@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.BinanceMonitor" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/accent_cyan</item>
+        <item name="colorSecondary">@color/accent_gold</item>
+        <item name="colorTertiary">@color/accent_blue</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/bg_primary</item>
+        <item name="android:windowBackground">@drawable/bg_app</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="materialCardViewStyle">@style/Widget.BinanceMonitor.Card</item>
+        <item name="textInputStyle">@style/Widget.BinanceMonitor.TextInputLayout</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="23">false</item>
+    </style>
+
+    <style name="Widget.BinanceMonitor.Card" parent="Widget.Material3.CardView.Filled">
+        <item name="cardBackgroundColor">@color/bg_card</item>
+        <item name="strokeColor">@color/stroke_card</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cardCornerRadius">10dp</item>
+    </style>
+
+    <style name="Widget.BinanceMonitor.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox.Dense">
+        <item name="boxBackgroundColor">@color/bg_input</item>
+        <item name="boxCornerRadiusTopStart">13dp</item>
+        <item name="boxCornerRadiusTopEnd">13dp</item>
+        <item name="boxCornerRadiusBottomStart">13dp</item>
+        <item name="boxCornerRadiusBottomEnd">13dp</item>
+        <item name="hintTextColor">@color/text_secondary</item>
+        <item name="boxStrokeColor">@color/stroke_card</item>
+    </style>
+</resources>

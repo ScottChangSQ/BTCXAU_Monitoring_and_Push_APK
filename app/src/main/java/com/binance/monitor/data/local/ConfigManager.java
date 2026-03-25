@@ -1,0 +1,114 @@
+package com.binance.monitor.data.local;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+
+import com.binance.monitor.constants.AppConstants;
+import com.binance.monitor.data.model.SymbolConfig;
+
+public class ConfigManager {
+
+    private static final String PREF_NAME = "binance_monitor_prefs";
+    private static final String KEY_LOGIC_AND = "logic_and";
+    private static final String KEY_FLOATING_ENABLED = "floating_enabled";
+    private static final String KEY_FLOATING_ALPHA = "floating_alpha";
+    private static final String KEY_SHOW_BTC = "show_btc";
+    private static final String KEY_SHOW_XAU = "show_xau";
+    private static volatile ConfigManager instance;
+
+    private final SharedPreferences preferences;
+
+    private ConfigManager(Context context) {
+        preferences = context.getApplicationContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+    }
+
+    public static ConfigManager getInstance(Context context) {
+        if (instance == null) {
+            synchronized (ConfigManager.class) {
+                if (instance == null) {
+                    instance = new ConfigManager(context);
+                }
+            }
+        }
+        return instance;
+    }
+
+    public SymbolConfig getSymbolConfig(String symbol) {
+        SymbolConfig defaults = SymbolConfig.createDefault(symbol);
+        String prefix = getPrefix(symbol);
+        return new SymbolConfig(
+                symbol,
+                preferences.getFloat(prefix + "_volume_threshold", (float) defaults.getVolumeThreshold()),
+                preferences.getFloat(prefix + "_amount_threshold", (float) defaults.getAmountThreshold()),
+                preferences.getFloat(prefix + "_price_threshold", (float) defaults.getPriceChangeThreshold()),
+                preferences.getBoolean(prefix + "_volume_enabled", defaults.isVolumeEnabled()),
+                preferences.getBoolean(prefix + "_amount_enabled", defaults.isAmountEnabled()),
+                preferences.getBoolean(prefix + "_price_enabled", defaults.isPriceChangeEnabled())
+        );
+    }
+
+    public void saveSymbolConfig(SymbolConfig config) {
+        String prefix = getPrefix(config.getSymbol());
+        preferences.edit()
+                .putFloat(prefix + "_volume_threshold", (float) config.getVolumeThreshold())
+                .putFloat(prefix + "_amount_threshold", (float) config.getAmountThreshold())
+                .putFloat(prefix + "_price_threshold", (float) config.getPriceChangeThreshold())
+                .putBoolean(prefix + "_volume_enabled", config.isVolumeEnabled())
+                .putBoolean(prefix + "_amount_enabled", config.isAmountEnabled())
+                .putBoolean(prefix + "_price_enabled", config.isPriceChangeEnabled())
+                .apply();
+    }
+
+    public SymbolConfig resetSymbolConfig(String symbol) {
+        SymbolConfig defaults = SymbolConfig.createDefault(symbol);
+        saveSymbolConfig(defaults);
+        return defaults;
+    }
+
+    public boolean isUseAndMode() {
+        return preferences.getBoolean(KEY_LOGIC_AND, false);
+    }
+
+    public void setUseAndMode(boolean useAndMode) {
+        preferences.edit().putBoolean(KEY_LOGIC_AND, useAndMode).apply();
+    }
+
+    public boolean isFloatingEnabled() {
+        return preferences.getBoolean(KEY_FLOATING_ENABLED, false);
+    }
+
+    public void setFloatingEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_FLOATING_ENABLED, enabled).apply();
+    }
+
+    public int getFloatingAlpha() {
+        return preferences.getInt(KEY_FLOATING_ALPHA, 88);
+    }
+
+    public void setFloatingAlpha(int alpha) {
+        preferences.edit().putInt(KEY_FLOATING_ALPHA, alpha).apply();
+    }
+
+    public boolean isShowBtc() {
+        return preferences.getBoolean(KEY_SHOW_BTC, true);
+    }
+
+    public void setShowBtc(boolean show) {
+        preferences.edit().putBoolean(KEY_SHOW_BTC, show).apply();
+    }
+
+    public boolean isShowXau() {
+        return preferences.getBoolean(KEY_SHOW_XAU, true);
+    }
+
+    public void setShowXau(boolean show) {
+        preferences.edit().putBoolean(KEY_SHOW_XAU, show).apply();
+    }
+
+    private String getPrefix(String symbol) {
+        if (AppConstants.SYMBOL_XAU.equals(symbol)) {
+            return "xau";
+        }
+        return "btc";
+    }
+}
