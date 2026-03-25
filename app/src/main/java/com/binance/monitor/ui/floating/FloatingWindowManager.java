@@ -26,7 +26,9 @@ import java.util.Collections;
 import java.util.Map;
 
 public class FloatingWindowManager {
-    private static final int TOGGLE_CENTER_OFFSET_DP = 7;
+    private static final int MINI_SIZE_DP = 25;
+    private static final int EXPANDED_PADDING_DP = 10;
+    private static final int MINIMIZE_BTN_SIZE_DP = 18;
 
     private final Context context;
     private final WindowManager windowManager;
@@ -59,6 +61,9 @@ public class FloatingWindowManager {
     private int lastAppliedHeight = Integer.MIN_VALUE;
     private boolean draggingWindow;
     private boolean pendingRender;
+    private int cachedExpandedWidth;
+    private float cachedExpandedCenterX;
+    private float cachedExpandedCenterY;
 
     public FloatingWindowManager(Context context) {
         this.context = context.getApplicationContext();
@@ -196,6 +201,9 @@ public class FloatingWindowManager {
                 AppConstants.SYMBOL_BTC, showBtc);
         renderSymbol(binding.layoutXau, binding.tvXauPrice, binding.tvXauVolume, binding.tvXauAmount,
                 AppConstants.SYMBOL_XAU, showXau);
+        if (!minimized) {
+            cacheExpandedAnchor();
+        }
         refreshMinimizedState(false);
     }
 
@@ -270,24 +278,99 @@ public class FloatingWindowManager {
             }
             return;
         }
-        adjustPositionForModeToggle(minimized);
+        remapPositionForToggle(minimized);
         this.minimized = minimized;
         refreshMinimizedState(true);
     }
 
-    private void adjustPositionForModeToggle(boolean targetMinimized) {
+    private void remapPositionForToggle(boolean targetMinimized) {
+        if (layoutParams == null || binding == null) {
+            return;
+        }
+        int oldWidth = binding.getRoot().getWidth();
+        if (oldWidth <= 0) {
+            oldWidth = targetMinimized
+                    ? Math.max(cachedExpandedWidth, dp(MINI_SIZE_DP))
+                    : dp(MINI_SIZE_DP);
+        }
+        float sourceCenterX;
+        float sourceCenterY;
+        int newWidth;
+        float targetCenterX;
+        float targetCenterY;
+
+        if (targetMinimized) {
+            cacheExpandedAnchor();
+            sourceCenterX = resolveExpandedAnchorCenterX();
+            sourceCenterY = resolveExpandedAnchorCenterY();
+            newWidth = dp(MINI_SIZE_DP);
+            targetCenterX = newWidth / 2f;
+            targetCenterY = dp(MINI_SIZE_DP) / 2f;
+        } else {
+            sourceCenterX = dp(MINI_SIZE_DP) / 2f;
+            sourceCenterY = dp(MINI_SIZE_DP) / 2f;
+            newWidth = cachedExpandedWidth > 0 ? cachedExpandedWidth : oldWidth;
+            targetCenterX = cachedExpandedCenterX > 0f
+                    ? cachedExpandedCenterX
+                    : defaultExpandedAnchorCenter();
+            targetCenterY = cachedExpandedCenterY > 0f
+                    ? cachedExpandedCenterY
+                    : defaultExpandedAnchorCenter();
+        }
+        remapWindowByCenter(oldWidth, newWidth, sourceCenterX, sourceCenterY, targetCenterX, targetCenterY);
+    }
+
+    private void remapWindowByCenter(int oldWidth,
+                                     int newWidth,
+                                     float sourceCenterX,
+                                     float sourceCenterY,
+                                     float targetCenterX,
+                                     float targetCenterY) {
         if (layoutParams == null) {
             return;
         }
-        int offset = dp(TOGGLE_CENTER_OFFSET_DP);
-        if (targetMinimized) {
-            // end-gravity: smaller x means move right
-            layoutParams.x = Math.max(0, layoutParams.x - offset);
-            layoutParams.y += offset;
-        } else {
-            layoutParams.x += offset;
-            layoutParams.y = Math.max(0, layoutParams.y - offset);
+        float nextX = layoutParams.x + (oldWidth - newWidth) + (targetCenterX - sourceCenterX);
+        float nextY = layoutParams.y + (sourceCenterY - targetCenterY);
+        layoutParams.x = Math.max(0, Math.round(nextX));
+        layoutParams.y = Math.max(0, Math.round(nextY));
+    }
+
+    private void cacheExpandedAnchor() {
+        if (binding == null) {
+            return;
         }
+        int width = binding.getRoot().getWidth();
+        if (width > 0) {
+            cachedExpandedWidth = width;
+        }
+        cachedExpandedCenterX = resolveExpandedAnchorCenterX();
+        cachedExpandedCenterY = resolveExpandedAnchorCenterY();
+    }
+
+    private float resolveExpandedAnchorCenterX() {
+        if (binding != null
+                && binding.layoutExpanded.getVisibility() == View.VISIBLE
+                && binding.btnMinimize.getWidth() > 0) {
+            return binding.layoutExpanded.getLeft()
+                    + binding.btnMinimize.getLeft()
+                    + binding.btnMinimize.getWidth() / 2f;
+        }
+        return defaultExpandedAnchorCenter();
+    }
+
+    private float resolveExpandedAnchorCenterY() {
+        if (binding != null
+                && binding.layoutExpanded.getVisibility() == View.VISIBLE
+                && binding.btnMinimize.getHeight() > 0) {
+            return binding.layoutExpanded.getTop()
+                    + binding.btnMinimize.getTop()
+                    + binding.btnMinimize.getHeight() / 2f;
+        }
+        return defaultExpandedAnchorCenter();
+    }
+
+    private float defaultExpandedAnchorCenter() {
+        return dp(EXPANDED_PADDING_DP) + dp(MINIMIZE_BTN_SIZE_DP) / 2f;
     }
 
     private void applyWindowAlpha() {
