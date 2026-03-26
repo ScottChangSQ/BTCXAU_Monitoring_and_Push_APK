@@ -128,10 +128,11 @@ public class Mt5BridgeGatewayClient {
             List<CurvePoint> curves = parseCurvePoints(root.optJSONArray("curvePoints"));
             List<AccountMetric> indicators = parseMetrics(root.optJSONArray("curveIndicators"));
             List<PositionItem> positions = parsePositions(root.optJSONArray("positions"));
+            List<PositionItem> pendingOrders = parsePendingOrders(root.optJSONArray("pendingOrders"));
             List<TradeRecordItem> trades = parseTrades(root.optJSONArray("trades"));
             List<AccountMetric> stats = parseMetrics(root.optJSONArray("statsMetrics"));
 
-            result.snapshot = new AccountSnapshot(overview, curves, indicators, positions, trades, stats);
+            result.snapshot = new AccountSnapshot(overview, curves, indicators, positions, pendingOrders, trades, stats);
             result.success = true;
             if (!isLoopbackBaseUrl(normalizedBase)) {
                 discoveredLanBaseUrl = normalizedBase;
@@ -391,7 +392,41 @@ public class Mt5BridgeGatewayClient {
                     item.optDouble("quantity", 0d),
                     item.optDouble("amount", 0d),
                     item.optDouble("fee", 0d),
-                    item.optString("remark", "")));
+                    item.optString("remark", ""),
+                    item.optDouble("profit", 0d),
+                    item.optLong("openTime", item.optLong("timestamp", 0L)),
+                    item.optLong("closeTime", item.optLong("timestamp", 0L)),
+                    item.optDouble("storageFee", item.optDouble("fee", 0d))));
+        }
+        return list;
+    }
+
+    private List<PositionItem> parsePendingOrders(JSONArray array) {
+        List<PositionItem> list = new ArrayList<>();
+        if (array == null) {
+            return list;
+        }
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            list.add(new PositionItem(
+                    item.optString("productName", "--"),
+                    item.optString("code", "--"),
+                    item.optString("side", "Buy"),
+                    item.optDouble("quantity", 0d),
+                    item.optDouble("sellableQuantity", 0d),
+                    item.optDouble("costPrice", 0d),
+                    item.optDouble("latestPrice", item.optDouble("pendingPrice", 0d)),
+                    item.optDouble("marketValue", 0d),
+                    item.optDouble("positionRatio", 0d),
+                    item.optDouble("dayPnL", 0d),
+                    item.optDouble("totalPnL", 0d),
+                    item.optDouble("returnRate", 0d),
+                    item.optDouble("pendingLots", item.optDouble("quantity", 0d)),
+                    item.optInt("pendingCount", 1),
+                    item.optDouble("pendingPrice", 0d)));
         }
         return list;
     }

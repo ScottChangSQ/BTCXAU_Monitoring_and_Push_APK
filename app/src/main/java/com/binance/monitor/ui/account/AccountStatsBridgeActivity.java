@@ -86,8 +86,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
     private volatile boolean loading;
     private AccountTimeRange selectedRange = AccountTimeRange.D7;
+    private boolean manualCurveRangeEnabled;
+    private long manualCurveRangeStartMs;
+    private long manualCurveRangeEndMs;
 
     private List<PositionItem> basePositions = new ArrayList<>();
+    private List<PositionItem> basePendingOrders = new ArrayList<>();
     private List<TradeRecordItem> baseTrades = new ArrayList<>();
     private List<CurvePoint> allCurvePoints = new ArrayList<>();
     private List<CurvePoint> displayedCurvePoints = new ArrayList<>();
@@ -129,6 +133,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setupCurveInteraction();
         bindLocalMeta();
         requestSnapshot();
+        refreshHandler.removeCallbacks(refreshRunnable);
+        refreshHandler.postDelayed(refreshRunnable, AppConstants.ACCOUNT_REFRESH_INTERVAL_MS);
     }
 
     @Override
@@ -140,7 +146,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
-        refreshHandler.removeCallbacks(refreshRunnable);
         super.onPause();
     }
 
@@ -230,7 +235,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.spinnerPositionSort.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshPositions));
 
         ArrayAdapter<String> productAdapter = createTradeFilterAdapter(
-                new String[]{FILTER_PRODUCT, "XAUUSD", "BTCUSD", "NAS100", "WTI", "EURUSD", "GBPUSD"});
+                new String[]{FILTER_PRODUCT});
         binding.spinnerTradeProduct.setAdapter(productAdapter);
         binding.spinnerTradeProduct.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
 
@@ -328,8 +333,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             } else {
                 selectedRange = AccountTimeRange.ALL;
             }
-            applyPresetCurveRangeFromAllPoints();
-            requestSnapshot();
+            clearManualCurveRange(true);
+            applyCurrentCurveRangeFromAllPoints();
         });
     }
 
@@ -383,6 +388,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void applySnapshot(AccountSnapshot snapshot) {
         basePositions = new ArrayList<>(snapshot.getPositions());
+        if (snapshot.getPendingOrders() == null || snapshot.getPendingOrders().isEmpty()) {
+            basePendingOrders = buildPendingOrders(basePositions);
+        } else {
+            basePendingOrders = new ArrayList<>(snapshot.getPendingOrders());
+        }
         baseTrades = new ArrayList<>(snapshot.getTrades());
         allCurvePoints = new ArrayList<>(snapshot.getCurvePoints());
         allCurvePoints.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
@@ -398,14 +408,42 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         overviewAdapter.submitList(overview);
         statsAdapter.submitList(stats);
-        applyPresetCurveRangeFromAllPoints();
+        updateTradeProductOptions();
+        applyCurrentCurveRangeFromAllPoints();
         refreshPositions();
         refreshTrades();
     }
 
-    private void applyPresetCurveRangeFromAllPoints() {
+    private void applyCurrentCurveRangeFromAllPoints() {
+        if (manualCurveRangeEnabled) {
+            List<CurvePoint> manual = filterCurveByManualRange(
+                    allCurvePoints,
+                    manualCurveRangeStartMs,
+                    manualCurveRangeEndMs
+            );
+            if (manual.size() >= 2) {
+                displayedCurvePoints = manual;
+                renderCurveWithIndicators(displayedCurvePoints);
+                return;
+            }
+            manualCurveRangeEnabled = false;
+        }
         displayedCurvePoints = filterCurveByRange(allCurvePoints, selectedRange);
         renderCurveWithIndicators(displayedCurvePoints);
+    }
+
+    private List<CurvePoint> filterCurveByManualRange(List<CurvePoint> source, long startInclusive, long endInclusive) {
+        List<CurvePoint> filtered = new ArrayList<>();
+        if (source == null || source.isEmpty()) {
+            return filtered;
+        }
+        for (CurvePoint point : source) {
+            long ts = point.getTimestamp();
+            if (ts >= startInclusive && ts <= endInclusive) {
+                filtered.add(point);
+            }
+        }
+        return filtered;
     }
 
     private List<CurvePoint> filterCurveByRange(List<CurvePoint> source, AccountTimeRange range) {
@@ -624,7 +662,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         positionAggregateAdapter.submitList(buildPositionAggregates(list));
         positionAdapter.submitList(list);
-        List<PositionItem> pendingOrders = buildPendingOrders(list);
+        List<PositionItem> pendingOrders = new ArrayList<>(basePendingOrders);
+        pendingOrders.sort((a, b) -> Double.compare(b.getPendingLots(), a.getPendingLots()));
         pendingOrderAdapter.submitList(pendingOrders);
         int pendingVisibility = pendingOrders.isEmpty() ? View.GONE : View.VISIBLE;
         binding.tvPendingOrdersTitle.setVisibility(pendingVisibility);
@@ -723,6 +762,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         String product = (String) binding.spinnerTradeProduct.getSelectedItem();
         String side = (String) binding.spinnerTradeSide.getSelectedItem();
         String time = (String) binding.spinnerTradeTime.getSelectedItem();
+        if (product == null || product.trim().isEmpty()) {
+            product = FILTER_PRODUCT;
+        }
+        if (side == null || side.trim().isEmpty()) {
+            side = FILTER_SIDE;
+        }
+        if (time == null || time.trim().isEmpty()) {
+            time = FILTER_DATE;
+        }
 
         long now = System.currentTimeMillis();
         long limit;
@@ -752,12 +800,41 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         tradeAdapter.submitList(filtered);
     }
 
+    private void updateTradeProductOptions() {
+        String current = (String) binding.spinnerTradeProduct.getSelectedItem();
+        if (current == null || current.trim().isEmpty()) {
+            current = FILTER_PRODUCT;
+        }
+
+        List<String> products = new ArrayList<>();
+        for (TradeRecordItem item : baseTrades) {
+            String code = trim(item.getCode()).toUpperCase(Locale.ROOT);
+            if (code.isEmpty() || products.contains(code)) {
+                continue;
+            }
+            products.add(code);
+        }
+        products.sort(String::compareToIgnoreCase);
+
+        List<String> options = new ArrayList<>();
+        options.add(FILTER_PRODUCT);
+        options.addAll(products);
+        ArrayAdapter<String> adapter = createTradeFilterAdapter(options.toArray(new String[0]));
+        binding.spinnerTradeProduct.setAdapter(adapter);
+
+        int selectedIndex = options.indexOf(current);
+        if (selectedIndex < 0) {
+            selectedIndex = 0;
+        }
+        binding.spinnerTradeProduct.setSelection(selectedIndex, false);
+    }
+
     private void applyManualCurveRange() {
         String startText = trim(binding.etRangeStart.getText() == null ? "" : binding.etRangeStart.getText().toString());
         String endText = trim(binding.etRangeEnd.getText() == null ? "" : binding.etRangeEnd.getText().toString());
         if (startText.isEmpty() || endText.isEmpty()) {
-            displayedCurvePoints = new ArrayList<>(allCurvePoints);
-            renderCurveWithIndicators(displayedCurvePoints);
+            clearManualCurveRange(false);
+            applyCurrentCurveRangeFromAllPoints();
             Toast.makeText(this, "已恢复当前时间维度完整区间", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -776,20 +853,27 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 end = tmp;
             }
 
-            List<CurvePoint> filtered = new ArrayList<>();
-            for (CurvePoint p : allCurvePoints) {
-                if (p.getTimestamp() >= start && p.getTimestamp() <= end) {
-                    filtered.add(p);
-                }
-            }
+            List<CurvePoint> filtered = filterCurveByManualRange(allCurvePoints, start, end);
             if (filtered.size() < 2) {
                 Toast.makeText(this, "该区间数据不足，请调整日期", Toast.LENGTH_SHORT).show();
                 return;
             }
-            displayedCurvePoints = filtered;
-            renderCurveWithIndicators(displayedCurvePoints);
+            manualCurveRangeEnabled = true;
+            manualCurveRangeStartMs = start;
+            manualCurveRangeEndMs = end;
+            applyCurrentCurveRangeFromAllPoints();
         } catch (Exception e) {
             Toast.makeText(this, "日期格式应为 yyyy-MM-dd", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void clearManualCurveRange(boolean clearInputText) {
+        manualCurveRangeEnabled = false;
+        manualCurveRangeStartMs = 0L;
+        manualCurveRangeEndMs = 0L;
+        if (clearInputText) {
+            binding.etRangeStart.setText("");
+            binding.etRangeEnd.setText("");
         }
     }
 
@@ -862,10 +946,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void openMarketMonitor() {
         Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
-        finish();
     }
 
     private class SwipeListener extends GestureDetector.SimpleOnGestureListener {

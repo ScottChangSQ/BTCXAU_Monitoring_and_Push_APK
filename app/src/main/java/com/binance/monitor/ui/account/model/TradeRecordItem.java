@@ -10,6 +10,10 @@ public class TradeRecordItem {
     private final double amount;
     private final double fee;
     private final String remark;
+    private final double profit;
+    private final long openTime;
+    private final long closeTime;
+    private final double storageFee;
 
     public TradeRecordItem(long timestamp,
                            String productName,
@@ -20,6 +24,23 @@ public class TradeRecordItem {
                            double amount,
                            double fee,
                            String remark) {
+        this(timestamp, productName, code, side, price, quantity, amount, fee, remark,
+                0d, timestamp, timestamp, fee);
+    }
+
+    public TradeRecordItem(long timestamp,
+                           String productName,
+                           String code,
+                           String side,
+                           double price,
+                           double quantity,
+                           double amount,
+                           double fee,
+                           String remark,
+                           double profit,
+                           long openTime,
+                           long closeTime,
+                           double storageFee) {
         this.timestamp = timestamp;
         this.productName = productName;
         this.code = code;
@@ -29,6 +50,10 @@ public class TradeRecordItem {
         this.amount = amount;
         this.fee = fee;
         this.remark = remark;
+        this.profit = profit;
+        this.openTime = openTime;
+        this.closeTime = closeTime;
+        this.storageFee = storageFee;
     }
 
     public long getTimestamp() {
@@ -65,5 +90,21 @@ public class TradeRecordItem {
 
     public String getRemark() {
         return remark;
+    }
+
+    public double getProfit() {
+        return profit;
+    }
+
+    public long getOpenTime() {
+        return openTime;
+    }
+
+    public long getCloseTime() {
+        return closeTime;
+    }
+
+    public double getStorageFee() {
+        return storageFee;
     }
 }

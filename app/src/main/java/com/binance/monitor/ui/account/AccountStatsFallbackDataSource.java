@@ -29,6 +29,12 @@ public class AccountStatsFallbackDataSource {
     public AccountSnapshot load(AccountTimeRange range) {
         List<CurvePoint> rangePoints = filterCurve(range);
         List<PositionItem> positions = new ArrayList<>(basePositions);
+        List<PositionItem> pendingOrders = new ArrayList<>();
+        for (PositionItem item : positions) {
+            if (item.getPendingCount() > 0 || item.getPendingLots() > 0d) {
+                pendingOrders.add(item);
+            }
+        }
         List<TradeRecordItem> trades = new ArrayList<>(baseTrades);
 
         double equity = rangePoints.isEmpty() ? 0d : rangePoints.get(rangePoints.size() - 1).getEquity();
@@ -92,7 +98,7 @@ public class AccountStatsFallbackDataSource {
                 new AccountMetric("Top-5 Position Ratio", percent(topFiveRatio(positions)))
         );
 
-        return new AccountSnapshot(overview, rangePoints, curveIndicators, positions, trades, stats);
+        return new AccountSnapshot(overview, rangePoints, curveIndicators, positions, pendingOrders, trades, stats);
     }
 
     private List<CurvePoint> filterCurve(AccountTimeRange range) {
@@ -162,16 +168,24 @@ public class AccountStatsFallbackDataSource {
             double qty = Math.max(0.1d, position.getQuantity() * (0.08d + random.nextDouble() * 0.18d));
             double price = position.getLatestPrice() * (0.98d + random.nextDouble() * 0.04d);
             double amount = qty * price;
+            long closeTime = now - i * 4L * 60L * 60L * 1000L;
+            long openTime = closeTime - (long) ((1.5d + random.nextDouble() * 6d) * 60d * 60d * 1000d);
+            double pnl = (random.nextDouble() - 0.42d) * 460d;
+            double storageFee = amount * 0.00015d;
             trades.add(new TradeRecordItem(
-                    now - i * 4L * 60L * 60L * 1000L,
+                    closeTime,
                     position.getProductName(),
                     position.getCode(),
                     buy ? "Buy" : "Sell",
                     price,
                     qty,
                     amount,
-                    amount * 0.0006d,
-                    remarks[i % remarks.length]
+                    storageFee,
+                    remarks[i % remarks.length],
+                    pnl,
+                    openTime,
+                    closeTime,
+                    storageFee
             ));
         }
         return trades;

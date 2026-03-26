@@ -62,6 +62,14 @@ def _safe_div(a: float, b: float) -> float:
     return a / b
 
 
+def _is_buy_trade_type(trade_type: int) -> bool:
+    return trade_type in (0, 2, 4, 6)
+
+
+def _order_side(order_type: int) -> str:
+    return "Buy" if _is_buy_trade_type(order_type) else "Sell"
+
+
 def _range_hours(range_key: str) -> int:
     mapping = {
         "1d": 24,
@@ -158,15 +166,33 @@ def _server_candidates() -> List[str]:
     return values
 
 
-def _mt5_initialize(path_value: Optional[str]) -> Tuple[bool, str]:
+def _mt5_initialize(
+    path_value: Optional[str],
+    login: Optional[int] = None,
+    password: Optional[str] = None,
+    server_name: Optional[str] = None,
+) -> Tuple[bool, str]:
     kwargs = {"timeout": MT5_INIT_TIMEOUT_MS}
     if path_value:
         kwargs["path"] = path_value
+    if login and password and server_name:
+        kwargs["login"] = int(login)
+        kwargs["password"] = password
+        kwargs["server"] = server_name
     try:
         ok = bool(mt5.initialize(**kwargs))
     except TypeError:
-        kwargs.pop("timeout", None)
-        ok = bool(mt5.initialize(**kwargs))
+        # Backward compatibility for MT5 package variants
+        # that do not accept timeout and/or auth fields together.
+        legacy_kwargs = dict(kwargs)
+        legacy_kwargs.pop("timeout", None)
+        try:
+            ok = bool(mt5.initialize(**legacy_kwargs))
+        except TypeError:
+            legacy_kwargs.pop("login", None)
+            legacy_kwargs.pop("password", None)
+            legacy_kwargs.pop("server", None)
+            ok = bool(mt5.initialize(**legacy_kwargs))
     except Exception as exc:
         return False, str(exc)
     return ok, str(mt5.last_error())
@@ -204,10 +230,27 @@ def _ensure_mt5() -> None:
 
     attempts: List[Optional[str]] = [None] + MT5_TERMINAL_CANDIDATES
     errors = []
+    server_candidates = _server_candidates()
     for path_value in attempts:
+        label = path_value if path_value else "<auto>"
+
+        # First try: initialize with credentials directly.
+        for server_name in server_candidates:
+            _shutdown_mt5()
+            initialized, init_message = _mt5_initialize(
+                path_value,
+                login=LOGIN,
+                password=PASSWORD,
+                server_name=server_name,
+            )
+            if initialized:
+                mt5_last_connected_path = label
+                return
+            errors.append(f"init+login({label},{server_name})={init_message}")
+
+        # Fallback: initialize first, then login.
         _shutdown_mt5()
         initialized, init_message = _mt5_initialize(path_value)
-        label = path_value if path_value else "<auto>"
         if not initialized:
             errors.append(f"init({label})={init_message}")
             continue
@@ -371,21 +414,92 @@ def _map_positions() -> List[Dict]:
     return mapped
 
 
+def _map_pending_orders() -> List[Dict]:
+    orders = mt5.orders_get() or []
+    mapped = []
+    for order in orders:
+        symbol = getattr(order, "symbol", "")
+        if not symbol:
+            continue
+
+        order_type = int(getattr(order, "type", 0))
+        side = _order_side(order_type)
+        volume = abs(float(getattr(order, "volume_current", 0.0)))
+        if volume <= 0.0:
+            volume = abs(float(getattr(order, "volume_initial", 0.0)))
+        if volume <= 0.0:
+            continue
+
+        price_open = float(getattr(order, "price_open", 0.0))
+        price_current = float(getattr(order, "price_current", 0.0))
+        pending_price = price_open if price_open > 0.0 else price_current
+        latest_price = price_current if price_current > 0.0 else pending_price
+
+        mapped.append(
+            {
+                "productName": symbol,
+                "code": symbol,
+                "side": side,
+                "quantity": 0.0,
+                "sellableQuantity": 0.0,
+                "costPrice": 0.0,
+                "latestPrice": latest_price,
+                "marketValue": 0.0,
+                "positionRatio": 0.0,
+                "dayPnL": 0.0,
+                "totalPnL": 0.0,
+                "returnRate": 0.0,
+                "pendingLots": volume,
+                "pendingCount": 1,
+                "pendingPrice": pending_price,
+            }
+        )
+
+    mapped.sort(key=lambda item: item["pendingLots"], reverse=True)
+    return mapped
+
+
 def _map_trades() -> List[Dict]:
     now = datetime.now(timezone.utc)
     from_time = now - timedelta(days=365)
     deals = mt5.history_deals_get(from_time, now) or []
     mapped = []
+    lifecycle: Dict[int, Dict[str, int]] = {}
 
     for deal in deals:
-        deal_type = int(getattr(deal, "type", 0))
-        side = "Buy" if deal_type in (0, 2, 4, 6) else "Sell"
+        symbol = getattr(deal, "symbol", "")
+        if not symbol:
+            continue
+        ticket = int(getattr(deal, "ticket", 0))
+        order_id = int(getattr(deal, "order", 0))
+        position_id = int(getattr(deal, "position_id", 0))
+        key = position_id if position_id > 0 else (order_id if order_id > 0 else ticket)
+        ts = int(getattr(deal, "time", 0)) * 1000
+        entry = int(getattr(deal, "entry", 0))
+
+        state = lifecycle.setdefault(key, {"open": ts, "close": ts})
+        state["open"] = min(state["open"], ts)
+        if entry in (1, 2, 3):
+            state["close"] = max(state["close"], ts)
+        else:
+            state["close"] = max(state["close"], ts)
+
+    for deal in deals:
         symbol = getattr(deal, "symbol", "--")
+        if symbol == "--" or not symbol:
+            continue
+
+        deal_type = int(getattr(deal, "type", 0))
+        side = "Buy" if _is_buy_trade_type(deal_type) else "Sell"
         volume = float(getattr(deal, "volume", 0.0))
+        if abs(volume) < 1e-9:
+            continue
+
         price = float(getattr(deal, "price", 0.0))
+        profit = float(getattr(deal, "profit", 0.0))
         commission = float(getattr(deal, "commission", 0.0))
         swap = float(getattr(deal, "swap", 0.0))
-        fee = abs(commission + swap)
+        storage_fee = abs(commission + swap)
 
         contract_size = 1.0
         sinfo = mt5.symbol_info(symbol)
@@ -393,16 +507,33 @@ def _map_trades() -> List[Dict]:
             contract_size = float(getattr(sinfo, "trade_contract_size", 1.0))
 
         amount = abs(volume * price * contract_size)
+        ticket = int(getattr(deal, "ticket", 0))
+        order_id = int(getattr(deal, "order", 0))
+        position_id = int(getattr(deal, "position_id", 0))
+        key = position_id if position_id > 0 else (order_id if order_id > 0 else ticket)
+        state = lifecycle.get(key, {})
+        open_time = int(state.get("open", 0))
+        close_time = int(state.get("close", 0))
+        ts = int(getattr(deal, "time", 0)) * 1000
+        if open_time <= 0:
+            open_time = ts
+        if close_time <= 0:
+            close_time = ts
+
         mapped.append(
             {
-                "timestamp": int(getattr(deal, "time", 0)) * 1000,
+                "timestamp": close_time,
                 "productName": symbol,
                 "code": symbol,
                 "side": side,
                 "price": price,
                 "quantity": volume,
                 "amount": amount,
-                "fee": fee,
+                "fee": storage_fee,
+                "profit": profit,
+                "openTime": open_time,
+                "closeTime": close_time,
+                "storageFee": storage_fee,
                 "remark": getattr(deal, "comment", "") or "",
             }
         )
@@ -451,15 +582,37 @@ def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
 
 
 def _build_stats(positions: List[Dict], trades: List[Dict], points: List[Dict]) -> List[Dict]:
-    total_pnl = sum(p["totalPnL"] for p in positions)
+    open_position_pnl = sum(p["totalPnL"] for p in positions)
+    realized_pnl = sum(float(t.get("profit", 0.0)) for t in trades)
+    total_pnl = realized_pnl + open_position_pnl
+
     total_count = len(trades)
-    buy_count = len([t for t in trades if t["side"] == "Buy"])
-    sell_count = len([t for t in trades if t["side"] == "Sell"])
-    win_count = max(1, sell_count // 2)
-    loss_count = max(1, sell_count - win_count)
-    avg_win = 420.0
-    avg_loss = -280.0
-    ratio = abs(avg_win / avg_loss)
+    buy_count = len([t for t in trades if t.get("side") == "Buy"])
+    sell_count = len([t for t in trades if t.get("side") == "Sell"])
+
+    wins = [float(t.get("profit", 0.0)) for t in trades if float(t.get("profit", 0.0)) > 0.0]
+    losses = [float(t.get("profit", 0.0)) for t in trades if float(t.get("profit", 0.0)) < 0.0]
+    win_count = len(wins)
+    loss_count = len(losses)
+    avg_win = mean(wins) if wins else 0.0
+    avg_loss = mean(losses) if losses else 0.0
+    ratio = abs(avg_win / avg_loss) if abs(avg_loss) > 1e-9 else 0.0
+    win_rate = _safe_div(win_count, max(1, win_count + loss_count))
+
+    now = datetime.now(timezone.utc)
+    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    month_start_ms = int(month_start.timestamp() * 1000)
+    year_start_ms = int(year_start.timestamp() * 1000)
+    month_profit = sum(float(t.get("profit", 0.0)) for t in trades if int(t.get("closeTime", t.get("timestamp", 0))) >= month_start_ms)
+    ytd_profit = sum(float(t.get("profit", 0.0)) for t in trades if int(t.get("closeTime", t.get("timestamp", 0))) >= year_start_ms)
+
+    close_times = [int(t.get("closeTime", t.get("timestamp", 0))) for t in trades if int(t.get("closeTime", t.get("timestamp", 0))) > 0]
+    if close_times:
+        span_days = max(1.0, (max(close_times) - min(close_times)) / (24.0 * 60.0 * 60.0 * 1000.0))
+    else:
+        span_days = 1.0
+    daily_avg_profit = _safe_div(realized_pnl, span_days)
 
     max_dd = 0.0
     if points:
@@ -477,29 +630,56 @@ def _build_stats(positions: List[Dict], trades: List[Dict], points: List[Dict]) 
 
     market_value = sum(p["marketValue"] for p in positions)
     top5 = sum(sorted([p["positionRatio"] for p in positions], reverse=True)[:5])
+    latest_equity = points[-1]["equity"] if points else max(1.0, market_value)
+    cumulative_return = _safe_div(realized_pnl, max(1.0, latest_equity - realized_pnl))
+
+    longest_win = 0
+    longest_loss = 0
+    current_win = 0
+    current_loss = 0
+    ordered_trades = sorted(trades, key=lambda t: int(t.get("closeTime", t.get("timestamp", 0))))
+    for trade in ordered_trades:
+        pnl = float(trade.get("profit", 0.0))
+        if pnl > 0.0:
+            current_win += 1
+            current_loss = 0
+            longest_win = max(longest_win, current_win)
+        elif pnl < 0.0:
+            current_loss += 1
+            current_win = 0
+            longest_loss = max(longest_loss, current_loss)
+
+    symbol_exposure: Dict[str, float] = {}
+    for position in positions:
+        code = str(position.get("code", ""))
+        if not code:
+            continue
+        symbol_exposure[code] = symbol_exposure.get(code, 0.0) + float(position.get("marketValue", 0.0))
+    symbols = sorted(symbol_exposure.items(), key=lambda item: item[1], reverse=True)
+    asset_distribution = " / ".join([symbol for symbol, _ in symbols[:3]]) if symbols else "--"
 
     return [
         {"name": "Cumulative Profit", "value": _fmt_money(total_pnl)},
-        {"name": "Cumulative Return", "value": _fmt_pct(_safe_div(total_pnl, 100000.0))},
-        {"name": "Month Profit", "value": _fmt_money(total_pnl * 0.24)},
-        {"name": "YTD Profit", "value": _fmt_money(total_pnl * 0.78)},
-        {"name": "Daily Avg Profit", "value": _fmt_money(total_pnl / 180.0)},
+        {"name": "Cumulative Return", "value": _fmt_pct(cumulative_return)},
+        {"name": "Month Profit", "value": _fmt_money(month_profit)},
+        {"name": "YTD Profit", "value": _fmt_money(ytd_profit)},
+        {"name": "Daily Avg Profit", "value": _fmt_money(daily_avg_profit)},
         {"name": "Total Trades", "value": str(total_count)},
         {"name": "Buy Count", "value": str(buy_count)},
         {"name": "Sell Count", "value": str(sell_count)},
-        {"name": "Win Rate", "value": _fmt_pct(_safe_div(win_count, max(1, win_count + loss_count)))},
+        {"name": "Win Rate", "value": _fmt_pct(win_rate)},
         {"name": "Win/Loss Trades", "value": f"{win_count} / {loss_count}"},
         {"name": "Avg Profit/Trade", "value": _fmt_usd(avg_win)},
         {"name": "Avg Loss/Trade", "value": _fmt_money(avg_loss)},
         {"name": "PnL Ratio", "value": f"{ratio:.2f}"},
         {"name": "Max Drawdown", "value": _fmt_pct(max_dd)},
         {"name": "Volatility", "value": _fmt_pct(volatility)},
-        {"name": "Position Utilization", "value": _fmt_pct(_safe_div(market_value, 100000.0))},
+        {"name": "Position Utilization", "value": _fmt_pct(_safe_div(market_value, max(1.0, latest_equity)))},
         {"name": "Single Position Max", "value": _fmt_pct(max([p["positionRatio"] for p in positions], default=0.0))},
         {"name": "Concentration", "value": _fmt_pct(top5)},
-        {"name": "Consecutive Win/Loss", "value": "5 / 3"},
+        {"name": "Consecutive Win/Loss", "value": f"{longest_win} / {longest_loss}"},
         {"name": "Current Position Amount", "value": _fmt_usd(market_value)},
-        {"name": "Asset Distribution", "value": "XAU / FX / Index"},
+        {"name": "Asset Distribution", "value": asset_distribution},
         {"name": "Top-5 Position Ratio", "value": _fmt_pct(top5)},
     ]
 
@@ -513,6 +693,7 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
                 raise RuntimeError("account_info is None")
             points = _build_curve(range_key)
             positions = _map_positions()
+            pending_orders = _map_pending_orders()
             trades = _map_trades()
             overview = _build_overview(positions, trades)
             indicators = _curve_indicators(points)
@@ -528,6 +709,7 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
                 "curvePoints": points,
                 "curveIndicators": indicators,
                 "positions": positions,
+                "pendingOrders": pending_orders,
                 "trades": trades,
                 "statsMetrics": stats,
             }
@@ -547,6 +729,7 @@ def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     data["curvePoints"] = data.get("curvePoints") or []
     data["curveIndicators"] = data.get("curveIndicators") or []
     data["positions"] = data.get("positions") or []
+    data["pendingOrders"] = data.get("pendingOrders") or []
     data["trades"] = data.get("trades") or []
     data["statsMetrics"] = data.get("statsMetrics") or []
     return data

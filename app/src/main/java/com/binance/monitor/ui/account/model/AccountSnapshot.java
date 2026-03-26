@@ -7,6 +7,7 @@ public class AccountSnapshot {
     private final List<CurvePoint> curvePoints;
     private final List<AccountMetric> curveIndicators;
     private final List<PositionItem> positions;
+    private final List<PositionItem> pendingOrders;
     private final List<TradeRecordItem> trades;
     private final List<AccountMetric> statsMetrics;
 
@@ -16,10 +17,21 @@ public class AccountSnapshot {
                            List<PositionItem> positions,
                            List<TradeRecordItem> trades,
                            List<AccountMetric> statsMetrics) {
+        this(overviewMetrics, curvePoints, curveIndicators, positions, null, trades, statsMetrics);
+    }
+
+    public AccountSnapshot(List<AccountMetric> overviewMetrics,
+                           List<CurvePoint> curvePoints,
+                           List<AccountMetric> curveIndicators,
+                           List<PositionItem> positions,
+                           List<PositionItem> pendingOrders,
+                           List<TradeRecordItem> trades,
+                           List<AccountMetric> statsMetrics) {
         this.overviewMetrics = overviewMetrics;
         this.curvePoints = curvePoints;
         this.curveIndicators = curveIndicators;
         this.positions = positions;
+        this.pendingOrders = pendingOrders;
         this.trades = trades;
         this.statsMetrics = statsMetrics;
     }
@@ -38,6 +50,10 @@ public class AccountSnapshot {
 
     public List<PositionItem> getPositions() {
         return positions;
+    }
+
+    public List<PositionItem> getPendingOrders() {
+        return pendingOrders;
     }
 
     public List<TradeRecordItem> getTrades() {

@@ -88,33 +88,41 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         void bind(TradeRecordItem item, boolean expanded) {
             int sideColor = ContextCompat.getColor(binding.getRoot().getContext(),
                     "BUY".equalsIgnoreCase(item.getSide()) ? R.color.accent_green : R.color.accent_red);
-            String amount = "$" + FormatUtils.formatPrice(item.getAmount());
-            String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
+            int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
+                    item.getProfit() >= 0d ? R.color.accent_green : R.color.accent_red);
+            String amount = signedMoney(item.getProfit());
+            String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手| %s",
                     item.getProductName(), sideCn(item.getSide()), item.getQuantity(), amount);
             SpannableString span = new SpannableString(raw);
             int start = raw.lastIndexOf(amount);
             if (start >= 0) {
-                span.setSpan(new ForegroundColorSpan(sideColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             binding.tvSummary.setText(span);
             binding.tvExpandHint.setText(expanded ? "收起" : "展开");
             binding.layoutDetail.setVisibility(expanded ? View.VISIBLE : View.GONE);
 
-            binding.tvTime.setText("时间: " + FormatUtils.formatDateTime(item.getTimestamp()));
-            binding.tvProduct.setText("产品: " + item.getProductName() + " (" + item.getCode() + ")");
-            binding.tvSide.setText("方向: " + sideCn(item.getSide()));
+            long openTime = item.getOpenTime() > 0L ? item.getOpenTime() : item.getTimestamp();
+            long closeTime = item.getCloseTime() > 0L ? item.getCloseTime() : item.getTimestamp();
+            binding.tvTime.setText("开仓时间: " + FormatUtils.formatDateTime(openTime));
+            binding.tvProduct.setText("平仓时间: " + FormatUtils.formatDateTime(closeTime));
+            binding.tvSide.setText("产品: " + item.getProductName() + " (" + item.getCode() + ") | 方向: " + sideCn(item.getSide()));
             binding.tvSide.setTextColor(sideColor);
             binding.tvDetail.setText(String.format(Locale.getDefault(),
-                    "价格 $%s | 数量 %.2f | 成交额 $%s | 手续费 $%s",
+                    "价格 $%s | 手数 %.2f | 盈亏 %s | 库存费 $%s",
                     FormatUtils.formatPrice(item.getPrice()),
                     item.getQuantity(),
-                    FormatUtils.formatPrice(item.getAmount()),
-                    FormatUtils.formatPrice(item.getFee())));
+                    signedMoney(item.getProfit()),
+                    FormatUtils.formatPrice(item.getStorageFee())));
             binding.tvRemark.setText("备注: " + item.getRemark());
         }
 
         private static String sideCn(String side) {
             return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
+        }
+
+        private static String signedMoney(double value) {
+            return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
         }
     }
 }
