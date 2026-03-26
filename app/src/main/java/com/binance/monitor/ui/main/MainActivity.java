@@ -2,6 +2,8 @@ package com.binance.monitor.ui.main;
 
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
@@ -33,6 +35,7 @@ import com.binance.monitor.util.PermissionHelper;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +57,15 @@ public class MainActivity extends AppCompatActivity {
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private boolean applyingConfig;
     private boolean monitoringEnabled;
+    private List<AbnormalRecord> recentRecordsSource = Collections.emptyList();
+    private final Handler recentRecordsHandler = new Handler(Looper.getMainLooper());
+    private final Runnable recentRecordsRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            renderRecentRecords();
+            recentRecordsHandler.postDelayed(this, 30_000L);
+        }
+    };
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -86,12 +98,20 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
+        startRecentRecordsAutoRefresh();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        stopRecentRecordsAutoRefresh();
         persistCurrentSymbolConfig();
+    }
+
+    @Override
+    protected void onDestroy() {
+        stopRecentRecordsAutoRefresh();
+        super.onDestroy();
     }
 
     @Override
@@ -149,6 +169,7 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 sendServiceAction(AppConstants.ACTION_START_MONITORING);
                 promptNotificationPermissionIfNeeded();
+                promptBatteryOptimizationIfNeeded();
             }
         });
         binding.btnViewLogs.setOnClickListener(v -> startActivity(new android.content.Intent(this, LogActivity.class)));
@@ -258,10 +279,24 @@ public class MainActivity extends AppCompatActivity {
         viewModel.getLatestClosedKlines().observe(this,
                 klines -> renderMarket(viewModel.getLatestPrices().getValue(), klines));
         viewModel.getRecords().observe(this, records -> {
-            List<AbnormalRecord> display = mergeDisplayRecords(records);
-            recordAdapter.submitList(display);
-            binding.tvRecordsEmpty.setVisibility(display.isEmpty() ? android.view.View.VISIBLE : android.view.View.GONE);
+            recentRecordsSource = records == null ? Collections.emptyList() : records;
+            renderRecentRecords();
         });
+    }
+
+    private void renderRecentRecords() {
+        List<AbnormalRecord> display = mergeDisplayRecords(recentRecordsSource);
+        recordAdapter.submitList(display);
+        binding.tvRecordsEmpty.setVisibility(display.isEmpty() ? View.VISIBLE : View.GONE);
+    }
+
+    private void startRecentRecordsAutoRefresh() {
+        recentRecordsHandler.removeCallbacks(recentRecordsRefreshRunnable);
+        recentRecordsHandler.post(recentRecordsRefreshRunnable);
+    }
+
+    private void stopRecentRecordsAutoRefresh() {
+        recentRecordsHandler.removeCallbacks(recentRecordsRefreshRunnable);
     }
 
     private List<AbnormalRecord> mergeDisplayRecords(List<AbnormalRecord> source) {
@@ -272,7 +307,7 @@ public class MainActivity extends AppCompatActivity {
         long oneHourAgo = System.currentTimeMillis() - 60L * 60L * 1000L;
         Map<Long, Map<String, AbnormalRecord>> grouped = new LinkedHashMap<>();
         for (AbnormalRecord item : source) {
-            if (item.getTimestamp() < oneHourAgo) {
+            if (item.getCloseTime() < oneHourAgo) {
                 continue;
             }
             Map<String, AbnormalRecord> map = grouped.get(item.getCloseTime());
@@ -290,7 +325,7 @@ public class MainActivity extends AppCompatActivity {
                 AbnormalRecord merged = new AbnormalRecord(
                         UUID.randomUUID().toString(),
                         "BOTH",
-                        Math.max(btc.getTimestamp(), xau.getTimestamp()),
+                        Math.max(btc.getCloseTime(), xau.getCloseTime()),
                         btc.getCloseTime(),
                         btc.getOpenPrice(),
                         btc.getClosePrice(),
@@ -306,7 +341,7 @@ public class MainActivity extends AppCompatActivity {
                 output.add(new AbnormalRecord(
                         btc.getId(),
                         "BTC",
-                        btc.getTimestamp(),
+                        btc.getCloseTime(),
                         btc.getCloseTime(),
                         btc.getOpenPrice(),
                         btc.getClosePrice(),
@@ -321,7 +356,7 @@ public class MainActivity extends AppCompatActivity {
                 output.add(new AbnormalRecord(
                         xau.getId(),
                         "XAU",
-                        xau.getTimestamp(),
+                        xau.getCloseTime(),
                         xau.getCloseTime(),
                         xau.getOpenPrice(),
                         xau.getClosePrice(),
@@ -494,5 +529,20 @@ public class MainActivity extends AppCompatActivity {
                     .setNegativeButton(R.string.dismiss, null)
                     .show();
         }
+    }
+
+    private void promptBatteryOptimizationIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+                || PermissionHelper.isIgnoringBatteryOptimizations(this)) {
+            return;
+        }
+        new MaterialAlertDialogBuilder(this)
+                .setMessage(R.string.battery_optimization_required)
+                .setPositiveButton(R.string.battery_optimization_allow, (dialog, which) ->
+                        PermissionHelper.requestIgnoreBatteryOptimizations(this))
+                .setNegativeButton(R.string.permission_settings, (dialog, which) ->
+                        PermissionHelper.openBatteryOptimizationSettings(this))
+                .setNeutralButton(R.string.dismiss, null)
+                .show();
     }
 }

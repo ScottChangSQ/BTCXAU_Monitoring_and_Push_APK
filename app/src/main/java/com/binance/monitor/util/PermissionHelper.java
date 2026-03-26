@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
 import android.provider.Settings;
 
 import androidx.core.app.ActivityCompat;
@@ -44,5 +45,34 @@ public final class PermissionHelper {
                     new String[]{Manifest.permission.POST_NOTIFICATIONS},
                     requestCode);
         }
+    }
+
+    public static boolean isIgnoringBatteryOptimizations(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true;
+        }
+        PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        return powerManager != null && powerManager.isIgnoringBatteryOptimizations(context.getPackageName());
+    }
+
+    public static void requestIgnoreBatteryOptimizations(Activity activity) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return;
+        }
+        Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:" + activity.getPackageName()));
+        try {
+            activity.startActivity(intent);
+        } catch (Exception ignored) {
+            openBatteryOptimizationSettings(activity);
+        }
+    }
+
+    public static void openBatteryOptimizationSettings(Activity activity) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return;
+        }
+        Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+        activity.startActivity(intent);
     }
 }

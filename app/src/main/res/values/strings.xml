@@ -8,8 +8,8 @@
     <string name="connection_connected">实时连接正常</string>
     <string name="connection_partial">部分连接</string>
     <string name="last_update_placeholder">--</string>
-    <string name="open_binance">打开 Binance</string>
-    <string name="open_mt5">打开 MT5</string>
+    <string name="open_binance">打开币安</string>
+    <string name="open_mt5">打开MT5</string>
     <string name="toggle_start">开始监控</string>
     <string name="toggle_stop">停止监控</string>
     <string name="view_logs">查看日志</string>
@@ -78,4 +78,6 @@
     <string name="overlay_update">更新 %1$s</string>
     <string name="record_line_single">%1$s 的 %2$s 出现异常！</string>
     <string name="record_line_both">%1$s 的 %2$s 出现异常！ %3$s 的 %4$s 出现异常！</string>
+    <string name="battery_optimization_required">为保证锁屏和后台持续监控，建议关闭该应用的电池优化限制。</string>
+    <string name="battery_optimization_allow">允许后台保护</string>
 </resources>

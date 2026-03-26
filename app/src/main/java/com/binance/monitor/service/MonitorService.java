@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 
 import androidx.annotation.Nullable;
 
@@ -50,6 +51,7 @@ public class MonitorService extends Service {
     private ExecutorService executorService;
     private boolean pipelineStarted;
     private boolean foregroundStarted;
+    private PowerManager.WakeLock wakeLock;
 
     @Override
     public void onCreate() {
@@ -63,6 +65,7 @@ public class MonitorService extends Service {
         apiClient = new BinanceApiClient();
         webSocketManager = new WebSocketManager();
         executorService = Executors.newSingleThreadExecutor();
+        acquireWakeLock();
         repository.setMonitoringEnabled(false);
         logManager.info("服务初始化完成");
         applyFloatingPreferences();
@@ -116,7 +119,41 @@ public class MonitorService extends Service {
         if (floatingWindowManager != null) {
             floatingWindowManager.hide();
         }
+        releaseWakeLock();
         logManager.info("服务已销毁");
+    }
+
+    private void acquireWakeLock() {
+        try {
+            if (wakeLock == null) {
+                PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+                if (powerManager != null) {
+                    wakeLock = powerManager.newWakeLock(
+                            PowerManager.PARTIAL_WAKE_LOCK,
+                            getPackageName() + ":monitor_wakelock");
+                    wakeLock.setReferenceCounted(false);
+                }
+            }
+            if (wakeLock != null && !wakeLock.isHeld()) {
+                wakeLock.acquire();
+            }
+        } catch (Exception exception) {
+            if (logManager != null) {
+                logManager.warn("WakeLock acquire failed: " + exception.getMessage());
+            }
+        }
+    }
+
+    private void releaseWakeLock() {
+        if (wakeLock == null) {
+            return;
+        }
+        try {
+            if (wakeLock.isHeld()) {
+                wakeLock.release();
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void ensureForeground() {

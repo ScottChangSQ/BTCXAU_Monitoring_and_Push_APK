@@ -25,7 +25,7 @@
             android:paddingBottom="0dp"
             android:text="@string/back"
             android:textAllCaps="false"
-            android:textColor="@color/text_primary"
+            android:textColor="@color/bg_primary"
             android:textSize="14sp" />
 
         <TextView
@@ -60,7 +60,7 @@
             android:paddingBottom="0dp"
             android:text="@string/select_all"
             android:textAllCaps="false"
-            android:textColor="@color/text_primary"
+            android:textColor="@color/bg_primary"
             android:textSize="16sp" />
 
         <Button
@@ -78,7 +78,7 @@
             android:paddingBottom="0dp"
             android:text="@string/delete_selected"
             android:textAllCaps="false"
-            android:textColor="@color/text_primary"
+            android:textColor="@color/bg_primary"
             android:textSize="16sp" />
     </LinearLayout>
 
