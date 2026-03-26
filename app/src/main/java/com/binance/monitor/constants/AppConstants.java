@@ -56,6 +56,8 @@ public final class AppConstants {
     public static final String BINANCE_URL = "https://www.binance.com/zh-CN/futures/";
     public static final String MT5_WEB_URL = "https://www.metatrader5.com/zh";
     public static final String MT5_PACKAGE = "net.metaquotes.metatrader5";
+    public static final String MT5_GATEWAY_BASE_URL = "http://10.0.2.2:8787";
+    public static final long ACCOUNT_REFRESH_INTERVAL_MS = 5000L;
 
     private AppConstants() {
     }

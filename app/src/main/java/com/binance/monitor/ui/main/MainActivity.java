@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
+import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -44,6 +45,8 @@ import java.util.UUID;
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQUEST_CODE_NOTIFICATION = 100;
+    private static final float SWIPE_THRESHOLD = 120f;
+    private static final float SWIPE_VELOCITY_THRESHOLD = 120f;
 
     private ActivityMainBinding binding;
     private MainViewModel viewModel;
@@ -57,6 +60,7 @@ public class MainActivity extends AppCompatActivity {
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private boolean applyingConfig;
     private boolean monitoringEnabled;
+    private GestureDetector gestureDetector;
     private List<AbnormalRecord> recentRecordsSource = Collections.emptyList();
     private final Handler recentRecordsHandler = new Handler(Looper.getMainLooper());
     private final Runnable recentRecordsRefreshRunnable = new Runnable() {
@@ -86,11 +90,13 @@ public class MainActivity extends AppCompatActivity {
         setupRecycler();
         setupActions();
         setupObservers();
+        setupBottomNav();
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
         renderSymbolTab();
         sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
         promptNotificationPermissionIfNeeded();
+        gestureDetector = new GestureDetector(this, new SwipeListener());
     }
 
     @Override
@@ -116,6 +122,9 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        if (gestureDetector != null) {
+            gestureDetector.onTouchEvent(event);
+        }
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             View focus = getCurrentFocus();
             if (focus instanceof EditText) {
@@ -152,6 +161,26 @@ public class MainActivity extends AppCompatActivity {
         binding.recyclerRecords.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerRecords.setNestedScrollingEnabled(true);
         binding.recyclerRecords.setAdapter(recordAdapter);
+    }
+
+    private void setupBottomNav() {
+        updateBottomTabs(true);
+        binding.tabMarketMonitor.setOnClickListener(v -> updateBottomTabs(true));
+        binding.tabAccountStats.setOnClickListener(v -> openAccountStats());
+    }
+
+    private void updateBottomTabs(boolean marketSelected) {
+        binding.tabMarketMonitor.setBackground(marketSelected
+                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
+                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+        binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this,
+                marketSelected ? R.color.bg_primary : R.color.text_secondary));
+
+        binding.tabAccountStats.setBackground(marketSelected
+                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected)
+                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected));
+        binding.tabAccountStats.setTextColor(ContextCompat.getColor(this,
+                marketSelected ? R.color.text_secondary : R.color.bg_primary));
     }
 
     private void setupActions() {
@@ -511,6 +540,12 @@ public class MainActivity extends AppCompatActivity {
         ContextCompat.startForegroundService(this, intent);
     }
 
+    private void openAccountStats() {
+        android.content.Intent intent = new android.content.Intent(this, com.binance.monitor.ui.account.AccountStatsBridgeActivity.class);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
+    }
+
     private void showOverlayPermissionDialog() {
         new MaterialAlertDialogBuilder(this)
                 .setMessage(R.string.overlay_permission_required)
@@ -544,5 +579,26 @@ public class MainActivity extends AppCompatActivity {
                         PermissionHelper.openBatteryOptimizationSettings(this))
                 .setNeutralButton(R.string.dismiss, null)
                 .show();
+    }
+
+    private class SwipeListener extends GestureDetector.SimpleOnGestureListener {
+        @Override
+        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+            if (e1 == null || e2 == null) {
+                return false;
+            }
+            float diffX = e2.getX() - e1.getX();
+            float diffY = e2.getY() - e1.getY();
+            if (Math.abs(diffX) < Math.abs(diffY)) {
+                return false;
+            }
+            if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
+                if (diffX < 0f) {
+                    openAccountStats();
+                }
+                return true;
+            }
+            return false;
+        }
     }
 }
