@@ -104,91 +104,103 @@
                             android:id="@+id/btnRange1d"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="36dp"
                             android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
                             android:includeFontPadding="false"
                             android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingBottom="0dp"
-                            android:paddingTop="0dp"
+                            android:paddingHorizontal="0dp"
+                            android:paddingVertical="0dp"
                             android:text="1D"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="11sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange7d"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="36dp"
                             android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
                             android:includeFontPadding="false"
                             android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingBottom="0dp"
-                            android:paddingTop="0dp"
-                            android:text="7D"
+                            android:paddingHorizontal="0dp"
+                            android:paddingVertical="0dp"
+                            android:text="1W"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="11sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1m"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="36dp"
                             android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
                             android:includeFontPadding="false"
                             android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingBottom="0dp"
-                            android:paddingTop="0dp"
+                            android:paddingHorizontal="0dp"
+                            android:paddingVertical="0dp"
                             android:text="1M"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="11sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange3m"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="36dp"
                             android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
                             android:includeFontPadding="false"
                             android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingBottom="0dp"
-                            android:paddingTop="0dp"
+                            android:paddingHorizontal="0dp"
+                            android:paddingVertical="0dp"
                             android:text="3M"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="11sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1y"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="36dp"
                             android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
                             android:includeFontPadding="false"
                             android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingBottom="0dp"
-                            android:paddingTop="0dp"
+                            android:paddingHorizontal="0dp"
+                            android:paddingVertical="0dp"
                             android:text="1Y"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="11sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRangeAll"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="36dp"
                             android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
                             android:includeFontPadding="false"
                             android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingBottom="0dp"
-                            android:paddingTop="0dp"
+                            android:paddingHorizontal="0dp"
+                            android:paddingVertical="0dp"
                             android:text="ALL"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="11sp" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <LinearLayout
@@ -201,13 +213,16 @@
                         <EditText
                             android:id="@+id/etRangeStart"
                             android:layout_width="0dp"
-                            android:layout_height="34dp"
+                            android:layout_height="32dp"
                             android:layout_weight="1"
                             android:background="@drawable/bg_inline_button"
                             android:focusable="false"
+                            android:gravity="center"
                             android:hint="开始日期"
+                            android:includeFontPadding="false"
                             android:maxLines="1"
-                            android:paddingHorizontal="10dp"
+                            android:paddingHorizontal="0dp"
+                            android:textAlignment="center"
                             android:textColor="@color/text_primary"
                             android:textColorHint="@color/text_secondary"
                             android:textSize="12sp" />
@@ -215,28 +230,36 @@
                         <EditText
                             android:id="@+id/etRangeEnd"
                             android:layout_width="0dp"
-                            android:layout_height="34dp"
+                            android:layout_height="32dp"
                             android:layout_marginStart="6dp"
                             android:layout_weight="1"
                             android:background="@drawable/bg_inline_button"
                             android:focusable="false"
+                            android:gravity="center"
                             android:hint="结束日期"
+                            android:includeFontPadding="false"
                             android:maxLines="1"
-                            android:paddingHorizontal="10dp"
+                            android:paddingHorizontal="0dp"
+                            android:textAlignment="center"
                             android:textColor="@color/text_primary"
                             android:textColorHint="@color/text_secondary"
                             android:textSize="12sp" />
 
-                        <Button
+                        <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnApplyManualRange"
                             android:layout_width="wrap_content"
-                            android:layout_height="34dp"
+                            android:layout_height="32dp"
                             android:layout_marginStart="6dp"
                             android:background="@drawable/bg_chip_selected"
+                            android:gravity="center"
+                            android:includeFontPadding="false"
                             android:minWidth="0dp"
+                            android:minHeight="0dp"
                             android:paddingHorizontal="10dp"
+                            android:paddingVertical="0dp"
                             android:text="应用"
                             android:textAllCaps="false"
+                            android:textAlignment="center"
                             android:textColor="@color/bg_primary"
                             android:textSize="12sp" />
                     </LinearLayout>
@@ -253,7 +276,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textSize="12sp"
+                        android:visibility="gone" />
 
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/recyclerCurveIndicators"
@@ -292,13 +316,12 @@
                         android:textSize="12sp"
                         android:textStyle="bold" />
 
-                    <TextView
-                        android:id="@+id/tvPositionByProduct"
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/recyclerPositionByProduct"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                        android:nestedScrollingEnabled="false" />
 
                     <Spinner
                         android:id="@+id/spinnerPositionSort"
@@ -314,12 +337,30 @@
                         android:nestedScrollingEnabled="false" />
 
                     <TextView
+                        android:id="@+id/tvPendingOrdersTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="挂单信息"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/recyclerPendingOrders"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:nestedScrollingEnabled="false" />
+
+                    <TextView
                         android:id="@+id/tvPositionCostSummary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textSize="12sp"
+                        android:visibility="gone" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

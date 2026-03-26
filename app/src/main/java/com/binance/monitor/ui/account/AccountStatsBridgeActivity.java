@@ -1,10 +1,12 @@
 package com.binance.monitor.ui.account;
 
-import android.app.DatePickerDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
@@ -24,6 +26,8 @@ import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.ActivityAccountStatsBinding;
 import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
+import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
+import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
 import com.binance.monitor.ui.account.adapter.StatsMetricAdapter;
 import com.binance.monitor.ui.account.adapter.TradeRecordAdapterV2;
@@ -34,14 +38,18 @@ import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.util.FormatUtils;
+import com.google.android.material.datepicker.MaterialDatePicker;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -67,7 +75,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private Mt5BridgeGatewayClient gatewayClient;
     private AccountMetricAdapter overviewAdapter;
     private StatsMetricAdapter indicatorAdapter;
+    private PositionAggregateAdapter positionAggregateAdapter;
     private PositionAdapterV2 positionAdapter;
+    private PendingOrderAdapter pendingOrderAdapter;
     private TradeRecordAdapterV2 tradeAdapter;
     private StatsMetricAdapter statsAdapter;
     private GestureDetector gestureDetector;
@@ -81,11 +91,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private List<TradeRecordItem> baseTrades = new ArrayList<>();
     private List<CurvePoint> allCurvePoints = new ArrayList<>();
     private List<CurvePoint> displayedCurvePoints = new ArrayList<>();
+    private String defaultCurveMeta = "--";
 
     private final Runnable refreshRunnable = new Runnable() {
         @Override
         public void run() {
-            requestSnapshot(false);
+            requestSnapshot();
             refreshHandler.postDelayed(this, AppConstants.ACCOUNT_REFRESH_INTERVAL_MS);
         }
     };
@@ -102,7 +113,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         overviewAdapter = new AccountMetricAdapter();
         indicatorAdapter = new StatsMetricAdapter();
+        positionAggregateAdapter = new PositionAggregateAdapter();
         positionAdapter = new PositionAdapterV2();
+        pendingOrderAdapter = new PendingOrderAdapter();
         tradeAdapter = new TradeRecordAdapterV2();
         statsAdapter = new StatsMetricAdapter();
 
@@ -113,8 +126,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setupFilters();
         setupRangeToggle();
         setupDatePickers();
+        setupCurveInteraction();
         bindLocalMeta();
-        requestSnapshot(true);
+        requestSnapshot();
     }
 
     @Override
@@ -192,8 +206,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.recyclerCurveIndicators.setLayoutManager(new GridLayoutManager(this, 3));
         binding.recyclerCurveIndicators.setAdapter(indicatorAdapter);
 
+        binding.recyclerPositionByProduct.setLayoutManager(new LinearLayoutManager(this));
+        binding.recyclerPositionByProduct.setAdapter(positionAggregateAdapter);
+
         binding.recyclerPositions.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerPositions.setAdapter(positionAdapter);
+
+        binding.recyclerPendingOrders.setLayoutManager(new LinearLayoutManager(this));
+        binding.recyclerPendingOrders.setAdapter(pendingOrderAdapter);
 
         binding.recyclerTrades.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerTrades.setAdapter(tradeAdapter);
@@ -209,25 +229,27 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.spinnerPositionSort.setAdapter(positionSortAdapter);
         binding.spinnerPositionSort.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshPositions));
 
-        ArrayAdapter<String> productAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
+        ArrayAdapter<String> productAdapter = createTradeFilterAdapter(
                 new String[]{FILTER_PRODUCT, "XAUUSD", "BTCUSD", "NAS100", "WTI", "EURUSD", "GBPUSD"});
-        productAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         binding.spinnerTradeProduct.setAdapter(productAdapter);
         binding.spinnerTradeProduct.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
 
-        ArrayAdapter<String> sideAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
-                new String[]{FILTER_SIDE, "买入", "卖出"});
-        sideAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        ArrayAdapter<String> sideAdapter = createTradeFilterAdapter(new String[]{FILTER_SIDE, "买入", "卖出"});
         binding.spinnerTradeSide.setAdapter(sideAdapter);
         binding.spinnerTradeSide.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
 
-        ArrayAdapter<String> timeAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
+        ArrayAdapter<String> timeAdapter = createTradeFilterAdapter(
                 new String[]{FILTER_DATE, FILTER_LAST_1D, FILTER_LAST_7D, FILTER_LAST_30D});
-        timeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         binding.spinnerTradeTime.setAdapter(timeAdapter);
         binding.spinnerTradeTime.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
 
         binding.btnApplyManualRange.setOnClickListener(v -> applyManualCurveRange());
+    }
+
+    private ArrayAdapter<String> createTradeFilterAdapter(String[] options) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.item_spinner_filter, options);
+        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
+        return adapter;
     }
 
     private void setupDatePickers() {
@@ -235,32 +257,56 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.etRangeEnd.setOnClickListener(v -> showDatePicker(binding.etRangeEnd));
     }
 
+    private void setupCurveInteraction() {
+        binding.equityCurveView.setOnPointHighlightListener(point -> {
+            if (point == null) {
+                binding.tvCurveMeta.setText(defaultCurveMeta);
+                return;
+            }
+            String detail = String.format(Locale.getDefault(),
+                    "时间 %s | 净值 $%s | 结余 $%s | 差值 %s",
+                    FormatUtils.formatDateTime(point.getTimestamp()),
+                    FormatUtils.formatPrice(point.getEquity()),
+                    FormatUtils.formatPrice(point.getBalance()),
+                    signedMoney(point.getEquity() - point.getBalance()));
+            binding.tvCurveMeta.setText(detail);
+        });
+    }
+
     private void showDatePicker(EditText target) {
-        Calendar calendar = Calendar.getInstance();
+        long selection = MaterialDatePicker.todayInUtcMilliseconds();
         String text = trim(target.getText() == null ? "" : target.getText().toString());
         if (!text.isEmpty()) {
             try {
                 Date parsed = dateOnlyFormat.parse(text);
                 if (parsed != null) {
-                    calendar.setTime(parsed);
+                    Calendar local = Calendar.getInstance();
+                    local.setTime(parsed);
+                    Calendar utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+                    utc.clear();
+                    utc.set(local.get(Calendar.YEAR), local.get(Calendar.MONTH), local.get(Calendar.DAY_OF_MONTH));
+                    selection = utc.getTimeInMillis();
                 }
             } catch (Exception ignored) {
             }
         }
 
-        DatePickerDialog dialog = new DatePickerDialog(this, android.R.style.Theme_Holo_Light_Dialog_NoActionBar,
-                (view, year, month, dayOfMonth) -> {
-                    Calendar picked = Calendar.getInstance();
-                    picked.set(year, month, dayOfMonth, 0, 0, 0);
-                    target.setText(dateOnlyFormat.format(picked.getTime()));
-                },
-                calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH));
-        try {
-            dialog.getDatePicker().setCalendarViewShown(false);
-            dialog.getDatePicker().setSpinnersShown(true);
-        } catch (Exception ignored) {
-        }
-        dialog.show();
+        MaterialDatePicker<Long> picker = MaterialDatePicker.Builder.datePicker()
+                .setTitleText("选择日期")
+                .setSelection(selection)
+                .build();
+        picker.addOnPositiveButtonClickListener(value -> {
+            if (value == null) {
+                return;
+            }
+            Calendar utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+            utc.setTimeInMillis(value);
+            Calendar local = Calendar.getInstance();
+            local.set(utc.get(Calendar.YEAR), utc.get(Calendar.MONTH), utc.get(Calendar.DAY_OF_MONTH), 0, 0, 0);
+            local.set(Calendar.MILLISECOND, 0);
+            target.setText(dateOnlyFormat.format(local.getTime()));
+        });
+        picker.show(getSupportFragmentManager(), "date_picker_" + target.getId());
     }
 
     private void setupRangeToggle() {
@@ -282,7 +328,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             } else {
                 selectedRange = AccountTimeRange.ALL;
             }
-            requestSnapshot(true);
+            applyPresetCurveRangeFromAllPoints();
+            requestSnapshot();
         });
     }
 
@@ -293,14 +340,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ACCOUNT, maskedPassword, SERVER));
     }
 
-    private void requestSnapshot(boolean force) {
-        if (loading && !force) {
+    private void requestSnapshot() {
+        if (loading) {
             return;
         }
         loading = true;
+        AccountTimeRange fetchRange = AccountTimeRange.ALL;
 
         ioExecutor.execute(() -> {
-            Mt5BridgeGatewayClient.SnapshotResult remote = gatewayClient.fetch(selectedRange);
+            Mt5BridgeGatewayClient.SnapshotResult remote = gatewayClient.fetch(fetchRange);
             AccountSnapshot snapshot;
             String meta;
             if (remote.isSuccess()) {
@@ -308,7 +356,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 meta = remote.buildMetaLine(ACCOUNT, SERVER);
                 runOnUiThread(() -> setConnectionStatus(true));
             } else {
-                snapshot = fallbackDataSource.load(selectedRange);
+                snapshot = fallbackDataSource.load(fetchRange);
                 String update = FormatUtils.formatTime(System.currentTimeMillis());
                 meta = "账号 " + ACCOUNT + " | 服务器 " + SERVER
                         + " | 数据源 历史数据（网关离线） | 更新时间 " + update
@@ -337,7 +385,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         basePositions = new ArrayList<>(snapshot.getPositions());
         baseTrades = new ArrayList<>(snapshot.getTrades());
         allCurvePoints = new ArrayList<>(snapshot.getCurvePoints());
-        displayedCurvePoints = new ArrayList<>(allCurvePoints);
+        allCurvePoints.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
 
         List<AccountMetric> overview = snapshot.getOverviewMetrics();
         if (overview == null || overview.isEmpty()) {
@@ -350,14 +398,73 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         overviewAdapter.submitList(overview);
         statsAdapter.submitList(stats);
-        renderCurveWithIndicators(displayedCurvePoints);
+        applyPresetCurveRangeFromAllPoints();
         refreshPositions();
         refreshTrades();
     }
 
+    private void applyPresetCurveRangeFromAllPoints() {
+        displayedCurvePoints = filterCurveByRange(allCurvePoints, selectedRange);
+        renderCurveWithIndicators(displayedCurvePoints);
+    }
+
+    private List<CurvePoint> filterCurveByRange(List<CurvePoint> source, AccountTimeRange range) {
+        if (source == null || source.isEmpty()) {
+            return new ArrayList<>();
+        }
+        if (range == null || range == AccountTimeRange.ALL) {
+            return new ArrayList<>(source);
+        }
+
+        long durationMs;
+        switch (range) {
+            case D1:
+                durationMs = 24L * 60L * 60L * 1000L;
+                break;
+            case D7:
+                durationMs = 7L * 24L * 60L * 60L * 1000L;
+                break;
+            case M1:
+                durationMs = 30L * 24L * 60L * 60L * 1000L;
+                break;
+            case M3:
+                durationMs = 90L * 24L * 60L * 60L * 1000L;
+                break;
+            case Y1:
+                durationMs = 365L * 24L * 60L * 60L * 1000L;
+                break;
+            case ALL:
+            default:
+                return new ArrayList<>(source);
+        }
+
+        long end = source.get(source.size() - 1).getTimestamp();
+        if (end <= 0L) {
+            end = System.currentTimeMillis();
+        }
+        long start = end - durationMs;
+
+        List<CurvePoint> filtered = new ArrayList<>();
+        for (CurvePoint point : source) {
+            if (point.getTimestamp() >= start) {
+                filtered.add(point);
+            }
+        }
+        if (filtered.size() >= 2) {
+            return filtered;
+        }
+
+        int size = source.size();
+        if (size >= 2) {
+            return new ArrayList<>(source.subList(size - 2, size));
+        }
+        return new ArrayList<>(source);
+    }
+
     private void renderCurveWithIndicators(List<CurvePoint> points) {
         binding.equityCurveView.setPoints(points);
-        binding.tvCurveMeta.setText(buildCurveMeta(points));
+        defaultCurveMeta = buildCurveMeta(points);
+        binding.tvCurveMeta.setText(defaultCurveMeta);
         indicatorAdapter.submitList(buildCurveIndicators(points));
     }
 
@@ -515,28 +622,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             list.sort(Comparator.comparing(PositionItem::getProductName));
         }
 
+        positionAggregateAdapter.submitList(buildPositionAggregates(list));
         positionAdapter.submitList(list);
-        binding.tvPositionCostSummary.setText(buildPositionSummary(list));
-        binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(list));
-        binding.tvPositionByProduct.setText(buildPositionBreakdown(list));
-    }
-
-    private String buildPositionSummary(List<PositionItem> list) {
-        StringBuilder builder = new StringBuilder();
-        for (PositionItem item : list) {
-            if (builder.length() > 0) {
-                builder.append("  |  ");
-            }
-            builder.append(item.getProductName())
-                    .append(" 成本 $")
-                    .append(FormatUtils.formatPrice(item.getCostPrice()))
-                    .append(" / 市值 $")
-                    .append(FormatUtils.formatPrice(item.getMarketValue()));
-        }
-        return builder.toString();
-    }
-
-    private String buildPositionPnlSummary(List<PositionItem> list) {
+        List<PositionItem> pendingOrders = buildPendingOrders(list);
+        pendingOrderAdapter.submitList(pendingOrders);
+        int pendingVisibility = pendingOrders.isEmpty() ? View.GONE : View.VISIBLE;
+        binding.tvPendingOrdersTitle.setVisibility(pendingVisibility);
+        binding.recyclerPendingOrders.setVisibility(pendingVisibility);
         double totalPnl = 0d;
         double totalValue = 0d;
         for (PositionItem item : list) {
@@ -544,26 +636,86 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             totalValue += item.getMarketValue();
         }
         double ratio = totalValue == 0d ? 0d : totalPnl / totalValue;
-        return String.format(Locale.getDefault(), "持仓盈亏: %s | 持仓盈亏比例: %+.2f%%", signedMoney(totalPnl), ratio * 100d);
+        binding.tvPositionPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(totalPnl, ratio));
     }
 
-    private String buildPositionBreakdown(List<PositionItem> list) {
-        StringBuilder builder = new StringBuilder();
+    private List<PositionAggregateAdapter.AggregateItem> buildPositionAggregates(List<PositionItem> list) {
+        Map<String, PositionAggregate> grouped = new LinkedHashMap<>();
         for (PositionItem item : list) {
-            if (builder.length() > 0) {
-                builder.append("\n");
+            String side = normalizeSideCn(item.getSide());
+            String key = item.getCode() + "|" + side;
+            PositionAggregate aggregate = grouped.get(key);
+            if (aggregate == null) {
+                aggregate = new PositionAggregate(item.getProductName(), side);
+                grouped.put(key, aggregate);
             }
-            builder.append(String.format(Locale.getDefault(),
-                    "%s | %s | %.2f 手 | 成本 $%s | 持仓盈亏 %s | 挂单 %d 笔 %.2f 手",
-                    item.getProductName(),
-                    normalizeSideCn(item.getSide()),
-                    item.getQuantity(),
-                    FormatUtils.formatPrice(item.getCostPrice()),
-                    signedMoney(item.getTotalPnL()),
-                    item.getPendingCount(),
-                    item.getPendingLots()));
+            double quantity = Math.max(0d, item.getQuantity());
+            aggregate.totalQuantity += quantity;
+            aggregate.weightedCostAmount += quantity * item.getCostPrice();
+            aggregate.weightedQuantity += quantity;
+            aggregate.totalPnl += item.getTotalPnL();
         }
-        return builder.toString();
+
+        List<PositionAggregateAdapter.AggregateItem> result = new ArrayList<>();
+        for (PositionAggregate aggregate : grouped.values()) {
+            double avgCost = aggregate.weightedQuantity <= 0d
+                    ? 0d
+                    : aggregate.weightedCostAmount / aggregate.weightedQuantity;
+            result.add(new PositionAggregateAdapter.AggregateItem(
+                    aggregate.productName,
+                    aggregate.side,
+                    aggregate.totalQuantity,
+                    avgCost,
+                    aggregate.totalPnl
+            ));
+        }
+        return result;
+    }
+
+    private CharSequence buildPositionPnlSummary(double totalPnl, double ratio) {
+        String pnlText = signedMoney(totalPnl);
+        String ratioText = String.format(Locale.getDefault(), "%+.2f%%", ratio * 100d);
+        String summary = String.format(Locale.getDefault(),
+                "持仓盈亏: %s | 持仓盈亏比例: %s",
+                pnlText,
+                ratioText);
+        SpannableString spannable = new SpannableString(summary);
+
+        int pnlColor = ContextCompat.getColor(this, totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
+        int ratioColor = ContextCompat.getColor(this, ratio >= 0d ? R.color.accent_green : R.color.accent_red);
+
+        int pnlStart = summary.indexOf(pnlText);
+        if (pnlStart >= 0) {
+            spannable.setSpan(
+                    new ForegroundColorSpan(pnlColor),
+                    pnlStart,
+                    pnlStart + pnlText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+        }
+
+        int ratioStart = summary.lastIndexOf(ratioText);
+        if (ratioStart >= 0) {
+            spannable.setSpan(
+                    new ForegroundColorSpan(ratioColor),
+                    ratioStart,
+                    ratioStart + ratioText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+        }
+        return spannable;
+    }
+
+    private List<PositionItem> buildPendingOrders(List<PositionItem> list) {
+        List<PositionItem> pending = new ArrayList<>();
+        for (PositionItem item : list) {
+            if (item.getPendingCount() > 0 || item.getPendingLots() > 0d) {
+                pending.add(item);
+            }
+        }
+        pending.sort((a, b) -> Double.compare(b.getPendingLots(), a.getPendingLots()));
+        return pending;
     }
 
     private void refreshTrades() {
@@ -692,6 +844,20 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return "卖出";
         }
         return side;
+    }
+
+    private static class PositionAggregate {
+        private final String productName;
+        private final String side;
+        private double totalQuantity;
+        private double weightedCostAmount;
+        private double weightedQuantity;
+        private double totalPnl;
+
+        private PositionAggregate(String productName, String side) {
+            this.productName = productName;
+            this.side = side;
+        }
     }
 
     private void openMarketMonitor() {

@@ -15,6 +15,7 @@ public class PositionItem {
     private final double returnRate;
     private final double pendingLots;
     private final int pendingCount;
+    private final double pendingPrice;
 
     public PositionItem(String productName,
                         String code,
@@ -28,7 +29,7 @@ public class PositionItem {
                         double totalPnL,
                         double returnRate) {
         this(productName, code, "Buy", quantity, sellableQuantity, costPrice, latestPrice,
-                marketValue, positionRatio, dayPnL, totalPnL, returnRate, 0d, 0);
+                marketValue, positionRatio, dayPnL, totalPnL, returnRate, 0d, 0, 0d);
     }
 
     public PositionItem(String productName,
@@ -45,6 +46,25 @@ public class PositionItem {
                         double returnRate,
                         double pendingLots,
                         int pendingCount) {
+        this(productName, code, side, quantity, sellableQuantity, costPrice, latestPrice,
+                marketValue, positionRatio, dayPnL, totalPnL, returnRate, pendingLots, pendingCount, 0d);
+    }
+
+    public PositionItem(String productName,
+                        String code,
+                        String side,
+                        double quantity,
+                        double sellableQuantity,
+                        double costPrice,
+                        double latestPrice,
+                        double marketValue,
+                        double positionRatio,
+                        double dayPnL,
+                        double totalPnL,
+                        double returnRate,
+                        double pendingLots,
+                        int pendingCount,
+                        double pendingPrice) {
         this.productName = productName;
         this.code = code;
         this.side = side;
@@ -59,6 +79,7 @@ public class PositionItem {
         this.returnRate = returnRate;
         this.pendingLots = pendingLots;
         this.pendingCount = pendingCount;
+        this.pendingPrice = pendingPrice;
     }
 
     public String getProductName() {
@@ -115,5 +136,9 @@ public class PositionItem {
 
     public int getPendingCount() {
         return pendingCount;
+    }
+
+    public double getPendingPrice() {
+        return pendingPrice;
     }
 }

@@ -1,9 +1,10 @@
 import math
 import os
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import uvicorn
 from dotenv import load_dotenv
@@ -20,6 +21,11 @@ LOGIN = int(os.getenv("MT5_LOGIN", "7400048"))
 PASSWORD = os.getenv("MT5_PASSWORD", "_fWsAeW1")
 SERVER = os.getenv("MT5_SERVER", "ICMarketsSC-MT5-6")
 PATH = os.getenv("MT5_PATH", "").strip() or None
+SERVER_ALIASES_RAW = os.getenv("MT5_SERVER_ALIASES", "").strip()
+try:
+    MT5_INIT_TIMEOUT_MS = int(os.getenv("MT5_INIT_TIMEOUT_MS", "60000"))
+except Exception:
+    MT5_INIT_TIMEOUT_MS = 60000
 HOST = os.getenv("GATEWAY_HOST", "0.0.0.0")
 PORT = int(os.getenv("GATEWAY_PORT", "8787"))
 GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull | ea
@@ -30,6 +36,7 @@ app = FastAPI(title="MT5 Bridge Gateway", version="1.1.0")
 state_lock = Lock()
 ea_snapshot_cache: Optional[Dict] = None
 ea_snapshot_received_at_ms = 0
+mt5_last_connected_path = ""
 
 
 def _now_ms() -> int:
@@ -71,14 +78,152 @@ def _is_mt5_configured() -> bool:
     return LOGIN > 0 and bool(PASSWORD) and bool(SERVER)
 
 
+def _normalize_path(raw: str) -> str:
+    value = (raw or "").strip().strip('"').strip("'")
+    if not value:
+        return ""
+    expanded = Path(os.path.expandvars(os.path.expanduser(value)))
+    try:
+        return str(expanded.resolve())
+    except Exception:
+        return str(expanded)
+
+
+def _discover_terminal_candidates() -> List[str]:
+    candidates: List[str] = []
+    seen = set()
+
+    def add(path_value: str) -> None:
+        normalized = _normalize_path(path_value)
+        if not normalized:
+            return
+        if normalized in seen:
+            return
+        if not Path(normalized).exists():
+            return
+        seen.add(normalized)
+        candidates.append(normalized)
+
+    if PATH:
+        add(PATH)
+
+    static_candidates = [
+        r"C:\Program Files\MetaTrader 5\terminal64.exe",
+        r"C:\Program Files (x86)\MetaTrader 5\terminal64.exe",
+        r"C:\Program Files\IC Markets - MetaTrader 5 - 01\terminal64.exe",
+        r"C:\Program Files\IC Markets - MetaTrader 5\terminal64.exe",
+    ]
+    for path_value in static_candidates:
+        add(path_value)
+
+    roots = []
+    local_app_data = os.getenv("LOCALAPPDATA", "")
+    app_data = os.getenv("APPDATA", "")
+    if local_app_data:
+        roots.append(Path(local_app_data) / "Programs")
+        roots.append(Path(local_app_data) / "MetaQuotes" / "Terminal")
+    if app_data:
+        roots.append(Path(app_data) / "MetaQuotes" / "Terminal")
+
+    for root in roots:
+        if not root.exists():
+            continue
+        try:
+            for child in root.iterdir():
+                if not child.is_dir():
+                    continue
+                add(str(child / "terminal64.exe"))
+                add(str(child / "terminal.exe"))
+        except Exception:
+            continue
+
+    return candidates
+
+
+MT5_TERMINAL_CANDIDATES = _discover_terminal_candidates()
+
+
+def _server_candidates() -> List[str]:
+    values: List[str] = []
+    seen = set()
+    for raw in [SERVER] + SERVER_ALIASES_RAW.split(","):
+        server = (raw or "").strip()
+        if not server:
+            continue
+        key = server.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        values.append(server)
+    return values
+
+
+def _mt5_initialize(path_value: Optional[str]) -> Tuple[bool, str]:
+    kwargs = {"timeout": MT5_INIT_TIMEOUT_MS}
+    if path_value:
+        kwargs["path"] = path_value
+    try:
+        ok = bool(mt5.initialize(**kwargs))
+    except TypeError:
+        kwargs.pop("timeout", None)
+        ok = bool(mt5.initialize(**kwargs))
+    except Exception as exc:
+        return False, str(exc)
+    return ok, str(mt5.last_error())
+
+
+def _mt5_login() -> Tuple[bool, str]:
+    account = mt5.account_info()
+    server_candidates = _server_candidates()
+    if account is not None and int(getattr(account, "login", 0)) == LOGIN:
+        account_server = str(getattr(account, "server", "")).strip().lower()
+        if not account_server or account_server in [candidate.lower() for candidate in server_candidates]:
+            return True, "already-logged-in"
+
+    errors = []
+    for server_name in server_candidates:
+        try:
+            ok = bool(mt5.login(LOGIN, password=PASSWORD, server=server_name, timeout=MT5_INIT_TIMEOUT_MS))
+        except TypeError:
+            ok = bool(mt5.login(LOGIN, password=PASSWORD, server=server_name))
+        except Exception as exc:
+            errors.append(f"{server_name}: {exc}")
+            continue
+        if ok:
+            return True, server_name
+        errors.append(f"{server_name}: {mt5.last_error()}")
+    return False, " ; ".join(errors)
+
+
 def _ensure_mt5() -> None:
+    global mt5_last_connected_path
     if mt5 is None:
         raise RuntimeError("MetaTrader5 python package is not installed in gateway environment.")
     if not _is_mt5_configured():
         raise RuntimeError("MT5 credentials are not configured.")
-    if mt5.initialize(path=PATH, login=LOGIN, password=PASSWORD, server=SERVER):
-        return
-    raise RuntimeError(f"MT5 initialize failed: {mt5.last_error()}")
+
+    attempts: List[Optional[str]] = [None] + MT5_TERMINAL_CANDIDATES
+    errors = []
+    for path_value in attempts:
+        _shutdown_mt5()
+        initialized, init_message = _mt5_initialize(path_value)
+        label = path_value if path_value else "<auto>"
+        if not initialized:
+            errors.append(f"init({label})={init_message}")
+            continue
+
+        logged_in, login_message = _mt5_login()
+        if logged_in:
+            mt5_last_connected_path = label
+            return
+        errors.append(f"login({label})={login_message}")
+
+    discovered_hint = ", ".join(MT5_TERMINAL_CANDIDATES[:3]) if MT5_TERMINAL_CANDIDATES else "none"
+    raise RuntimeError(
+        "MT5 login failed. "
+        + " | ".join(errors[-6:])
+        + f" | configured_server={SERVER} | discovered_terminal_candidates={discovered_hint}"
+    )
 
 
 def _shutdown_mt5() -> None:
@@ -169,9 +314,14 @@ def _map_positions() -> List[Dict]:
         symbol = getattr(order, "symbol", "")
         if not symbol:
             continue
-        state = pending_by_symbol.setdefault(symbol, {"count": 0, "lots": 0.0})
+        state = pending_by_symbol.setdefault(symbol, {"count": 0, "lots": 0.0, "notional": 0.0})
+        volume = abs(float(getattr(order, "volume_current", 0.0)))
+        order_price = float(getattr(order, "price_open", 0.0))
+        if order_price <= 0.0:
+            order_price = float(getattr(order, "price_current", 0.0))
         state["count"] += 1
-        state["lots"] += abs(float(getattr(order, "volume_current", 0.0)))
+        state["lots"] += volume
+        state["notional"] += abs(volume * order_price)
 
     total_mv = 0.0
     mapped = []
@@ -209,6 +359,10 @@ def _map_positions() -> List[Dict]:
                 "returnRate": ret,
                 "pendingLots": pending_by_symbol.get(symbol, {}).get("lots", 0.0),
                 "pendingCount": int(pending_by_symbol.get(symbol, {}).get("count", 0)),
+                "pendingPrice": _safe_div(
+                    pending_by_symbol.get(symbol, {}).get("notional", 0.0),
+                    pending_by_symbol.get(symbol, {}).get("lots", 0.0),
+                ),
             }
         )
 
@@ -439,23 +593,33 @@ def health():
             "gatewayMode": GATEWAY_MODE,
             "mt5PackageAvailable": mt5 is not None,
             "mt5Configured": _is_mt5_configured(),
+            "mt5ConfiguredLogin": str(LOGIN),
+            "mt5ConfiguredServer": SERVER,
+            "mt5PathEnv": PATH or "",
+            "mt5LastConnectedPath": mt5_last_connected_path,
+            "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
             "eaSnapshotFresh": _is_ea_snapshot_fresh(),
             "eaSnapshotReceivedAt": ea_snapshot_received_at_ms,
         }
         if mt5 is None:
             return info
         with state_lock:
-            if _is_mt5_configured() and mt5.initialize(path=PATH, login=LOGIN, password=PASSWORD, server=SERVER):
-                account = mt5.account_info()
-                info["mt5Connected"] = account is not None
-                info["login"] = str(getattr(account, "login", LOGIN)) if account else str(LOGIN)
-                info["server"] = str(getattr(account, "server", SERVER)) if account else SERVER
-                info["lastError"] = str(mt5.last_error())
-                _shutdown_mt5()
+            if _is_mt5_configured():
+                try:
+                    _ensure_mt5()
+                    account = mt5.account_info()
+                    info["mt5Connected"] = account is not None
+                    info["login"] = str(getattr(account, "login", LOGIN)) if account else str(LOGIN)
+                    info["server"] = str(getattr(account, "server", SERVER)) if account else SERVER
+                    info["lastError"] = str(mt5.last_error())
+                except Exception as exc:
+                    info["mt5Connected"] = False
+                    info["lastError"] = str(exc)
+                finally:
+                    _shutdown_mt5()
             else:
                 info["mt5Connected"] = False
                 info["lastError"] = str(mt5.last_error())
-                _shutdown_mt5()
         return info
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
@@ -467,6 +631,11 @@ def source_status():
         "gatewayMode": GATEWAY_MODE,
         "mt5PackageAvailable": mt5 is not None,
         "mt5Configured": _is_mt5_configured(),
+        "mt5ConfiguredLogin": str(LOGIN),
+        "mt5ConfiguredServer": SERVER,
+        "mt5PathEnv": PATH or "",
+        "mt5LastConnectedPath": mt5_last_connected_path,
+        "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
         "eaSnapshotFresh": _is_ea_snapshot_fresh(),
         "eaSnapshotReceivedAt": ea_snapshot_received_at_ms,
     }

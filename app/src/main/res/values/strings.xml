@@ -83,7 +83,7 @@
     <string name="nav_market_monitor">行情监控</string>
     <string name="nav_account_stats">账户统计</string>
     <string name="account_overview_title">账户总览</string>
-    <string name="equity_curve_title">净值曲线 / 结余曲线</string>
+    <string name="equity_curve_title">净值曲线</string>
     <string name="current_positions_title">当前持仓</string>
     <string name="trade_records_title">交易记录</string>
     <string name="trade_statistics_title">交易统计</string>

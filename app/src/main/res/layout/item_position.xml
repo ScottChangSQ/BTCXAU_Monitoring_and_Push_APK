@@ -33,9 +33,9 @@
                 android:id="@+id/tvExpandHint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:text="展开"
                 android:textColor="@color/text_secondary"
-                android:textSize="11sp"
-                android:text="展开" />
+                android:textSize="11sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -80,3 +80,4 @@
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
+

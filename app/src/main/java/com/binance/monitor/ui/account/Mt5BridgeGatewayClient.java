@@ -1,5 +1,7 @@
 package com.binance.monitor.ui.account;
 
+import androidx.annotation.Nullable;
+
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
@@ -10,12 +12,21 @@ import com.binance.monitor.ui.account.model.TradeRecordItem;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
@@ -23,9 +34,21 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 public class Mt5BridgeGatewayClient {
+    private static final int GATEWAY_PORT = 8787;
+    private static final int LAN_SCAN_THREAD_COUNT = 24;
+    private static final long LAN_SCAN_COOLDOWN_MS = 2 * 60 * 1000L;
+
+    private static volatile String discoveredLanBaseUrl = "";
+    private static volatile long lastLanScanAtMs = 0L;
+
     private final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(3, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
+            .build();
+
+    private final OkHttpClient discoveryClient = new OkHttpClient.Builder()
+            .connectTimeout(350, TimeUnit.MILLISECONDS)
+            .readTimeout(500, TimeUnit.MILLISECONDS)
             .build();
 
     private final List<String> baseUrls;
@@ -42,45 +65,214 @@ public class Mt5BridgeGatewayClient {
     public SnapshotResult fetch(AccountTimeRange range) {
         SnapshotResult result = new SnapshotResult();
         List<String> errors = new ArrayList<>();
-        for (String baseUrl : baseUrls) {
-            String normalizedBase = normalizeBaseUrl(baseUrl);
-            String url = normalizedBase + "/v1/snapshot?range=" + mapRange(range);
-            Request request = new Request.Builder().url(url).get().build();
-            try (Response response = client.newCall(request).execute()) {
-                if (!response.isSuccessful()) {
-                    errors.add(normalizedBase + " -> HTTP " + response.code());
-                    continue;
-                }
-                String body = response.body() == null ? "" : response.body().string();
-                if (body.isEmpty()) {
-                    errors.add(normalizedBase + " -> Empty response");
-                    continue;
-                }
+        Set<String> attempted = new HashSet<>();
+        String rangeKey = mapRange(range);
 
-                JSONObject root = new JSONObject(body);
-                JSONObject meta = root.optJSONObject("accountMeta");
-                result.account = meta == null ? "" : meta.optString("login", "");
-                result.server = meta == null ? "" : meta.optString("server", "");
-                result.source = meta == null ? "MT5网关" : meta.optString("source", "MT5网关");
-                result.updatedAt = meta == null ? 0L : meta.optLong("updatedAt", 0L);
-                result.connectedBaseUrl = normalizedBase;
-
-                List<AccountMetric> overview = parseMetrics(root.optJSONArray("overviewMetrics"));
-                List<CurvePoint> curves = parseCurvePoints(root.optJSONArray("curvePoints"));
-                List<AccountMetric> indicators = parseMetrics(root.optJSONArray("curveIndicators"));
-                List<PositionItem> positions = parsePositions(root.optJSONArray("positions"));
-                List<TradeRecordItem> trades = parseTrades(root.optJSONArray("trades"));
-                List<AccountMetric> stats = parseMetrics(root.optJSONArray("statsMetrics"));
-
-                result.snapshot = new AccountSnapshot(overview, curves, indicators, positions, trades, stats);
-                result.success = true;
+        if (!discoveredLanBaseUrl.isEmpty()) {
+            if (fetchFromBaseUrl(discoveredLanBaseUrl, rangeKey, result, errors)) {
                 return result;
-            } catch (Exception exception) {
-                errors.add(normalizedBase + " -> " + exception.getMessage());
             }
+            attempted.add(discoveredLanBaseUrl);
         }
+
+        for (String baseUrl : baseUrls) {
+            if (attempted.contains(baseUrl)) {
+                continue;
+            }
+            if (fetchFromBaseUrl(baseUrl, rangeKey, result, errors)) {
+                return result;
+            }
+            attempted.add(baseUrl);
+        }
+
+        String discovered = discoverLanGatewayBaseUrl();
+        if (!discovered.isEmpty() && !attempted.contains(discovered)) {
+            if (fetchFromBaseUrl(discovered, rangeKey, result, errors)) {
+                return result;
+            }
+        } else if (discovered.isEmpty()) {
+            errors.add("LAN scan -> no reachable gateway found");
+        }
+
         result.error = String.join(" ; ", errors);
         return result;
+    }
+
+    private boolean fetchFromBaseUrl(String baseUrl,
+                                     String rangeKey,
+                                     SnapshotResult result,
+                                     List<String> errors) {
+        String normalizedBase = normalizeBaseUrl(baseUrl);
+        String url = normalizedBase + "/v1/snapshot?range=" + rangeKey;
+        Request request = new Request.Builder().url(url).get().build();
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                errors.add(normalizedBase + " -> HTTP " + response.code());
+                return false;
+            }
+            String body = response.body() == null ? "" : response.body().string();
+            if (body.isEmpty()) {
+                errors.add(normalizedBase + " -> Empty response");
+                return false;
+            }
+
+            JSONObject root = new JSONObject(body);
+            JSONObject meta = root.optJSONObject("accountMeta");
+            result.account = meta == null ? "" : meta.optString("login", "");
+            result.server = meta == null ? "" : meta.optString("server", "");
+            result.source = meta == null ? "MT5网关" : meta.optString("source", "MT5网关");
+            result.updatedAt = meta == null ? 0L : meta.optLong("updatedAt", 0L);
+            result.connectedBaseUrl = normalizedBase;
+
+            List<AccountMetric> overview = parseMetrics(root.optJSONArray("overviewMetrics"));
+            List<CurvePoint> curves = parseCurvePoints(root.optJSONArray("curvePoints"));
+            List<AccountMetric> indicators = parseMetrics(root.optJSONArray("curveIndicators"));
+            List<PositionItem> positions = parsePositions(root.optJSONArray("positions"));
+            List<TradeRecordItem> trades = parseTrades(root.optJSONArray("trades"));
+            List<AccountMetric> stats = parseMetrics(root.optJSONArray("statsMetrics"));
+
+            result.snapshot = new AccountSnapshot(overview, curves, indicators, positions, trades, stats);
+            result.success = true;
+            if (!isLoopbackBaseUrl(normalizedBase)) {
+                discoveredLanBaseUrl = normalizedBase;
+            }
+            return true;
+        } catch (Exception exception) {
+            errors.add(normalizedBase + " -> " + exception.getMessage());
+            return false;
+        }
+    }
+
+    private boolean isLoopbackBaseUrl(String baseUrl) {
+        return baseUrl.contains("10.0.2.2")
+                || baseUrl.contains("127.0.0.1")
+                || baseUrl.contains("localhost");
+    }
+
+    private String discoverLanGatewayBaseUrl() {
+        long now = System.currentTimeMillis();
+        if (now - lastLanScanAtMs < LAN_SCAN_COOLDOWN_MS) {
+            return "";
+        }
+        synchronized (Mt5BridgeGatewayClient.class) {
+            now = System.currentTimeMillis();
+            if (now - lastLanScanAtMs < LAN_SCAN_COOLDOWN_MS) {
+                return "";
+            }
+            lastLanScanAtMs = now;
+        }
+
+        SubnetInfo subnet = resolveLocalSubnet();
+        if (subnet == null) {
+            return "";
+        }
+
+        List<String> bases = buildLanHostCandidates(subnet);
+        if (bases.isEmpty()) {
+            return "";
+        }
+
+        ExecutorService pool = Executors.newFixedThreadPool(LAN_SCAN_THREAD_COUNT);
+        CompletionService<String> completion = new ExecutorCompletionService<>(pool);
+        int submitted = 0;
+        for (String base : bases) {
+            completion.submit(() -> probeGateway(base) ? base : "");
+            submitted++;
+        }
+
+        String found = "";
+        try {
+            for (int i = 0; i < submitted; i++) {
+                String candidate = completion.take().get();
+                if (candidate != null && !candidate.isEmpty()) {
+                    found = candidate;
+                    break;
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            pool.shutdownNow();
+        }
+        if (!found.isEmpty()) {
+            discoveredLanBaseUrl = found;
+        }
+        return found;
+    }
+
+    private boolean probeGateway(String baseUrl) {
+        Request request = new Request.Builder()
+                .url(baseUrl + "/health")
+                .get()
+                .build();
+        try (Response response = discoveryClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                return false;
+            }
+            String body = response.body() == null ? "" : response.body().string();
+            if (body.isEmpty()) {
+                return false;
+            }
+            return body.contains("\"gatewayMode\"")
+                    || body.contains("\"mt5PackageAvailable\"")
+                    || body.contains("\"ok\"");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private List<String> buildLanHostCandidates(SubnetInfo subnet) {
+        LinkedHashSet<Integer> hostSet = new LinkedHashSet<>();
+        int self = subnet.selfHost;
+
+        for (int delta = 1; delta <= 10; delta++) {
+            hostSet.add(self - delta);
+            hostSet.add(self + delta);
+        }
+        int[] commonHosts = {2, 8, 10, 11, 20, 30, 50, 80, 100, 101, 110, 120, 150, 180, 200, 220, 254, 1};
+        for (int host : commonHosts) {
+            hostSet.add(host);
+        }
+        for (int host = 1; host <= 254; host++) {
+            hostSet.add(host);
+        }
+
+        List<String> result = new ArrayList<>();
+        for (Integer host : hostSet) {
+            if (host == null || host <= 0 || host >= 255 || host == self) {
+                continue;
+            }
+            result.add("http://" + subnet.prefix + host + ":" + GATEWAY_PORT);
+        }
+        return result;
+    }
+
+    @Nullable
+    private SubnetInfo resolveLocalSubnet() {
+        try {
+            for (NetworkInterface networkInterface : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (networkInterface == null || !networkInterface.isUp() || networkInterface.isLoopback()) {
+                    continue;
+                }
+                for (InetAddress address : Collections.list(networkInterface.getInetAddresses())) {
+                    if (!(address instanceof Inet4Address)) {
+                        continue;
+                    }
+                    String ip = address.getHostAddress();
+                    if (ip == null || ip.startsWith("127.") || ip.startsWith("169.254.")) {
+                        continue;
+                    }
+                    String[] parts = ip.split("\\.");
+                    if (parts.length != 4) {
+                        continue;
+                    }
+                    int self = Integer.parseInt(parts[3]);
+                    String prefix = parts[0] + "." + parts[1] + "." + parts[2] + ".";
+                    return new SubnetInfo(prefix, self);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     private String normalizeBaseUrl(String baseUrl) {
@@ -174,7 +366,8 @@ public class Mt5BridgeGatewayClient {
                     item.optDouble("totalPnL", 0d),
                     item.optDouble("returnRate", 0d),
                     item.optDouble("pendingLots", 0d),
-                    item.optInt("pendingCount", 0)));
+                    item.optInt("pendingCount", 0),
+                    item.optDouble("pendingPrice", 0d)));
         }
         return list;
     }
@@ -201,6 +394,16 @@ public class Mt5BridgeGatewayClient {
                     item.optString("remark", "")));
         }
         return list;
+    }
+
+    private static final class SubnetInfo {
+        private final String prefix;
+        private final int selfHost;
+
+        private SubnetInfo(String prefix, int selfHost) {
+            this.prefix = prefix;
+            this.selfHost = selfHost;
+        }
     }
 
     public static class SnapshotResult {

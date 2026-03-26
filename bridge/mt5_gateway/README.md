@@ -19,11 +19,13 @@ It supports two modes:
 
 1. Copy `.env.example` to `.env`
 2. Confirm these values:
-   - `MT5_LOGIN=7400048`
-   - `MT5_PASSWORD=_fWsAeW1`
+   - `MT5_LOGIN=12345678`
+   - `MT5_PASSWORD=your_investor_password`
    - `MT5_SERVER=ICMarketsSC-MT5-6`
 3. Optional:
    - `MT5_PATH=C:\Program Files\MetaTrader 5\terminal64.exe`
+   - `MT5_SERVER_ALIASES=ICMarketsSC-MT5,ICMarketsSC-MT5-5`
+   - `MT5_INIT_TIMEOUT_MS=60000`
    - `GATEWAY_MODE=auto|pull|ea`
    - `EA_INGEST_TOKEN=...` (if you want EA push authentication)
 
@@ -50,8 +52,16 @@ Default address: `http://127.0.0.1:8787`
 - Emulator default already configured:
   - `http://10.0.2.2:8787`
 - Physical device:
-  - update `MT5_GATEWAY_BASE_URL` in `app/src/main/java/com/binance/monitor/constants/AppConstants.java`
-  - use your PC LAN IP, e.g. `http://192.168.1.20:8787`
+  - set `MT5_GATEWAY_BASE_URL` in `gradle.properties`
+  - example: `MT5_GATEWAY_BASE_URL=https://mt5-api.example.com`
+  - rebuild APK after changing the value.
+
+## 5) Tencent Cloud deployment package
+
+- See `deploy/tencent/README.md` for:
+  - Windows CVM bootstrap scripts
+  - startup task registration
+  - Caddy/Nginx reverse proxy samples
 
 ## Notes
 

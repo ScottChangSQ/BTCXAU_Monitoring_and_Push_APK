@@ -1,17 +1,12 @@
 package com.binance.monitor.ui.account.adapter;
 
-import android.text.SpannableString;
-import android.text.Spanned;
-import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.util.FormatUtils;
@@ -22,7 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Holder> {
+public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapter.Holder> {
     private final List<PositionItem> items = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
 
@@ -86,42 +81,31 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         }
 
         void bind(PositionItem item, boolean expanded) {
-            int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
-                    item.getTotalPnL() >= 0d ? R.color.accent_green : R.color.accent_red);
-            String pnlText = signedMoney(item.getTotalPnL());
-            String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
-                    item.getProductName(), sideCn(item.getSide()), item.getQuantity(), pnlText);
-            SpannableString span = new SpannableString(raw);
-            int start = raw.lastIndexOf(pnlText);
-            if (start >= 0) {
-                span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-            binding.tvSummary.setText(span);
+            double pendingPrice = item.getPendingPrice() > 0d ? item.getPendingPrice() : item.getLatestPrice();
+            binding.tvSummary.setText(String.format(Locale.getDefault(),
+                    "%s | %s | %.2f 手 | 挂单价位 $%s",
+                    item.getProductName(),
+                    sideCn(item.getSide()),
+                    item.getPendingLots(),
+                    FormatUtils.formatPrice(pendingPrice)));
 
             binding.tvExpandHint.setText(expanded ? "收起" : "展开");
             binding.layoutDetail.setVisibility(expanded ? View.VISIBLE : View.GONE);
 
-            binding.tvProduct.setText(String.format(Locale.getDefault(), "产品 %s (%s)", item.getProductName(), item.getCode()));
+            binding.tvProduct.setText(String.format(Locale.getDefault(),
+                    "产品 %s (%s)",
+                    item.getProductName(),
+                    item.getCode()));
             binding.tvBase.setText(String.format(Locale.getDefault(),
-                    "持仓 %.2f | 可卖 %.2f | 成本 $%s | 最新 $%s",
-                    item.getQuantity(),
-                    item.getSellableQuantity(),
-                    FormatUtils.formatPrice(item.getCostPrice()),
-                    FormatUtils.formatPrice(item.getLatestPrice())));
+                    "方向 %s | 挂单手数 %.2f | 挂单笔数 %d",
+                    sideCn(item.getSide()),
+                    item.getPendingLots(),
+                    item.getPendingCount()));
             binding.tvMetrics.setText(String.format(Locale.getDefault(),
-                    "市值 $%s | 占比 %.2f%%",
-                    FormatUtils.formatPrice(item.getMarketValue()),
-                    item.getPositionRatio() * 100d));
-            binding.tvPnL.setText(String.format(Locale.getDefault(),
-                    "当日 %s | 累计 %s | 收益率 %+.2f%%",
-                    signedMoney(item.getDayPnL()),
-                    signedMoney(item.getTotalPnL()),
-                    item.getReturnRate() * 100d));
-            binding.tvPnL.setTextColor(pnlColor);
-        }
-
-        private static String signedMoney(double value) {
-            return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
+                    "挂单价位 $%s | 参考现价 $%s",
+                    FormatUtils.formatPrice(pendingPrice),
+                    FormatUtils.formatPrice(item.getLatestPrice())));
+            binding.tvPnL.setVisibility(View.GONE);
         }
 
         private static String sideCn(String side) {

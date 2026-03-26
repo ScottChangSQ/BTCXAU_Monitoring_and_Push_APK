@@ -2,6 +2,10 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+val mt5GatewayBaseUrl = (
+    project.findProperty("MT5_GATEWAY_BASE_URL") as String?
+)?.trim()?.takeIf { it.isNotEmpty() } ?: "http://10.0.2.2:8787"
+
 android {
     namespace = "com.binance.monitor"
     compileSdk = 34
@@ -12,10 +16,16 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+        buildConfigField(
+            "String",
+            "MT5_GATEWAY_BASE_URL",
+            "\"${mt5GatewayBaseUrl.replace("\"", "\\\"")}\""
+        )
     }
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 
     buildTypes {
