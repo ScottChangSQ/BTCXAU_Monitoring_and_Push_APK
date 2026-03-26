@@ -5,8 +5,6 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
@@ -50,17 +48,20 @@ import java.util.concurrent.Executors;
 public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final float SWIPE_THRESHOLD = 120f;
     private static final float SWIPE_VELOCITY_THRESHOLD = 120f;
+
     private static final String ACCOUNT = "7400048";
     private static final String PASSWORD = "_fWsAeW1";
     private static final String SERVER = "ICMarketsSC-MT5-6";
-    private static final String FILTER_ALL_PRODUCTS = "全部产品";
-    private static final String FILTER_ALL_SIDES = "全部方向";
-    private static final String FILTER_ALL_TIME = "全部时间";
+
+    private static final String FILTER_PRODUCT = "产品";
+    private static final String FILTER_SIDE = "方向";
+    private static final String FILTER_DATE = "日期";
     private static final String FILTER_LAST_1D = "近1日";
     private static final String FILTER_LAST_7D = "近7日";
     private static final String FILTER_LAST_30D = "近30日";
 
     private final SimpleDateFormat dateOnlyFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+
     private ActivityAccountStatsBinding binding;
     private AccountStatsFallbackDataSource fallbackDataSource;
     private Mt5BridgeGatewayClient gatewayClient;
@@ -71,9 +72,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private StatsMetricAdapter statsAdapter;
     private GestureDetector gestureDetector;
     private ExecutorService ioExecutor;
+
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
     private volatile boolean loading;
     private AccountTimeRange selectedRange = AccountTimeRange.D7;
+
     private List<PositionItem> basePositions = new ArrayList<>();
     private List<TradeRecordItem> baseTrades = new ArrayList<>();
     private List<CurvePoint> allCurvePoints = new ArrayList<>();
@@ -92,15 +95,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         binding = ActivityAccountStatsBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+
         fallbackDataSource = new AccountStatsFallbackDataSource();
         gatewayClient = new Mt5BridgeGatewayClient();
         ioExecutor = Executors.newSingleThreadExecutor();
+
         overviewAdapter = new AccountMetricAdapter();
         indicatorAdapter = new StatsMetricAdapter();
         positionAdapter = new PositionAdapterV2();
         tradeAdapter = new TradeRecordAdapterV2();
         statsAdapter = new StatsMetricAdapter();
+
         gestureDetector = new GestureDetector(this, new SwipeListener());
+
         setupBottomNav();
         setupRecyclers();
         setupFilters();
@@ -168,22 +175,29 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.tabMarketMonitor.setBackground(marketSelected
                 ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
                 : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
-        binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this, marketSelected ? R.color.bg_primary : R.color.text_secondary));
+        binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this,
+                marketSelected ? R.color.bg_primary : R.color.text_secondary));
+
         binding.tabAccountStats.setBackground(marketSelected
                 ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected)
                 : AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected));
-        binding.tabAccountStats.setTextColor(ContextCompat.getColor(this, marketSelected ? R.color.text_secondary : R.color.bg_primary));
+        binding.tabAccountStats.setTextColor(ContextCompat.getColor(this,
+                marketSelected ? R.color.text_secondary : R.color.bg_primary));
     }
 
     private void setupRecyclers() {
         binding.recyclerOverview.setLayoutManager(new GridLayoutManager(this, 2));
         binding.recyclerOverview.setAdapter(overviewAdapter);
+
         binding.recyclerCurveIndicators.setLayoutManager(new GridLayoutManager(this, 3));
         binding.recyclerCurveIndicators.setAdapter(indicatorAdapter);
+
         binding.recyclerPositions.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerPositions.setAdapter(positionAdapter);
+
         binding.recyclerTrades.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerTrades.setAdapter(tradeAdapter);
+
         binding.recyclerStats.setLayoutManager(new GridLayoutManager(this, 2));
         binding.recyclerStats.setAdapter(statsAdapter);
     }
@@ -196,28 +210,23 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.spinnerPositionSort.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshPositions));
 
         ArrayAdapter<String> productAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
-                new String[]{FILTER_ALL_PRODUCTS, "XAUUSD", "BTCUSD", "NAS100", "WTI", "EURUSD", "GBPUSD"});
+                new String[]{FILTER_PRODUCT, "XAUUSD", "BTCUSD", "NAS100", "WTI", "EURUSD", "GBPUSD"});
         productAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         binding.spinnerTradeProduct.setAdapter(productAdapter);
         binding.spinnerTradeProduct.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
 
         ArrayAdapter<String> sideAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
-                new String[]{FILTER_ALL_SIDES, "买入", "卖出"});
+                new String[]{FILTER_SIDE, "买入", "卖出"});
         sideAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         binding.spinnerTradeSide.setAdapter(sideAdapter);
         binding.spinnerTradeSide.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
 
         ArrayAdapter<String> timeAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
-                new String[]{FILTER_ALL_TIME, FILTER_LAST_1D, FILTER_LAST_7D, FILTER_LAST_30D});
+                new String[]{FILTER_DATE, FILTER_LAST_1D, FILTER_LAST_7D, FILTER_LAST_30D});
         timeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         binding.spinnerTradeTime.setAdapter(timeAdapter);
         binding.spinnerTradeTime.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
 
-        binding.etTradeSearch.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override public void afterTextChanged(Editable s) { refreshTrades(); }
-        });
         binding.btnApplyManualRange.setOnClickListener(v -> applyManualCurveRange());
     }
 
@@ -232,9 +241,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (!text.isEmpty()) {
             try {
                 Date parsed = dateOnlyFormat.parse(text);
-                if (parsed != null) calendar.setTime(parsed);
-            } catch (Exception ignored) {}
+                if (parsed != null) {
+                    calendar.setTime(parsed);
+                }
+            } catch (Exception ignored) {
+            }
         }
+
         DatePickerDialog dialog = new DatePickerDialog(this, android.R.style.Theme_Holo_Light_Dialog_NoActionBar,
                 (view, year, month, dayOfMonth) -> {
                     Calendar picked = Calendar.getInstance();
@@ -246,7 +259,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             dialog.getDatePicker().setCalendarViewShown(false);
             dialog.getDatePicker().setSpinnersShown(true);
         } catch (Exception ignored) {
-            // Some OEM systems may not expose spinner mode; fallback to system default picker.
         }
         dialog.show();
     }
@@ -254,13 +266,22 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void setupRangeToggle() {
         binding.toggleTimeRange.check(R.id.btnRange7d);
         binding.toggleTimeRange.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
-            if (!isChecked) return;
-            if (checkedId == R.id.btnRange1d) selectedRange = AccountTimeRange.D1;
-            else if (checkedId == R.id.btnRange7d) selectedRange = AccountTimeRange.D7;
-            else if (checkedId == R.id.btnRange1m) selectedRange = AccountTimeRange.M1;
-            else if (checkedId == R.id.btnRange3m) selectedRange = AccountTimeRange.M3;
-            else if (checkedId == R.id.btnRange1y) selectedRange = AccountTimeRange.Y1;
-            else selectedRange = AccountTimeRange.ALL;
+            if (!isChecked) {
+                return;
+            }
+            if (checkedId == R.id.btnRange1d) {
+                selectedRange = AccountTimeRange.D1;
+            } else if (checkedId == R.id.btnRange7d) {
+                selectedRange = AccountTimeRange.D7;
+            } else if (checkedId == R.id.btnRange1m) {
+                selectedRange = AccountTimeRange.M1;
+            } else if (checkedId == R.id.btnRange3m) {
+                selectedRange = AccountTimeRange.M3;
+            } else if (checkedId == R.id.btnRange1y) {
+                selectedRange = AccountTimeRange.Y1;
+            } else {
+                selectedRange = AccountTimeRange.ALL;
+            }
             requestSnapshot(true);
         });
     }
@@ -268,12 +289,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void bindLocalMeta() {
         String maskedPassword = PASSWORD.substring(0, 2) + "******" + PASSWORD.substring(PASSWORD.length() - 1);
         binding.tvAccountMeta.setText(String.format(Locale.getDefault(),
-                "账户 %s | 只读密码 %s | 服务器 %s | 数据源 历史演示", ACCOUNT, maskedPassword, SERVER));
+                "账号 %s | 只读密码 %s | 服务器 %s | 数据源 历史数据（网关离线）",
+                ACCOUNT, maskedPassword, SERVER));
     }
 
     private void requestSnapshot(boolean force) {
-        if (loading && !force) return;
+        if (loading && !force) {
+            return;
+        }
         loading = true;
+
         ioExecutor.execute(() -> {
             Mt5BridgeGatewayClient.SnapshotResult remote = gatewayClient.fetch(selectedRange);
             AccountSnapshot snapshot;
@@ -285,11 +310,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             } else {
                 snapshot = fallbackDataSource.load(selectedRange);
                 String update = FormatUtils.formatTime(System.currentTimeMillis());
-                meta = "账户 " + ACCOUNT + " | 服务器 " + SERVER
-                        + " | 数据源 历史演示（网关离线） | 更新时间 " + update
+                meta = "账号 " + ACCOUNT + " | 服务器 " + SERVER
+                        + " | 数据源 历史数据（网关离线） | 更新时间 " + update
                         + " | 原因 " + remote.getError();
                 runOnUiThread(() -> setConnectionStatus(false));
             }
+
             runOnUiThread(() -> {
                 applySnapshot(snapshot);
                 binding.tvAccountMeta.setText(meta);
@@ -314,9 +340,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         displayedCurvePoints = new ArrayList<>(allCurvePoints);
 
         List<AccountMetric> overview = snapshot.getOverviewMetrics();
-        if (overview == null || overview.isEmpty()) overview = buildOverviewFallbackMetrics();
+        if (overview == null || overview.isEmpty()) {
+            overview = buildOverviewFallbackMetrics();
+        }
         List<AccountMetric> stats = snapshot.getStatsMetrics();
-        if (stats == null || stats.isEmpty()) stats = buildStatsFallbackMetrics();
+        if (stats == null || stats.isEmpty()) {
+            stats = buildStatsFallbackMetrics();
+        }
+
         overviewAdapter.submitList(overview);
         statsAdapter.submitList(stats);
         renderCurveWithIndicators(displayedCurvePoints);
@@ -331,23 +362,35 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private String buildCurveMeta(List<CurvePoint> points) {
-        if (points == null || points.isEmpty()) return "--";
+        if (points == null || points.isEmpty()) {
+            return "--";
+        }
         double start = points.get(0).getEquity();
         double current = points.get(points.size() - 1).getEquity();
-        double peak = start, valley = start;
-        int peakIndex = 0, valleyIndex = 0;
+        double peak = start;
+        double valley = start;
+        int peakIndex = 0;
+        int valleyIndex = 0;
         for (int i = 1; i < points.size(); i++) {
             double value = points.get(i).getEquity();
-            if (value >= peak) { peak = value; peakIndex = i; }
-            if (value <= valley) { valley = value; valleyIndex = i; }
+            if (value >= peak) {
+                peak = value;
+                peakIndex = i;
+            }
+            if (value <= valley) {
+                valley = value;
+                valleyIndex = i;
+            }
         }
         double drawdown = peak == 0d ? 0d : (peak - valley) / peak;
         return String.format(Locale.getDefault(),
                 "起点净值 $%s | 当前净值 $%s | 峰值 %s | 谷值 %s | 最大回撤 %.2f%% | 收益率 %+.2f%%",
-                FormatUtils.formatPrice(start), FormatUtils.formatPrice(current),
+                FormatUtils.formatPrice(start),
+                FormatUtils.formatPrice(current),
                 FormatUtils.formatTime(points.get(peakIndex).getTimestamp()),
                 FormatUtils.formatTime(points.get(valleyIndex).getTimestamp()),
-                drawdown * 100d, (current - start) * 100d / Math.max(1d, start));
+                drawdown * 100d,
+                (current - start) * 100d / Math.max(1d, start));
     }
 
     private List<AccountMetric> buildCurveIndicators(List<CurvePoint> points) {
@@ -358,28 +401,37 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             result.add(new AccountMetric("近30日收益", "--"));
             result.add(new AccountMetric("最大回撤", "--"));
             result.add(new AccountMetric("波动率", "--"));
-            result.add(new AccountMetric("夏普比率", "--"));
+            result.add(new AccountMetric("Sharpe Ratio", "--"));
             return result;
         }
+
         double[] values = new double[points.size()];
-        for (int i = 0; i < points.size(); i++) values[i] = points.get(i).getEquity();
-        double peak = values[0], maxDd = 0d;
+        for (int i = 0; i < points.size(); i++) {
+            values[i] = points.get(i).getEquity();
+        }
+
+        double peak = values[0];
+        double maxDd = 0d;
         List<Double> returns = new ArrayList<>();
         for (int i = 1; i < values.length; i++) {
             peak = Math.max(peak, values[i]);
             maxDd = Math.max(maxDd, safeDivide(peak - values[i], peak));
             returns.add(safeDivide(values[i] - values[i - 1], values[i - 1]));
         }
-        double r1 = returnN(values, 24), r7 = returnN(values, 24 * 7), r30 = returnN(values, 24 * 30);
+
+        double r1 = returnN(values, 24);
+        double r7 = returnN(values, 24 * 7);
+        double r30 = returnN(values, 24 * 30);
         double vol = calcStd(returns) * Math.sqrt(365d);
         double mean = returns.stream().mapToDouble(v -> v).average().orElse(0d);
         double sharpe = vol == 0d ? 0d : (mean * 365d) / vol;
+
         result.add(new AccountMetric("近1日收益", String.format(Locale.getDefault(), "%+.2f%%", r1 * 100d)));
         result.add(new AccountMetric("近7日收益", String.format(Locale.getDefault(), "%+.2f%%", r7 * 100d)));
         result.add(new AccountMetric("近30日收益", String.format(Locale.getDefault(), "%+.2f%%", r30 * 100d)));
         result.add(new AccountMetric("最大回撤", String.format(Locale.getDefault(), "%.2f%%", maxDd * 100d)));
         result.add(new AccountMetric("波动率", String.format(Locale.getDefault(), "%.2f%%", vol * 100d)));
-        result.add(new AccountMetric("夏普比率", String.format(Locale.getDefault(), "%.2f", sharpe)));
+        result.add(new AccountMetric("Sharpe Ratio", String.format(Locale.getDefault(), "%.2f", sharpe)));
         return result;
     }
 
@@ -387,53 +439,82 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         List<AccountMetric> result = new ArrayList<>();
         double equity = displayedCurvePoints.isEmpty() ? 0d : displayedCurvePoints.get(displayedCurvePoints.size() - 1).getEquity();
         double balance = displayedCurvePoints.isEmpty() ? 0d : displayedCurvePoints.get(displayedCurvePoints.size() - 1).getBalance();
-        double marketValue = 0d, totalPnl = 0d;
-        for (PositionItem item : basePositions) { marketValue += item.getMarketValue(); totalPnl += item.getTotalPnL(); }
+        double marketValue = 0d;
+        double totalPnl = 0d;
+        for (PositionItem item : basePositions) {
+            marketValue += item.getMarketValue();
+            totalPnl += item.getTotalPnL();
+        }
         double margin = equity * 0.3d;
         double free = Math.max(0d, equity - margin);
-        double dRet = equity == 0d ? 0d : (equity - balance) / equity;
-        double tRet = balance == 0d ? 0d : totalPnl / balance;
+        double dayReturn = equity == 0d ? 0d : (equity - balance) / equity;
+        double totalReturn = balance == 0d ? 0d : totalPnl / balance;
+
         result.add(new AccountMetric("总资产", "$" + FormatUtils.formatPrice(equity)));
-        result.add(new AccountMetric("保证金", "$" + FormatUtils.formatPrice(margin)));
+        result.add(new AccountMetric("保证金金额", "$" + FormatUtils.formatPrice(margin)));
         result.add(new AccountMetric("可用资金", "$" + FormatUtils.formatPrice(free)));
         result.add(new AccountMetric("持仓市值", "$" + FormatUtils.formatPrice(marketValue)));
         result.add(new AccountMetric("持仓盈亏", signedMoney(totalPnl)));
         result.add(new AccountMetric("当前净值", "$" + FormatUtils.formatPrice(equity)));
-        result.add(new AccountMetric("当日收益率", String.format(Locale.getDefault(), "%+.2f%%", dRet * 100d)));
-        result.add(new AccountMetric("累计收益率", String.format(Locale.getDefault(), "%+.2f%%", tRet * 100d)));
+        result.add(new AccountMetric("当日收益率", String.format(Locale.getDefault(), "%+.2f%%", dayReturn * 100d)));
+        result.add(new AccountMetric("累计收益率", String.format(Locale.getDefault(), "%+.2f%%", totalReturn * 100d)));
         return result;
     }
 
     private List<AccountMetric> buildStatsFallbackMetrics() {
         List<AccountMetric> result = new ArrayList<>();
-        double totalPnl = 0d, maxPos = 0d;
-        for (PositionItem item : basePositions) { totalPnl += item.getTotalPnL(); maxPos = Math.max(maxPos, item.getPositionRatio()); }
-        int buy = 0, sell = 0;
-        for (TradeRecordItem item : baseTrades) if ("BUY".equalsIgnoreCase(item.getSide())) buy++; else sell++;
+        double totalPnl = 0d;
+        double maxPos = 0d;
+        for (PositionItem item : basePositions) {
+            totalPnl += item.getTotalPnL();
+            maxPos = Math.max(maxPos, item.getPositionRatio());
+        }
+
+        int buy = 0;
+        int sell = 0;
+        for (TradeRecordItem item : baseTrades) {
+            if ("BUY".equalsIgnoreCase(item.getSide())) {
+                buy++;
+            } else {
+                sell++;
+            }
+        }
+
         double maxDd = 0d;
         if (displayedCurvePoints.size() > 1) {
             double peak = displayedCurvePoints.get(0).getEquity();
-            for (CurvePoint p : displayedCurvePoints) { peak = Math.max(peak, p.getEquity()); maxDd = Math.max(maxDd, safeDivide(peak - p.getEquity(), peak)); }
+            for (CurvePoint p : displayedCurvePoints) {
+                peak = Math.max(peak, p.getEquity());
+                maxDd = Math.max(maxDd, safeDivide(peak - p.getEquity(), peak));
+            }
         }
+
         result.add(new AccountMetric("累计收益额", signedMoney(totalPnl)));
         result.add(new AccountMetric("总交易次数", String.valueOf(baseTrades.size())));
         result.add(new AccountMetric("买入次数", String.valueOf(buy)));
         result.add(new AccountMetric("卖出次数", String.valueOf(sell)));
         result.add(new AccountMetric("最大回撤", String.format(Locale.getDefault(), "%.2f%%", maxDd * 100d)));
         result.add(new AccountMetric("单一持仓最大占比", String.format(Locale.getDefault(), "%.2f%%", maxPos * 100d)));
-        result.add(new AccountMetric("连续盈利/亏损", "5 / 3"));
-        result.add(new AccountMetric("数据来源", "网关离线时本地计算"));
+        result.add(new AccountMetric("连续盈利/连续亏损", "5 / 3"));
+        result.add(new AccountMetric("数据来源", "网关离线时本地估算"));
         return result;
     }
 
     private void refreshPositions() {
         List<PositionItem> list = new ArrayList<>(basePositions);
         int index = binding.spinnerPositionSort.getSelectedItemPosition();
-        if (index == 1) list.sort((a, b) -> Double.compare(b.getMarketValue(), a.getMarketValue()));
-        else if (index == 2) list.sort((a, b) -> Double.compare(b.getTotalPnL(), a.getTotalPnL()));
-        else if (index == 3) list.sort((a, b) -> Double.compare(b.getReturnRate(), a.getReturnRate()));
-        else if (index == 4) list.sort((a, b) -> Double.compare(b.getQuantity(), a.getQuantity()));
-        else list.sort(Comparator.comparing(PositionItem::getProductName));
+        if (index == 1) {
+            list.sort((a, b) -> Double.compare(b.getMarketValue(), a.getMarketValue()));
+        } else if (index == 2) {
+            list.sort((a, b) -> Double.compare(b.getTotalPnL(), a.getTotalPnL()));
+        } else if (index == 3) {
+            list.sort((a, b) -> Double.compare(b.getReturnRate(), a.getReturnRate()));
+        } else if (index == 4) {
+            list.sort((a, b) -> Double.compare(b.getQuantity(), a.getQuantity()));
+        } else {
+            list.sort(Comparator.comparing(PositionItem::getProductName));
+        }
+
         positionAdapter.submitList(list);
         binding.tvPositionCostSummary.setText(buildPositionSummary(list));
         binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(list));
@@ -443,51 +524,75 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String buildPositionSummary(List<PositionItem> list) {
         StringBuilder builder = new StringBuilder();
         for (PositionItem item : list) {
-            if (builder.length() > 0) builder.append("  |  ");
-            builder.append(item.getProductName()).append(" 成本 $").append(FormatUtils.formatPrice(item.getCostPrice()))
-                    .append(" / 市值 $").append(FormatUtils.formatPrice(item.getMarketValue()));
+            if (builder.length() > 0) {
+                builder.append("  |  ");
+            }
+            builder.append(item.getProductName())
+                    .append(" 成本 $")
+                    .append(FormatUtils.formatPrice(item.getCostPrice()))
+                    .append(" / 市值 $")
+                    .append(FormatUtils.formatPrice(item.getMarketValue()));
         }
         return builder.toString();
     }
 
     private String buildPositionPnlSummary(List<PositionItem> list) {
-        double totalPnl = 0d, totalValue = 0d;
-        for (PositionItem item : list) { totalPnl += item.getTotalPnL(); totalValue += item.getMarketValue(); }
+        double totalPnl = 0d;
+        double totalValue = 0d;
+        for (PositionItem item : list) {
+            totalPnl += item.getTotalPnL();
+            totalValue += item.getMarketValue();
+        }
         double ratio = totalValue == 0d ? 0d : totalPnl / totalValue;
-        return String.format(Locale.getDefault(), "持仓合计盈亏: %s | 相对净值盈亏比例: %+.2f%%", signedMoney(totalPnl), ratio * 100d);
+        return String.format(Locale.getDefault(), "持仓盈亏: %s | 持仓盈亏比例: %+.2f%%", signedMoney(totalPnl), ratio * 100d);
     }
 
     private String buildPositionBreakdown(List<PositionItem> list) {
         StringBuilder builder = new StringBuilder();
         for (PositionItem item : list) {
-            if (builder.length() > 0) builder.append("\n");
-            builder.append(String.format(Locale.getDefault(), "%s | %s | %.2f 手 | 成本 $%s | 持仓盈亏 %s | 挂单 %d 笔 %.2f 手",
-                    item.getProductName(), normalizeSideCn(item.getSide()), item.getQuantity(), FormatUtils.formatPrice(item.getCostPrice()),
-                    signedMoney(item.getTotalPnL()), item.getPendingCount(), item.getPendingLots()));
+            if (builder.length() > 0) {
+                builder.append("\n");
+            }
+            builder.append(String.format(Locale.getDefault(),
+                    "%s | %s | %.2f 手 | 成本 $%s | 持仓盈亏 %s | 挂单 %d 笔 %.2f 手",
+                    item.getProductName(),
+                    normalizeSideCn(item.getSide()),
+                    item.getQuantity(),
+                    FormatUtils.formatPrice(item.getCostPrice()),
+                    signedMoney(item.getTotalPnL()),
+                    item.getPendingCount(),
+                    item.getPendingLots()));
         }
         return builder.toString();
     }
 
     private void refreshTrades() {
         List<TradeRecordItem> filtered = new ArrayList<>();
-        String keyword = trim(binding.etTradeSearch.getText() == null ? "" : binding.etTradeSearch.getText().toString());
         String product = (String) binding.spinnerTradeProduct.getSelectedItem();
         String side = (String) binding.spinnerTradeSide.getSelectedItem();
         String time = (String) binding.spinnerTradeTime.getSelectedItem();
+
         long now = System.currentTimeMillis();
         long limit;
-        if (FILTER_LAST_1D.equals(time)) limit = now - 24L * 60L * 60L * 1000L;
-        else if (FILTER_LAST_7D.equals(time)) limit = now - 7L * 24L * 60L * 60L * 1000L;
-        else if (FILTER_LAST_30D.equals(time)) limit = now - 30L * 24L * 60L * 60L * 1000L;
-        else limit = 0L;
+        if (FILTER_LAST_1D.equals(time)) {
+            limit = now - 24L * 60L * 60L * 1000L;
+        } else if (FILTER_LAST_7D.equals(time)) {
+            limit = now - 7L * 24L * 60L * 60L * 1000L;
+        } else if (FILTER_LAST_30D.equals(time)) {
+            limit = now - 30L * 24L * 60L * 60L * 1000L;
+        } else {
+            limit = 0L;
+        }
+
         for (TradeRecordItem item : baseTrades) {
-            if (limit > 0L && item.getTimestamp() < limit) continue;
-            if (!FILTER_ALL_PRODUCTS.equals(product) && !item.getCode().equalsIgnoreCase(product)) continue;
-            if (!FILTER_ALL_SIDES.equals(side) && !item.getSide().equalsIgnoreCase(normalizeSide(side))) continue;
-            if (!keyword.isEmpty()) {
-                String lower = keyword.toLowerCase(Locale.ROOT);
-                String target = (item.getProductName() + item.getCode() + item.getRemark()).toLowerCase(Locale.ROOT);
-                if (!target.contains(lower)) continue;
+            if (limit > 0L && item.getTimestamp() < limit) {
+                continue;
+            }
+            if (!FILTER_PRODUCT.equals(product) && !item.getCode().equalsIgnoreCase(product)) {
+                continue;
+            }
+            if (!FILTER_SIDE.equals(side) && !item.getSide().equalsIgnoreCase(normalizeSide(side))) {
+                continue;
             }
             filtered.add(item);
         }
@@ -504,15 +609,27 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             Toast.makeText(this, "已恢复当前时间维度完整区间", Toast.LENGTH_SHORT).show();
             return;
         }
+
         try {
             Date startDate = dateOnlyFormat.parse(startText);
             Date endDate = dateOnlyFormat.parse(endText);
-            if (startDate == null || endDate == null) throw new IllegalArgumentException();
+            if (startDate == null || endDate == null) {
+                throw new IllegalArgumentException();
+            }
             long start = startDate.getTime();
             long end = endDate.getTime() + 24L * 60L * 60L * 1000L - 1L;
-            if (start > end) { long t = start; start = end; end = t; }
+            if (start > end) {
+                long tmp = start;
+                start = end;
+                end = tmp;
+            }
+
             List<CurvePoint> filtered = new ArrayList<>();
-            for (CurvePoint p : allCurvePoints) if (p.getTimestamp() >= start && p.getTimestamp() <= end) filtered.add(p);
+            for (CurvePoint p : allCurvePoints) {
+                if (p.getTimestamp() >= start && p.getTimestamp() <= end) {
+                    filtered.add(p);
+                }
+            }
             if (filtered.size() < 2) {
                 Toast.makeText(this, "该区间数据不足，请调整日期", Toast.LENGTH_SHORT).show();
                 return;
@@ -524,18 +641,58 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-    private String trim(String source) { return source == null ? "" : source.trim(); }
-    private double safeDivide(double a, double b) { return Math.abs(b) < 1e-9 ? 0d : a / b; }
-    private double returnN(double[] values, int n) { if (values.length < 2) return 0d; int from = Math.max(0, values.length - 1 - n); return safeDivide(values[values.length - 1] - values[from], values[from]); }
+    private String trim(String source) {
+        return source == null ? "" : source.trim();
+    }
+
+    private double safeDivide(double a, double b) {
+        return Math.abs(b) < 1e-9 ? 0d : a / b;
+    }
+
+    private double returnN(double[] values, int n) {
+        if (values.length < 2) {
+            return 0d;
+        }
+        int from = Math.max(0, values.length - 1 - n);
+        return safeDivide(values[values.length - 1] - values[from], values[from]);
+    }
+
     private double calcStd(List<Double> values) {
-        if (values.isEmpty()) return 0d;
-        double avg = values.stream().mapToDouble(v -> v).average().orElse(0d), sum = 0d;
-        for (double value : values) { double diff = value - avg; sum += diff * diff; }
+        if (values.isEmpty()) {
+            return 0d;
+        }
+        double avg = values.stream().mapToDouble(v -> v).average().orElse(0d);
+        double sum = 0d;
+        for (double value : values) {
+            double diff = value - avg;
+            sum += diff * diff;
+        }
         return Math.sqrt(sum / values.size());
     }
-    private String signedMoney(double value) { return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value)); }
-    private String normalizeSide(String side) { if ("买入".equals(side)) return "Buy"; if ("卖出".equals(side)) return "Sell"; return side; }
-    private String normalizeSideCn(String side) { if ("buy".equalsIgnoreCase(side) || "买入".equals(side)) return "买入"; if ("sell".equalsIgnoreCase(side) || "卖出".equals(side)) return "卖出"; return side; }
+
+    private String signedMoney(double value) {
+        return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
+    }
+
+    private String normalizeSide(String side) {
+        if ("买入".equals(side)) {
+            return "Buy";
+        }
+        if ("卖出".equals(side)) {
+            return "Sell";
+        }
+        return side;
+    }
+
+    private String normalizeSideCn(String side) {
+        if ("buy".equalsIgnoreCase(side) || "买入".equals(side)) {
+            return "买入";
+        }
+        if ("sell".equalsIgnoreCase(side) || "卖出".equals(side)) {
+            return "卖出";
+        }
+        return side;
+    }
 
     private void openMarketMonitor() {
         Intent intent = new Intent(this, MainActivity.class);
@@ -548,12 +705,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private class SwipeListener extends GestureDetector.SimpleOnGestureListener {
         @Override
         public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-            if (e1 == null || e2 == null) return false;
+            if (e1 == null || e2 == null) {
+                return false;
+            }
             float diffX = e2.getX() - e1.getX();
             float diffY = e2.getY() - e1.getY();
-            if (Math.abs(diffX) < Math.abs(diffY)) return false;
+            if (Math.abs(diffX) < Math.abs(diffY)) {
+                return false;
+            }
             if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
-                if (diffX > 0f) openMarketMonitor();
+                if (diffX > 0f) {
+                    openMarketMonitor();
+                }
                 return true;
             }
             return false;

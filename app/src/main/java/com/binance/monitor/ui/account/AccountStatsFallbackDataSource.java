@@ -88,7 +88,7 @@ public class AccountStatsFallbackDataSource {
                 new AccountMetric("Concentration", percent(topFiveRatio(positions))),
                 new AccountMetric("Consecutive Win/Loss", "5 / 3"),
                 new AccountMetric("Current Position Amount", money(marketValue)),
-                new AccountMetric("Asset Distribution", "XAU / BTC / FX / Index"),
+                new AccountMetric("Asset Distribution", "黄金 / 比特币 / 外汇 / 指数"),
                 new AccountMetric("Top-5 Position Ratio", percent(topFiveRatio(positions)))
         );
 
@@ -142,12 +142,12 @@ public class AccountStatsFallbackDataSource {
 
     private List<PositionItem> buildPositions() {
         return Arrays.asList(
-                new PositionItem("Gold", "XAUUSD", "Buy", 18.5, 18.5, 2342.3, 2366.5, 43_770, 0.245, 438, 2_964, 0.0727, 2.0, 2),
-                new PositionItem("Bitcoin", "BTCUSD", "Buy", 1.25, 1.25, 86_240, 88_120, 110_150, 0.615, 1_190, 2_350, 0.0218, 0.5, 1),
-                new PositionItem("Nasdaq", "NAS100", "Sell", 7.0, 7.0, 18_922, 18_775, 12_650, 0.071, -294, -1_029, -0.0752, 1.0, 1),
-                new PositionItem("WTI Oil", "WTI", "Buy", 22.0, 22.0, 79.11, 80.25, 17_655, 0.099, 251, 916, 0.0547, 0.0, 0),
-                new PositionItem("Euro", "EURUSD", "Buy", 45_000, 45_000, 1.0832, 1.0865, 4_889, 0.027, 132, 186, 0.0396, 10_000, 2),
-                new PositionItem("Pound", "GBPUSD", "Sell", 30_000, 30_000, 1.2623, 1.2597, 3_780, 0.021, -78, -121, -0.0310, 0.0, 0)
+                new PositionItem("黄金", "XAUUSD", "Buy", 18.5, 18.5, 2342.3, 2366.5, 43_770, 0.245, 438, 2_964, 0.0727, 2.0, 2),
+                new PositionItem("比特币", "BTCUSD", "Buy", 1.25, 1.25, 86_240, 88_120, 110_150, 0.615, 1_190, 2_350, 0.0218, 0.5, 1),
+                new PositionItem("纳指", "NAS100", "Sell", 7.0, 7.0, 18_922, 18_775, 12_650, 0.071, -294, -1_029, -0.0752, 1.0, 1),
+                new PositionItem("原油", "WTI", "Buy", 22.0, 22.0, 79.11, 80.25, 17_655, 0.099, 251, 916, 0.0547, 0.0, 0),
+                new PositionItem("欧元", "EURUSD", "Buy", 45_000, 45_000, 1.0832, 1.0865, 4_889, 0.027, 132, 186, 0.0396, 10_000, 2),
+                new PositionItem("英镑", "GBPUSD", "Sell", 30_000, 30_000, 1.2623, 1.2597, 3_780, 0.021, -78, -121, -0.0310, 0.0, 0)
         );
     }
 
@@ -155,7 +155,7 @@ public class AccountStatsFallbackDataSource {
         List<TradeRecordItem> trades = new ArrayList<>();
         Random random = new Random(20260326L);
         long now = System.currentTimeMillis();
-        String[] remarks = {"Follow Strategy", "Scale Out", "Pullback Hedge", "Trend Entry", "Risk Hedge"};
+        String[] remarks = {"策略跟随", "分批止盈", "回撤对冲", "趋势入场", "风险对冲"};
         for (int i = 0; i < 72; i++) {
             PositionItem position = positions.get(i % positions.size());
             boolean buy = (i % 3) != 0;

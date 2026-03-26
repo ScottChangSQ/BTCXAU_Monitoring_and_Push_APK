@@ -23,7 +23,6 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 public class Mt5BridgeGatewayClient {
-
     private final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(3, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
@@ -127,7 +126,7 @@ public class Mt5BridgeGatewayClient {
                 continue;
             }
             list.add(new AccountMetric(
-                    toChineseMetricName(item.optString("name", "--")),
+                    MetricNameTranslator.toChinese(item.optString("name", "--")),
                     item.optString("value", "--")));
         }
         return list;
@@ -204,92 +203,6 @@ public class Mt5BridgeGatewayClient {
         return list;
     }
 
-    private String toChineseMetricName(String name) {
-        if (name == null) {
-            return "--";
-        }
-        switch (name) {
-            case "Total Asset":
-                return "总资产";
-            case "Margin":
-                return "保证金";
-            case "Free Fund":
-                return "可用资金";
-            case "Position Market Value":
-                return "持仓市值";
-            case "Position PnL":
-                return "持仓盈亏";
-            case "Daily PnL":
-                return "当日盈亏";
-            case "Cumulative PnL":
-                return "累计盈亏";
-            case "Current Equity":
-                return "当前净值";
-            case "Daily Return":
-                return "当日收益率";
-            case "Total Return":
-                return "累计收益率";
-            case "Position Ratio":
-                return "仓位占比";
-            case "1D Return":
-                return "近1日收益";
-            case "7D Return":
-                return "近7日收益";
-            case "30D Return":
-                return "近30日收益";
-            case "Max Drawdown":
-                return "最大回撤";
-            case "Volatility":
-                return "波动率";
-            case "Sharpe":
-                return "夏普比率";
-            case "Cumulative Profit":
-                return "累计收益额";
-            case "Cumulative Return":
-                return "累计收益率";
-            case "Month Profit":
-                return "本月收益";
-            case "YTD Profit":
-                return "年内收益";
-            case "Daily Avg Profit":
-                return "日均收益";
-            case "Total Trades":
-                return "总交易次数";
-            case "Buy Count":
-                return "买入次数";
-            case "Sell Count":
-                return "卖出次数";
-            case "Win Rate":
-                return "胜率";
-            case "Win/Loss Trades":
-                return "盈利/亏损笔数";
-            case "Avg Profit/Trade":
-                return "平均每笔盈利";
-            case "Avg Loss/Trade":
-                return "平均每笔亏损";
-            case "PnL Ratio":
-                return "盈亏比";
-            case "Position Utilization":
-                return "仓位利用率";
-            case "Single Position Max":
-                return "单一持仓最大占比";
-            case "Concentration":
-                return "集中度";
-            case "Consecutive Win/Loss":
-                return "连续盈利/亏损";
-            case "Current Position Amount":
-                return "当前持仓金额";
-            case "Asset Distribution":
-                return "资产分布";
-            case "Top-5 Position Ratio":
-                return "前五大持仓占比";
-            case "Data Source":
-                return "数据来源";
-            default:
-                return name;
-        }
-    }
-
     public static class SnapshotResult {
         private boolean success;
         private String account = "";
@@ -315,16 +228,30 @@ public class Mt5BridgeGatewayClient {
         public String buildMetaLine(String defaultAccount, String defaultServer) {
             String accountText = account.isEmpty() ? defaultAccount : account;
             String serverText = server.isEmpty() ? defaultServer : server;
-            String sourceText = source.isEmpty() ? "MT5网关" : source;
+            String sourceText = localizeSource(source);
             String updateText = updatedAt <= 0L
                     ? "--"
                     : new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(updatedAt);
             String endpoint = connectedBaseUrl.isEmpty() ? "未识别" : connectedBaseUrl;
-            return "账户 " + accountText
+            return "账号 " + accountText
                     + " | 服务器 " + serverText
                     + " | 数据源 " + sourceText
                     + " | 网关 " + endpoint
                     + " | 更新时间 " + updateText;
+        }
+
+        private String localizeSource(String source) {
+            if (source == null || source.trim().isEmpty()) {
+                return "MT5网关";
+            }
+            String normalized = source.trim().toLowerCase(Locale.ROOT);
+            if (normalized.contains("fallback") || normalized.contains("offline")) {
+                return "历史数据（网关离线）";
+            }
+            if ("mt5 gateway".equals(normalized)) {
+                return "MT5网关";
+            }
+            return source;
         }
     }
 }

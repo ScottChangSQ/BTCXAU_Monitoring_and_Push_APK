@@ -7,6 +7,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.databinding.ItemAccountKvBinding;
+import com.binance.monitor.ui.account.MetricNameTranslator;
 import com.binance.monitor.ui.account.model.AccountMetric;
 
 import java.util.ArrayList;
@@ -49,7 +50,7 @@ public class AccountMetricAdapter extends RecyclerView.Adapter<AccountMetricAdap
         }
 
         void bind(AccountMetric item) {
-            binding.tvLabel.setText(item.getName());
+            binding.tvLabel.setText(MetricNameTranslator.toChinese(item.getName()));
             binding.tvValue.setText(item.getValue());
         }
     }

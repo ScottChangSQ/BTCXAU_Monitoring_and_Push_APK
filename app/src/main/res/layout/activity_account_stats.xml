@@ -106,12 +106,14 @@
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingTop="0dp"
                             android:paddingBottom="0dp"
+                            android:paddingTop="0dp"
                             android:text="1D"
                             android:textAllCaps="false"
-                            android:textSize="12sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange7d"
@@ -119,12 +121,14 @@
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingTop="0dp"
                             android:paddingBottom="0dp"
+                            android:paddingTop="0dp"
                             android:text="7D"
                             android:textAllCaps="false"
-                            android:textSize="12sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1m"
@@ -132,12 +136,14 @@
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingTop="0dp"
                             android:paddingBottom="0dp"
+                            android:paddingTop="0dp"
                             android:text="1M"
                             android:textAllCaps="false"
-                            android:textSize="12sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange3m"
@@ -145,12 +151,14 @@
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingTop="0dp"
                             android:paddingBottom="0dp"
+                            android:paddingTop="0dp"
                             android:text="3M"
                             android:textAllCaps="false"
-                            android:textSize="12sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1y"
@@ -158,12 +166,14 @@
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingTop="0dp"
                             android:paddingBottom="0dp"
+                            android:paddingTop="0dp"
                             android:text="1Y"
                             android:textAllCaps="false"
-                            android:textSize="12sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRangeAll"
@@ -171,12 +181,14 @@
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:maxLines="1"
                             android:minWidth="0dp"
-                            android:paddingTop="0dp"
                             android:paddingBottom="0dp"
+                            android:paddingTop="0dp"
                             android:text="ALL"
                             android:textAllCaps="false"
-                            android:textSize="12sp" />
+                            android:textSize="10sp" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <LinearLayout
@@ -332,22 +344,14 @@
 
                     <EditText
                         android:id="@+id/etTradeSearch"
-                        android:layout_width="match_parent"
-                        android:layout_height="34dp"
-                        android:layout_marginTop="6dp"
-                        android:background="@drawable/bg_inline_button"
-                        android:hint="@string/trade_search_hint"
-                        android:imeOptions="actionDone"
-                        android:maxLines="1"
-                        android:paddingLeft="12dp"
-                        android:paddingRight="12dp"
-                        android:textColor="@color/text_primary"
-                        android:textColorHint="@color/text_secondary" />
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:visibility="gone" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
+                        android:layout_marginTop="8dp"
                         android:orientation="horizontal">
 
                         <Spinner
@@ -360,14 +364,14 @@
                             android:id="@+id/spinnerTradeSide"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
+                            android:layout_marginStart="6dp"
                             android:layout_weight="1" />
 
                         <Spinner
                             android:id="@+id/spinnerTradeTime"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
+                            android:layout_marginStart="6dp"
                             android:layout_weight="1" />
                     </LinearLayout>
 

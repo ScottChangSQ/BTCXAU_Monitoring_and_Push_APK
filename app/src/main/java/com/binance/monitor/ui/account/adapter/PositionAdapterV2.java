@@ -30,13 +30,19 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         Set<String> next = new HashSet<>();
         if (data != null) {
             for (PositionItem item : data) {
-                if (expandedKeys.contains(keyOf(item))) next.add(keyOf(item));
+                String key = keyOf(item);
+                if (expandedKeys.contains(key)) {
+                    next.add(key);
+                }
             }
         }
         expandedKeys.clear();
         expandedKeys.addAll(next);
+
         items.clear();
-        if (data != null) items.addAll(data);
+        if (data != null) {
+            items.addAll(data);
+        }
         notifyDataSetChanged();
     }
 
@@ -53,21 +59,31 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         holder.bind(item, expanded);
         holder.binding.layoutHeader.setOnClickListener(v -> {
             String key = keyOf(item);
-            if (expandedKeys.contains(key)) expandedKeys.remove(key);
-            else expandedKeys.add(key);
+            if (expandedKeys.contains(key)) {
+                expandedKeys.remove(key);
+            } else {
+                expandedKeys.add(key);
+            }
             notifyItemChanged(holder.getBindingAdapterPosition());
         });
     }
 
     @Override
-    public int getItemCount() { return items.size(); }
+    public int getItemCount() {
+        return items.size();
+    }
 
-    private String keyOf(PositionItem item) { return item.getCode() + "|" + item.getSide(); }
+    private String keyOf(PositionItem item) {
+        return item.getCode() + "|" + item.getSide();
+    }
 
     static class Holder extends RecyclerView.ViewHolder {
         private final ItemPositionBinding binding;
 
-        Holder(ItemPositionBinding binding) { super(binding.getRoot()); this.binding = binding; }
+        Holder(ItemPositionBinding binding) {
+            super(binding.getRoot());
+            this.binding = binding;
+        }
 
         void bind(PositionItem item, boolean expanded) {
             int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
@@ -77,23 +93,41 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                     item.getProductName(), sideCn(item.getSide()), item.getQuantity(), pnlText);
             SpannableString span = new SpannableString(raw);
             int start = raw.lastIndexOf(pnlText);
-            if (start >= 0) span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if (start >= 0) {
+                span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
             binding.tvSummary.setText(span);
 
             binding.tvExpandHint.setText(expanded ? "收起" : "展开");
             binding.layoutDetail.setVisibility(expanded ? View.VISIBLE : View.GONE);
+
             binding.tvProduct.setText(String.format(Locale.getDefault(), "产品 %s (%s)", item.getProductName(), item.getCode()));
-            binding.tvBase.setText(String.format(Locale.getDefault(), "持仓 %.2f | 可卖 %.2f | 成本 $%s | 最新 $%s",
-                    item.getQuantity(), item.getSellableQuantity(),
-                    FormatUtils.formatPrice(item.getCostPrice()), FormatUtils.formatPrice(item.getLatestPrice())));
-            binding.tvMetrics.setText(String.format(Locale.getDefault(), "市值 $%s | 占比 %.2f%% | 挂单 %d 笔 / %.2f 手",
-                    FormatUtils.formatPrice(item.getMarketValue()), item.getPositionRatio() * 100d, item.getPendingCount(), item.getPendingLots()));
-            binding.tvPnL.setText(String.format(Locale.getDefault(), "当日 %s | 累计 %s | 收益率 %+.2f%%",
-                    signedMoney(item.getDayPnL()), signedMoney(item.getTotalPnL()), item.getReturnRate() * 100d));
+            binding.tvBase.setText(String.format(Locale.getDefault(),
+                    "持仓 %.2f | 可卖 %.2f | 成本 $%s | 最新 $%s",
+                    item.getQuantity(),
+                    item.getSellableQuantity(),
+                    FormatUtils.formatPrice(item.getCostPrice()),
+                    FormatUtils.formatPrice(item.getLatestPrice())));
+            binding.tvMetrics.setText(String.format(Locale.getDefault(),
+                    "市值 $%s | 占比 %.2f%% | 挂单 %d 笔 / %.2f 手",
+                    FormatUtils.formatPrice(item.getMarketValue()),
+                    item.getPositionRatio() * 100d,
+                    item.getPendingCount(),
+                    item.getPendingLots()));
+            binding.tvPnL.setText(String.format(Locale.getDefault(),
+                    "当日 %s | 累计 %s | 收益率 %+.2f%%",
+                    signedMoney(item.getDayPnL()),
+                    signedMoney(item.getTotalPnL()),
+                    item.getReturnRate() * 100d));
             binding.tvPnL.setTextColor(pnlColor);
         }
 
-        private static String signedMoney(double value) { return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value)); }
-        private static String sideCn(String side) { return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side); }
+        private static String signedMoney(double value) {
+            return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
+        }
+
+        private static String sideCn(String side) {
+            return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
+        }
     }
 }
