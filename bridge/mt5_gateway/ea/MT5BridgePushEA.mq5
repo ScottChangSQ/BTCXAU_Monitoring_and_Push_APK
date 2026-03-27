@@ -4,6 +4,8 @@ input string GatewayUrl = "http://127.0.0.1:8787/v1/ea/snapshot";
 input string BridgeToken = "";
 input int PushIntervalSeconds = 5;
 input int RequestTimeoutMs = 3000;
+input int TradeHistoryDays = 3650;
+input int MaxTradeItems = 5000;
 
 string JsonEscape(string value)
 {
@@ -94,19 +96,25 @@ string BuildPositions()
          continue;
 
       string symbol = PositionGetString(POSITION_SYMBOL);
+      long positionType = PositionGetInteger(POSITION_TYPE);
+      string side = (positionType == POSITION_TYPE_BUY ? "Buy" : "Sell");
       double volume = PositionGetDouble(POSITION_VOLUME);
       double priceOpen = PositionGetDouble(POSITION_PRICE_OPEN);
       double priceCurrent = PositionGetDouble(POSITION_PRICE_CURRENT);
       double profit = PositionGetDouble(POSITION_PROFIT);
+      double takeProfit = PositionGetDouble(POSITION_TP);
+      double stopLoss = PositionGetDouble(POSITION_SL);
+      double storageFee = PositionGetDouble(POSITION_SWAP);
       double marketValue = MathAbs(volume * priceCurrent * GetContractSize(symbol));
       double ratio = 0.0;
       if(totalMarketValue > 0.0)
          ratio = marketValue / totalMarketValue;
 
       string item = StringFormat(
-         "{\"productName\":\"%s\",\"code\":\"%s\",\"quantity\":%.4f,\"sellableQuantity\":%.4f,\"costPrice\":%.5f,\"latestPrice\":%.5f,\"marketValue\":%.2f,\"positionRatio\":%.6f,\"dayPnL\":%.2f,\"totalPnL\":%.2f,\"returnRate\":%.6f}",
+         "{\"productName\":\"%s\",\"code\":\"%s\",\"side\":\"%s\",\"quantity\":%.4f,\"sellableQuantity\":%.4f,\"costPrice\":%.5f,\"latestPrice\":%.5f,\"marketValue\":%.2f,\"positionRatio\":%.6f,\"dayPnL\":%.2f,\"totalPnL\":%.2f,\"returnRate\":%.6f,\"takeProfit\":%.5f,\"stopLoss\":%.5f,\"storageFee\":%.2f}",
          JsonEscape(symbol),
          JsonEscape(symbol),
+         side,
          volume,
          volume,
          priceOpen,
@@ -115,7 +123,10 @@ string BuildPositions()
          ratio,
          profit * 0.2,
          profit,
-         (priceOpen == 0.0 ? 0.0 : (priceCurrent - priceOpen) / priceOpen)
+         (priceOpen == 0.0 ? 0.0 : (priceCurrent - priceOpen) / priceOpen),
+         takeProfit,
+         stopLoss,
+         storageFee
       );
 
       if(!first)
@@ -130,7 +141,10 @@ string BuildPositions()
 
 string BuildTrades()
 {
-   datetime fromTime = TimeCurrent() - 30 * 24 * 60 * 60;
+   int historyDays = TradeHistoryDays;
+   if(historyDays <= 0)
+      historyDays = 3650;
+   datetime fromTime = TimeCurrent() - historyDays * 24 * 60 * 60;
    datetime toTime = TimeCurrent();
    if(!HistorySelect(fromTime, toTime))
       return "[]";
@@ -139,7 +153,9 @@ string BuildTrades()
    if(total <= 0)
       return "[]";
 
-   int maxItems = 80;
+   int maxItems = MaxTradeItems;
+   if(maxItems <= 0 || maxItems > total)
+      maxItems = total;
    int start = total - 1;
    int end = MathMax(0, total - maxItems);
 
@@ -157,20 +173,29 @@ string BuildTrades()
       string side = (dealType == DEAL_TYPE_BUY ? "Buy" : "Sell");
       double volume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
       double price = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
-      double fee = MathAbs(HistoryDealGetDouble(dealTicket, DEAL_COMMISSION) + HistoryDealGetDouble(dealTicket, DEAL_SWAP));
+      double commission = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
+      double swapFee = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
+      double fee = MathAbs(commission + swapFee);
+      double profit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
       long timeMs = (long)HistoryDealGetInteger(dealTicket, DEAL_TIME) * 1000;
       double amount = MathAbs(volume * price * GetContractSize(symbol));
       string comment = HistoryDealGetString(dealTicket, DEAL_COMMENT);
 
       string item = StringFormat(
-         "{\"timestamp\":%I64d,\"productName\":\"%s\",\"code\":\"%s\",\"side\":\"%s\",\"price\":%.5f,\"quantity\":%.4f,\"amount\":%.2f,\"fee\":%.2f,\"remark\":\"%s\"}",
+         "{\"timestamp\":%I64d,\"productName\":\"%s\",\"code\":\"%s\",\"side\":\"%s\",\"price\":%.5f,\"openPrice\":%.5f,\"closePrice\":%.5f,\"quantity\":%.4f,\"amount\":%.2f,\"fee\":%.2f,\"profit\":%.2f,\"openTime\":%I64d,\"closeTime\":%I64d,\"storageFee\":%.2f,\"remark\":\"%s\"}",
          timeMs,
          JsonEscape(symbol),
          JsonEscape(symbol),
          side,
          price,
+         price,
+         price,
          volume,
          amount,
+         fee,
+         profit,
+         timeMs,
+         timeMs,
          fee,
          JsonEscape(comment)
       );
@@ -246,11 +271,12 @@ bool PushSnapshot()
 
 int OnInit()
 {
-   if(PushIntervalSeconds < 1)
-      PushIntervalSeconds = 5;
+   int intervalSeconds = PushIntervalSeconds;
+   if(intervalSeconds < 1)
+      intervalSeconds = 5;
 
-   EventSetTimer(PushIntervalSeconds);
-   Print("MT5BridgePushEA started. Gateway=", GatewayUrl, " interval=", PushIntervalSeconds, "s");
+   EventSetTimer(intervalSeconds);
+   Print("MT5BridgePushEA started. Gateway=", GatewayUrl, " interval=", intervalSeconds, "s");
    PushSnapshot();
    return(INIT_SUCCEEDED);
 }

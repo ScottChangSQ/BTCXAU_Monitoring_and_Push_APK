@@ -11,6 +11,7 @@ import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.style.ForegroundColorSpan;
 import android.util.TypedValue;
+import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -36,6 +37,7 @@ import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
+import com.binance.monitor.data.local.LogManager;
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.ActivityAccountStatsBinding;
@@ -59,14 +61,18 @@ import com.google.android.material.datepicker.MaterialDatePicker;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.text.SimpleDateFormat;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
@@ -74,6 +80,7 @@ import java.util.concurrent.Executors;
 
 public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final double ACCOUNT_INITIAL_BALANCE = 15_019.45d;
+    private static final double TRADE_PNL_ZERO_THRESHOLD = 0.01d;
     private static final int RETURNS_CELL_MARGIN_DP = 0;
     private static final int RETURNS_HEADER_HEIGHT_DP = 36;
     private static final int RETURNS_BODY_HEIGHT_DP = 56;
@@ -84,9 +91,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final String FILTER_PRODUCT = "全部产品";
     private static final String FILTER_SIDE = "全部方向";
     private static final String FILTER_DATE = "全部日期";
-    private static final String FILTER_LAST_1D = "近1日";
-    private static final String FILTER_LAST_7D = "近7日";
-    private static final String FILTER_LAST_30D = "近30日";
     private static final String FILTER_SORT = "排序方式";
     private static final String SORT_CLOSE_TIME = "平仓时间";
     private static final String SORT_OPEN_TIME = "开仓时间";
@@ -105,7 +109,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final String PREF_MANUAL_END_TEXT = "pref_manual_end_text";
     private static final String PREF_FILTER_PRODUCT = "pref_filter_product";
     private static final String PREF_FILTER_SIDE = "pref_filter_side";
-    private static final String PREF_FILTER_DATE = "pref_filter_date";
     private static final String PREF_FILTER_SORT = "pref_filter_sort";
     private static final String PREF_FILTER_SORT_DESC = "pref_filter_sort_desc";
 
@@ -131,7 +134,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private final SimpleDateFormat monthTitleFormat = new SimpleDateFormat("yyyy年M月", Locale.getDefault());
 
     private ActivityAccountStatsBinding binding;
-    private AccountStatsFallbackDataSource fallbackDataSource;
     private AccountStatsPreloadManager preloadManager;
     private Mt5BridgeGatewayClient gatewayClient;
     private AccountMetricAdapter overviewAdapter;
@@ -141,6 +143,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private PendingOrderAdapter pendingOrderAdapter;
     private TradeRecordAdapterV2 tradeAdapter;
     private StatsMetricAdapter statsAdapter;
+    private LogManager logManager;
     private ExecutorService ioExecutor;
 
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
@@ -153,11 +156,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private long returnStatsAnchorDateMs;
     private String selectedTradeProductFilter = FILTER_PRODUCT;
     private String selectedTradeSideFilter = FILTER_SIDE;
-    private String selectedTradeDateFilter = FILTER_DATE;
     private String selectedTradeSortFilter = FILTER_SORT;
-    private String lastExplicitTradeSortMode = "";
-    private boolean tradeSortDescending = false;
-    private boolean sortSpinnerUserAction;
+    private String lastExplicitTradeSortMode = SORT_CLOSE_TIME;
+    private boolean tradeSortDescending = true;
     private double latestCumulativePnl;
 
     private boolean manualCurveRangeEnabled;
@@ -186,6 +187,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private List<PositionItem> connectedPositionCache = new ArrayList<>();
     private List<PositionItem> connectedPendingCache = new ArrayList<>();
     private List<AccountMetric> connectedOverviewCache = new ArrayList<>();
+    private final Map<String, PositionLogState> lastPositionLogStates = new HashMap<>();
+    private final Map<String, PendingLogState> lastPendingLogStates = new HashMap<>();
+    private final Set<String> knownTradeOpenLogKeys = new HashSet<>();
+    private final Set<String> knownTradeCloseLogKeys = new HashSet<>();
+    private boolean accountLogBaselineReady;
+    private Boolean lastLoggedConnectedState;
+    private String lastLoggedSource = "";
+    private String lastLoggedGateway = "";
+    private String lastLoggedError = "";
 
     private final Runnable refreshRunnable = new Runnable() {
         @Override
@@ -201,9 +211,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding = ActivityAccountStatsBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        fallbackDataSource = new AccountStatsFallbackDataSource();
         preloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
         gatewayClient = new Mt5BridgeGatewayClient();
+        logManager = LogManager.getInstance(getApplicationContext());
         ioExecutor = Executors.newSingleThreadExecutor();
 
         overviewAdapter = new AccountMetricAdapter();
@@ -335,9 +345,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         selectedTradeProductFilter = prefs.getString(PREF_FILTER_PRODUCT, FILTER_PRODUCT);
         selectedTradeSideFilter = prefs.getString(PREF_FILTER_SIDE, FILTER_SIDE);
-        selectedTradeDateFilter = prefs.getString(PREF_FILTER_DATE, FILTER_DATE);
         selectedTradeSortFilter = prefs.getString(PREF_FILTER_SORT, FILTER_SORT);
-        tradeSortDescending = prefs.getBoolean(PREF_FILTER_SORT_DESC, false);
+        tradeSortDescending = prefs.getBoolean(PREF_FILTER_SORT_DESC, true);
 
         if (selectedTradeProductFilter == null || selectedTradeProductFilter.trim().isEmpty()) {
             selectedTradeProductFilter = FILTER_PRODUCT;
@@ -345,14 +354,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (selectedTradeSideFilter == null || selectedTradeSideFilter.trim().isEmpty()) {
             selectedTradeSideFilter = FILTER_SIDE;
         }
-        if (selectedTradeDateFilter == null || selectedTradeDateFilter.trim().isEmpty()) {
-            selectedTradeDateFilter = FILTER_DATE;
-        }
         if (selectedTradeSortFilter == null || selectedTradeSortFilter.trim().isEmpty()) {
             selectedTradeSortFilter = FILTER_SORT;
         }
         lastExplicitTradeSortMode = FILTER_SORT.equals(selectedTradeSortFilter)
-                ? ""
+                ? SORT_CLOSE_TIME
                 : normalizeSortValue(selectedTradeSortFilter);
     }
 
@@ -362,7 +368,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         selectedTradeProductFilter = safeSpinnerValue(binding.spinnerTradeProduct, selectedTradeProductFilter, FILTER_PRODUCT);
         selectedTradeSideFilter = safeSpinnerValue(binding.spinnerTradeSide, selectedTradeSideFilter, FILTER_SIDE);
-        selectedTradeDateFilter = safeSpinnerValue(binding.spinnerTradeTime, selectedTradeDateFilter, FILTER_DATE);
         selectedTradeSortFilter = safeSpinnerValue(binding.spinnerTradeSort, selectedTradeSortFilter, FILTER_SORT);
 
         String manualStartText = trim(binding.etRangeStart.getText() == null
@@ -385,7 +390,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         editor.putString(PREF_MANUAL_END_TEXT, manualEndText);
         editor.putString(PREF_FILTER_PRODUCT, selectedTradeProductFilter);
         editor.putString(PREF_FILTER_SIDE, selectedTradeSideFilter);
-        editor.putString(PREF_FILTER_DATE, selectedTradeDateFilter);
         editor.putString(PREF_FILTER_SORT, selectedTradeSortFilter);
         editor.putBoolean(PREF_FILTER_SORT_DESC, tradeSortDescending);
         editor.apply();
@@ -498,52 +502,38 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void setupFilters() {
         ArrayAdapter<String> productAdapter = createTradeFilterAdapter(new String[]{FILTER_PRODUCT});
         binding.spinnerTradeProduct.setAdapter(productAdapter);
-        binding.spinnerTradeProduct.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
+        binding.spinnerTradeProduct.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
+            updateTradeFilterDisplayTexts();
+            refreshTrades();
+        }));
 
         ArrayAdapter<String> sideAdapter = createTradeFilterAdapter(new String[]{FILTER_SIDE, "\u4e70\u5165", "\u5356\u51fa"});
         binding.spinnerTradeSide.setAdapter(sideAdapter);
-        binding.spinnerTradeSide.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
-
-        ArrayAdapter<String> timeAdapter = createTradeFilterAdapter(
-                new String[]{FILTER_DATE, FILTER_LAST_1D, FILTER_LAST_7D, FILTER_LAST_30D});
-        binding.spinnerTradeTime.setAdapter(timeAdapter);
-        binding.spinnerTradeTime.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
+        binding.spinnerTradeSide.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
+            updateTradeFilterDisplayTexts();
+            refreshTrades();
+        }));
 
         ArrayAdapter<String> sortAdapter = createTradeFilterAdapter(
                 new String[]{FILTER_SORT, SORT_CLOSE_TIME, SORT_OPEN_TIME, SORT_PROFIT});
         binding.spinnerTradeSort.setAdapter(sortAdapter);
         binding.spinnerTradeSort.setOnTouchListener((v, event) -> {
-            if (event != null && event.getAction() == MotionEvent.ACTION_DOWN) {
-                sortSpinnerUserAction = true;
+            if (event != null && event.getAction() == MotionEvent.ACTION_UP) {
+                showTradeSortPickerDialog();
             }
-            return false;
-        });
-        binding.spinnerTradeSort.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                String raw = parent.getItemAtPosition(position) == null
-                        ? FILTER_SORT
-                        : String.valueOf(parent.getItemAtPosition(position));
-                handleSortSelection(raw, sortSpinnerUserAction);
-                sortSpinnerUserAction = false;
-                refreshTrades();
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-                sortSpinnerUserAction = false;
-            }
+            return true;
         });
 
         setSpinnerSelectionByValue(binding.spinnerTradeProduct, selectedTradeProductFilter);
         setSpinnerSelectionByValue(binding.spinnerTradeSide, selectedTradeSideFilter);
-        setSpinnerSelectionByValue(binding.spinnerTradeTime, selectedTradeDateFilter);
         setSpinnerSelectionByValue(binding.spinnerTradeSort, selectedTradeSortFilter);
         selectedTradeProductFilter = safeSpinnerValue(binding.spinnerTradeProduct, selectedTradeProductFilter, FILTER_PRODUCT);
         selectedTradeSideFilter = safeSpinnerValue(binding.spinnerTradeSide, selectedTradeSideFilter, FILTER_SIDE);
-        selectedTradeDateFilter = safeSpinnerValue(binding.spinnerTradeTime, selectedTradeDateFilter, FILTER_DATE);
         selectedTradeSortFilter = safeSpinnerValue(binding.spinnerTradeSort, selectedTradeSortFilter, FILTER_SORT);
-        forceRenderTradeFilterSpinners();
+        updateTradeFilterDisplayTexts();
+        binding.tvTradeProductLabel.setOnClickListener(v -> binding.spinnerTradeProduct.performClick());
+        binding.tvTradeSideLabel.setOnClickListener(v -> binding.spinnerTradeSide.performClick());
+        binding.tvTradeSortLabel.setOnClickListener(v -> showTradeSortPickerDialog());
 
         binding.btnApplyManualRange.setOnClickListener(v -> applyManualCurveRange());
     }
@@ -552,84 +542,91 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         final List<String> items = new ArrayList<>();
         if (options != null) {
             for (String option : options) {
-                items.add(option == null ? "" : option);
+                String value = option == null ? "" : option.trim();
+                if (!value.isEmpty()) {
+                    items.add(value);
+                }
             }
         }
-        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
+        if (items.isEmpty()) {
+            items.add("--");
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
                 this,
                 R.layout.item_spinner_filter,
                 android.R.id.text1,
-                items) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                TextView textView = resolveTradeFilterTextView(view);
-                bindTradeFilterTextView(textView, getItem(position), true);
-                return view;
-            }
-
-            @Override
-            public View getDropDownView(int position, View convertView, ViewGroup parent) {
-                View view = super.getDropDownView(position, convertView, parent);
-                TextView textView = resolveTradeFilterTextView(view);
-                bindTradeFilterTextView(textView, getItem(position), false);
-                return view;
-            }
-        };
+                items
+        );
         adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
         return adapter;
     }
 
-    @Nullable
-    private TextView resolveTradeFilterTextView(View view) {
-        if (view instanceof TextView) {
-            return (TextView) view;
-        }
-        if (view == null) {
-            return null;
-        }
-        View text = view.findViewById(android.R.id.text1);
-        return text instanceof TextView ? (TextView) text : null;
+    private void updateTradeFilterDisplayTexts() {
+        updateTradeFilterDisplayTexts(
+                safeSpinnerValue(binding.spinnerTradeProduct, selectedTradeProductFilter, FILTER_PRODUCT),
+                safeSpinnerValue(binding.spinnerTradeSide, selectedTradeSideFilter, FILTER_SIDE),
+                safeSpinnerValue(binding.spinnerTradeSort, selectedTradeSortFilter, FILTER_SORT)
+        );
     }
 
-    private void bindTradeFilterTextView(@Nullable TextView textView, @Nullable String value, boolean collapsed) {
-        if (textView == null) {
+    private void updateTradeFilterDisplayTexts(String product, String side, String sort) {
+        setTradeFilterLabel(binding.tvTradeProductLabel, product, FILTER_PRODUCT);
+        setTradeFilterLabel(binding.tvTradeSideLabel, side, FILTER_SIDE);
+        setTradeFilterLabel(binding.tvTradeSortLabel, sort, FILTER_SORT);
+    }
+
+    private void setTradeFilterLabel(TextView labelView, String value, String fallback) {
+        if (labelView == null) {
             return;
         }
-        textView.setText(value == null ? "" : value);
-        textView.setSingleLine(true);
-        textView.setMaxLines(1);
-        textView.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        textView.setIncludeFontPadding(false);
-        textView.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        textView.setTextColor(0xFFFFFFFF);
-        textView.setShadowLayer(1.2f, 0f, 0f, 0x99000000);
-        textView.setVisibility(View.VISIBLE);
-        textView.setAlpha(1f);
-        textView.setPadding(dpToPx(10), dpToPx(7), collapsed ? dpToPx(24) : dpToPx(10), dpToPx(7));
-        textView.setMinHeight(dpToPx(36));
-        if (!collapsed) {
-            textView.setBackgroundColor(ContextCompat.getColor(this, R.color.bg_surface));
-        } else {
-            textView.setBackgroundColor(0x00000000);
+        String text = trim(value);
+        if (text.isEmpty()) {
+            text = fallback;
         }
+        labelView.setText(text);
     }
 
     private void handleSortSelection(String rawSortValue, boolean userAction) {
         String raw = (rawSortValue == null || rawSortValue.trim().isEmpty()) ? FILTER_SORT : rawSortValue;
         String normalized = normalizeSortValue(raw);
-        if (userAction && !FILTER_SORT.equals(raw)) {
-            if (normalized.equals(lastExplicitTradeSortMode)) {
+        if (FILTER_SORT.equals(raw)) {
+            selectedTradeSortFilter = raw;
+            return;
+        }
+        if (userAction) {
+            if (normalized.equals(lastExplicitTradeSortMode)
+                    && !FILTER_SORT.equals(selectedTradeSortFilter)) {
                 tradeSortDescending = !tradeSortDescending;
             } else {
                 tradeSortDescending = false;
             }
-            lastExplicitTradeSortMode = normalized;
-        } else if (!FILTER_SORT.equals(raw)) {
-            lastExplicitTradeSortMode = normalized;
         }
+        lastExplicitTradeSortMode = normalized;
         selectedTradeSortFilter = raw;
+    }
+
+    private void showTradeSortPickerDialog() {
+        String[] sortOptions = new String[]{SORT_CLOSE_TIME, SORT_OPEN_TIME, SORT_PROFIT};
+        String current = normalizeSortValue(selectedTradeSortFilter);
+        int checked = 0;
+        for (int i = 0; i < sortOptions.length; i++) {
+            if (sortOptions[i].equals(current)) {
+                checked = i;
+                break;
+            }
+        }
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("排序方式")
+                .setSingleChoiceItems(sortOptions, checked, (dialog, which) -> {
+                    String chosen = sortOptions[which];
+                    handleSortSelection(chosen, true);
+                    setSpinnerSelectionByValue(binding.spinnerTradeSort, chosen);
+                    updateTradeFilterDisplayTexts();
+                    refreshTrades();
+                    dialog.dismiss();
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private String normalizeSortValue(String rawSort) {
@@ -657,27 +654,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (adapter.getCount() > 0) {
             spinner.setSelection(0, false);
         }
-    }
-
-    private void forceRenderTradeFilterSpinners() {
-        forceRenderSpinnerSelectedText(binding.spinnerTradeProduct);
-        forceRenderSpinnerSelectedText(binding.spinnerTradeSide);
-        forceRenderSpinnerSelectedText(binding.spinnerTradeTime);
-        forceRenderSpinnerSelectedText(binding.spinnerTradeSort);
-    }
-
-    private void forceRenderSpinnerSelectedText(Spinner spinner) {
-        if (spinner == null) {
-            return;
-        }
-        spinner.post(() -> {
-            View selectedView = spinner.getSelectedView();
-            TextView textView = resolveTradeFilterTextView(selectedView);
-            if (textView != null) {
-                Object selected = spinner.getSelectedItem();
-                bindTradeFilterTextView(textView, selected == null ? "" : String.valueOf(selected), true);
-            }
-        });
     }
 
     private void configureToggleButtonsV2() {
@@ -1210,6 +1186,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         setConnectionStatus(cache.isConnected());
         updateOverviewHeader();
+        logConnectionEvent(cache.isConnected());
         applySnapshot(cache.getSnapshot(), cache.isConnected());
     }
 
@@ -1250,7 +1227,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 updatedAt = remote.getUpdatedAt() > 0L ? remote.getUpdatedAt() : System.currentTimeMillis();
                 error = "";
             } else {
-                snapshot = fallbackDataSource.load(fetchRange);
+                // 断线时保持当前界面数据，不回落到演示/备用数据。
+                snapshot = null;
                 connected = false;
                 account = ACCOUNT;
                 server = SERVER;
@@ -1279,7 +1257,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
                 setConnectionStatus(finalConnected);
                 updateOverviewHeader();
-                applySnapshot(finalSnapshot, finalConnected);
+                logConnectionEvent(finalConnected);
+                if (finalSnapshot != null) {
+                    applySnapshot(finalSnapshot, finalConnected);
+                }
                 loading = false;
             });
         });
@@ -1309,6 +1290,318 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
         binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(this,
                 connected ? R.color.bg_primary : R.color.text_secondary));
+    }
+
+    private void logConnectionEvent(boolean connected) {
+        if (logManager == null) {
+            return;
+        }
+        boolean stateChanged = lastLoggedConnectedState == null || lastLoggedConnectedState != connected;
+        if (stateChanged) {
+            if (connected) {
+                logManager.info("AccountStats connected: account=" + connectedAccount
+                        + ", server=" + connectedServer
+                        + ", source=" + trim(connectedSource));
+            } else {
+                String message = "AccountStats disconnected: fallback source=" + trim(connectedSource);
+                String error = trim(connectedError);
+                if (!error.isEmpty()) {
+                    message = message + ", error=" + error;
+                }
+                logManager.warn(message);
+            }
+        }
+
+        String source = trim(connectedSource);
+        if (!source.equals(lastLoggedSource)) {
+            logManager.info("AccountStats data source -> " + source);
+            lastLoggedSource = source;
+        }
+
+        String gateway = trim(connectedGateway);
+        if (!gateway.equals(lastLoggedGateway) && !gateway.isEmpty()) {
+            logManager.info("AccountStats gateway -> " + gateway);
+            lastLoggedGateway = gateway;
+        }
+
+        String error = trim(connectedError);
+        if (!connected && !error.isEmpty() && !error.equals(lastLoggedError)) {
+            logManager.warn("AccountStats gateway error: " + error);
+        }
+        lastLoggedError = error;
+        lastLoggedConnectedState = connected;
+    }
+
+    private void logAccountSnapshotEvents(List<PositionItem> positions,
+                                          List<PositionItem> pendingOrders,
+                                          List<TradeRecordItem> trades,
+                                          boolean remoteConnected) {
+        if (logManager == null || !remoteConnected) {
+            return;
+        }
+
+        Map<String, PositionLogState> currentPositions = buildPositionLogStateMap(positions);
+        Map<String, PendingLogState> currentPending = buildPendingLogStateMap(pendingOrders);
+
+        if (!accountLogBaselineReady) {
+            lastPositionLogStates.clear();
+            lastPositionLogStates.putAll(currentPositions);
+            lastPendingLogStates.clear();
+            lastPendingLogStates.putAll(currentPending);
+            knownTradeOpenLogKeys.clear();
+            knownTradeCloseLogKeys.clear();
+            if (trades != null) {
+                for (TradeRecordItem item : trades) {
+                    knownTradeOpenLogKeys.add(buildTradeOpenLogKey(item));
+                    knownTradeCloseLogKeys.add(buildTradeCloseLogKey(item));
+                }
+            }
+            accountLogBaselineReady = true;
+            logManager.info("AccountStats log baseline ready: positions=" + currentPositions.size()
+                    + ", pending=" + currentPending.size()
+                    + ", trades=" + (trades == null ? 0 : trades.size()));
+            return;
+        }
+
+        final double qtyEps = 1e-6;
+        Set<String> positionKeys = new HashSet<>();
+        positionKeys.addAll(lastPositionLogStates.keySet());
+        positionKeys.addAll(currentPositions.keySet());
+        for (String key : positionKeys) {
+            PositionLogState previous = lastPositionLogStates.get(key);
+            PositionLogState current = currentPositions.get(key);
+            if (previous == null && current != null && Math.abs(current.quantity) > qtyEps) {
+                logManager.info("Position opened: " + current.code + " " + current.side
+                        + " qty=" + shortQty(current.quantity)
+                        + " avgCost=$" + FormatUtils.formatPrice(current.avgCostPrice));
+                continue;
+            }
+            if (previous != null && (current == null || Math.abs(current.quantity) <= qtyEps)) {
+                logManager.info("Position closed: " + previous.code + " " + previous.side
+                        + " qty=" + shortQty(previous.quantity));
+                continue;
+            }
+            if (previous == null || current == null) {
+                continue;
+            }
+            double delta = current.quantity - previous.quantity;
+            double threshold = Math.max(1e-4, Math.max(Math.abs(previous.quantity), Math.abs(current.quantity)) * 0.001d);
+            if (Math.abs(delta) >= threshold) {
+                if (delta > 0d) {
+                    logManager.info("Position increased: " + current.code + " " + current.side
+                            + " +" + shortQty(delta) + " -> " + shortQty(current.quantity));
+                } else {
+                    logManager.info("Position reduced: " + current.code + " " + current.side
+                            + " " + shortQty(delta) + " -> " + shortQty(current.quantity));
+                }
+            }
+        }
+
+        Set<String> pendingKeys = new HashSet<>();
+        pendingKeys.addAll(lastPendingLogStates.keySet());
+        pendingKeys.addAll(currentPending.keySet());
+        for (String key : pendingKeys) {
+            PendingLogState previous = lastPendingLogStates.get(key);
+            PendingLogState current = currentPending.get(key);
+            if (previous == null && current != null && current.count > 0) {
+                logManager.info("Pending added: " + current.code + " " + current.side
+                        + " lots=" + shortQty(current.lots) + ", count=" + current.count);
+                continue;
+            }
+            if (previous != null && (current == null || current.count <= 0 || Math.abs(current.lots) <= qtyEps)) {
+                logManager.info("Pending removed: " + previous.code + " " + previous.side
+                        + " lots=" + shortQty(previous.lots) + ", count=" + previous.count);
+                continue;
+            }
+            if (previous == null || current == null) {
+                continue;
+            }
+            boolean countChanged = previous.count != current.count;
+            boolean lotsChanged = Math.abs(current.lots - previous.lots) >= Math.max(1e-4, Math.abs(previous.lots) * 0.01d);
+            if (countChanged || lotsChanged) {
+                logManager.info("Pending changed: " + current.code + " " + current.side
+                        + " lots " + shortQty(previous.lots) + " -> " + shortQty(current.lots)
+                        + ", count " + previous.count + " -> " + current.count);
+            }
+        }
+
+        if (trades != null && !trades.isEmpty()) {
+            List<TradeRecordItem> orderedTrades = new ArrayList<>(trades);
+            orderedTrades.sort(Comparator.comparingLong(this::resolveCloseTime));
+            int budget = 80;
+            for (TradeRecordItem item : orderedTrades) {
+                if (budget <= 0) {
+                    break;
+                }
+                String openKey = buildTradeOpenLogKey(item);
+                if (knownTradeOpenLogKeys.add(openKey)) {
+                    logManager.info("Trade opened: " + symbolForLog(item.getCode(), item.getProductName())
+                            + " " + sideForLog(item.getSide())
+                            + " qty=" + shortQty(item.getQuantity())
+                            + " open=" + FormatUtils.formatDateTime(resolveOpenTime(item)));
+                    budget--;
+                    if (budget <= 0) {
+                        break;
+                    }
+                }
+
+                String closeKey = buildTradeCloseLogKey(item);
+                if (knownTradeCloseLogKeys.add(closeKey)) {
+                    logManager.info("Trade closed: " + symbolForLog(item.getCode(), item.getProductName())
+                            + " " + sideForLog(item.getSide())
+                            + " qty=" + shortQty(item.getQuantity())
+                            + " pnl=" + signedMoney(item.getProfit())
+                            + " close=" + FormatUtils.formatDateTime(resolveCloseTime(item)));
+                    budget--;
+                }
+            }
+        }
+
+        if (knownTradeOpenLogKeys.size() > 50_000 || knownTradeCloseLogKeys.size() > 50_000) {
+            knownTradeOpenLogKeys.clear();
+            knownTradeCloseLogKeys.clear();
+            if (trades != null) {
+                for (TradeRecordItem item : trades) {
+                    knownTradeOpenLogKeys.add(buildTradeOpenLogKey(item));
+                    knownTradeCloseLogKeys.add(buildTradeCloseLogKey(item));
+                }
+            }
+        }
+
+        lastPositionLogStates.clear();
+        lastPositionLogStates.putAll(currentPositions);
+        lastPendingLogStates.clear();
+        lastPendingLogStates.putAll(currentPending);
+    }
+
+    private Map<String, PositionLogState> buildPositionLogStateMap(List<PositionItem> positions) {
+        Map<String, PositionLogState> result = new HashMap<>();
+        if (positions == null || positions.isEmpty()) {
+            return result;
+        }
+        for (PositionItem item : positions) {
+            if (item == null) {
+                continue;
+            }
+            double qty = Math.max(0d, Math.abs(item.getQuantity()));
+            if (qty <= 1e-9) {
+                continue;
+            }
+            String code = symbolForLog(item.getCode(), item.getProductName());
+            String side = sideForLog(item.getSide());
+            String key = code + "|" + side;
+            PositionLogState state = result.get(key);
+            if (state == null) {
+                state = new PositionLogState();
+                state.productName = trim(item.getProductName());
+                state.code = code;
+                state.side = side;
+                result.put(key, state);
+            }
+            state.quantity += qty;
+            state.costAmount += qty * Math.max(0d, item.getCostPrice());
+            state.latestPrice = Math.max(state.latestPrice, Math.max(0d, item.getLatestPrice()));
+        }
+        for (PositionLogState state : result.values()) {
+            state.avgCostPrice = state.quantity > 0d ? state.costAmount / state.quantity : 0d;
+        }
+        return result;
+    }
+
+    private Map<String, PendingLogState> buildPendingLogStateMap(List<PositionItem> pendingOrders) {
+        Map<String, PendingLogState> result = new HashMap<>();
+        if (pendingOrders == null || pendingOrders.isEmpty()) {
+            return result;
+        }
+        for (PositionItem item : pendingOrders) {
+            if (item == null) {
+                continue;
+            }
+            double lots = Math.max(0d, item.getPendingLots());
+            int count = Math.max(0, item.getPendingCount());
+            if (lots <= 1e-9 && count <= 0) {
+                continue;
+            }
+            String code = symbolForLog(item.getCode(), item.getProductName());
+            String side = sideForLog(item.getSide());
+            String key = code + "|" + side;
+            PendingLogState state = result.get(key);
+            if (state == null) {
+                state = new PendingLogState();
+                state.productName = trim(item.getProductName());
+                state.code = code;
+                state.side = side;
+                result.put(key, state);
+            }
+            state.lots += lots;
+            state.count += count;
+            double pendingPrice = item.getPendingPrice() > 0d ? item.getPendingPrice() : item.getLatestPrice();
+            if (pendingPrice > 0d) {
+                state.priceAmount += pendingPrice * Math.max(1d, lots);
+                state.priceWeight += Math.max(1d, lots);
+            }
+        }
+        for (PendingLogState state : result.values()) {
+            state.price = state.priceWeight > 0d ? state.priceAmount / state.priceWeight : 0d;
+        }
+        return result;
+    }
+
+    private String buildTradeOpenLogKey(TradeRecordItem item) {
+        String code = symbolForLog(item == null ? "" : item.getCode(), item == null ? "" : item.getProductName());
+        String side = sideForLog(item == null ? "" : item.getSide());
+        long open = item == null ? 0L : resolveOpenTime(item);
+        long qty = item == null ? 0L : Math.round(Math.abs(item.getQuantity()) * 10_000d);
+        long price = item == null ? 0L : Math.round(Math.abs(item.getPrice()) * 100d);
+        return code + "|" + side + "|" + open + "|" + qty + "|" + price;
+    }
+
+    private String buildTradeCloseLogKey(TradeRecordItem item) {
+        return buildTradeDedupeKey(item);
+    }
+
+    private String symbolForLog(String code, String productName) {
+        String normalizedCode = trim(code).toUpperCase(Locale.ROOT);
+        if (!normalizedCode.isEmpty()) {
+            return normalizedCode;
+        }
+        return trim(productName).toUpperCase(Locale.ROOT);
+    }
+
+    private String sideForLog(String side) {
+        String normalized = normalizeSide(trim(side));
+        if ("buy".equalsIgnoreCase(normalized)) {
+            return "Buy";
+        }
+        if ("sell".equalsIgnoreCase(normalized)) {
+            return "Sell";
+        }
+        return normalized;
+    }
+
+    private String shortQty(double value) {
+        return String.format(Locale.getDefault(), "%.2f", value);
+    }
+
+    private static final class PositionLogState {
+        private String productName;
+        private String code;
+        private String side;
+        private double quantity;
+        private double costAmount;
+        private double avgCostPrice;
+        private double latestPrice;
+    }
+
+    private static final class PendingLogState {
+        private String productName;
+        private String code;
+        private String side;
+        private double lots;
+        private int count;
+        private double priceAmount;
+        private double priceWeight;
+        private double price;
     }
 
     private void applySnapshot(AccountSnapshot snapshot, boolean remoteConnected) {
@@ -1356,10 +1649,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         List<CurvePoint> effectiveCurves = curveHistory.isEmpty()
                 ? snapshotCurves
                 : new ArrayList<>(curveHistory.values());
-        dataQualitySummary = buildDataQualitySummary(effectiveTrades, effectiveCurves);
+        dataQualitySummary = buildDataQualitySummary(effectiveTrades, effectiveCurves, basePositions);
 
-        baseTrades = pruneZeroProfitTrades(mergeOpenCloseTrades(effectiveTrades));
+        baseTrades = new ArrayList<>(effectiveTrades);
+        baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
         allCurvePoints = normalizeCurvePoints(effectiveCurves);
+        logAccountSnapshotEvents(basePositions, basePendingOrders, baseTrades, remoteConnected);
         ensureReturnStatsAnchor();
         if (!remoteConnected && !connectedOverviewCache.isEmpty()) {
             latestOverviewMetrics = new ArrayList<>(connectedOverviewCache);
@@ -1419,11 +1714,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-    private String buildDataQualitySummary(List<TradeRecordItem> trades, List<CurvePoint> curves) {
+    private String buildDataQualitySummary(List<TradeRecordItem> trades,
+                                           List<CurvePoint> curves,
+                                           List<PositionItem> positions) {
         int tradeCount = trades == null ? 0 : trades.size();
         int curveCount = curves == null ? 0 : curves.size();
         int missingOpen = 0;
         int missingClose = 0;
+        int nearZeroProfit = 0;
         if (trades != null) {
             for (TradeRecordItem item : trades) {
                 if (item == null) {
@@ -1435,12 +1733,34 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 if (resolveCloseTime(item) <= 0L) {
                     missingClose++;
                 }
+                if (Math.abs(item.getProfit()) < TRADE_PNL_ZERO_THRESHOLD) {
+                    nearZeroProfit++;
+                }
             }
         }
+        int missingTp = 0;
+        int missingSl = 0;
+        if (positions != null) {
+            for (PositionItem item : positions) {
+                if (item == null || Math.abs(item.getQuantity()) <= 1e-9) {
+                    continue;
+                }
+                if (item.getTakeProfit() <= 0d) {
+                    missingTp++;
+                }
+                if (item.getStopLoss() <= 0d) {
+                    missingSl++;
+                }
+            }
+        }
+        String capHint = tradeCount >= 500 ? ", 疑似存在上限截断" : "";
         return "交易" + tradeCount
                 + "条, 曲线" + curveCount
                 + "点, 开仓时间缺失" + missingOpen
-                + "条, 平仓时间缺失" + missingClose + "条";
+                + "条, 平仓时间缺失" + missingClose
+                + "条, 近零盈亏" + nearZeroProfit
+                + "条, 持仓缺止盈" + missingTp
+                + "条, 持仓缺止损" + missingSl + "条" + capHint;
     }
 
     private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source) {
@@ -1906,7 +2226,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
         }
 
-        int totalTrades = winCount + lossCount;
+        int totalTrades = ordered.size();
         double winRate = safeDivide(winCount, Math.max(1d, totalTrades));
         double lossRate = safeDivide(lossCount, Math.max(1d, totalTrades));
         double profitFactor = Math.abs(grossLoss) < 1e-9
@@ -1961,7 +2281,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             if (code.isEmpty()) {
                 code = "UNKNOWN";
             }
-            byCode.put(code, byCode.getOrDefault(code, 0d) + item.getProfit());
+            byCode.put(code, byCode.getOrDefault(code, 0d) + item.getProfit() + item.getStorageFee());
         }
 
         List<Map.Entry<String, Double>> ordered = new ArrayList<>(byCode.entrySet());
@@ -3230,7 +3550,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void refreshPositions() {
-        List<PositionItem> list = new ArrayList<>(basePositions);
+        List<PositionItem> list = buildPositionListWithNaturalDayPnl(basePositions, baseTrades);
         list.sort(Comparator.comparing(PositionItem::getProductName));
 
         positionAggregateAdapter.submitList(buildPositionAggregates(list));
@@ -3254,6 +3574,81 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         double ratio = safeDivide(totalPnl, totalAsset);
         binding.tvPositionPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
         binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(totalPnl, ratio));
+    }
+
+    private List<PositionItem> buildPositionListWithNaturalDayPnl(List<PositionItem> source,
+                                                                   List<TradeRecordItem> trades) {
+        List<PositionItem> result = new ArrayList<>();
+        if (source == null || source.isEmpty()) {
+            return result;
+        }
+        long start = startOfToday();
+        long now = System.currentTimeMillis();
+        Map<String, Double> todayClosedByKey = new HashMap<>();
+        if (trades != null) {
+            for (TradeRecordItem trade : trades) {
+                if (trade == null) {
+                    continue;
+                }
+                long closeTime = resolveCloseTime(trade);
+                if (closeTime < start || closeTime > now) {
+                    continue;
+                }
+                String key = buildPositionSideKey(trade.getCode(), trade.getProductName(), trade.getSide());
+                double sum = todayClosedByKey.getOrDefault(key, 0d);
+                todayClosedByKey.put(key, sum + trade.getProfit());
+            }
+        }
+
+        Map<String, Double> totalQtyByKey = new HashMap<>();
+        for (PositionItem item : source) {
+            if (item == null) {
+                continue;
+            }
+            String key = buildPositionSideKey(item.getCode(), item.getProductName(), item.getSide());
+            double qty = Math.max(0d, Math.abs(item.getQuantity()));
+            totalQtyByKey.put(key, totalQtyByKey.getOrDefault(key, 0d) + qty);
+        }
+
+        for (PositionItem item : source) {
+            if (item == null) {
+                continue;
+            }
+            String key = buildPositionSideKey(item.getCode(), item.getProductName(), item.getSide());
+            double todayClosed = todayClosedByKey.getOrDefault(key, 0d);
+            double totalQty = totalQtyByKey.getOrDefault(key, 0d);
+            double qty = Math.max(0d, Math.abs(item.getQuantity()));
+            double shareClosed = totalQty > 1e-9 ? todayClosed * (qty / totalQty) : todayClosed;
+            double naturalDayPnL = shareClosed + item.getTotalPnL();
+
+            result.add(new PositionItem(
+                    item.getProductName(),
+                    item.getCode(),
+                    item.getSide(),
+                    item.getQuantity(),
+                    item.getSellableQuantity(),
+                    item.getCostPrice(),
+                    item.getLatestPrice(),
+                    item.getMarketValue(),
+                    item.getPositionRatio(),
+                    naturalDayPnL,
+                    item.getTotalPnL(),
+                    item.getReturnRate(),
+                    item.getPendingLots(),
+                    item.getPendingCount(),
+                    item.getPendingPrice(),
+                    item.getTakeProfit(),
+                    item.getStopLoss(),
+                    item.getStorageFee()
+            ));
+        }
+        return result;
+    }
+
+    private String buildPositionSideKey(String code, String productName, String side) {
+        String symbol = symbolForLog(code, productName);
+        String normalizedSide = sideForLog(side);
+        return symbol + "|" + normalizedSide;
     }
 
     private List<PositionAggregateAdapter.AggregateItem> buildPositionAggregates(List<PositionItem> list) {
@@ -3331,6 +3726,23 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return merged;
         }
 
+        int nearZeroCount = 0;
+        for (TradeRecordItem item : source) {
+            if (item != null && Math.abs(item.getProfit()) < TRADE_PNL_ZERO_THRESHOLD) {
+                nearZeroCount++;
+            }
+        }
+        // If upstream has already returned lifecycle-level records, skip aggressive regrouping.
+        if (nearZeroCount == 0) {
+            for (TradeRecordItem item : source) {
+                if (item != null) {
+                    merged.add(item);
+                }
+            }
+            merged.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
+            return merged;
+        }
+
         java.util.Set<String> dedupeSet = new java.util.LinkedHashSet<>();
         Map<String, List<TradeRecordItem>> grouped = new LinkedHashMap<>();
         for (TradeRecordItem item : source) {
@@ -3355,7 +3767,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             group.sort(Comparator.comparingLong(this::resolveCloseTime));
             List<TradeRecordItem> nonZero = new ArrayList<>();
             for (TradeRecordItem item : group) {
-                if (Math.abs(item.getProfit()) > 1e-9) {
+                if (Math.abs(item.getProfit()) >= TRADE_PNL_ZERO_THRESHOLD) {
                     nonZero.add(item);
                 }
             }
@@ -3375,7 +3787,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
             long openTime = resolveOpenTime(latest);
             long closeTime = resolveCloseTime(latest);
-            boolean likelyNoise = Math.abs(latest.getProfit()) <= 1e-9
+            boolean likelyNoise = Math.abs(latest.getProfit()) < TRADE_PNL_ZERO_THRESHOLD
                     && closeTime <= openTime + 1_000L;
             if (!likelyNoise) {
                 merged.add(latest);
@@ -3387,6 +3799,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private String buildTradeDedupeKey(TradeRecordItem item) {
+        if (item.getDealTicket() > 0L) {
+            return "deal|" + item.getDealTicket();
+        }
         String code = trim(item.getCode()).toUpperCase(Locale.ROOT);
         long open = resolveOpenTime(item);
         long close = resolveCloseTime(item);
@@ -3400,8 +3815,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String buildTradeMergeKey(TradeRecordItem item) {
         String code = trim(item.getCode()).toUpperCase(Locale.ROOT);
         long openBucket = resolveOpenTime(item) / 60_000L;
+        long closeBucket = resolveCloseTime(item) / 60_000L;
         long quantityKey = Math.round(Math.abs(item.getQuantity()) * 10_000d);
-        return code + "|" + openBucket + "|" + quantityKey;
+        long openPriceKey = Math.round(Math.abs(item.getOpenPrice()) * 100d);
+        long closePriceKey = Math.round(Math.abs(item.getClosePrice()) * 100d);
+        String side = normalizeSide(trim(item.getSide())).toLowerCase(Locale.ROOT);
+        return code + "|" + side + "|" + openBucket + "|" + closeBucket + "|"
+                + quantityKey + "|" + openPriceKey + "|" + closePriceKey;
     }
 
     private List<TradeRecordItem> pruneZeroProfitTrades(List<TradeRecordItem> source) {
@@ -3410,7 +3830,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return result;
         }
         for (TradeRecordItem item : source) {
-            if (Math.abs(item.getProfit()) > 1e-9) {
+            if (Math.abs(item.getProfit()) >= TRADE_PNL_ZERO_THRESHOLD) {
                 result.add(item);
             }
         }
@@ -3480,6 +3900,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         double storageFeeSum = 0d;
         double maxQuantity = Math.max(0d, closeRecord.getQuantity());
         double maxAmount = Math.max(0d, closeRecord.getAmount());
+        double mergedOpenPrice = closeRecord.getOpenPrice() > 0d ? closeRecord.getOpenPrice() : closeRecord.getPrice();
+        double mergedClosePrice = closeRecord.getClosePrice() > 0d ? closeRecord.getClosePrice() : closeRecord.getPrice();
         long minOpenTime = Long.MAX_VALUE;
         long maxCloseTime = 0L;
 
@@ -3490,11 +3912,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             maxAmount = Math.max(maxAmount, item.getAmount());
             long openTime = resolveOpenTime(item);
             long closeTime = resolveCloseTime(item);
+            double openPrice = item.getOpenPrice() > 0d ? item.getOpenPrice() : item.getPrice();
+            double closePrice = item.getClosePrice() > 0d ? item.getClosePrice() : item.getPrice();
             if (openTime > 0L) {
-                minOpenTime = Math.min(minOpenTime, openTime);
+                if (openTime < minOpenTime) {
+                    minOpenTime = openTime;
+                    mergedOpenPrice = openPrice;
+                }
             }
             if (closeTime > 0L) {
-                maxCloseTime = Math.max(maxCloseTime, closeTime);
+                if (closeTime >= maxCloseTime) {
+                    maxCloseTime = closeTime;
+                    mergedClosePrice = closePrice;
+                }
             }
         }
         if (minOpenTime == Long.MAX_VALUE) {
@@ -3522,14 +3952,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 closeRecord.getProfit(),
                 minOpenTime,
                 maxCloseTime,
-                storageFeeSum
+                storageFeeSum,
+                mergedOpenPrice,
+                mergedClosePrice
         );
     }
 
     private String resolveMergedSide(TradeRecordItem closeRecord, List<TradeRecordItem> group) {
         if (group != null) {
             for (TradeRecordItem item : group) {
-                if (Math.abs(item.getProfit()) <= 1e-9) {
+                if (Math.abs(item.getProfit()) < TRADE_PNL_ZERO_THRESHOLD) {
                     String side = normalizeSide(trim(item.getSide()));
                     if (!side.isEmpty()) {
                         return side;
@@ -3566,7 +3998,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         List<TradeRecordItem> filtered = new ArrayList<>();
         String product = (String) binding.spinnerTradeProduct.getSelectedItem();
         String side = (String) binding.spinnerTradeSide.getSelectedItem();
-        String time = (String) binding.spinnerTradeTime.getSelectedItem();
         String sort = (String) binding.spinnerTradeSort.getSelectedItem();
         if (product == null || product.trim().isEmpty()) {
             product = FILTER_PRODUCT;
@@ -3574,35 +4005,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (side == null || side.trim().isEmpty()) {
             side = FILTER_SIDE;
         }
-        if (time == null || time.trim().isEmpty()) {
-            time = FILTER_DATE;
-        }
         if (sort == null || sort.trim().isEmpty()) {
             sort = FILTER_SORT;
         }
         selectedTradeProductFilter = product;
         selectedTradeSideFilter = side;
-        selectedTradeDateFilter = time;
         selectedTradeSortFilter = sort;
-        String normalizedSort = normalizeSortValue(sort);
-
-        long now = System.currentTimeMillis();
-        long limit;
-        if (FILTER_LAST_1D.equals(time)) {
-            limit = now - 24L * 60L * 60L * 1000L;
-        } else if (FILTER_LAST_7D.equals(time)) {
-            limit = now - 7L * 24L * 60L * 60L * 1000L;
-        } else if (FILTER_LAST_30D.equals(time)) {
-            limit = now - 30L * 24L * 60L * 60L * 1000L;
-        } else {
-            limit = 0L;
-        }
+        updateTradeFilterDisplayTexts(product, side, sort);
+        String normalizedSort = FILTER_SORT.equals(sort)
+                ? normalizeSortValue(lastExplicitTradeSortMode)
+                : normalizeSortValue(sort);
 
         for (TradeRecordItem item : baseTrades) {
-            long closeTime = item.getCloseTime() > 0L ? item.getCloseTime() : item.getTimestamp();
-            if (limit > 0L && closeTime < limit) {
-                continue;
-            }
             if (!FILTER_PRODUCT.equals(product) && !item.getCode().equalsIgnoreCase(product)) {
                 continue;
             }
@@ -3628,8 +4042,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             java.util.Collections.reverse(filtered);
         }
         tradeAdapter.submitList(filtered);
-        updateTradePnlSummary(filtered, product, side, time);
-        forceRenderTradeFilterSpinners();
+        updateTradePnlSummary(filtered, product, side, FILTER_DATE);
     }
 
     private List<TradeRecordItem> collapseZeroProfitForDisplay(List<TradeRecordItem> source) {
@@ -3638,7 +4051,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         List<TradeRecordItem> result = new ArrayList<>();
         for (TradeRecordItem item : source) {
-            if (Math.abs(item.getProfit()) > 1e-9) {
+            if (Math.abs(item.getProfit()) >= TRADE_PNL_ZERO_THRESHOLD) {
                 result.add(item);
             }
         }
@@ -3650,17 +4063,30 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                        String sideFilter,
                                        String dateFilter) {
         double total = 0d;
+        double storageTotal = 0d;
         int tradeCount = trades == null ? 0 : trades.size();
         if (trades != null) {
             for (TradeRecordItem item : trades) {
                 total += item.getProfit();
+                storageTotal += item.getStorageFee();
             }
         }
-        if (isDefaultTradeFilters(productFilter, sideFilter, dateFilter)) {
-            total = latestCumulativePnl;
+        if (isDefaultTradeFilters(productFilter, sideFilter, dateFilter)
+                && logManager != null
+                && Math.abs(total - latestCumulativePnl) >= TRADE_PNL_ZERO_THRESHOLD) {
+            logManager.warn("Trade pnl summary mismatch: tradeSum="
+                    + FormatUtils.formatPrice(total)
+                    + ", cumulative=" + FormatUtils.formatPrice(latestCumulativePnl)
+                    + ", rawTrades=" + baseTrades.size());
         }
-        String pnlText = String.format(Locale.getDefault(), "%,.2f", total);
-        String summary = "盈亏合计：" + pnlText + "    交易次数：" + tradeCount + "次";
+        String pnlText = signedMoneyTrailingUnit(total);
+        String storageText = signedMoneyTrailingUnit(storageTotal);
+        double balanceTotal = total + storageTotal;
+        String balanceText = signedMoneyTrailingUnit(balanceTotal);
+        String summary = "盈亏：" + pnlText
+                + "    库存费：" + storageText
+                + "    结余：" + balanceText
+                + "    交易次数：" + tradeCount + "次";
         SpannableStringBuilder span = new SpannableStringBuilder(summary);
         int pnlStart = summary.indexOf(pnlText);
         if (pnlStart >= 0) {
@@ -3669,6 +4095,24 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             span.setSpan(new ForegroundColorSpan(color),
                     pnlStart,
                     pnlStart + pnlText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        int storageStart = summary.indexOf(storageText);
+        if (storageStart >= 0) {
+            int color = ContextCompat.getColor(this,
+                    storageTotal > 0d ? R.color.accent_green : (storageTotal < 0d ? R.color.accent_red : R.color.text_primary));
+            span.setSpan(new ForegroundColorSpan(color),
+                    storageStart,
+                    storageStart + storageText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        int balanceStart = summary.indexOf(balanceText);
+        if (balanceStart >= 0) {
+            int color = ContextCompat.getColor(this,
+                    balanceTotal > 0d ? R.color.accent_green : (balanceTotal < 0d ? R.color.accent_red : R.color.text_primary));
+            span.setSpan(new ForegroundColorSpan(color),
+                    balanceStart,
+                    balanceStart + balanceText.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         binding.tvTradeRecordsPnlSummary.setText(span);
@@ -3713,7 +4157,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.spinnerTradeProduct.setAdapter(adapter);
         setSpinnerSelectionByValue(binding.spinnerTradeProduct, current);
         selectedTradeProductFilter = safeSpinnerValue(binding.spinnerTradeProduct, current, FILTER_PRODUCT);
-        forceRenderSpinnerSelectedText(binding.spinnerTradeProduct);
+        updateTradeFilterDisplayTexts();
     }
 
     private void applyManualCurveRange() {
@@ -3795,6 +4239,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private String signedMoney(double value) {
         return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
+    }
+
+    private String signedMoneyTrailingUnit(double value) {
+        DecimalFormat format = new DecimalFormat("#,##0.##");
+        return (value >= 0d ? "+" : "-") + format.format(Math.abs(value)) + "$";
     }
 
     private String percent(double ratio) {

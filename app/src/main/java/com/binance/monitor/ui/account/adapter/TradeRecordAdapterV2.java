@@ -121,8 +121,6 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         }
 
         void bind(TradeRecordItem item, boolean expanded) {
-            int sideColor = ContextCompat.getColor(binding.getRoot().getContext(),
-                    "BUY".equalsIgnoreCase(item.getSide()) ? R.color.accent_green : R.color.accent_red);
             int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
                     item.getProfit() >= 0d ? R.color.accent_green : R.color.accent_red);
             String amount = signedMoney(item.getProfit());
@@ -141,12 +139,13 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             long closeTime = item.getCloseTime() > 0L ? item.getCloseTime() : item.getTimestamp();
             binding.tvTime.setText("开仓时间: " + FormatUtils.formatDateTime(openTime));
             binding.tvProduct.setText("平仓时间: " + FormatUtils.formatDateTime(closeTime));
-            binding.tvSide.setText("产品: " + item.getProductName() + " (" + item.getCode() + ") | 方向: " + sideCn(item.getSide()));
-            binding.tvSide.setTextColor(sideColor);
+            binding.tvSide.setText(String.format(Locale.getDefault(),
+                    "开仓价格 $%s | 平仓价格 $%s",
+                    FormatUtils.formatPrice(item.getOpenPrice()),
+                    FormatUtils.formatPrice(item.getClosePrice())));
+            binding.tvSide.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
             binding.tvDetail.setText(String.format(Locale.getDefault(),
-                    "价格 $%s | 手数 %.2f | 盈亏 %s | 库存费 $%s",
-                    FormatUtils.formatPrice(item.getPrice()),
-                    item.getQuantity(),
+                    "盈亏 %s | 库存费 $%s",
                     signedMoney(item.getProfit()),
                     FormatUtils.formatPrice(item.getStorageFee())));
             binding.tvRemark.setVisibility(View.GONE);

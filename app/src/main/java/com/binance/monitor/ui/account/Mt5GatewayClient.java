@@ -186,16 +186,31 @@ public class Mt5GatewayClient {
             if (item == null) {
                 continue;
             }
+            double price = item.optDouble("price", 0d);
+            double openPrice = optDoubleAny(item, price,
+                    "openPrice", "open_price", "open", "priceOpen", "entryPrice", "entry_price");
+            double closePrice = optDoubleAny(item, price,
+                    "closePrice", "close_price", "close", "priceClose", "exitPrice", "exit_price");
             list.add(new TradeRecordItem(
                     item.optLong("timestamp", 0L),
                     item.optString("productName", "--"),
                     item.optString("code", "--"),
                     item.optString("side", "买入"),
-                    item.optDouble("price", 0d),
+                    price,
                     item.optDouble("quantity", 0d),
                     item.optDouble("amount", 0d),
                     item.optDouble("fee", 0d),
-                    item.optString("remark", "")
+                    item.optString("remark", ""),
+                    item.optDouble("profit", 0d),
+                    item.optLong("openTime", item.optLong("timestamp", 0L)),
+                    item.optLong("closeTime", item.optLong("timestamp", 0L)),
+                    item.optDouble("storageFee", item.optDouble("fee", 0d)),
+                    openPrice,
+                    closePrice,
+                    item.optLong("dealTicket", 0L),
+                    item.optLong("orderId", 0L),
+                    item.optLong("positionId", 0L),
+                    item.optInt("entryType", 0)
             ));
         }
         return list;

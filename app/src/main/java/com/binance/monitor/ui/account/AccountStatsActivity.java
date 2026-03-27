@@ -133,14 +133,6 @@ public class AccountStatsActivity extends AppCompatActivity {
         binding.spinnerTradeSide.setAdapter(sideAdapter);
         binding.spinnerTradeSide.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
 
-        ArrayAdapter<String> timeAdapter = new ArrayAdapter<>(
-                this,
-                android.R.layout.simple_spinner_item,
-                new String[]{"全部时间", "近1日", "近7日", "近30日"});
-        timeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        binding.spinnerTradeTime.setAdapter(timeAdapter);
-        binding.spinnerTradeTime.setOnItemSelectedListener(new SimpleSelectionListener(this::refreshTrades));
-
         binding.etTradeSearch.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -270,22 +262,7 @@ public class AccountStatsActivity extends AppCompatActivity {
         String keyword = text(binding.etTradeSearch.getText() == null ? "" : binding.etTradeSearch.getText().toString());
         String product = (String) binding.spinnerTradeProduct.getSelectedItem();
         String side = (String) binding.spinnerTradeSide.getSelectedItem();
-        String time = (String) binding.spinnerTradeTime.getSelectedItem();
-        long now = System.currentTimeMillis();
-        long limit;
-        if ("近1日".equals(time)) {
-            limit = now - 24L * 60L * 60L * 1000L;
-        } else if ("近7日".equals(time)) {
-            limit = now - 7L * 24L * 60L * 60L * 1000L;
-        } else if ("近30日".equals(time)) {
-            limit = now - 30L * 24L * 60L * 60L * 1000L;
-        } else {
-            limit = 0L;
-        }
         for (TradeRecordItem item : baseTrades) {
-            if (limit > 0L && item.getTimestamp() < limit) {
-                continue;
-            }
             if (!"全部产品".equals(product) && !item.getProductName().equals(product)) {
                 continue;
             }

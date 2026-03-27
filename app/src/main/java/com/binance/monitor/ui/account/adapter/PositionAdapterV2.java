@@ -131,17 +131,13 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             binding.tvExpandHint.setText(expanded ? "收起" : "展开");
             binding.layoutDetail.setVisibility(expanded ? View.VISIBLE : View.GONE);
 
-            binding.tvProduct.setText(String.format(Locale.getDefault(), "产品 %s (%s)", item.getProductName(), item.getCode()));
+            binding.tvProduct.setVisibility(View.GONE);
             binding.tvBase.setText(String.format(Locale.getDefault(),
-                    "持仓 %.2f | 可卖 %.2f | 成本 $%s | 最新 $%s",
-                    item.getQuantity(),
-                    item.getSellableQuantity(),
+                    "成本 $%s | 最新 $%s",
                     FormatUtils.formatPrice(item.getCostPrice()),
                     FormatUtils.formatPrice(item.getLatestPrice())));
             binding.tvMetrics.setText(String.format(Locale.getDefault(),
-                    "市值 $%s | 占比 %.2f%%\n止盈 %s | 止损 %s | 库存费 %s",
-                    FormatUtils.formatPrice(item.getMarketValue()),
-                    item.getPositionRatio() * 100d,
+                    "止盈 %s | 止损 %s | 库存费 %s",
                     optionalPrice(item.getTakeProfit()),
                     optionalPrice(item.getStopLoss()),
                     signedMoney(item.getStorageFee())));

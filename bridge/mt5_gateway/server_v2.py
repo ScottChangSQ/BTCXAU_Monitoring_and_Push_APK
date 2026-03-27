@@ -70,6 +70,25 @@ def _order_side(order_type: int) -> str:
     return "Buy" if _is_buy_trade_type(order_type) else "Sell"
 
 
+def _is_trade_deal_type(deal_type: int) -> bool:
+    # MT5 deal type: 0=BUY, 1=SELL
+    return deal_type in (0, 1)
+
+
+def _is_buy_deal_type(deal_type: int) -> bool:
+    return deal_type == 0
+
+
+def _is_entry_open(entry_type: int) -> bool:
+    # MT5 entry: 0=IN, 2=INOUT
+    return entry_type in (0, 2)
+
+
+def _is_entry_close(entry_type: int) -> bool:
+    # MT5 entry: 1=OUT, 2=INOUT, 3=OUT_BY
+    return entry_type in (1, 2, 3)
+
+
 def _range_hours(range_key: str) -> int:
     mapping = {
         "1d": 24,
@@ -77,7 +96,7 @@ def _range_hours(range_key: str) -> int:
         "1m": 24 * 30,
         "3m": 24 * 90,
         "1y": 24 * 365,
-        "all": 24 * 365 * 3,
+        "all": 24 * 365 * 10,
     }
     return mapping.get(range_key.lower(), 24 * 7)
 
@@ -406,6 +425,9 @@ def _map_positions() -> List[Dict]:
                     pending_by_symbol.get(symbol, {}).get("notional", 0.0),
                     pending_by_symbol.get(symbol, {}).get("lots", 0.0),
                 ),
+                "takeProfit": float(getattr(position, "tp", 0.0)),
+                "stopLoss": float(getattr(position, "sl", 0.0)),
+                "storageFee": float(getattr(position, "swap", 0.0)),
             }
         )
 
@@ -452,6 +474,8 @@ def _map_pending_orders() -> List[Dict]:
                 "pendingLots": volume,
                 "pendingCount": 1,
                 "pendingPrice": pending_price,
+                "takeProfit": float(getattr(order, "tp", 0.0)),
+                "stopLoss": float(getattr(order, "sl", 0.0)),
             }
         )
 
@@ -459,66 +483,118 @@ def _map_pending_orders() -> List[Dict]:
     return mapped
 
 
-def _map_trades() -> List[Dict]:
+def _map_trades(range_key: str = "all") -> List[Dict]:
     now = datetime.now(timezone.utc)
-    from_time = now - timedelta(days=365)
+    from_time = now - timedelta(hours=_range_hours(range_key))
     deals = mt5.history_deals_get(from_time, now) or []
     mapped = []
-    lifecycle: Dict[int, Dict[str, int]] = {}
+    lifecycle: Dict[int, Dict[str, float]] = {}
+    contract_size_cache: Dict[str, float] = {}
 
-    for deal in deals:
+    def contract_size_of(symbol: str) -> float:
+        cached = contract_size_cache.get(symbol)
+        if cached is not None:
+            return cached
+        size = 1.0
+        sinfo = mt5.symbol_info(symbol)
+        if sinfo is not None and getattr(sinfo, "trade_contract_size", 0.0) > 0:
+            size = float(getattr(sinfo, "trade_contract_size", 1.0))
+        contract_size_cache[symbol] = size
+        return size
+
+    sorted_deals = sorted(deals, key=lambda d: int(getattr(d, "time", 0)))
+
+    for deal in sorted_deals:
         symbol = getattr(deal, "symbol", "")
         if not symbol:
             continue
+        deal_type = int(getattr(deal, "type", -1))
+        if not _is_trade_deal_type(deal_type):
+            continue
+
+        volume = abs(float(getattr(deal, "volume", 0.0)))
+        if volume <= 0.0:
+            continue
+
         ticket = int(getattr(deal, "ticket", 0))
         order_id = int(getattr(deal, "order", 0))
         position_id = int(getattr(deal, "position_id", 0))
         key = position_id if position_id > 0 else (order_id if order_id > 0 else ticket)
+        entry_type = int(getattr(deal, "entry", 0))
         ts = int(getattr(deal, "time", 0)) * 1000
-        entry = int(getattr(deal, "entry", 0))
+        price = float(getattr(deal, "price", 0.0))
 
-        state = lifecycle.setdefault(key, {"open": ts, "close": ts})
-        state["open"] = min(state["open"], ts)
-        if entry in (1, 2, 3):
-            state["close"] = max(state["close"], ts)
-        else:
-            state["close"] = max(state["close"], ts)
+        state = lifecycle.setdefault(
+            key,
+            {
+                "open_time": 0.0,
+                "open_price_notional": 0.0,
+                "open_volume": 0.0,
+                "open_price": price,
+                "close_time": 0.0,
+                "close_price": price,
+                "side": "Buy",
+            },
+        )
 
-    for deal in deals:
+        if _is_entry_open(entry_type):
+            if state["open_time"] <= 0.0 or ts < state["open_time"]:
+                state["open_time"] = float(ts)
+            state["open_volume"] += volume
+            state["open_price_notional"] += volume * price
+            if state["open_volume"] > 1e-9:
+                state["open_price"] = state["open_price_notional"] / state["open_volume"]
+            state["side"] = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
+
+        if _is_entry_close(entry_type):
+            if ts >= state["close_time"]:
+                state["close_time"] = float(ts)
+                state["close_price"] = price
+
+    for deal in sorted_deals:
         symbol = getattr(deal, "symbol", "--")
         if symbol == "--" or not symbol:
             continue
+        deal_type = int(getattr(deal, "type", -1))
+        if not _is_trade_deal_type(deal_type):
+            continue
 
-        deal_type = int(getattr(deal, "type", 0))
-        side = "Buy" if _is_buy_trade_type(deal_type) else "Sell"
-        volume = float(getattr(deal, "volume", 0.0))
-        if abs(volume) < 1e-9:
+        entry_type = int(getattr(deal, "entry", 0))
+        if not _is_entry_close(entry_type):
+            # 交易记录以“成交(平仓/反手)”为口径，避免开仓成交重复占用统计口径。
+            continue
+
+        volume = abs(float(getattr(deal, "volume", 0.0)))
+        if volume <= 0.0:
             continue
 
         price = float(getattr(deal, "price", 0.0))
         profit = float(getattr(deal, "profit", 0.0))
         commission = float(getattr(deal, "commission", 0.0))
         swap = float(getattr(deal, "swap", 0.0))
-        storage_fee = abs(commission + swap)
+        storage_fee = commission + swap
+        amount = abs(volume * price * contract_size_of(symbol))
 
-        contract_size = 1.0
-        sinfo = mt5.symbol_info(symbol)
-        if sinfo is not None and getattr(sinfo, "trade_contract_size", 0.0) > 0:
-            contract_size = float(getattr(sinfo, "trade_contract_size", 1.0))
-
-        amount = abs(volume * price * contract_size)
         ticket = int(getattr(deal, "ticket", 0))
         order_id = int(getattr(deal, "order", 0))
         position_id = int(getattr(deal, "position_id", 0))
         key = position_id if position_id > 0 else (order_id if order_id > 0 else ticket)
         state = lifecycle.get(key, {})
-        open_time = int(state.get("open", 0))
-        close_time = int(state.get("close", 0))
         ts = int(getattr(deal, "time", 0)) * 1000
+
+        open_time = int(state.get("open_time", 0))
         if open_time <= 0:
             open_time = ts
-        if close_time <= 0:
-            close_time = ts
+        close_time = ts
+
+        open_price = float(state.get("open_price", price))
+        close_price = price
+        lifecycle_side = str(state.get("side", "")).strip()
+        if lifecycle_side in ("Buy", "Sell"):
+            side = lifecycle_side
+        else:
+            # 若窗口内缺失开仓成交，则根据平仓成交方向反推原始持仓方向。
+            side = "Buy" if deal_type == 1 else "Sell"
 
         mapped.append(
             {
@@ -533,13 +609,19 @@ def _map_trades() -> List[Dict]:
                 "profit": profit,
                 "openTime": open_time,
                 "closeTime": close_time,
+                "openPrice": open_price if open_price > 0.0 else price,
+                "closePrice": close_price if close_price > 0.0 else price,
                 "storageFee": storage_fee,
+                "dealTicket": ticket,
+                "orderId": order_id,
+                "positionId": position_id,
+                "entryType": entry_type,
                 "remark": getattr(deal, "comment", "") or "",
             }
         )
 
     mapped.sort(key=lambda item: item["timestamp"], reverse=True)
-    return mapped[:500]
+    return mapped
 
 
 def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
@@ -694,7 +776,7 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
             points = _build_curve(range_key)
             positions = _map_positions()
             pending_orders = _map_pending_orders()
-            trades = _map_trades()
+            trades = _map_trades(range_key)
             overview = _build_overview(positions, trades)
             indicators = _curve_indicators(points)
             stats = _build_stats(positions, trades, points)
@@ -704,6 +786,11 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
                     "server": str(getattr(account, "server", SERVER)),
                     "source": "MT5 Python Pull",
                     "updatedAt": _now_ms(),
+                    "range": range_key,
+                    "tradeCount": len(trades),
+                    "positionCount": len(positions),
+                    "pendingOrderCount": len(pending_orders),
+                    "curvePointCount": len(points),
                 },
                 "overviewMetrics": overview,
                 "curvePoints": points,
@@ -754,11 +841,15 @@ def _select_snapshot(range_key: str) -> Dict:
     if mode == "pull":
         return _snapshot_from_mt5(range_key)
 
+    # auto mode: prefer MT5 pull first (full historical fidelity), then EA push fallback.
+    if mt5 is not None and _is_mt5_configured():
+        try:
+            return _snapshot_from_mt5(range_key)
+        except Exception:
+            pass
+
     if _is_ea_snapshot_fresh():
         return _normalize_snapshot(ea_snapshot_cache, "MT5 EA Push")
-
-    if mt5 is not None and _is_mt5_configured():
-        return _snapshot_from_mt5(range_key)
 
     if ea_snapshot_cache is not None:
         stale = _normalize_snapshot(ea_snapshot_cache, "MT5 EA Push")

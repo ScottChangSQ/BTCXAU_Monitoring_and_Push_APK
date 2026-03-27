@@ -556,44 +556,97 @@
                         android:layout_marginTop="8dp"
                         android:orientation="horizontal">
 
-                        <Spinner
-                            android:id="@+id/spinnerTradeProduct"
+                        <FrameLayout
                             android:layout_width="0dp"
                             android:layout_height="36dp"
-                            android:layout_weight="1.35"
-                            android:background="@drawable/bg_spinner_filter"
-                            android:minWidth="0dp"
-                            android:spinnerMode="dropdown" />
+                            android:layout_weight="1.25">
 
-                        <Spinner
-                            android:id="@+id/spinnerTradeSide"
-                            android:layout_width="0dp"
-                            android:layout_height="36dp"
-                            android:layout_marginStart="2dp"
-                            android:layout_weight="1.2"
-                            android:background="@drawable/bg_spinner_filter"
-                            android:minWidth="0dp"
-                            android:spinnerMode="dropdown" />
+                            <androidx.appcompat.widget.AppCompatSpinner
+                                android:id="@+id/spinnerTradeProduct"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:background="@drawable/bg_spinner_filter"
+                                android:minWidth="0dp"
+                                android:popupBackground="@drawable/bg_spinner_popup"
+                                android:spinnerMode="dropdown" />
 
-                        <Spinner
-                            android:id="@+id/spinnerTradeTime"
-                            android:layout_width="0dp"
-                            android:layout_height="36dp"
-                            android:layout_marginStart="2dp"
-                            android:layout_weight="1.2"
-                            android:background="@drawable/bg_spinner_filter"
-                            android:minWidth="0dp"
-                            android:spinnerMode="dropdown" />
+                            <TextView
+                                android:id="@+id/tvTradeProductLabel"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:clickable="false"
+                                android:ellipsize="end"
+                                android:focusable="false"
+                                android:gravity="center_vertical|start"
+                                android:includeFontPadding="false"
+                                android:maxLines="1"
+                                android:paddingStart="10dp"
+                                android:paddingEnd="24dp"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+                        </FrameLayout>
 
-                        <Spinner
-                            android:id="@+id/spinnerTradeSort"
+                        <FrameLayout
                             android:layout_width="0dp"
                             android:layout_height="36dp"
-                            android:layout_marginStart="2dp"
-                            android:layout_weight="1.45"
-                            android:background="@drawable/bg_spinner_filter"
-                            android:minWidth="0dp"
-                            android:spinnerMode="dropdown" />
+                            android:layout_marginStart="1dp"
+                            android:layout_weight="1.1">
+
+                            <androidx.appcompat.widget.AppCompatSpinner
+                                android:id="@+id/spinnerTradeSide"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:background="@drawable/bg_spinner_filter"
+                                android:minWidth="0dp"
+                                android:popupBackground="@drawable/bg_spinner_popup"
+                                android:spinnerMode="dropdown" />
+
+                            <TextView
+                                android:id="@+id/tvTradeSideLabel"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:clickable="false"
+                                android:ellipsize="end"
+                                android:focusable="false"
+                                android:gravity="center_vertical|start"
+                                android:includeFontPadding="false"
+                                android:maxLines="1"
+                                android:paddingStart="10dp"
+                                android:paddingEnd="24dp"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+                        </FrameLayout>
+
+                        <FrameLayout
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginStart="1dp"
+                            android:layout_weight="1.25">
+
+                            <androidx.appcompat.widget.AppCompatSpinner
+                                android:id="@+id/spinnerTradeSort"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:background="@drawable/bg_spinner_filter"
+                                android:minWidth="0dp"
+                                android:popupBackground="@drawable/bg_spinner_popup"
+                                android:spinnerMode="dropdown" />
+
+                            <TextView
+                                android:id="@+id/tvTradeSortLabel"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:clickable="false"
+                                android:ellipsize="end"
+                                android:focusable="false"
+                                android:gravity="center_vertical|start"
+                                android:includeFontPadding="false"
+                                android:maxLines="1"
+                                android:paddingStart="10dp"
+                                android:paddingEnd="24dp"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+                        </FrameLayout>
                     </LinearLayout>
 
                     <androidx.recyclerview.widget.RecyclerView
@@ -609,7 +662,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
-                        android:text="盈亏合计：0.00    交易次数：0次"
+                        android:text="盈亏：+0$    库存费：+0$    结余：+0$    交易次数：0次"
                         android:textColor="@color/text_primary"
                         android:textSize="12sp"
                         android:textStyle="bold" />

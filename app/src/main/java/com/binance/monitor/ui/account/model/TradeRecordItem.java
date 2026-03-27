@@ -14,6 +14,12 @@ public class TradeRecordItem {
     private final long openTime;
     private final long closeTime;
     private final double storageFee;
+    private final double openPrice;
+    private final double closePrice;
+    private final long dealTicket;
+    private final long orderId;
+    private final long positionId;
+    private final int entryType;
 
     public TradeRecordItem(long timestamp,
                            String productName,
@@ -25,7 +31,7 @@ public class TradeRecordItem {
                            double fee,
                            String remark) {
         this(timestamp, productName, code, side, price, quantity, amount, fee, remark,
-                0d, timestamp, timestamp, fee);
+                0d, timestamp, timestamp, fee, price, price, 0L, 0L, 0L, 0);
     }
 
     public TradeRecordItem(long timestamp,
@@ -41,6 +47,48 @@ public class TradeRecordItem {
                            long openTime,
                            long closeTime,
                            double storageFee) {
+        this(timestamp, productName, code, side, price, quantity, amount, fee, remark,
+                profit, openTime, closeTime, storageFee, price, price, 0L, 0L, 0L, 0);
+    }
+
+    public TradeRecordItem(long timestamp,
+                           String productName,
+                           String code,
+                           String side,
+                           double price,
+                           double quantity,
+                           double amount,
+                           double fee,
+                           String remark,
+                           double profit,
+                           long openTime,
+                           long closeTime,
+                           double storageFee,
+                           double openPrice,
+                           double closePrice) {
+        this(timestamp, productName, code, side, price, quantity, amount, fee, remark,
+                profit, openTime, closeTime, storageFee, openPrice, closePrice, 0L, 0L, 0L, 0);
+    }
+
+    public TradeRecordItem(long timestamp,
+                           String productName,
+                           String code,
+                           String side,
+                           double price,
+                           double quantity,
+                           double amount,
+                           double fee,
+                           String remark,
+                           double profit,
+                           long openTime,
+                           long closeTime,
+                           double storageFee,
+                           double openPrice,
+                           double closePrice,
+                           long dealTicket,
+                           long orderId,
+                           long positionId,
+                           int entryType) {
         this.timestamp = timestamp;
         this.productName = productName;
         this.code = code;
@@ -54,6 +102,12 @@ public class TradeRecordItem {
         this.openTime = openTime;
         this.closeTime = closeTime;
         this.storageFee = storageFee;
+        this.openPrice = openPrice > 0d ? openPrice : price;
+        this.closePrice = closePrice > 0d ? closePrice : price;
+        this.dealTicket = dealTicket;
+        this.orderId = orderId;
+        this.positionId = positionId;
+        this.entryType = entryType;
     }
 
     public long getTimestamp() {
@@ -106,5 +160,29 @@ public class TradeRecordItem {
 
     public double getStorageFee() {
         return storageFee;
+    }
+
+    public double getOpenPrice() {
+        return openPrice;
+    }
+
+    public double getClosePrice() {
+        return closePrice;
+    }
+
+    public long getDealTicket() {
+        return dealTicket;
+    }
+
+    public long getOrderId() {
+        return orderId;
+    }
+
+    public long getPositionId() {
+        return positionId;
+    }
+
+    public int getEntryType() {
+        return entryType;
     }
 }
