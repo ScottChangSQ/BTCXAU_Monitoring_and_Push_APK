@@ -36,10 +36,11 @@
                         android:orientation="horizontal">
 
                         <TextView
+                            android:id="@+id/tvAccountOverviewTitle"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="@string/account_overview_title"
+                            android:text="账户总览（账号）"
                             android:textColor="@color/text_primary"
                             android:textSize="16sp"
                             android:textStyle="bold" />
@@ -49,6 +50,8 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:background="@drawable/bg_chip_unselected"
+                            android:clickable="true"
+                            android:focusable="true"
                             android:paddingHorizontal="8dp"
                             android:paddingVertical="3dp"
                             android:text="未连接账户"
@@ -62,6 +65,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
+                        android:text="更新时间 --"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 
@@ -75,6 +79,7 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardCurveSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp">
@@ -88,7 +93,17 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/equity_curve_title"
+                        android:text="净值曲线 / 结余曲线"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/tvCurveTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="净值/结余曲线"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -104,7 +119,7 @@
                             android:id="@+id/btnRange1d"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="36dp"
+                            android:layout_height="32dp"
                             android:layout_weight="1"
                             android:ellipsize="none"
                             android:gravity="center"
@@ -112,16 +127,15 @@
                             android:maxLines="1"
                             android:minWidth="0dp"
                             android:paddingHorizontal="0dp"
-                            android:paddingVertical="0dp"
                             android:text="1D"
                             android:textAllCaps="false"
-                            android:textSize="11sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange7d"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="36dp"
+                            android:layout_height="32dp"
                             android:layout_weight="1"
                             android:ellipsize="none"
                             android:gravity="center"
@@ -129,16 +143,15 @@
                             android:maxLines="1"
                             android:minWidth="0dp"
                             android:paddingHorizontal="0dp"
-                            android:paddingVertical="0dp"
-                            android:text="1W"
+                            android:text="7D"
                             android:textAllCaps="false"
-                            android:textSize="11sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1m"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="36dp"
+                            android:layout_height="32dp"
                             android:layout_weight="1"
                             android:ellipsize="none"
                             android:gravity="center"
@@ -146,16 +159,15 @@
                             android:maxLines="1"
                             android:minWidth="0dp"
                             android:paddingHorizontal="0dp"
-                            android:paddingVertical="0dp"
                             android:text="1M"
                             android:textAllCaps="false"
-                            android:textSize="11sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange3m"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="36dp"
+                            android:layout_height="32dp"
                             android:layout_weight="1"
                             android:ellipsize="none"
                             android:gravity="center"
@@ -163,16 +175,15 @@
                             android:maxLines="1"
                             android:minWidth="0dp"
                             android:paddingHorizontal="0dp"
-                            android:paddingVertical="0dp"
                             android:text="3M"
                             android:textAllCaps="false"
-                            android:textSize="11sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1y"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="36dp"
+                            android:layout_height="32dp"
                             android:layout_weight="1"
                             android:ellipsize="none"
                             android:gravity="center"
@@ -180,16 +191,15 @@
                             android:maxLines="1"
                             android:minWidth="0dp"
                             android:paddingHorizontal="0dp"
-                            android:paddingVertical="0dp"
                             android:text="1Y"
                             android:textAllCaps="false"
-                            android:textSize="11sp" />
+                            android:textSize="10sp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRangeAll"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="36dp"
+                            android:layout_height="32dp"
                             android:layout_weight="1"
                             android:ellipsize="none"
                             android:gravity="center"
@@ -197,10 +207,9 @@
                             android:maxLines="1"
                             android:minWidth="0dp"
                             android:paddingHorizontal="0dp"
-                            android:paddingVertical="0dp"
                             android:text="ALL"
                             android:textAllCaps="false"
-                            android:textSize="11sp" />
+                            android:textSize="10sp" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <LinearLayout
@@ -219,10 +228,7 @@
                             android:focusable="false"
                             android:gravity="center"
                             android:hint="开始日期"
-                            android:includeFontPadding="false"
                             android:maxLines="1"
-                            android:paddingHorizontal="0dp"
-                            android:textAlignment="center"
                             android:textColor="@color/text_primary"
                             android:textColorHint="@color/text_secondary"
                             android:textSize="12sp" />
@@ -237,10 +243,7 @@
                             android:focusable="false"
                             android:gravity="center"
                             android:hint="结束日期"
-                            android:includeFontPadding="false"
                             android:maxLines="1"
-                            android:paddingHorizontal="0dp"
-                            android:textAlignment="center"
                             android:textColor="@color/text_primary"
                             android:textColorHint="@color/text_secondary"
                             android:textSize="12sp" />
@@ -248,20 +251,20 @@
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnApplyManualRange"
                             android:layout_width="wrap_content"
-                            android:layout_height="32dp"
+                            android:layout_height="34dp"
                             android:layout_marginStart="6dp"
                             android:background="@drawable/bg_chip_selected"
                             android:gravity="center"
                             android:includeFontPadding="false"
-                            android:minWidth="0dp"
                             android:minHeight="0dp"
+                            android:minWidth="0dp"
                             android:paddingHorizontal="10dp"
                             android:paddingVertical="0dp"
                             android:text="应用"
                             android:textAllCaps="false"
-                            android:textAlignment="center"
                             android:textColor="@color/bg_primary"
-                            android:textSize="12sp" />
+                            android:textSize="12sp"
+                            />
                     </LinearLayout>
 
                     <com.binance.monitor.ui.account.EquityCurveView
@@ -285,6 +288,144 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:nestedScrollingEnabled="false" />
+
+                    <TextView
+                        android:id="@+id/tvMonthlyReturnsTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="收益率统计"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButtonToggleGroup
+                        android:id="@+id/toggleReturnStatsMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        app:singleSelection="true">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnReturnDay"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
+                            android:maxLines="1"
+                            android:minWidth="0dp"
+                            android:text="日收益"
+                            android:textAllCaps="false"
+                            android:textSize="10sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnReturnMonth"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
+                            android:maxLines="1"
+                            android:minWidth="0dp"
+                            android:text="月收益"
+                            android:textAllCaps="false"
+                            android:textSize="10sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnReturnYear"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
+                            android:maxLines="1"
+                            android:minWidth="0dp"
+                            android:text="年收益"
+                            android:textAllCaps="false"
+                            android:textSize="10sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnReturnStage"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:ellipsize="none"
+                            android:gravity="center"
+                            android:maxLines="1"
+                            android:minWidth="0dp"
+                            android:text="阶段收益"
+                            android:textAllCaps="false"
+                            android:textSize="10sp" />
+                    </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tvReturnsPeriod"
+                            android:layout_width="0dp"
+                            android:layout_height="32dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_inline_button"
+                            android:gravity="center_vertical"
+                            android:paddingHorizontal="10dp"
+                            android:text="统计日期"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                        <com.google.android.material.button.MaterialButtonToggleGroup
+                            android:id="@+id/toggleReturnsValueMode"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:layout_marginStart="6dp"
+                            app:singleSelection="true">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnReturnsRate"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="36dp"
+                                android:minWidth="58dp"
+                                android:text="收益率"
+                                android:textAllCaps="false"
+                                android:textSize="10sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnReturnsAmount"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="36dp"
+                                android:minWidth="58dp"
+                                android:text="收益额"
+                                android:textAllCaps="false"
+                                android:textSize="10sp" />
+                        </com.google.android.material.button.MaterialButtonToggleGroup>
+                    </LinearLayout>
+
+                    <TableLayout
+                        android:id="@+id/tableMonthlyReturns"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:shrinkColumns="*"
+                        android:stretchColumns="*" />
+
+                    <TextView
+                        android:id="@+id/tvMonthlyReturnsHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -302,7 +443,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/current_positions_title"
+                        android:text="当前持仓"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -316,6 +457,16 @@
                         android:textSize="12sp"
                         android:textStyle="bold" />
 
+                    <TextView
+                        android:id="@+id/tvPositionAggregateTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="按产品汇总"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/recyclerPositionByProduct"
                         android:layout_width="match_parent"
@@ -323,11 +474,21 @@
                         android:layout_marginTop="4dp"
                         android:nestedScrollingEnabled="false" />
 
-                    <Spinner
-                        android:id="@+id/spinnerPositionSort"
+                    <TextView
+                        android:id="@+id/tvPositionDetailTitle"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp" />
+                        android:layout_marginTop="6dp"
+                        android:text="持仓明细"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <Spinner
+                        android:id="@+id/spinnerPositionSort"
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:visibility="gone" />
 
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/recyclerPositions"
@@ -378,7 +539,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/trade_records_title"
+                        android:text="交易记录"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -398,22 +559,41 @@
                         <Spinner
                             android:id="@+id/spinnerTradeProduct"
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1" />
+                            android:layout_height="36dp"
+                            android:layout_weight="1.35"
+                            android:background="@drawable/bg_spinner_filter"
+                            android:minWidth="0dp"
+                            android:spinnerMode="dropdown" />
 
                         <Spinner
                             android:id="@+id/spinnerTradeSide"
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="6dp"
-                            android:layout_weight="1" />
+                            android:layout_height="36dp"
+                            android:layout_marginStart="2dp"
+                            android:layout_weight="1.2"
+                            android:background="@drawable/bg_spinner_filter"
+                            android:minWidth="0dp"
+                            android:spinnerMode="dropdown" />
 
                         <Spinner
                             android:id="@+id/spinnerTradeTime"
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="6dp"
-                            android:layout_weight="1" />
+                            android:layout_height="36dp"
+                            android:layout_marginStart="2dp"
+                            android:layout_weight="1.2"
+                            android:background="@drawable/bg_spinner_filter"
+                            android:minWidth="0dp"
+                            android:spinnerMode="dropdown" />
+
+                        <Spinner
+                            android:id="@+id/spinnerTradeSort"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginStart="2dp"
+                            android:layout_weight="1.45"
+                            android:background="@drawable/bg_spinner_filter"
+                            android:minWidth="0dp"
+                            android:spinnerMode="dropdown" />
                     </LinearLayout>
 
                     <androidx.recyclerview.widget.RecyclerView
@@ -423,6 +603,16 @@
                         android:layout_marginTop="6dp"
                         android:nestedScrollingEnabled="true"
                         android:scrollbars="vertical" />
+
+                    <TextView
+                        android:id="@+id/tvTradeRecordsPnlSummary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="盈亏合计：0.00    交易次数：0次"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -441,7 +631,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/trade_statistics_title"
+                        android:text="交易统计"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -452,6 +642,68 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
                         android:nestedScrollingEnabled="false" />
+
+                    <com.google.android.material.button.MaterialButtonToggleGroup
+                        android:id="@+id/toggleTradePnlSide"
+                        android:layout_width="wrap_content"
+                        android:layout_height="34dp"
+                        android:layout_marginTop="8dp"
+                        app:singleSelection="true">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnTradePnlAll"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="34dp"
+                            android:minWidth="66dp"
+                            android:text="全部"
+                            android:textAllCaps="false"
+                            android:textSize="11sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnTradePnlBuy"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="34dp"
+                            android:minWidth="66dp"
+                            android:text="买入"
+                            android:textAllCaps="false"
+                            android:textSize="11sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnTradePnlSell"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="34dp"
+                            android:minWidth="66dp"
+                            android:text="卖出"
+                            android:textAllCaps="false"
+                            android:textSize="11sp" />
+                    </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                    <TextView
+                        android:id="@+id/tvTradePnlSummary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvTradePnlLegend"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:visibility="gone" />
+
+                    <com.binance.monitor.ui.account.TradePnlBarChartView
+                        android:id="@+id/tradePnlBarChart"
+                        android:layout_width="match_parent"
+                        android:layout_height="220dp"
+                        android:layout_marginTop="8dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
@@ -487,6 +739,19 @@
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/bg_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tabSettings"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip_unselected"
+            android:gravity="center"
+            android:text="设置"
+            android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:textStyle="bold" />
     </LinearLayout>

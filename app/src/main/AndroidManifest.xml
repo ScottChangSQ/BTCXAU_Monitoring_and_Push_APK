@@ -42,6 +42,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.settings.SettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.main.MainActivity"
             android:exported="true">
             <intent-filter>

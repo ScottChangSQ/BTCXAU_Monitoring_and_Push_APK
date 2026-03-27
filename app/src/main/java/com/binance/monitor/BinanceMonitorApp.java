@@ -6,6 +6,7 @@ import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
 import com.binance.monitor.data.repository.MonitorRepository;
+import com.binance.monitor.ui.account.AccountStatsPreloadManager;
 
 public class BinanceMonitorApp extends Application {
 
@@ -16,5 +17,6 @@ public class BinanceMonitorApp extends Application {
         LogManager.getInstance(this);
         AbnormalRecordManager.getInstance(this);
         MonitorRepository.getInstance(this);
+        AccountStatsPreloadManager.getInstance(this).start();
     }
 }

@@ -5,7 +5,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
-import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -29,7 +28,7 @@ import com.binance.monitor.databinding.ActivityMainBinding;
 import com.binance.monitor.databinding.ItemMetricBinding;
 import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.adapter.AbnormalRecordAdapter;
-import com.binance.monitor.ui.log.LogActivity;
+import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.util.AppLaunchHelper;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.PermissionHelper;
@@ -45,8 +44,6 @@ import java.util.UUID;
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQUEST_CODE_NOTIFICATION = 100;
-    private static final float SWIPE_THRESHOLD = 120f;
-    private static final float SWIPE_VELOCITY_THRESHOLD = 120f;
 
     private ActivityMainBinding binding;
     private MainViewModel viewModel;
@@ -60,7 +57,6 @@ public class MainActivity extends AppCompatActivity {
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private boolean applyingConfig;
     private boolean monitoringEnabled;
-    private GestureDetector gestureDetector;
     private List<AbnormalRecord> recentRecordsSource = Collections.emptyList();
     private final Handler recentRecordsHandler = new Handler(Looper.getMainLooper());
     private final Runnable recentRecordsRefreshRunnable = new Runnable() {
@@ -96,7 +92,6 @@ public class MainActivity extends AppCompatActivity {
         renderSymbolTab();
         sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
         promptNotificationPermissionIfNeeded();
-        gestureDetector = new GestureDetector(this, new SwipeListener());
     }
 
     @Override
@@ -122,9 +117,6 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
-        if (gestureDetector != null) {
-            gestureDetector.onTouchEvent(event);
-        }
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             View focus = getCurrentFocus();
             if (focus instanceof EditText) {
@@ -164,23 +156,34 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupBottomNav() {
-        updateBottomTabs(true);
+        updateBottomTabs(true, false, false);
         binding.tabMarketMonitor.setOnClickListener(v -> updateBottomTabs(true));
         binding.tabAccountStats.setOnClickListener(v -> openAccountStats());
+        binding.tabSettings.setOnClickListener(v -> openSettings());
     }
 
     private void updateBottomTabs(boolean marketSelected) {
+        updateBottomTabs(marketSelected, !marketSelected, false);
+    }
+
+    private void updateBottomTabs(boolean marketSelected, boolean accountSelected, boolean settingsSelected) {
         binding.tabMarketMonitor.setBackground(marketSelected
                 ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
                 : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
         binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this,
                 marketSelected ? R.color.bg_primary : R.color.text_secondary));
 
-        binding.tabAccountStats.setBackground(marketSelected
-                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected)
-                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected));
+        binding.tabAccountStats.setBackground(accountSelected
+                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
+                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
         binding.tabAccountStats.setTextColor(ContextCompat.getColor(this,
-                marketSelected ? R.color.text_secondary : R.color.bg_primary));
+                accountSelected ? R.color.bg_primary : R.color.text_secondary));
+
+        binding.tabSettings.setBackground(settingsSelected
+                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
+                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+        binding.tabSettings.setTextColor(ContextCompat.getColor(this,
+                settingsSelected ? R.color.bg_primary : R.color.text_secondary));
     }
 
     private void setupActions() {
@@ -201,7 +204,6 @@ public class MainActivity extends AppCompatActivity {
                 promptBatteryOptimizationIfNeeded();
             }
         });
-        binding.btnViewLogs.setOnClickListener(v -> startActivity(new android.content.Intent(this, LogActivity.class)));
         binding.btnOpenBinance.setOnClickListener(v -> {
             if (!AppLaunchHelper.openBinance(this)) {
                 Toast.makeText(this, R.string.open_app_failed, Toast.LENGTH_SHORT).show();
@@ -235,47 +237,6 @@ public class MainActivity extends AppCompatActivity {
         binding.etPriceChangeThreshold.setOnFocusChangeListener((v, hasFocus) -> {
             if (!hasFocus) {
                 persistIfReady();
-            }
-        });
-        binding.switchFloatingEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applyingConfig) {
-                return;
-            }
-            if (isChecked && !PermissionHelper.canDrawOverlays(this)) {
-                showOverlayPermissionDialog();
-            }
-            viewModel.setFloatingEnabled(isChecked);
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-        });
-        binding.seekFloatingAlpha.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) {
-                int safeValue = Math.max(20, progress);
-                binding.tvAlphaValue.setText(getString(R.string.alpha_suffix, safeValue));
-                if (fromUser && !applyingConfig) {
-                    viewModel.setFloatingAlpha(safeValue);
-                    sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-                }
-            }
-
-            @Override
-            public void onStartTrackingTouch(android.widget.SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(android.widget.SeekBar seekBar) {
-            }
-        });
-        binding.switchShowBtc.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (!applyingConfig) {
-                viewModel.setShowBtc(isChecked);
-                sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-            }
-        });
-        binding.switchShowXau.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (!applyingConfig) {
-                viewModel.setShowXau(isChecked);
-                sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
             }
         });
     }
@@ -441,12 +402,6 @@ public class MainActivity extends AppCompatActivity {
         applyingConfig = true;
         binding.radioLogicOr.setChecked(!viewModel.isUseAndMode());
         binding.radioLogicAnd.setChecked(viewModel.isUseAndMode());
-        binding.switchFloatingEnabled.setChecked(viewModel.isFloatingEnabled());
-        int alpha = viewModel.getFloatingAlpha();
-        binding.seekFloatingAlpha.setProgress(alpha);
-        binding.tvAlphaValue.setText(getString(R.string.alpha_suffix, alpha));
-        binding.switchShowBtc.setChecked(viewModel.isShowBtc());
-        binding.switchShowXau.setChecked(viewModel.isShowXau());
         applyingConfig = false;
     }
 
@@ -547,6 +502,13 @@ public class MainActivity extends AppCompatActivity {
         overridePendingTransition(0, 0);
     }
 
+    private void openSettings() {
+        android.content.Intent intent = new android.content.Intent(this, SettingsActivity.class);
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
+    }
+
     private void showOverlayPermissionDialog() {
         new MaterialAlertDialogBuilder(this)
                 .setMessage(R.string.overlay_permission_required)
@@ -580,26 +542,5 @@ public class MainActivity extends AppCompatActivity {
                         PermissionHelper.openBatteryOptimizationSettings(this))
                 .setNeutralButton(R.string.dismiss, null)
                 .show();
-    }
-
-    private class SwipeListener extends GestureDetector.SimpleOnGestureListener {
-        @Override
-        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-            if (e1 == null || e2 == null) {
-                return false;
-            }
-            float diffX = e2.getX() - e1.getX();
-            float diffY = e2.getY() - e1.getY();
-            if (Math.abs(diffX) < Math.abs(diffY)) {
-                return false;
-            }
-            if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
-                if (diffX < 0f) {
-                    openAccountStats();
-                }
-                return true;
-            }
-            return false;
-        }
     }
 }

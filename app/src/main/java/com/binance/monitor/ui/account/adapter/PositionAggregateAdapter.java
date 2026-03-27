@@ -58,12 +58,13 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
                     item.totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
             String pnlText = signedMoney(item.totalPnl);
+            String costText = String.format(Locale.getDefault(), "%,.0f", item.avgCostPrice);
             String raw = String.format(Locale.getDefault(),
-                    "%s | %s | %.2f 手 | 持仓成本 $%s | 持仓盈亏 %s",
+                    "%s | %s | %.2f 手 | 成本 $%s | %s",
                     item.productName,
                     item.side,
                     item.quantity,
-                    FormatUtils.formatPrice(item.avgCostPrice),
+                    costText,
                     pnlText);
             SpannableString span = new SpannableString(raw);
             int start = raw.lastIndexOf(pnlText);

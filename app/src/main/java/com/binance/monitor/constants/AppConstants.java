@@ -19,8 +19,12 @@ public final class AppConstants {
     public static final double XAU_DEFAULT_AMOUNT = 15000000d;
     public static final double XAU_DEFAULT_PRICE_CHANGE = 10d;
 
-    public static final String BASE_REST_URL = "https://fapi.binance.com/fapi/v1/klines";
-    public static final String BASE_WS_URL = "wss://fstream.binance.com/ws/";
+    public static final String BASE_REST_URL = sanitizeBaseUrl(
+            BuildConfig.BINANCE_REST_BASE_URL,
+            "https://fapi.binance.com/fapi/v1/klines");
+    public static final String BASE_WS_URL = sanitizeBaseUrl(
+            BuildConfig.BINANCE_WS_BASE_URL,
+            "wss://fstream.binance.com/ws/");
     public static final int MAX_RECONNECT_ATTEMPTS = 30;
     public static final long NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000L;
     public static final long MERGE_WINDOW_MS = 4000L;
@@ -65,11 +69,20 @@ public final class AppConstants {
     }
 
     public static String buildRestUrl(String symbol) {
-        return BASE_REST_URL + "?symbol=" + symbol + "&interval=1m&limit=3";
+        if (BASE_REST_URL.contains("{symbol}")) {
+            return BASE_REST_URL.replace("{symbol}", symbol);
+        }
+        String separator = BASE_REST_URL.contains("?") ? "&" : "?";
+        return BASE_REST_URL + separator + "symbol=" + symbol + "&interval=1m&limit=3";
     }
 
     public static String buildWebSocketUrl(String symbol) {
-        return BASE_WS_URL + symbol.toLowerCase() + "@kline_1m";
+        String stream = symbol.toLowerCase() + "@kline_1m";
+        if (BASE_WS_URL.contains("{stream}")) {
+            return BASE_WS_URL.replace("{stream}", stream);
+        }
+        String base = BASE_WS_URL.endsWith("/") ? BASE_WS_URL : (BASE_WS_URL + "/");
+        return base + stream;
     }
 
     public static String symbolToAsset(String symbol) {
@@ -77,5 +90,13 @@ public final class AppConstants {
             return "XAU";
         }
         return "BTC";
+    }
+
+    private static String sanitizeBaseUrl(String value, String fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? fallback : trimmed;
     }
 }

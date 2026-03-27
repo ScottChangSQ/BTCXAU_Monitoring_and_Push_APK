@@ -133,6 +133,7 @@ public class Mt5GatewayClient {
             list.add(new PositionItem(
                     item.optString("productName", "--"),
                     item.optString("code", "--"),
+                    item.optString("side", "Buy"),
                     item.optDouble("quantity", 0d),
                     item.optDouble("sellableQuantity", 0d),
                     item.optDouble("costPrice", 0d),
@@ -141,10 +142,38 @@ public class Mt5GatewayClient {
                     item.optDouble("positionRatio", 0d),
                     item.optDouble("dayPnL", 0d),
                     item.optDouble("totalPnL", 0d),
-                    item.optDouble("returnRate", 0d)
+                    item.optDouble("returnRate", 0d),
+                    item.optDouble("pendingLots", 0d),
+                    item.optInt("pendingCount", 0),
+                    item.optDouble("pendingPrice", 0d),
+                    optDoubleAny(item, 0d, "takeProfit", "tp", "tpPrice", "take_profit"),
+                    optDoubleAny(item, 0d, "stopLoss", "sl", "slPrice", "stop_loss"),
+                    optDoubleAny(item, 0d, "storageFee", "swap", "storage", "swapFee")
             ));
         }
         return list;
+    }
+
+    private double optDoubleAny(JSONObject item, double fallback, String... keys) {
+        if (item == null || keys == null) {
+            return fallback;
+        }
+        for (String key : keys) {
+            if (key == null || key.trim().isEmpty() || !item.has(key)) {
+                continue;
+            }
+            Object value = item.opt(key);
+            if (value instanceof Number) {
+                return ((Number) value).doubleValue();
+            }
+            if (value instanceof String) {
+                try {
+                    return Double.parseDouble(((String) value).trim());
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return fallback;
     }
 
     private List<TradeRecordItem> parseTrades(JSONArray array) {

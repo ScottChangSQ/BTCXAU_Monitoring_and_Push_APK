@@ -5,6 +5,12 @@ plugins {
 val mt5GatewayBaseUrl = (
     project.findProperty("MT5_GATEWAY_BASE_URL") as String?
 )?.trim()?.takeIf { it.isNotEmpty() } ?: "http://10.0.2.2:8787"
+val binanceRestBaseUrl = (
+    project.findProperty("BINANCE_REST_BASE_URL") as String?
+)?.trim()?.takeIf { it.isNotEmpty() } ?: "https://fapi.binance.com/fapi/v1/klines"
+val binanceWsBaseUrl = (
+    project.findProperty("BINANCE_WS_BASE_URL") as String?
+)?.trim()?.takeIf { it.isNotEmpty() } ?: "wss://fstream.binance.com/ws/"
 
 android {
     namespace = "com.binance.monitor"
@@ -20,6 +26,16 @@ android {
             "String",
             "MT5_GATEWAY_BASE_URL",
             "\"${mt5GatewayBaseUrl.replace("\"", "\\\"")}\""
+        )
+        buildConfigField(
+            "String",
+            "BINANCE_REST_BASE_URL",
+            "\"${binanceRestBaseUrl.replace("\"", "\\\"")}\""
+        )
+        buildConfigField(
+            "String",
+            "BINANCE_WS_BASE_URL",
+            "\"${binanceWsBaseUrl.replace("\"", "\\\"")}\""
         )
     }
 

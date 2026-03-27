@@ -10,14 +10,18 @@ public final class MetricNameTranslator {
     static {
         NAME_MAP.put("Total Asset", "总资产");
         NAME_MAP.put("Total Assets", "总资产");
-        NAME_MAP.put("Margin", "保证金金额");
-        NAME_MAP.put("Free Fund", "可用资金");
-        NAME_MAP.put("Available Funds", "可用资金");
+        NAME_MAP.put("Net Asset", "净资产");
+        NAME_MAP.put("Current Equity", "净资产");
+        NAME_MAP.put("Margin", "保证金");
+        NAME_MAP.put("Margin Amount", "保证金");
+        NAME_MAP.put("Free Fund", "可用预付款");
+        NAME_MAP.put("Available Funds", "可用预付款");
+        NAME_MAP.put("Available", "可用预付款");
         NAME_MAP.put("Position Market Value", "持仓市值");
+        NAME_MAP.put("Position Value", "持仓市值");
         NAME_MAP.put("Position PnL", "持仓盈亏");
         NAME_MAP.put("Daily PnL", "当日盈亏");
         NAME_MAP.put("Cumulative PnL", "累计盈亏");
-        NAME_MAP.put("Current Equity", "当前净值");
         NAME_MAP.put("Daily Return", "当日收益率");
         NAME_MAP.put("Total Return", "累计收益率");
         NAME_MAP.put("Position Ratio", "仓位占比");
@@ -27,8 +31,8 @@ public final class MetricNameTranslator {
         NAME_MAP.put("30D Return", "近30日收益");
         NAME_MAP.put("Max Drawdown", "最大回撤");
         NAME_MAP.put("Volatility", "波动率");
-        NAME_MAP.put("Sharpe", "Sharpe Ratio");
-        NAME_MAP.put("Sharpe Ratio", "Sharpe Ratio");
+        NAME_MAP.put("Sharpe", "夏普比率");
+        NAME_MAP.put("Sharpe Ratio", "夏普比率");
 
         NAME_MAP.put("Cumulative Profit", "累计收益额");
         NAME_MAP.put("Cumulative Return", "累计收益率");
@@ -39,7 +43,7 @@ public final class MetricNameTranslator {
         NAME_MAP.put("Buy Count", "买入次数");
         NAME_MAP.put("Sell Count", "卖出次数");
         NAME_MAP.put("Win Rate", "胜率");
-        NAME_MAP.put("Win/Loss Trades", "盈利/亏损交易数");
+        NAME_MAP.put("Win/Loss Trades", "盈利交易数/亏损交易数");
         NAME_MAP.put("Avg Profit/Trade", "平均每笔盈利");
         NAME_MAP.put("Avg Loss/Trade", "平均每笔亏损");
         NAME_MAP.put("PnL Ratio", "盈亏比");

@@ -17,33 +17,51 @@ import com.binance.monitor.ui.account.model.TradeRecordItem;
 import com.binance.monitor.util.FormatUtils;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapterV2.Holder> {
     private final List<TradeRecordItem> items = new ArrayList<>();
+    private final List<String> rowKeys = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
 
     public void submitList(List<TradeRecordItem> data) {
-        Set<String> next = new HashSet<>();
-        if (data != null) {
-            for (TradeRecordItem item : data) {
-                String key = keyOf(item);
-                if (expandedKeys.contains(key)) {
-                    next.add(key);
-                }
+        List<String> nextRowKeys = buildRowKeys(data);
+        Set<String> nextExpanded = new HashSet<>();
+        for (String key : nextRowKeys) {
+            if (expandedKeys.contains(key)) {
+                nextExpanded.add(key);
             }
         }
         expandedKeys.clear();
-        expandedKeys.addAll(next);
+        expandedKeys.addAll(nextExpanded);
 
         items.clear();
+        rowKeys.clear();
         if (data != null) {
             items.addAll(data);
+            rowKeys.addAll(nextRowKeys);
         }
         notifyDataSetChanged();
+    }
+
+    private List<String> buildRowKeys(List<TradeRecordItem> data) {
+        List<String> keys = new ArrayList<>();
+        if (data == null || data.isEmpty()) {
+            return keys;
+        }
+        Map<String, Integer> occurrence = new HashMap<>();
+        for (TradeRecordItem item : data) {
+            String base = baseKeyOf(item);
+            int index = occurrence.containsKey(base) ? occurrence.get(base) : 0;
+            occurrence.put(base, index + 1);
+            keys.add(base + "#" + index);
+        }
+        return keys;
     }
 
     @NonNull
@@ -55,16 +73,21 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
     @Override
     public void onBindViewHolder(@NonNull Holder holder, int position) {
         TradeRecordItem item = items.get(position);
-        boolean expanded = expandedKeys.contains(keyOf(item));
+        String rowKey = rowKeys.get(position);
+        boolean expanded = expandedKeys.contains(rowKey);
         holder.bind(item, expanded);
         holder.binding.layoutHeader.setOnClickListener(v -> {
-            String key = keyOf(item);
+            int adapterPosition = holder.getBindingAdapterPosition();
+            if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= rowKeys.size()) {
+                return;
+            }
+            String key = rowKeys.get(adapterPosition);
             if (expandedKeys.contains(key)) {
                 expandedKeys.remove(key);
             } else {
                 expandedKeys.add(key);
             }
-            notifyItemChanged(holder.getBindingAdapterPosition());
+            notifyItemChanged(adapterPosition);
         });
     }
 
@@ -73,8 +96,20 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         return items.size();
     }
 
-    private String keyOf(TradeRecordItem item) {
-        return item.getTimestamp() + "|" + item.getCode() + "|" + item.getSide();
+    private String baseKeyOf(TradeRecordItem item) {
+        if (item == null) {
+            return "";
+        }
+        long openTime = item.getOpenTime() > 0L ? item.getOpenTime() : item.getTimestamp();
+        long closeTime = item.getCloseTime() > 0L ? item.getCloseTime() : item.getTimestamp();
+        long qtyKey = Math.round(Math.abs(item.getQuantity()) * 10_000d);
+        long priceKey = Math.round(item.getPrice() * 100d);
+        long amountKey = Math.round(item.getAmount() * 100d);
+        long profitKey = Math.round(item.getProfit() * 100d);
+        long feeKey = Math.round(item.getFee() * 100d);
+        long storageKey = Math.round(item.getStorageFee() * 100d);
+        return item.getCode() + "|" + item.getSide() + "|" + openTime + "|" + closeTime + "|" + qtyKey + "|"
+                + priceKey + "|" + amountKey + "|" + profitKey + "|" + feeKey + "|" + storageKey;
     }
 
     static class Holder extends RecyclerView.ViewHolder {
@@ -91,7 +126,7 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
                     item.getProfit() >= 0d ? R.color.accent_green : R.color.accent_red);
             String amount = signedMoney(item.getProfit());
-            String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手| %s",
+            String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
                     item.getProductName(), sideCn(item.getSide()), item.getQuantity(), amount);
             SpannableString span = new SpannableString(raw);
             int start = raw.lastIndexOf(amount);
@@ -114,7 +149,7 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
                     item.getQuantity(),
                     signedMoney(item.getProfit()),
                     FormatUtils.formatPrice(item.getStorageFee())));
-            binding.tvRemark.setText("备注: " + item.getRemark());
+            binding.tvRemark.setVisibility(View.GONE);
         }
 
         private static String sideCn(String side) {

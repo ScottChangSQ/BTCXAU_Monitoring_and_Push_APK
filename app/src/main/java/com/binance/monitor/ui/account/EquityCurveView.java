@@ -48,6 +48,9 @@ public class EquityCurveView extends View {
     private float chartBottom;
     private double chartMin;
     private double chartMax;
+    private long chartStartTs;
+    private long chartEndTs;
+    private double baseBalance = 1d;
 
     private int highlightedIndex = -1;
     private boolean longPressing;
@@ -123,10 +126,16 @@ public class EquityCurveView extends View {
         points.clear();
         if (data != null) {
             points.addAll(data);
+            points.sort((left, right) -> Long.compare(left.getTimestamp(), right.getTimestamp()));
         }
         highlightedIndex = -1;
         longPressing = false;
         dispatchHighlightedPoint();
+        invalidate();
+    }
+
+    public void setBaseBalance(double value) {
+        baseBalance = Math.max(1e-9, value);
         invalidate();
     }
 
@@ -136,19 +145,16 @@ public class EquityCurveView extends View {
         if (points.size() < 2) {
             return super.onTouchEvent(event);
         }
-
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_MOVE && longPressing) {
             requestParentDisallowIntercept(true);
             updateHighlightByX(event.getX());
             return true;
         }
-        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            if (longPressing) {
-                longPressing = false;
-                requestParentDisallowIntercept(false);
-                return true;
-            }
+        if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && longPressing) {
+            longPressing = false;
+            requestParentDisallowIntercept(false);
+            return true;
         }
         return true;
     }
@@ -162,9 +168,9 @@ public class EquityCurveView extends View {
             return;
         }
 
-        chartLeft = dp(56f);
+        chartLeft = dp(38f);
         chartTop = dp(12f);
-        chartRight = width - dp(8f);
+        chartRight = width - dp(36f);
         chartBottom = height - dp(24f);
 
         drawGrid(canvas, chartLeft, chartTop, chartRight, chartBottom);
@@ -173,27 +179,36 @@ public class EquityCurveView extends View {
             return;
         }
 
-        chartMin = Double.MAX_VALUE;
-        chartMax = -Double.MAX_VALUE;
+        double rawMin = Double.MAX_VALUE;
+        double rawMax = -Double.MAX_VALUE;
         for (CurvePoint point : points) {
-            chartMin = Math.min(chartMin, Math.min(point.getEquity(), point.getBalance()));
-            chartMax = Math.max(chartMax, Math.max(point.getEquity(), point.getBalance()));
+            rawMin = Math.min(rawMin, Math.min(point.getEquity(), point.getBalance()));
+            rawMax = Math.max(rawMax, Math.max(point.getEquity(), point.getBalance()));
         }
+        if (rawMax - rawMin < 1e-6) {
+            rawMax += 1d;
+            rawMin -= 1d;
+        }
+        double rawRange = Math.max(1d, rawMax - rawMin);
+        double step = niceStep(rawRange / 4d);
+        chartMin = Math.floor(rawMin / step) * step;
+        chartMax = Math.ceil(rawMax / step) * step;
         if (chartMax - chartMin < 1e-6) {
             chartMax += 1d;
             chartMin -= 1d;
         }
 
+        chartStartTs = points.get(0).getTimestamp();
+        chartEndTs = points.get(points.size() - 1).getTimestamp();
+        if (chartEndTs <= chartStartTs) {
+            chartEndTs = chartStartTs + 1L;
+        }
+
         equityPath.reset();
         balancePath.reset();
-        int peakIndex = 0;
-        int valleyIndex = 0;
-        double peak = points.get(0).getEquity();
-        double valley = points.get(0).getEquity();
-
         for (int i = 0; i < points.size(); i++) {
             CurvePoint point = points.get(i);
-            float x = chartLeft + (chartRight - chartLeft) * i / (points.size() - 1f);
+            float x = mapX(point.getTimestamp(), chartStartTs, chartEndTs, chartLeft, chartRight);
             float yEquity = mapY(point.getEquity(), chartMin, chartMax, chartTop, chartBottom);
             float yBalance = mapY(point.getBalance(), chartMin, chartMax, chartTop, chartBottom);
             if (i == 0) {
@@ -203,44 +218,25 @@ public class EquityCurveView extends View {
                 equityPath.lineTo(x, yEquity);
                 balancePath.lineTo(x, yBalance);
             }
-            if (point.getEquity() >= peak) {
-                peak = point.getEquity();
-                peakIndex = i;
-            }
-            if (point.getEquity() <= valley) {
-                valley = point.getEquity();
-                valleyIndex = i;
-            }
         }
 
         canvas.drawPath(balancePath, balancePaint);
         canvas.drawPath(equityPath, equityPaint);
-
-        float peakX = chartLeft + (chartRight - chartLeft) * peakIndex / (points.size() - 1f);
-        float peakY = mapY(peak, chartMin, chartMax, chartTop, chartBottom);
-        float valleyX = chartLeft + (chartRight - chartLeft) * valleyIndex / (points.size() - 1f);
-        float valleyY = mapY(valley, chartMin, chartMax, chartTop, chartBottom);
-
-        markerPaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_green));
-        canvas.drawCircle(peakX, peakY, dp(3f), markerPaint);
-        markerPaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_red));
-        canvas.drawCircle(valleyX, valleyY, dp(3f), markerPaint);
 
         if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
             drawHighlight(canvas, highlightedIndex);
         }
 
         drawAxes(canvas, chartLeft, chartTop, chartRight, chartBottom);
-        drawYLabels(canvas, chartLeft, chartTop, chartBottom, chartMin, chartMax);
+        drawYLabels(canvas, chartLeft, chartRight, chartTop, chartBottom, chartMin, chartMax, baseBalance);
         drawXLabels(canvas, chartLeft, chartRight, chartBottom);
     }
 
     private void drawHighlight(Canvas canvas, int index) {
         CurvePoint point = points.get(index);
-        float x = chartLeft + (chartRight - chartLeft) * index / (points.size() - 1f);
+        float x = mapX(point.getTimestamp(), chartStartTs, chartEndTs, chartLeft, chartRight);
         float yEquity = mapY(point.getEquity(), chartMin, chartMax, chartTop, chartBottom);
         float yBalance = mapY(point.getBalance(), chartMin, chartMax, chartTop, chartBottom);
-
         canvas.drawLine(x, chartTop, x, chartBottom, crosshairPaint);
 
         markerPaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_cyan));
@@ -251,13 +247,16 @@ public class EquityCurveView extends View {
         String line1 = formatLabelTime(point.getTimestamp());
         String line2 = "净值 $" + FormatUtils.formatPrice(point.getEquity());
         String line3 = "结余 $" + FormatUtils.formatPrice(point.getBalance());
+        double pct = (point.getBalance() - baseBalance) / Math.max(1e-9, baseBalance) * 100d;
+        String line4 = String.format(Locale.getDefault(), "收益 %+.2f%%", pct);
 
         float maxWidth = Math.max(tooltipTextPaint.measureText(line1),
-                Math.max(tooltipTextPaint.measureText(line2), tooltipTextPaint.measureText(line3)));
+                Math.max(Math.max(tooltipTextPaint.measureText(line2), tooltipTextPaint.measureText(line3)),
+                        tooltipTextPaint.measureText(line4)));
         float padding = dp(6f);
         float lineHeight = dp(11f);
         float boxWidth = maxWidth + padding * 2;
-        float boxHeight = lineHeight * 3 + padding * 2;
+        float boxHeight = lineHeight * 4 + padding * 2;
 
         float boxLeft = x + dp(8f);
         if (boxLeft + boxWidth > chartRight) {
@@ -265,12 +264,12 @@ public class EquityCurveView extends View {
         }
         boxLeft = Math.max(chartLeft, boxLeft);
         float boxTop = chartTop + dp(4f);
-
         RectF rect = new RectF(boxLeft, boxTop, boxLeft + boxWidth, boxTop + boxHeight);
         canvas.drawRoundRect(rect, dp(6f), dp(6f), tooltipBgPaint);
         canvas.drawText(line1, boxLeft + padding, boxTop + padding + lineHeight * 0.8f, tooltipTextPaint);
         canvas.drawText(line2, boxLeft + padding, boxTop + padding + lineHeight * 1.8f, tooltipTextPaint);
         canvas.drawText(line3, boxLeft + padding, boxTop + padding + lineHeight * 2.8f, tooltipTextPaint);
+        canvas.drawText(line4, boxLeft + padding, boxTop + padding + lineHeight * 3.8f, tooltipTextPaint);
     }
 
     private void updateHighlightByX(float x) {
@@ -279,13 +278,44 @@ public class EquityCurveView extends View {
             return;
         }
         float clamped = Math.max(chartLeft, Math.min(chartRight, x));
-        int index = Math.round((clamped - chartLeft) / range * (points.size() - 1));
+        double ratio = (clamped - chartLeft) / range;
+        long targetTs = chartStartTs + Math.round(ratio * (chartEndTs - chartStartTs));
+        int index = findNearestIndexByTimestamp(targetTs);
         index = Math.max(0, Math.min(points.size() - 1, index));
         if (highlightedIndex != index) {
             highlightedIndex = index;
             dispatchHighlightedPoint();
             invalidate();
         }
+    }
+
+    private int findNearestIndexByTimestamp(long timestamp) {
+        int size = points.size();
+        if (size == 0) {
+            return -1;
+        }
+        int left = 0;
+        int right = size - 1;
+        while (left <= right) {
+            int mid = (left + right) >>> 1;
+            long midTs = points.get(mid).getTimestamp();
+            if (midTs < timestamp) {
+                left = mid + 1;
+            } else if (midTs > timestamp) {
+                right = mid - 1;
+            } else {
+                return mid;
+            }
+        }
+        if (left >= size) {
+            return size - 1;
+        }
+        if (right < 0) {
+            return 0;
+        }
+        long leftDiff = Math.abs(points.get(left).getTimestamp() - timestamp);
+        long rightDiff = Math.abs(points.get(right).getTimestamp() - timestamp);
+        return leftDiff < rightDiff ? left : right;
     }
 
     private void clearHighlight() {
@@ -298,59 +328,82 @@ public class EquityCurveView extends View {
         }
     }
 
+    private void dispatchHighlightedPoint() {
+        if (onPointHighlightListener == null) {
+            return;
+        }
+        onPointHighlightListener.onPointHighlight(
+                highlightedIndex >= 0 && highlightedIndex < points.size() ? points.get(highlightedIndex) : null);
+    }
+
     private void requestParentDisallowIntercept(boolean disallow) {
         if (getParent() != null) {
             getParent().requestDisallowInterceptTouchEvent(disallow);
         }
     }
 
-    private void dispatchHighlightedPoint() {
-        if (onPointHighlightListener == null) {
-            return;
-        }
-        if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
-            onPointHighlightListener.onPointHighlight(points.get(highlightedIndex));
-        } else {
-            onPointHighlightListener.onPointHighlight(null);
-        }
-    }
-
     private void drawGrid(Canvas canvas, float left, float top, float right, float bottom) {
         float hStep = (bottom - top) / 4f;
         for (int i = 0; i <= 4; i++) {
-            float y = top + i * hStep;
-            canvas.drawLine(left, y, right, y, gridPaint);
+            canvas.drawLine(left, top + i * hStep, right, top + i * hStep, gridPaint);
         }
         float vStep = (right - left) / 5f;
         for (int i = 0; i <= 5; i++) {
-            float x = left + i * vStep;
-            canvas.drawLine(x, top, x, bottom, gridPaint);
+            canvas.drawLine(left + i * vStep, top, left + i * vStep, bottom, gridPaint);
         }
     }
 
     private void drawAxes(Canvas canvas, float left, float top, float right, float bottom) {
         canvas.drawLine(left, top, left, bottom, axisPaint);
+        canvas.drawLine(right, top, right, bottom, axisPaint);
         canvas.drawLine(left, bottom, right, bottom, axisPaint);
     }
 
-    private void drawYLabels(Canvas canvas, float left, float top, float bottom, double min, double max) {
-        int step = 4;
-        for (int i = 0; i <= step; i++) {
-            double value = max - (max - min) * i / step;
-            float y = top + (bottom - top) * i / step;
-            String label = "$" + FormatUtils.formatPrice(value);
-            canvas.drawText(label, dp(4f), y + dp(3f), labelPaint);
+    private void drawYLabels(Canvas canvas, float left, float right, float top, float bottom, double min, double max, double base) {
+        int tickCount = 4;
+        for (int i = 0; i <= tickCount; i++) {
+            double value = min + (max - min) * i / tickCount;
+            float y = mapY(value, min, max, top, bottom);
+            String amount = "$" + String.format(Locale.getDefault(), "%,.0f", value);
+            float amountWidth = labelPaint.measureText(amount);
+            canvas.drawText(amount, left - dp(4f) - amountWidth, y + dp(3f), labelPaint);
+
+            double pct = (value - base) / Math.max(1e-9, base) * 100d;
+            String percent = String.format(Locale.getDefault(), "%+.1f%%", pct);
+            canvas.drawText(percent, right + dp(4f), y + dp(3f), labelPaint);
         }
+    }
+
+    private double niceStep(double rawStep) {
+        if (rawStep <= 1d) {
+            return 1d;
+        }
+        double exponent = Math.pow(10d, Math.floor(Math.log10(rawStep)));
+        double fraction = rawStep / exponent;
+        double niceFraction;
+        if (fraction <= 1d) {
+            niceFraction = 1d;
+        } else if (fraction <= 2d) {
+            niceFraction = 2d;
+        } else if (fraction <= 5d) {
+            niceFraction = 5d;
+        } else {
+            niceFraction = 10d;
+        }
+        return Math.max(1d, niceFraction * exponent);
     }
 
     private void drawXLabels(Canvas canvas, float left, float right, float bottom) {
         if (points.isEmpty()) {
             return;
         }
-        int mid = points.size() / 2;
-        String start = formatLabelTime(points.get(0).getTimestamp());
-        String middle = formatLabelTime(points.get(mid).getTimestamp());
-        String end = formatLabelTime(points.get(points.size() - 1).getTimestamp());
+        long startTs = points.get(0).getTimestamp();
+        long endTs = points.get(points.size() - 1).getTimestamp();
+        long middleTs = startTs + (endTs - startTs) / 2L;
+
+        String start = formatLabelTime(startTs);
+        String middle = formatLabelTime(middleTs);
+        String end = formatLabelTime(endTs);
 
         canvas.drawText(start, left, bottom + dp(12f), labelPaint);
         float midWidth = labelPaint.measureText(middle);
@@ -360,13 +413,21 @@ public class EquityCurveView extends View {
     }
 
     private String formatLabelTime(long timestamp) {
-        SimpleDateFormat format = new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault());
-        return format.format(timestamp);
+        return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(timestamp);
     }
 
     private float mapY(double value, double min, double max, float top, float bottom) {
         double ratio = (value - min) / (max - min);
         return (float) (bottom - ratio * (bottom - top));
+    }
+
+    private float mapX(long timestamp, long start, long end, float left, float right) {
+        if (end <= start) {
+            return left;
+        }
+        double ratio = (double) (timestamp - start) / (double) (end - start);
+        ratio = Math.max(0d, Math.min(1d, ratio));
+        return (float) (left + ratio * (right - left));
     }
 
     private float dp(float value) {

@@ -16,6 +16,9 @@ public class PositionItem {
     private final double pendingLots;
     private final int pendingCount;
     private final double pendingPrice;
+    private final double takeProfit;
+    private final double stopLoss;
+    private final double storageFee;
 
     public PositionItem(String productName,
                         String code,
@@ -29,7 +32,7 @@ public class PositionItem {
                         double totalPnL,
                         double returnRate) {
         this(productName, code, "Buy", quantity, sellableQuantity, costPrice, latestPrice,
-                marketValue, positionRatio, dayPnL, totalPnL, returnRate, 0d, 0, 0d);
+                marketValue, positionRatio, dayPnL, totalPnL, returnRate, 0d, 0, 0d, 0d, 0d, 0d);
     }
 
     public PositionItem(String productName,
@@ -47,7 +50,7 @@ public class PositionItem {
                         double pendingLots,
                         int pendingCount) {
         this(productName, code, side, quantity, sellableQuantity, costPrice, latestPrice,
-                marketValue, positionRatio, dayPnL, totalPnL, returnRate, pendingLots, pendingCount, 0d);
+                marketValue, positionRatio, dayPnL, totalPnL, returnRate, pendingLots, pendingCount, 0d, 0d, 0d, 0d);
     }
 
     public PositionItem(String productName,
@@ -65,6 +68,29 @@ public class PositionItem {
                         double pendingLots,
                         int pendingCount,
                         double pendingPrice) {
+        this(productName, code, side, quantity, sellableQuantity, costPrice, latestPrice,
+                marketValue, positionRatio, dayPnL, totalPnL, returnRate,
+                pendingLots, pendingCount, pendingPrice, 0d, 0d, 0d);
+    }
+
+    public PositionItem(String productName,
+                        String code,
+                        String side,
+                        double quantity,
+                        double sellableQuantity,
+                        double costPrice,
+                        double latestPrice,
+                        double marketValue,
+                        double positionRatio,
+                        double dayPnL,
+                        double totalPnL,
+                        double returnRate,
+                        double pendingLots,
+                        int pendingCount,
+                        double pendingPrice,
+                        double takeProfit,
+                        double stopLoss,
+                        double storageFee) {
         this.productName = productName;
         this.code = code;
         this.side = side;
@@ -80,6 +106,9 @@ public class PositionItem {
         this.pendingLots = pendingLots;
         this.pendingCount = pendingCount;
         this.pendingPrice = pendingPrice;
+        this.takeProfit = takeProfit;
+        this.stopLoss = stopLoss;
+        this.storageFee = storageFee;
     }
 
     public String getProductName() {
@@ -140,5 +169,17 @@ public class PositionItem {
 
     public double getPendingPrice() {
         return pendingPrice;
+    }
+
+    public double getTakeProfit() {
+        return takeProfit;
+    }
+
+    public double getStopLoss() {
+        return stopLoss;
+    }
+
+    public double getStorageFee() {
+        return storageFee;
     }
 }
