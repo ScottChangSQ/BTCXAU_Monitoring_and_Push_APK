@@ -9,6 +9,7 @@ import com.binance.monitor.data.model.KlineData;
 import org.json.JSONObject;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -29,15 +30,16 @@ public class WebSocketManager {
 
     private final OkHttpClient client;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Map<String, WebSocket> sockets = new ConcurrentHashMap<>();
-    private final Map<String, Integer> reconnectCounts = new ConcurrentHashMap<>();
     private final Map<String, Boolean> managedSymbols = new ConcurrentHashMap<>();
     private volatile Listener listener;
     private volatile boolean running;
+    private volatile WebSocket socket;
+    private volatile int reconnectAttempt;
+    private volatile boolean reconnectScheduled;
 
     public WebSocketManager() {
         client = new OkHttpClient.Builder()
-                .pingInterval(20, TimeUnit.SECONDS)
+                .pingInterval(AppConstants.WS_PING_INTERVAL_SECONDS, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .build();
     }
@@ -45,99 +47,174 @@ public class WebSocketManager {
     public synchronized void connect(Collection<String> symbols, Listener listener) {
         this.listener = listener;
         running = true;
-        for (String symbol : symbols) {
-            managedSymbols.put(symbol, true);
-            if (!sockets.containsKey(symbol)) {
-                connectSymbol(symbol, false);
+        managedSymbols.clear();
+        if (symbols != null) {
+            for (String symbol : symbols) {
+                if (symbol != null && !symbol.trim().isEmpty()) {
+                    managedSymbols.put(symbol.trim().toUpperCase(), true);
+                }
             }
         }
+        reconnectAttempt = 0;
+        reconnectScheduled = false;
+        connectInternal(false);
     }
 
     public synchronized void disconnectAll() {
         running = false;
         handler.removeCallbacksAndMessages(null);
-        for (WebSocket socket : sockets.values()) {
-            socket.close(1000, "disconnect");
+        reconnectScheduled = false;
+        WebSocket current = socket;
+        socket = null;
+        if (current != null) {
+            current.close(1000, "disconnect");
         }
-        sockets.clear();
         managedSymbols.clear();
+        reconnectAttempt = 0;
     }
 
-    private void connectSymbol(String symbol, boolean reconnecting) {
-        if (!running || !Boolean.TRUE.equals(managedSymbols.get(symbol))) {
+    public synchronized void forceReconnect(String reason) {
+        if (!running || managedSymbols.isEmpty()) {
             return;
         }
-        Listener currentListener = listener;
-        if (currentListener != null) {
-            int attempt = reconnectCounts.getOrDefault(symbol, 0);
-            currentListener.onSocketStateChanged(symbol, false, attempt,
-                    reconnecting ? "重连中" : "连接中");
+        notifyErrorAll(reason);
+        WebSocket current = socket;
+        socket = null;
+        if (current != null) {
+            current.cancel();
         }
+        scheduleReconnect(true);
+    }
+
+    private synchronized void connectInternal(boolean reconnecting) {
+        if (!running || managedSymbols.isEmpty() || socket != null) {
+            return;
+        }
+        int currentAttempt = reconnectAttempt;
+        notifyStateAll(false, currentAttempt, reconnecting ? "重连中" : "连接中");
         Request request = new Request.Builder()
-                .url(AppConstants.buildWebSocketUrl(symbol))
+                .url(AppConstants.buildCombinedWebSocketUrl(new HashSet<>(managedSymbols.keySet())))
                 .build();
-        WebSocket socket = client.newWebSocket(request, new WebSocketListener() {
+        socket = client.newWebSocket(request, new WebSocketListener() {
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
-                sockets.put(symbol, webSocket);
-                reconnectCounts.put(symbol, 0);
-                if (listener != null) {
-                    listener.onSocketStateChanged(symbol, true, 0, "已连接");
+                synchronized (WebSocketManager.this) {
+                    socket = webSocket;
+                    reconnectAttempt = 0;
+                    reconnectScheduled = false;
                 }
+                notifyStateAll(true, 0, "已连接");
             }
 
             @Override
             public void onMessage(WebSocket webSocket, String text) {
                 try {
                     JSONObject root = new JSONObject(text);
-                    JSONObject kline = root.getJSONObject("k");
+                    JSONObject payload = root.optJSONObject("data");
+                    JSONObject klineSource = payload == null ? root : payload;
+                    JSONObject kline = klineSource.optJSONObject("k");
+                    if (kline == null) {
+                        return;
+                    }
+                    String symbol = resolveSymbol(root, payload, kline);
+                    if (symbol.isEmpty() || !Boolean.TRUE.equals(managedSymbols.get(symbol))) {
+                        return;
+                    }
                     KlineData data = KlineData.fromSocket(symbol, kline);
                     if (listener != null) {
                         listener.onKlineUpdate(symbol, data);
                     }
                 } catch (Exception exception) {
-                    if (listener != null) {
-                        listener.onSocketError(symbol, "消息解析失败: " + exception.getMessage());
-                    }
+                    notifyErrorAll("消息解析失败: " + exception.getMessage());
                 }
             }
 
             @Override
             public void onClosed(WebSocket webSocket, int code, String reason) {
-                sockets.remove(symbol);
-                scheduleReconnect(symbol, "连接关闭: " + reason);
+                handleSocketTermination(webSocket, "连接关闭: " + reason);
             }
 
             @Override
             public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-                sockets.remove(symbol);
                 String message = t != null ? t.getMessage() : "未知错误";
-                scheduleReconnect(symbol, "连接失败: " + message);
+                handleSocketTermination(webSocket, "连接失败: " + message);
             }
         });
-        sockets.put(symbol, socket);
     }
 
-    private void scheduleReconnect(String symbol, String reason) {
-        if (listener != null) {
-            listener.onSocketError(symbol, reason);
+    private String resolveSymbol(JSONObject root, JSONObject payload, JSONObject kline) {
+        String symbol = "";
+        if (payload != null) {
+            symbol = payload.optString("s", "");
         }
-        if (!running || !Boolean.TRUE.equals(managedSymbols.get(symbol))) {
-            return;
+        if (symbol == null || symbol.trim().isEmpty()) {
+            symbol = kline.optString("s", "");
         }
-        int nextAttempt = reconnectCounts.getOrDefault(symbol, 0) + 1;
-        reconnectCounts.put(symbol, nextAttempt);
-        if (nextAttempt > AppConstants.MAX_RECONNECT_ATTEMPTS) {
-            if (listener != null) {
-                listener.onSocketStateChanged(symbol, false, nextAttempt, "重连已停止");
+        if (symbol == null || symbol.trim().isEmpty()) {
+            String stream = root.optString("stream", "");
+            int atIndex = stream.indexOf('@');
+            symbol = atIndex > 0 ? stream.substring(0, atIndex) : stream;
+        }
+        if (symbol == null) {
+            return "";
+        }
+        return symbol.trim().toUpperCase();
+    }
+
+    private void handleSocketTermination(WebSocket terminatedSocket, String reason) {
+        synchronized (this) {
+            if (socket == terminatedSocket) {
+                socket = null;
             }
+        }
+        notifyErrorAll(reason);
+        scheduleReconnect(false);
+    }
+
+    private synchronized void scheduleReconnect(boolean immediate) {
+        if (!running || managedSymbols.isEmpty()) {
             return;
         }
-        if (listener != null) {
-            listener.onSocketStateChanged(symbol, false, nextAttempt,
-                    "重连中(" + nextAttempt + "/" + AppConstants.MAX_RECONNECT_ATTEMPTS + ")");
+        if (reconnectScheduled) {
+            return;
         }
-        long delay = Math.min(30000L, 2000L * nextAttempt);
-        handler.postDelayed(() -> connectSymbol(symbol, true), delay);
+        reconnectAttempt++;
+        final int attempt = reconnectAttempt;
+        if (attempt > AppConstants.MAX_RECONNECT_ATTEMPTS) {
+            notifyStateAll(false, attempt, "重连已停止");
+            return;
+        }
+        notifyStateAll(false, attempt, "重连中(" + attempt + "/" + AppConstants.MAX_RECONNECT_ATTEMPTS + ")");
+        long delay = immediate ? 300L : Math.min(30_000L, 1_500L * attempt);
+        reconnectScheduled = true;
+        handler.postDelayed(() -> {
+            synchronized (WebSocketManager.this) {
+                reconnectScheduled = false;
+                if (!running || managedSymbols.isEmpty() || socket != null) {
+                    return;
+                }
+                connectInternal(true);
+            }
+        }, delay);
+    }
+
+    private void notifyStateAll(boolean connected, int reconnectAttempt, String message) {
+        Listener currentListener = listener;
+        if (currentListener == null) {
+            return;
+        }
+        for (String symbol : managedSymbols.keySet()) {
+            currentListener.onSocketStateChanged(symbol, connected, reconnectAttempt, message);
+        }
+    }
+
+    private void notifyErrorAll(String message) {
+        Listener currentListener = listener;
+        if (currentListener == null) {
+            return;
+        }
+        for (String symbol : managedSymbols.keySet()) {
+            currentListener.onSocketError(symbol, message);
+        }
     }
 }

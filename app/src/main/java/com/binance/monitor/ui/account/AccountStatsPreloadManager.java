@@ -15,10 +15,14 @@ public class AccountStatsPreloadManager {
     private final Mt5BridgeGatewayClient gatewayClient = new Mt5BridgeGatewayClient();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Object lock = new Object();
+    private static final long MIN_REFRESH_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
+    private static final long MAX_REFRESH_MS = 15_000L;
 
     private volatile Cache latestCache;
     private volatile boolean started;
     private volatile boolean loading;
+    private volatile int unchangedStreak;
+    private volatile long nextDelayMs = MIN_REFRESH_MS;
 
     private AccountStatsPreloadManager(Context context) {
     }
@@ -63,7 +67,7 @@ public class AccountStatsPreloadManager {
             }
             fetchOnce();
             if (started) {
-                scheduleFetch(AppConstants.ACCOUNT_REFRESH_INTERVAL_MS);
+                scheduleFetch(nextDelayMs);
             }
         });
     }
@@ -76,6 +80,8 @@ public class AccountStatsPreloadManager {
         try {
             Mt5BridgeGatewayClient.SnapshotResult result = gatewayClient.fetch(AccountTimeRange.ALL);
             if (!result.isSuccess()) {
+                unchangedStreak = 0;
+                nextDelayMs = Math.min(MAX_REFRESH_MS, Math.max(MIN_REFRESH_MS * 2L, nextDelayMs));
                 Cache previous = latestCache;
                 if (previous != null) {
                     latestCache = new Cache(
@@ -92,6 +98,12 @@ public class AccountStatsPreloadManager {
                 return;
             }
             AccountSnapshot snapshot = result.getSnapshot();
+            if (result.isUnchanged()) {
+                unchangedStreak = Math.min(8, unchangedStreak + 1);
+            } else {
+                unchangedStreak = 0;
+            }
+            nextDelayMs = Math.min(MAX_REFRESH_MS, MIN_REFRESH_MS + unchangedStreak * 1_500L);
             latestCache = new Cache(
                     true,
                     snapshot,
@@ -103,6 +115,8 @@ public class AccountStatsPreloadManager {
                     "",
                     System.currentTimeMillis());
         } catch (Exception exception) {
+            unchangedStreak = 0;
+            nextDelayMs = Math.min(MAX_REFRESH_MS, Math.max(MIN_REFRESH_MS * 2L, nextDelayMs));
             Cache previous = latestCache;
             if (previous != null) {
                 latestCache = new Cache(

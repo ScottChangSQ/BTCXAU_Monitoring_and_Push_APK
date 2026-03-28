@@ -1,0 +1,15 @@
+flowchart TD
+  A[需求澄清] --> B[流程编排 using-superpowers]
+  B --> C[规划文件 planning-with-files]
+  C --> D[/// 步骤拆解 gsd-method-guide]
+  D --> E[OpenSpec: /opsx:propose]
+  E --> F{用户确认?}
+  F -- 否 --> A
+  F -- 是 --> G[OpenSpec: /opsx:apply]
+  G --> H[实现与测试]
+  H --> I[更新流程图]
+  I --> J[更新 progress/findings]
+  J --> K[OpenSpec: /opsx:archive]
+
+  H --> M[模块拆分: 收益统计表]
+  H --> N[口径调整: 库存费纳入]

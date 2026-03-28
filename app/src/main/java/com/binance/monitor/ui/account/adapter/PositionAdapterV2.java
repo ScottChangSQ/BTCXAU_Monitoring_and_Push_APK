@@ -116,9 +116,10 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         }
 
         void bind(PositionItem item, boolean expanded) {
+            double summaryPnl = item.getTotalPnL() + item.getStorageFee();
             int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
-                    item.getTotalPnL() >= 0d ? R.color.accent_green : R.color.accent_red);
-            String pnlText = signedMoney(item.getTotalPnL());
+                    summaryPnl >= 0d ? R.color.accent_green : R.color.accent_red);
+            String pnlText = signedMoney(summaryPnl);
             String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
                     item.getProductName(), sideCn(item.getSide()), item.getQuantity(), pnlText);
             SpannableString span = new SpannableString(raw);

@@ -1,0 +1,10 @@
+flowchart TD
+  A[Start: Receive Requirements] --> B[First Principles Check]
+  B --> C[OpenSpec Propose]
+  C --> D{User Confirms?}
+  D -- No --> C
+  D -- Yes --> E[OpenSpec Apply]
+  E --> F[Implement Changes]
+  F --> G[Update Progress/Findings]
+  G --> H[OpenSpec Archive]
+  H --> I[End]

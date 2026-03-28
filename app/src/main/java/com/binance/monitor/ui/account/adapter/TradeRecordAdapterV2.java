@@ -121,9 +121,10 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         }
 
         void bind(TradeRecordItem item, boolean expanded) {
+            double summaryProfit = item.getProfit() + item.getStorageFee();
             int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
-                    item.getProfit() >= 0d ? R.color.accent_green : R.color.accent_red);
-            String amount = signedMoney(item.getProfit());
+                    summaryProfit >= 0d ? R.color.accent_green : R.color.accent_red);
+            String amount = signedMoney(summaryProfit);
             String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
                     item.getProductName(), sideCn(item.getSide()), item.getQuantity(), amount);
             SpannableString span = new SpannableString(raw);

@@ -288,6 +288,28 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:nestedScrollingEnabled="false" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardReturnStatsSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="收益统计表"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/tvMonthlyReturnsTitle"
@@ -662,7 +684,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
-                        android:text="盈亏：+0$    库存费：+0$    结余：+0$    交易次数：0次"
+                        android:text="交易次数：0次    盈亏：+0$    库存费：+0$    结余：+0$"
                         android:textColor="@color/text_primary"
                         android:textSize="12sp"
                         android:textStyle="bold" />

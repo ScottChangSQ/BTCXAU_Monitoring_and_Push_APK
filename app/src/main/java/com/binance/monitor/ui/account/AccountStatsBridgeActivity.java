@@ -95,6 +95,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final String SORT_CLOSE_TIME = "平仓时间";
     private static final String SORT_OPEN_TIME = "开仓时间";
     private static final String SORT_PROFIT = "盈利水平";
+    private static final long ACCOUNT_REFRESH_MIN_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
+    private static final long ACCOUNT_REFRESH_MAX_MS = 20_000L;
 
     private static final String PREFS_UI_STATE = "account_stats_ui_state";
     private static final String PREF_RANGE = "pref_range";
@@ -196,12 +198,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String lastLoggedSource = "";
     private String lastLoggedGateway = "";
     private String lastLoggedError = "";
+    private long dynamicRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
+    private int unchangedRefreshStreak = 0;
 
     private final Runnable refreshRunnable = new Runnable() {
         @Override
         public void run() {
             requestSnapshot();
-            refreshHandler.postDelayed(this, AppConstants.ACCOUNT_REFRESH_INTERVAL_MS);
+            refreshHandler.postDelayed(this, dynamicRefreshDelayMs);
         }
     };
 
@@ -242,14 +246,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         requestSnapshot();
 
         refreshHandler.removeCallbacks(refreshRunnable);
-        refreshHandler.postDelayed(refreshRunnable, AppConstants.ACCOUNT_REFRESH_INTERVAL_MS);
+        refreshHandler.postDelayed(refreshRunnable, dynamicRefreshDelayMs);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         refreshHandler.removeCallbacks(refreshRunnable);
-        refreshHandler.postDelayed(refreshRunnable, AppConstants.ACCOUNT_REFRESH_INTERVAL_MS);
+        refreshHandler.postDelayed(refreshRunnable, dynamicRefreshDelayMs);
     }
 
     @Override
@@ -472,8 +476,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         android.widget.LinearLayout container = (android.widget.LinearLayout) parent;
+        android.view.View returnStatsSection = binding.cardReturnStatsSection;
         container.removeView(binding.cardCurveSection);
+        if (returnStatsSection != null && returnStatsSection.getParent() == container) {
+            container.removeView(returnStatsSection);
+        }
         container.addView(binding.cardCurveSection);
+        if (returnStatsSection != null) {
+            container.addView(returnStatsSection);
+        }
     }
 
     private void setupRecyclers() {
@@ -1246,6 +1257,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             final String finalGateway = gateway;
             final String finalUpdate = FormatUtils.formatTime(updatedAt);
             final String finalError = error;
+            final boolean finalUnchanged = remote.isUnchanged();
 
             runOnUiThread(() -> {
                 connectedAccount = finalAccount;
@@ -1258,12 +1270,29 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 setConnectionStatus(finalConnected);
                 updateOverviewHeader();
                 logConnectionEvent(finalConnected);
-                if (finalSnapshot != null) {
+                if (finalSnapshot != null && !finalUnchanged) {
                     applySnapshot(finalSnapshot, finalConnected);
                 }
+                adjustRefreshCadence(finalConnected, finalUnchanged);
                 loading = false;
             });
         });
+    }
+
+    private void adjustRefreshCadence(boolean connected, boolean unchanged) {
+        if (!connected) {
+            unchangedRefreshStreak = 0;
+            dynamicRefreshDelayMs = Math.min(ACCOUNT_REFRESH_MAX_MS, ACCOUNT_REFRESH_MIN_MS * 2L);
+            return;
+        }
+        if (unchanged) {
+            unchangedRefreshStreak = Math.min(10, unchangedRefreshStreak + 1);
+        } else {
+            unchangedRefreshStreak = 0;
+        }
+        dynamicRefreshDelayMs = Math.min(
+                ACCOUNT_REFRESH_MAX_MS,
+                ACCOUNT_REFRESH_MIN_MS + unchangedRefreshStreak * 1_500L);
     }
 
     private String normalizeSource(String source) {
@@ -1859,7 +1888,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         double positionPnl = 0d;
         for (PositionItem item : basePositions) {
             marketValue += item.getMarketValue();
-            positionPnl += item.getTotalPnL();
+            positionPnl += item.getTotalPnL() + item.getStorageFee();
         }
         double positionRatio = safeDivide(marketValue, Math.max(1d, netAsset));
         double positionPnlRate = safeDivide(positionPnl, Math.max(1d, totalAsset));
@@ -2175,6 +2204,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         for (TradeRecordItem item : ordered) {
             double profit = item.getProfit();
+            double profitWithStorage = profit + item.getStorageFee();
             long openTime = resolveOpenTime(item);
             long closeTime = resolveCloseTime(item);
 
@@ -2188,7 +2218,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
             if (profit > 0d) {
                 winCount++;
-                grossProfit += profit;
                 currentWinStreak++;
                 currentWinAmount += profit;
                 if (currentWinStreak > maxWinStreak
@@ -2204,7 +2233,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 hasWorstTrade = true;
             } else if (profit < 0d) {
                 lossCount++;
-                grossLoss += profit;
                 currentLossStreak++;
                 currentLossAmount += profit;
                 if (currentLossStreak > maxLossStreak
@@ -2223,6 +2251,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 currentWinAmount = 0d;
                 currentLossStreak = 0;
                 currentLossAmount = 0d;
+            }
+
+            if (profitWithStorage > 0d) {
+                grossProfit += profitWithStorage;
+            } else if (profitWithStorage < 0d) {
+                grossLoss += profitWithStorage;
             }
         }
 
@@ -3566,7 +3600,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         double totalPnl = 0d;
         for (PositionItem item : list) {
-            totalPnl += item.getTotalPnL();
+            totalPnl += item.getTotalPnL() + item.getStorageFee();
         }
         double totalAsset = allCurvePoints.isEmpty()
                 ? ACCOUNT_INITIAL_BALANCE
@@ -3665,7 +3699,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             aggregate.totalQuantity += quantity;
             aggregate.weightedCostAmount += quantity * item.getCostPrice();
             aggregate.weightedQuantity += quantity;
-            aggregate.totalPnl += item.getTotalPnL();
+            aggregate.totalPnl += item.getTotalPnL() + item.getStorageFee();
         }
 
         List<PositionAggregateAdapter.AggregateItem> result = new ArrayList<>();
@@ -4083,10 +4117,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         String storageText = signedMoneyTrailingUnit(storageTotal);
         double balanceTotal = total + storageTotal;
         String balanceText = signedMoneyTrailingUnit(balanceTotal);
-        String summary = "盈亏：" + pnlText
+        String summary = "交易次数：" + tradeCount + "次"
+                + "    盈亏：" + pnlText
                 + "    库存费：" + storageText
-                + "    结余：" + balanceText
-                + "    交易次数：" + tradeCount + "次";
+                + "    结余：" + balanceText;
         SpannableStringBuilder span = new SpannableStringBuilder(summary);
         int pnlStart = summary.indexOf(pnlText);
         if (pnlStart >= 0) {

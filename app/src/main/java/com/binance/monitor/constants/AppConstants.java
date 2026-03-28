@@ -3,7 +3,9 @@ package com.binance.monitor.constants;
 import com.binance.monitor.BuildConfig;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 
 public final class AppConstants {
 
@@ -26,6 +28,12 @@ public final class AppConstants {
             BuildConfig.BINANCE_WS_BASE_URL,
             "wss://fstream.binance.com/ws/");
     public static final int MAX_RECONNECT_ATTEMPTS = 30;
+    public static final long WS_PING_INTERVAL_SECONDS = 45L;
+    public static final long PRICE_UPDATE_THROTTLE_MS = 2_000L;
+    public static final long FLOATING_UPDATE_THROTTLE_MS = 1_500L;
+    public static final long CONNECTION_HEARTBEAT_INTERVAL_MS = 30_000L;
+    public static final long SOCKET_STALE_TIMEOUT_MS = 70_000L;
+    public static final long STALE_RECONNECT_COOLDOWN_MS = 60_000L;
     public static final long NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000L;
     public static final long MERGE_WINDOW_MS = 4000L;
 
@@ -83,6 +91,37 @@ public final class AppConstants {
         }
         String base = BASE_WS_URL.endsWith("/") ? BASE_WS_URL : (BASE_WS_URL + "/");
         return base + stream;
+    }
+
+    public static String buildCombinedWebSocketUrl(Collection<String> symbols) {
+        if (symbols == null || symbols.isEmpty()) {
+            return buildWebSocketUrl(SYMBOL_BTC);
+        }
+        StringBuilder streams = new StringBuilder();
+        for (String symbol : symbols) {
+            if (symbol == null || symbol.trim().isEmpty()) {
+                continue;
+            }
+            if (streams.length() > 0) {
+                streams.append("/");
+            }
+            streams.append(symbol.trim().toLowerCase(Locale.ROOT)).append("@kline_1m");
+        }
+        if (streams.length() == 0) {
+            return buildWebSocketUrl(SYMBOL_BTC);
+        }
+        if (BASE_WS_URL.contains("{stream}")) {
+            return BASE_WS_URL.replace("{stream}", streams.toString());
+        }
+        String base = BASE_WS_URL.trim();
+        if (base.endsWith("/ws") || base.endsWith("/ws/")) {
+            base = base.replaceAll("/ws/?$", "");
+        } else if (base.endsWith("/stream") || base.endsWith("/stream/")) {
+            base = base.replaceAll("/stream/?$", "");
+        } else if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/stream?streams=" + streams;
     }
 
     public static String symbolToAsset(String symbol) {

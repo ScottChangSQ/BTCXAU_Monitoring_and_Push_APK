@@ -5,7 +5,6 @@ import android.content.Intent;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
-import android.os.PowerManager;
 
 import androidx.annotation.Nullable;
 
@@ -38,7 +37,25 @@ public class MonitorService extends Service {
     private final Map<String, Boolean> socketStates = new HashMap<>();
     private final Map<String, Integer> reconnectCounts = new HashMap<>();
     private final Map<String, Long> lastNotifyAt = new HashMap<>();
+    private final Map<String, Long> lastKlineTickAt = new HashMap<>();
+    private final Map<String, Long> lastPricePublishAt = new HashMap<>();
+    private final Map<String, Double> lastPublishedPrice = new HashMap<>();
     private final Map<Long, PendingRound> pendingRounds = new HashMap<>();
+    private final Runnable connectionWatchdogRunnable = new Runnable() {
+        @Override
+        public void run() {
+            checkStreamFreshness();
+            mainHandler.postDelayed(this, AppConstants.CONNECTION_HEARTBEAT_INTERVAL_MS);
+        }
+    };
+    private final Runnable floatingRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            floatingRefreshScheduled = false;
+            lastFloatingRefreshAt = System.currentTimeMillis();
+            refreshFloatingWindow();
+        }
+    };
 
     private MonitorRepository repository;
     private LogManager logManager;
@@ -51,7 +68,9 @@ public class MonitorService extends Service {
     private ExecutorService executorService;
     private boolean pipelineStarted;
     private boolean foregroundStarted;
-    private PowerManager.WakeLock wakeLock;
+    private long lastFloatingRefreshAt;
+    private boolean floatingRefreshScheduled;
+    private long lastForcedReconnectAt;
 
     @Override
     public void onCreate() {
@@ -65,7 +84,6 @@ public class MonitorService extends Service {
         apiClient = new BinanceApiClient();
         webSocketManager = new WebSocketManager();
         executorService = Executors.newSingleThreadExecutor();
-        acquireWakeLock();
         repository.setMonitoringEnabled(false);
         logManager.info("服务初始化完成");
         applyFloatingPreferences();
@@ -96,7 +114,7 @@ public class MonitorService extends Service {
                 break;
         }
         refreshForegroundState();
-        refreshFloatingWindow();
+        requestFloatingWindowRefresh(true);
         return START_STICKY;
     }
 
@@ -119,41 +137,7 @@ public class MonitorService extends Service {
         if (floatingWindowManager != null) {
             floatingWindowManager.hide();
         }
-        releaseWakeLock();
         logManager.info("服务已销毁");
-    }
-
-    private void acquireWakeLock() {
-        try {
-            if (wakeLock == null) {
-                PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-                if (powerManager != null) {
-                    wakeLock = powerManager.newWakeLock(
-                            PowerManager.PARTIAL_WAKE_LOCK,
-                            getPackageName() + ":monitor_wakelock");
-                    wakeLock.setReferenceCounted(false);
-                }
-            }
-            if (wakeLock != null && !wakeLock.isHeld()) {
-                wakeLock.acquire();
-            }
-        } catch (Exception exception) {
-            if (logManager != null) {
-                logManager.warn("WakeLock acquire failed: " + exception.getMessage());
-            }
-        }
-    }
-
-    private void releaseWakeLock() {
-        if (wakeLock == null) {
-            return;
-        }
-        try {
-            if (wakeLock.isHeld()) {
-                wakeLock.release();
-            }
-        } catch (Exception ignored) {
-        }
     }
 
     private void ensureForeground() {
@@ -184,6 +168,8 @@ public class MonitorService extends Service {
         pipelineStarted = true;
         repository.setConnectionStatus(getString(R.string.connection_connecting));
         fetchBootstrapData();
+        mainHandler.removeCallbacks(connectionWatchdogRunnable);
+        mainHandler.postDelayed(connectionWatchdogRunnable, AppConstants.CONNECTION_HEARTBEAT_INTERVAL_MS);
         webSocketManager.connect(AppConstants.MONITOR_SYMBOLS, new WebSocketManager.Listener() {
             @Override
             public void onSocketStateChanged(String symbol, boolean connected, int reconnectAttempt, String message) {
@@ -197,14 +183,18 @@ public class MonitorService extends Service {
             @Override
             public void onKlineUpdate(String symbol, KlineData data) {
                 mainHandler.post(() -> {
-                    repository.updatePrice(symbol, data.getClosePrice());
+                    long now = System.currentTimeMillis();
+                    lastKlineTickAt.put(symbol, now);
                     if (data.isClosed()) {
+                        maybePublishPrice(symbol, data, now, true);
                         repository.updateClosedKline(data);
                         if (Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
                             handleClosedKline(data);
                         }
+                    } else {
+                        maybePublishPrice(symbol, data, now, false);
                     }
-                    refreshFloatingWindow();
+                    requestFloatingWindowRefresh(data.isClosed());
                 });
             }
 
@@ -225,15 +215,17 @@ public class MonitorService extends Service {
                 try {
                     KlineData data = apiClient.fetchLatestClosedKline(symbol);
                     if (data != null) {
+                        long now = System.currentTimeMillis();
+                        lastKlineTickAt.put(symbol, now);
                         repository.updateClosedKline(data);
-                        repository.updatePrice(symbol, data.getClosePrice());
+                        maybePublishPrice(symbol, data, now, true);
                         logManager.info(symbol + " 初始化成功，最近收盘时间 " + FormatUtils.formatDateTime(data.getCloseTime()));
                     }
                 } catch (Exception exception) {
                     logManager.error(symbol + " 初始化失败: " + exception.getMessage());
                 }
             }
-            mainHandler.post(this::refreshFloatingWindow);
+            mainHandler.post(() -> requestFloatingWindowRefresh(true));
         });
     }
 
@@ -388,7 +380,7 @@ public class MonitorService extends Service {
         }
         repository.setConnectionStatus(status);
         refreshForegroundState();
-        refreshFloatingWindow();
+        requestFloatingWindowRefresh(true);
     }
 
     private void applyFloatingPreferences() {
@@ -402,6 +394,77 @@ public class MonitorService extends Service {
                 configManager.isShowBtc(),
                 configManager.isShowXau()
         );
+        requestFloatingWindowRefresh(true);
+    }
+
+    private void maybePublishPrice(String symbol, KlineData data, long now, boolean force) {
+        if (data == null) {
+            return;
+        }
+        double price = data.getClosePrice();
+        long lastAt = lastPricePublishAt.getOrDefault(symbol, 0L);
+        Double lastPrice = lastPublishedPrice.get(symbol);
+        boolean intervalReached = now - lastAt >= AppConstants.PRICE_UPDATE_THROTTLE_MS;
+        boolean deltaReached = lastPrice == null || Math.abs(price - lastPrice) >= minPriceDelta(price);
+        if (!force && !intervalReached && !deltaReached) {
+            return;
+        }
+        repository.updatePrice(symbol, price);
+        lastPricePublishAt.put(symbol, now);
+        lastPublishedPrice.put(symbol, price);
+    }
+
+    private double minPriceDelta(double price) {
+        return Math.max(0.1d, Math.abs(price) * 0.0002d);
+    }
+
+    private void requestFloatingWindowRefresh(boolean immediate) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> requestFloatingWindowRefresh(immediate));
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long elapsed = now - lastFloatingRefreshAt;
+        if (immediate || elapsed >= AppConstants.FLOATING_UPDATE_THROTTLE_MS) {
+            mainHandler.removeCallbacks(floatingRefreshRunnable);
+            floatingRefreshScheduled = false;
+            lastFloatingRefreshAt = now;
+            refreshFloatingWindow();
+            return;
+        }
+        if (floatingRefreshScheduled) {
+            return;
+        }
+        long delay = Math.max(120L, AppConstants.FLOATING_UPDATE_THROTTLE_MS - elapsed);
+        floatingRefreshScheduled = true;
+        mainHandler.postDelayed(floatingRefreshRunnable, delay);
+    }
+
+    private void checkStreamFreshness() {
+        if (!pipelineStarted) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        List<String> staleSymbols = new ArrayList<>();
+        for (String symbol : AppConstants.MONITOR_SYMBOLS) {
+            long last = lastKlineTickAt.getOrDefault(symbol, 0L);
+            if (last <= 0L || now - last > AppConstants.SOCKET_STALE_TIMEOUT_MS) {
+                staleSymbols.add(symbol);
+            }
+        }
+        if (staleSymbols.isEmpty()) {
+            return;
+        }
+        if (now - lastForcedReconnectAt < AppConstants.STALE_RECONNECT_COOLDOWN_MS) {
+            return;
+        }
+        lastForcedReconnectAt = now;
+        for (String symbol : staleSymbols) {
+            socketStates.put(symbol, false);
+        }
+        logManager.warn("行情心跳超时，触发重连: " + String.join(", ", staleSymbols));
+        webSocketManager.forceReconnect("行情心跳超时");
+        updateConnectionStatus();
     }
 
     private void refreshFloatingWindow() {

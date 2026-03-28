@@ -1,14 +1,17 @@
+import hashlib
+import json
 import math
 import os
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 from threading import Lock
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.middleware.gzip import GZipMiddleware
 
 try:
     import MetaTrader5 as mt5
@@ -31,12 +34,19 @@ PORT = int(os.getenv("GATEWAY_PORT", "8787"))
 GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull | ea
 EA_SNAPSHOT_TTL_SEC = int(os.getenv("EA_SNAPSHOT_TTL_SEC", "20"))
 EA_INGEST_TOKEN = os.getenv("EA_INGEST_TOKEN", "").strip()
+SNAPSHOT_BUILD_CACHE_MS = int(os.getenv("SNAPSHOT_BUILD_CACHE_MS", "1500"))
+SNAPSHOT_DELTA_ENABLED = os.getenv("SNAPSHOT_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+SNAPSHOT_DELTA_FALLBACK_RATIO = float(os.getenv("SNAPSHOT_DELTA_FALLBACK_RATIO", "0.85"))
 
 app = FastAPI(title="MT5 Bridge Gateway", version="1.1.0")
+app.add_middleware(GZipMiddleware, minimum_size=512)
 state_lock = Lock()
+snapshot_cache_lock = Lock()
 ea_snapshot_cache: Optional[Dict] = None
 ea_snapshot_received_at_ms = 0
 mt5_last_connected_path = ""
+snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
+snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
 
 
 def _now_ms() -> int:
@@ -410,6 +420,7 @@ def _map_positions() -> List[Dict]:
                 "productName": symbol,
                 "code": symbol,
                 "side": side,
+                "positionTicket": int(getattr(position, "ticket", 0)),
                 "quantity": volume,
                 "sellableQuantity": volume,
                 "costPrice": price_open,
@@ -462,6 +473,7 @@ def _map_pending_orders() -> List[Dict]:
                 "productName": symbol,
                 "code": symbol,
                 "side": side,
+                "orderId": int(getattr(order, "ticket", 0)),
                 "quantity": 0.0,
                 "sellableQuantity": 0.0,
                 "costPrice": 0.0,
@@ -822,6 +834,210 @@ def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     return data
 
 
+def _stable_json_size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+
+
+def _snapshot_digest(snapshot: Dict) -> str:
+    core = {
+        "overviewMetrics": snapshot.get("overviewMetrics") or [],
+        "curvePoints": snapshot.get("curvePoints") or [],
+        "curveIndicators": snapshot.get("curveIndicators") or [],
+        "positions": snapshot.get("positions") or [],
+        "pendingOrders": snapshot.get("pendingOrders") or [],
+        "trades": snapshot.get("trades") or [],
+        "statsMetrics": snapshot.get("statsMetrics") or [],
+    }
+    payload = json.dumps(core, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+def _position_key(item: Dict) -> str:
+    ticket = int(item.get("positionTicket", 0) or 0)
+    if ticket > 0:
+        return f"position:{ticket}"
+    code = str(item.get("code", "")).upper()
+    side = str(item.get("side", "")).upper()
+    qty = round(float(item.get("quantity", 0.0) or 0.0), 4)
+    cost = round(float(item.get("costPrice", 0.0) or 0.0), 2)
+    return f"position:{code}|{side}|{qty}|{cost}"
+
+
+def _pending_key(item: Dict) -> str:
+    order_id = int(item.get("orderId", 0) or 0)
+    if order_id > 0:
+        return f"pending:{order_id}"
+    code = str(item.get("code", "")).upper()
+    side = str(item.get("side", "")).upper()
+    lots = round(float(item.get("pendingLots", 0.0) or 0.0), 4)
+    price = round(float(item.get("pendingPrice", 0.0) or 0.0), 4)
+    return f"pending:{code}|{side}|{lots}|{price}"
+
+
+def _trade_key(item: Dict) -> str:
+    ticket = int(item.get("dealTicket", 0) or 0)
+    if ticket > 0:
+        return f"trade:{ticket}"
+    order_id = int(item.get("orderId", 0) or 0)
+    position_id = int(item.get("positionId", 0) or 0)
+    close_time = int(item.get("closeTime", item.get("timestamp", 0)) or 0)
+    qty = round(float(item.get("quantity", 0.0) or 0.0), 4)
+    return f"trade:{order_id}|{position_id}|{close_time}|{qty}"
+
+
+def _index_entities(items: List[Dict], key_fn) -> Dict[str, Dict]:
+    indexed: Dict[str, Dict] = {}
+    for item in items:
+        key = key_fn(item)
+        payload = dict(item)
+        payload["_key"] = key
+        indexed[key] = payload
+    return indexed
+
+
+def _diff_entities(previous: List[Dict], current: List[Dict], key_fn) -> Dict[str, List]:
+    previous_map = _index_entities(previous, key_fn)
+    current_map = _index_entities(current, key_fn)
+
+    upsert: List[Dict] = []
+    for key, item in current_map.items():
+        if key not in previous_map or previous_map.get(key) != item:
+            upsert.append(item)
+
+    remove = [key for key in previous_map.keys() if key not in current_map]
+    return {"upsert": upsert, "remove": remove}
+
+
+def _diff_curve_points(previous: List[Dict], current: List[Dict]) -> Dict[str, Any]:
+    if not previous:
+        return {"reset": False, "append": current}
+    if not current:
+        return {"reset": True, "append": []}
+
+    prev_by_ts = {int(item.get("timestamp", 0)): item for item in previous if int(item.get("timestamp", 0)) > 0}
+    cur_by_ts = {int(item.get("timestamp", 0)): item for item in current if int(item.get("timestamp", 0)) > 0}
+    if not prev_by_ts or not cur_by_ts:
+        return {"reset": True, "append": current}
+
+    for ts, prev_item in prev_by_ts.items():
+        cur_item = cur_by_ts.get(ts)
+        if cur_item is None:
+            return {"reset": True, "append": current}
+        if cur_item != prev_item:
+            return {"reset": True, "append": current}
+
+    prev_last_ts = max(prev_by_ts.keys())
+    append = [item for item in current if int(item.get("timestamp", 0)) > prev_last_ts]
+    return {"reset": False, "append": append}
+
+
+def _build_delta_snapshot(previous: Dict, current: Dict) -> Dict:
+    return {
+        "positions": _diff_entities(previous.get("positions") or [], current.get("positions") or [], _position_key),
+        "pendingOrders": _diff_entities(previous.get("pendingOrders") or [], current.get("pendingOrders") or [], _pending_key),
+        "trades": _diff_entities(previous.get("trades") or [], current.get("trades") or [], _trade_key),
+        "curvePoints": _diff_curve_points(previous.get("curvePoints") or [], current.get("curvePoints") or []),
+    }
+
+
+def _build_full_response(snapshot: Dict, sync_seq: int) -> Dict:
+    meta = dict(snapshot.get("accountMeta") or {})
+    meta["syncSeq"] = sync_seq
+    meta["deltaEnabled"] = SNAPSHOT_DELTA_ENABLED
+    return {
+        "accountMeta": meta,
+        "isDelta": False,
+        "unchanged": False,
+        "overviewMetrics": snapshot.get("overviewMetrics") or [],
+        "curvePoints": snapshot.get("curvePoints") or [],
+        "curveIndicators": snapshot.get("curveIndicators") or [],
+        "positions": snapshot.get("positions") or [],
+        "pendingOrders": snapshot.get("pendingOrders") or [],
+        "trades": snapshot.get("trades") or [],
+        "statsMetrics": snapshot.get("statsMetrics") or [],
+    }
+
+
+def _build_snapshot_with_cache(range_key: str) -> Dict:
+    now_ms = _now_ms()
+    with snapshot_cache_lock:
+        cached = snapshot_build_cache.get(range_key)
+        if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+            return cached.get("snapshot")
+
+    snapshot = _normalize_snapshot(_select_snapshot(range_key), "MT5 Gateway")
+    with snapshot_cache_lock:
+        snapshot_build_cache[range_key] = {"builtAt": now_ms, "snapshot": snapshot}
+    return snapshot
+
+
+def _build_snapshot_response(range_key: str, since_seq: int, delta: bool) -> Dict:
+    snapshot = _build_snapshot_with_cache(range_key)
+    digest = _snapshot_digest(snapshot)
+
+    with snapshot_cache_lock:
+        state = snapshot_sync_cache.get(range_key)
+        previous_snapshot: Optional[Dict] = None
+        previous_seq = 0
+
+        if state is None:
+            sync_seq = 1
+            snapshot_sync_cache[range_key] = {
+                "seq": sync_seq,
+                "digest": digest,
+                "snapshot": snapshot,
+                "previousSeq": 0,
+                "previousSnapshot": None,
+            }
+            changed = True
+        else:
+            if state.get("digest") == digest:
+                sync_seq = int(state.get("seq", 1))
+                changed = False
+                snapshot = state.get("snapshot") or snapshot
+                previous_seq = int(state.get("previousSeq", 0))
+                previous_snapshot = state.get("previousSnapshot")
+            else:
+                previous_seq = int(state.get("seq", 0))
+                previous_snapshot = state.get("snapshot")
+                sync_seq = previous_seq + 1
+                snapshot_sync_cache[range_key] = {
+                    "seq": sync_seq,
+                    "digest": digest,
+                    "snapshot": snapshot,
+                    "previousSeq": previous_seq,
+                    "previousSnapshot": previous_snapshot,
+                }
+                changed = True
+
+    if not SNAPSHOT_DELTA_ENABLED or not delta or since_seq <= 0:
+        return _build_full_response(snapshot, sync_seq)
+
+    meta = dict(snapshot.get("accountMeta") or {})
+    meta["syncSeq"] = sync_seq
+    meta["deltaEnabled"] = SNAPSHOT_DELTA_ENABLED
+
+    if since_seq == sync_seq:
+        return {"accountMeta": meta, "isDelta": True, "unchanged": True}
+
+    if changed and previous_snapshot is not None and since_seq == previous_seq:
+        delta_payload = _build_delta_snapshot(previous_snapshot, snapshot)
+        delta_response = {
+            "accountMeta": meta,
+            "isDelta": True,
+            "unchanged": False,
+            "delta": delta_payload,
+            "overviewMetrics": snapshot.get("overviewMetrics") or [],
+            "curveIndicators": snapshot.get("curveIndicators") or [],
+            "statsMetrics": snapshot.get("statsMetrics") or [],
+        }
+        full_response = _build_full_response(snapshot, sync_seq)
+        if _stable_json_size(delta_response) <= _stable_json_size(full_response) * SNAPSHOT_DELTA_FALLBACK_RATIO:
+            return delta_response
+
+    return _build_full_response(snapshot, sync_seq)
+
+
 def _is_ea_snapshot_fresh() -> bool:
     if ea_snapshot_cache is None:
         return False
@@ -874,6 +1090,8 @@ def health():
             "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
             "eaSnapshotFresh": _is_ea_snapshot_fresh(),
             "eaSnapshotReceivedAt": ea_snapshot_received_at_ms,
+            "snapshotDeltaEnabled": SNAPSHOT_DELTA_ENABLED,
+            "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
         }
         if mt5 is None:
             return info
@@ -912,6 +1130,8 @@ def source_status():
         "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
         "eaSnapshotFresh": _is_ea_snapshot_fresh(),
         "eaSnapshotReceivedAt": ea_snapshot_received_at_ms,
+        "snapshotDeltaEnabled": SNAPSHOT_DELTA_ENABLED,
+        "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
     }
 
 
@@ -930,14 +1150,20 @@ def ingest_ea_snapshot(payload: Dict, x_bridge_token: Optional[str] = Header(def
     with state_lock:
         ea_snapshot_cache = normalized
         ea_snapshot_received_at_ms = _now_ms()
+    with snapshot_cache_lock:
+        snapshot_build_cache.clear()
 
     return {"ok": True, "receivedAt": ea_snapshot_received_at_ms}
 
 
 @app.get("/v1/snapshot")
-def snapshot(range: str = Query(default="7d", pattern="^(1d|7d|1m|3m|1y|all)$")):
+def snapshot(
+    range: str = Query(default="7d", pattern="^(1d|7d|1m|3m|1y|all)$"),
+    since: int = Query(default=0, ge=0),
+    delta: int = Query(default=1, ge=0, le=1),
+):
     try:
-        return _select_snapshot(range.lower())
+        return _build_snapshot_response(range.lower(), since_seq=since, delta=(delta == 1))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
