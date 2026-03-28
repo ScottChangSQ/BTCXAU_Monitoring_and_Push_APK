@@ -533,14 +533,14 @@ public class FloatingWindowManager {
             priceBlinkDimmed = !priceBlinkDimmed;
             if (btcActive) {
                 binding.tvBtcPrice.setAlpha(1f);
-                binding.tvBtcPrice.setTextColor(context.getColor(priceBlinkDimmed ? R.color.accent_red : R.color.white));
+                binding.tvBtcPrice.setTextColor(context.getColor(priceBlinkDimmed ? R.color.accent_red : R.color.bg_primary));
             } else {
                 binding.tvBtcPrice.setAlpha(1f);
                 binding.tvBtcPrice.setTextColor(context.getColor(R.color.text_primary));
             }
             if (xauActive) {
                 binding.tvXauPrice.setAlpha(1f);
-                binding.tvXauPrice.setTextColor(context.getColor(priceBlinkDimmed ? R.color.accent_red : R.color.white));
+                binding.tvXauPrice.setTextColor(context.getColor(priceBlinkDimmed ? R.color.accent_red : R.color.bg_primary));
             } else {
                 binding.tvXauPrice.setAlpha(1f);
                 binding.tvXauPrice.setTextColor(context.getColor(R.color.text_primary));

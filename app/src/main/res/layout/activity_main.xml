@@ -194,6 +194,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:fontFamily="serif"
                     android:text="@string/market_card_title"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp"
@@ -329,6 +330,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:fontFamily="serif"
                     android:text="@string/recent_records"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp"
@@ -378,6 +380,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:fontFamily="serif"
                     android:text="@string/threshold_card_title"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp"
@@ -580,6 +583,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:fontFamily="serif"
                     android:text="@string/floating_card_title"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp"

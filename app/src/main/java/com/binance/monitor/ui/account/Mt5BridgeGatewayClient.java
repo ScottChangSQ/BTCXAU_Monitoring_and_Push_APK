@@ -688,6 +688,10 @@ public class Mt5BridgeGatewayClient {
         if (!key.isEmpty()) {
             return key;
         }
+        long ticket = raw.optLong("positionTicket", raw.optLong("ticket", 0L));
+        if (ticket > 0L) {
+            return "position:" + ticket;
+        }
         return "position:" + item.getCode() + "|" + item.getSide() + "|"
                 + Math.round(Math.abs(item.getQuantity()) * 10_000d) + "|"
                 + Math.round(item.getCostPrice() * 100d);
@@ -697,6 +701,10 @@ public class Mt5BridgeGatewayClient {
         String key = raw.optString("_key", "");
         if (!key.isEmpty()) {
             return key;
+        }
+        long orderId = raw.optLong("orderId", raw.optLong("ticket", 0L));
+        if (orderId > 0L) {
+            return "pending:" + orderId;
         }
         return "pending:" + item.getCode() + "|" + item.getSide() + "|"
                 + Math.round(item.getPendingLots() * 10_000d) + "|"

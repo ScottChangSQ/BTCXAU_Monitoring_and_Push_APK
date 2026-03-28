@@ -40,6 +40,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:fontFamily="serif"
                             android:text="账户总览（账号）"
                             android:textColor="@color/text_primary"
                             android:textSize="16sp"
@@ -103,6 +104,7 @@
                         android:id="@+id/tvCurveTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:fontFamily="serif"
                         android:text="净值/结余曲线"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
@@ -267,6 +269,82 @@
                             />
                     </LinearLayout>
 
+                    <LinearLayout
+                        android:id="@+id/layoutManualDatePickerPanel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/bg_chip_unselected"
+                        android:orientation="vertical"
+                        android:padding="8dp"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:id="@+id/tvManualDatePickerTitle"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="serif"
+                            android:text="选择日期"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:orientation="horizontal">
+
+                            <NumberPicker
+                                android:id="@+id/npManualYear"
+                                android:layout_width="0dp"
+                                android:layout_height="120dp"
+                                android:layout_weight="1" />
+
+                            <NumberPicker
+                                android:id="@+id/npManualMonth"
+                                android:layout_width="0dp"
+                                android:layout_height="120dp"
+                                android:layout_weight="1" />
+
+                            <NumberPicker
+                                android:id="@+id/npManualDay"
+                                android:layout_width="0dp"
+                                android:layout_height="120dp"
+                                android:layout_weight="1" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnManualDateCancel"
+                                android:layout_width="0dp"
+                                android:layout_height="32dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/bg_inline_button"
+                                android:text="取消"
+                                android:textAllCaps="false"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+
+                            <Button
+                                android:id="@+id/btnManualDateConfirm"
+                                android:layout_width="0dp"
+                                android:layout_height="32dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/bg_chip_selected"
+                                android:text="确定"
+                                android:textAllCaps="false"
+                                android:textColor="@color/bg_primary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
                     <com.binance.monitor.ui.account.EquityCurveView
                         android:id="@+id/equityCurveView"
                         android:layout_width="match_parent"
@@ -306,6 +384,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:fontFamily="serif"
                         android:text="收益统计表"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
@@ -316,6 +395,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
+                        android:fontFamily="serif"
                         android:text="收益率统计"
                         android:textColor="@color/text_primary"
                         android:textSize="14sp"
@@ -433,6 +513,76 @@
                         </com.google.android.material.button.MaterialButtonToggleGroup>
                     </LinearLayout>
 
+                    <LinearLayout
+                        android:id="@+id/layoutReturnPeriodPickerPanel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/bg_chip_unselected"
+                        android:orientation="vertical"
+                        android:padding="8dp"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:id="@+id/tvReturnPeriodPickerTitle"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="serif"
+                            android:text="选择统计年月"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:orientation="horizontal">
+
+                            <NumberPicker
+                                android:id="@+id/npReturnYear"
+                                android:layout_width="0dp"
+                                android:layout_height="120dp"
+                                android:layout_weight="1" />
+
+                            <NumberPicker
+                                android:id="@+id/npReturnMonth"
+                                android:layout_width="0dp"
+                                android:layout_height="120dp"
+                                android:layout_weight="1" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnReturnPeriodCancel"
+                                android:layout_width="0dp"
+                                android:layout_height="32dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/bg_inline_button"
+                                android:text="取消"
+                                android:textAllCaps="false"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+
+                            <Button
+                                android:id="@+id/btnReturnPeriodConfirm"
+                                android:layout_width="0dp"
+                                android:layout_height="32dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/bg_chip_selected"
+                                android:text="确定"
+                                android:textAllCaps="false"
+                                android:textColor="@color/bg_primary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
                     <TableLayout
                         android:id="@+id/tableMonthlyReturns"
                         android:layout_width="match_parent"
@@ -465,6 +615,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:fontFamily="serif"
                         android:text="当前持仓"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
@@ -484,6 +635,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
+                        android:fontFamily="serif"
                         android:text="按产品汇总"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp"
@@ -501,6 +653,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
+                        android:fontFamily="serif"
                         android:text="持仓明细"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp"
@@ -524,6 +677,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
+                        android:fontFamily="serif"
                         android:text="挂单信息"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp"
@@ -561,6 +715,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:fontFamily="serif"
                         android:text="交易记录"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
@@ -706,6 +861,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:fontFamily="serif"
                         android:text="交易统计"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"

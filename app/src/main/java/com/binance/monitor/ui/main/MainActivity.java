@@ -448,7 +448,7 @@ public class MainActivity extends AppCompatActivity {
         button.setBackground(selected
                 ? AppCompatResources.getDrawable(this, R.drawable.bg_symbol_selected)
                 : AppCompatResources.getDrawable(this, R.drawable.bg_symbol_unselected));
-        button.setTextColor(ContextCompat.getColor(this, selected ? R.color.bg_primary : R.color.white));
+        button.setTextColor(ContextCompat.getColor(this, selected ? R.color.bg_primary : R.color.text_primary));
     }
 
     private void persistIfReady() {

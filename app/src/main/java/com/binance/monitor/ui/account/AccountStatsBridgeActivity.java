@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.account;
 
+import android.content.res.ColorStateList;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
@@ -30,7 +31,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.content.ContextCompat;
@@ -57,7 +57,6 @@ import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.util.FormatUtils;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
-import com.google.android.material.datepicker.MaterialDatePicker;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.text.SimpleDateFormat;
@@ -73,7 +72,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -113,6 +111,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final String PREF_FILTER_SIDE = "pref_filter_side";
     private static final String PREF_FILTER_SORT = "pref_filter_sort";
     private static final String PREF_FILTER_SORT_DESC = "pref_filter_sort_desc";
+    private static final int DATE_TARGET_START = 0;
+    private static final int DATE_TARGET_END = 1;
 
     private enum ReturnStatsMode {
         DAY,
@@ -166,6 +166,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private boolean manualCurveRangeEnabled;
     private long manualCurveRangeStartMs;
     private long manualCurveRangeEndMs;
+    private int manualDateTarget = DATE_TARGET_START;
+    private final List<Integer> returnPickerYears = new ArrayList<>();
+    private final Map<Integer, boolean[]> returnPickerYearMonthMap = new TreeMap<>();
 
     private List<PositionItem> basePositions = new ArrayList<>();
     private List<PositionItem> basePendingOrders = new ArrayList<>();
@@ -433,7 +436,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 + "更新时间信息：" + connectedUpdate
                 + (connectedError.isEmpty() ? "" : "\n失败原因：" + connectedError)
                 + (dataQualitySummary.isEmpty() ? "" : "\n数据校对：" + dataQualitySummary);
-        new AlertDialog.Builder(this)
+        new MaterialAlertDialogBuilder(this)
                 .setTitle("账户连接详情")
                 .setMessage(message)
                 .setPositiveButton("确定", null)
@@ -528,12 +531,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         ArrayAdapter<String> sortAdapter = createTradeFilterAdapter(
                 new String[]{FILTER_SORT, SORT_CLOSE_TIME, SORT_OPEN_TIME, SORT_PROFIT});
         binding.spinnerTradeSort.setAdapter(sortAdapter);
-        binding.spinnerTradeSort.setOnTouchListener((v, event) -> {
-            if (event != null && event.getAction() == MotionEvent.ACTION_UP) {
-                showTradeSortPickerDialog();
-            }
-            return true;
-        });
+        binding.spinnerTradeSort.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
+            String chosen = safeSpinnerValue(binding.spinnerTradeSort, selectedTradeSortFilter, FILTER_SORT);
+            handleSortSelection(chosen, false);
+            updateTradeFilterDisplayTexts();
+            refreshTrades();
+        }));
 
         setSpinnerSelectionByValue(binding.spinnerTradeProduct, selectedTradeProductFilter);
         setSpinnerSelectionByValue(binding.spinnerTradeSide, selectedTradeSideFilter);
@@ -541,10 +544,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         selectedTradeProductFilter = safeSpinnerValue(binding.spinnerTradeProduct, selectedTradeProductFilter, FILTER_PRODUCT);
         selectedTradeSideFilter = safeSpinnerValue(binding.spinnerTradeSide, selectedTradeSideFilter, FILTER_SIDE);
         selectedTradeSortFilter = safeSpinnerValue(binding.spinnerTradeSort, selectedTradeSortFilter, FILTER_SORT);
+        handleSortSelection(selectedTradeSortFilter, false);
         updateTradeFilterDisplayTexts();
         binding.tvTradeProductLabel.setOnClickListener(v -> binding.spinnerTradeProduct.performClick());
         binding.tvTradeSideLabel.setOnClickListener(v -> binding.spinnerTradeSide.performClick());
-        binding.tvTradeSortLabel.setOnClickListener(v -> showTradeSortPickerDialog());
+        binding.tvTradeSortLabel.setOnClickListener(v -> binding.spinnerTradeSort.performClick());
 
         binding.btnApplyManualRange.setOnClickListener(v -> applyManualCurveRange());
     }
@@ -614,30 +618,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         lastExplicitTradeSortMode = normalized;
         selectedTradeSortFilter = raw;
-    }
-
-    private void showTradeSortPickerDialog() {
-        String[] sortOptions = new String[]{SORT_CLOSE_TIME, SORT_OPEN_TIME, SORT_PROFIT};
-        String current = normalizeSortValue(selectedTradeSortFilter);
-        int checked = 0;
-        for (int i = 0; i < sortOptions.length; i++) {
-            if (sortOptions[i].equals(current)) {
-                checked = i;
-                break;
-            }
-        }
-        new MaterialAlertDialogBuilder(this)
-                .setTitle("排序方式")
-                .setSingleChoiceItems(sortOptions, checked, (dialog, which) -> {
-                    String chosen = sortOptions[which];
-                    handleSortSelection(chosen, true);
-                    setSpinnerSelectionByValue(binding.spinnerTradeSort, chosen);
-                    updateTradeFilterDisplayTexts();
-                    refreshTrades();
-                    dialog.dismiss();
-                })
-                .setNegativeButton("取消", null)
-                .show();
     }
 
     private String normalizeSortValue(String rawSort) {
@@ -775,6 +755,20 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         button.setMinWidth(0);
         button.setMinimumWidth(0);
         button.setPadding(0, 0, 0, 0);
+
+        int[][] states = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{}
+        };
+        int checkedBg = ContextCompat.getColor(this, R.color.accent_gold);
+        int uncheckedBg = ContextCompat.getColor(this, R.color.bg_input);
+        int checkedText = ContextCompat.getColor(this, R.color.bg_primary);
+        int uncheckedText = ContextCompat.getColor(this, R.color.text_primary);
+        button.setBackgroundTintList(new ColorStateList(states, new int[]{checkedBg, uncheckedBg}));
+        button.setTextColor(new ColorStateList(states, new int[]{checkedText, uncheckedText}));
+        button.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.stroke_card)));
+        button.setStrokeWidth(dpToPx(1));
+        button.setRippleColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.vintage_orange)));
     }
 
     private void autoFitSegmentButtons(MaterialButtonToggleGroup group,
@@ -830,9 +824,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setupDatePickers() {
-        binding.etRangeStart.setOnClickListener(v -> showDatePicker(binding.etRangeStart));
-        binding.etRangeEnd.setOnClickListener(v -> showDatePicker(binding.etRangeEnd));
-        binding.tvReturnsPeriod.setOnClickListener(v -> showReturnStatsDatePicker());
+        setupManualDatePickerPanel();
+        setupReturnPeriodPickerPanel();
     }
 
     private void setupCurveInteraction() {
@@ -853,140 +846,164 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         });
     }
 
-    private void showDatePicker(EditText target) {
-        long selection = MaterialDatePicker.todayInUtcMilliseconds();
-        String text = trim(target.getText() == null ? "" : target.getText().toString());
+    private void setupManualDatePickerPanel() {
+        binding.etRangeStart.setOnClickListener(v -> showManualDatePickerPanel(DATE_TARGET_START));
+        binding.etRangeEnd.setOnClickListener(v -> showManualDatePickerPanel(DATE_TARGET_END));
+        binding.btnManualDateCancel.setOnClickListener(v -> hideManualDatePickerPanel());
+        binding.btnManualDateConfirm.setOnClickListener(v -> {
+            Calendar chosen = Calendar.getInstance();
+            chosen.set(Calendar.YEAR, binding.npManualYear.getValue());
+            chosen.set(Calendar.MONTH, binding.npManualMonth.getValue() - 1);
+            chosen.set(Calendar.DAY_OF_MONTH, binding.npManualDay.getValue());
+            chosen.set(Calendar.HOUR_OF_DAY, 0);
+            chosen.set(Calendar.MINUTE, 0);
+            chosen.set(Calendar.SECOND, 0);
+            chosen.set(Calendar.MILLISECOND, 0);
+
+            EditText target = manualDateTarget == DATE_TARGET_END ? binding.etRangeEnd : binding.etRangeStart;
+            target.setText(dateOnlyFormat.format(chosen.getTime()));
+            hideManualDatePickerPanel();
+        });
+        binding.npManualYear.setOnValueChangedListener((picker, oldVal, newVal) -> updateManualPickerDayRange());
+        binding.npManualMonth.setOnValueChangedListener((picker, oldVal, newVal) -> updateManualPickerDayRange());
+    }
+
+    private void showManualDatePickerPanel(int target) {
+        manualDateTarget = target;
+        binding.tvManualDatePickerTitle.setText(target == DATE_TARGET_START ? "选择开始日期" : "选择结束日期");
+
+        Calendar floor = Calendar.getInstance();
+        floor.add(Calendar.YEAR, -8);
+        int minYear = floor.get(Calendar.YEAR);
+        Calendar ceil = Calendar.getInstance();
+        ceil.add(Calendar.YEAR, 2);
+        int maxYear = ceil.get(Calendar.YEAR);
+        binding.npManualYear.setMinValue(minYear);
+        binding.npManualYear.setMaxValue(maxYear);
+        binding.npManualYear.setWrapSelectorWheel(false);
+
+        binding.npManualMonth.setMinValue(1);
+        binding.npManualMonth.setMaxValue(12);
+        binding.npManualMonth.setWrapSelectorWheel(true);
+
+        EditText targetView = target == DATE_TARGET_END ? binding.etRangeEnd : binding.etRangeStart;
+        Calendar chosen = Calendar.getInstance();
+        String text = trim(targetView.getText() == null ? "" : targetView.getText().toString());
         if (!text.isEmpty()) {
             try {
                 Date parsed = dateOnlyFormat.parse(text);
                 if (parsed != null) {
-                    Calendar local = Calendar.getInstance();
-                    local.setTime(parsed);
-                    Calendar utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-                    utc.clear();
-                    utc.set(local.get(Calendar.YEAR), local.get(Calendar.MONTH), local.get(Calendar.DAY_OF_MONTH));
-                    selection = utc.getTimeInMillis();
+                    chosen.setTime(parsed);
                 }
             } catch (Exception ignored) {
             }
         }
 
-        MaterialDatePicker<Long> picker = MaterialDatePicker.Builder.datePicker()
-                .setTitleText("选择日期")
-                .setSelection(selection)
-                .build();
-        picker.addOnPositiveButtonClickListener(value -> {
-            if (value == null) {
-                return;
-            }
-            Calendar utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-            utc.setTimeInMillis(value);
-            Calendar local = Calendar.getInstance();
-            local.set(utc.get(Calendar.YEAR), utc.get(Calendar.MONTH), utc.get(Calendar.DAY_OF_MONTH), 0, 0, 0);
-            local.set(Calendar.MILLISECOND, 0);
-            target.setText(dateOnlyFormat.format(local.getTime()));
-        });
-        picker.show(getSupportFragmentManager(), "date_picker_" + target.getId());
+        int year = chosen.get(Calendar.YEAR);
+        if (year < minYear) {
+            year = minYear;
+        } else if (year > maxYear) {
+            year = maxYear;
+        }
+        binding.npManualYear.setValue(year);
+        binding.npManualMonth.setValue(chosen.get(Calendar.MONTH) + 1);
+        updateManualPickerDayRange();
+        binding.npManualDay.setValue(chosen.get(Calendar.DAY_OF_MONTH));
+
+        binding.layoutManualDatePickerPanel.setVisibility(View.VISIBLE);
     }
 
-    private void showReturnStatsDatePicker() {
+    private void updateManualPickerDayRange() {
+        Calendar calendar = Calendar.getInstance();
+        calendar.set(Calendar.YEAR, binding.npManualYear.getValue());
+        calendar.set(Calendar.MONTH, Math.max(0, binding.npManualMonth.getValue() - 1));
+        int maxDay = calendar.getActualMaximum(Calendar.DAY_OF_MONTH);
+        binding.npManualDay.setMinValue(1);
+        binding.npManualDay.setMaxValue(maxDay);
+        binding.npManualDay.setWrapSelectorWheel(true);
+    }
+
+    private void hideManualDatePickerPanel() {
+        binding.layoutManualDatePickerPanel.setVisibility(View.GONE);
+    }
+
+    private void setupReturnPeriodPickerPanel() {
+        binding.tvReturnsPeriod.setOnClickListener(v -> showReturnPeriodPickerPanel());
+        binding.btnReturnPeriodCancel.setOnClickListener(v -> hideReturnPeriodPickerPanel());
+        binding.btnReturnPeriodConfirm.setOnClickListener(v -> {
+            if (returnPickerYears.isEmpty()) {
+                hideReturnPeriodPickerPanel();
+                return;
+            }
+            int selectedYear = returnPickerYears.get(binding.npReturnYear.getValue());
+            int selectedMonth = binding.npReturnMonth.getValue();
+            Calendar selected = Calendar.getInstance();
+            selected.set(selectedYear, selectedMonth - 1, 1, 0, 0, 0);
+            selected.set(Calendar.MILLISECOND, 0);
+            returnStatsAnchorDateMs = selected.getTimeInMillis();
+            hideReturnPeriodPickerPanel();
+            renderReturnStatsTable(allCurvePoints);
+        });
+        binding.npReturnYear.setOnValueChangedListener((picker, oldVal, newVal) ->
+                syncReturnPickerMonthForYearIndex(newVal));
+    }
+
+    private void showReturnPeriodPickerPanel() {
         if (returnStatsMode != ReturnStatsMode.DAY) {
+            binding.layoutReturnPeriodPickerPanel.setVisibility(View.GONE);
             return;
         }
 
-        Map<Integer, boolean[]> yearMonthMap = buildYearMonthAvailability(allCurvePoints);
-        if (yearMonthMap.isEmpty()) {
+        returnPickerYearMonthMap.clear();
+        returnPickerYearMonthMap.putAll(buildYearMonthAvailability(allCurvePoints));
+        if (returnPickerYearMonthMap.isEmpty()) {
+            binding.layoutReturnPeriodPickerPanel.setVisibility(View.GONE);
             return;
         }
 
-        List<Integer> years = new ArrayList<>(yearMonthMap.keySet());
-        years.sort(Integer::compareTo);
-        String[] yearLabels = new String[years.size()];
-        for (int i = 0; i < years.size(); i++) {
-            yearLabels[i] = years.get(i) + "年";
+        returnPickerYears.clear();
+        returnPickerYears.addAll(returnPickerYearMonthMap.keySet());
+        returnPickerYears.sort(Integer::compareTo);
+
+        String[] yearLabels = new String[returnPickerYears.size()];
+        for (int i = 0; i < returnPickerYears.size(); i++) {
+            yearLabels[i] = returnPickerYears.get(i) + "年";
         }
 
         Calendar anchor = Calendar.getInstance();
         anchor.setTimeInMillis(returnStatsAnchorDateMs > 0L ? returnStatsAnchorDateMs : System.currentTimeMillis());
-        int anchorYear = anchor.get(Calendar.YEAR);
-        int anchorMonth = anchor.get(Calendar.MONTH) + 1;
-
-        int yearIndex = years.indexOf(anchorYear);
+        int year = anchor.get(Calendar.YEAR);
+        int month = anchor.get(Calendar.MONTH) + 1;
+        int yearIndex = returnPickerYears.indexOf(year);
         if (yearIndex < 0) {
-            yearIndex = years.size() - 1;
-            anchorYear = years.get(yearIndex);
+            yearIndex = returnPickerYears.size() - 1;
+            year = returnPickerYears.get(yearIndex);
         }
 
-        NumberPicker yearPicker = new NumberPicker(this);
-        yearPicker.setMinValue(0);
-        yearPicker.setMaxValue(yearLabels.length - 1);
-        yearPicker.setDisplayedValues(yearLabels);
-        yearPicker.setWrapSelectorWheel(false);
-        yearPicker.setValue(yearIndex);
+        binding.npReturnYear.setMinValue(0);
+        binding.npReturnYear.setMaxValue(yearLabels.length - 1);
+        binding.npReturnYear.setDisplayedValues(null);
+        binding.npReturnYear.setDisplayedValues(yearLabels);
+        binding.npReturnYear.setWrapSelectorWheel(false);
+        binding.npReturnYear.setValue(yearIndex);
 
-        NumberPicker monthPicker = new NumberPicker(this);
-        monthPicker.setWrapSelectorWheel(false);
-        applyMonthPickerRange(monthPicker, yearMonthMap.get(anchorYear), anchorMonth);
+        binding.npReturnMonth.setWrapSelectorWheel(false);
+        applyMonthPickerRange(binding.npReturnMonth, returnPickerYearMonthMap.get(year), month);
+        binding.layoutReturnPeriodPickerPanel.setVisibility(View.VISIBLE);
+    }
 
-        TextView yearLabel = new TextView(this);
-        yearLabel.setText("年份");
-        yearLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        yearLabel.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-        yearLabel.setGravity(Gravity.CENTER);
+    private void syncReturnPickerMonthForYearIndex(int yearIndex) {
+        if (returnPickerYears.isEmpty() || yearIndex < 0 || yearIndex >= returnPickerYears.size()) {
+            return;
+        }
+        int selectedYear = returnPickerYears.get(yearIndex);
+        applyMonthPickerRange(binding.npReturnMonth,
+                returnPickerYearMonthMap.get(selectedYear),
+                binding.npReturnMonth.getValue());
+    }
 
-        TextView monthLabel = new TextView(this);
-        monthLabel.setText("月份");
-        monthLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        monthLabel.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-        monthLabel.setGravity(Gravity.CENTER);
-
-        android.widget.LinearLayout yearColumn = new android.widget.LinearLayout(this);
-        yearColumn.setOrientation(android.widget.LinearLayout.VERTICAL);
-        yearColumn.addView(yearLabel, new android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
-        yearColumn.addView(yearPicker, new android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        android.widget.LinearLayout monthColumn = new android.widget.LinearLayout(this);
-        monthColumn.setOrientation(android.widget.LinearLayout.VERTICAL);
-        monthColumn.addView(monthLabel, new android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
-        monthColumn.addView(monthPicker, new android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        android.widget.LinearLayout content = new android.widget.LinearLayout(this);
-        content.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        int sidePadding = dpToPx(12);
-        content.setPadding(sidePadding, sidePadding, sidePadding, sidePadding);
-        content.setBackgroundColor(ContextCompat.getColor(this, R.color.bg_surface));
-        content.addView(yearColumn, new android.widget.LinearLayout.LayoutParams(
-                0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        content.addView(monthColumn, new android.widget.LinearLayout.LayoutParams(
-                0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        yearPicker.setOnValueChangedListener((picker, oldVal, newVal) -> {
-            int selectedYear = years.get(newVal);
-            applyMonthPickerRange(monthPicker, yearMonthMap.get(selectedYear), monthPicker.getValue());
-        });
-
-        new MaterialAlertDialogBuilder(this)
-                .setTitle("选择统计月份")
-                .setView(content)
-                .setPositiveButton("确定", (dialog, which) -> {
-                    int selectedYear = years.get(yearPicker.getValue());
-                    int selectedMonth = monthPicker.getValue();
-                    Calendar selected = Calendar.getInstance();
-                    selected.set(selectedYear, selectedMonth - 1, 1, 0, 0, 0);
-                    selected.set(Calendar.MILLISECOND, 0);
-                    returnStatsAnchorDateMs = selected.getTimeInMillis();
-                    renderReturnStatsTable(allCurvePoints);
-                })
-                .setNegativeButton("取消", null)
-                .show();
+    private void hideReturnPeriodPickerPanel() {
+        binding.layoutReturnPeriodPickerPanel.setVisibility(View.GONE);
     }
 
     private Map<Integer, boolean[]> buildYearMonthAvailability(List<CurvePoint> points) {
@@ -1070,6 +1087,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void setupReturnStatsModeToggle() {
         binding.toggleReturnStatsMode.check(mapReturnModeButtonId(returnStatsMode));
+        binding.tvReturnsPeriod.setEnabled(returnStatsMode == ReturnStatsMode.DAY);
+        binding.tvReturnsPeriod.setAlpha(returnStatsMode == ReturnStatsMode.DAY ? 1f : 0.65f);
         binding.toggleReturnStatsMode.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
             if (!isChecked) {
                 return;
@@ -1083,6 +1102,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             } else {
                 returnStatsMode = ReturnStatsMode.STAGE;
             }
+            if (returnStatsMode != ReturnStatsMode.DAY) {
+                hideReturnPeriodPickerPanel();
+            }
+            binding.tvReturnsPeriod.setEnabled(returnStatsMode == ReturnStatsMode.DAY);
+            binding.tvReturnsPeriod.setAlpha(returnStatsMode == ReturnStatsMode.DAY ? 1f : 0.65f);
             renderReturnStatsTable(allCurvePoints);
         });
     }
@@ -3616,6 +3640,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (source == null || source.isEmpty()) {
             return result;
         }
+        List<PositionItem> normalizedSource = deduplicatePositionItems(source);
         long start = startOfToday();
         long now = System.currentTimeMillis();
         Map<String, Double> todayClosedByKey = new HashMap<>();
@@ -3635,7 +3660,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
 
         Map<String, Double> totalQtyByKey = new HashMap<>();
-        for (PositionItem item : source) {
+        for (PositionItem item : normalizedSource) {
             if (item == null) {
                 continue;
             }
@@ -3644,7 +3669,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             totalQtyByKey.put(key, totalQtyByKey.getOrDefault(key, 0d) + qty);
         }
 
-        for (PositionItem item : source) {
+        for (PositionItem item : normalizedSource) {
             if (item == null) {
                 continue;
             }
@@ -3653,7 +3678,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             double totalQty = totalQtyByKey.getOrDefault(key, 0d);
             double qty = Math.max(0d, Math.abs(item.getQuantity()));
             double shareClosed = totalQty > 1e-9 ? todayClosed * (qty / totalQty) : todayClosed;
-            double naturalDayPnL = shareClosed + item.getTotalPnL();
+            double naturalDayPnL = item.getDayPnL() + shareClosed;
 
             result.add(new PositionItem(
                     item.getProductName(),
@@ -3677,6 +3702,30 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             ));
         }
         return result;
+    }
+
+    private List<PositionItem> deduplicatePositionItems(List<PositionItem> source) {
+        LinkedHashMap<String, PositionItem> unique = new LinkedHashMap<>();
+        for (PositionItem item : source) {
+            if (item == null) {
+                continue;
+            }
+            unique.put(buildPositionUniqueKey(item), item);
+        }
+        return new ArrayList<>(unique.values());
+    }
+
+    private String buildPositionUniqueKey(PositionItem item) {
+        long qty = Math.round(Math.abs(item.getQuantity()) * 10_000d);
+        long cost = Math.round(item.getCostPrice() * 10000d);
+        long latest = Math.round(item.getLatestPrice() * 10000d);
+        long total = Math.round(item.getTotalPnL() * 100d);
+        long day = Math.round(item.getDayPnL() * 100d);
+        long storage = Math.round(item.getStorageFee() * 100d);
+        return trim(item.getCode()).toUpperCase(Locale.ROOT)
+                + "|" + normalizeSide(trim(item.getSide())).toUpperCase(Locale.ROOT)
+                + "|" + qty + "|" + cost + "|" + latest
+                + "|" + total + "|" + day + "|" + storage;
     }
 
     private String buildPositionSideKey(String code, String productName, String side) {
@@ -4195,6 +4244,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void applyManualCurveRange() {
+        hideManualDatePickerPanel();
         String startText = trim(binding.etRangeStart.getText() == null ? "" : binding.etRangeStart.getText().toString());
         String endText = trim(binding.etRangeEnd.getText() == null ? "" : binding.etRangeEnd.getText().toString());
         if (startText.isEmpty() || endText.isEmpty()) {
