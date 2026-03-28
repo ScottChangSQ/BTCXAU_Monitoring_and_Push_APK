@@ -16,11 +16,12 @@ public class AccountStatsPreloadManager {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Object lock = new Object();
     private static final long MIN_REFRESH_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
-    private static final long MAX_REFRESH_MS = 15_000L;
+    private static final long MAX_REFRESH_MS = AppConstants.ACCOUNT_REFRESH_MAX_INTERVAL_MS;
 
     private volatile Cache latestCache;
     private volatile boolean started;
     private volatile boolean loading;
+    private volatile boolean liveScreenActive;
     private volatile int unchangedStreak;
     private volatile long nextDelayMs = MIN_REFRESH_MS;
 
@@ -55,6 +56,10 @@ public class AccountStatsPreloadManager {
         return latestCache;
     }
 
+    public void setLiveScreenActive(boolean active) {
+        liveScreenActive = active;
+    }
+
     private void scheduleFetch(long delayMs) {
         executor.execute(() -> {
             if (delayMs > 0L) {
@@ -78,6 +83,10 @@ public class AccountStatsPreloadManager {
         }
         loading = true;
         try {
+            if (liveScreenActive) {
+                nextDelayMs = MAX_REFRESH_MS;
+                return;
+            }
             Mt5BridgeGatewayClient.SnapshotResult result = gatewayClient.fetch(AccountTimeRange.ALL);
             if (!result.isSuccess()) {
                 unchangedStreak = 0;
@@ -103,7 +112,7 @@ public class AccountStatsPreloadManager {
             } else {
                 unchangedStreak = 0;
             }
-            nextDelayMs = Math.min(MAX_REFRESH_MS, MIN_REFRESH_MS + unchangedStreak * 1_500L);
+            nextDelayMs = Math.min(MAX_REFRESH_MS, MIN_REFRESH_MS + unchangedStreak * 2_000L);
             latestCache = new Cache(
                     true,
                     snapshot,

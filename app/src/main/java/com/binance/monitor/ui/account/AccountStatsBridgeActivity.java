@@ -23,6 +23,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.NumberPicker;
+import android.widget.PopupMenu;
 import android.widget.Spinner;
 import android.widget.SpinnerAdapter;
 import android.widget.TableLayout;
@@ -94,7 +95,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final String SORT_OPEN_TIME = "开仓时间";
     private static final String SORT_PROFIT = "盈利水平";
     private static final long ACCOUNT_REFRESH_MIN_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
-    private static final long ACCOUNT_REFRESH_MAX_MS = 20_000L;
+    private static final long ACCOUNT_REFRESH_MAX_MS = AppConstants.ACCOUNT_REFRESH_MAX_INTERVAL_MS;
 
     private static final String PREFS_UI_STATE = "account_stats_ui_state";
     private static final String PREF_RANGE = "pref_range";
@@ -196,6 +197,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private final Map<String, PendingLogState> lastPendingLogStates = new HashMap<>();
     private final Set<String> knownTradeOpenLogKeys = new HashSet<>();
     private final Set<String> knownTradeCloseLogKeys = new HashSet<>();
+    private final Map<String, String> knownTradeStateByKey = new HashMap<>();
+    private int lastHistoryRecordCount = 0;
+    private Boolean lastTradePnlMismatchState;
     private boolean accountLogBaselineReady;
     private Boolean lastLoggedConnectedState;
     private String lastLoggedSource = "";
@@ -255,12 +259,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (preloadManager != null) {
+            preloadManager.setLiveScreenActive(true);
+        }
         refreshHandler.removeCallbacks(refreshRunnable);
         refreshHandler.postDelayed(refreshRunnable, dynamicRefreshDelayMs);
     }
 
     @Override
     protected void onPause() {
+        refreshHandler.removeCallbacks(refreshRunnable);
+        if (preloadManager != null) {
+            preloadManager.setLiveScreenActive(false);
+        }
         persistUiState();
         super.onPause();
     }
@@ -268,6 +279,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         refreshHandler.removeCallbacks(refreshRunnable);
+        if (preloadManager != null) {
+            preloadManager.setLiveScreenActive(false);
+        }
         if (ioExecutor != null) {
             ioExecutor.shutdownNow();
         }
@@ -501,12 +515,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.recyclerPositionByProduct.setAdapter(positionAggregateAdapter);
 
         binding.recyclerPositions.setLayoutManager(new LinearLayoutManager(this));
+        binding.recyclerPositions.setItemAnimator(null);
         binding.recyclerPositions.setAdapter(positionAdapter);
 
         binding.recyclerPendingOrders.setLayoutManager(new LinearLayoutManager(this));
+        binding.recyclerPendingOrders.setItemAnimator(null);
         binding.recyclerPendingOrders.setAdapter(pendingOrderAdapter);
 
         binding.recyclerTrades.setLayoutManager(new LinearLayoutManager(this));
+        binding.recyclerTrades.setItemAnimator(null);
         binding.recyclerTrades.setAdapter(tradeAdapter);
 
         binding.recyclerStats.setLayoutManager(new GridLayoutManager(this, 2));
@@ -531,12 +548,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         ArrayAdapter<String> sortAdapter = createTradeFilterAdapter(
                 new String[]{FILTER_SORT, SORT_CLOSE_TIME, SORT_OPEN_TIME, SORT_PROFIT});
         binding.spinnerTradeSort.setAdapter(sortAdapter);
-        binding.spinnerTradeSort.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
-            String chosen = safeSpinnerValue(binding.spinnerTradeSort, selectedTradeSortFilter, FILTER_SORT);
-            handleSortSelection(chosen, false);
-            updateTradeFilterDisplayTexts();
-            refreshTrades();
-        }));
+        binding.spinnerTradeSort.setOnTouchListener((v, event) -> {
+            if (event != null && event.getAction() == MotionEvent.ACTION_UP) {
+                showTradeSortPopupMenu(v);
+            }
+            return true;
+        });
 
         setSpinnerSelectionByValue(binding.spinnerTradeProduct, selectedTradeProductFilter);
         setSpinnerSelectionByValue(binding.spinnerTradeSide, selectedTradeSideFilter);
@@ -548,7 +565,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         updateTradeFilterDisplayTexts();
         binding.tvTradeProductLabel.setOnClickListener(v -> binding.spinnerTradeProduct.performClick());
         binding.tvTradeSideLabel.setOnClickListener(v -> binding.spinnerTradeSide.performClick());
-        binding.tvTradeSortLabel.setOnClickListener(v -> binding.spinnerTradeSort.performClick());
+        binding.tvTradeSortLabel.setOnClickListener(this::showTradeSortPopupMenu);
 
         binding.btnApplyManualRange.setOnClickListener(v -> applyManualCurveRange());
     }
@@ -587,7 +604,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void updateTradeFilterDisplayTexts(String product, String side, String sort) {
         setTradeFilterLabel(binding.tvTradeProductLabel, product, FILTER_PRODUCT);
         setTradeFilterLabel(binding.tvTradeSideLabel, side, FILTER_SIDE);
-        setTradeFilterLabel(binding.tvTradeSortLabel, sort, FILTER_SORT);
+        String sortText = trim(sort);
+        if (sortText.isEmpty()) {
+            sortText = FILTER_SORT;
+        }
+        if (!FILTER_SORT.equals(sortText)) {
+            sortText = sortText + (tradeSortDescending ? " ↓" : " ↑");
+        }
+        binding.tvTradeSortLabel.setText(sortText);
     }
 
     private void setTradeFilterLabel(TextView labelView, String value, String fallback) {
@@ -625,6 +649,34 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return SORT_CLOSE_TIME;
         }
         return rawSort;
+    }
+
+    private void showTradeSortPopupMenu(View anchor) {
+        View menuAnchor = anchor == null ? binding.tvTradeSortLabel : anchor;
+        PopupMenu popup = new PopupMenu(this, menuAnchor);
+        String[] sortOptions = new String[]{SORT_CLOSE_TIME, SORT_OPEN_TIME, SORT_PROFIT};
+        String current = normalizeSortValue(selectedTradeSortFilter);
+        for (int i = 0; i < sortOptions.length; i++) {
+            String option = sortOptions[i];
+            String label = option;
+            if (option.equals(current)) {
+                label = option + (tradeSortDescending ? " ↓" : " ↑");
+            }
+            popup.getMenu().add(0, i, i, label);
+        }
+        popup.setOnMenuItemClickListener(item -> {
+            int which = item.getItemId();
+            if (which < 0 || which >= sortOptions.length) {
+                return false;
+            }
+            String chosen = sortOptions[which];
+            handleSortSelection(chosen, true);
+            setSpinnerSelectionByValue(binding.spinnerTradeSort, chosen);
+            updateTradeFilterDisplayTexts();
+            refreshTrades();
+            return true;
+        });
+        popup.show();
     }
 
     private void setSpinnerSelectionByValue(Spinner spinner, String value) {
@@ -1310,13 +1362,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         if (unchanged) {
-            unchangedRefreshStreak = Math.min(10, unchangedRefreshStreak + 1);
+            unchangedRefreshStreak = Math.min(12, unchangedRefreshStreak + 1);
         } else {
             unchangedRefreshStreak = 0;
         }
         dynamicRefreshDelayMs = Math.min(
                 ACCOUNT_REFRESH_MAX_MS,
-                ACCOUNT_REFRESH_MIN_MS + unchangedRefreshStreak * 1_500L);
+                ACCOUNT_REFRESH_MIN_MS + unchangedRefreshStreak * 2_000L);
     }
 
     private String normalizeSource(String source) {
@@ -1403,16 +1455,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             lastPendingLogStates.putAll(currentPending);
             knownTradeOpenLogKeys.clear();
             knownTradeCloseLogKeys.clear();
+            knownTradeStateByKey.clear();
             if (trades != null) {
                 for (TradeRecordItem item : trades) {
                     knownTradeOpenLogKeys.add(buildTradeOpenLogKey(item));
                     knownTradeCloseLogKeys.add(buildTradeCloseLogKey(item));
+                    knownTradeStateByKey.put(buildTradeDedupeKey(item), buildTradeStateSignature(item));
                 }
             }
+            lastHistoryRecordCount = trades == null ? 0 : trades.size();
             accountLogBaselineReady = true;
-            logManager.info("AccountStats log baseline ready: positions=" + currentPositions.size()
-                    + ", pending=" + currentPending.size()
-                    + ", trades=" + (trades == null ? 0 : trades.size()));
             return;
         }
 
@@ -1481,25 +1533,35 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (trades != null && !trades.isEmpty()) {
             List<TradeRecordItem> orderedTrades = new ArrayList<>(trades);
             orderedTrades.sort(Comparator.comparingLong(this::resolveCloseTime));
+            Map<String, String> currentTradeStates = new HashMap<>();
             int budget = 80;
             for (TradeRecordItem item : orderedTrades) {
-                if (budget <= 0) {
-                    break;
+                String tradeKey = buildTradeDedupeKey(item);
+                String tradeState = buildTradeStateSignature(item);
+                currentTradeStates.put(tradeKey, tradeState);
+                String previousState = knownTradeStateByKey.get(tradeKey);
+                if (previousState != null && !previousState.equals(tradeState) && budget > 0) {
+                    logManager.info("Trade changed: " + symbolForLog(item.getCode(), item.getProductName())
+                            + " " + sideForLog(item.getSide())
+                            + " qty=" + shortQty(item.getQuantity())
+                            + " pnl=" + signedMoney(item.getProfit())
+                            + " close=" + FormatUtils.formatDateTime(resolveCloseTime(item)));
+                    budget--;
                 }
+
                 String openKey = buildTradeOpenLogKey(item);
-                if (knownTradeOpenLogKeys.add(openKey)) {
+                boolean newOpenKey = previousState == null && knownTradeOpenLogKeys.add(openKey);
+                if (newOpenKey && budget > 0) {
                     logManager.info("Trade opened: " + symbolForLog(item.getCode(), item.getProductName())
                             + " " + sideForLog(item.getSide())
                             + " qty=" + shortQty(item.getQuantity())
                             + " open=" + FormatUtils.formatDateTime(resolveOpenTime(item)));
                     budget--;
-                    if (budget <= 0) {
-                        break;
-                    }
                 }
 
                 String closeKey = buildTradeCloseLogKey(item);
-                if (knownTradeCloseLogKeys.add(closeKey)) {
+                boolean newCloseKey = previousState == null && knownTradeCloseLogKeys.add(closeKey);
+                if (newCloseKey && budget > 0) {
                     logManager.info("Trade closed: " + symbolForLog(item.getCode(), item.getProductName())
                             + " " + sideForLog(item.getSide())
                             + " qty=" + shortQty(item.getQuantity())
@@ -1508,6 +1570,30 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     budget--;
                 }
             }
+
+            int historyRecordCount = currentTradeStates.size();
+            if (historyRecordCount != lastHistoryRecordCount) {
+                int delta = historyRecordCount - lastHistoryRecordCount;
+                if (delta > 0) {
+                    logManager.info("History records added: +" + delta + " -> " + historyRecordCount);
+                } else if (lastHistoryRecordCount > 0) {
+                    logManager.warn("History records reduced: " + delta + " -> " + historyRecordCount);
+                }
+                lastHistoryRecordCount = historyRecordCount;
+            }
+
+            int removedTrades = 0;
+            for (String key : new HashSet<>(knownTradeStateByKey.keySet())) {
+                if (!currentTradeStates.containsKey(key)) {
+                    removedTrades++;
+                }
+            }
+            if (removedTrades > 0) {
+                logManager.warn("Trade records removed from snapshot: " + removedTrades);
+            }
+
+            knownTradeStateByKey.clear();
+            knownTradeStateByKey.putAll(currentTradeStates);
         }
 
         if (knownTradeOpenLogKeys.size() > 50_000 || knownTradeCloseLogKeys.size() > 50_000) {
@@ -1611,6 +1697,22 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private String buildTradeCloseLogKey(TradeRecordItem item) {
         return buildTradeDedupeKey(item);
+    }
+
+    private String buildTradeStateSignature(TradeRecordItem item) {
+        if (item == null) {
+            return "";
+        }
+        long open = resolveOpenTime(item);
+        long close = resolveCloseTime(item);
+        long qty = Math.round(Math.abs(item.getQuantity()) * 10_000d);
+        long price = Math.round(Math.abs(item.getPrice()) * 100d);
+        long profit = Math.round(item.getProfit() * 100d);
+        long storage = Math.round(item.getStorageFee() * 100d);
+        String remark = trim(item.getRemark());
+        String side = normalizeSide(trim(item.getSide())).toLowerCase(Locale.ROOT);
+        return open + "|" + close + "|" + qty + "|" + price + "|" + profit + "|" + storage
+                + "|" + side + "|" + remark;
     }
 
     private String symbolForLog(String code, String productName) {
@@ -4154,14 +4256,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 storageTotal += item.getStorageFee();
             }
         }
+        boolean mismatch = Math.abs(total - latestCumulativePnl) >= TRADE_PNL_ZERO_THRESHOLD;
         if (isDefaultTradeFilters(productFilter, sideFilter, dateFilter)
                 && logManager != null
-                && Math.abs(total - latestCumulativePnl) >= TRADE_PNL_ZERO_THRESHOLD) {
+                && mismatch
+                && !Boolean.TRUE.equals(lastTradePnlMismatchState)) {
             logManager.warn("Trade pnl summary mismatch: tradeSum="
                     + FormatUtils.formatPrice(total)
                     + ", cumulative=" + FormatUtils.formatPrice(latestCumulativePnl)
                     + ", rawTrades=" + baseTrades.size());
         }
+        lastTradePnlMismatchState = mismatch;
         String pnlText = signedMoneyTrailingUnit(total);
         String storageText = signedMoneyTrailingUnit(storageTotal);
         double balanceTotal = total + storageTotal;

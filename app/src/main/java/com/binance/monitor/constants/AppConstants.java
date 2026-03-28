@@ -71,7 +71,8 @@ public final class AppConstants {
     public static final String MT5_WEB_URL = "https://www.metatrader5.com/zh";
     public static final String MT5_PACKAGE = "net.metaquotes.metatrader5";
     public static final String MT5_GATEWAY_BASE_URL = BuildConfig.MT5_GATEWAY_BASE_URL;
-    public static final long ACCOUNT_REFRESH_INTERVAL_MS = 5000L;
+    public static final long ACCOUNT_REFRESH_INTERVAL_MS = 8000L;
+    public static final long ACCOUNT_REFRESH_MAX_INTERVAL_MS = 30000L;
 
     private AppConstants() {
     }

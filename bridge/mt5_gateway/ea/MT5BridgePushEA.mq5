@@ -2,10 +2,14 @@
 
 input string GatewayUrl = "http://127.0.0.1:8787/v1/ea/snapshot";
 input string BridgeToken = "";
-input int PushIntervalSeconds = 5;
+input int PushIntervalSeconds = 10;
+input int HeartbeatIntervalSeconds = 20;
 input int RequestTimeoutMs = 3000;
 input int TradeHistoryDays = 3650;
 input int MaxTradeItems = 5000;
+
+string g_lastSuccessfulState = "";
+datetime g_lastSuccessfulPushTime = 0;
 
 string JsonEscape(string value)
 {
@@ -53,6 +57,13 @@ string BuildCurvePoints()
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
    return StringFormat("[{\"timestamp\":%I64d,\"equity\":%.2f,\"balance\":%.2f}]", nowMs, equity, balance);
+}
+
+string BuildCurveStateSignature()
+{
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   return StringFormat("%.2f|%.2f", equity, balance);
 }
 
 string BuildCurveIndicators()
@@ -219,7 +230,12 @@ string BuildStats()
    return json;
 }
 
-string BuildSnapshotJson()
+string BuildSnapshotJsonFromParts(string overviewMetrics,
+                                  string curvePoints,
+                                  string curveIndicators,
+                                  string positions,
+                                  string trades,
+                                  string stats)
 {
    long nowMs = (long)TimeCurrent() * 1000;
    long login = AccountInfoInteger(ACCOUNT_LOGIN);
@@ -234,20 +250,35 @@ string BuildSnapshotJson()
 
    string json = "{";
    json += "\"accountMeta\":" + accountMeta;
-   json += ",\"overviewMetrics\":" + BuildOverviewMetrics();
-   json += ",\"curvePoints\":" + BuildCurvePoints();
-   json += ",\"curveIndicators\":" + BuildCurveIndicators();
-   json += ",\"positions\":" + BuildPositions();
-   json += ",\"trades\":" + BuildTrades();
-   json += ",\"statsMetrics\":" + BuildStats();
+   json += ",\"overviewMetrics\":" + overviewMetrics;
+   json += ",\"curvePoints\":" + curvePoints;
+   json += ",\"curveIndicators\":" + curveIndicators;
+   json += ",\"positions\":" + positions;
+   json += ",\"trades\":" + trades;
+   json += ",\"statsMetrics\":" + stats;
    json += "}";
 
    return json;
 }
 
-bool PushSnapshot()
+string BuildSnapshotStateSignature(string overviewMetrics,
+                                   string curveIndicators,
+                                   string positions,
+                                   string trades)
 {
-   string body = BuildSnapshotJson();
+   long login = AccountInfoInteger(ACCOUNT_LOGIN);
+   string server = AccountInfoString(ACCOUNT_SERVER);
+   return StringFormat("%I64d|%s|%s|%s|%s|%s",
+      login,
+      JsonEscape(server),
+      BuildCurveStateSignature(),
+      overviewMetrics,
+      curveIndicators,
+      positions + "|" + trades);
+}
+
+bool PushSnapshotBody(string body)
+{
    char payload[];
    StringToCharArray(body, payload, 0, -1, CP_UTF8);
 
@@ -265,19 +296,71 @@ bool PushSnapshot()
    }
 
    string responseText = CharArrayToString(response, 0, -1, CP_UTF8);
-   Print("MT5BridgePushEA: push status=", code, " response=", responseText);
-   return code >= 200 && code < 300;
+   if(code < 200 || code >= 300)
+   {
+      Print("MT5BridgePushEA: push status=", code, " response=", responseText);
+      return false;
+   }
+   return true;
+}
+
+bool PushSnapshot()
+{
+   string overviewMetrics = BuildOverviewMetrics();
+   string curvePoints = BuildCurvePoints();
+   string curveIndicators = BuildCurveIndicators();
+   string positions = BuildPositions();
+   string trades = BuildTrades();
+   string stats = BuildStats();
+   string body = BuildSnapshotJsonFromParts(
+      overviewMetrics,
+      curvePoints,
+      curveIndicators,
+      positions,
+      trades,
+      stats
+   );
+   return PushSnapshotBody(body);
 }
 
 int OnInit()
 {
    int intervalSeconds = PushIntervalSeconds;
    if(intervalSeconds < 1)
-      intervalSeconds = 5;
+      intervalSeconds = 10;
+
+   int heartbeatSeconds = HeartbeatIntervalSeconds;
+   if(heartbeatSeconds < intervalSeconds)
+      heartbeatSeconds = intervalSeconds * 2;
 
    EventSetTimer(intervalSeconds);
-   Print("MT5BridgePushEA started. Gateway=", GatewayUrl, " interval=", intervalSeconds, "s");
-   PushSnapshot();
+   Print("MT5BridgePushEA started. Gateway=", GatewayUrl, " interval=", intervalSeconds, "s heartbeat=", heartbeatSeconds, "s");
+
+   string overviewMetrics = BuildOverviewMetrics();
+   string curvePoints = BuildCurvePoints();
+   string curveIndicators = BuildCurveIndicators();
+   string positions = BuildPositions();
+   string trades = BuildTrades();
+   string stats = BuildStats();
+   string body = BuildSnapshotJsonFromParts(
+      overviewMetrics,
+      curvePoints,
+      curveIndicators,
+      positions,
+      trades,
+      stats
+   );
+   string stateSignature = BuildSnapshotStateSignature(
+      overviewMetrics,
+      curveIndicators,
+      positions,
+      trades
+   );
+   if(PushSnapshotBody(body))
+   {
+      g_lastSuccessfulState = stateSignature;
+      g_lastSuccessfulPushTime = TimeCurrent();
+   }
    return(INIT_SUCCEEDED);
 }
 
@@ -289,5 +372,39 @@ void OnDeinit(const int reason)
 
 void OnTimer()
 {
-   PushSnapshot();
+   int heartbeatSeconds = HeartbeatIntervalSeconds;
+   if(heartbeatSeconds < PushIntervalSeconds)
+      heartbeatSeconds = PushIntervalSeconds * 2;
+
+   string overviewMetrics = BuildOverviewMetrics();
+   string curvePoints = BuildCurvePoints();
+   string curveIndicators = BuildCurveIndicators();
+   string positions = BuildPositions();
+   string trades = BuildTrades();
+   string stateSignature = BuildSnapshotStateSignature(
+      overviewMetrics,
+      curveIndicators,
+      positions,
+      trades
+   );
+
+   datetime now = TimeCurrent();
+   bool stateChanged = (StringLen(g_lastSuccessfulState) == 0 || g_lastSuccessfulState != stateSignature);
+   bool heartbeatDue = (g_lastSuccessfulPushTime <= 0 || (now - g_lastSuccessfulPushTime) >= heartbeatSeconds);
+   if(!stateChanged && !heartbeatDue)
+      return;
+
+   string body = BuildSnapshotJsonFromParts(
+      overviewMetrics,
+      curvePoints,
+      curveIndicators,
+      positions,
+      trades,
+      BuildStats()
+   );
+   if(PushSnapshotBody(body))
+   {
+      g_lastSuccessfulState = stateSignature;
+      g_lastSuccessfulPushTime = now;
+   }
 }

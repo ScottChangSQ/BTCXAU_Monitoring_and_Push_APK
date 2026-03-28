@@ -32,9 +32,9 @@ except Exception:
 HOST = os.getenv("GATEWAY_HOST", "0.0.0.0")
 PORT = int(os.getenv("GATEWAY_PORT", "8787"))
 GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull | ea
-EA_SNAPSHOT_TTL_SEC = int(os.getenv("EA_SNAPSHOT_TTL_SEC", "20"))
+EA_SNAPSHOT_TTL_SEC = int(os.getenv("EA_SNAPSHOT_TTL_SEC", "35"))
 EA_INGEST_TOKEN = os.getenv("EA_INGEST_TOKEN", "").strip()
-SNAPSHOT_BUILD_CACHE_MS = int(os.getenv("SNAPSHOT_BUILD_CACHE_MS", "1500"))
+SNAPSHOT_BUILD_CACHE_MS = int(os.getenv("SNAPSHOT_BUILD_CACHE_MS", "8000"))
 SNAPSHOT_DELTA_ENABLED = os.getenv("SNAPSHOT_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 SNAPSHOT_DELTA_FALLBACK_RATIO = float(os.getenv("SNAPSHOT_DELTA_FALLBACK_RATIO", "0.85"))
 
@@ -44,6 +44,7 @@ state_lock = Lock()
 snapshot_cache_lock = Lock()
 ea_snapshot_cache: Optional[Dict] = None
 ea_snapshot_received_at_ms = 0
+ea_snapshot_change_digest = ""
 mt5_last_connected_path = ""
 snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
 snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
@@ -838,15 +839,52 @@ def _stable_json_size(value: Any) -> int:
     return len(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
 
 
+def _normalize_digest_curve_points(points: List[Dict]) -> List[Dict]:
+    if not points:
+        return []
+    keep_timestamp = len(points) > 1
+    normalized: List[Dict] = []
+    for item in points:
+        point = {
+            "equity": round(float(item.get("equity", 0.0) or 0.0), 2),
+            "balance": round(float(item.get("balance", 0.0) or 0.0), 2),
+        }
+        if keep_timestamp:
+            point["timestamp"] = int(item.get("timestamp", 0) or 0)
+        if normalized and normalized[-1] == point:
+            continue
+        normalized.append(point)
+    return normalized
+
+
+def _normalize_digest_stats_metrics(metrics: List[Dict]) -> List[Dict]:
+    normalized: List[Dict] = []
+    for item in metrics or []:
+        name = str(item.get("name", ""))
+        if name.strip().lower() == "pushed at":
+            continue
+        normalized.append({
+            "name": name,
+            "value": str(item.get("value", "")),
+        })
+    return normalized
+
+
 def _snapshot_digest(snapshot: Dict) -> str:
+    account_meta = snapshot.get("accountMeta") or {}
     core = {
+        "accountMeta": {
+            "login": str(account_meta.get("login", "")),
+            "server": str(account_meta.get("server", "")),
+            "source": str(account_meta.get("source", "")),
+        },
         "overviewMetrics": snapshot.get("overviewMetrics") or [],
-        "curvePoints": snapshot.get("curvePoints") or [],
+        "curvePoints": _normalize_digest_curve_points(snapshot.get("curvePoints") or []),
         "curveIndicators": snapshot.get("curveIndicators") or [],
         "positions": snapshot.get("positions") or [],
         "pendingOrders": snapshot.get("pendingOrders") or [],
         "trades": snapshot.get("trades") or [],
-        "statsMetrics": snapshot.get("statsMetrics") or [],
+        "statsMetrics": _normalize_digest_stats_metrics(snapshot.get("statsMetrics") or []),
     }
     payload = json.dumps(core, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha1(payload).hexdigest()
@@ -1137,7 +1175,7 @@ def source_status():
 
 @app.post("/v1/ea/snapshot")
 def ingest_ea_snapshot(payload: Dict, x_bridge_token: Optional[str] = Header(default=None)):
-    global ea_snapshot_cache, ea_snapshot_received_at_ms
+    global ea_snapshot_cache, ea_snapshot_received_at_ms, ea_snapshot_change_digest
 
     if EA_INGEST_TOKEN:
         if not x_bridge_token or x_bridge_token != EA_INGEST_TOKEN:
@@ -1146,14 +1184,21 @@ def ingest_ea_snapshot(payload: Dict, x_bridge_token: Optional[str] = Header(def
     normalized = _normalize_snapshot(payload, "MT5 EA Push")
     normalized["accountMeta"]["source"] = "MT5 EA Push"
     normalized["accountMeta"]["updatedAt"] = _now_ms()
+    change_digest = _snapshot_digest(normalized)
+    changed = False
+    received_at = _now_ms()
 
     with state_lock:
-        ea_snapshot_cache = normalized
-        ea_snapshot_received_at_ms = _now_ms()
-    with snapshot_cache_lock:
-        snapshot_build_cache.clear()
+        changed = ea_snapshot_cache is None or change_digest != ea_snapshot_change_digest
+        ea_snapshot_received_at_ms = received_at
+        if changed:
+            ea_snapshot_cache = normalized
+            ea_snapshot_change_digest = change_digest
+    if changed:
+        with snapshot_cache_lock:
+            snapshot_build_cache.clear()
 
-    return {"ok": True, "receivedAt": ea_snapshot_received_at_ms}
+    return {"ok": True, "receivedAt": ea_snapshot_received_at_ms, "changed": changed}
 
 
 @app.get("/v1/snapshot")
