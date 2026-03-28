@@ -56,7 +56,7 @@
     <string name="dismiss">稍后</string>
     <string name="status_connection">连接状态</string>
     <string name="status_monitor">监控状态</string>
-    <string name="status_update">最近更新时间</string>
+    <string name="status_update">更新时间</string>
     <string name="threshold_card_title">异常判断配置</string>
     <string name="floating_card_title">悬浮窗与显示设置</string>
     <string name="market_card_title">行情概览</string>

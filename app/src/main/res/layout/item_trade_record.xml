@@ -3,8 +3,8 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="6dp"
-    app:cardBackgroundColor="@color/bg_input"
+    android:layout_marginBottom="@dimen/space_8"
+    app:cardBackgroundColor="@color/bg_card"
     app:strokeColor="@color/stroke_card"
     app:strokeWidth="1dp">
 
@@ -13,7 +13,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="10dp">
+        android:padding="@dimen/space_12">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -25,17 +25,14 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp" />
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.MetaStrong" />
 
             <TextView
                 android:id="@+id/tvExpandHint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="展开"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp"
-                android:textStyle="normal" />
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.MetaStrong" />
         </LinearLayout>
 
         <LinearLayout
@@ -49,41 +46,36 @@
                 android:id="@+id/tvTime"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
+                android:layout_marginTop="@dimen/space_8"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
             <TextView
                 android:id="@+id/tvProduct"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
+                android:layout_marginTop="@dimen/space_4"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
             <TextView
                 android:id="@+id/tvSide"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
+                android:layout_marginTop="@dimen/space_4"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
             <TextView
                 android:id="@+id/tvDetail"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
+                android:layout_marginTop="@dimen/space_4"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
             <TextView
                 android:id="@+id/tvRemark"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
+                android:layout_marginTop="@dimen/space_4"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

@@ -11,7 +11,7 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:clipToPadding="false"
-        android:padding="16dp">
+        android:padding="@dimen/page_horizontal_padding">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -20,40 +20,37 @@
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_8">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="16dp">
+                    android:padding="@dimen/card_content_padding">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:fontFamily="serif"
-                        android:text="悬浮窗与显示设置"
-                        android:textColor="@color/text_primary"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
+                        android:text="悬浮窗与显示"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/switchFloatingEnabled"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
+                        android:layout_marginTop="@dimen/space_16"
                         android:text="@string/floating_window"
                         android:textColor="@color/text_primary"
-                        android:textSize="13sp" />
+                        android:textSize="14sp" />
 
                     <TextView
                         android:id="@+id/tvAlphaValue"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="@dimen/space_12"
                         android:text="88%"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
                     <SeekBar
                         android:id="@+id/seekFloatingAlpha"
@@ -66,9 +63,10 @@
                         android:id="@+id/switchShowBtc"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_12"
                         android:text="@string/show_btc"
                         android:textColor="@color/text_primary"
-                        android:textSize="13sp" />
+                        android:textSize="14sp" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/switchShowXau"
@@ -76,26 +74,79 @@
                         android:layout_height="wrap_content"
                         android:text="@string/show_xau"
                         android:textColor="@color/text_primary"
-                        android:textSize="13sp" />
+                        android:textSize="14sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/page_section_gap">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_content_padding">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="主题搭配"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:text="切换整体背景、卡片、按钮、滑块和悬浮窗的整套主题。"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/control_height_md"
+                        android:layout_marginTop="@dimen/space_12">
+
+                        <androidx.appcompat.widget.AppCompatSpinner
+                            android:id="@+id/spinnerColorPalette"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="@drawable/bg_spinner_filter"
+                            android:minWidth="0dp"
+                            android:popupBackground="@drawable/bg_spinner_popup"
+                            android:spinnerMode="dropdown" />
+
+                        <TextView
+                            android:id="@+id/tvThemePaletteLabel"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:clickable="false"
+                            android:ellipsize="end"
+                            android:focusable="false"
+                            android:gravity="center_vertical|start"
+                            android:includeFontPadding="false"
+                            android:maxLines="1"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="32dp"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp" />
+                    </FrameLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
             <Button
                 android:id="@+id/btnViewLogs"
                 android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:layout_marginTop="14dp"
-                android:layout_marginBottom="20dp"
+                android:layout_height="@dimen/control_height_md"
+                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginBottom="@dimen/space_20"
                 android:background="@drawable/bg_inline_button"
                 android:gravity="center"
-                android:includeFontPadding="true"
                 android:maxLines="1"
                 android:minHeight="0dp"
-                android:paddingTop="0dp"
-                android:paddingBottom="0dp"
                 android:text="@string/view_logs"
                 android:textAllCaps="false"
-                android:textColor="@color/bg_primary"
+                android:textColor="@color/text_primary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -104,10 +155,10 @@
     <LinearLayout
         android:id="@+id/tabBar"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
+        android:layout_height="@dimen/bottom_nav_height"
         android:background="@drawable/bg_bottom_nav"
         android:orientation="horizontal"
-        android:padding="6dp">
+        android:padding="@dimen/space_8">
 
         <TextView
             android:id="@+id/tabMarketMonitor"
@@ -125,7 +176,7 @@
             android:id="@+id/tabAccountStats"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
             android:background="@drawable/bg_chip_unselected"
             android:gravity="center"
@@ -138,12 +189,12 @@
             android:id="@+id/tabSettings"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
             android:background="@drawable/bg_chip_selected"
             android:gravity="center"
             android:text="设置"
-            android:textColor="@color/bg_primary"
+            android:textColor="@color/white"
             android:textSize="13sp"
             android:textStyle="bold" />
     </LinearLayout>

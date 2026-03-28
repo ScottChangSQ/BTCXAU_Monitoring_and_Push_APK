@@ -61,12 +61,17 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
             String nameCn = MetricNameTranslator.toChinese(item.getName());
             String value = item.getValue();
             binding.tvName.setText(nameCn);
-            binding.tvValue.setText(value);
             if (isStreakMetric(nameCn)) {
                 binding.tvValue.setText(buildStreakSpan(value));
                 binding.tvValue.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
                 return;
             }
+            if (isTradeRatioMetric(nameCn)) {
+                binding.tvValue.setText(buildTradeRatioSpan(nameCn, value));
+                binding.tvValue.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                return;
+            }
+            binding.tvValue.setText(value);
             applyProfitColor(binding.tvValue, nameCn, value);
         }
 
@@ -78,23 +83,22 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
             return normalized.contains("最大连续盈利") || normalized.contains("最大连续亏损");
         }
 
+        private boolean isTradeRatioMetric(String label) {
+            if (label == null) {
+                return false;
+            }
+            String normalized = label.replace(" ", "");
+            return normalized.contains("盈利交易") || normalized.contains("亏损交易");
+        }
+
         private CharSequence buildStreakSpan(String raw) {
             if (raw == null || raw.trim().isEmpty()) {
                 return "--";
             }
             SpannableString span = new SpannableString(raw);
-            int left = raw.indexOf('(');
-            int right = raw.lastIndexOf(')');
-            if (left < 0 || right <= left) {
-                return span;
-            }
-            int signPos = -1;
-            for (int i = left + 1; i < right; i++) {
-                char c = raw.charAt(i);
-                if (c == '+' || c == '-') {
-                    signPos = i;
-                    break;
-                }
+            int signPos = raw.indexOf('+');
+            if (signPos < 0) {
+                signPos = raw.indexOf('-');
             }
             if (signPos < 0) {
                 return span;
@@ -103,7 +107,27 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
                     raw.charAt(signPos) == '+' ? R.color.accent_green : R.color.accent_red);
             span.setSpan(new ForegroundColorSpan(color),
                     signPos,
-                    right,
+                    raw.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            return span;
+        }
+
+        private CharSequence buildTradeRatioSpan(String label, String raw) {
+            if (raw == null || raw.trim().isEmpty()) {
+                return "--";
+            }
+            SpannableString span = new SpannableString(raw);
+            int lineBreak = raw.indexOf('\n');
+            if (lineBreak < 0 || lineBreak >= raw.length() - 1) {
+                return span;
+            }
+            int color = ContextCompat.getColor(binding.getRoot().getContext(),
+                    label != null && label.contains("亏损")
+                            ? R.color.accent_red
+                            : R.color.accent_green);
+            span.setSpan(new ForegroundColorSpan(color),
+                    lineBreak + 1,
+                    raw.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             return span;
         }

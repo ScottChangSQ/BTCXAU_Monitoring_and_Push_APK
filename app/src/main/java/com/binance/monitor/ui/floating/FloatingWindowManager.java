@@ -18,6 +18,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.databinding.LayoutFloatingWindowBinding;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.AppLaunchHelper;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.PermissionHelper;
@@ -201,6 +202,9 @@ public class FloatingWindowManager {
                 AppConstants.SYMBOL_BTC, showBtc);
         renderSymbol(binding.layoutXau, binding.tvXauPrice, binding.tvXauVolume, binding.tvXauAmount,
                 AppConstants.SYMBOL_XAU, showXau);
+        if (!priceBlinkActive) {
+            applyIdlePriceColors();
+        }
         if (!minimized) {
             cacheExpandedAnchor();
         }
@@ -440,10 +444,7 @@ public class FloatingWindowManager {
         if (binding != null) {
             binding.viewMiniSquare.setAlpha(1f);
             setMiniSquareBackground(false);
-            binding.tvBtcPrice.setAlpha(1f);
-            binding.tvXauPrice.setAlpha(1f);
-            binding.tvBtcPrice.setTextColor(context.getColor(R.color.text_primary));
-            binding.tvXauPrice.setTextColor(context.getColor(R.color.text_primary));
+            applyIdlePriceColors();
         }
     }
 
@@ -512,10 +513,7 @@ public class FloatingWindowManager {
             if (binding == null || minimized) {
                 priceBlinkActive = false;
                 if (binding != null) {
-                    binding.tvBtcPrice.setAlpha(1f);
-                    binding.tvXauPrice.setAlpha(1f);
-                    binding.tvBtcPrice.setTextColor(context.getColor(R.color.text_primary));
-                    binding.tvXauPrice.setTextColor(context.getColor(R.color.text_primary));
+                    applyIdlePriceColors();
                 }
                 return;
             }
@@ -524,30 +522,36 @@ public class FloatingWindowManager {
             boolean xauActive = now < xauBlinkEndAt;
             if (!btcActive && !xauActive) {
                 priceBlinkActive = false;
-                binding.tvBtcPrice.setAlpha(1f);
-                binding.tvXauPrice.setAlpha(1f);
-                binding.tvBtcPrice.setTextColor(context.getColor(R.color.text_primary));
-                binding.tvXauPrice.setTextColor(context.getColor(R.color.text_primary));
+                applyIdlePriceColors();
                 return;
             }
             priceBlinkDimmed = !priceBlinkDimmed;
+            UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
             if (btcActive) {
                 binding.tvBtcPrice.setAlpha(1f);
-                binding.tvBtcPrice.setTextColor(context.getColor(priceBlinkDimmed ? R.color.accent_red : R.color.bg_primary));
+                binding.tvBtcPrice.setTextColor(priceBlinkDimmed ? context.getColor(R.color.accent_red) : palette.btc);
             } else {
                 binding.tvBtcPrice.setAlpha(1f);
-                binding.tvBtcPrice.setTextColor(context.getColor(R.color.text_primary));
+                binding.tvBtcPrice.setTextColor(palette.btc);
             }
             if (xauActive) {
                 binding.tvXauPrice.setAlpha(1f);
-                binding.tvXauPrice.setTextColor(context.getColor(priceBlinkDimmed ? R.color.accent_red : R.color.bg_primary));
+                binding.tvXauPrice.setTextColor(priceBlinkDimmed ? context.getColor(R.color.accent_red) : palette.xau);
             } else {
                 binding.tvXauPrice.setAlpha(1f);
-                binding.tvXauPrice.setTextColor(context.getColor(R.color.text_primary));
+                binding.tvXauPrice.setTextColor(palette.xau);
             }
             handler.postDelayed(this, 300L);
         }
     };
+
+    private void applyIdlePriceColors() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
+        binding.tvBtcPrice.setAlpha(1f);
+        binding.tvXauPrice.setAlpha(1f);
+        binding.tvBtcPrice.setTextColor(palette.btc);
+        binding.tvXauPrice.setTextColor(palette.xau);
+    }
 
     private int dp(int value) {
         return (int) (value * context.getResources().getDisplayMetrics().density);

@@ -59,7 +59,7 @@ public class TradePnlBarChartView extends View {
         labelPaint.setTextSize(dp(9f));
         labelPaint.setTextAlign(Paint.Align.CENTER);
 
-        valuePaint.setTextSize(dp(8f));
+        valuePaint.setTextSize(dp(9f));
         valuePaint.setTextAlign(Paint.Align.CENTER);
 
         positivePaint.setColor(ContextCompat.getColor(context, R.color.accent_green));
@@ -89,8 +89,10 @@ public class TradePnlBarChartView extends View {
 
         float left = dp(12f);
         float right = width - dp(12f);
-        float top = dp(14f);
-        float bottom = height - dp(14f);
+        float chartTop = dp(30f);
+        float axisBottom = height - dp(40f);
+        float codeBaseline = height - dp(10f);
+        float negativeLabelBaseline = axisBottom + dp(18f);
 
         boolean hasPositive = false;
         boolean hasNegative = false;
@@ -108,20 +110,20 @@ public class TradePnlBarChartView extends View {
         float zeroY;
         if (hasPositive && hasNegative) {
             double range = Math.max(1e-9, maxPositive - minNegative);
-            zeroY = (float) (top + (maxPositive / range) * (bottom - top));
+            zeroY = (float) (chartTop + (maxPositive / range) * (axisBottom - chartTop));
         } else if (hasPositive) {
-            zeroY = bottom - dp(12f);
+            zeroY = axisBottom - dp(10f);
             maxPositive = Math.max(maxPositive, 1d);
         } else if (hasNegative) {
-            zeroY = top + dp(12f);
+            zeroY = chartTop + dp(12f);
             minNegative = Math.min(minNegative, -1d);
         } else {
-            zeroY = top + (bottom - top) / 2f;
+            zeroY = chartTop + (axisBottom - chartTop) / 2f;
         }
 
         canvas.drawLine(left, zeroY, right, zeroY, axisPaint);
-        canvas.drawLine(left, top, left, bottom, gridPaint);
-        canvas.drawLine(right, top, right, bottom, gridPaint);
+        canvas.drawLine(left, chartTop, left, axisBottom, gridPaint);
+        canvas.drawLine(right, chartTop, right, axisBottom, gridPaint);
 
         if (entries.isEmpty()) {
             canvas.drawText("暂无柱状统计数据", width / 2f, height / 2f, emptyPaint);
@@ -129,9 +131,9 @@ public class TradePnlBarChartView extends View {
         }
 
         float slotWidth = (right - left) / entries.size();
-        float barWidth = Math.max(dp(10f), slotWidth * 0.45f);
-        float positiveHeight = Math.max(dp(1f), zeroY - top - dp(2f));
-        float negativeHeight = Math.max(dp(1f), bottom - zeroY - dp(2f));
+        float barWidth = Math.max(dp(10f), slotWidth * 0.4f);
+        float positiveHeight = Math.max(dp(1f), zeroY - chartTop - dp(4f));
+        float negativeHeight = Math.max(dp(1f), axisBottom - zeroY - dp(12f));
         double positiveBase = Math.max(1d, maxPositive);
         double negativeBase = Math.max(1d, Math.abs(minNegative));
 
@@ -146,16 +148,19 @@ public class TradePnlBarChartView extends View {
                 rect = new RectF(centerX - barWidth / 2f, zeroY - barHeight, centerX + barWidth / 2f, zeroY);
                 canvas.drawRoundRect(rect, dp(3f), dp(3f), positivePaint);
                 valuePaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_green));
-                canvas.drawText(formatPnl(entry.pnl), centerX, rect.top - dp(2f), valuePaint);
+                float positiveValueY = Math.max(dp(18f), rect.top - dp(10f));
+                canvas.drawText(formatPnl(entry.pnl), centerX, positiveValueY, valuePaint);
             } else {
                 float ratio = (float) (Math.abs(entry.pnl) / negativeBase);
                 float barHeight = negativeHeight * ratio;
                 rect = new RectF(centerX - barWidth / 2f, zeroY, centerX + barWidth / 2f, zeroY + barHeight);
                 canvas.drawRoundRect(rect, dp(3f), dp(3f), negativePaint);
                 valuePaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_red));
-                canvas.drawText(formatPnl(entry.pnl), centerX, rect.bottom + dp(8f), valuePaint);
+                float negativeValueY = Math.max(negativeLabelBaseline, rect.bottom + dp(14f));
+                negativeValueY = Math.min(codeBaseline - dp(10f), negativeValueY);
+                canvas.drawText(formatPnl(entry.pnl), centerX, negativeValueY, valuePaint);
             }
-            canvas.drawText(entry.code, centerX, bottom + dp(7f), labelPaint);
+            canvas.drawText(entry.code, centerX, codeBaseline, labelPaint);
         }
     }
 

@@ -14,6 +14,7 @@ public class ConfigManager {
     private static final String KEY_FLOATING_ALPHA = "floating_alpha";
     private static final String KEY_SHOW_BTC = "show_btc";
     private static final String KEY_SHOW_XAU = "show_xau";
+    private static final String KEY_COLOR_PALETTE = "color_palette";
     private static volatile ConfigManager instance;
 
     private final SharedPreferences preferences;
@@ -103,6 +104,14 @@ public class ConfigManager {
 
     public void setShowXau(boolean show) {
         preferences.edit().putBoolean(KEY_SHOW_XAU, show).apply();
+    }
+
+    public int getColorPalette() {
+        return preferences.getInt(KEY_COLOR_PALETTE, 0);
+    }
+
+    public void setColorPalette(int paletteId) {
+        preferences.edit().putInt(KEY_COLOR_PALETTE, Math.max(0, paletteId)).apply();
     }
 
     private String getPrefix(String symbol) {

@@ -1,7 +1,7 @@
 package com.binance.monitor.ui.account;
 
-import android.content.res.ColorStateList;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
@@ -22,6 +22,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.NumberPicker;
 import android.widget.PopupMenu;
 import android.widget.Spinner;
@@ -31,12 +32,13 @@ import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.data.local.LogManager;
 import com.binance.monitor.R;
@@ -55,13 +57,14 @@ import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.ui.widget.TradeScrollBarView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.text.SimpleDateFormat;
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Comparator;
@@ -80,10 +83,10 @@ import java.util.concurrent.Executors;
 public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final double ACCOUNT_INITIAL_BALANCE = 15_019.45d;
     private static final double TRADE_PNL_ZERO_THRESHOLD = 0.01d;
-    private static final int RETURNS_CELL_MARGIN_DP = 0;
-    private static final int RETURNS_HEADER_HEIGHT_DP = 36;
-    private static final int RETURNS_BODY_HEIGHT_DP = 56;
-
+    private static final int RETURNS_CELL_MARGIN_DP = 1;
+    private static final int RETURNS_HEADER_HEIGHT_DP = 28;
+    private static final int RETURNS_BODY_HEIGHT_DP = 42;
+    private static final int RETURNS_STAGE_HEIGHT_DP = 38;
     private static final String ACCOUNT = "7400048";
     private static final String SERVER = "ICMarketsSC-MT5-6";
 
@@ -207,6 +210,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String lastLoggedError = "";
     private long dynamicRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private int unchangedRefreshStreak = 0;
+    private boolean draggingTradeScrollBar;
 
     private final Runnable refreshRunnable = new Runnable() {
         @Override
@@ -249,6 +253,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setupCurveInteraction();
         setupOverviewHeader();
         bindLocalMeta();
+        applyPaletteStyles();
         applyPreloadedCacheIfAvailable();
         requestSnapshot();
 
@@ -259,6 +264,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        applyPaletteStyles();
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(true);
         }
@@ -465,23 +471,30 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void updateBottomTabs(boolean marketSelected, boolean accountSelected, boolean settingsSelected) {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         binding.tabMarketMonitor.setBackground(marketSelected
-                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
-                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                UiPaletteManager.neutralFill(this),
+                UiPaletteManager.neutralStroke(this)));
         binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this,
-                marketSelected ? R.color.bg_primary : R.color.text_secondary));
+                marketSelected ? R.color.white : R.color.text_secondary));
 
         binding.tabAccountStats.setBackground(accountSelected
-                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
-                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                UiPaletteManager.neutralFill(this),
+                UiPaletteManager.neutralStroke(this)));
         binding.tabAccountStats.setTextColor(ContextCompat.getColor(this,
-                accountSelected ? R.color.bg_primary : R.color.text_secondary));
+                accountSelected ? R.color.white : R.color.text_secondary));
 
         binding.tabSettings.setBackground(settingsSelected
-                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
-                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                UiPaletteManager.neutralFill(this),
+                UiPaletteManager.neutralStroke(this)));
         binding.tabSettings.setTextColor(ContextCompat.getColor(this,
-                settingsSelected ? R.color.bg_primary : R.color.text_secondary));
+                settingsSelected ? R.color.white : R.color.text_secondary));
     }
 
     private void placeCurveSectionToBottom() {
@@ -525,6 +538,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.recyclerTrades.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerTrades.setItemAnimator(null);
         binding.recyclerTrades.setAdapter(tradeAdapter);
+        configureTradeScrollHandle();
 
         binding.recyclerStats.setLayoutManager(new GridLayoutManager(this, 2));
         binding.recyclerStats.setAdapter(statsAdapter);
@@ -535,14 +549,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.spinnerTradeProduct.setAdapter(productAdapter);
         binding.spinnerTradeProduct.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
             updateTradeFilterDisplayTexts();
-            refreshTrades();
+            refreshTrades(true);
         }));
 
         ArrayAdapter<String> sideAdapter = createTradeFilterAdapter(new String[]{FILTER_SIDE, "\u4e70\u5165", "\u5356\u51fa"});
         binding.spinnerTradeSide.setAdapter(sideAdapter);
         binding.spinnerTradeSide.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
             updateTradeFilterDisplayTexts();
-            refreshTrades();
+            refreshTrades(true);
         }));
 
         ArrayAdapter<String> sortAdapter = createTradeFilterAdapter(
@@ -673,7 +687,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             handleSortSelection(chosen, true);
             setSpinnerSelectionByValue(binding.spinnerTradeSort, chosen);
             updateTradeFilterDisplayTexts();
-            refreshTrades();
+            refreshTrades(true);
             return true;
         });
         popup.show();
@@ -715,7 +729,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         styleSegmentButton(binding.btnReturnStage, "\u9636\u6bb5\u6536\u76ca", 11f);
         styleSegmentButton(binding.btnReturnsRate, "\u6536\u76ca\u7387", 10f);
         styleSegmentButton(binding.btnReturnsAmount, "\u6536\u76ca\u989d", 10f);
-        binding.tvReturnsPeriod.setText("\u7edf\u8ba1\u6708\u4efd");
 
         styleSegmentButton(binding.btnTradePnlAll, "\u5168\u90e8", 11f);
         styleSegmentButton(binding.btnTradePnlBuy, "\u4e70\u5165", 11f);
@@ -736,6 +749,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 },
                 11f,
                 8f));
+        binding.toggleReturnsValueMode.post(() -> autoFitSegmentButtons(
+                binding.toggleReturnsValueMode,
+                new MaterialButton[]{
+                        binding.btnReturnsRate, binding.btnReturnsAmount
+                },
+                11f,
+                9f));
         binding.toggleTradePnlSide.post(() -> autoFitSegmentButtons(
                 binding.toggleTradePnlSide,
                 new MaterialButton[]{
@@ -812,15 +832,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 new int[]{android.R.attr.state_checked},
                 new int[]{}
         };
-        int checkedBg = ContextCompat.getColor(this, R.color.accent_gold);
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        int checkedBg = palette.primary;
         int uncheckedBg = ContextCompat.getColor(this, R.color.bg_input);
-        int checkedText = ContextCompat.getColor(this, R.color.bg_primary);
+        int checkedText = ContextCompat.getColor(this, R.color.white);
         int uncheckedText = ContextCompat.getColor(this, R.color.text_primary);
         button.setBackgroundTintList(new ColorStateList(states, new int[]{checkedBg, uncheckedBg}));
         button.setTextColor(new ColorStateList(states, new int[]{checkedText, uncheckedText}));
         button.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.stroke_card)));
         button.setStrokeWidth(dpToPx(1));
-        button.setRippleColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.vintage_orange)));
+        button.setRippleColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.accent_gold)));
     }
 
     private void autoFitSegmentButtons(MaterialButtonToggleGroup group,
@@ -1283,7 +1304,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             title = title + "-" + connectedLeverageText;
         }
         binding.tvAccountOverviewTitle.setText(title);
-        binding.tvAccountMeta.setText("更新时间 " + connectedUpdate);
+        binding.tvAccountMeta.setText("更新时间 " + connectedUpdate + "（" + formatAccountRefreshCycle() + "）");
     }
 
     private void requestSnapshot() {
@@ -1346,7 +1367,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 setConnectionStatus(finalConnected);
                 updateOverviewHeader();
                 logConnectionEvent(finalConnected);
-                if (finalSnapshot != null && !finalUnchanged) {
+                if (finalSnapshot != null) {
                     applySnapshot(finalSnapshot, finalConnected);
                 }
                 adjustRefreshCadence(finalConnected, finalUnchanged);
@@ -1359,6 +1380,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (!connected) {
             unchangedRefreshStreak = 0;
             dynamicRefreshDelayMs = Math.min(ACCOUNT_REFRESH_MAX_MS, ACCOUNT_REFRESH_MIN_MS * 2L);
+            updateOverviewHeader();
             return;
         }
         if (unchanged) {
@@ -1369,6 +1391,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         dynamicRefreshDelayMs = Math.min(
                 ACCOUNT_REFRESH_MAX_MS,
                 ACCOUNT_REFRESH_MIN_MS + unchangedRefreshStreak * 2_000L);
+        updateOverviewHeader();
     }
 
     private String normalizeSource(String source) {
@@ -1389,12 +1412,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setConnectionStatus(boolean connected) {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         binding.tvAccountConnectionStatus.setText(connected ? "已连接账户" : "未连接账户");
         binding.tvAccountConnectionStatus.setBackground(connected
-                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
-                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                UiPaletteManager.neutralFill(this),
+                UiPaletteManager.neutralStroke(this)));
         binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(this,
-                connected ? R.color.bg_primary : R.color.text_secondary));
+                connected ? R.color.white : R.color.text_secondary));
     }
 
     private void logConnectionEvent(boolean connected) {
@@ -1829,7 +1855,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         applyCurrentCurveRangeFromAllPoints();
         refreshTradeStats();
         refreshPositions();
-        refreshTrades();
+        refreshTrades(false);
     }
 
     private void mergeCurveHistory(List<CurvePoint> source) {
@@ -1860,13 +1886,27 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             if (item == null) {
                 continue;
             }
-            String key = buildTradeDedupeKey(item);
+            String key = buildTradeHistoryKey(item);
             tradeHistory.put(key, item);
         }
         while (tradeHistory.size() > 20_000) {
             String firstKey = tradeHistory.keySet().iterator().next();
             tradeHistory.remove(firstKey);
         }
+    }
+
+    private String buildTradeHistoryKey(TradeRecordItem item) {
+        if (item.getDealTicket() > 0L) {
+            return "deal|" + item.getDealTicket();
+        }
+        if (item.getOrderId() > 0L || item.getPositionId() > 0L) {
+            return "trade|" + item.getOrderId() + "|" + item.getPositionId()
+                    + "|" + item.getEntryType()
+                    + "|" + resolveOpenTime(item)
+                    + "|" + resolveCloseTime(item)
+                    + "|" + Math.round(Math.abs(item.getQuantity()) * 10_000d);
+        }
+        return buildTradeDedupeKey(item);
     }
 
     private String buildDataQualitySummary(List<TradeRecordItem> trades,
@@ -2286,14 +2326,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (trades == null || trades.isEmpty()) {
             result.add(new AccountMetric("最近交易", "--"));
             result.add(new AccountMetric("交易次数", "0"));
-            result.add(new AccountMetric("盈利交易", "0次 (0.00%)"));
-            result.add(new AccountMetric("亏损交易", "0次 (0.00%)"));
+            result.add(new AccountMetric("盈利交易", "0次\n0.00%"));
+            result.add(new AccountMetric("亏损交易", "0次\n0.00%"));
             result.add(new AccountMetric("最好交易", "--"));
             result.add(new AccountMetric("最差交易", "--"));
             result.add(new AccountMetric("毛利", "--"));
             result.add(new AccountMetric("毛损", "--"));
-            result.add(new AccountMetric("最大连续盈利", "--"));
-            result.add(new AccountMetric("最大连续亏损", "--"));
+            result.add(new AccountMetric("最大连续盈利", "0次\n--"));
+            result.add(new AccountMetric("最大连续亏损", "0次\n--"));
             result.add(new AccountMetric("利润因子", "--"));
             result.add(new AccountMetric("夏普比率", "--"));
             result.add(new AccountMetric("每周交易次数", "--"));
@@ -2405,8 +2445,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         result.add(new AccountMetric("最近交易", formatRelativeTime(lastClose)));
         result.add(new AccountMetric("交易次数", totalTrades + " 次"));
-        result.add(new AccountMetric("盈利交易", winCount + "次 (" + percentRaw(winRate) + ")"));
-        result.add(new AccountMetric("亏损交易", lossCount + "次 (" + percentRaw(lossRate) + ")"));
+        result.add(new AccountMetric("盈利交易", formatTradeRatioMetric(winCount, winRate)));
+        result.add(new AccountMetric("亏损交易", formatTradeRatioMetric(lossCount, lossRate)));
         result.add(new AccountMetric("最好交易", hasBestTrade ? signedMoney(bestTrade) : "--"));
         result.add(new AccountMetric("最差交易", hasWorstTrade ? signedMoney(worstTrade) : "--"));
         result.add(new AccountMetric("毛利", signedMoney(grossProfit)));
@@ -2549,9 +2589,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private String formatStreak(int count, double amount) {
         if (count <= 0) {
-            return "--";
+            return "0次\n--";
         }
-        return String.format(Locale.getDefault(), "%d次 (%s)", count, signedMoney(amount));
+        return String.format(Locale.getDefault(), "%d次\n%s", count, signedMoney(amount));
+    }
+
+    private String formatTradeRatioMetric(int count, double ratio) {
+        return String.format(Locale.getDefault(), "%d次\n%s", count, percentRaw(ratio));
     }
 
     private void applyCurrentCurveRangeFromAllPoints() {
@@ -2563,13 +2607,30 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             );
             if (manual.size() >= 2) {
                 displayedCurvePoints = manual;
+                syncRangeInputsWithDisplayedCurve(displayedCurvePoints);
                 renderCurveWithIndicators(displayedCurvePoints);
                 return;
             }
             manualCurveRangeEnabled = false;
         }
         displayedCurvePoints = filterCurveByRange(allCurvePoints, selectedRange);
+        syncRangeInputsWithDisplayedCurve(displayedCurvePoints);
         renderCurveWithIndicators(displayedCurvePoints);
+    }
+
+    private void syncRangeInputsWithDisplayedCurve(List<CurvePoint> points) {
+        if (binding == null) {
+            return;
+        }
+        if (points == null || points.isEmpty()) {
+            binding.etRangeStart.setText("");
+            binding.etRangeEnd.setText("");
+            return;
+        }
+        CurvePoint start = points.get(0);
+        CurvePoint end = points.get(points.size() - 1);
+        binding.etRangeStart.setText(dateOnlyFormat.format(new Date(start.getTimestamp())));
+        binding.etRangeEnd.setText(dateOnlyFormat.format(new Date(end.getTimestamp())));
     }
 
     private List<CurvePoint> filterCurveByManualRange(List<CurvePoint> source, long startInclusive, long endInclusive) {
@@ -3152,8 +3213,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             List<CurvePoint> range = filterCurveByManualRange(source, stage.startMs, stage.endMs);
             TableRow row = new TableRow(this);
             if (range.size() < 2) {
-                row.addView(createReturnsCell(stage.label, 110, false, null, null));
-                row.addView(createReturnsCell("--", 110, false, null, null));
+                TextView stageCell = createReturnsCell(stage.label, 110, false, null, null);
+                TextView valueCell = createReturnsCell("--", 110, false, null, null);
+                applyReturnsCellLayout(stageCell, 110, 0f, RETURNS_STAGE_HEIGHT_DP,
+                        RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
+                applyReturnsCellLayout(valueCell, 110, 0f, RETURNS_STAGE_HEIGHT_DP,
+                        RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
+                row.addView(stageCell);
+                row.addView(valueCell);
                 table.addView(row);
                 continue;
             }
@@ -3165,10 +3232,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             int color = ContextCompat.getColor(this, rate >= 0d ? R.color.accent_green : R.color.accent_red);
             String valueText = formatReturnValue(rate, profit);
 
-            row.addView(createReturnsCell(stage.label, 110, false, null,
-                    v -> applyCurveRangeFromTableSelection(stage.startMs, stage.endMs)));
-            row.addView(createReturnsCell(valueText, 110, false, color,
-                    v -> applyCurveRangeFromTableSelection(stage.startMs, stage.endMs)));
+            TextView stageCell = createReturnsCell(stage.label, 110, false, null,
+                    v -> applyCurveRangeFromTableSelection(stage.startMs, stage.endMs));
+            TextView valueCell = createReturnsCell(valueText, 110, false, color,
+                    v -> applyCurveRangeFromTableSelection(stage.startMs, stage.endMs));
+            applyReturnsCellLayout(stageCell, 110, 0f, RETURNS_STAGE_HEIGHT_DP,
+                    RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
+            applyReturnsCellLayout(valueCell, 110, 0f, RETURNS_STAGE_HEIGHT_DP,
+                    RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
+            row.addView(stageCell);
+            row.addView(valueCell);
             table.addView(row);
         }
     }
@@ -3342,31 +3415,28 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     } else {
                         ghostLabel = String.valueOf(nextDayValue++);
                     }
-                    TextView emptyCell = createReturnsCell(
-                            buildLabelValueText(ghostLabel, "--",
-                                    ContextCompat.getColor(this, R.color.text_secondary)),
-                            0,
-                            false,
+                    View emptyCell = createDailyReturnsCell(
+                            ghostLabel,
+                            null,
+                            ContextCompat.getColor(this, R.color.text_secondary),
                             null,
                             null);
                     applyReturnsCellLayout(emptyCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
-                    emptyCell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f);
                     tableRow.addView(emptyCell);
                     continue;
                 }
 
                 DayBucket bucket = dayBuckets.get(day);
                 if (bucket == null) {
-                    TextView dayCell = createReturnsCell(
-                            buildLabelValueText(String.valueOf(day), "--", null),
-                            0,
-                            false,
+                    View dayCell = createDailyReturnsCell(
+                            String.valueOf(day),
+                            null,
+                            ContextCompat.getColor(this, R.color.text_primary),
                             null,
                             null);
                     applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
-                    dayCell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f);
                     tableRow.addView(dayCell);
                 } else {
                     int key = year * 10_000 + (month + 1) * 100 + day;
@@ -3385,15 +3455,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     String valueText = formatReturnValue(dayReturn, dayAmount, true);
                     long startMs = bucket.startMs;
                     long endMs = bucket.endMs;
-                    TextView dayCell = createReturnsCell(
-                            buildLabelValueText(String.valueOf(day), valueText, color),
-                            0,
-                            false,
-                            null,
+                    View dayCell = createDailyReturnsCell(
+                            String.valueOf(day),
+                            valueText,
+                            ContextCompat.getColor(this, R.color.text_primary),
+                            color,
                             v -> applyCurveRangeFromTableSelection(startMs, endMs));
                     applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
-                    dayCell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f);
                     tableRow.addView(dayCell);
                 }
                 day++;
@@ -3486,7 +3555,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return cell;
     }
 
-    private void applyReturnsCellLayout(TextView cell,
+    private void applyReturnsCellLayout(View cell,
                                         int widthDp,
                                         float weight,
                                         int heightDp,
@@ -3544,7 +3613,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             builder.append('\n');
         }
         int valueStart = builder.length();
-        builder.append(safeValue);
+        builder.append(makeNonBreakingText(safeValue));
         if (valueColor != null) {
             builder.setSpan(new ForegroundColorSpan(valueColor),
                     valueStart,
@@ -3571,23 +3640,25 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                        @Nullable Integer textColor,
                                        @Nullable View.OnClickListener clickListener) {
         TextView cell = new TextView(this);
-        int baseHeightDp = header ? 36 : 52;
+        int baseHeightDp = header ? RETURNS_HEADER_HEIGHT_DP : RETURNS_BODY_HEIGHT_DP;
         TableRow.LayoutParams params = new TableRow.LayoutParams(dpToPx(minWidthDp), dpToPx(baseHeightDp));
         int marginPx = dpToPx(RETURNS_CELL_MARGIN_DP);
         params.setMargins(marginPx, marginPx, marginPx, marginPx);
         cell.setLayoutParams(params);
-        cell.setPadding(0, 0, 0, 0);
+        int horizontalPadding = dpToPx(header ? 6 : 2);
+        int verticalPadding = dpToPx(header ? 4 : 6);
+        cell.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding);
         cell.setGravity(android.view.Gravity.CENTER);
         cell.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
         cell.setIncludeFontPadding(false);
         cell.setText(text);
-        cell.setTextSize(header ? 10.5f : 8.8f);
+        cell.setTextSize(header ? 11f : 7.6f);
         String plain = text == null ? "" : text.toString();
         cell.setEllipsize(null);
         if (plain.contains("\n")) {
             cell.setLines(2);
             cell.setMaxLines(2);
-            cell.setLineSpacing(0f, 1.0f);
+            cell.setLineSpacing(dpToPx(1), 1.08f);
         } else {
             cell.setLines(1);
             cell.setMaxLines(1);
@@ -3600,6 +3671,63 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             cell.setClickable(true);
         }
         return cell;
+    }
+
+    private View createDailyReturnsCell(String label,
+                                        @Nullable String value,
+                                        int labelColor,
+                                        @Nullable Integer valueColor,
+                                        @Nullable View.OnClickListener clickListener) {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setGravity(Gravity.CENTER);
+        container.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
+        container.setBackgroundResource(R.drawable.bg_returns_table_cell);
+        container.setBaselineAligned(false);
+
+        TextView labelView = new TextView(this);
+        labelView.setGravity(Gravity.CENTER);
+        labelView.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        labelView.setIncludeFontPadding(false);
+        labelView.setText(trim(label));
+        labelView.setTextColor(labelColor);
+        labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f);
+        container.addView(labelView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView valueView = new TextView(this);
+        valueView.setGravity(Gravity.CENTER);
+        valueView.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        valueView.setIncludeFontPadding(false);
+        valueView.setText(makeNonBreakingText(value == null ? "00.0%" : value));
+        valueView.setTextColor(valueColor != null ? valueColor : ContextCompat.getColor(this, R.color.text_secondary));
+        valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.0f);
+        valueView.setSingleLine(true);
+        valueView.setMaxLines(1);
+        valueView.setMinLines(1);
+        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        valueParams.topMargin = dpToPx(2);
+        container.addView(valueView, valueParams);
+
+        if (value == null) {
+            valueView.setAlpha(0f);
+        }
+        if (clickListener != null) {
+            container.setOnClickListener(clickListener);
+            container.setClickable(true);
+        }
+        return container;
+    }
+
+    private CharSequence makeNonBreakingText(String value) {
+        String safe = trim(value);
+        if (safe.isEmpty()) {
+            return "--";
+        }
+        return safe.replace(" ", "\u00A0");
     }
 
     private List<YearlyReturnRow> buildMonthlyReturnRows(List<CurvePoint> source) {
@@ -3786,6 +3914,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     item.getProductName(),
                     item.getCode(),
                     item.getSide(),
+                    item.getPositionTicket(),
+                    item.getOrderId(),
                     item.getQuantity(),
                     item.getSellableQuantity(),
                     item.getCostPrice(),
@@ -3818,6 +3948,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private String buildPositionUniqueKey(PositionItem item) {
+        if (item.getPositionTicket() > 0L) {
+            return "position|" + item.getPositionTicket();
+        }
+        if (item.getOrderId() > 0L) {
+            return "order|" + item.getOrderId();
+        }
         long qty = Math.round(Math.abs(item.getQuantity()) * 10_000d);
         long cost = Math.round(item.getCostPrice() * 10000d);
         long latest = Math.round(item.getLatestPrice() * 10000d);
@@ -3986,6 +4122,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String buildTradeDedupeKey(TradeRecordItem item) {
         if (item.getDealTicket() > 0L) {
             return "deal|" + item.getDealTicket();
+        }
+        if (item.getOrderId() > 0L || item.getPositionId() > 0L) {
+            return "trade|" + item.getOrderId() + "|" + item.getPositionId()
+                    + "|" + item.getEntryType()
+                    + "|" + resolveOpenTime(item)
+                    + "|" + resolveCloseTime(item)
+                    + "|" + Math.round(Math.abs(item.getQuantity()) * 10_000d);
         }
         String code = trim(item.getCode()).toUpperCase(Locale.ROOT);
         long open = resolveOpenTime(item);
@@ -4180,6 +4323,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void refreshTrades() {
+        refreshTrades(false);
+    }
+
+    private void refreshTrades(boolean scrollToTop) {
         List<TradeRecordItem> filtered = new ArrayList<>();
         String product = (String) binding.spinnerTradeProduct.getSelectedItem();
         String side = (String) binding.spinnerTradeSide.getSelectedItem();
@@ -4210,8 +4357,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
             filtered.add(item);
         }
-        filtered = collapseZeroProfitForDisplay(filtered);
-
         if (SORT_OPEN_TIME.equals(normalizedSort)) {
             filtered.sort((a, b) -> Long.compare(
                     a.getOpenTime() > 0L ? a.getOpenTime() : a.getTimestamp(),
@@ -4227,20 +4372,75 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             java.util.Collections.reverse(filtered);
         }
         tradeAdapter.submitList(filtered);
+        binding.recyclerTrades.post(this::updateTradeScrollHandle);
+        if (scrollToTop) {
+            scrollTradesToTop();
+        }
         updateTradePnlSummary(filtered, product, side, FILTER_DATE);
     }
+
+    private void scrollTradesToTop() {
+        RecyclerView.LayoutManager layoutManager = binding.recyclerTrades.getLayoutManager();
+        if (!(layoutManager instanceof LinearLayoutManager)) {
+            binding.recyclerTrades.scrollToPosition(0);
+            return;
+        }
+        binding.recyclerTrades.post(() ->
+                ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(0, 0));
+    }
+    private void configureTradeScrollHandle() {
+        binding.recyclerTrades.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                updateTradeScrollHandle();
+            }
+        });
+        binding.viewTradeScrollBar.setOnThumbDragListener(new TradeScrollBarView.OnThumbDragListener() {
+            @Override
+            public void onDragFractionChanged(float fraction) {
+                int range = binding.recyclerTrades.computeVerticalScrollRange();
+                int extent = binding.recyclerTrades.computeVerticalScrollExtent();
+                int currentOffset = binding.recyclerTrades.computeVerticalScrollOffset();
+                int scrollable = Math.max(0, range - extent);
+                if (scrollable <= 0) {
+                    return;
+                }
+                int targetOffset = Math.round(fraction * scrollable);
+                binding.recyclerTrades.scrollBy(0, targetOffset - currentOffset);
+            }
+
+            @Override
+            public void onDragStateChanged(boolean dragging) {
+                draggingTradeScrollBar = dragging;
+                if (!dragging) {
+                    updateTradeScrollHandle();
+                }
+            }
+        });
+        binding.recyclerTrades.post(this::updateTradeScrollHandle);
+    }
+
+    private void updateTradeScrollHandle() {
+        int range = binding.recyclerTrades.computeVerticalScrollRange();
+        int extent = binding.recyclerTrades.computeVerticalScrollExtent();
+        int offset = binding.recyclerTrades.computeVerticalScrollOffset();
+        int scrollable = Math.max(0, range - extent);
+        if (scrollable <= 0) {
+            binding.viewTradeScrollBar.setVisibility(View.INVISIBLE);
+            return;
+        }
+        binding.viewTradeScrollBar.setVisibility(View.VISIBLE);
+        if (!draggingTradeScrollBar) {
+            binding.viewTradeScrollBar.setScrollMetrics(offset, extent, range);
+        }
+    }
+
 
     private List<TradeRecordItem> collapseZeroProfitForDisplay(List<TradeRecordItem> source) {
         if (source == null || source.isEmpty()) {
             return new ArrayList<>();
         }
-        List<TradeRecordItem> result = new ArrayList<>();
-        for (TradeRecordItem item : source) {
-            if (Math.abs(item.getProfit()) >= TRADE_PNL_ZERO_THRESHOLD) {
-                result.add(item);
-            }
-        }
-        return result;
+        return new ArrayList<>(source);
     }
 
     private void updateTradePnlSummary(List<TradeRecordItem> trades,
@@ -4267,14 +4467,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     + ", rawTrades=" + baseTrades.size());
         }
         lastTradePnlMismatchState = mismatch;
-        String pnlText = signedMoneyTrailingUnit(total);
-        String storageText = signedMoneyTrailingUnit(storageTotal);
+        String pnlText = signedMoney(total);
+        String storageText = signedMoney(storageTotal);
         double balanceTotal = total + storageTotal;
-        String balanceText = signedMoneyTrailingUnit(balanceTotal);
+        String balanceText = signedMoney(balanceTotal);
         String summary = "交易次数：" + tradeCount + "次"
-                + "    盈亏：" + pnlText
-                + "    库存费：" + storageText
-                + "    结余：" + balanceText;
+                + "    结余：" + balanceText
+                + "\n盈亏：" + pnlText
+                + "    库存费：" + storageText;
         SpannableStringBuilder span = new SpannableStringBuilder(summary);
         int pnlStart = summary.indexOf(pnlText);
         if (pnlStart >= 0) {
@@ -4430,9 +4630,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
     }
 
-    private String signedMoneyTrailingUnit(double value) {
-        DecimalFormat format = new DecimalFormat("#,##0.##");
-        return (value >= 0d ? "+" : "-") + format.format(Math.abs(value)) + "$";
+    private void applyPaletteStyles() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        updateBottomTabs(false, true, false);
+        configureToggleButtonsV2();
+        binding.equityCurveView.refreshPalette();
+        boolean connected = "已连接账户".contentEquals(binding.tvAccountConnectionStatus.getText());
+        setConnectionStatus(connected);
+    }
+
+    private String formatAccountRefreshCycle() {
+        long seconds = Math.max(1L, dynamicRefreshDelayMs / 1000L);
+        return seconds + "秒";
     }
 
     private String percent(double ratio) {

@@ -98,4 +98,12 @@ public class MainViewModel extends AndroidViewModel {
     public void setShowXau(boolean show) {
         repository.getConfigManager().setShowXau(show);
     }
+
+    public int getColorPalette() {
+        return repository.getConfigManager().getColorPalette();
+    }
+
+    public void setColorPalette(int paletteId) {
+        repository.getConfigManager().setColorPalette(paletteId);
+    }
 }

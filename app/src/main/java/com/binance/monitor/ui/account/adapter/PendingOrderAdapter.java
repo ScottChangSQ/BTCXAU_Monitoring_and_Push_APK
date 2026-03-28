@@ -208,9 +208,9 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
             double pendingPrice = item.getPendingPrice() > 0d ? item.getPendingPrice() : item.getLatestPrice();
-            String pendingPriceText = String.format(Locale.getDefault(), "%,.0f", pendingPrice);
+            String pendingPriceText = String.format(Locale.getDefault(), "%,.2f", pendingPrice);
             String summaryRaw = String.format(Locale.getDefault(),
-                    "%s | %s | %.2f 手 | 价位 $%s",
+                    "%s | %s | %.2f 手 | $%s",
                     item.getProductName(),
                     sideText,
                     item.getPendingLots(),
@@ -227,26 +227,10 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
 
             updateExpandState(expanded, animateExpand);
 
-            binding.tvProduct.setText(String.format(Locale.getDefault(),
-                    "产品 %s (%s)",
-                    item.getProductName(),
-                    item.getCode()));
-            String baseRaw = String.format(Locale.getDefault(),
-                    "方向 %s | 挂单手数 %.2f | 挂单笔数 %d",
-                    sideText,
-                    item.getPendingLots(),
-                    item.getPendingCount());
-            SpannableStringBuilder baseSpan = new SpannableStringBuilder(baseRaw);
-            int baseSideStart = baseRaw.indexOf(sideText);
-            if (baseSideStart >= 0) {
-                baseSpan.setSpan(new ForegroundColorSpan(sideColor),
-                        baseSideStart,
-                        baseSideStart + sideText.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-            binding.tvBase.setText(baseSpan);
+            binding.tvProduct.setVisibility(View.GONE);
+            binding.tvBase.setVisibility(View.GONE);
             binding.tvMetrics.setText(String.format(Locale.getDefault(),
-                    "价位 $%s | 参考现价 $%s\n止盈 %s | 止损 %s",
+                    "价位 $%s | 现价 $%s\n止盈 %s | 止损 %s",
                     pendingPriceText,
                     FormatUtils.formatPrice(item.getLatestPrice()),
                     optionalPrice(item.getTakeProfit()),

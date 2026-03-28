@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:background="@drawable/bg_app"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="@dimen/page_horizontal_padding">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -14,80 +14,80 @@
 
         <Button
             android:id="@+id/btnBack"
-            android:layout_width="106dp"
-            android:layout_height="34dp"
+            android:layout_width="88dp"
+            android:layout_height="@dimen/control_height_md"
             android:background="@drawable/bg_inline_button"
             android:gravity="center"
-            android:includeFontPadding="true"
             android:maxLines="1"
             android:minHeight="0dp"
-            android:paddingTop="0dp"
-            android:paddingBottom="0dp"
             android:text="@string/back"
             android:textAllCaps="false"
-            android:textColor="@color/bg_primary"
+            android:textColor="@color/text_primary"
             android:textSize="14sp" />
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
+            android:layout_marginStart="@dimen/space_12"
             android:layout_weight="1"
-            android:fontFamily="serif"
-            android:maxLines="1"
-            android:text="@string/log_title"
-            android:textColor="@color/text_primary"
-            android:textSize="22sp"
-            android:textStyle="bold" />
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/log_title"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.PageTitle" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_4"
+                android:text="查看运行记录并按需批量清理。"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="@dimen/space_16"
         android:orientation="horizontal">
 
         <Button
             android:id="@+id/btnSelectAll"
             android:layout_width="0dp"
-            android:layout_height="34dp"
+            android:layout_height="@dimen/control_height_md"
             android:layout_weight="1"
             android:background="@drawable/bg_inline_button"
             android:gravity="center"
-            android:includeFontPadding="true"
             android:maxLines="1"
             android:minHeight="0dp"
-            android:paddingTop="0dp"
-            android:paddingBottom="0dp"
             android:text="@string/select_all"
             android:textAllCaps="false"
-            android:textColor="@color/bg_primary"
-            android:textSize="16sp" />
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
 
         <Button
             android:id="@+id/btnDeleteSelected"
             android:layout_width="0dp"
-            android:layout_height="34dp"
-            android:layout_marginStart="8dp"
+            android:layout_height="@dimen/control_height_md"
+            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
             android:background="@drawable/bg_inline_button"
             android:gravity="center"
-            android:includeFontPadding="true"
             android:maxLines="1"
             android:minHeight="0dp"
-            android:paddingTop="0dp"
-            android:paddingBottom="0dp"
             android:text="@string/delete_selected"
             android:textAllCaps="false"
-            android:textColor="@color/bg_primary"
-            android:textSize="16sp" />
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerLogs"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="@dimen/space_16"
         android:layout_weight="1" />
 
     <TextView
@@ -95,8 +95,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
+        android:paddingVertical="@dimen/space_16"
         android:text="@string/no_logs"
-        android:textColor="@color/text_secondary"
-        android:textSize="13sp"
+        android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption"
         android:visibility="gone" />
 </LinearLayout>

@@ -125,6 +125,12 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         if (item == null) {
             return "";
         }
+        if (item.getPositionTicket() > 0L) {
+            return "position:" + item.getPositionTicket();
+        }
+        if (item.getOrderId() > 0L) {
+            return "order:" + item.getOrderId();
+        }
         long cost = Math.round(item.getCostPrice() * 100d);
         long tp = Math.round(item.getTakeProfit() * 100d);
         long sl = Math.round(item.getStopLoss() * 100d);
@@ -230,9 +236,12 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                         sideStart + sideText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
-            int start = raw.lastIndexOf(pnlText);
-            if (start >= 0) {
-                span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            int summaryStart = raw.lastIndexOf(pnlText);
+            if (summaryStart >= 0) {
+                span.setSpan(new ForegroundColorSpan(pnlColor),
+                        summaryStart,
+                        summaryStart + pnlText.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             binding.tvSummary.setText(span);
             updateExpandState(expanded, animateExpand);
@@ -257,12 +266,29 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             binding.tvMetrics.setText(metricsSpan);
-            binding.tvPnL.setText(String.format(Locale.getDefault(),
-                    "当日 %s | 累计 %s | 收益率 %+.2f%%",
-                    signedMoney(item.getDayPnL()),
-                    signedMoney(item.getTotalPnL()),
-                    item.getReturnRate() * 100d));
-            binding.tvPnL.setTextColor(pnlColor);
+            String totalPnlText = signedMoney(item.getTotalPnL());
+            String returnRateText = String.format(Locale.getDefault(), "%+.2f%%", item.getReturnRate() * 100d);
+            String pnlRaw = String.format(Locale.getDefault(),
+                    "盈亏 %s | 收益率 %s",
+                    totalPnlText,
+                    returnRateText);
+            SpannableStringBuilder pnlSpan = new SpannableStringBuilder(pnlRaw);
+            int totalPnlStart = pnlRaw.indexOf(totalPnlText);
+            if (totalPnlStart >= 0) {
+                pnlSpan.setSpan(new ForegroundColorSpan(resolveValueColor(binding.getRoot(), item.getTotalPnL())),
+                        totalPnlStart,
+                        totalPnlStart + totalPnlText.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            int returnRateStart = pnlRaw.lastIndexOf(returnRateText);
+            if (returnRateStart >= 0) {
+                pnlSpan.setSpan(new ForegroundColorSpan(resolveRatioColor(binding.getRoot(), item.getReturnRate())),
+                        returnRateStart,
+                        returnRateStart + returnRateText.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            binding.tvPnL.setText(pnlSpan);
+            binding.tvPnL.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
         }
 
         private void updateExpandState(boolean expanded, boolean animate) {
@@ -327,6 +353,13 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         }
 
         private static int resolveValueColor(View root, double value) {
+            int colorRes = value > 0d
+                    ? R.color.accent_green
+                    : (value < 0d ? R.color.accent_red : R.color.text_secondary);
+            return ContextCompat.getColor(root.getContext(), colorRes);
+        }
+
+        private static int resolveRatioColor(View root, double value) {
             int colorRes = value > 0d
                     ? R.color.accent_green
                     : (value < 0d ? R.color.accent_red : R.color.text_secondary);

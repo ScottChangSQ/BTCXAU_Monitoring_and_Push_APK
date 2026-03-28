@@ -12,17 +12,9 @@
     <item>
         <shape android:shape="rectangle">
             <gradient
-                android:angle="40"
+                android:angle="90"
                 android:endColor="#00FFFFFF"
                 android:startColor="@color/grain_overlay" />
-        </shape>
-    </item>
-    <item>
-        <shape android:shape="rectangle">
-            <gradient
-                android:angle="315"
-                android:endColor="#00A06D3D"
-                android:startColor="#10936B42" />
         </shape>
     </item>
 </layer-list>

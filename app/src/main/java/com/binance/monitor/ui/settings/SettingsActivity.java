@@ -2,10 +2,10 @@ package com.binance.monitor.ui.settings;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.widget.ArrayAdapter;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.content.ContextCompat;
 import androidx.lifecycle.ViewModelProvider;
 
@@ -17,6 +17,7 @@ import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.ui.log.LogActivity;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.main.MainViewModel;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.PermissionHelper;
 
 public class SettingsActivity extends AppCompatActivity {
@@ -32,6 +33,7 @@ public class SettingsActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
 
         viewModel = new ViewModelProvider(this).get(MainViewModel.class);
+        setupPaletteSelector();
         setupBottomNav();
         setupActions();
     }
@@ -39,6 +41,8 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        applyPaletteStyles();
+        updateBottomTabs();
         applySettings();
     }
 
@@ -50,13 +54,39 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void updateBottomTabs() {
-        binding.tabMarketMonitor.setBackground(AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
-        binding.tabAccountStats.setBackground(AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
-        binding.tabSettings.setBackground(AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected));
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        binding.tabMarketMonitor.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
+        binding.tabAccountStats.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
+        binding.tabSettings.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
 
         binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
         binding.tabAccountStats.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-        binding.tabSettings.setTextColor(ContextCompat.getColor(this, R.color.bg_primary));
+        binding.tabSettings.setTextColor(ContextCompat.getColor(this, R.color.white));
+    }
+
+    private void setupPaletteSelector() {
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                R.layout.item_spinner_filter,
+                android.R.id.text1,
+                UiPaletteManager.labels());
+        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
+        binding.spinnerColorPalette.setAdapter(adapter);
+        binding.tvThemePaletteLabel.setOnClickListener(v -> binding.spinnerColorPalette.performClick());
+        binding.spinnerColorPalette.setOnItemSelectedListener(new com.binance.monitor.ui.account.SimpleSelectionListener(() -> {
+            if (applying) {
+                return;
+            }
+            int selected = binding.spinnerColorPalette.getSelectedItemPosition();
+            if (selected == viewModel.getColorPalette()) {
+                return;
+            }
+            viewModel.setColorPalette(selected);
+            binding.tvThemePaletteLabel.setText(UiPaletteManager.labels()[selected]);
+            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+            applyPaletteStyles();
+            updateBottomTabs();
+        }));
     }
 
     private void setupActions() {
@@ -110,6 +140,8 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void applySettings() {
         applying = true;
+        binding.spinnerColorPalette.setSelection(viewModel.getColorPalette(), false);
+        binding.tvThemePaletteLabel.setText(UiPaletteManager.labels()[viewModel.getColorPalette()]);
         binding.switchFloatingEnabled.setChecked(viewModel.isFloatingEnabled());
         int alpha = viewModel.getFloatingAlpha();
         binding.seekFloatingAlpha.setProgress(alpha);
@@ -117,6 +149,15 @@ public class SettingsActivity extends AppCompatActivity {
         binding.switchShowBtc.setChecked(viewModel.isShowBtc());
         binding.switchShowXau.setChecked(viewModel.isShowXau());
         applying = false;
+    }
+
+    private void applyPaletteStyles() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        binding.btnViewLogs.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        binding.btnViewLogs.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        binding.spinnerColorPalette.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
+        binding.tvThemePaletteLabel.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
     }
 
     private void sendServiceAction(String action) {

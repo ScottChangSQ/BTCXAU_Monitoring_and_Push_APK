@@ -256,12 +256,20 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
                     FormatUtils.formatPrice(item.getOpenPrice()),
                     FormatUtils.formatPrice(item.getClosePrice())));
             binding.tvSide.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+            String profitText = signedMoney(item.getProfit());
             String storageFeeText = "$" + FormatUtils.formatPrice(item.getStorageFee());
             String detailRaw = String.format(Locale.getDefault(),
                     "盈亏 %s | 库存费 %s",
-                    signedMoney(item.getProfit()),
+                    profitText,
                     storageFeeText);
             SpannableStringBuilder detailSpan = new SpannableStringBuilder(detailRaw);
+            int profitStart = detailRaw.indexOf(profitText);
+            if (profitStart >= 0) {
+                detailSpan.setSpan(new ForegroundColorSpan(resolveValueColor(binding.getRoot(), item.getProfit())),
+                        profitStart,
+                        profitStart + profitText.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
             int storageStart = detailRaw.lastIndexOf(storageFeeText);
             if (storageStart >= 0) {
                 detailSpan.setSpan(new ForegroundColorSpan(resolveValueColor(binding.getRoot(), item.getStorageFee())),

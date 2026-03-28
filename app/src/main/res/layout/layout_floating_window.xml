@@ -61,7 +61,7 @@
                 android:layout_height="wrap_content"
                 android:maxLines="1"
                 android:text="BTC"
-                android:textColor="@color/accent_gold"
+                android:textColor="@color/text_primary"
                 android:textSize="10sp"
                 android:textStyle="bold" />
 
@@ -112,7 +112,7 @@
                 android:layout_height="wrap_content"
                 android:maxLines="1"
                 android:text="XAU"
-                android:textColor="@color/accent_cyan"
+                android:textColor="@color/text_primary"
                 android:textSize="10sp"
                 android:textStyle="bold" />
 

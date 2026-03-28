@@ -60,9 +60,8 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             String pnlText = signedMoney(item.totalPnl);
             String costText = String.format(Locale.getDefault(), "%,.0f", item.avgCostPrice);
             String raw = String.format(Locale.getDefault(),
-                    "%s | %s | %.2f 手 | 成本 $%s | %s",
+                    "%s | %.2f 手 | 成本 $%s | %s",
                     item.productName,
-                    item.side,
                     item.quantity,
                     costText,
                     pnlText);

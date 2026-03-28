@@ -14,7 +14,6 @@ import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.content.ContextCompat;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -29,6 +28,7 @@ import com.binance.monitor.databinding.ItemMetricBinding;
 import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.adapter.AbnormalRecordAdapter;
 import com.binance.monitor.ui.settings.SettingsActivity;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.AppLaunchHelper;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.PermissionHelper;
@@ -90,6 +90,7 @@ public class MainActivity extends AppCompatActivity {
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
         renderSymbolTab();
+        applyPaletteStyles();
         sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
         promptNotificationPermissionIfNeeded();
     }
@@ -97,6 +98,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        applyPaletteStyles();
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
         startRecentRecordsAutoRefresh();
@@ -167,23 +169,30 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateBottomTabs(boolean marketSelected, boolean accountSelected, boolean settingsSelected) {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         binding.tabMarketMonitor.setBackground(marketSelected
-                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
-                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                UiPaletteManager.neutralFill(this),
+                UiPaletteManager.neutralStroke(this)));
         binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this,
-                marketSelected ? R.color.bg_primary : R.color.text_secondary));
+                marketSelected ? R.color.white : R.color.text_secondary));
 
         binding.tabAccountStats.setBackground(accountSelected
-                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
-                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                UiPaletteManager.neutralFill(this),
+                UiPaletteManager.neutralStroke(this)));
         binding.tabAccountStats.setTextColor(ContextCompat.getColor(this,
-                accountSelected ? R.color.bg_primary : R.color.text_secondary));
+                accountSelected ? R.color.white : R.color.text_secondary));
 
         binding.tabSettings.setBackground(settingsSelected
-                ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
-                : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                UiPaletteManager.neutralFill(this),
+                UiPaletteManager.neutralStroke(this)));
         binding.tabSettings.setTextColor(ContextCompat.getColor(this,
-                settingsSelected ? R.color.bg_primary : R.color.text_secondary));
+                settingsSelected ? R.color.white : R.color.text_secondary));
     }
 
     private void setupActions() {
@@ -242,28 +251,36 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupObservers() {
-        viewModel.getConnectionStatus().observe(this, status -> binding.tvConnectionStatus.setText(status));
+        viewModel.getConnectionStatus().observe(this, status -> {
+            binding.tvConnectionStatus.setText(status);
+            applyConnectionChipStyle();
+        });
         viewModel.getMonitoringEnabled().observe(this, enabled -> {
             monitoringEnabled = Boolean.TRUE.equals(enabled);
             binding.tvMonitoringStatus.setText(monitoringEnabled
                     ? R.string.monitoring_running
                     : R.string.monitoring_stopped);
             binding.tvMonitoringStatus.setBackground(monitoringEnabled
-                    ? AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected)
-                    : AppCompatResources.getDrawable(this, R.drawable.bg_chip_unselected));
+                    ? UiPaletteManager.createFilledDrawable(this, ContextCompat.getColor(this, R.color.accent_green))
+                    : UiPaletteManager.createOutlinedDrawable(this,
+                    UiPaletteManager.neutralFill(this),
+                    UiPaletteManager.neutralStroke(this)));
             binding.tvMonitoringStatus.setTextColor(ContextCompat.getColor(this,
-                    monitoringEnabled ? R.color.bg_primary : R.color.text_primary));
+                    monitoringEnabled ? R.color.white : R.color.text_primary));
             binding.btnToggleMonitoring.setText(monitoringEnabled
                     ? R.string.toggle_stop
                     : R.string.toggle_start);
-            binding.btnToggleMonitoring.setBackground(monitoringEnabled
-                    ? AppCompatResources.getDrawable(this, R.drawable.bg_inline_button)
-                    : AppCompatResources.getDrawable(this, R.drawable.bg_chip_selected));
+            UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+            binding.btnToggleMonitoring.setBackground(UiPaletteManager.createFilledDrawable(
+                    this,
+                    monitoringEnabled
+                            ? ContextCompat.getColor(this, R.color.accent_red)
+                            : palette.primary));
             binding.btnToggleMonitoring.setTextColor(ContextCompat.getColor(this,
-                    monitoringEnabled ? R.color.text_primary : R.color.bg_primary));
+                    R.color.white));
         });
         viewModel.getLastUpdateTime().observe(this,
-                time -> binding.tvLastUpdate.setText(FormatUtils.formatDateTime(time == null ? 0L : time)));
+                time -> binding.tvLastUpdate.setText(formatMarketUpdateText(time == null ? 0L : time)));
         viewModel.getLatestPrices().observe(this,
                 prices -> renderMarket(prices, viewModel.getLatestClosedKlines().getValue()));
         viewModel.getLatestClosedKlines().observe(this,
@@ -445,10 +462,48 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void styleSymbolButton(Button button, boolean selected) {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         button.setBackground(selected
-                ? AppCompatResources.getDrawable(this, R.drawable.bg_symbol_selected)
-                : AppCompatResources.getDrawable(this, R.drawable.bg_symbol_unselected));
-        button.setTextColor(ContextCompat.getColor(this, selected ? R.color.bg_primary : R.color.text_primary));
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                palette.primarySoft,
+                palette.primary));
+        button.setTextColor(ContextCompat.getColor(this, selected ? R.color.white : R.color.text_primary));
+    }
+
+    private void applyConnectionChipStyle() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        binding.tvConnectionStatus.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
+        binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this, R.color.white));
+    }
+
+    private void applyPaletteStyles() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        updateBottomTabs(true, false, false);
+        applyConnectionChipStyle();
+        renderSymbolTab();
+        if (monitoringEnabled) {
+            binding.btnToggleMonitoring.setBackground(
+                    UiPaletteManager.createFilledDrawable(this, ContextCompat.getColor(this, R.color.accent_red)));
+            binding.btnToggleMonitoring.setTextColor(ContextCompat.getColor(this, R.color.white));
+            binding.tvMonitoringStatus.setBackground(
+                    UiPaletteManager.createFilledDrawable(this, ContextCompat.getColor(this, R.color.accent_green)));
+            binding.tvMonitoringStatus.setTextColor(ContextCompat.getColor(this, R.color.white));
+        } else {
+            binding.btnToggleMonitoring.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
+            binding.btnToggleMonitoring.setTextColor(ContextCompat.getColor(this, R.color.white));
+            binding.tvMonitoringStatus.setBackground(UiPaletteManager.createOutlinedDrawable(this,
+                    palette.primarySoft,
+                    palette.primary));
+            binding.tvMonitoringStatus.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        }
+    }
+
+    private String formatMarketUpdateText(long timestampMs) {
+        String timeText = FormatUtils.formatDateTime(timestampMs);
+        long seconds = Math.max(1L, AppConstants.PRICE_UPDATE_THROTTLE_MS / 1000L);
+        return timeText + "（" + seconds + "秒）";
     }
 
     private void persistIfReady() {

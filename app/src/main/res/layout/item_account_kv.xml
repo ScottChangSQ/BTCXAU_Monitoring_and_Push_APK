@@ -9,15 +9,12 @@
         android:id="@+id/tvLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textColor="@color/text_secondary"
-        android:textSize="11sp" />
+        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
     <TextView
         android:id="@+id/tvValue"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
-        android:textColor="@color/text_primary"
-        android:textSize="13sp"
-        android:textStyle="bold" />
+        android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
 </LinearLayout>

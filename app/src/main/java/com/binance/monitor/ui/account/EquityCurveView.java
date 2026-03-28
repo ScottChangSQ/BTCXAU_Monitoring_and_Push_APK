@@ -14,6 +14,7 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.binance.monitor.R;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.util.FormatUtils;
 
@@ -75,11 +76,12 @@ public class EquityCurveView extends View {
         labelPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
         labelPaint.setTextSize(dp(9f));
 
-        equityPaint.setColor(ContextCompat.getColor(context, R.color.accent_cyan));
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
+        equityPaint.setColor(palette.primary);
         equityPaint.setStyle(Paint.Style.STROKE);
         equityPaint.setStrokeWidth(dp(2f));
 
-        balancePaint.setColor(ContextCompat.getColor(context, R.color.accent_blue));
+        balancePaint.setColor(palette.btc);
         balancePaint.setStyle(Paint.Style.STROKE);
         balancePaint.setStrokeWidth(dp(1.6f));
 
@@ -116,6 +118,13 @@ public class EquityCurveView extends View {
                 updateHighlightByX(e.getX());
             }
         });
+    }
+
+    public void refreshPalette() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(getContext());
+        equityPaint.setColor(palette.primary);
+        balancePaint.setColor(palette.btc);
+        invalidate();
     }
 
     public void setOnPointHighlightListener(@Nullable OnPointHighlightListener listener) {
@@ -239,9 +248,10 @@ public class EquityCurveView extends View {
         float yBalance = mapY(point.getBalance(), chartMin, chartMax, chartTop, chartBottom);
         canvas.drawLine(x, chartTop, x, chartBottom, crosshairPaint);
 
-        markerPaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_cyan));
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(getContext());
+        markerPaint.setColor(palette.primary);
         canvas.drawCircle(x, yEquity, dp(4f), markerPaint);
-        markerPaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_blue));
+        markerPaint.setColor(palette.btc);
         canvas.drawCircle(x, yBalance, dp(3.5f), markerPaint);
 
         String line1 = formatLabelTime(point.getTimestamp());

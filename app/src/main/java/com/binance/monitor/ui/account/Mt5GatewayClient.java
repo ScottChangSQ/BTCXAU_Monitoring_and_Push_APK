@@ -134,6 +134,8 @@ public class Mt5GatewayClient {
                     item.optString("productName", "--"),
                     item.optString("code", "--"),
                     item.optString("side", "Buy"),
+                    item.optLong("positionTicket", item.optLong("ticket", 0L)),
+                    item.optLong("orderId", 0L),
                     item.optDouble("quantity", 0d),
                     item.optDouble("sellableQuantity", 0d),
                     item.optDouble("costPrice", 0d),
