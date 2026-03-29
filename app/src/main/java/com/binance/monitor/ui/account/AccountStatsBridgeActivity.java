@@ -56,6 +56,7 @@ import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
 import com.binance.monitor.ui.chart.MarketChartActivity;
+import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
@@ -155,6 +156,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
     private volatile boolean loading;
+    private long connectedUpdateAtMs;
+    private long nextRefreshAtMs;
 
     private AccountTimeRange selectedRange = AccountTimeRange.D7;
     private ReturnStatsMode returnStatsMode = ReturnStatsMode.MONTH;
@@ -210,6 +213,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String lastLoggedGateway = "";
     private String lastLoggedError = "";
     private long dynamicRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
+    private long scheduledRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private int unchangedRefreshStreak = 0;
     private boolean draggingTradeScrollBar;
 
@@ -217,7 +221,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         @Override
         public void run() {
             requestSnapshot();
-            refreshHandler.postDelayed(this, dynamicRefreshDelayMs);
+            scheduleNextSnapshot(dynamicRefreshDelayMs);
+        }
+    };
+
+    private final Runnable overviewHeaderTicker = new Runnable() {
+        @Override
+        public void run() {
+            updateOverviewHeader();
+            refreshHandler.postDelayed(this, 1_000L);
         }
     };
 
@@ -257,9 +269,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         applyPaletteStyles();
         applyPreloadedCacheIfAvailable();
         requestSnapshot();
-
-        refreshHandler.removeCallbacks(refreshRunnable);
-        refreshHandler.postDelayed(refreshRunnable, dynamicRefreshDelayMs);
+        scheduleNextSnapshot(dynamicRefreshDelayMs);
+        startOverviewHeaderTicker();
     }
 
     @Override
@@ -269,13 +280,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(true);
         }
-        refreshHandler.removeCallbacks(refreshRunnable);
-        refreshHandler.postDelayed(refreshRunnable, dynamicRefreshDelayMs);
+        scheduleNextSnapshot(dynamicRefreshDelayMs);
+        startOverviewHeaderTicker();
     }
 
     @Override
     protected void onPause() {
         refreshHandler.removeCallbacks(refreshRunnable);
+        nextRefreshAtMs = 0L;
+        scheduledRefreshDelayMs = 0L;
+        stopOverviewHeaderTicker();
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(false);
         }
@@ -286,6 +300,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         refreshHandler.removeCallbacks(refreshRunnable);
+        nextRefreshAtMs = 0L;
+        scheduledRefreshDelayMs = 0L;
+        stopOverviewHeaderTicker();
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(false);
         }
@@ -477,6 +494,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                   boolean accountSelected,
                                   boolean settingsSelected) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        BottomTabVisibilityManager.apply(this,
+                binding.tabMarketMonitor,
+                binding.tabMarketChart,
+                binding.tabAccountStats,
+                binding.tabSettings);
         binding.tabMarketMonitor.setBackground(marketSelected
                 ? UiPaletteManager.createFilledDrawable(this, palette.primary)
                 : UiPaletteManager.createOutlinedDrawable(this,
@@ -1278,7 +1300,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedServer = SERVER;
         connectedSource = "历史数据（网关离线）";
         connectedGateway = "--";
-        connectedUpdate = FormatUtils.formatTime(System.currentTimeMillis());
+        connectedUpdateAtMs = System.currentTimeMillis();
+        connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
         connectedLeverageText = "";
         connectedError = "";
         dataQualitySummary = "";
@@ -1302,7 +1325,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedSource = normalizeSource(cache.getSource());
         connectedGateway = cache.getGateway().isEmpty() ? "--" : cache.getGateway();
         long updateAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
-        connectedUpdate = FormatUtils.formatTime(updateAt);
+        connectedUpdateAtMs = updateAt;
+        connectedUpdate = FormatUtils.formatDateTime(updateAt);
         connectedError = cache.getError();
 
         setConnectionStatus(cache.isConnected());
@@ -1317,7 +1341,46 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             title = title + "-" + connectedLeverageText;
         }
         binding.tvAccountOverviewTitle.setText(title);
-        binding.tvAccountMeta.setText("更新时间 " + connectedUpdate + "（" + formatAccountRefreshCycle() + "）");
+        binding.tvAccountMeta.setText("更新时间 " + formatRefreshMetaText());
+    }
+
+    private void scheduleNextSnapshot(long delayMs) {
+        long safeDelay = Math.max(1_000L, delayMs);
+        refreshHandler.removeCallbacks(refreshRunnable);
+        scheduledRefreshDelayMs = safeDelay;
+        nextRefreshAtMs = System.currentTimeMillis() + safeDelay;
+        refreshHandler.postDelayed(refreshRunnable, safeDelay);
+    }
+
+    private void startOverviewHeaderTicker() {
+        refreshHandler.removeCallbacks(overviewHeaderTicker);
+        refreshHandler.post(overviewHeaderTicker);
+    }
+
+    private void stopOverviewHeaderTicker() {
+        refreshHandler.removeCallbacks(overviewHeaderTicker);
+    }
+
+    private String formatRefreshMetaText() {
+        long updateAt = connectedUpdateAtMs > 0L ? connectedUpdateAtMs : System.currentTimeMillis();
+        long intervalMs = scheduledRefreshDelayMs > 0L ? scheduledRefreshDelayMs : dynamicRefreshDelayMs;
+        long intervalSeconds = Math.max(1L, intervalMs / 1_000L);
+        long remainSeconds = resolveRemainingRefreshSeconds(intervalSeconds);
+        return FormatUtils.formatDateTime(updateAt) + "（" + remainSeconds + "秒/" + intervalSeconds + "秒）";
+    }
+
+    private long resolveRemainingRefreshSeconds(long intervalSeconds) {
+        if (intervalSeconds <= 0L) {
+            return 1L;
+        }
+        if (nextRefreshAtMs <= 0L) {
+            return intervalSeconds;
+        }
+        long remainMs = Math.max(0L, nextRefreshAtMs - System.currentTimeMillis());
+        if (remainMs <= 0L) {
+            return intervalSeconds;
+        }
+        return Math.max(1L, (remainMs + 999L) / 1_000L);
     }
 
     private void requestSnapshot() {
@@ -1365,7 +1428,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             final String finalServer = server;
             final String finalSource = source;
             final String finalGateway = gateway;
-            final String finalUpdate = FormatUtils.formatTime(updatedAt);
+            final long finalUpdatedAt = updatedAt;
             final String finalError = error;
             final boolean finalUnchanged = remote.isUnchanged();
 
@@ -1374,7 +1437,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 connectedServer = finalServer;
                 connectedSource = finalSource;
                 connectedGateway = finalGateway;
-                connectedUpdate = finalUpdate;
+                connectedUpdateAtMs = finalUpdatedAt;
+                connectedUpdate = FormatUtils.formatDateTime(finalUpdatedAt);
                 connectedError = finalError;
 
                 setConnectionStatus(finalConnected);
@@ -4651,11 +4715,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.equityCurveView.refreshPalette();
         boolean connected = "已连接账户".contentEquals(binding.tvAccountConnectionStatus.getText());
         setConnectionStatus(connected);
-    }
-
-    private String formatAccountRefreshCycle() {
-        long seconds = Math.max(1L, dynamicRefreshDelayMs / 1000L);
-        return seconds + "秒";
     }
 
     private String percent(double ratio) {

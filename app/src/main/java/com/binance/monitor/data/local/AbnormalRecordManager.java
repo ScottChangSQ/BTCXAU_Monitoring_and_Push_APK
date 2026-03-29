@@ -81,6 +81,18 @@ public class AbnormalRecordManager {
         );
     }
 
+    public synchronized void clearAll() {
+        cache.clear();
+        if (storeFile.exists()) {
+            try {
+                //noinspection ResultOfMethodCallIgnored
+                storeFile.delete();
+            } catch (Exception ignored) {
+            }
+        }
+        publishLocked();
+    }
+
     private void trimLocked() {
         while (cache.size() > MAX_RECORDS) {
             cache.remove(cache.size() - 1);

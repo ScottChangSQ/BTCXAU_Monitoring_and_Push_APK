@@ -1,6 +1,7 @@
 package com.binance.monitor.ui.floating;
 
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -18,6 +19,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.databinding.LayoutFloatingWindowBinding;
+import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.AppLaunchHelper;
 import com.binance.monitor.util.FormatUtils;
@@ -633,6 +635,10 @@ public class FloatingWindowManager {
             if (target == binding.layoutExpanded) {
                 if (isInMinimizeArea(event.getX(), event.getY())) {
                     setMinimized(true);
+                } else if (isInSymbolArea(binding.layoutBtc, event.getX(), event.getY())) {
+                    openChartForSymbol(AppConstants.SYMBOL_BTC);
+                } else if (isInSymbolArea(binding.layoutXau, event.getX(), event.getY())) {
+                    openChartForSymbol(AppConstants.SYMBOL_XAU);
                 } else {
                     AppLaunchHelper.openBinance(context);
                 }
@@ -641,6 +647,25 @@ public class FloatingWindowManager {
 
         private boolean isInMinimizeArea(float x, float y) {
             return x >= 0 && y >= 0 && x <= dp(28) && y <= dp(28);
+        }
+
+        private boolean isInSymbolArea(View symbolView, float x, float y) {
+            if (symbolView == null || symbolView.getVisibility() != View.VISIBLE) {
+                return false;
+            }
+            return x >= symbolView.getLeft()
+                    && x <= symbolView.getRight()
+                    && y >= symbolView.getTop()
+                    && y <= symbolView.getBottom();
+        }
+
+        private void openChartForSymbol(String symbol) {
+            Intent intent = new Intent(context, MarketChartActivity.class);
+            intent.putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL, symbol);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            context.startActivity(intent);
         }
     }
 }

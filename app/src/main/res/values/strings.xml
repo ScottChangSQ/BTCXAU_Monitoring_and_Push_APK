@@ -81,7 +81,7 @@
     <string name="battery_optimization_required">为保证锁屏和后台持续监控，建议关闭该应用的电池优化限制。</string>
     <string name="battery_optimization_allow">允许后台保护</string>
     <string name="nav_market_monitor">行情监控</string>
-    <string name="nav_market_chart">行情图表</string>
+    <string name="nav_market_chart">行情持仓</string>
     <string name="nav_account_stats">账户统计</string>
     <string name="account_overview_title">账户总览</string>
     <string name="equity_curve_title">净值曲线</string>

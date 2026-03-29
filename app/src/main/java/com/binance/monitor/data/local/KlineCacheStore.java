@@ -79,6 +79,26 @@ public class KlineCacheStore {
         }
     }
 
+    public synchronized int clearAll() {
+        if (!rootDir.exists()) {
+            return 0;
+        }
+        File[] files = rootDir.listFiles();
+        if (files == null || files.length == 0) {
+            return 0;
+        }
+        int deleted = 0;
+        for (File file : files) {
+            if (file == null || !file.exists()) {
+                continue;
+            }
+            if (file.delete()) {
+                deleted++;
+            }
+        }
+        return deleted;
+    }
+
     private List<CandleEntry> normalize(List<CandleEntry> source, int maxCount) {
         if (source == null || source.isEmpty()) {
             return new ArrayList<>();

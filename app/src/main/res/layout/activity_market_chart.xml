@@ -34,30 +34,14 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal">
 
-                    <Button
-                        android:id="@+id/btnSymbolBtc"
-                        android:layout_width="0dp"
+                    <androidx.appcompat.widget.AppCompatSpinner
+                        android:id="@+id/spinnerSymbolPicker"
+                        android:layout_width="match_parent"
                         android:layout_height="@dimen/control_height_md"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_chip_selected"
-                        android:text="@string/symbol_btc"
-                        android:textAllCaps="false"
-                        android:textColor="@color/white"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
-
-                    <Button
-                        android:id="@+id/btnSymbolXau"
-                        android:layout_width="0dp"
-                        android:layout_height="@dimen/control_height_md"
-                        android:layout_marginStart="4dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_chip_unselected"
-                        android:text="@string/symbol_xau"
-                        android:textAllCaps="false"
-                        android:textColor="#B8C7DF"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
+                        android:background="@drawable/bg_spinner_filter"
+                        android:minWidth="0dp"
+                        android:popupBackground="@drawable/bg_spinner_popup"
+                        android:spinnerMode="dropdown" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -264,8 +248,8 @@
 
                     <ImageButton
                         android:id="@+id/btnScrollToLatest"
-                        android:layout_width="18dp"
-                        android:layout_height="18dp"
+                        android:layout_width="25dp"
+                        android:layout_height="25dp"
                         android:layout_gravity="top|start"
                         android:background="@drawable/bg_scroll_to_latest"
                         android:contentDescription="@string/chart_back_to_latest"

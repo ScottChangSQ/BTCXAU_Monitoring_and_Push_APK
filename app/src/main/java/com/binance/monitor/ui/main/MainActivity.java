@@ -8,8 +8,10 @@ import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.EditText;
-import android.widget.Button;
+import android.widget.SpinnerAdapter;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
@@ -58,6 +60,7 @@ public class MainActivity extends AppCompatActivity {
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private boolean applyingConfig;
     private boolean monitoringEnabled;
+    private long lastMarketUpdateMs;
     private List<AbnormalRecord> recentRecordsSource = Collections.emptyList();
     private final Handler recentRecordsHandler = new Handler(Looper.getMainLooper());
     private final Runnable recentRecordsRefreshRunnable = new Runnable() {
@@ -65,6 +68,13 @@ public class MainActivity extends AppCompatActivity {
         public void run() {
             renderRecentRecords();
             recentRecordsHandler.postDelayed(this, 30_000L);
+        }
+    };
+    private final Runnable updateTimeTickerRunnable = new Runnable() {
+        @Override
+        public void run() {
+            binding.tvLastUpdate.setText(formatMarketUpdateText(lastMarketUpdateMs));
+            recentRecordsHandler.postDelayed(this, 1_000L);
         }
     };
 
@@ -90,7 +100,6 @@ public class MainActivity extends AppCompatActivity {
         setupBottomNav();
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
-        renderSymbolTab();
         applyPaletteStyles();
         sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
         promptNotificationPermissionIfNeeded();
@@ -103,18 +112,21 @@ public class MainActivity extends AppCompatActivity {
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
         startRecentRecordsAutoRefresh();
+        startUpdateTimeTicker();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         stopRecentRecordsAutoRefresh();
+        stopUpdateTimeTicker();
         persistCurrentSymbolConfig();
     }
 
     @Override
     protected void onDestroy() {
         stopRecentRecordsAutoRefresh();
+        stopUpdateTimeTicker();
         super.onDestroy();
     }
 
@@ -171,6 +183,11 @@ public class MainActivity extends AppCompatActivity {
                                   boolean accountSelected,
                                   boolean settingsSelected) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        BottomTabVisibilityManager.apply(this,
+                binding.tabMarketMonitor,
+                binding.tabMarketChart,
+                binding.tabAccountStats,
+                binding.tabSettings);
         binding.tabMarketMonitor.setBackground(marketSelected
                 ? UiPaletteManager.createFilledDrawable(this, palette.primary)
                 : UiPaletteManager.createOutlinedDrawable(this,
@@ -205,8 +222,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupActions() {
-        binding.btnSymbolBtc.setOnClickListener(v -> switchSymbol(AppConstants.SYMBOL_BTC));
-        binding.btnSymbolXau.setOnClickListener(v -> switchSymbol(AppConstants.SYMBOL_XAU));
+        setupSymbolSelector();
         binding.btnRestoreDefault.setOnClickListener(v -> {
             SymbolConfig config = viewModel.resetSymbolConfig(selectedSymbol);
             applySymbolConfig(config);
@@ -259,6 +275,62 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void setupSymbolSelector() {
+        List<String> symbols = new ArrayList<>(AppConstants.MONITOR_SYMBOLS);
+        if (symbols.isEmpty()) {
+            symbols.add(AppConstants.SYMBOL_BTC);
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                R.layout.item_spinner_filter,
+                android.R.id.text1,
+                symbols
+        );
+        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
+        binding.spinnerSymbolPicker.setAdapter(adapter);
+        binding.spinnerSymbolPicker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                Object item = parent.getItemAtPosition(position);
+                if (item == null) {
+                    return;
+                }
+                String symbol = String.valueOf(item).trim();
+                if (symbol.isEmpty()) {
+                    return;
+                }
+                switchSymbol(symbol);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        syncSymbolSelector();
+    }
+
+    private void syncSymbolSelector() {
+        SpinnerAdapter adapter = binding.spinnerSymbolPicker.getAdapter();
+        if (adapter == null) {
+            return;
+        }
+        String target = selectedSymbol == null ? "" : selectedSymbol.trim().toUpperCase(java.util.Locale.ROOT);
+        for (int i = 0; i < adapter.getCount(); i++) {
+            Object item = adapter.getItem(i);
+            if (item == null) {
+                continue;
+            }
+            String symbol = String.valueOf(item).trim().toUpperCase(java.util.Locale.ROOT);
+            if (!symbol.equals(target)) {
+                continue;
+            }
+            if (binding.spinnerSymbolPicker.getSelectedItemPosition() != i) {
+                binding.spinnerSymbolPicker.setSelection(i, false);
+            }
+            return;
+        }
+    }
+
     private void setupObservers() {
         viewModel.getConnectionStatus().observe(this, status -> {
             binding.tvConnectionStatus.setText(status);
@@ -288,8 +360,10 @@ public class MainActivity extends AppCompatActivity {
             binding.btnToggleMonitoring.setTextColor(ContextCompat.getColor(this,
                     R.color.white));
         });
-        viewModel.getLastUpdateTime().observe(this,
-                time -> binding.tvLastUpdate.setText(formatMarketUpdateText(time == null ? 0L : time)));
+        viewModel.getLastUpdateTime().observe(this, time -> {
+            lastMarketUpdateMs = time == null ? 0L : time;
+            binding.tvLastUpdate.setText(formatMarketUpdateText(lastMarketUpdateMs));
+        });
         viewModel.getLatestPrices().observe(this,
                 prices -> renderMarket(prices, viewModel.getLatestClosedKlines().getValue()));
         viewModel.getLatestClosedKlines().observe(this,
@@ -313,6 +387,15 @@ public class MainActivity extends AppCompatActivity {
 
     private void stopRecentRecordsAutoRefresh() {
         recentRecordsHandler.removeCallbacks(recentRecordsRefreshRunnable);
+    }
+
+    private void startUpdateTimeTicker() {
+        recentRecordsHandler.removeCallbacks(updateTimeTickerRunnable);
+        recentRecordsHandler.post(updateTimeTickerRunnable);
+    }
+
+    private void stopUpdateTimeTicker() {
+        recentRecordsHandler.removeCallbacks(updateTimeTickerRunnable);
     }
 
     private List<AbnormalRecord> mergeDisplayRecords(List<AbnormalRecord> source) {
@@ -432,13 +515,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void switchSymbol(String symbol) {
-        if (TextUtils.equals(symbol, selectedSymbol)) {
+        if (TextUtils.isEmpty(symbol)) {
+            return;
+        }
+        String normalized = symbol.trim().toUpperCase(java.util.Locale.ROOT);
+        if (TextUtils.equals(normalized, selectedSymbol)) {
             return;
         }
         persistCurrentSymbolConfig();
-        selectedSymbol = symbol;
-        renderSymbolTab();
-        loadSymbolConfig(symbol);
+        selectedSymbol = normalized;
+        syncSymbolSelector();
+        loadSymbolConfig(normalized);
         renderMarket(viewModel.getLatestPrices().getValue(), viewModel.getLatestClosedKlines().getValue());
     }
 
@@ -465,21 +552,6 @@ public class MainActivity extends AppCompatActivity {
         metricVolumeBinding.tvMetricLabel.setText(getString(R.string.volume) + " (" + volumeUnit + ")");
     }
 
-    private void renderSymbolTab() {
-        styleSymbolButton(binding.btnSymbolBtc, AppConstants.SYMBOL_BTC.equals(selectedSymbol));
-        styleSymbolButton(binding.btnSymbolXau, AppConstants.SYMBOL_XAU.equals(selectedSymbol));
-    }
-
-    private void styleSymbolButton(Button button, boolean selected) {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        button.setBackground(selected
-                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
-                : UiPaletteManager.createOutlinedDrawable(this,
-                palette.primarySoft,
-                palette.primary));
-        button.setTextColor(ContextCompat.getColor(this, selected ? R.color.white : R.color.text_primary));
-    }
-
     private void applyConnectionChipStyle() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         binding.tvConnectionStatus.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
@@ -491,7 +563,7 @@ public class MainActivity extends AppCompatActivity {
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         updateBottomTabs(true, false, false, false);
         applyConnectionChipStyle();
-        renderSymbolTab();
+        syncSymbolSelector();
         if (monitoringEnabled) {
             binding.btnToggleMonitoring.setBackground(
                     UiPaletteManager.createFilledDrawable(this, ContextCompat.getColor(this, R.color.accent_red)));
@@ -510,9 +582,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String formatMarketUpdateText(long timestampMs) {
-        String timeText = FormatUtils.formatDateTime(timestampMs);
-        long seconds = Math.max(1L, AppConstants.PRICE_UPDATE_THROTTLE_MS / 1000L);
-        return timeText + "（" + seconds + "秒）";
+        if (timestampMs <= 0L) {
+            return "--";
+        }
+        long intervalMs = Math.max(1_000L, AppConstants.PRICE_UPDATE_THROTTLE_MS);
+        long intervalSeconds = Math.max(1L, intervalMs / 1_000L);
+        long elapsed = Math.max(0L, System.currentTimeMillis() - timestampMs);
+        long remainMs = intervalMs - (elapsed % intervalMs);
+        if (remainMs == intervalMs && elapsed > 0L) {
+            remainMs = 0L;
+        }
+        long remainSeconds = remainMs <= 0L
+                ? intervalSeconds
+                : Math.max(1L, (remainMs + 999L) / 1_000L);
+        return FormatUtils.formatDateTime(timestampMs)
+                + "（" + remainSeconds + "秒/" + intervalSeconds + "秒）";
     }
 
     private void persistIfReady() {

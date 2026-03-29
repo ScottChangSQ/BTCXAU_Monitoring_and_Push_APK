@@ -1,13 +1,18 @@
 package com.binance.monitor.ui.chart;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.SpinnerAdapter;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -16,8 +21,10 @@ import androidx.core.content.ContextCompat;
 
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
+import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.KlineCacheStore;
+import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.remote.BinanceApiClient;
@@ -27,6 +34,7 @@ import com.binance.monitor.ui.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
@@ -51,7 +59,12 @@ import java.util.concurrent.Future;
 
 public class MarketChartActivity extends AppCompatActivity {
 
+    public static final String EXTRA_TARGET_SYMBOL = "extra_target_symbol";
+    public static final String PREF_RUNTIME_NAME = "market_chart_runtime";
+
     private static final long AUTO_REFRESH_INTERVAL_MS = 10_000L;
+    private static final long XAU_FULL_HISTORY_CHECK_INTERVAL_MS = 60L * 60L * 1000L;
+    private static final String KEY_XAU_FULL_CHECK_PREFIX = "xau_full_check_";
     private static final int HISTORY_PERSIST_LIMIT = 5_000;
 
     private static final class IntervalOption {
@@ -95,6 +108,8 @@ public class MarketChartActivity extends AppCompatActivity {
     private final Set<String> prefetchInFlight = ConcurrentHashMap.newKeySet();
     private KlineCacheStore klineCacheStore;
     private AccountStatsPreloadManager accountStatsPreloadManager;
+    private AbnormalRecordManager abnormalRecordManager;
+    private SharedPreferences runtimePreferences;
 
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private IntervalOption selectedInterval = INTERVALS[2];
@@ -112,6 +127,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private int pricePaneBottomPx;
     private volatile boolean loadingMore;
     private long lastSuccessUpdateMs;
+    private List<AbnormalRecord> abnormalRecords = new ArrayList<>();
     private final Runnable autoRefreshRunnable = new Runnable() {
         @Override
         public void run() {
@@ -128,9 +144,18 @@ public class MarketChartActivity extends AppCompatActivity {
         ioExecutor = Executors.newFixedThreadPool(2);
         klineCacheStore = new KlineCacheStore(this);
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
+        abnormalRecordManager = AbnormalRecordManager.getInstance(getApplicationContext());
+        runtimePreferences = getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE);
+        applyIntentSymbol(getIntent(), false);
+        if (abnormalRecordManager != null) {
+            abnormalRecordManager.getRecordsLiveData().observe(this, records -> {
+                abnormalRecords = records == null ? new ArrayList<>() : new ArrayList<>(records);
+                updateAbnormalAnnotationsOverlay();
+            });
+        }
 
         setupChart();
-        setupSymbolButtons();
+        setupSymbolSelector();
         setupIntervalButtons();
         setupIndicatorButtons();
         setupBottomNav();
@@ -142,8 +167,8 @@ public class MarketChartActivity extends AppCompatActivity {
         requestKlines();
         prefetch(selectedSymbol, INTERVALS[0]);
         prefetch(selectedSymbol, INTERVALS[1]);
-        prefetch(getOppositeSymbol(selectedSymbol), INTERVALS[0]);
-        prefetch(getOppositeSymbol(selectedSymbol), INTERVALS[1]);
+        prefetchOtherSymbols(INTERVALS[0]);
+        prefetchOtherSymbols(INTERVALS[1]);
     }
 
     @Override
@@ -152,6 +177,13 @@ public class MarketChartActivity extends AppCompatActivity {
         applyPaletteStyles();
         refreshChartOverlays();
         startAutoRefresh();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        applyIntentSymbol(intent, true);
     }
 
     @Override
@@ -211,10 +243,82 @@ public class MarketChartActivity extends AppCompatActivity {
         refreshChartOverlays();
     }
 
-    private void setupSymbolButtons() {
-        binding.btnSymbolBtc.setOnClickListener(v -> switchSymbol(AppConstants.SYMBOL_BTC));
-        binding.btnSymbolXau.setOnClickListener(v -> switchSymbol(AppConstants.SYMBOL_XAU));
-        updateSymbolButtons();
+    private void setupSymbolSelector() {
+        List<String> symbols = getSupportedSymbols();
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                R.layout.item_spinner_filter,
+                android.R.id.text1,
+                symbols
+        );
+        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
+        binding.spinnerSymbolPicker.setAdapter(adapter);
+        binding.spinnerSymbolPicker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                Object item = parent.getItemAtPosition(position);
+                if (item == null) {
+                    return;
+                }
+                String symbol = String.valueOf(item).trim();
+                if (symbol.isEmpty()) {
+                    return;
+                }
+                switchSymbol(symbol);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        syncSymbolSelector();
+    }
+
+    private void applyIntentSymbol(@Nullable Intent intent, boolean triggerReload) {
+        String symbol = resolveTargetSymbol(intent);
+        if (!isSupportedSymbol(symbol)) {
+            return;
+        }
+        if (symbol.equalsIgnoreCase(selectedSymbol)) {
+            return;
+        }
+        selectedSymbol = symbol;
+        if (binding == null) {
+            return;
+        }
+        syncSymbolSelector();
+        if (triggerReload) {
+            requestKlines();
+            prefetch(selectedSymbol, INTERVALS[0]);
+            prefetch(selectedSymbol, INTERVALS[1]);
+            prefetchOtherSymbols(INTERVALS[0]);
+            prefetchOtherSymbols(INTERVALS[1]);
+            scheduleNextAutoRefresh();
+        }
+    }
+
+    private String resolveTargetSymbol(@Nullable Intent intent) {
+        if (intent == null) {
+            return "";
+        }
+        String raw = intent.getStringExtra(EXTRA_TARGET_SYMBOL);
+        if (raw == null || raw.trim().isEmpty()) {
+            return "";
+        }
+        return raw.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private boolean isSupportedSymbol(@Nullable String symbol) {
+        if (symbol == null || symbol.trim().isEmpty()) {
+            return false;
+        }
+        String target = symbol.trim().toUpperCase(Locale.ROOT);
+        for (String item : getSupportedSymbols()) {
+            if (target.equalsIgnoreCase(item)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void setupIntervalButtons() {
@@ -261,6 +365,11 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private void updateBottomTabs(boolean market, boolean chart, boolean account, boolean settings) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        BottomTabVisibilityManager.apply(this,
+                binding.tabMarketMonitor,
+                binding.tabMarketChart,
+                binding.tabAccountStats,
+                binding.tabSettings);
         styleNavTab(binding.tabMarketMonitor, market, palette);
         styleNavTab(binding.tabMarketChart, chart, palette);
         styleNavTab(binding.tabAccountStats, account, palette);
@@ -277,14 +386,16 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private void switchSymbol(String symbol) {
-        if (symbol.equalsIgnoreCase(selectedSymbol)) {
+        if (symbol == null || symbol.trim().isEmpty() || symbol.equalsIgnoreCase(selectedSymbol)) {
             return;
         }
-        selectedSymbol = symbol;
-        updateSymbolButtons();
+        selectedSymbol = symbol.trim().toUpperCase(Locale.ROOT);
+        syncSymbolSelector();
         requestKlines();
         prefetch(selectedSymbol, INTERVALS[0]);
         prefetch(selectedSymbol, INTERVALS[1]);
+        prefetchOtherSymbols(INTERVALS[0]);
+        prefetchOtherSymbols(INTERVALS[1]);
         scheduleNextAutoRefresh();
     }
 
@@ -295,7 +406,7 @@ public class MarketChartActivity extends AppCompatActivity {
         selectedInterval = option;
         updateIntervalButtons();
         requestKlines();
-        prefetch(getOppositeSymbol(selectedSymbol), option);
+        prefetchOtherSymbols(option);
         scheduleNextAutoRefresh();
     }
 
@@ -399,7 +510,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     binding.tvError.setVisibility(android.view.View.GONE);
                     binding.btnRetryLoad.setVisibility(android.view.View.GONE);
                     showLoading(false);
-                    prefetch(getOppositeSymbol(selectedSymbol), selectedInterval);
+                    prefetchOtherSymbols(selectedInterval);
                     prefetch(selectedSymbol, INTERVALS[0]);
                     prefetch(selectedSymbol, INTERVALS[1]);
                 });
@@ -648,8 +759,40 @@ public class MarketChartActivity extends AppCompatActivity {
         return symbol + "|" + interval.key + "|" + interval.apiInterval + "|" + interval.yearAggregate;
     }
 
-    private String getOppositeSymbol(String symbol) {
-        return AppConstants.SYMBOL_BTC.equals(symbol) ? AppConstants.SYMBOL_XAU : AppConstants.SYMBOL_BTC;
+    private List<String> getSupportedSymbols() {
+        if (AppConstants.MONITOR_SYMBOLS == null || AppConstants.MONITOR_SYMBOLS.isEmpty()) {
+            List<String> fallback = new ArrayList<>();
+            fallback.add(AppConstants.SYMBOL_BTC);
+            return fallback;
+        }
+        List<String> symbols = new ArrayList<>();
+        for (String symbol : AppConstants.MONITOR_SYMBOLS) {
+            if (symbol == null) {
+                continue;
+            }
+            String normalized = symbol.trim().toUpperCase(Locale.ROOT);
+            if (normalized.isEmpty() || symbols.contains(normalized)) {
+                continue;
+            }
+            symbols.add(normalized);
+        }
+        if (symbols.isEmpty()) {
+            symbols.add(AppConstants.SYMBOL_BTC);
+        }
+        return symbols;
+    }
+
+    private void prefetchOtherSymbols(IntervalOption interval) {
+        if (interval == null) {
+            return;
+        }
+        String current = selectedSymbol == null ? "" : selectedSymbol.trim().toUpperCase(Locale.ROOT);
+        for (String symbol : getSupportedSymbols()) {
+            if (symbol.equalsIgnoreCase(current)) {
+                continue;
+            }
+            prefetch(symbol, interval);
+        }
     }
 
     private void prefetch(String symbol, IntervalOption interval) {
@@ -717,13 +860,17 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private List<CandleEntry> loadCandlesForRequest(boolean autoRefresh) throws Exception {
-        if (!autoRefresh || loadedCandles.isEmpty() || !buildCacheKey(selectedSymbol, selectedInterval).equals(activeDataKey)) {
-            return apiClient.fetchKlineHistory(selectedSymbol, selectedInterval.apiInterval, selectedInterval.limit);
+        boolean requireFullHistory = !autoRefresh
+                || loadedCandles.isEmpty()
+                || !buildCacheKey(selectedSymbol, selectedInterval).equals(activeDataKey)
+                || shouldForceXauFullHistoryCheck(autoRefresh);
+        if (requireFullHistory) {
+            return fetchFullHistoryAndMark(selectedSymbol, selectedInterval.limit);
         }
         long intervalMs = intervalToMs(selectedInterval.apiInterval);
         int incrementalLimit = resolveAutoRefreshFetchLimit(intervalMs);
         if (intervalMs <= 0L) {
-            return apiClient.fetchKlineHistory(selectedSymbol, selectedInterval.apiInterval, incrementalLimit);
+            return fetchFullHistoryAndMark(selectedSymbol, incrementalLimit);
         }
         long latestOpenTime = loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
         long startTime = Math.max(0L, latestOpenTime - intervalMs);
@@ -735,7 +882,41 @@ public class MarketChartActivity extends AppCompatActivity {
         if (!incremental.isEmpty()) {
             return incremental;
         }
-        return apiClient.fetchKlineHistory(selectedSymbol, selectedInterval.apiInterval, Math.min(120, incrementalLimit));
+        return fetchFullHistoryAndMark(selectedSymbol, Math.min(120, incrementalLimit));
+    }
+
+    private List<CandleEntry> fetchFullHistoryAndMark(String symbol, int limit) throws Exception {
+        List<CandleEntry> full = apiClient.fetchKlineHistory(symbol, selectedInterval.apiInterval, limit);
+        if (AppConstants.SYMBOL_XAU.equalsIgnoreCase(symbol) && full != null && !full.isEmpty()) {
+            markXauFullHistoryChecked();
+        }
+        return full;
+    }
+
+    private boolean shouldForceXauFullHistoryCheck(boolean autoRefresh) {
+        if (!autoRefresh || runtimePreferences == null) {
+            return false;
+        }
+        if (!AppConstants.SYMBOL_XAU.equalsIgnoreCase(selectedSymbol)) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        long lastChecked = runtimePreferences.getLong(buildXauFullHistoryCheckKey(), 0L);
+        return now - lastChecked >= XAU_FULL_HISTORY_CHECK_INTERVAL_MS;
+    }
+
+    private void markXauFullHistoryChecked() {
+        if (runtimePreferences == null || !AppConstants.SYMBOL_XAU.equalsIgnoreCase(selectedSymbol)) {
+            return;
+        }
+        runtimePreferences.edit()
+                .putLong(buildXauFullHistoryCheckKey(), System.currentTimeMillis())
+                .apply();
+    }
+
+    private String buildXauFullHistoryCheckKey() {
+        String intervalKey = selectedInterval == null ? "default" : selectedInterval.key;
+        return KEY_XAU_FULL_CHECK_PREFIX + intervalKey;
     }
 
     private int resolveAutoRefreshFetchLimit(long intervalMs) {
@@ -879,6 +1060,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private void refreshChartOverlays() {
         updateVolumeThresholdOverlay();
         updateAccountAnnotationsOverlay();
+        updateAbnormalAnnotationsOverlay();
     }
 
     private void updateVolumeThresholdOverlay() {
@@ -894,6 +1076,51 @@ public class MarketChartActivity extends AppCompatActivity {
                 && config.isVolumeEnabled()
                 && threshold > 0d;
         binding.klineChartView.setVolumeThreshold(threshold, visible);
+    }
+
+    private void updateAbnormalAnnotationsOverlay() {
+        if (binding == null || binding.klineChartView == null) {
+            return;
+        }
+        List<KlineChartView.PriceAnnotation> abnormalAnnotations = new ArrayList<>();
+        if (abnormalRecords != null) {
+            int color = Color.parseColor("#F59E0B");
+            int overlayCount = 0;
+            for (AbnormalRecord record : abnormalRecords) {
+                if (record == null) {
+                    continue;
+                }
+                if (!matchesSelectedSymbol(record.getSymbol(), record.getSymbol())) {
+                    continue;
+                }
+                double price = record.getClosePrice() > 0d ? record.getClosePrice() : record.getOpenPrice();
+                if (price <= 0d) {
+                    continue;
+                }
+                long anchorTime = record.getCloseTime() > 0L ? record.getCloseTime() : record.getTimestamp();
+                if (anchorTime <= 0L) {
+                    continue;
+                }
+                String label = "ABN $" + FormatUtils.formatPrice(price);
+                String summary = record.getTriggerSummary() == null ? "" : record.getTriggerSummary().trim();
+                if (!summary.isEmpty()) {
+                    String shortSummary = summary.length() > 12 ? summary.substring(0, 12) + "…" : summary;
+                    label = label + " " + shortSummary;
+                }
+                abnormalAnnotations.add(new KlineChartView.PriceAnnotation(
+                        anchorTime,
+                        price,
+                        label,
+                        color,
+                        "abn|" + record.getId()));
+                overlayCount++;
+                if (overlayCount >= 180) {
+                    break;
+                }
+            }
+        }
+        abnormalAnnotations.sort((a, b) -> Long.compare(a.anchorTimeMs, b.anchorTimeMs));
+        binding.klineChartView.setAbnormalAnnotations(abnormalAnnotations);
     }
 
     private void updateAccountAnnotationsOverlay() {
@@ -955,8 +1182,9 @@ public class MarketChartActivity extends AppCompatActivity {
             String label = side + " " + formatQuantity(Math.abs(item.getQuantity()))
                     + ", " + formatSignedUsd(item.getTotalPnL());
             int color = item.getTotalPnL() >= 0d ? gainColor : lossColor;
-            result.add(new KlineChartView.PriceAnnotation(anchorTime, price, label, color));
-            appendTpSlAnnotations(result, anchorTime, item.getTakeProfit(), item.getStopLoss(), tpColor, slColor);
+            String groupId = buildAnnotationGroupId("position", item, anchorTime, price);
+            result.add(new KlineChartView.PriceAnnotation(anchorTime, price, label, color, groupId));
+            appendTpSlAnnotations(result, anchorTime, item.getTakeProfit(), item.getStopLoss(), tpColor, slColor, groupId);
         }
         result.sort(Comparator.comparingDouble(annotation -> annotation.price));
         return result;
@@ -994,8 +1222,9 @@ public class MarketChartActivity extends AppCompatActivity {
             long anchorTime = resolvePendingAnchorTime(item, trades);
             String label = "PENDING " + side + " " + formatQuantity(lots)
                     + ", @ $" + FormatUtils.formatPrice(price);
-            result.add(new KlineChartView.PriceAnnotation(anchorTime, price, label, color));
-            appendTpSlAnnotations(result, anchorTime, item.getTakeProfit(), item.getStopLoss(), tpColor, slColor);
+            String groupId = buildAnnotationGroupId("pending", item, anchorTime, price);
+            result.add(new KlineChartView.PriceAnnotation(anchorTime, price, label, color, groupId));
+            appendTpSlAnnotations(result, anchorTime, item.getTakeProfit(), item.getStopLoss(), tpColor, slColor, groupId);
         }
         result.sort(Comparator.comparingDouble(annotation -> annotation.price));
         return result;
@@ -1026,7 +1255,7 @@ public class MarketChartActivity extends AppCompatActivity {
             return null;
         }
         double avgCost = weightedCost / qty;
-        return new KlineChartView.AggregateCostAnnotation(avgCost, FormatUtils.formatPrice(avgCost));
+        return new KlineChartView.AggregateCostAnnotation(avgCost, FormatUtils.formatPrice(avgCost), selectedSymbol);
     }
 
     private long resolvePositionAnchorTime(PositionItem position, List<TradeRecordItem> trades) {
@@ -1197,10 +1426,16 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private boolean matchesSelectedSymbol(String code, String productName) {
-        String asset = AppConstants.SYMBOL_XAU.equals(selectedSymbol) ? "XAU" : "BTC";
+        String symbol = selectedSymbol == null ? "" : selectedSymbol.trim().toUpperCase(Locale.ROOT);
+        String asset = symbol.endsWith("USDT") && symbol.length() > 4
+                ? symbol.substring(0, symbol.length() - 4)
+                : symbol;
         String normalizedCode = code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
         String normalizedName = productName == null ? "" : productName.trim().toUpperCase(Locale.ROOT);
-        return normalizedCode.contains(asset) || normalizedName.contains(asset);
+        if (!symbol.isEmpty() && (normalizedCode.contains(symbol) || normalizedName.contains(symbol))) {
+            return true;
+        }
+        return !asset.isEmpty() && (normalizedCode.contains(asset) || normalizedName.contains(asset));
     }
 
     private String normalizeTradeSideLabel(String side) {
@@ -1227,12 +1462,30 @@ public class MarketChartActivity extends AppCompatActivity {
         return sign + "$" + pnlFormat.format(Math.abs(value));
     }
 
+    private String buildAnnotationGroupId(String type, PositionItem item, long anchorTime, double price) {
+        String safeType = type == null ? "order" : type;
+        if (item == null) {
+            return safeType + "|na|" + anchorTime;
+        }
+        if (item.getPositionTicket() > 0L) {
+            return safeType + "|position|" + item.getPositionTicket();
+        }
+        if (item.getOrderId() > 0L) {
+            return safeType + "|order|" + item.getOrderId();
+        }
+        String code = item.getCode() == null ? "" : item.getCode().trim().toUpperCase(Locale.ROOT);
+        String side = normalizeTradeSideLabel(item.getSide());
+        String priceToken = String.format(Locale.US, "%.4f", Math.max(0d, price));
+        return safeType + "|fallback|" + code + "|" + side + "|" + anchorTime + "|" + priceToken;
+    }
+
     private void appendTpSlAnnotations(List<KlineChartView.PriceAnnotation> output,
                                        long anchorTime,
                                        double takeProfit,
                                        double stopLoss,
                                        int tpColor,
-                                       int slColor) {
+                                       int slColor,
+                                       String groupId) {
         if (output == null) {
             return;
         }
@@ -1241,14 +1494,16 @@ public class MarketChartActivity extends AppCompatActivity {
                     anchorTime,
                     takeProfit,
                     "TP $" + FormatUtils.formatPrice(takeProfit),
-                    tpColor));
+                    tpColor,
+                    groupId));
         }
         if (stopLoss > 0d) {
             output.add(new KlineChartView.PriceAnnotation(
                     anchorTime,
                     stopLoss,
                     "SL $" + FormatUtils.formatPrice(stopLoss),
-                    slColor));
+                    slColor,
+                    groupId));
         }
     }
 
@@ -1290,9 +1545,26 @@ public class MarketChartActivity extends AppCompatActivity {
         return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 
-    private void updateSymbolButtons() {
-        styleSymbolButton(binding.btnSymbolBtc, AppConstants.SYMBOL_BTC.equals(selectedSymbol));
-        styleSymbolButton(binding.btnSymbolXau, AppConstants.SYMBOL_XAU.equals(selectedSymbol));
+    private void syncSymbolSelector() {
+        SpinnerAdapter adapter = binding.spinnerSymbolPicker.getAdapter();
+        if (adapter == null) {
+            return;
+        }
+        String target = selectedSymbol == null ? "" : selectedSymbol.trim().toUpperCase(Locale.ROOT);
+        for (int i = 0; i < adapter.getCount(); i++) {
+            Object item = adapter.getItem(i);
+            if (item == null) {
+                continue;
+            }
+            String symbol = String.valueOf(item).trim().toUpperCase(Locale.ROOT);
+            if (!symbol.equals(target)) {
+                continue;
+            }
+            if (binding.spinnerSymbolPicker.getSelectedItemPosition() != i) {
+                binding.spinnerSymbolPicker.setSelection(i, false);
+            }
+            return;
+        }
     }
 
     private void updateIntervalButtons() {
@@ -1315,14 +1587,6 @@ public class MarketChartActivity extends AppCompatActivity {
         styleTabButton(binding.btnIndicatorBoll, showBoll);
     }
 
-    private void styleSymbolButton(Button button, boolean selected) {
-        button.setBackground(selected
-                ? UiPaletteManager.createFilledDrawable(this, Color.parseColor("#F0B90B"))
-                : UiPaletteManager.createOutlinedDrawable(this, Color.parseColor("#17243A"), Color.parseColor("#304766")));
-        button.setTextColor(selected ? Color.parseColor("#111827") : Color.parseColor("#B8C7DF"));
-        button.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
-    }
-
     private void styleTabButton(Button button, boolean selected) {
         button.setBackgroundColor(Color.TRANSPARENT);
         button.setTextColor(selected ? Color.parseColor("#E6EDF9") : Color.parseColor("#7F8EA9"));
@@ -1331,7 +1595,6 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private void normalizeOptionButtons() {
         Button[] buttons = new Button[]{
-                binding.btnSymbolBtc, binding.btnSymbolXau,
                 binding.btnInterval1m, binding.btnInterval5m, binding.btnInterval15m, binding.btnInterval30m,
                 binding.btnInterval1h, binding.btnInterval4h, binding.btnInterval1d, binding.btnInterval1w,
                 binding.btnInterval1mo, binding.btnInterval1y,
@@ -1353,7 +1616,7 @@ public class MarketChartActivity extends AppCompatActivity {
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         binding.getRoot().setBackgroundColor(Color.parseColor("#111B2E"));
         updateBottomTabs(false, true, false, false);
-        updateSymbolButtons();
+        syncSymbolSelector();
         updateIntervalButtons();
         updateIndicatorButtons();
     }

@@ -15,6 +15,9 @@ public class ConfigManager {
     private static final String KEY_SHOW_BTC = "show_btc";
     private static final String KEY_SHOW_XAU = "show_xau";
     private static final String KEY_COLOR_PALETTE = "color_palette";
+    private static final String KEY_TAB_MARKET_MONITOR_VISIBLE = "tab_market_monitor_visible";
+    private static final String KEY_TAB_MARKET_CHART_VISIBLE = "tab_market_chart_visible";
+    private static final String KEY_TAB_ACCOUNT_STATS_VISIBLE = "tab_account_stats_visible";
     private static volatile ConfigManager instance;
 
     private final SharedPreferences preferences;
@@ -112,6 +115,30 @@ public class ConfigManager {
 
     public void setColorPalette(int paletteId) {
         preferences.edit().putInt(KEY_COLOR_PALETTE, Math.max(0, paletteId)).apply();
+    }
+
+    public boolean isTabMarketMonitorVisible() {
+        return preferences.getBoolean(KEY_TAB_MARKET_MONITOR_VISIBLE, true);
+    }
+
+    public void setTabMarketMonitorVisible(boolean visible) {
+        preferences.edit().putBoolean(KEY_TAB_MARKET_MONITOR_VISIBLE, visible).apply();
+    }
+
+    public boolean isTabMarketChartVisible() {
+        return preferences.getBoolean(KEY_TAB_MARKET_CHART_VISIBLE, true);
+    }
+
+    public void setTabMarketChartVisible(boolean visible) {
+        preferences.edit().putBoolean(KEY_TAB_MARKET_CHART_VISIBLE, visible).apply();
+    }
+
+    public boolean isTabAccountStatsVisible() {
+        return preferences.getBoolean(KEY_TAB_ACCOUNT_STATS_VISIBLE, true);
+    }
+
+    public void setTabAccountStatsVisible(boolean visible) {
+        preferences.edit().putBoolean(KEY_TAB_ACCOUNT_STATS_VISIBLE, visible).apply();
     }
 
     private String getPrefix(String symbol) {

@@ -60,6 +60,12 @@ public class AccountStatsPreloadManager {
         liveScreenActive = active;
     }
 
+    public void clearLatestCache() {
+        latestCache = null;
+        unchangedStreak = 0;
+        nextDelayMs = MIN_REFRESH_MS;
+    }
+
     private void scheduleFetch(long delayMs) {
         executor.execute(() -> {
             if (delayMs > 0L) {

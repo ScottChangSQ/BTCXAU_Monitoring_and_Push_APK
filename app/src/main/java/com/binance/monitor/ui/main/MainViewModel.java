@@ -106,4 +106,28 @@ public class MainViewModel extends AndroidViewModel {
     public void setColorPalette(int paletteId) {
         repository.getConfigManager().setColorPalette(paletteId);
     }
+
+    public boolean isTabMarketMonitorVisible() {
+        return repository.getConfigManager().isTabMarketMonitorVisible();
+    }
+
+    public void setTabMarketMonitorVisible(boolean visible) {
+        repository.getConfigManager().setTabMarketMonitorVisible(visible);
+    }
+
+    public boolean isTabMarketChartVisible() {
+        return repository.getConfigManager().isTabMarketChartVisible();
+    }
+
+    public void setTabMarketChartVisible(boolean visible) {
+        repository.getConfigManager().setTabMarketChartVisible(visible);
+    }
+
+    public boolean isTabAccountStatsVisible() {
+        return repository.getConfigManager().isTabAccountStatsVisible();
+    }
+
+    public void setTabAccountStatsVisible(boolean visible) {
+        repository.getConfigManager().setTabAccountStatsVisible(visible);
+    }
 }
