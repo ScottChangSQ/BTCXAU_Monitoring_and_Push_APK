@@ -55,6 +55,7 @@ import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
@@ -464,13 +465,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setupBottomNav() {
-        updateBottomTabs(false, true, false);
+        updateBottomTabs(false, false, true, false);
         binding.tabMarketMonitor.setOnClickListener(v -> openMarketMonitor());
-        binding.tabAccountStats.setOnClickListener(v -> updateBottomTabs(false, true, false));
+        binding.tabMarketChart.setOnClickListener(v -> openMarketChart());
+        binding.tabAccountStats.setOnClickListener(v -> updateBottomTabs(false, false, true, false));
         binding.tabSettings.setOnClickListener(v -> openSettings());
     }
 
-    private void updateBottomTabs(boolean marketSelected, boolean accountSelected, boolean settingsSelected) {
+    private void updateBottomTabs(boolean marketSelected,
+                                  boolean chartSelected,
+                                  boolean accountSelected,
+                                  boolean settingsSelected) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         binding.tabMarketMonitor.setBackground(marketSelected
                 ? UiPaletteManager.createFilledDrawable(this, palette.primary)
@@ -479,6 +484,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 UiPaletteManager.neutralStroke(this)));
         binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this,
                 marketSelected ? R.color.white : R.color.text_secondary));
+
+        binding.tabMarketChart.setBackground(chartSelected
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                UiPaletteManager.neutralFill(this),
+                UiPaletteManager.neutralStroke(this)));
+        binding.tabMarketChart.setTextColor(ContextCompat.getColor(this,
+                chartSelected ? R.color.white : R.color.text_secondary));
 
         binding.tabAccountStats.setBackground(accountSelected
                 ? UiPaletteManager.createFilledDrawable(this, palette.primary)
@@ -4633,7 +4646,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
-        updateBottomTabs(false, true, false);
+        updateBottomTabs(false, false, true, false);
         configureToggleButtonsV2();
         binding.equityCurveView.refreshPalette();
         boolean connected = "已连接账户".contentEquals(binding.tvAccountConnectionStatus.getText());
@@ -4671,6 +4684,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void openMarketMonitor() {
         Intent intent = new Intent(this, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
+    }
+
+    private void openMarketChart() {
+        Intent intent = new Intent(this, MarketChartActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);

@@ -71,6 +71,8 @@ public class MonitorService extends Service {
     private long lastFloatingRefreshAt;
     private boolean floatingRefreshScheduled;
     private long lastForcedReconnectAt;
+    private long lastStaleRestRefreshAt;
+    private volatile boolean staleRestRefreshInFlight;
 
     @Override
     public void onCreate() {
@@ -219,7 +221,7 @@ public class MonitorService extends Service {
                         lastKlineTickAt.put(symbol, now);
                         repository.updateClosedKline(data);
                         maybePublishPrice(symbol, data, now, true);
-                        logManager.info(symbol + " 初始化成功，最近收盘时间 " + FormatUtils.formatDateTime(data.getCloseTime()));
+                        logManager.info(symbol + " 初始化成功，最近收盘时间(本地时区) " + FormatUtils.formatDateTime(data.getCloseTime()));
                     }
                 } catch (Exception exception) {
                     logManager.error(symbol + " 初始化失败: " + exception.getMessage());
@@ -455,6 +457,7 @@ public class MonitorService extends Service {
         if (staleSymbols.isEmpty()) {
             return;
         }
+        refreshStaleSymbolsWithRest(staleSymbols, now);
         if (now - lastForcedReconnectAt < AppConstants.STALE_RECONNECT_COOLDOWN_MS) {
             return;
         }
@@ -465,6 +468,43 @@ public class MonitorService extends Service {
         logManager.warn("行情心跳超时，触发重连: " + String.join(", ", staleSymbols));
         webSocketManager.forceReconnect("行情心跳超时");
         updateConnectionStatus();
+    }
+
+    private void refreshStaleSymbolsWithRest(List<String> staleSymbols, long now) {
+        if (staleSymbols == null || staleSymbols.isEmpty() || executorService == null) {
+            return;
+        }
+        if (staleRestRefreshInFlight) {
+            return;
+        }
+        if (now - lastStaleRestRefreshAt < 20_000L) {
+            return;
+        }
+        staleRestRefreshInFlight = true;
+        lastStaleRestRefreshAt = now;
+        executorService.execute(() -> {
+            try {
+                for (String symbol : staleSymbols) {
+                    try {
+                        KlineData data = apiClient.fetchLatestClosedKline(symbol);
+                        if (data == null) {
+                            continue;
+                        }
+                        long fetchedAt = System.currentTimeMillis();
+                        lastKlineTickAt.put(symbol, fetchedAt);
+                        repository.updateClosedKline(data);
+                        maybePublishPrice(symbol, data, fetchedAt, true);
+                        logManager.warn(symbol + " 实时流超时，已回退REST刷新，最近收盘(本地时区) "
+                                + FormatUtils.formatDateTime(data.getCloseTime()));
+                    } catch (Exception exception) {
+                        logManager.warn(symbol + " 回退REST刷新失败: " + exception.getMessage());
+                    }
+                }
+                mainHandler.post(() -> requestFloatingWindowRefresh(true));
+            } finally {
+                staleRestRefreshInFlight = false;
+            }
+        });
     }
 
     private void refreshFloatingWindow() {

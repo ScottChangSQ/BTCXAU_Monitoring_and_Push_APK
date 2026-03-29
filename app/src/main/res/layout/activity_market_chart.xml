@@ -1,0 +1,451 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#111B2E"
+    android:orientation="vertical">
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingStart="2dp"
+        android:paddingTop="2dp"
+        android:paddingEnd="2dp"
+        android:paddingBottom="2dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/cardSymbolPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:orientation="vertical"
+                android:padding="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnSymbolBtc"
+                        android:layout_width="0dp"
+                        android:layout_height="@dimen/control_height_md"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_chip_selected"
+                        android:text="@string/symbol_btc"
+                        android:textAllCaps="false"
+                        android:textColor="@color/white"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btnSymbolXau"
+                        android:layout_width="0dp"
+                        android:layout_height="@dimen/control_height_md"
+                        android:layout_marginStart="4dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_chip_unselected"
+                        android:text="@string/symbol_xau"
+                        android:textAllCaps="false"
+                        android:textColor="#B8C7DF"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardChartPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:orientation="vertical"
+                android:padding="2dp">
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="30dp"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:background="#17233A"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="@dimen/space_4"
+                        android:paddingEnd="@dimen/space_4">
+
+                        <Button
+                            android:id="@+id/btnInterval1m"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="1分"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnInterval5m"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="5分"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnInterval15m"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="15分"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnInterval30m"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="30分"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnInterval1h"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="1小时"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnInterval4h"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="4小时"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnInterval1d"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="日线"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnInterval1w"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="周线"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnInterval1mo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="月线"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnInterval1y"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_8"
+                            android:paddingEnd="@dimen/space_8"
+                            android:text="年线"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </HorizontalScrollView>
+
+                <TextView
+                    android:id="@+id/tvChartInfo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_8"
+                    android:text="@string/chart_info_empty"
+                    android:textColor="#B8C7DF"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="460dp"
+                    android:layout_marginTop="@dimen/space_8">
+
+                    <com.binance.monitor.ui.chart.KlineChartView
+                        android:id="@+id/klineChartView"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end|top"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginEnd="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ProgressBar
+                            android:id="@+id/progressChart"
+                            style="?android:attr/progressBarStyleSmall"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/tvChartLoading"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_4"
+                            android:text="@string/chart_loading_overlay_text"
+                            android:textColor="#B8C7DF"
+                            android:textSize="11sp"
+                            android:visibility="gone" />
+                    </LinearLayout>
+
+                    <ImageButton
+                        android:id="@+id/btnScrollToLatest"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="top|start"
+                        android:background="@drawable/bg_scroll_to_latest"
+                        android:contentDescription="@string/chart_back_to_latest"
+                        android:padding="4dp"
+                        android:scaleType="centerInside"
+                        android:src="@drawable/ic_scroll_to_latest_arrow"
+                        android:tint="#E6EEF9"
+                        android:visibility="gone" />
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/tvChartState"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text=""
+                    android:textColor="#8FA6C7"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/tvError"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="#F87171"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/btnRetryLoad"
+                    android:layout_width="wrap_content"
+                    android:layout_height="@dimen/control_height_sm"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/bg_chip_selected"
+                    android:text="重试加载"
+                    android:textAllCaps="false"
+                    android:textColor="@color/white"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="30dp"
+                    android:layout_marginTop="4dp"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:background="#17233A"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="@dimen/space_4"
+                        android:paddingEnd="@dimen/space_4">
+
+                        <Button
+                            android:id="@+id/btnIndicatorVolume"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="VOL"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
+
+                        <Button
+                            android:id="@+id/btnIndicatorMacd"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="MACD"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
+
+                        <Button
+                            android:id="@+id/btnIndicatorStochRsi"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="STOCHRSI"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
+
+                        <Button
+                            android:id="@+id/btnIndicatorBoll"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="BOLL"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </HorizontalScrollView>
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="4dp" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <LinearLayout
+        android:id="@+id/tabBar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/bottom_nav_height"
+        android:background="@drawable/bg_bottom_nav"
+        android:orientation="horizontal"
+        android:padding="@dimen/space_8">
+
+        <TextView
+            android:id="@+id/tabMarketMonitor"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip_unselected"
+            android:gravity="center"
+            android:text="@string/nav_market_monitor"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tabMarketChart"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="@dimen/space_8"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip_selected"
+            android:gravity="center"
+            android:text="@string/nav_market_chart"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tabAccountStats"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="@dimen/space_8"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip_unselected"
+            android:gravity="center"
+            android:text="@string/nav_account_stats"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tabSettings"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="@dimen/space_8"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip_unselected"
+            android:gravity="center"
+            android:text="设置"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNavigation"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:menu="@menu/menu_bottom_nav" />
+</LinearLayout>

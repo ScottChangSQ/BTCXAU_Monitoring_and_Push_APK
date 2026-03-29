@@ -27,6 +27,7 @@ import com.binance.monitor.databinding.ActivityMainBinding;
 import com.binance.monitor.databinding.ItemMetricBinding;
 import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.adapter.AbnormalRecordAdapter;
+import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.AppLaunchHelper;
@@ -158,17 +159,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupBottomNav() {
-        updateBottomTabs(true, false, false);
-        binding.tabMarketMonitor.setOnClickListener(v -> updateBottomTabs(true));
+        updateBottomTabs(true, false, false, false);
+        binding.tabMarketMonitor.setOnClickListener(v -> updateBottomTabs(true, false, false, false));
+        binding.tabMarketChart.setOnClickListener(v -> openMarketChart());
         binding.tabAccountStats.setOnClickListener(v -> openAccountStats());
         binding.tabSettings.setOnClickListener(v -> openSettings());
     }
 
-    private void updateBottomTabs(boolean marketSelected) {
-        updateBottomTabs(marketSelected, !marketSelected, false);
-    }
-
-    private void updateBottomTabs(boolean marketSelected, boolean accountSelected, boolean settingsSelected) {
+    private void updateBottomTabs(boolean marketSelected,
+                                  boolean chartSelected,
+                                  boolean accountSelected,
+                                  boolean settingsSelected) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         binding.tabMarketMonitor.setBackground(marketSelected
                 ? UiPaletteManager.createFilledDrawable(this, palette.primary)
@@ -177,6 +178,14 @@ public class MainActivity extends AppCompatActivity {
                 UiPaletteManager.neutralStroke(this)));
         binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this,
                 marketSelected ? R.color.white : R.color.text_secondary));
+
+        binding.tabMarketChart.setBackground(chartSelected
+                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
+                : UiPaletteManager.createOutlinedDrawable(this,
+                UiPaletteManager.neutralFill(this),
+                UiPaletteManager.neutralStroke(this)));
+        binding.tabMarketChart.setTextColor(ContextCompat.getColor(this,
+                chartSelected ? R.color.white : R.color.text_secondary));
 
         binding.tabAccountStats.setBackground(accountSelected
                 ? UiPaletteManager.createFilledDrawable(this, palette.primary)
@@ -480,7 +489,7 @@ public class MainActivity extends AppCompatActivity {
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
-        updateBottomTabs(true, false, false);
+        updateBottomTabs(true, false, false, false);
         applyConnectionChipStyle();
         renderSymbolTab();
         if (monitoringEnabled) {
@@ -552,6 +561,13 @@ public class MainActivity extends AppCompatActivity {
 
     private void openAccountStats() {
         android.content.Intent intent = new android.content.Intent(this, com.binance.monitor.ui.account.AccountStatsBridgeActivity.class);
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
+    }
+
+    private void openMarketChart() {
+        android.content.Intent intent = new android.content.Intent(this, MarketChartActivity.class);
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);

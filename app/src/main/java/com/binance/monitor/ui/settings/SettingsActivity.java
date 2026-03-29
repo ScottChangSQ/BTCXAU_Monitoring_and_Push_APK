@@ -14,6 +14,7 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.ActivitySettingsBinding;
 import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
+import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.log.LogActivity;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.main.MainViewModel;
@@ -49,6 +50,7 @@ public class SettingsActivity extends AppCompatActivity {
     private void setupBottomNav() {
         updateBottomTabs();
         binding.tabMarketMonitor.setOnClickListener(v -> openMarketMonitor());
+        binding.tabMarketChart.setOnClickListener(v -> openMarketChart());
         binding.tabAccountStats.setOnClickListener(v -> openAccountStats());
         binding.tabSettings.setOnClickListener(v -> updateBottomTabs());
     }
@@ -56,10 +58,12 @@ public class SettingsActivity extends AppCompatActivity {
     private void updateBottomTabs() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         binding.tabMarketMonitor.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
+        binding.tabMarketChart.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.tabAccountStats.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.tabSettings.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
 
         binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        binding.tabMarketChart.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
         binding.tabAccountStats.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
         binding.tabSettings.setTextColor(ContextCompat.getColor(this, R.color.white));
     }
@@ -176,6 +180,14 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void openAccountStats() {
         Intent intent = new Intent(this, AccountStatsBridgeActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
+        finish();
+    }
+
+    private void openMarketChart() {
+        Intent intent = new Intent(this, MarketChartActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);

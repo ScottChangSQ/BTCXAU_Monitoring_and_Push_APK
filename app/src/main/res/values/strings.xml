@@ -81,6 +81,7 @@
     <string name="battery_optimization_required">为保证锁屏和后台持续监控，建议关闭该应用的电池优化限制。</string>
     <string name="battery_optimization_allow">允许后台保护</string>
     <string name="nav_market_monitor">行情监控</string>
+    <string name="nav_market_chart">行情图表</string>
     <string name="nav_account_stats">账户统计</string>
     <string name="account_overview_title">账户总览</string>
     <string name="equity_curve_title">净值曲线</string>
@@ -88,4 +89,14 @@
     <string name="trade_records_title">交易记录</string>
     <string name="trade_statistics_title">交易统计</string>
     <string name="trade_search_hint">搜索产品 / 代码 / 备注</string>
+    <string name="chart_section_subtitle">币安永续 K 线（BTCUSDT / XAUUSDT），默认开启成交量、MACD、StochRSI、布林带。</string>
+    <string name="chart_loading_text">正在加载币安K线数据…</string>
+    <string name="chart_loading_overlay_text">正在加载数据…</string>
+    <string name="chart_loaded_state">%1$s · %2$s · 共 %3$d 根K线</string>
+    <string name="chart_load_failed_state">%1$s · %2$s · 加载失败</string>
+    <string name="chart_error_prefix">错误：%1$s</string>
+    <string name="chart_info_empty">长按图表查看K线详情</string>
+    <string name="chart_info_template">%1$s | O:%2$s H:%3$s L:%4$s C:%5$s | VOL:%6$s | MACD:%7$s K:%8$s D:%9$s</string>
+    <string name="chart_gesture_hint">手势支持：双指缩放、左右滑动、长按十字线。</string>
+    <string name="chart_back_to_latest">回到最新</string>
 </resources>

@@ -78,11 +78,31 @@ public final class AppConstants {
     }
 
     public static String buildRestUrl(String symbol) {
+        return buildRestUrl(symbol, "1m", 3);
+    }
+
+    public static String buildRestUrl(String symbol, String interval, int limit) {
+        String safeSymbol = symbol == null || symbol.trim().isEmpty() ? SYMBOL_BTC : symbol.trim();
+        String safeInterval = interval == null || interval.trim().isEmpty() ? "1m" : interval.trim();
+        int safeLimit = Math.max(1, Math.min(1500, limit));
         if (BASE_REST_URL.contains("{symbol}")) {
-            return BASE_REST_URL.replace("{symbol}", symbol);
+            String url = BASE_REST_URL.replace("{symbol}", safeSymbol);
+            if (url.contains("{interval}")) {
+                url = url.replace("{interval}", safeInterval);
+            } else if (!url.contains("interval=")) {
+                String separator = url.contains("?") ? "&" : "?";
+                url = url + separator + "interval=" + safeInterval;
+            }
+            if (url.contains("{limit}")) {
+                url = url.replace("{limit}", String.valueOf(safeLimit));
+            } else if (!url.contains("limit=")) {
+                String separator = url.contains("?") ? "&" : "?";
+                url = url + separator + "limit=" + safeLimit;
+            }
+            return url;
         }
         String separator = BASE_REST_URL.contains("?") ? "&" : "?";
-        return BASE_REST_URL + separator + "symbol=" + symbol + "&interval=1m&limit=3";
+        return BASE_REST_URL + separator + "symbol=" + safeSymbol + "&interval=" + safeInterval + "&limit=" + safeLimit;
     }
 
     public static String buildWebSocketUrl(String symbol) {
