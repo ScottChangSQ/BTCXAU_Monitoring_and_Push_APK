@@ -8,16 +8,18 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.SpinnerAdapter;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.ContextCompat;
 
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
@@ -26,8 +28,10 @@ import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.KlineCacheStore;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.CandleEntry;
+import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.remote.BinanceApiClient;
+import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.ui.account.AccountStatsPreloadManager;
@@ -39,6 +43,7 @@ import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
@@ -46,7 +51,6 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -66,6 +70,8 @@ public class MarketChartActivity extends AppCompatActivity {
     private static final long XAU_FULL_HISTORY_CHECK_INTERVAL_MS = 60L * 60L * 1000L;
     private static final String KEY_XAU_FULL_CHECK_PREFIX = "xau_full_check_";
     private static final int HISTORY_PERSIST_LIMIT = 5_000;
+    private static final int TAB_ACTIVE_COLOR = Color.parseColor("#07C160");
+    private static final int TAB_INACTIVE_COLOR = Color.parseColor("#7F8EA9");
 
     private static final class IntervalOption {
         private final String key;
@@ -81,6 +87,10 @@ public class MarketChartActivity extends AppCompatActivity {
             this.limit = limit;
             this.yearAggregate = yearAggregate;
         }
+    }
+
+    private interface IndicatorParamApplyCallback {
+        void onApply(int[] values);
     }
 
     private static final IntervalOption[] INTERVALS = new IntervalOption[]{
@@ -109,6 +119,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private KlineCacheStore klineCacheStore;
     private AccountStatsPreloadManager accountStatsPreloadManager;
     private AbnormalRecordManager abnormalRecordManager;
+    private MonitorRepository monitorRepository;
     private SharedPreferences runtimePreferences;
 
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
@@ -118,6 +129,28 @@ public class MarketChartActivity extends AppCompatActivity {
     private boolean showMacd = true;
     private boolean showStochRsi = true;
     private boolean showBoll = true;
+    private boolean showMa = true;
+    private boolean showEma = true;
+    private boolean showSra;
+    private boolean showAvl;
+    private boolean showRsi;
+    private boolean showKdj;
+    private int maPeriod = 20;
+    private int emaPeriod = 12;
+    private int sraPeriod = 14;
+    private int avlPeriod = 20;
+    private int rsiPeriod = 14;
+    private int kdjPeriod = 9;
+    private int kdjSmoothK = 3;
+    private int kdjSmoothD = 3;
+    private int bollPeriod = 20;
+    private int bollStdMultiplier = 2;
+    private int macdFastPeriod = 12;
+    private int macdSlowPeriod = 26;
+    private int macdSignalPeriod = 9;
+    private int stochRsiLookback = 14;
+    private int stochRsiSmoothK = 3;
+    private int stochRsiSmoothD = 3;
     private final List<CandleEntry> loadedCandles = new ArrayList<>();
     private final SimpleDateFormat infoTimeFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
     private final SimpleDateFormat stateTimeFormat = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
@@ -127,6 +160,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private int pricePaneBottomPx;
     private volatile boolean loadingMore;
     private long lastSuccessUpdateMs;
+    private long lastMonitorDataAtMs;
     private List<AbnormalRecord> abnormalRecords = new ArrayList<>();
     private final Runnable autoRefreshRunnable = new Runnable() {
         @Override
@@ -145,6 +179,7 @@ public class MarketChartActivity extends AppCompatActivity {
         klineCacheStore = new KlineCacheStore(this);
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
         abnormalRecordManager = AbnormalRecordManager.getInstance(getApplicationContext());
+        monitorRepository = MonitorRepository.getInstance(getApplicationContext());
         runtimePreferences = getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE);
         applyIntentSymbol(getIntent(), false);
         if (abnormalRecordManager != null) {
@@ -158,6 +193,8 @@ public class MarketChartActivity extends AppCompatActivity {
         setupSymbolSelector();
         setupIntervalButtons();
         setupIndicatorButtons();
+        setupChartPositionPanel();
+        bindMonitorDataSource();
         setupBottomNav();
         normalizeOptionButtons();
         binding.btnRetryLoad.setOnClickListener(v -> requestKlines());
@@ -211,6 +248,9 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private void setupChart() {
         binding.klineChartView.setIndicatorsVisible(showVolume, showMacd, showStochRsi, showBoll);
+        binding.klineChartView.setExtendedIndicatorsVisible(showMa, showEma, showSra, showAvl, showRsi, showKdj);
+        applyCoreIndicatorParamsToChart();
+        applyAdvancedIndicatorParamsToChart();
         binding.klineChartView.setOnCrosshairListener(value -> {
             if (value == null) {
                 renderInfoWithLatest();
@@ -336,23 +376,299 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private void setupIndicatorButtons() {
-        binding.btnIndicatorVolume.setOnClickListener(v -> {
-            showVolume = !showVolume;
-            onIndicatorChanged();
+        binding.btnIndicatorVolume.setOnClickListener(v -> toggleIndicator(() -> showVolume = !showVolume));
+        binding.btnIndicatorMacd.setOnClickListener(v -> toggleIndicator(() -> showMacd = !showMacd));
+        binding.btnIndicatorStochRsi.setOnClickListener(v -> toggleIndicator(() -> showStochRsi = !showStochRsi));
+        binding.btnIndicatorBoll.setOnClickListener(v -> toggleIndicator(() -> showBoll = !showBoll));
+        binding.btnIndicatorMa.setOnClickListener(v -> toggleIndicator(() -> showMa = !showMa));
+        binding.btnIndicatorEma.setOnClickListener(v -> toggleIndicator(() -> showEma = !showEma));
+        binding.btnIndicatorSra.setOnClickListener(v -> toggleIndicator(() -> showSra = !showSra));
+        binding.btnIndicatorAvl.setOnClickListener(v -> toggleIndicator(() -> showAvl = !showAvl));
+        binding.btnIndicatorRsi.setOnClickListener(v -> toggleIndicator(() -> showRsi = !showRsi));
+        binding.btnIndicatorKdj.setOnClickListener(v -> toggleIndicator(() -> showKdj = !showKdj));
+
+        binding.btnIndicatorVolume.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "VOL 参数设置",
+                    "成交量主图当前无额外参数",
+                    new String[]{},
+                    new int[]{},
+                    null);
+            return true;
         });
-        binding.btnIndicatorMacd.setOnClickListener(v -> {
-            showMacd = !showMacd;
-            onIndicatorChanged();
+
+        binding.btnIndicatorMacd.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "MACD 参数设置",
+                    "指数平滑异同移动平均线",
+                    new String[]{"快线", "慢线", "信号线"},
+                    new int[]{macdFastPeriod, macdSlowPeriod, macdSignalPeriod},
+                    values -> {
+                        macdFastPeriod = values[0];
+                        macdSlowPeriod = Math.max(macdFastPeriod + 1, values[1]);
+                        macdSignalPeriod = values[2];
+                        applyCoreIndicatorParamsToChart();
+                        onIndicatorChanged();
+                    });
+            return true;
         });
-        binding.btnIndicatorStochRsi.setOnClickListener(v -> {
-            showStochRsi = !showStochRsi;
-            onIndicatorChanged();
+        binding.btnIndicatorBoll.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "BOLL 参数设置",
+                    "布林带",
+                    new String[]{"周期", "标准差倍数"},
+                    new int[]{bollPeriod, bollStdMultiplier},
+                    values -> {
+                        bollPeriod = values[0];
+                        bollStdMultiplier = values[1];
+                        applyCoreIndicatorParamsToChart();
+                        onIndicatorChanged();
+                    });
+            return true;
         });
-        binding.btnIndicatorBoll.setOnClickListener(v -> {
-            showBoll = !showBoll;
-            onIndicatorChanged();
+        binding.btnIndicatorStochRsi.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "STOCHRSI 参数设置",
+                    "随机相对强弱指标",
+                    new String[]{"随机周期", "平滑K", "平滑D"},
+                    new int[]{stochRsiLookback, stochRsiSmoothK, stochRsiSmoothD},
+                    values -> {
+                        stochRsiLookback = values[0];
+                        stochRsiSmoothK = values[1];
+                        stochRsiSmoothD = values[2];
+                        applyCoreIndicatorParamsToChart();
+                        onIndicatorChanged();
+                    });
+            return true;
+        });
+
+        binding.btnIndicatorMa.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "MA 参数设置",
+                    "移动平均线",
+                    new String[]{"周期"},
+                    new int[]{maPeriod},
+                    values -> {
+                        maPeriod = values[0];
+                        applyAdvancedIndicatorParamsToChart();
+                        onIndicatorChanged();
+                    });
+            return true;
+        });
+        binding.btnIndicatorEma.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "EMA 参数设置",
+                    "指数移动平均线",
+                    new String[]{"周期"},
+                    new int[]{emaPeriod},
+                    values -> {
+                        emaPeriod = values[0];
+                        applyAdvancedIndicatorParamsToChart();
+                        onIndicatorChanged();
+                    });
+            return true;
+        });
+        binding.btnIndicatorSra.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "SRA 参数设置",
+                    "平滑移动均线",
+                    new String[]{"平滑周期"},
+                    new int[]{sraPeriod},
+                    values -> {
+                        sraPeriod = values[0];
+                        applyAdvancedIndicatorParamsToChart();
+                        onIndicatorChanged();
+                    });
+            return true;
+        });
+        binding.btnIndicatorAvl.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "AVL 参数设置",
+                    "成交量均线",
+                    new String[]{"周期"},
+                    new int[]{avlPeriod},
+                    values -> {
+                        avlPeriod = values[0];
+                        applyAdvancedIndicatorParamsToChart();
+                        onIndicatorChanged();
+                    });
+            return true;
+        });
+        binding.btnIndicatorRsi.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "RSI 参数设置",
+                    "相对强弱指标",
+                    new String[]{"周期"},
+                    new int[]{rsiPeriod},
+                    values -> {
+                        rsiPeriod = values[0];
+                        applyAdvancedIndicatorParamsToChart();
+                        onIndicatorChanged();
+                    });
+            return true;
+        });
+        binding.btnIndicatorKdj.setOnLongClickListener(v -> {
+            showIndicatorParamDialog(
+                    "KDJ 参数设置",
+                    "随机指标",
+                    new String[]{"周期N", "平滑K", "平滑D"},
+                    new int[]{kdjPeriod, kdjSmoothK, kdjSmoothD},
+                    values -> {
+                        kdjPeriod = values[0];
+                        kdjSmoothK = values[1];
+                        kdjSmoothD = values[2];
+                        applyAdvancedIndicatorParamsToChart();
+                        onIndicatorChanged();
+                    });
+            return true;
         });
         updateIndicatorButtons();
+    }
+
+    private void toggleIndicator(Runnable action) {
+        if (action == null) {
+            return;
+        }
+        action.run();
+        onIndicatorChanged();
+    }
+
+    private void setupChartPositionPanel() {
+        updateChartPositionPanel(new ArrayList<>(), new ArrayList<>());
+    }
+
+    private void bindMonitorDataSource() {
+        if (monitorRepository == null) {
+            return;
+        }
+        monitorRepository.getLatestClosedKlines().observe(this, klines -> {
+            if (klines == null || klines.isEmpty()) {
+                return;
+            }
+            KlineData latest = klines.get(selectedSymbol);
+            if (latest == null || !latest.isClosed()) {
+                return;
+            }
+            applyMonitorClosedKline(latest);
+        });
+    }
+
+    private void applyMonitorClosedKline(KlineData latest) {
+        if (latest == null || selectedInterval == null || selectedInterval.yearAggregate) {
+            return;
+        }
+        if (!"1m".equalsIgnoreCase(selectedInterval.apiInterval)) {
+            return;
+        }
+        CandleEntry entry = new CandleEntry(
+                latest.getSymbol(),
+                latest.getOpenTime(),
+                latest.getCloseTime(),
+                latest.getOpenPrice(),
+                Math.max(latest.getOpenPrice(), latest.getClosePrice()),
+                Math.min(latest.getOpenPrice(), latest.getClosePrice()),
+                latest.getClosePrice(),
+                latest.getVolume(),
+                latest.getQuoteAssetVolume()
+        );
+        String key = buildCacheKey(selectedSymbol, selectedInterval);
+        if (!loadedCandles.isEmpty()) {
+            List<CandleEntry> merged = mergeLatestData(new ArrayList<>(loadedCandles), Collections.singletonList(entry));
+            if (!merged.isEmpty()) {
+                loadedCandles.clear();
+                loadedCandles.addAll(merged);
+                activeDataKey = key;
+                klineCache.put(key, new ArrayList<>(loadedCandles));
+                binding.klineChartView.setCandlesKeepingViewport(loadedCandles);
+                renderInfoWithLatest();
+                refreshChartOverlays();
+                persistCurrentCandles(key);
+                updateStateCount();
+            }
+        }
+        lastMonitorDataAtMs = System.currentTimeMillis();
+    }
+
+    private void updateChartPositionPanel(List<PositionItem> positions, List<PositionItem> pendingOrders) {
+        if (binding == null || binding.layoutChartPositionRows == null || binding.tvChartPositionSummary == null) {
+            return;
+        }
+        List<PositionItem> filtered = new ArrayList<>();
+        if (positions != null) {
+            for (PositionItem item : positions) {
+                if (item == null || Math.abs(item.getQuantity()) <= 1e-9) {
+                    continue;
+                }
+                if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {
+                    continue;
+                }
+                filtered.add(item);
+            }
+        }
+        filtered.sort((left, right) -> Double.compare(Math.abs(right.getMarketValue()), Math.abs(left.getMarketValue())));
+
+        int pendingCount = 0;
+        if (pendingOrders != null) {
+            for (PositionItem item : pendingOrders) {
+                if (item == null) {
+                    continue;
+                }
+                if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {
+                    continue;
+                }
+                if (Math.abs(item.getPendingLots()) <= 1e-9 && Math.abs(item.getQuantity()) <= 1e-9) {
+                    continue;
+                }
+                pendingCount++;
+            }
+        }
+
+        LinearLayout container = binding.layoutChartPositionRows;
+        container.removeAllViews();
+        if (filtered.isEmpty()) {
+            binding.tvChartPositionSummary.setText("当前品种暂无持仓，挂单 " + pendingCount + " 笔");
+            container.addView(buildChartPositionRow("暂无持仓记录", Color.parseColor("#8FA6C7"), false));
+            return;
+        }
+
+        double totalPnl = 0d;
+        for (PositionItem item : filtered) {
+            totalPnl += item.getTotalPnL();
+        }
+        binding.tvChartPositionSummary.setText("持仓 " + filtered.size()
+                + " 笔 | 浮动盈亏 " + formatSignedUsd(totalPnl)
+                + " | 挂单 " + pendingCount + " 笔");
+
+        int displayCount = Math.min(6, filtered.size());
+        for (int i = 0; i < displayCount; i++) {
+            PositionItem item = filtered.get(i);
+            String side = normalizeTradeSideLabel(item.getSide());
+            String text = item.getCode()
+                    + "  " + side
+                    + "  " + formatQuantity(Math.abs(item.getQuantity()))
+                    + "手  | 开 $" + FormatUtils.formatPrice(item.getCostPrice())
+                    + "  现 $" + FormatUtils.formatPrice(item.getLatestPrice())
+                    + "  | " + formatSignedUsd(item.getTotalPnL());
+            int color = item.getTotalPnL() >= 0d ? Color.parseColor("#16C784") : Color.parseColor("#F6465D");
+            container.addView(buildChartPositionRow(text, color, true));
+        }
+    }
+
+    private TextView buildChartPositionRow(String text, int valueColor, boolean useAccent) {
+        TextView view = new TextView(this);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.topMargin = dpToPx(4f);
+        view.setLayoutParams(params);
+        view.setBackgroundResource(R.drawable.bg_chart_position_row);
+        view.setPadding(dpToPx(8f), dpToPx(6f), dpToPx(8f), dpToPx(6f));
+        view.setText(text);
+        view.setTextSize(11f);
+        view.setTypeface(null, Typeface.BOLD);
+        view.setTextColor(useAccent ? valueColor : Color.parseColor("#A9BBD6"));
+        return view;
     }
 
     private void setupBottomNav() {
@@ -364,25 +680,24 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private void updateBottomTabs(boolean market, boolean chart, boolean account, boolean settings) {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
                 binding.tabSettings);
-        styleNavTab(binding.tabMarketMonitor, market, palette);
-        styleNavTab(binding.tabMarketChart, chart, palette);
-        styleNavTab(binding.tabAccountStats, account, palette);
-        styleNavTab(binding.tabSettings, settings, palette);
+        styleNavTab(binding.tabMarketMonitor, market);
+        styleNavTab(binding.tabMarketChart, chart);
+        styleNavTab(binding.tabAccountStats, account);
+        styleNavTab(binding.tabSettings, settings);
     }
 
-    private void styleNavTab(TextView button, boolean selected, UiPaletteManager.Palette palette) {
-        button.setBackground(selected
-                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
-                : UiPaletteManager.createOutlinedDrawable(this,
-                UiPaletteManager.neutralFill(this),
-                UiPaletteManager.neutralStroke(this)));
-        button.setTextColor(ContextCompat.getColor(this, selected ? R.color.white : R.color.text_secondary));
+    private void styleNavTab(TextView button, boolean selected) {
+        if (button == null) {
+            return;
+        }
+        button.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
+        button.setTextColor(selected ? TAB_ACTIVE_COLOR : TAB_INACTIVE_COLOR);
+        button.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
     }
 
     private void switchSymbol(String symbol) {
@@ -412,9 +727,110 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private void onIndicatorChanged() {
         binding.klineChartView.setIndicatorsVisible(showVolume, showMacd, showStochRsi, showBoll);
+        binding.klineChartView.setExtendedIndicatorsVisible(showMa, showEma, showSra, showAvl, showRsi, showKdj);
         updateIndicatorButtons();
         refreshChartOverlays();
         binding.klineChartView.post(this::updateScrollToLatestButtonPosition);
+    }
+
+    private void applyAdvancedIndicatorParamsToChart() {
+        if (binding == null || binding.klineChartView == null) {
+            return;
+        }
+        binding.klineChartView.setAdvancedIndicatorParams(
+                maPeriod,
+                emaPeriod,
+                sraPeriod,
+                avlPeriod,
+                rsiPeriod,
+                kdjPeriod,
+                kdjSmoothK,
+                kdjSmoothD
+        );
+    }
+
+    private void applyCoreIndicatorParamsToChart() {
+        if (binding == null || binding.klineChartView == null) {
+            return;
+        }
+        binding.klineChartView.setCoreIndicatorParams(
+                bollPeriod,
+                bollStdMultiplier,
+                macdFastPeriod,
+                macdSlowPeriod,
+                macdSignalPeriod,
+                stochRsiLookback,
+                stochRsiSmoothK,
+                stochRsiSmoothD
+        );
+    }
+
+    private void showIndicatorParamDialog(String title,
+                                          String hint,
+                                          String[] labels,
+                                          int[] defaults,
+                                          IndicatorParamApplyCallback callback) {
+        View content = LayoutInflater.from(this).inflate(R.layout.dialog_indicator_params, null, false);
+        TextView tvHint = content.findViewById(R.id.tvParamHint);
+        TextView tvLabel1 = content.findViewById(R.id.tvParamLabel1);
+        TextView tvLabel2 = content.findViewById(R.id.tvParamLabel2);
+        TextView tvLabel3 = content.findViewById(R.id.tvParamLabel3);
+        EditText etValue1 = content.findViewById(R.id.etParamValue1);
+        EditText etValue2 = content.findViewById(R.id.etParamValue2);
+        EditText etValue3 = content.findViewById(R.id.etParamValue3);
+        tvHint.setText("长按后可调整该指标参数，修改后立即生效。");
+
+        List<TextView> labelViews = new ArrayList<>();
+        labelViews.add(tvLabel1);
+        labelViews.add(tvLabel2);
+        labelViews.add(tvLabel3);
+        List<EditText> valueViews = new ArrayList<>();
+        valueViews.add(etValue1);
+        valueViews.add(etValue2);
+        valueViews.add(etValue3);
+
+        int count = Math.min(Math.min(labels == null ? 0 : labels.length, defaults == null ? 0 : defaults.length), 3);
+        for (int i = 0; i < 3; i++) {
+            TextView labelView = labelViews.get(i);
+            EditText valueView = valueViews.get(i);
+            if (i < count) {
+                labelView.setVisibility(View.VISIBLE);
+                valueView.setVisibility(View.VISIBLE);
+                labelView.setText(labels[i]);
+                valueView.setText(String.valueOf(defaults[i]));
+            } else {
+                labelView.setVisibility(View.GONE);
+                valueView.setVisibility(View.GONE);
+            }
+        }
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(title)
+                .setMessage(hint)
+                .setView(content)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("应用", (dialog, which) -> {
+                    int[] result = new int[count];
+                    for (int i = 0; i < count; i++) {
+                        int parsed = parsePositiveInt(valueViews.get(i).getText() == null
+                                ? ""
+                                : valueViews.get(i).getText().toString(), defaults[i]);
+                        result[i] = parsed;
+                    }
+                    if (callback != null) {
+                        callback.onApply(result);
+                    }
+                })
+                .show();
+    }
+
+    private int parsePositiveInt(String raw, int fallback) {
+        try {
+            int value = Integer.parseInt(raw == null ? "" : raw.trim());
+            return value > 0 ? value : fallback;
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     private void requestKlines() {
@@ -424,6 +840,15 @@ public class MarketChartActivity extends AppCompatActivity {
     private void requestKlines(boolean allowCancelRunning, boolean autoRefresh) {
         final String key = buildCacheKey(selectedSymbol, selectedInterval);
         if (autoRefresh && binding.klineChartView.isUserInteracting()) {
+            return;
+        }
+        if (autoRefresh
+                && selectedInterval != null
+                && !selectedInterval.yearAggregate
+                && "1m".equalsIgnoreCase(selectedInterval.apiInterval)
+                && !loadedCandles.isEmpty()
+                && System.currentTimeMillis() - lastMonitorDataAtMs < 65_000L) {
+            updateStateCount();
             return;
         }
 
@@ -1138,6 +1563,7 @@ public class MarketChartActivity extends AppCompatActivity {
             binding.klineChartView.setPositionAnnotations(new ArrayList<>());
             binding.klineChartView.setPendingAnnotations(new ArrayList<>());
             binding.klineChartView.setAggregateCostAnnotation(null);
+            updateChartPositionPanel(new ArrayList<>(), new ArrayList<>());
             return;
         }
 
@@ -1154,6 +1580,7 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.klineChartView.setPositionAnnotations(buildPositionAnnotations(positions, trades));
         binding.klineChartView.setPendingAnnotations(buildPendingAnnotations(pendingOrders, trades));
         binding.klineChartView.setAggregateCostAnnotation(buildAggregateCostAnnotation(positions));
+        updateChartPositionPanel(positions, pendingOrders);
     }
 
     private List<KlineChartView.PriceAnnotation> buildPositionAnnotations(List<PositionItem> positions,
@@ -1585,12 +2012,21 @@ public class MarketChartActivity extends AppCompatActivity {
         styleTabButton(binding.btnIndicatorMacd, showMacd);
         styleTabButton(binding.btnIndicatorStochRsi, showStochRsi);
         styleTabButton(binding.btnIndicatorBoll, showBoll);
+        styleTabButton(binding.btnIndicatorMa, showMa);
+        styleTabButton(binding.btnIndicatorEma, showEma);
+        styleTabButton(binding.btnIndicatorSra, showSra);
+        styleTabButton(binding.btnIndicatorAvl, showAvl);
+        styleTabButton(binding.btnIndicatorRsi, showRsi);
+        styleTabButton(binding.btnIndicatorKdj, showKdj);
     }
 
     private void styleTabButton(Button button, boolean selected) {
         button.setBackgroundColor(Color.TRANSPARENT);
-        button.setTextColor(selected ? Color.parseColor("#E6EDF9") : Color.parseColor("#7F8EA9"));
+        button.setTextColor(selected ? TAB_ACTIVE_COLOR : TAB_INACTIVE_COLOR);
         button.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        button.setPaintFlags(selected
+                ? (button.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG)
+                : (button.getPaintFlags() & ~android.graphics.Paint.UNDERLINE_TEXT_FLAG));
     }
 
     private void normalizeOptionButtons() {
@@ -1598,7 +2034,9 @@ public class MarketChartActivity extends AppCompatActivity {
                 binding.btnInterval1m, binding.btnInterval5m, binding.btnInterval15m, binding.btnInterval30m,
                 binding.btnInterval1h, binding.btnInterval4h, binding.btnInterval1d, binding.btnInterval1w,
                 binding.btnInterval1mo, binding.btnInterval1y,
-                binding.btnIndicatorVolume, binding.btnIndicatorMacd, binding.btnIndicatorStochRsi, binding.btnIndicatorBoll
+                binding.btnIndicatorVolume, binding.btnIndicatorMacd, binding.btnIndicatorStochRsi, binding.btnIndicatorBoll,
+                binding.btnIndicatorMa, binding.btnIndicatorEma, binding.btnIndicatorSra,
+                binding.btnIndicatorAvl, binding.btnIndicatorRsi, binding.btnIndicatorKdj
         };
         for (Button button : buttons) {
             if (button == null) {

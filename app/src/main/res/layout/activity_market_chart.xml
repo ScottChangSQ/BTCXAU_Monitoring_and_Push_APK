@@ -356,8 +356,121 @@
                             android:textAllCaps="false"
                             android:textColor="#7F8EA9"
                             android:textSize="10sp" />
+
+                        <Button
+                            android:id="@+id/btnIndicatorMa"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="MA"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
+
+                        <Button
+                            android:id="@+id/btnIndicatorEma"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="EMA"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
+
+                        <Button
+                            android:id="@+id/btnIndicatorSra"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="SRA"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
+
+                        <Button
+                            android:id="@+id/btnIndicatorAvl"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="AVL"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
+
+                        <Button
+                            android:id="@+id/btnIndicatorRsi"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="RSI"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
+
+                        <Button
+                            android:id="@+id/btnIndicatorKdj"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="@dimen/space_12"
+                            android:text="KDJ"
+                            android:textAllCaps="false"
+                            android:textColor="#7F8EA9"
+                            android:textSize="10sp" />
                     </LinearLayout>
                 </HorizontalScrollView>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardChartPositions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:background="@drawable/bg_chart_position_card"
+                android:orientation="vertical"
+                android:padding="8dp">
+
+                <TextView
+                    android:id="@+id/tvChartPositionTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="当前持仓"
+                    android:textColor="#E6EEF9"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvChartPositionSummary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="等待账户持仓数据..."
+                    android:textColor="#8FA6C7"
+                    android:textSize="11sp" />
+
+                <LinearLayout
+                    android:id="@+id/layoutChartPositionRows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="vertical" />
             </LinearLayout>
 
             <View

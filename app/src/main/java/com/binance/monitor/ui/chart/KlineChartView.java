@@ -110,11 +110,25 @@ public class KlineChartView extends View {
     private double[] macdHist = new double[0];
     private double[] stochK = new double[0];
     private double[] stochD = new double[0];
+    private double[] maLine = new double[0];
+    private double[] emaLine = new double[0];
+    private double[] sraLine = new double[0];
+    private double[] avlLine = new double[0];
+    private double[] rsiLine = new double[0];
+    private double[] kdjK = new double[0];
+    private double[] kdjD = new double[0];
+    private double[] kdjJ = new double[0];
 
     private boolean showVolume = true;
     private boolean showMacd = true;
     private boolean showStochRsi = true;
     private boolean showBoll = true;
+    private boolean showMa = true;
+    private boolean showEma = true;
+    private boolean showSra;
+    private boolean showAvl;
+    private boolean showRsi;
+    private boolean showKdj;
 
     private final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -131,6 +145,12 @@ public class KlineChartView extends View {
     private final Paint macdDeaPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stochKPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stochDPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint maPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint emaPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint sraPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint avlPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint rsiPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint kdjJPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint crossPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint crossLabelBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint crossLabelTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -154,6 +174,23 @@ public class KlineChartView extends View {
     private final Paint aggregateCostTagTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint aggregateCostHintTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint volumeThresholdPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    private int maPeriod = 20;
+    private int emaPeriod = 12;
+    private int sraPeriod = 14;
+    private int avlPeriod = 20;
+    private int rsiPeriod = 14;
+    private int kdjPeriod = 9;
+    private int kdjSmoothK = 3;
+    private int kdjSmoothD = 3;
+    private int bollPeriod = 20;
+    private int bollStdMultiplier = 2;
+    private int macdFastPeriod = 12;
+    private int macdSlowPeriod = 26;
+    private int macdSignalPeriod = 9;
+    private int stochRsiLookback = 14;
+    private int stochRsiSmoothK = 3;
+    private int stochRsiSmoothD = 3;
 
     private final RectF priceRect = new RectF();
     private final RectF volRect = new RectF();
@@ -283,10 +320,22 @@ public class KlineChartView extends View {
         macdDeaPaint.setColor(0xFF8B5CF6);
         stochKPaint.setColor(0xFFF2C94C);
         stochDPaint.setColor(0xFF8B5CF6);
+        maPaint.setColor(0xFF60A5FA);
+        emaPaint.setColor(0xFF34D399);
+        sraPaint.setColor(0xFFF59E0B);
+        avlPaint.setColor(0xFF22D3EE);
+        rsiPaint.setColor(0xFFFFB020);
+        kdjJPaint.setColor(0xFFFF5A5F);
         macdDifPaint.setStrokeWidth(dp(1.4f));
         macdDeaPaint.setStrokeWidth(dp(1.4f));
         stochKPaint.setStrokeWidth(dp(1.3f));
         stochDPaint.setStrokeWidth(dp(1.3f));
+        maPaint.setStrokeWidth(dp(1.2f));
+        emaPaint.setStrokeWidth(dp(1.2f));
+        sraPaint.setStrokeWidth(dp(1.2f));
+        avlPaint.setStrokeWidth(dp(1.2f));
+        rsiPaint.setStrokeWidth(dp(1.3f));
+        kdjJPaint.setStrokeWidth(dp(1.3f));
         crossPaint.setColor(0xFF8FA6C7);
         crossPaint.setStrokeWidth(dp(1f));
         crossLabelBgPaint.setColor(0xFF1D2A3F);
@@ -438,6 +487,61 @@ public class KlineChartView extends View {
         showMacd = macd;
         showStochRsi = stochRsi;
         showBoll = boll;
+        invalidate();
+    }
+
+    public void setExtendedIndicatorsVisible(boolean ma,
+                                             boolean ema,
+                                             boolean sra,
+                                             boolean avl,
+                                             boolean rsi,
+                                             boolean kdj) {
+        showMa = ma;
+        showEma = ema;
+        showSra = sra;
+        showAvl = avl;
+        showRsi = rsi;
+        showKdj = kdj;
+        invalidate();
+    }
+
+    public void setAdvancedIndicatorParams(int maPeriod,
+                                           int emaPeriod,
+                                           int sraPeriod,
+                                           int avlPeriod,
+                                           int rsiPeriod,
+                                           int kdjPeriod,
+                                           int kdjSmoothK,
+                                           int kdjSmoothD) {
+        this.maPeriod = sanitizePeriod(maPeriod, 1, 360, 20);
+        this.emaPeriod = sanitizePeriod(emaPeriod, 1, 360, 12);
+        this.sraPeriod = sanitizePeriod(sraPeriod, 1, 360, 14);
+        this.avlPeriod = sanitizePeriod(avlPeriod, 1, 360, 20);
+        this.rsiPeriod = sanitizePeriod(rsiPeriod, 2, 360, 14);
+        this.kdjPeriod = sanitizePeriod(kdjPeriod, 2, 360, 9);
+        this.kdjSmoothK = sanitizePeriod(kdjSmoothK, 1, 120, 3);
+        this.kdjSmoothD = sanitizePeriod(kdjSmoothD, 1, 120, 3);
+        computeIndicators();
+        invalidate();
+    }
+
+    public void setCoreIndicatorParams(int bollPeriod,
+                                       int bollStdMultiplier,
+                                       int macdFastPeriod,
+                                       int macdSlowPeriod,
+                                       int macdSignalPeriod,
+                                       int stochRsiLookback,
+                                       int stochRsiSmoothK,
+                                       int stochRsiSmoothD) {
+        this.bollPeriod = sanitizePeriod(bollPeriod, 2, 360, 20);
+        this.bollStdMultiplier = sanitizePeriod(bollStdMultiplier, 1, 10, 2);
+        this.macdFastPeriod = sanitizePeriod(macdFastPeriod, 1, 240, 12);
+        this.macdSlowPeriod = sanitizePeriod(macdSlowPeriod, this.macdFastPeriod + 1, 360, 26);
+        this.macdSignalPeriod = sanitizePeriod(macdSignalPeriod, 1, 120, 9);
+        this.stochRsiLookback = sanitizePeriod(stochRsiLookback, 2, 240, 14);
+        this.stochRsiSmoothK = sanitizePeriod(stochRsiSmoothK, 1, 120, 3);
+        this.stochRsiSmoothD = sanitizePeriod(stochRsiSmoothD, 1, 120, 3);
+        computeIndicators();
         invalidate();
     }
 
@@ -638,6 +742,18 @@ public class KlineChartView extends View {
                 min = Math.min(min, bollDn[i]);
                 max = Math.max(max, bollUp[i]);
             }
+            if (showMa && i < maLine.length && !Double.isNaN(maLine[i])) {
+                min = Math.min(min, maLine[i]);
+                max = Math.max(max, maLine[i]);
+            }
+            if (showEma && i < emaLine.length && !Double.isNaN(emaLine[i])) {
+                min = Math.min(min, emaLine[i]);
+                max = Math.max(max, emaLine[i]);
+            }
+            if (showSra && i < sraLine.length && !Double.isNaN(sraLine[i])) {
+                min = Math.min(min, sraLine[i]);
+                max = Math.max(max, sraLine[i]);
+            }
         }
         if (max <= min) {
             max = min + 1d;
@@ -677,14 +793,23 @@ public class KlineChartView extends View {
             drawSeries(canvas, bollUp, start, end, visiblePriceMin, visiblePriceMax, priceRect, bollUpPaint, drawStep);
             drawSeries(canvas, bollDn, start, end, visiblePriceMin, visiblePriceMax, priceRect, bollDnPaint, drawStep);
         }
+        if (showMa) {
+            drawSeries(canvas, maLine, start, end, visiblePriceMin, visiblePriceMax, priceRect, maPaint, drawStep);
+        }
+        if (showEma) {
+            drawSeries(canvas, emaLine, start, end, visiblePriceMin, visiblePriceMax, priceRect, emaPaint, drawStep);
+        }
+        if (showSra) {
+            drawSeries(canvas, sraLine, start, end, visiblePriceMin, visiblePriceMax, priceRect, sraPaint, drawStep);
+        }
         if (showVolume && volRect.height() > 0f) {
             drawVolume(canvas, start, end, infoIndex, drawStep);
         }
         if (showMacd && macdRect.height() > 0f) {
             drawMacd(canvas, start, end, infoIndex, drawStep);
         }
-        if (showStochRsi && stochRect.height() > 0f) {
-            drawStochRsi(canvas, start, end, infoIndex, drawStep);
+        if ((showStochRsi || showRsi || showKdj) && stochRect.height() > 0f) {
+            drawOscillator(canvas, start, end, infoIndex, drawStep);
         }
         if (longPressing) {
             drawCrosshair(canvas, highlightedIndex);
@@ -727,6 +852,9 @@ public class KlineChartView extends View {
         double maxVolume = 1d;
         for (int i = start; i <= end; i++) {
             maxVolume = Math.max(maxVolume, candles.get(i).getVolume());
+            if (showAvl && i < avlLine.length && !Double.isNaN(avlLine[i])) {
+                maxVolume = Math.max(maxVolume, avlLine[i]);
+            }
         }
         float halfBody = Math.max(dp(0.18f), candleWidth / 2f);
         int stride = Math.max(1, step);
@@ -739,10 +867,17 @@ public class KlineChartView extends View {
             Paint paint = candle.getClose() >= candle.getOpen() ? upPaint : downPaint;
             canvas.drawRect(x - halfBody, top, x + halfBody, volRect.bottom, paint);
         }
+        if (showAvl) {
+            drawSeries(canvas, avlLine, start, end, 0d, maxVolume, volRect, avlPaint, stride);
+        }
         canvas.restoreToCount(saveCount);
         canvas.drawLine(volRect.left, volRect.top, volRect.right, volRect.top, axisPaint);
         textPaint.setColor(0xFF8FA6C7);
-        canvas.drawText("VOL: " + formatVolumeNumber(candles.get(infoIndex).getVolume(), false), volRect.left + dp(2f), volRect.top + dp(10f), textPaint);
+        String volText = "VOL: " + formatVolumeNumber(candles.get(infoIndex).getVolume(), false);
+        if (showAvl && infoIndex >= 0 && infoIndex < avlLine.length && !Double.isNaN(avlLine[infoIndex])) {
+            volText += " AVL(" + avlPeriod + "):" + formatVolumeNumber(avlLine[infoIndex], false);
+        }
+        canvas.drawText(volText, volRect.left + dp(2f), volRect.top + dp(10f), textPaint);
         canvas.drawLine(volRect.right, volRect.top, volRect.right, volRect.bottom, axisPaint);
         canvas.drawText(formatVolumeNumber(maxVolume, true), volRect.right + dp(4f), volRect.top + dp(3f), textPaint);
         canvas.drawText("0", volRect.right + dp(4f), volRect.bottom + dp(3f), textPaint);
@@ -798,6 +933,89 @@ public class KlineChartView extends View {
         canvas.drawText("0", stochRect.right + dp(4f), stochRect.bottom + dp(3f), textPaint);
     }
 
+    private void drawOscillator(Canvas canvas, int start, int end, int infoIndex, int step) {
+        double min = 0d;
+        double max = 100d;
+        for (int i = start; i <= end; i++) {
+            if (showStochRsi) {
+                min = Math.min(min, Math.min(valueOrFallback(stochK, i, 50d), valueOrFallback(stochD, i, 50d)));
+                max = Math.max(max, Math.max(valueOrFallback(stochK, i, 50d), valueOrFallback(stochD, i, 50d)));
+            }
+            if (showRsi) {
+                min = Math.min(min, valueOrFallback(rsiLine, i, 50d));
+                max = Math.max(max, valueOrFallback(rsiLine, i, 50d));
+            }
+            if (showKdj) {
+                min = Math.min(min, Math.min(valueOrFallback(kdjK, i, 50d),
+                        Math.min(valueOrFallback(kdjD, i, 50d), valueOrFallback(kdjJ, i, 50d))));
+                max = Math.max(max, Math.max(valueOrFallback(kdjK, i, 50d),
+                        Math.max(valueOrFallback(kdjD, i, 50d), valueOrFallback(kdjJ, i, 50d))));
+            }
+        }
+        if (max <= min) {
+            max = min + 1d;
+        }
+        double pad = (max - min) * 0.08d;
+        double lower = min - pad;
+        double upper = max + pad;
+
+        int stride = Math.max(1, step);
+        if (showStochRsi) {
+            drawSeries(canvas, stochK, start, end, lower, upper, stochRect, stochKPaint, stride);
+            drawSeries(canvas, stochD, start, end, lower, upper, stochRect, stochDPaint, stride);
+        }
+        if (showRsi) {
+            drawSeries(canvas, rsiLine, start, end, lower, upper, stochRect, rsiPaint, stride);
+        }
+        if (showKdj) {
+            drawSeries(canvas, kdjK, start, end, lower, upper, stochRect, stochKPaint, stride);
+            drawSeries(canvas, kdjD, start, end, lower, upper, stochRect, stochDPaint, stride);
+            drawSeries(canvas, kdjJ, start, end, lower, upper, stochRect, kdjJPaint, stride);
+        }
+
+        canvas.drawLine(stochRect.left, stochRect.top, stochRect.right, stochRect.top, gridPaint);
+        canvas.drawLine(stochRect.left, stochRect.bottom, stochRect.right, stochRect.bottom, axisPaint);
+        canvas.drawLine(stochRect.right, stochRect.top, stochRect.right, stochRect.bottom, axisPaint);
+
+        textPaint.setColor(0xFF8FA6C7);
+        canvas.drawText(formatAxisInt(upper), stochRect.right + dp(4f), stochRect.top + dp(3f), textPaint);
+        canvas.drawText(formatAxisInt((upper + lower) * 0.5d),
+                stochRect.right + dp(4f),
+                yFor((upper + lower) * 0.5d, lower, upper, stochRect) + dp(3f),
+                textPaint);
+        canvas.drawText(formatAxisInt(lower), stochRect.right + dp(4f), stochRect.bottom + dp(3f), textPaint);
+        drawOscillatorInfo(canvas, infoIndex);
+    }
+
+    private void drawOscillatorInfo(Canvas canvas, int index) {
+        if (index < 0 || index >= candles.size()) {
+            return;
+        }
+        float y = stochRect.top + dp(10f);
+        float x = stochRect.left + dp(2f);
+        textPaint.setColor(0xFF8FA6C7);
+
+        if (showRsi) {
+            String text = "RSI(" + rsiPeriod + "):" + formatDecimal(valueAt(rsiLine, index));
+            canvas.drawText(text, x, y, textPaint);
+            x += textPaint.measureText(text) + dp(8f);
+        }
+        if (showKdj) {
+            String text = "KDJ(" + kdjPeriod + "," + kdjSmoothK + "," + kdjSmoothD + ")"
+                    + " K:" + formatDecimal(valueAt(kdjK, index))
+                    + " D:" + formatDecimal(valueAt(kdjD, index))
+                    + " J:" + formatDecimal(valueAt(kdjJ, index));
+            canvas.drawText(text, x, y, textPaint);
+            x += textPaint.measureText(text) + dp(8f);
+        }
+        if (showStochRsi) {
+            String text = "STOCHRSI(" + stochRsiLookback + "," + stochRsiSmoothK + "," + stochRsiSmoothD + ")"
+                    + " K:" + formatDecimal(valueAt(stochK, index))
+                    + " D:" + formatDecimal(valueAt(stochD, index));
+            canvas.drawText(text, x, y, textPaint);
+        }
+    }
+
     private void drawGrid(Canvas canvas, RectF rect) {
         for (int i = 0; i <= 4; i++) {
             float y = rect.top + rect.height() * i / 4f;
@@ -840,7 +1058,7 @@ public class KlineChartView extends View {
         }
         float y = priceRect.top + dp(10f);
         textPaint.setColor(0xFF8FA6C7);
-        canvas.drawText("BOLL(20,2)", priceRect.left + dp(2f), y, textPaint);
+        canvas.drawText("BOLL(" + bollPeriod + "," + bollStdMultiplier + ")", priceRect.left + dp(2f), y, textPaint);
         if (index < bollUp.length && !Double.isNaN(bollUp[index])) {
             float x = priceRect.left + dp(58f);
             textPaint.setColor(bollUpPaint.getColor());
@@ -861,7 +1079,8 @@ public class KlineChartView extends View {
         }
         float y = macdRect.top + dp(10f);
         textPaint.setColor(0xFF8FA6C7);
-        String text = "DIF:" + formatDecimal(macdDif[index])
+        String text = "MACD(" + macdFastPeriod + "," + macdSlowPeriod + "," + macdSignalPeriod + ")"
+                + " DIF:" + formatDecimal(macdDif[index])
                 + "  DEA:" + formatDecimal(macdDea[index])
                 + "  MACD:" + formatDecimal(macdHist[index]);
         canvas.drawText(text, macdRect.left + dp(2f), y, textPaint);
@@ -1184,9 +1403,10 @@ public class KlineChartView extends View {
         float pw = 9.36f;
         float vw = showVolume ? 2f : 0f;
         float mw = showMacd ? 2f : 0f;
-        float sw = showStochRsi ? 2f : 0f;
+        boolean oscillatorVisible = showStochRsi || showRsi || showKdj;
+        float sw = oscillatorVisible ? 2f : 0f;
         float gap = dp(10f);
-        int sections = 1 + (showVolume ? 1 : 0) + (showMacd ? 1 : 0) + (showStochRsi ? 1 : 0);
+        int sections = 1 + (showVolume ? 1 : 0) + (showMacd ? 1 : 0) + (oscillatorVisible ? 1 : 0);
         float total = pw + vw + mw + sw;
         float unit = (bottom - top - Math.max(0, sections - 1) * gap) / Math.max(1f, total);
 
@@ -1207,7 +1427,7 @@ public class KlineChartView extends View {
         } else {
             macdRect.setEmpty();
         }
-        if (showStochRsi) {
+        if (oscillatorVisible) {
             cursor += gap;
             stochRect.set(left, cursor, right, cursor + sw * unit);
         } else {
@@ -1225,72 +1445,144 @@ public class KlineChartView extends View {
         macdHist = nanArray(size);
         stochK = nanArray(size);
         stochD = nanArray(size);
+        maLine = nanArray(size);
+        emaLine = nanArray(size);
+        sraLine = nanArray(size);
+        avlLine = nanArray(size);
+        rsiLine = nanArray(size);
+        kdjK = nanArray(size);
+        kdjD = nanArray(size);
+        kdjJ = nanArray(size);
         if (size == 0) return;
 
-        for (int i = 19; i < size; i++) {
+        int bollWindow = Math.max(2, bollPeriod);
+        for (int i = bollWindow - 1; i < size; i++) {
             double sum = 0d;
-            for (int j = i - 19; j <= i; j++) sum += candles.get(j).getClose();
-            double mean = sum / 20d;
+            for (int j = i - (bollWindow - 1); j <= i; j++) sum += candles.get(j).getClose();
+            double mean = sum / bollWindow;
             double var = 0d;
-            for (int j = i - 19; j <= i; j++) {
+            for (int j = i - (bollWindow - 1); j <= i; j++) {
                 double diff = candles.get(j).getClose() - mean;
                 var += diff * diff;
             }
-            double std = Math.sqrt(var / 20d);
+            double std = Math.sqrt(var / bollWindow);
             bollMid[i] = mean;
-            bollUp[i] = mean + 2d * std;
-            bollDn[i] = mean - 2d * std;
+            bollUp[i] = mean + bollStdMultiplier * std;
+            bollDn[i] = mean - bollStdMultiplier * std;
+        }
+
+        for (int i = maPeriod - 1; i < size; i++) {
+            double sum = 0d;
+            for (int j = i - maPeriod + 1; j <= i; j++) {
+                sum += candles.get(j).getClose();
+            }
+            maLine[i] = sum / maPeriod;
+        }
+
+        double ema = candles.get(0).getClose();
+        double emaAlpha = 2d / (emaPeriod + 1d);
+        for (int i = 0; i < size; i++) {
+            double close = candles.get(i).getClose();
+            ema = i == 0 ? close : (ema + emaAlpha * (close - ema));
+            if (i >= emaPeriod - 1) {
+                emaLine[i] = ema;
+            }
+        }
+
+        double sra = candles.get(0).getClose();
+        for (int i = 0; i < size; i++) {
+            double close = candles.get(i).getClose();
+            sra = i == 0 ? close : ((sra * (sraPeriod - 1d)) + close) / sraPeriod;
+            if (i >= sraPeriod - 1) {
+                sraLine[i] = sra;
+            }
+        }
+
+        for (int i = avlPeriod - 1; i < size; i++) {
+            double sum = 0d;
+            for (int j = i - avlPeriod + 1; j <= i; j++) {
+                sum += candles.get(j).getVolume();
+            }
+            avlLine[i] = sum / avlPeriod;
         }
 
         double ema12 = candles.get(0).getClose();
         double ema26 = ema12;
+        double alphaFast = 2d / (macdFastPeriod + 1d);
+        double alphaSlow = 2d / (macdSlowPeriod + 1d);
+        double alphaSignal = 2d / (macdSignalPeriod + 1d);
         double dea = 0d;
         for (int i = 0; i < size; i++) {
             double close = candles.get(i).getClose();
-            ema12 = ema12 + (2d / 13d) * (close - ema12);
-            ema26 = ema26 + (2d / 27d) * (close - ema26);
+            ema12 = ema12 + alphaFast * (close - ema12);
+            ema26 = ema26 + alphaSlow * (close - ema26);
             double dif = ema12 - ema26;
-            dea = dea + (2d / 10d) * (dif - dea);
+            dea = dea + alphaSignal * (dif - dea);
             macdDif[i] = dif;
             macdDea[i] = dea;
             macdHist[i] = (dif - dea) * 2d;
         }
 
-        double[] rsi = nanArray(size);
-        if (size > 15) {
+        if (size > rsiPeriod) {
             double gain = 0d;
             double loss = 0d;
-            for (int i = 1; i <= 14; i++) {
+            for (int i = 1; i <= rsiPeriod; i++) {
                 double diff = candles.get(i).getClose() - candles.get(i - 1).getClose();
                 gain += Math.max(0d, diff);
                 loss += Math.max(0d, -diff);
             }
-            gain /= 14d;
-            loss /= 14d;
-            rsi[14] = loss < 1e-9 ? 100d : 100d - 100d / (1d + gain / loss);
-            for (int i = 15; i < size; i++) {
+            gain /= rsiPeriod;
+            loss /= rsiPeriod;
+            rsiLine[rsiPeriod] = loss < 1e-9 ? 100d : 100d - 100d / (1d + gain / loss);
+            for (int i = rsiPeriod + 1; i < size; i++) {
                 double diff = candles.get(i).getClose() - candles.get(i - 1).getClose();
-                gain = (gain * 13d + Math.max(0d, diff)) / 14d;
-                loss = (loss * 13d + Math.max(0d, -diff)) / 14d;
-                rsi[i] = loss < 1e-9 ? 100d : 100d - 100d / (1d + gain / loss);
+                gain = (gain * (rsiPeriod - 1d) + Math.max(0d, diff)) / rsiPeriod;
+                loss = (loss * (rsiPeriod - 1d) + Math.max(0d, -diff)) / rsiPeriod;
+                rsiLine[i] = loss < 1e-9 ? 100d : 100d - 100d / (1d + gain / loss);
             }
         }
+
+        double prevK = 50d;
+        double prevD = 50d;
+        for (int i = 0; i < size; i++) {
+            if (i < kdjPeriod - 1) {
+                continue;
+            }
+            double highest = -Double.MAX_VALUE;
+            double lowest = Double.MAX_VALUE;
+            for (int j = i - kdjPeriod + 1; j <= i; j++) {
+                CandleEntry item = candles.get(j);
+                highest = Math.max(highest, item.getHigh());
+                lowest = Math.min(lowest, item.getLow());
+            }
+            double close = candles.get(i).getClose();
+            double rsv = Math.abs(highest - lowest) < 1e-9 ? 50d : (close - lowest) * 100d / (highest - lowest);
+            prevK = ((kdjSmoothK - 1d) * prevK + rsv) / kdjSmoothK;
+            prevD = ((kdjSmoothD - 1d) * prevD + prevK) / kdjSmoothD;
+            kdjK[i] = prevK;
+            kdjD[i] = prevD;
+            kdjJ[i] = 3d * prevK - 2d * prevD;
+        }
+
         double[] raw = nanArray(size);
-        for (int i = 27; i < size; i++) {
+        int stochLookback = Math.max(2, stochRsiLookback);
+        int stochSmoothK = Math.max(1, stochRsiSmoothK);
+        int stochSmoothD = Math.max(1, stochRsiSmoothD);
+        for (int i = rsiPeriod + stochLookback - 1; i < size; i++) {
             double min = Double.MAX_VALUE;
             double max = -Double.MAX_VALUE;
-            for (int j = i - 13; j <= i; j++) {
-                if (Double.isNaN(rsi[j])) {
+            for (int j = i - stochLookback + 1; j <= i; j++) {
+                if (Double.isNaN(rsiLine[j])) {
                     min = Double.NaN;
                     break;
                 }
-                min = Math.min(min, rsi[j]);
-                max = Math.max(max, rsi[j]);
+                min = Math.min(min, rsiLine[j]);
+                max = Math.max(max, rsiLine[j]);
             }
             if (Double.isNaN(min)) continue;
-            raw[i] = Math.abs(max - min) < 1e-9 ? 50d : (rsi[i] - min) * 100d / (max - min);
-            stochK[i] = avg(raw, i, 3);
-            stochD[i] = avg(stochK, i, 3);
+            raw[i] = Math.abs(max - min) < 1e-9 ? 50d : (rsiLine[i] - min) * 100d / (max - min);
+            stochK[i] = avg(raw, i, stochSmoothK);
+            stochD[i] = avg(stochK, i, stochSmoothD);
         }
     }
 
@@ -1546,6 +1838,14 @@ public class KlineChartView extends View {
         return values[index];
     }
 
+    private double valueOrFallback(double[] values, int index, double fallback) {
+        double value = valueAt(values, index);
+        if (Double.isNaN(value)) {
+            return fallback;
+        }
+        return value;
+    }
+
     private int indexByOpenTime(long openTime) {
         if (candles.isEmpty()) {
             return -1;
@@ -1565,6 +1865,13 @@ public class KlineChartView extends View {
             }
         }
         return -1;
+    }
+
+    private int sanitizePeriod(int value, int min, int max, int fallback) {
+        if (value <= 0) {
+            return fallback;
+        }
+        return Math.max(min, Math.min(max, value));
     }
 
     private double[] nanArray(int size) {

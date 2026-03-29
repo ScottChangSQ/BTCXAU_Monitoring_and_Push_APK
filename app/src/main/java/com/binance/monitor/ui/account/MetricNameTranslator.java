@@ -25,6 +25,8 @@ public final class MetricNameTranslator {
         NAME_MAP.put("Daily Return", "当日收益率");
         NAME_MAP.put("Total Return", "累计收益率");
         NAME_MAP.put("Position Ratio", "仓位占比");
+        NAME_MAP.put("Leverage", "杠杆");
+        NAME_MAP.put("Margin Level", "保证金水平");
 
         NAME_MAP.put("1D Return", "近1日收益");
         NAME_MAP.put("7D Return", "近7日收益");

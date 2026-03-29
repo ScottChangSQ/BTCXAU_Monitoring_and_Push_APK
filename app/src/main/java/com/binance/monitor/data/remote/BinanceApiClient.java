@@ -13,10 +13,13 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
@@ -30,6 +33,19 @@ import okhttp3.ResponseBody;
 public class BinanceApiClient {
 
     private static final long LATEST_CLOSED_MAX_STALE_MS = 45L * 60L * 1000L;
+    private static final long SHARED_RESPONSE_CACHE_TTL_MS = 8_000L;
+    private static final int SHARED_RESPONSE_CACHE_MAX_SIZE = 120;
+    private static final Map<String, CachedArray> SHARED_RESPONSE_CACHE = new ConcurrentHashMap<>();
+
+    private static final class CachedArray {
+        private final String body;
+        private final long cachedAtMs;
+
+        private CachedArray(String body, long cachedAtMs) {
+            this.body = body == null ? "" : body;
+            this.cachedAtMs = cachedAtMs;
+        }
+    }
 
     private final OkHttpClient client;
 
@@ -243,6 +259,10 @@ public class BinanceApiClient {
     }
 
     private JSONArray requestJsonArray(String url) throws Exception {
+        JSONArray cached = getCachedJsonArray(url);
+        if (cached != null) {
+            return cached;
+        }
         Request request = new Request.Builder()
                 .url(url)
                 .get()
@@ -260,7 +280,46 @@ public class BinanceApiClient {
             if (content == null || content.trim().isEmpty()) {
                 throw new IOException("空响应体");
             }
+            cacheJsonArray(url, content);
             return new JSONArray(content);
+        }
+    }
+
+    private JSONArray getCachedJsonArray(String url) {
+        CachedArray cached = SHARED_RESPONSE_CACHE.get(url);
+        if (cached == null) {
+            return null;
+        }
+        long now = System.currentTimeMillis();
+        if (now - cached.cachedAtMs > SHARED_RESPONSE_CACHE_TTL_MS) {
+            SHARED_RESPONSE_CACHE.remove(url);
+            return null;
+        }
+        try {
+            return new JSONArray(cached.body);
+        } catch (Exception ignored) {
+            SHARED_RESPONSE_CACHE.remove(url);
+            return null;
+        }
+    }
+
+    private void cacheJsonArray(String url, String body) {
+        if (url == null || url.trim().isEmpty() || body == null || body.trim().isEmpty()) {
+            return;
+        }
+        SHARED_RESPONSE_CACHE.put(url, new CachedArray(body, System.currentTimeMillis()));
+        if (SHARED_RESPONSE_CACHE.size() <= SHARED_RESPONSE_CACHE_MAX_SIZE) {
+            return;
+        }
+        int removeCount = SHARED_RESPONSE_CACHE.size() - SHARED_RESPONSE_CACHE_MAX_SIZE;
+        if (removeCount <= 0) {
+            return;
+        }
+        Iterator<String> iterator = SHARED_RESPONSE_CACHE.keySet().iterator();
+        while (iterator.hasNext() && removeCount > 0) {
+            String key = iterator.next();
+            SHARED_RESPONSE_CACHE.remove(key);
+            removeCount--;
         }
     }
 

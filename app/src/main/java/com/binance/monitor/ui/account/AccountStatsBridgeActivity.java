@@ -3,6 +3,7 @@ package com.binance.monitor.ui.account;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.content.SharedPreferences;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -101,6 +102,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final String SORT_PROFIT = "盈利水平";
     private static final long ACCOUNT_REFRESH_MIN_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
     private static final long ACCOUNT_REFRESH_MAX_MS = AppConstants.ACCOUNT_REFRESH_MAX_INTERVAL_MS;
+    private static final int TAB_ACTIVE_COLOR = 0xFF07C160;
+    private static final int TAB_INACTIVE_COLOR = 0xFF7F8EA9;
 
     private static final String PREFS_UI_STATE = "account_stats_ui_state";
     private static final String PREF_RANGE = "pref_range";
@@ -493,43 +496,24 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                   boolean chartSelected,
                                   boolean accountSelected,
                                   boolean settingsSelected) {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
                 binding.tabSettings);
-        binding.tabMarketMonitor.setBackground(marketSelected
-                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
-                : UiPaletteManager.createOutlinedDrawable(this,
-                UiPaletteManager.neutralFill(this),
-                UiPaletteManager.neutralStroke(this)));
-        binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this,
-                marketSelected ? R.color.white : R.color.text_secondary));
+        styleNavTab(binding.tabMarketMonitor, marketSelected);
+        styleNavTab(binding.tabMarketChart, chartSelected);
+        styleNavTab(binding.tabAccountStats, accountSelected);
+        styleNavTab(binding.tabSettings, settingsSelected);
+    }
 
-        binding.tabMarketChart.setBackground(chartSelected
-                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
-                : UiPaletteManager.createOutlinedDrawable(this,
-                UiPaletteManager.neutralFill(this),
-                UiPaletteManager.neutralStroke(this)));
-        binding.tabMarketChart.setTextColor(ContextCompat.getColor(this,
-                chartSelected ? R.color.white : R.color.text_secondary));
-
-        binding.tabAccountStats.setBackground(accountSelected
-                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
-                : UiPaletteManager.createOutlinedDrawable(this,
-                UiPaletteManager.neutralFill(this),
-                UiPaletteManager.neutralStroke(this)));
-        binding.tabAccountStats.setTextColor(ContextCompat.getColor(this,
-                accountSelected ? R.color.white : R.color.text_secondary));
-
-        binding.tabSettings.setBackground(settingsSelected
-                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
-                : UiPaletteManager.createOutlinedDrawable(this,
-                UiPaletteManager.neutralFill(this),
-                UiPaletteManager.neutralStroke(this)));
-        binding.tabSettings.setTextColor(ContextCompat.getColor(this,
-                settingsSelected ? R.color.white : R.color.text_secondary));
+    private void styleNavTab(TextView tab, boolean selected) {
+        if (tab == null) {
+            return;
+        }
+        tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
+        tab.setTextColor(selected ? TAB_ACTIVE_COLOR : TAB_INACTIVE_COLOR);
+        tab.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
     }
 
     private void placeCurveSectionToBottom() {

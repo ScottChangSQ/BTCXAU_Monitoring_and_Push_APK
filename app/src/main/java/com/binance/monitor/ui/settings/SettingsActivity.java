@@ -1,8 +1,10 @@
 package com.binance.monitor.ui.settings;
 
 import android.content.Intent;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.widget.ArrayAdapter;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
@@ -34,6 +36,8 @@ public class SettingsActivity extends AppCompatActivity {
     private ActivitySettingsBinding binding;
     private MainViewModel viewModel;
     private boolean applying;
+    private static final int TAB_ACTIVE_COLOR = 0xFF07C160;
+    private static final int TAB_INACTIVE_COLOR = 0xFF7F8EA9;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -64,21 +68,24 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void updateBottomTabs() {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
                 binding.tabSettings);
-        binding.tabMarketMonitor.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
-        binding.tabMarketChart.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
-        binding.tabAccountStats.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
-        binding.tabSettings.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
+        styleNavTab(binding.tabMarketMonitor, false);
+        styleNavTab(binding.tabMarketChart, false);
+        styleNavTab(binding.tabAccountStats, false);
+        styleNavTab(binding.tabSettings, true);
+    }
 
-        binding.tabMarketMonitor.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-        binding.tabMarketChart.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-        binding.tabAccountStats.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-        binding.tabSettings.setTextColor(ContextCompat.getColor(this, R.color.white));
+    private void styleNavTab(TextView tab, boolean selected) {
+        if (tab == null) {
+            return;
+        }
+        tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
+        tab.setTextColor(selected ? TAB_ACTIVE_COLOR : TAB_INACTIVE_COLOR);
+        tab.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
     }
 
     private void setupPaletteSelector() {

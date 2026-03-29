@@ -22,6 +22,12 @@
 - SharedPreferences 持久化配置
 - 本地文件持久化日志与异常记录
 - 主页面与日志页面
+- 行情图表页新增指标：`MA / EMA / SRA / AVL / RSI / KDJ`
+- 指标按钮支持长按参数设置（周期、平滑参数等）
+- 行情图表页底部新增“当前持仓”模块，并与图表持仓标注共用账户快照数据
+- 底部 Tab 调整为微信风格（选中绿色文字 + 下划线）
+- 账户统计网关补充 MT5 Python 接口字段（杠杆、保证金水平、账户元信息）
+- 监控模块与图表模块通过共享缓存与实时收盘口径减少重复请求
 
 ## 目录说明
 
@@ -55,3 +61,12 @@
 
 - `XAUUSDT` 在 Binance Futures 上可能不可用，项目已将交易对集中定义在 `AppConstants` 中，方便后续替换。
 - 若未授予通知权限或悬浮窗权限，应用会降级运行，不会崩溃。
+
+## 搜索记录（2026-03-29）
+
+- `skills.sh` 检索：`android-design-guidelines`（https://skills.sh/ehmo/platform-design-skills/android-design-guidelines）
+  结论：Tab 与长按交互可按 Android 一致性原则落地，底部导航采用清晰选中态更符合移动端习惯。
+- GitHub 检索：`liihuu/KLineChartAndroid`（https://github.com/liihuu/KLineChartAndroid）
+  结论：K 线常用指标组合包含 `MA/EMA/RSI/KDJ/BOLL/MACD`，本项目图表指标扩展采用同类组合。
+- 官方文档检索：MQL5 Python `history_deals_get`（https://www.mql5.com/en/docs/python_metatrader5/mt5historydealsget_py）
+  结论：账户统计与交易历史相关数据继续以 MetaTrader5 Python 接口为主数据来源。

@@ -660,6 +660,9 @@ def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
     day_return = _safe_div(day_pnl, max(1.0, equity - day_pnl))
     total_return = _safe_div(total_pnl, max(1.0, balance - total_pnl))
     position_ratio = _safe_div(market_value, max(1.0, equity))
+    leverage = int(getattr(account, "leverage", 0) or 0)
+    margin_level = float(getattr(account, "margin_level", 0.0) or 0.0)
+    margin_level_text = "--" if not math.isfinite(margin_level) else f"{margin_level:.2f}%"
 
     return [
         {"name": "Total Asset", "value": _fmt_usd(total_asset)},
@@ -673,6 +676,8 @@ def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
         {"name": "Daily Return", "value": _fmt_pct(day_return)},
         {"name": "Total Return", "value": _fmt_pct(total_return)},
         {"name": "Position Ratio", "value": _fmt_pct(position_ratio)},
+        {"name": "Leverage", "value": f"{leverage}x" if leverage > 0 else "--"},
+        {"name": "Margin Level", "value": margin_level_text},
     ]
 
 
@@ -799,6 +804,10 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
                     "server": str(getattr(account, "server", SERVER)),
                     "source": "MT5 Python Pull",
                     "updatedAt": _now_ms(),
+                    "currency": str(getattr(account, "currency", "")),
+                    "leverage": int(getattr(account, "leverage", 0) or 0),
+                    "name": str(getattr(account, "name", "")),
+                    "company": str(getattr(account, "company", "")),
                     "range": range_key,
                     "tradeCount": len(trades),
                     "positionCount": len(positions),
