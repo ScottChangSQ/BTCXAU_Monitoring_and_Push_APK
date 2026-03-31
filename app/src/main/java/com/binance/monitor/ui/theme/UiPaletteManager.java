@@ -128,7 +128,7 @@ public final class UiPaletteManager {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{palette.card, palette.control});
-        drawable.setCornerRadius(dp(context, 12));
+        drawable.setCornerRadius(dp(context, 2));
         drawable.setStroke(dp(context, 1), palette.stroke);
         return drawable;
     }
@@ -136,7 +136,7 @@ public final class UiPaletteManager {
     public static GradientDrawable createFilledDrawable(Context context, int fillColor) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setCornerRadius(dp(context, 10));
+        drawable.setCornerRadius(dp(context, 2));
         drawable.setColor(fillColor);
         drawable.setStroke(dp(context, 1), fillColor);
         return drawable;
@@ -145,10 +145,34 @@ public final class UiPaletteManager {
     public static GradientDrawable createOutlinedDrawable(Context context, int fillColor, int strokeColor) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setCornerRadius(dp(context, 10));
+        drawable.setCornerRadius(dp(context, 2));
         drawable.setColor(fillColor);
         drawable.setStroke(dp(context, 1), strokeColor);
         return drawable;
+    }
+
+    private static GradientDrawable createRectDrawable(Context context,
+                                                       int fillColor,
+                                                       int strokeColor,
+                                                       int cornerDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.RECTANGLE);
+        drawable.setCornerRadius(dp(context, cornerDp));
+        drawable.setColor(fillColor);
+        drawable.setStroke(dp(context, 1), strokeColor);
+        return drawable;
+    }
+
+    public static GradientDrawable createListRowBackground(Context context, int fillColor, int strokeColor) {
+        return createRectDrawable(context, fillColor, strokeColor, 0);
+    }
+
+    public static GradientDrawable createSectionBackground(Context context, int fillColor, int strokeColor) {
+        return createRectDrawable(context, fillColor, strokeColor, 0);
+    }
+
+    public static GradientDrawable createThemeItemDrawable(Context context, int fillColor, int strokeColor) {
+        return createRectDrawable(context, fillColor, strokeColor, 0);
     }
 
     public static void applyPageTheme(View root, Palette palette) {
@@ -184,8 +208,10 @@ public final class UiPaletteManager {
         Context context = view.getContext();
         if (view instanceof MaterialCardView) {
             MaterialCardView card = (MaterialCardView) view;
-            card.setCardBackgroundColor(palette.card);
-            card.setStrokeColor(palette.stroke);
+            card.setRadius(0f);
+            card.setCardElevation(0f);
+            card.setStrokeWidth(0);
+            card.setCardBackgroundColor(palette.surfaceEnd);
         } else if (view instanceof TextInputLayout) {
             TextInputLayout inputLayout = (TextInputLayout) view;
             inputLayout.setBoxBackgroundColor(palette.control);

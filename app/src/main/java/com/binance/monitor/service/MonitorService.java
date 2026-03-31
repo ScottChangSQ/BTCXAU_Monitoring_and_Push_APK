@@ -183,7 +183,8 @@ public class MonitorService extends Service {
             public void onSocketStateChanged(String symbol, boolean connected, int reconnectAttempt, String message) {
                 mainHandler.post(() -> {
                     socketStates.put(symbol, connected);
-                    reconnectCounts.put(symbol, reconnectAttempt);
+                    reconnectCounts.put(symbol,
+                            ConnectionStatusResolver.normalizeReconnectAttempt(connected, reconnectAttempt));
                     updateConnectionStatus();
                 });
             }
@@ -368,24 +369,18 @@ public class MonitorService extends Service {
     }
 
     private void updateConnectionStatus() {
-        int connectedCount = 0;
-        int maxReconnect = 0;
-        for (String symbol : AppConstants.MONITOR_SYMBOLS) {
-            if (Boolean.TRUE.equals(socketStates.get(symbol))) {
-                connectedCount++;
-            }
-            maxReconnect = Math.max(maxReconnect, reconnectCounts.getOrDefault(symbol, 0));
-        }
-        String status;
-        if (connectedCount == AppConstants.MONITOR_SYMBOLS.size()) {
-            status = getString(R.string.connection_connected);
-        } else if (connectedCount > 0) {
-            status = getString(R.string.connection_partial) + " " + connectedCount + "/" + AppConstants.MONITOR_SYMBOLS.size();
-        } else if (maxReconnect > 0) {
-            status = "重连中(" + maxReconnect + "/" + AppConstants.MAX_RECONNECT_ATTEMPTS + ")";
-        } else {
-            status = getString(R.string.connection_connecting);
-        }
+        String status = ConnectionStatusResolver.resolveStatus(
+                AppConstants.MONITOR_SYMBOLS,
+                socketStates,
+                reconnectCounts,
+                lastKlineTickAt,
+                System.currentTimeMillis(),
+                AppConstants.SOCKET_STALE_TIMEOUT_MS,
+                AppConstants.MAX_RECONNECT_ATTEMPTS,
+                getString(R.string.connection_connected),
+                getString(R.string.connection_partial),
+                getString(R.string.connection_connecting)
+        );
         repository.setConnectionStatus(status);
         refreshForegroundState();
         requestFloatingWindowRefresh(true);

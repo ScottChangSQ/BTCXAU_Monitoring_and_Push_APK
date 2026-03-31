@@ -319,7 +319,7 @@ def _deal_profit(deal) -> float:
     )
 
 
-def _build_curve(range_key: str) -> List[Dict]:
+def _build_curve(range_key: str, current_positions: Optional[List[Dict]] = None) -> List[Dict]:
     now = datetime.now(timezone.utc)
     from_time = now - timedelta(hours=_range_hours(range_key))
     deals = mt5.history_deals_get(from_time, now) or []
@@ -327,26 +327,210 @@ def _build_curve(range_key: str) -> List[Dict]:
     if account is None:
         return []
 
-    current_balance = float(account.balance)
-    current_equity = float(account.equity)
-    realized = sum(_deal_profit(deal) for deal in deals)
+    current_balance = float(getattr(account, "balance", 0.0))
+    current_equity = float(getattr(account, "equity", 0.0))
+    realized = 0.0
+    deal_history: List[Dict[str, Any]] = []
+    for deal in deals:
+        profit = float(getattr(deal, "profit", 0.0))
+        commission = float(getattr(deal, "commission", 0.0))
+        swap = float(getattr(deal, "swap", 0.0))
+        realized += profit + commission + swap
+        deal_history.append({
+            "timestamp": int(getattr(deal, "time", 0)) * 1000,
+            "price": float(getattr(deal, "price", 0.0)),
+            "profit": profit,
+            "commission": commission,
+            "swap": swap,
+            "entry": int(getattr(deal, "entry", 0)),
+            "deal_type": int(getattr(deal, "type", -1)),
+            "volume": abs(float(getattr(deal, "volume", 0.0))),
+            "symbol": str(getattr(deal, "symbol", "") or ""),
+            "position_id": int(getattr(deal, "position_id", 0)),
+        })
+
     start_balance = current_balance - realized
+    positions = current_positions or _map_positions()
+    contract_cache: Dict[str, float] = {}
+    contract_size_fn = lambda symbol: _contract_size_for_symbol(symbol, contract_cache)
+    return _replay_curve_from_history(
+        deal_history=deal_history,
+        start_balance=start_balance,
+        open_positions=positions,
+        current_balance=current_balance,
+        current_equity=current_equity,
+        contract_size_fn=contract_size_fn,
+        now_ms=_now_ms(),
+    )
 
-    points = []
-    running = start_balance
-    deals_sorted = sorted(deals, key=lambda x: int(getattr(x, "time", 0)))
-    if not deals_sorted:
-        ts = _now_ms()
-        return [{"timestamp": ts, "equity": current_equity, "balance": current_balance}]
 
-    first_ts = int(getattr(deals_sorted[0], "time", int(now.timestamp()))) * 1000
-    points.append({"timestamp": first_ts, "equity": running, "balance": running})
-    for deal in deals_sorted:
-        running += _deal_profit(deal)
-        ts = int(getattr(deal, "time", int(now.timestamp()))) * 1000
-        points.append({"timestamp": ts, "equity": running, "balance": running})
+def _contract_size_for_symbol(symbol: str, cache: Dict[str, float]) -> float:
+    if not symbol:
+        return 1.0
+    cached = cache.get(symbol)
+    if cached is not None:
+        return cached
+    if mt5 is None:
+        cache[symbol] = 1.0
+        return 1.0
+    size = 1.0
+    sinfo = mt5.symbol_info(symbol)
+    if sinfo is not None and float(getattr(sinfo, "trade_contract_size", 0.0) or 0.0) > 0:
+        size = float(getattr(sinfo, "trade_contract_size", 1.0))
+    cache[symbol] = size
+    return size
 
-    points.append({"timestamp": _now_ms(), "equity": current_equity, "balance": current_balance})
+
+def _curve_point(timestamp: int, equity: float, balance: float) -> Dict[str, float]:
+    return {"timestamp": int(timestamp), "equity": float(equity), "balance": float(balance)}
+
+
+def _add_curve_exposure(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    symbol: str,
+    side: str,
+    volume: float,
+    price: float,
+    contract_size: float,
+) -> None:
+    if not symbol or volume <= 0.0 or price <= 0.0 or contract_size <= 0.0:
+        return
+    key = (symbol, side)
+    state = exposures.setdefault(key, {"volume": 0.0, "open_notional": 0.0, "contract_size": contract_size})
+    state["volume"] += volume
+    state["open_notional"] += volume * price * contract_size
+    state["contract_size"] = contract_size
+
+
+def _remove_curve_exposure(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    symbol: str,
+    side: str,
+    volume: float,
+) -> None:
+    if not symbol or volume <= 0.0:
+        return
+    key = (symbol, side)
+    state = exposures.get(key)
+    if not state:
+        return
+    contract_size = state.get("contract_size", 1.0)
+    current_volume = state.get("volume", 0.0)
+    if current_volume <= 0.0:
+        exposures.pop(key, None)
+        return
+    remove_volume = min(volume, current_volume)
+    avg_open_price = state.get("open_notional", 0.0) / max(current_volume * contract_size, 1e-9)
+    reduction = avg_open_price * remove_volume * contract_size
+    state["volume"] = max(0.0, current_volume - remove_volume)
+    state["open_notional"] = max(0.0, state.get("open_notional", 0.0) - reduction)
+    if state["volume"] <= 1e-9:
+        exposures.pop(key, None)
+
+
+def _calculate_curve_floating(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    last_price_by_symbol: Dict[str, float],
+) -> float:
+    # 计算每个持仓按照最新价格的浮动盈亏，缺少价格时就跳过
+    total = 0.0
+    for (symbol, side), state in exposures.items():
+        volume = state.get("volume", 0.0)
+        contract_size = state.get("contract_size", 1.0)
+        if volume <= 0.0 or contract_size <= 0.0:
+            continue
+        price = last_price_by_symbol.get(symbol, 0.0)
+        if price <= 0.0:
+            continue
+        avg_price = state.get("open_notional", 0.0) / max(volume * contract_size, 1e-9)
+        direction = 1.0 if side == "Buy" else -1.0
+        total += (price - avg_price) * direction * volume * contract_size
+    return total
+
+
+def _inject_positions_into_exposures(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    positions: List[Dict[str, Any]],
+    open_position_ids: set,
+    contract_size_fn,
+    last_price_by_symbol: Dict[str, float],
+) -> None:
+    # 把当前未平仓持仓注入到曝光映射里，避免与本窗口内开仓的重复叠加
+    for position in positions or []:
+        ticket = int(position.get("positionTicket", 0))
+        if ticket > 0 and ticket in open_position_ids:
+            continue
+        symbol = str(position.get("code") or position.get("productName") or "").strip()
+        if not symbol:
+            continue
+        side = str(position.get("side") or "Buy")
+        volume = float(position.get("quantity", 0.0))
+        if volume <= 0.0:
+            continue
+        open_price = float(position.get("costPrice", 0.0))
+        contract_size = contract_size_fn(symbol)
+        latest_price = float(position.get("latestPrice", 0.0))
+        if open_price <= 0.0 and latest_price > 0.0:
+            open_price = latest_price
+        _add_curve_exposure(exposures, symbol, side, volume, open_price, contract_size)
+        if latest_price > 0.0:
+            last_price_by_symbol.setdefault(symbol, latest_price)
+
+
+def _replay_curve_from_history(
+    deal_history: List[Dict[str, Any]],
+    start_balance: float,
+    open_positions: List[Dict[str, Any]],
+    current_balance: float,
+    current_equity: float,
+    contract_size_fn,
+    now_ms: int,
+) -> List[Dict[str, float]]:
+    # 以时间序列方式重放成交和持仓，生成 equity/balance 分离的曲线点
+    if not deal_history:
+        return [_curve_point(now_ms, current_equity, current_balance)]
+
+    exposures: Dict[Tuple[str, str], Dict[str, float]] = {}
+    last_price_by_symbol: Dict[str, float] = {}
+    open_position_ids = {
+        int(deal.get("position_id", 0)) for deal in deal_history if _is_entry_open(int(deal.get("entry", 0)))
+    }
+    _inject_positions_into_exposures(exposures, open_positions, open_position_ids, contract_size_fn, last_price_by_symbol)
+
+    sorted_deals = sorted(deal_history, key=lambda item: int(item.get("timestamp", 0)))
+    running_balance = float(start_balance)
+    points: List[Dict[str, float]] = []
+    first_ts = max(int(sorted_deals[0].get("timestamp", 0)), 0)
+    floating = _calculate_curve_floating(exposures, last_price_by_symbol)
+    points.append(_curve_point(first_ts, running_balance + floating, running_balance))
+
+    for deal in sorted_deals:
+        timestamp = int(deal.get("timestamp", 0))
+        symbol = str(deal.get("symbol", "") or "")
+        price = float(deal.get("price", 0.0))
+        if symbol and price > 0.0:
+            last_price_by_symbol[symbol] = price
+
+        entry = int(deal.get("entry", 0))
+        deal_type = int(deal.get("deal_type", -1))
+        volume = abs(float(deal.get("volume", 0.0)))
+        direction = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
+
+        if _is_entry_close(entry):
+            _remove_curve_exposure(exposures, symbol, direction, volume)
+        if _is_entry_open(entry):
+            contract_size = contract_size_fn(symbol)
+            _add_curve_exposure(exposures, symbol, direction, volume, price, contract_size)
+
+        running_balance += (
+            float(deal.get("profit", 0.0))
+            + float(deal.get("commission", 0.0))
+            + float(deal.get("swap", 0.0))
+        )
+        floating = _calculate_curve_floating(exposures, last_price_by_symbol)
+        points.append(_curve_point(timestamp, running_balance + floating, running_balance))
+
+    points.append(_curve_point(now_ms, current_equity, current_balance))
     return points
 
 
@@ -798,8 +982,8 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
             account = mt5.account_info()
             if account is None:
                 raise RuntimeError("account_info is None")
-            points = _build_curve(range_key)
             positions = _map_positions()
+            points = _build_curve(range_key, positions)
             pending_orders = _map_pending_orders()
             trades = _map_trades(range_key)
             overview = _build_overview(positions, trades)

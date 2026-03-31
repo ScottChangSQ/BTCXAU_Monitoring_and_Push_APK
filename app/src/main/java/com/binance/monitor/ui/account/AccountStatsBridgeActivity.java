@@ -7,6 +7,9 @@ package com.binance.monitor.ui.account;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
@@ -73,6 +76,7 @@ import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.ui.widget.TradeScrollBarView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
+import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.text.SimpleDateFormat;
@@ -161,7 +165,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private Mt5BridgeGatewayClient gatewayClient;
     private AccountStorageRepository accountStorageRepository;
     private AccountMetricAdapter overviewAdapter;
-    private StatsMetricAdapter indicatorAdapter;
+    private AccountMetricAdapter indicatorAdapter;
     private PositionAggregateAdapter positionAggregateAdapter;
     private PositionAdapterV2 positionAdapter;
     private PendingOrderAdapter pendingOrderAdapter;
@@ -202,9 +206,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private List<TradeRecordItem> baseTrades = new ArrayList<>();
     private List<CurvePoint> allCurvePoints = new ArrayList<>();
     private List<CurvePoint> displayedCurvePoints = new ArrayList<>();
+    private List<CurveAnalyticsHelper.DrawdownPoint> displayedDrawdownPoints = new ArrayList<>();
+    private List<CurveAnalyticsHelper.DailyReturnPoint> displayedDailyReturnPoints = new ArrayList<>();
     private List<AccountMetric> latestOverviewMetrics = new ArrayList<>();
     private String defaultCurveMeta = "--";
     private double curveBaseBalance = ACCOUNT_INITIAL_BALANCE;
+    private boolean syncingCurveHighlight;
 
     private String connectedAccount = ACCOUNT;
     private String connectedAccountName = ACCOUNT;
@@ -271,7 +278,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         ioExecutor = Executors.newSingleThreadExecutor();
 
         overviewAdapter = new AccountMetricAdapter();
-        indicatorAdapter = new StatsMetricAdapter();
+        indicatorAdapter = new AccountMetricAdapter();
         positionAggregateAdapter = new PositionAggregateAdapter();
         positionAdapter = new PositionAdapterV2();
         pendingOrderAdapter = new PendingOrderAdapter();
@@ -707,7 +714,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.recyclerTrades.setAdapter(tradeAdapter);
         configureTradeScrollHandle();
 
-        binding.recyclerStats.setLayoutManager(new GridLayoutManager(this, 2));
+        binding.recyclerStats.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerStats.setAdapter(statsAdapter);
     }
 
@@ -1093,19 +1100,34 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void setupCurveInteraction() {
         binding.equityCurveView.setOnPointHighlightListener(point -> {
-            if (point == null) {
-                binding.tvCurveMeta.setText(defaultCurveMeta);
+            if (syncingCurveHighlight) {
                 return;
             }
-            double pct = (point.getBalance() - curveBaseBalance) / Math.max(1e-9, curveBaseBalance) * 100d;
-            String detail = String.format(Locale.getDefault(),
-                    "时间 %s | 净值 $%s | 结余 $%s | 收益 %+.2f%% | 差额 %s",
-                    FormatUtils.formatDateTime(point.getTimestamp()),
-                    FormatUtils.formatPrice(point.getEquity()),
-                    FormatUtils.formatPrice(point.getBalance()),
-                    pct,
-                    signedMoney(point.getEquity() - point.getBalance()));
-            binding.tvCurveMeta.setText(detail);
+            if (point == null) {
+                clearSharedCurveHighlight();
+                return;
+            }
+            applySharedCurveHighlight(point.getTimestamp());
+        });
+        binding.drawdownChartView.setOnTimeHighlightListener(timestamp -> {
+            if (syncingCurveHighlight) {
+                return;
+            }
+            if (timestamp == null) {
+                clearSharedCurveHighlight();
+                return;
+            }
+            applySharedCurveHighlight(timestamp);
+        });
+        binding.dailyReturnChartView.setOnTimeHighlightListener(timestamp -> {
+            if (syncingCurveHighlight) {
+                return;
+            }
+            if (timestamp == null) {
+                clearSharedCurveHighlight();
+                return;
+            }
+            applySharedCurveHighlight(timestamp);
         });
     }
 
@@ -1172,6 +1194,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.npManualMonth.setValue(chosen.get(Calendar.MONTH) + 1);
         updateManualPickerDayRange();
         binding.npManualDay.setValue(chosen.get(Calendar.DAY_OF_MONTH));
+        applyPickerPanelStyle(binding.npManualYear, binding.npManualMonth, binding.npManualDay);
 
         binding.layoutManualDatePickerPanel.setVisibility(View.VISIBLE);
     }
@@ -1252,6 +1275,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         binding.npReturnMonth.setWrapSelectorWheel(false);
         applyMonthPickerRange(binding.npReturnMonth, returnPickerYearMonthMap.get(year), month);
+        applyPickerPanelStyle(binding.npReturnYear, binding.npReturnMonth);
         binding.layoutReturnPeriodPickerPanel.setVisibility(View.VISIBLE);
     }
 
@@ -1263,6 +1287,51 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         applyMonthPickerRange(binding.npReturnMonth,
                 returnPickerYearMonthMap.get(selectedYear),
                 binding.npReturnMonth.getValue());
+        applyPickerPanelStyle(binding.npReturnYear, binding.npReturnMonth);
+    }
+
+    // 统一提升日期选择器的文字和分隔线可见性。
+    private void applyPickerPanelStyle(NumberPicker... pickers) {
+        int textColor = ContextCompat.getColor(this, R.color.text_primary);
+        int dividerColor = ContextCompat.getColor(this, R.color.stroke_card);
+        for (NumberPicker picker : pickers) {
+            applyNumberPickerStyle(picker, textColor, dividerColor);
+        }
+    }
+
+    // 通过子控件和反射同步 NumberPicker 颜色，解决深色界面数字发灰的问题。
+    private void applyNumberPickerStyle(@Nullable NumberPicker picker, int textColor, int dividerColor) {
+        if (picker == null) {
+            return;
+        }
+        picker.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
+        for (int i = 0; i < picker.getChildCount(); i++) {
+            View child = picker.getChildAt(i);
+            if (child instanceof EditText) {
+                EditText editText = (EditText) child;
+                editText.setTextColor(textColor);
+                editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+            }
+        }
+        try {
+            java.lang.reflect.Field selectorWheelPaintField =
+                    NumberPicker.class.getDeclaredField("mSelectorWheelPaint");
+            selectorWheelPaintField.setAccessible(true);
+            Paint paint = (Paint) selectorWheelPaintField.get(picker);
+            if (paint != null) {
+                paint.setColor(textColor);
+                paint.setTextSize(dpToPx(18));
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            java.lang.reflect.Field selectionDividerField =
+                    NumberPicker.class.getDeclaredField("mSelectionDivider");
+            selectionDividerField.setAccessible(true);
+            selectionDividerField.set(picker, new android.graphics.drawable.ColorDrawable(dividerColor));
+        } catch (Exception ignored) {
+        }
+        picker.invalidate();
     }
 
     private void hideReturnPeriodPickerPanel() {
@@ -2706,6 +2775,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         statsAdapter.submitList(buildTradeStatsMetrics(baseTrades, allCurvePoints));
         List<TradePnlBarChartView.Entry> entries = buildTradePnlChartEntries(baseTrades, tradePnlSideMode);
         binding.tradePnlBarChart.setEntries(entries);
+        List<TradeRecordItem> scopedTrades = filterTradesBySideMode(baseTrades, tradePnlSideMode);
+        binding.tradeDistributionScatterView.setPoints(
+                CurveAnalyticsHelper.buildTradeScatterPoints(scopedTrades, allCurvePoints));
+        binding.holdingDurationDistributionView.setBuckets(
+                CurveAnalyticsHelper.buildHoldingDurationDistribution(scopedTrades));
 
         double totalPnl = 0d;
         for (TradePnlBarChartView.Entry entry : entries) {
@@ -2919,6 +2993,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return side.contains("sell") || side.contains("空") || side.contains("卖");
     }
 
+    private List<TradeRecordItem> filterTradesBySideMode(List<TradeRecordItem> trades, TradePnlSideMode sideMode) {
+        List<TradeRecordItem> result = new ArrayList<>();
+        if (trades == null || trades.isEmpty()) {
+            return result;
+        }
+        for (TradeRecordItem item : trades) {
+            if (item != null && matchesSideMode(item, sideMode)) {
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
     private long resolveOpenTime(TradeRecordItem item) {
         long open = item.getOpenTime();
         return open > 0L ? open : item.getTimestamp();
@@ -3111,66 +3198,177 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderCurveWithIndicators(List<CurvePoint> points) {
-        DrawdownSegment drawdownSegment = resolveMaxDrawdownSegment(points);
+        CurveAnalyticsHelper.DrawdownSegment drawdownSegment = CurveAnalyticsHelper.resolveMaxDrawdownSegment(points);
         curveBaseBalance = resolveCurvePercentBase(points);
         binding.equityCurveView.setBaseBalance(curveBaseBalance);
+        long viewportStartTs = points != null && !points.isEmpty() ? points.get(0).getTimestamp() : 0L;
+        long viewportEndTs = points != null && points.size() > 1
+                ? points.get(points.size() - 1).getTimestamp()
+                : viewportStartTs + 1L;
         if (drawdownSegment == null) {
             binding.equityCurveView.setDrawdownHighlight(0L, 0L, 0d, 0d);
         } else {
             binding.equityCurveView.setDrawdownHighlight(
-                    drawdownSegment.peakTimestamp,
-                    drawdownSegment.valleyTimestamp,
-                    drawdownSegment.peakBalance,
-                    drawdownSegment.valleyBalance
+                    drawdownSegment.getPeakTimestamp(),
+                    drawdownSegment.getValleyTimestamp(),
+                    drawdownSegment.getPeakEquity(),
+                    drawdownSegment.getValleyEquity()
             );
         }
         binding.equityCurveView.setPoints(points);
+        displayedDrawdownPoints = CurveAnalyticsHelper.buildDrawdownSeries(points);
+        displayedDailyReturnPoints = CurveAnalyticsHelper.buildDailyReturnSeries(points);
+        binding.drawdownChartView.setViewport(viewportStartTs, viewportEndTs);
+        binding.drawdownChartView.setPoints(displayedDrawdownPoints);
+        binding.dailyReturnChartView.setViewport(viewportStartTs, viewportEndTs);
+        binding.dailyReturnChartView.setPoints(displayedDailyReturnPoints);
         defaultCurveMeta = buildCurveMeta(points, drawdownSegment);
         binding.tvCurveMeta.setText(defaultCurveMeta);
+        clearSharedCurveHighlight();
         indicatorAdapter.submitList(buildCurveIndicators(points));
+    }
+
+    // 把任一子图的时间点同步成三联图共享十字光标。
+    private void applySharedCurveHighlight(long timestamp) {
+        CurvePoint point = findNearestCurvePoint(timestamp);
+        if (point == null) {
+            clearSharedCurveHighlight();
+            return;
+        }
+        CurveAnalyticsHelper.DrawdownPoint drawdownPoint = findNearestDrawdownPoint(point.getTimestamp());
+        CurveAnalyticsHelper.DailyReturnPoint dailyReturnPoint = findNearestDailyReturnPoint(point.getTimestamp());
+        List<String> extraLines = new ArrayList<>();
+        extraLines.add("回撤 " + formatPercentValue(drawdownPoint == null ? null : drawdownPoint.getDrawdownRate(), false));
+        extraLines.add("日收益 " + formatPercentValue(dailyReturnPoint == null ? null : dailyReturnPoint.getReturnRate(), true));
+        syncingCurveHighlight = true;
+        binding.equityCurveView.setTooltipExtraLines(extraLines);
+        binding.equityCurveView.syncHighlightTimestamp(point.getTimestamp());
+        binding.drawdownChartView.syncHighlightTimestamp(point.getTimestamp());
+        binding.dailyReturnChartView.syncHighlightTimestamp(point.getTimestamp());
+        syncingCurveHighlight = false;
+    }
+
+    // 清除三联图共享十字光标和附带弹窗。
+    private void clearSharedCurveHighlight() {
+        syncingCurveHighlight = true;
+        binding.equityCurveView.setTooltipExtraLines(null);
+        binding.equityCurveView.clearSyncedHighlight();
+        binding.drawdownChartView.clearSyncedHighlight();
+        binding.dailyReturnChartView.clearSyncedHighlight();
+        binding.tvCurveMeta.setText(defaultCurveMeta);
+        syncingCurveHighlight = false;
+    }
+
+    // 找到当前主图里离目标时间最近的点。
+    @Nullable
+    private CurvePoint findNearestCurvePoint(long timestamp) {
+        if (displayedCurvePoints == null || displayedCurvePoints.isEmpty()) {
+            return null;
+        }
+        CurvePoint bestPoint = displayedCurvePoints.get(0);
+        long bestDistance = Math.abs(bestPoint.getTimestamp() - timestamp);
+        for (CurvePoint point : displayedCurvePoints) {
+            long distance = Math.abs(point.getTimestamp() - timestamp);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestPoint = point;
+            }
+        }
+        return bestPoint;
+    }
+
+    // 找到离目标时间最近的回撤点。
+    @Nullable
+    private CurveAnalyticsHelper.DrawdownPoint findNearestDrawdownPoint(long timestamp) {
+        if (displayedDrawdownPoints == null || displayedDrawdownPoints.isEmpty()) {
+            return null;
+        }
+        CurveAnalyticsHelper.DrawdownPoint bestPoint = displayedDrawdownPoints.get(0);
+        long bestDistance = Math.abs(bestPoint.getTimestamp() - timestamp);
+        for (CurveAnalyticsHelper.DrawdownPoint point : displayedDrawdownPoints) {
+            long distance = Math.abs(point.getTimestamp() - timestamp);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestPoint = point;
+            }
+        }
+        return bestPoint;
+    }
+
+    // 找到离目标时间最近的日收益点。
+    @Nullable
+    private CurveAnalyticsHelper.DailyReturnPoint findNearestDailyReturnPoint(long timestamp) {
+        if (displayedDailyReturnPoints == null || displayedDailyReturnPoints.isEmpty()) {
+            return null;
+        }
+        CurveAnalyticsHelper.DailyReturnPoint bestPoint = displayedDailyReturnPoints.get(0);
+        long bestDistance = Math.abs(bestPoint.getTimestamp() - timestamp);
+        for (CurveAnalyticsHelper.DailyReturnPoint point : displayedDailyReturnPoints) {
+            long distance = Math.abs(point.getTimestamp() - timestamp);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestPoint = point;
+            }
+        }
+        return bestPoint;
+    }
+
+    // 统一格式化附图百分比，缺数据时用 --。
+    private String formatPercentValue(@Nullable Double value, boolean alwaysShowSign) {
+        if (value == null) {
+            return "--";
+        }
+        if (alwaysShowSign) {
+            return String.format(Locale.getDefault(), "%+.2f%%", value * 100d);
+        }
+        return String.format(Locale.getDefault(), "%.2f%%", value * 100d);
     }
 
     private double resolveCurvePercentBase(List<CurvePoint> points) {
         if (points != null && !points.isEmpty()) {
-            double firstBalance = points.get(0).getBalance();
-            if (firstBalance > 0d) {
-                return Math.max(1e-9, firstBalance);
+            double firstEquity = points.get(0).getEquity();
+            if (firstEquity > 0d) {
+                return Math.max(1e-9, firstEquity);
             }
         }
         if (allCurvePoints != null && !allCurvePoints.isEmpty()) {
-            double allFirstBalance = allCurvePoints.get(0).getBalance();
-            if (allFirstBalance > 0d) {
-                return Math.max(1e-9, allFirstBalance);
+            double firstEquity = allCurvePoints.get(0).getEquity();
+            if (firstEquity > 0d) {
+                return Math.max(1e-9, firstEquity);
             }
         }
         return Math.max(1e-9, ACCOUNT_INITIAL_BALANCE);
     }
 
-    private String buildCurveMeta(List<CurvePoint> points, @Nullable DrawdownSegment drawdownSegment) {
+    private String buildCurveMeta(List<CurvePoint> points,
+                                  @Nullable CurveAnalyticsHelper.DrawdownSegment drawdownSegment) {
         if (points == null || points.isEmpty()) {
             return "--";
         }
-        double start = points.get(0).getBalance();
-        double current = points.get(points.size() - 1).getBalance();
+        double start = points.get(0).getEquity();
         double currentEquity = points.get(points.size() - 1).getEquity();
+        double currentBalance = points.get(points.size() - 1).getBalance();
+        double rangeReturn = safeDivide(currentEquity - start, Math.max(1d, start)) * 100d;
+        String gapText = signedMoney(currentEquity - currentBalance);
         if (drawdownSegment == null) {
             return String.format(Locale.getDefault(),
-                    "起点净值 $%s | 当前净值 $%s | 当前权益 $%s | 收益率 %+.2f%%",
+                    "区间净值 $%s | 当前净值 $%s | 当前结余 $%s | 区间收益 %+.2f%% | 浮盈差额 %s",
                     FormatUtils.formatPrice(start),
-                    FormatUtils.formatPrice(current),
                     FormatUtils.formatPrice(currentEquity),
-                    safeDivide(current - start, Math.max(1d, start)) * 100d);
+                    FormatUtils.formatPrice(currentBalance),
+                    rangeReturn,
+                    gapText);
         }
-        String summary = String.format(Locale.getDefault(),
-                "起点净值 $%s | 当前净值 $%s | 最大回撤区间 %s -> %s | 最大回撤 %.2f%% | 收益率 %+.2f%%",
+        return String.format(Locale.getDefault(),
+                "区间净值 $%s | 当前净值 $%s | 当前结余 $%s | 最大回撤区间 %s -> %s | 最大回撤 %.2f%% | 区间收益 %+.2f%% | 浮盈差额 %s",
                 FormatUtils.formatPrice(start),
-                FormatUtils.formatPrice(current),
-                FormatUtils.formatTime(drawdownSegment.peakTimestamp),
-                FormatUtils.formatTime(drawdownSegment.valleyTimestamp),
-                drawdownSegment.drawdownRate * 100d,
-                safeDivide(current - start, Math.max(1d, start)) * 100d);
-        summary = summary + " | 当前净值 $" + FormatUtils.formatPrice(currentEquity);
-        return summary;
+                FormatUtils.formatPrice(currentEquity),
+                FormatUtils.formatPrice(currentBalance),
+                FormatUtils.formatTime(drawdownSegment.getPeakTimestamp()),
+                FormatUtils.formatTime(drawdownSegment.getValleyTimestamp()),
+                drawdownSegment.getDrawdownRate() * 100d,
+                rangeReturn,
+                gapText);
     }
 
     @Nullable
@@ -3223,20 +3421,21 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         sorted.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
 
         CurvePoint latest = sorted.get(sorted.size() - 1);
-        double latestBalance = Math.max(1e-9, latest.getBalance());
+        double latestEquity = Math.max(1e-9, latest.getEquity());
         long latestTs = latest.getTimestamp();
 
-        double r1 = calcLookbackReturn(sorted, latestTs, latestBalance, 1);
-        double r7 = calcLookbackReturn(sorted, latestTs, latestBalance, 7);
-        double r30 = calcLookbackReturn(sorted, latestTs, latestBalance, 30);
+        double r1 = calcLookbackEquityReturn(sorted, latestTs, latestEquity, 1);
+        double r7 = calcLookbackEquityReturn(sorted, latestTs, latestEquity, 7);
+        double r30 = calcLookbackEquityReturn(sorted, latestTs, latestEquity, 30);
 
-        double startBalance = Math.max(1e-9, sorted.get(0).getBalance());
-        double cumulative = safeDivide(latestBalance - startBalance, startBalance);
+        double startEquity = Math.max(1e-9, sorted.get(0).getEquity());
+        double cumulative = safeDivide(latestEquity - startEquity, startEquity);
 
-        double maxDrawdownRate = calcMaxDrawdownRate(sorted);
-        String maxDrawdownText = String.format(Locale.getDefault(), "%.2f%%", maxDrawdownRate * 100d);
-
-        String sharpe = calcCurveSharpe(sorted);
+        CurveAnalyticsHelper.DrawdownSegment drawdownSegment = CurveAnalyticsHelper.resolveMaxDrawdownSegment(sorted);
+        String maxDrawdownText = drawdownSegment == null
+                ? "--"
+                : String.format(Locale.getDefault(), "%.2f%%", drawdownSegment.getDrawdownRate() * 100d);
+        String sharpe = calcEquityCurveSharpe(sorted);
 
         result.add(new AccountMetric("近1日收益", percent(r1)));
         result.add(new AccountMetric("近7日收益", percent(r7)));
@@ -3247,15 +3446,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return result;
     }
 
-    private double calcLookbackReturn(List<CurvePoint> points, long latestTs, double latestBalance, int days) {
+    private double calcLookbackEquityReturn(List<CurvePoint> points, long latestTs, double latestEquity, int days) {
         long lookbackMs = days * 24L * 60L * 60L * 1000L;
         long targetTs = latestTs - lookbackMs;
         CurvePoint startPoint = findNearestPointAtOrBefore(points, targetTs);
         if (startPoint == null) {
             startPoint = points.get(0);
         }
-        double startBalance = Math.max(1e-9, startPoint.getBalance());
-        return safeDivide(latestBalance - startBalance, startBalance);
+        double startEquity = Math.max(1e-9, startPoint.getEquity());
+        return safeDivide(latestEquity - startEquity, startEquity);
     }
 
     @Nullable
@@ -3319,7 +3518,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void renderReturnStatsTable(List<CurvePoint> source) {
         binding.tableMonthlyReturns.removeAllViews();
         if (source == null || source.size() < 2) {
-            binding.tvMonthlyReturnsTitle.setText("收益率统计");
+            binding.tvMonthlyReturnsTitle.setText("收益统计");
             binding.tvReturnsPeriod.setText("--");
             binding.tvMonthlyReturnsHint.setText("暂无收益统计数据");
             return;
@@ -3409,7 +3608,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         int year = target.get(Calendar.YEAR);
         int month = target.get(Calendar.MONTH);
 
-        binding.tvMonthlyReturnsTitle.setText("日收益统计");
+        binding.tvMonthlyReturnsTitle.setText("区间收益（日）");
         binding.tvMonthlyReturnsHint.setText("点击具体日期可查看该日净值曲线区间");
 
         Map<Integer, DayBucket> dayBuckets = new LinkedHashMap<>();
@@ -3448,7 +3647,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderMonthlyReturnsTable(List<CurvePoint> source) {
-        binding.tvMonthlyReturnsTitle.setText("月收益统计");
+        binding.tvMonthlyReturnsTitle.setText("区间收益（月）");
         binding.tvMonthlyReturnsHint.setText("点击月份可查看对应区间净值曲线");
 
         List<YearlyReturnRow> rows = buildMonthlyReturnRows(source);
@@ -3578,11 +3777,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderYearlyReturnsTable(List<CurvePoint> source) {
-        binding.tvMonthlyReturnsTitle.setText("年收益统计");
+        binding.tvMonthlyReturnsTitle.setText("区间收益（年）");
         binding.tvMonthlyReturnsHint.setText("点击年份可查看该年净值曲线");
 
         TableLayout table = binding.tableMonthlyReturns;
         table.removeAllViews();
+        table.setStretchAllColumns(false);
+        table.setShrinkAllColumns(false);
 
         List<CurvePoint> sorted = new ArrayList<>(source);
         sorted.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
@@ -3610,15 +3811,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
 
+        String valueHeader = returnValueMode == ReturnValueMode.RATE ? "收益率" : "收益额";
+        table.addView(createAlignedReturnsRow("年份", valueHeader, true, null, null));
+
         double previousClose = Math.max(1e-9, sorted.get(0).getBalance());
-        TableRow row = null;
-        int colCount = 0;
         for (Map.Entry<Integer, PeriodBucket> entry : yearBuckets.entrySet()) {
-            if (row == null || colCount == 3) {
-                row = new TableRow(this);
-                table.addView(row);
-                colCount = 0;
-            }
             PeriodBucket bucket = entry.getValue();
             double yearAmount = bucket.closeEquity - previousClose;
             double yearReturn = safeDivide(yearAmount, previousClose);
@@ -3628,24 +3825,26 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             String valueText = formatReturnValue(yearReturn, yearAmount);
             long startMs = bucket.startMs;
             long endMs = bucket.endMs;
-            row.addView(createReturnsCell(
-                    buildLabelValueText(entry.getKey() + "年", valueText, color),
-                    96,
+            table.addView(createAlignedReturnsRow(
+                    entry.getKey() + "年",
+                    valueText,
                     false,
-                    null,
+                    color,
+                    yearReturn,
                     v -> applyCurveRangeFromTableSelection(startMs, endMs)));
-            colCount++;
         }
     }
 
     private void renderStageReturnsTable(List<CurvePoint> source, long referenceTime) {
-        binding.tvMonthlyReturnsTitle.setText("阶段收益统计");
+        binding.tvMonthlyReturnsTitle.setText("区间收益（阶段）");
         binding.tvMonthlyReturnsHint.setText("支持近1日/近7日/近30日/近3月/近1年/今年以来/全部/自定义");
 
         TableLayout table = binding.tableMonthlyReturns;
         table.removeAllViews();
+        table.setStretchAllColumns(false);
+        table.setShrinkAllColumns(false);
         String valueHeader = returnValueMode == ReturnValueMode.RATE ? "收益率" : "收益额";
-        table.addView(createSimpleHeaderRow(new String[]{"阶段", valueHeader}, 110));
+        table.addView(createAlignedReturnsRow("阶段", valueHeader, true, null, null));
 
         long endMs = Math.min(source.get(source.size() - 1).getTimestamp(), endOfDay(referenceTime));
         long allStart = source.get(0).getTimestamp();
@@ -3664,17 +3863,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         for (StageRange stage : stageRanges) {
             List<CurvePoint> range = filterCurveByManualRange(source, stage.startMs, stage.endMs);
-            TableRow row = new TableRow(this);
             if (range.size() < 2) {
-                TextView stageCell = createReturnsCell(stage.label, 110, false, null, null);
-                TextView valueCell = createReturnsCell("--", 110, false, null, null);
-                applyReturnsCellLayout(stageCell, 110, 0f, RETURNS_STAGE_HEIGHT_DP,
-                        RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
-                applyReturnsCellLayout(valueCell, 110, 0f, RETURNS_STAGE_HEIGHT_DP,
-                        RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
-                row.addView(stageCell);
-                row.addView(valueCell);
-                table.addView(row);
+                table.addView(createAlignedReturnsRow(stage.label, "--", false, null, null));
                 continue;
             }
 
@@ -3685,17 +3875,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             int color = ContextCompat.getColor(this, rate >= 0d ? R.color.accent_green : R.color.accent_red);
             String valueText = formatReturnValue(rate, profit);
 
-            TextView stageCell = createReturnsCell(stage.label, 110, false, null,
-                    v -> applyCurveRangeFromTableSelection(stage.startMs, stage.endMs));
-            TextView valueCell = createReturnsCell(valueText, 110, false, color,
-                    v -> applyCurveRangeFromTableSelection(stage.startMs, stage.endMs));
-            applyReturnsCellLayout(stageCell, 110, 0f, RETURNS_STAGE_HEIGHT_DP,
-                    RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
-            applyReturnsCellLayout(valueCell, 110, 0f, RETURNS_STAGE_HEIGHT_DP,
-                    RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
-            row.addView(stageCell);
-            row.addView(valueCell);
-            table.addView(row);
+            table.addView(createAlignedReturnsRow(
+                    stage.label,
+                    valueText,
+                    false,
+                    color,
+                    rate,
+                    v -> applyCurveRangeFromTableSelection(stage.startMs, stage.endMs)));
         }
     }
 
@@ -3873,6 +4059,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                             null,
                             ContextCompat.getColor(this, R.color.text_secondary),
                             null,
+                            null,
                             null);
                     applyReturnsCellLayout(emptyCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
@@ -3886,6 +4073,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                             String.valueOf(day),
                             null,
                             ContextCompat.getColor(this, R.color.text_primary),
+                            null,
                             null,
                             null);
                     applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
@@ -3913,7 +4101,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                             valueText,
                             ContextCompat.getColor(this, R.color.text_primary),
                             color,
-                            v -> applyCurveRangeFromTableSelection(startMs, endMs));
+                            v -> applyCurveRangeFromTableSelection(startMs, endMs),
+                            dayReturn);
                     applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
                     tableRow.addView(dayCell);
@@ -3937,139 +4126,147 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private TableRow createMonthlyReturnsHeaderRow() {
         TableRow row = new TableRow(this);
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.HORIZONTAL);
-        container.addView(createLinearReturnsCell("年份", 74, RETURNS_BODY_HEIGHT_DP * 2 + 2, true, null, null));
-        LinearLayout halves = new LinearLayout(this);
-        halves.setOrientation(LinearLayout.VERTICAL);
-        halves.addView(createMonthlyHalfRow(true, 1, 6, null));
-        halves.addView(createMonthlyHalfRow(true, 7, 12, null));
-        container.addView(halves);
-        row.addView(container);
+        row.addView(createMonthlyHeatCell("年份", 1.18f, true, null, null, null));
+        for (int month = 1; month <= 12; month++) {
+            row.addView(createMonthlyHeatCell(month + "月", 1f, true, null, null, null));
+        }
         return row;
     }
 
     private TableRow createMonthlyReturnsYearRow(YearlyReturnRow rowData) {
         TableRow row = new TableRow(this);
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.HORIZONTAL);
-        container.setBaselineAligned(false);
-
         View.OnClickListener yearClick = null;
         if (rowData.startMs > 0L && rowData.endMs > rowData.startMs) {
             long startMs = rowData.startMs;
             long endMs = rowData.endMs;
             yearClick = v -> applyCurveRangeFromTableSelection(startMs, endMs);
         }
-        int yearColor = ContextCompat.getColor(this, rowData.yearReturnRate >= 0d ? R.color.accent_green : R.color.accent_red);
-        String yearValueText = formatReturnValue(rowData.yearReturnRate, rowData.yearReturnAmount);
-        TextView yearCell = createLinearReturnsCell(
-                buildLabelValueText(rowData.year + "年", yearValueText, yearColor),
-                74,
-                RETURNS_BODY_HEIGHT_DP * 2 + 2,
-                false,
-                null,
-                yearClick
-        );
-        yearCell.setBackgroundResource(R.drawable.bg_returns_table_year_top);
-        yearCell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.2f);
-        yearCell.setPadding(dpToPx(4), dpToPx(6), dpToPx(4), dpToPx(6));
-        container.addView(yearCell);
-
-        LinearLayout halves = new LinearLayout(this);
-        halves.setOrientation(LinearLayout.VERTICAL);
-        halves.addView(createMonthlyHalfRow(false, 1, 6, rowData));
-        halves.addView(createMonthlyHalfRow(false, 7, 12, rowData));
-        container.addView(halves);
-        row.addView(container);
-        return row;
-    }
-
-    private LinearLayout createMonthlyHalfRow(boolean header,
-                                              int startMonth,
-                                              int endMonth,
-                                              @Nullable YearlyReturnRow rowData) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        for (int month = startMonth; month <= endMonth; month++) {
-            if (header) {
-                row.addView(createLinearReturnsCell(month + "月", 68, RETURNS_HEADER_HEIGHT_DP, true, null, null));
-                continue;
-            }
-            row.addView(createLinearMonthReturnCell(month, rowData == null ? null : rowData.monthly.get(month)));
+        row.addView(createMonthlyHeatCell(rowData.year + "年", 1.18f, false, null, null, yearClick));
+        for (int month = 1; month <= 12; month++) {
+            row.addView(createMonthlyHeatCell(
+                    formatMonthlyHeatCellValue(rowData.monthly.get(month)),
+                    1f,
+                    false,
+                    resolveMonthlyHeatCellTextColor(rowData.monthly.get(month)),
+                    resolveMonthlyHeatCellRate(rowData.monthly.get(month)),
+                    resolveMonthlyHeatCellClickListener(rowData.monthly.get(month))));
         }
         return row;
     }
 
-    private TextView createLinearMonthReturnCell(int month, @Nullable MonthReturnInfo info) {
-        TextView cell;
+    private String formatMonthlyHeatCellValue(@Nullable MonthReturnInfo info) {
         if (info == null || !info.hasData) {
-            cell = createLinearReturnsCell(buildLabelValueText(month + "月", "--", null),
-                    68,
-                    RETURNS_BODY_HEIGHT_DP,
-                    false,
-                    null,
-                    null);
-        } else {
-            int textColor = ContextCompat.getColor(this, info.returnRate >= 0d ? R.color.accent_green : R.color.accent_red);
-            String text = formatReturnValue(info.returnRate, info.returnAmount);
-            long startMs = info.startMs;
-            long endMs = info.endMs;
-            cell = createLinearReturnsCell(
-                    buildLabelValueText(month + "月", text, textColor),
-                    68,
-                    RETURNS_BODY_HEIGHT_DP,
-                    false,
-                    null,
-                    v -> applyCurveRangeFromTableSelection(startMs, endMs)
-            );
+            return "--";
         }
-        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.2f);
-        return cell;
+        if (returnValueMode == ReturnValueMode.AMOUNT) {
+            return formatCompactSignedAmount(info.returnAmount);
+        }
+        return String.format(Locale.getDefault(), "%+.2f", info.returnRate * 100d);
     }
 
-    private TextView createLinearReturnsCell(CharSequence text,
-                                             int widthDp,
-                                             int heightDp,
-                                             boolean header,
-                                             @Nullable Integer textColor,
-                                             @Nullable View.OnClickListener clickListener) {
-        TextView cell = createReturnsCell(text, 0, header, textColor, clickListener);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dpToPx(widthDp), dpToPx(heightDp));
-        int marginPx = dpToPx(RETURNS_CELL_MARGIN_DP);
-        params.setMargins(marginPx, marginPx, marginPx, marginPx);
-        cell.setLayoutParams(params);
-        cell.setMinWidth(dpToPx(widthDp));
-        cell.setMaxWidth(dpToPx(widthDp));
-        cell.setMinHeight(dpToPx(heightDp));
+    private String formatCompactSignedAmount(double amount) {
+        double absAmount = Math.abs(amount);
+        if (absAmount >= 10_000d) {
+            return String.format(Locale.getDefault(), "%+.1fk", amount / 1_000d);
+        }
+        return String.format(Locale.getDefault(), "%+,.0f", amount);
+    }
+
+    @Nullable
+    private Integer resolveMonthlyHeatCellTextColor(@Nullable MonthReturnInfo info) {
+        if (info == null || !info.hasData) {
+            return null;
+        }
+        return ContextCompat.getColor(this, info.returnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+    }
+
+    @Nullable
+    private Double resolveMonthlyHeatCellRate(@Nullable MonthReturnInfo info) {
+        if (info == null || !info.hasData) {
+            return null;
+        }
+        return info.returnRate;
+    }
+
+    @Nullable
+    private View.OnClickListener resolveMonthlyHeatCellClickListener(@Nullable MonthReturnInfo info) {
+        if (info == null || !info.hasData || info.startMs <= 0L || info.endMs <= info.startMs) {
+            return null;
+        }
+        long startMs = info.startMs;
+        long endMs = info.endMs;
+        return v -> applyCurveRangeFromTableSelection(startMs, endMs);
+    }
+
+    private TextView createMonthlyHeatCell(CharSequence text,
+                                           float weight,
+                                           boolean header,
+                                           @Nullable Integer textColor,
+                                           @Nullable Double heatRate,
+                                           @Nullable View.OnClickListener clickListener) {
+        TextView cell = createReturnsCell(makeNonBreakingText(text == null ? "" : text.toString()), 0, header, textColor, clickListener);
+        applyReturnsCellLayout(cell, 0, weight, header ? RETURNS_HEADER_HEIGHT_DP : RETURNS_BODY_HEIGHT_DP,
+                0, RETURNS_CELL_MARGIN_DP, 0, RETURNS_CELL_MARGIN_DP);
         cell.setGravity(Gravity.CENTER);
         cell.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, header ? 8.6f : 7.2f);
+        cell.setPadding(dpToPx(header ? 2 : 1), 0, dpToPx(header ? 2 : 1), 0);
+        cell.setSingleLine(true);
+        cell.setMaxLines(1);
+        cell.setMinLines(1);
+        cell.setEllipsize(TextUtils.TruncateAt.END);
+        cell.setBackground(buildReturnsCellBackground(heatRate, header));
         return cell;
     }
 
-    private TextView createMonthReturnCellV3(int month,
-                                             @Nullable MonthReturnInfo info,
-                                             int widthDp,
-                                             float weight,
-                                             int marginTopDp) {
-        TextView cell;
-        if (info == null || !info.hasData) {
-            cell = createReturnsCell(buildLabelValueText(month + "月", "--", null), widthDp, false, null, null);
-        } else {
-            int textColor = ContextCompat.getColor(this, info.returnRate >= 0d ? R.color.accent_green : R.color.accent_red);
-            String text = formatReturnValue(info.returnRate, info.returnAmount);
-            long startMs = info.startMs;
-            long endMs = info.endMs;
-            cell = createReturnsCell(
-                    buildLabelValueText(month + "月", text, textColor),
-                    widthDp,
-                    false,
-                    null,
-                    v -> applyCurveRangeFromTableSelection(startMs, endMs));
+    private TableRow createAlignedReturnsRow(CharSequence label,
+                                             CharSequence value,
+                                             boolean header,
+                                             @Nullable Integer valueColor,
+                                             @Nullable Double heatRate) {
+        return createAlignedReturnsRow(label, value, header, valueColor, heatRate, null);
+    }
+
+    private TableRow createAlignedReturnsRow(CharSequence label,
+                                             CharSequence value,
+                                             boolean header,
+                                             @Nullable Integer valueColor,
+                                             @Nullable Double heatRate,
+                                             @Nullable View.OnClickListener clickListener) {
+        TableRow row = new TableRow(this);
+        row.addView(createAlignedReturnsCell(label, header, false, header ? 1.04f : 1f, null, heatRate, clickListener));
+        row.addView(createAlignedReturnsCell(value, header, true, 0.96f, valueColor, heatRate, clickListener));
+        return row;
+    }
+
+    private TextView createAlignedReturnsCell(CharSequence text,
+                                              boolean header,
+                                              boolean alignEnd,
+                                              float weight,
+                                              @Nullable Integer textColor,
+                                              @Nullable Double heatRate,
+                                              @Nullable View.OnClickListener clickListener) {
+        TextView cell = new TextView(this);
+        applyReturnsCellLayout(cell, 0, weight, header ? RETURNS_HEADER_HEIGHT_DP : RETURNS_STAGE_HEIGHT_DP,
+                0, RETURNS_CELL_MARGIN_DP, 0, RETURNS_CELL_MARGIN_DP);
+        int horizontalPadding = dpToPx(header ? 8 : 10);
+        cell.setPadding(horizontalPadding, 0, horizontalPadding, 0);
+        cell.setGravity((alignEnd ? Gravity.END : Gravity.START) | Gravity.CENTER_VERTICAL);
+        cell.setTextAlignment(alignEnd ? View.TEXT_ALIGNMENT_VIEW_END : View.TEXT_ALIGNMENT_VIEW_START);
+        cell.setIncludeFontPadding(false);
+        cell.setSingleLine(true);
+        cell.setMaxLines(1);
+        cell.setEllipsize(TextUtils.TruncateAt.END);
+        cell.setText(makeNonBreakingText(text == null ? "--" : text.toString()));
+        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, header ? 10f : 9.6f);
+        cell.setTextColor(textColor != null
+                ? textColor
+                : ContextCompat.getColor(this, header ? R.color.text_primary : R.color.text_secondary));
+        cell.setBackground(buildReturnsCellBackground(heatRate, header));
+        if (clickListener != null) {
+            cell.setOnClickListener(clickListener);
+            cell.setClickable(true);
         }
-        applyReturnsCellLayout(cell, widthDp, weight, RETURNS_BODY_HEIGHT_DP,
-                RETURNS_CELL_MARGIN_DP, marginTopDp, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
-        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f);
         return cell;
     }
 
@@ -4181,7 +4378,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             cell.setLines(1);
             cell.setMaxLines(1);
         }
-        cell.setBackgroundResource(header ? R.drawable.bg_returns_table_header_cell : R.drawable.bg_returns_table_cell);
+        cell.setBackground(buildReturnsCellBackground(null, header));
         int defaultColor = ContextCompat.getColor(this, header ? R.color.text_primary : R.color.text_secondary);
         cell.setTextColor(textColor != null ? textColor : defaultColor);
         if (clickListener != null) {
@@ -4195,12 +4392,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                         @Nullable String value,
                                         int labelColor,
                                         @Nullable Integer valueColor,
-                                        @Nullable View.OnClickListener clickListener) {
+                                        @Nullable View.OnClickListener clickListener,
+                                        @Nullable Double heatRate) {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         container.setGravity(Gravity.CENTER);
         container.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
-        container.setBackgroundResource(R.drawable.bg_returns_table_cell);
+        container.setBackground(buildReturnsCellBackground(heatRate, false));
         container.setBaselineAligned(false);
 
         TextView labelView = new TextView(this);
@@ -4238,6 +4436,40 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             container.setClickable(true);
         }
         return container;
+    }
+
+    private GradientDrawable buildReturnsCellBackground(@Nullable Double rate, boolean header) {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.RECTANGLE);
+        drawable.setCornerRadius(0f);
+        drawable.setStroke(dpToPx(1), palette.stroke);
+        int fill = header
+                ? blendColor(palette.surfaceEnd, palette.textPrimary, 0.10f)
+                : palette.surfaceEnd;
+        if (!header && rate != null) {
+            float intensity = Math.min(1f, 0.18f + (float) Math.abs(rate) * 4.2f);
+            fill = blendColor(palette.surfaceEnd, rate >= 0d ? palette.rise : palette.fall, intensity * 0.42f);
+        }
+        drawable.setColor(fill);
+        return drawable;
+    }
+
+    private int blendColor(int startColor, int endColor, float ratio) {
+        float safeRatio = Math.max(0f, Math.min(1f, ratio));
+        int startA = Color.alpha(startColor);
+        int startR = Color.red(startColor);
+        int startG = Color.green(startColor);
+        int startB = Color.blue(startColor);
+        int endA = Color.alpha(endColor);
+        int endR = Color.red(endColor);
+        int endG = Color.green(endColor);
+        int endB = Color.blue(endColor);
+        return Color.argb(
+                Math.round(startA + (endA - startA) * safeRatio),
+                Math.round(startR + (endR - startR) * safeRatio),
+                Math.round(startG + (endG - startG) * safeRatio),
+                Math.round(startB + (endB - startB) * safeRatio));
     }
 
     private CharSequence makeNonBreakingText(String value) {
@@ -4528,7 +4760,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         String pnlText = signedMoney(totalPnl);
         String ratioText = percent(ratio);
         String summary = String.format(Locale.getDefault(),
-                "持仓盈亏: %s | 持仓收益率: %s",
+                "全周期总计盈亏（持仓）: %s | 持仓收益率: %s",
                 pnlText,
                 ratioText);
         SpannableStringBuilder spannable = new SpannableStringBuilder(summary);
@@ -5012,40 +5244,25 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         String storageText = signedMoney(storageTotal);
         double balanceTotal = total + storageTotal;
         String balanceText = signedMoney(balanceTotal);
-        String summary = "交易次数：" + tradeCount + "次"
-                + "    结余：" + balanceText
-                + "\n盈亏：" + pnlText
-                + "    库存费：" + storageText;
-        SpannableStringBuilder span = new SpannableStringBuilder(summary);
-        int pnlStart = summary.indexOf(pnlText);
-        if (pnlStart >= 0) {
-            int color = ContextCompat.getColor(this,
-                    total > 0d ? R.color.accent_green : (total < 0d ? R.color.accent_red : R.color.text_primary));
-            span.setSpan(new ForegroundColorSpan(color),
-                    pnlStart,
-                    pnlStart + pnlText.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        binding.tvTradeSummaryCountValue.setText(tradeCount + "次");
+        binding.tvTradeSummaryBalanceValue.setText(balanceText);
+        binding.tvTradeSummaryPnlValue.setText(pnlText);
+        binding.tvTradeSummaryStorageValue.setText(storageText);
+        binding.tvTradeSummaryCountValue.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        binding.tvTradeSummaryBalanceValue.setTextColor(resolveSignedValueColor(balanceTotal));
+        binding.tvTradeSummaryPnlValue.setTextColor(resolveSignedValueColor(total));
+        binding.tvTradeSummaryStorageValue.setTextColor(resolveSignedValueColor(storageTotal));
+    }
+
+    // 统一给盈亏数字着色，0 值保持主文字色。
+    private int resolveSignedValueColor(double value) {
+        if (value > 0d) {
+            return ContextCompat.getColor(this, R.color.accent_green);
         }
-        int storageStart = summary.indexOf(storageText);
-        if (storageStart >= 0) {
-            int color = ContextCompat.getColor(this,
-                    storageTotal > 0d ? R.color.accent_green : (storageTotal < 0d ? R.color.accent_red : R.color.text_primary));
-            span.setSpan(new ForegroundColorSpan(color),
-                    storageStart,
-                    storageStart + storageText.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (value < 0d) {
+            return ContextCompat.getColor(this, R.color.accent_red);
         }
-        int balanceStart = summary.indexOf(balanceText);
-        if (balanceStart >= 0) {
-            int color = ContextCompat.getColor(this,
-                    balanceTotal > 0d ? R.color.accent_green : (balanceTotal < 0d ? R.color.accent_red : R.color.text_primary));
-            span.setSpan(new ForegroundColorSpan(color),
-                    balanceStart,
-                    balanceStart + balanceText.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        binding.tvTradeRecordsPnlSummary.setText(span);
-        binding.tvTradeRecordsPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        return ContextCompat.getColor(this, R.color.text_primary);
     }
 
     private boolean isDefaultTradeFilters(String productFilter,
@@ -5168,7 +5385,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private String signedMoney(double value) {
-        return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
+        return FormatUtils.formatSignedMoney(value);
     }
 
     private void applyPaletteStyles() {
@@ -5179,8 +5396,47 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         tabInactiveColor = palette.textSecondary;
         updateBottomTabs(false, false, true, false);
         configureToggleButtonsV2();
+        flattenCardSections(binding.scrollAccountStats, palette);
         binding.equityCurveView.refreshPalette();
+        binding.drawdownChartView.refreshPalette();
+        binding.dailyReturnChartView.refreshPalette();
+        binding.tradeDistributionScatterView.refreshPalette();
+        binding.holdingDurationDistributionView.refreshPalette();
         setConnectionStatus(gatewayConnected);
+    }
+
+    private void flattenCardSections(View view, UiPaletteManager.Palette palette) {
+        if (view instanceof MaterialCardView) {
+            MaterialCardView cardView = (MaterialCardView) view;
+            cardView.setCardElevation(0f);
+            cardView.setRadius(0f);
+            cardView.setStrokeWidth(0);
+            cardView.setCardBackgroundColor(palette.surfaceEnd);
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                flattenCardSections(group.getChildAt(i), palette);
+            }
+        }
+    }
+
+    private String calcEquityCurveSharpe(List<CurvePoint> points) {
+        List<CurveAnalyticsHelper.DailyReturnPoint> dailyReturns = CurveAnalyticsHelper.buildDailyReturnSeries(points);
+        if (dailyReturns.size() < 2) {
+            return "--";
+        }
+        List<Double> returns = new ArrayList<>();
+        for (CurveAnalyticsHelper.DailyReturnPoint point : dailyReturns) {
+            returns.add(point.getReturnRate());
+        }
+        double mean = returns.stream().mapToDouble(v -> v).average().orElse(0d);
+        double std = calcStd(returns);
+        if (std <= 1e-12) {
+            return "0.00";
+        }
+        double sharpe = mean / std * Math.sqrt(365d);
+        return String.format(Locale.getDefault(), "%.2f", sharpe);
     }
 
     private String percent(double ratio) {

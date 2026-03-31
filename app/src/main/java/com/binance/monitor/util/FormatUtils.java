@@ -32,11 +32,11 @@ public final class FormatUtils {
     }
 
     public static String formatSignedMoney(double value) {
-        return (value >= 0d ? "+$" : "-$") + formatPrice(Math.abs(value));
+        return formatSignedCurrency(value, "#,##0.00", true);
     }
 
     public static String formatSignedMoneyNoDecimal(double value) {
-        return (value >= 0d ? "+$" : "-$") + decimal("#,##0", Math.abs(value));
+        return formatSignedCurrency(value, "#,##0", false);
     }
 
     public static String formatPriceWithUnit(double value) {
@@ -73,5 +73,15 @@ public final class FormatUtils {
 
     private static String decimal(String pattern, double value) {
         return new DecimalFormat(pattern).format(value);
+    }
+
+    private static String formatSignedCurrency(double value, String pattern, boolean keepDecimal) {
+        String zeroText = decimal(pattern, 0d);
+        String amountText = decimal(pattern, Math.abs(value));
+        if (zeroText.equals(amountText)) {
+            return "$" + amountText;
+        }
+        String sign = value >= 0d ? "+$" : "-$";
+        return sign + amountText;
     }
 }

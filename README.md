@@ -11,7 +11,7 @@
 - 设置页支持运行时修改 MT5 网关地址，不用重新打包 APK
 - 设置页支持 5 套主题即时切换，并同步图表、悬浮窗和桌面图标
 - 图表历史、交易历史、账户摘要、持仓快照统一写入 Room，已拉取过的数据会长期保留
-- 账户统计页支持收益统计、月收益表、净值/结余曲线、交易记录筛选排序
+- 账户统计页支持收益统计、月收益表、净值/结余曲线、回撤曲线、日收益率曲线、交易分布图、持仓时间分布图和交易记录筛选排序
 
 ## 技术架构
 
@@ -19,7 +19,7 @@
 - 架构：MVVM + Repository
 - 本地存储：Room + SharedPreferences
 - 网络：OkHttp + WebSocket
-- 图表与账户：自定义 View + MT5 网关接口
+- 图表与账户：自定义 View + MT5 网关接口 + 服务端净值曲线重放
 - 构建：Gradle Kotlin DSL，`compileSdk / targetSdk 34`，`minSdk 24`
 
 ## 已完成功能列表
@@ -47,13 +47,16 @@
 - 账户统计页已补上概览区持仓盈亏同步刷新
 - 账户统计页净值/结余曲线支持最大回撤区间高亮
 - 账户统计页月收益表改为横向滚动双行布局，左侧年份区块与右侧 12 个月对齐，收益率文本不再被截断
+- MT5 网关已改为按历史成交、当前持仓和产品价格重算净值曲线，净值不再长期和结余重合
+- 账户统计页已补上回撤附图、日收益率附图、历史交易分布图、持仓时间分布图
+- 账户统计页交易统计区已改成左标题右数值的清单式布局
 - 账户统计页交易记录区已把产品、方向、排序收敛到同一行，说明文案已删除
 - 行情持仓页挂单信息增加回填逻辑，并改为“双源合并去重”展示
 - 底部 Tab 调整为微信风格
 - 设置页已改成“微信式目录首页 -> 二级设置页”
 - 设置页支持 MT5 网关地址运行时修改
 - 设置页支持分项清理：历史行情、历史交易、运行时缓存
-- 设置页支持 5 套主题卡片：金融专业风、复古风、币安风格、TradingView 风格、浅色风格
+- 设置页支持 5 套主题方案：金融专业风、复古风、币安风格、TradingView 风格、浅色风格
 - 主题切换会同步影响图表、页面卡片、悬浮窗和桌面图标
 - 行情监控页已删除手动监控按钮，服务默认监控开启
 
@@ -100,6 +103,12 @@ MT5 网关 Python 侧常用验证：
   行情图表页入口。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
   账户统计页入口。
+- [app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java)
+  账户统计分析工具，负责最大回撤、日收益、交易散点和持仓时间分布计算。
+- [app/src/main/java/com/binance/monitor/ui/account/TradeDistributionScatterView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/TradeDistributionScatterView.java)
+  历史交易分布图控件。
+- [app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java)
+  持仓时间分布图控件。
 - [app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java)
   悬浮窗渲染与交互管理。
 - [app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java)

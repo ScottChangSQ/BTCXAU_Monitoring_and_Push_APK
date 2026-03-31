@@ -7,6 +7,7 @@ package com.binance.monitor.ui.floating;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.PixelFormat;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -404,7 +405,7 @@ public class FloatingWindowManager {
             handler.removeCallbacks(miniBlinkRunnable);
             miniBlinkActive = false;
             miniBlinkDimmed = false;
-            binding.viewMiniSquare.setAlpha(1f);
+            applyMiniSquareBackgroundAlpha(false);
         }
     }
 
@@ -444,13 +445,25 @@ public class FloatingWindowManager {
         if (layoutParams == null) {
             return;
         }
-        layoutParams.alpha = Math.max(0.2f, Math.min(1f, alphaPercent / 100f));
+        layoutParams.alpha = 1f;
+        applyFloatingBackgroundAlpha();
         if (showing && binding != null) {
             try {
                 windowManager.updateViewLayout(binding.getRoot(), layoutParams);
             } catch (Exception ignored) {
             }
         }
+    }
+
+    // 仅调整背景透明度，避免系统窗口级透明把文字一起变淡。
+    private void applyFloatingBackgroundAlpha() {
+        if (binding == null) {
+            return;
+        }
+        int baseAlpha = resolveBackgroundAlpha();
+        applyBackgroundAlpha(binding.layoutExpanded, baseAlpha);
+        applyBackgroundAlpha(binding.btnMinimize, baseAlpha);
+        applyMiniSquareBackgroundAlpha(miniBlinkDimmed);
     }
 
     private void openChartForSymbol(String symbol) {
@@ -491,14 +504,44 @@ public class FloatingWindowManager {
             if (now >= miniBlinkEndAt) {
                 miniBlinkActive = false;
                 miniBlinkDimmed = false;
-                binding.viewMiniSquare.setAlpha(1f);
+                applyMiniSquareBackgroundAlpha(false);
                 return;
             }
             miniBlinkDimmed = !miniBlinkDimmed;
-            binding.viewMiniSquare.setAlpha(miniBlinkDimmed ? 0.35f : 1f);
+            applyMiniSquareBackgroundAlpha(miniBlinkDimmed);
             handler.postDelayed(this, 300L);
         }
     };
+
+    // 最小化闪烁时只闪背景，不改变字体透明度。
+    private void applyMiniSquareBackgroundAlpha(boolean dimmed) {
+        if (binding == null) {
+            return;
+        }
+        int baseAlpha = resolveBackgroundAlpha();
+        int targetAlpha = dimmed ? Math.max(54, Math.round(baseAlpha * 0.38f)) : baseAlpha;
+        applyBackgroundAlpha(binding.viewMiniSquare, targetAlpha);
+    }
+
+    // 统一给背景 drawable 应用透明度，避免影响文本本身。
+    private void applyBackgroundAlpha(View view, int alpha) {
+        if (view == null) {
+            return;
+        }
+        Drawable background = view.getBackground();
+        if (background == null) {
+            return;
+        }
+        background = background.mutate();
+        background.setAlpha(Math.max(0, Math.min(255, alpha)));
+        view.setBackground(background);
+    }
+
+    // 把用户设置的百分比换算成背景 alpha，保持最低 20% 可见度。
+    private int resolveBackgroundAlpha() {
+        float ratio = Math.max(0.2f, Math.min(1f, alphaPercent / 100f));
+        return Math.round(255f * ratio);
+    }
 
     private int dp(int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);

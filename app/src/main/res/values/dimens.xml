@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <dimen name="space_2">2dp</dimen>
     <dimen name="space_4">4dp</dimen>
     <dimen name="space_8">8dp</dimen>
+    <dimen name="space_10">10dp</dimen>
     <dimen name="space_12">12dp</dimen>
     <dimen name="space_16">16dp</dimen>
     <dimen name="space_20">20dp</dimen>
@@ -11,9 +13,9 @@
     <dimen name="page_section_gap">10dp</dimen>
     <dimen name="card_content_padding">10dp</dimen>
 
-    <dimen name="radius_sm">10dp</dimen>
-    <dimen name="radius_md">14dp</dimen>
-    <dimen name="radius_lg">18dp</dimen>
+    <dimen name="radius_sm">2dp</dimen>
+    <dimen name="radius_md">2dp</dimen>
+    <dimen name="radius_lg">4dp</dimen>
 
     <dimen name="control_height_sm">36dp</dimen>
     <dimen name="control_height_md">40dp</dimen>

@@ -86,6 +86,8 @@ Response JSON:
 - `curvePoints`
 - `curveIndicators`
 
+曲线点会以历史成交、持仓、开平仓时间、价格与手数重新重算，使 `equity` 与 `balance` 能真实区分；如果缺少价格数据，会自动降级而不是让接口失败。
+
 支持 `since` 与 `delta=1`，用于只追加新曲线点。
 
 ## 增量参数

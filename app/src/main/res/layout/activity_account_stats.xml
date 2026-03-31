@@ -102,7 +102,7 @@
                         android:id="@+id/tvCurveTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="净值/结余曲线"
+                        android:text="当前区间净值/结余"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
                     <com.google.android.material.button.MaterialButtonToggleGroup
@@ -344,16 +344,28 @@
                         android:id="@+id/tvCurveMeta"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="0dp"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp"
                         android:visibility="gone" />
+
+                    <com.binance.monitor.ui.account.DrawdownChartView
+                        android:id="@+id/drawdownChartView"
+                        android:layout_width="match_parent"
+                        android:layout_height="132dp"
+                        android:layout_marginTop="4dp" />
+
+                    <com.binance.monitor.ui.account.DailyReturnChartView
+                        android:id="@+id/dailyReturnChartView"
+                        android:layout_width="match_parent"
+                        android:layout_height="132dp"
+                        android:layout_marginTop="2dp" />
 
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/recyclerCurveIndicators"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="@dimen/space_12"
                         android:nestedScrollingEnabled="false" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -373,7 +385,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="收益统计表"
+                        android:text="收益统计"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
                     <TextView
@@ -381,7 +393,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:text="收益率统计"
+                        android:text="区间收益（月)"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
 
                     <com.google.android.material.button.MaterialButtonToggleGroup
@@ -572,7 +584,7 @@
 
                         <TableLayout
                             android:id="@+id/tableMonthlyReturns"
-                            android:layout_width="wrap_content"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content" />
                     </HorizontalScrollView>
 
@@ -582,7 +594,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                        android:textSize="11sp"
+                        android:visibility="gone" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -819,15 +832,124 @@
                             android:paddingBottom="8dp" />
                     </FrameLayout>
 
-                    <TextView
-                        android:id="@+id/tvTradeRecordsPnlSummary"
+                    <LinearLayout
+                        android:id="@+id/layoutTradeRecordsPnlSummary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_12"
-                        android:text="交易次数：0次    结余：+$0.00&#10;盈亏：+$0.00    库存费：+$0.00"
-                        android:textColor="@color/text_primary"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
+                        android:orientation="vertical">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="start|center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="交易次数："
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="11sp" />
+
+                                <TextView
+                                    android:id="@+id/tvTradeSummaryCountValue"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="0次"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="end|center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="结余："
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="11sp" />
+
+                                <TextView
+                                    android:id="@+id/tvTradeSummaryBalanceValue"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="$0.00"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="start|center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="盈亏："
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="11sp" />
+
+                                <TextView
+                                    android:id="@+id/tvTradeSummaryPnlValue"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="$0.00"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="end|center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="库存费："
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="11sp" />
+
+                                <TextView
+                                    android:id="@+id/tvTradeSummaryStorageValue"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="$0.00"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -917,6 +1039,32 @@
                         android:layout_width="match_parent"
                         android:layout_height="220dp"
                         android:layout_marginTop="8dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_12"
+                        android:text="全周期历史交易分布"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
+
+                    <com.binance.monitor.ui.account.TradeDistributionScatterView
+                        android:id="@+id/tradeDistributionScatterView"
+                        android:layout_width="match_parent"
+                        android:layout_height="220dp"
+                        android:layout_marginTop="@dimen/space_8" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_12"
+                        android:text="全周期持仓时间分布"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
+
+                    <com.binance.monitor.ui.account.HoldingDurationDistributionView
+                        android:id="@+id/holdingDurationDistributionView"
+                        android:layout_width="match_parent"
+                        android:layout_height="188dp"
+                        android:layout_marginTop="@dimen/space_8" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
@@ -928,14 +1076,14 @@
         android:layout_height="@dimen/bottom_nav_height"
         android:background="@drawable/bg_bottom_nav"
         android:orientation="horizontal"
-        android:padding="@dimen/space_8">
+        android:padding="0dp">
 
         <TextView
             android:id="@+id/tabMarketMonitor"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_unselected"
+            android:background="@drawable/bg_tab_wechat_unselected"
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
@@ -946,9 +1094,8 @@
             android:id="@+id/tabMarketChart"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_unselected"
+            android:background="@drawable/bg_tab_wechat_unselected"
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
@@ -959,9 +1106,8 @@
             android:id="@+id/tabAccountStats"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_selected"
+            android:background="@drawable/bg_tab_wechat_selected"
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/white"
@@ -972,9 +1118,8 @@
             android:id="@+id/tabSettings"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_unselected"
+            android:background="@drawable/bg_tab_wechat_unselected"
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/text_secondary"

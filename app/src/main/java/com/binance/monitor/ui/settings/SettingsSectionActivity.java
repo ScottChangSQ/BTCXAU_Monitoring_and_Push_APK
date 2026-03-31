@@ -34,7 +34,6 @@ import com.binance.monitor.ui.main.MainViewModel;
 import com.binance.monitor.ui.theme.ThemeLauncherIconManager;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.PermissionHelper;
-import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.File;
@@ -62,7 +61,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         sectionTitle = readExtra(EXTRA_TITLE, "设置");
         viewModel = new ViewModelProvider(this).get(MainViewModel.class);
         setupBottomNav();
-        setupThemeCards();
+        setupThemeItems();
         setupActions();
         applyVisibleSection();
     }
@@ -203,8 +202,8 @@ public class SettingsSectionActivity extends AppCompatActivity {
         });
     }
 
-    // 绑定主题卡片。
-    private void setupThemeCards() {
+    // 绑定主题选项。
+    private void setupThemeItems() {
         binding.cardThemeFinancial.setOnClickListener(v -> selectTheme(0));
         binding.cardThemeVintage.setOnClickListener(v -> selectTheme(1));
         binding.cardThemeBinance.setOnClickListener(v -> selectTheme(2));
@@ -342,30 +341,35 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.btnClearCache.setTextColor(palette.textPrimary);
         binding.btnSaveMt5GatewayUrl.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
         binding.btnSaveMt5GatewayUrl.setTextColor(ContextCompat.getColor(this, R.color.white));
-        applyThemeCards(palette.id);
+        binding.cardFloatingSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
+        binding.cardGatewaySection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
+        binding.cardThemeSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
+        binding.cardTabSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
+        binding.cardCacheSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
+        applyThemeItems(palette.id);
     }
 
     // 绘制主题预览卡片。
-    private void applyThemeCards(int selectedId) {
-        styleThemeCard(binding.cardThemeFinancial, binding.tvThemeFinancialTitle, binding.tvThemeFinancialDesc,
+    private void applyThemeItems(int selectedId) {
+        styleThemeItem(binding.cardThemeFinancial, binding.tvThemeFinancialTitle, binding.tvThemeFinancialDesc,
                 binding.viewThemeFinancialA, binding.viewThemeFinancialB, binding.viewThemeFinancialC,
                 UiPaletteManager.findById(0), selectedId == 0);
-        styleThemeCard(binding.cardThemeVintage, binding.tvThemeVintageTitle, binding.tvThemeVintageDesc,
+        styleThemeItem(binding.cardThemeVintage, binding.tvThemeVintageTitle, binding.tvThemeVintageDesc,
                 binding.viewThemeVintageA, binding.viewThemeVintageB, binding.viewThemeVintageC,
                 UiPaletteManager.findById(1), selectedId == 1);
-        styleThemeCard(binding.cardThemeBinance, binding.tvThemeBinanceTitle, binding.tvThemeBinanceDesc,
+        styleThemeItem(binding.cardThemeBinance, binding.tvThemeBinanceTitle, binding.tvThemeBinanceDesc,
                 binding.viewThemeBinanceA, binding.viewThemeBinanceB, binding.viewThemeBinanceC,
                 UiPaletteManager.findById(2), selectedId == 2);
-        styleThemeCard(binding.cardThemeTradingView, binding.tvThemeTradingViewTitle, binding.tvThemeTradingViewDesc,
+        styleThemeItem(binding.cardThemeTradingView, binding.tvThemeTradingViewTitle, binding.tvThemeTradingViewDesc,
                 binding.viewThemeTradingViewA, binding.viewThemeTradingViewB, binding.viewThemeTradingViewC,
                 UiPaletteManager.findById(3), selectedId == 3);
-        styleThemeCard(binding.cardThemeLight, binding.tvThemeLightTitle, binding.tvThemeLightDesc,
+        styleThemeItem(binding.cardThemeLight, binding.tvThemeLightTitle, binding.tvThemeLightDesc,
                 binding.viewThemeLightA, binding.viewThemeLightB, binding.viewThemeLightC,
                 UiPaletteManager.findById(4), selectedId == 4);
     }
 
-    // 绘制单张主题卡片。
-    private void styleThemeCard(MaterialCardView card,
+    // 绘制单个主题条目。
+    private void styleThemeItem(View item,
                                 TextView titleView,
                                 TextView descView,
                                 View previewA,
@@ -373,15 +377,26 @@ public class SettingsSectionActivity extends AppCompatActivity {
                                 View previewC,
                                 UiPaletteManager.Palette palette,
                                 boolean selected) {
-        card.setCardBackgroundColor(palette.card);
-        card.setStrokeColor(selected ? palette.primary : palette.stroke);
-        card.setStrokeWidth(dp(selected ? 2 : 1));
-        titleView.setTextColor(palette.textPrimary);
-        descView.setTextColor(palette.textSecondary);
-        previewA.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
-        previewB.setBackground(UiPaletteManager.createFilledDrawable(this, palette.rise));
-        previewC.setBackground(UiPaletteManager.createFilledDrawable(this, palette.fall));
-        card.setAlpha(selected ? 1f : 0.92f);
+        if (item != null) {
+            int border = selected ? palette.primary : palette.stroke;
+            int fill = selected ? palette.control : palette.surfaceEnd;
+            item.setBackground(UiPaletteManager.createThemeItemDrawable(this, fill, border));
+        }
+        if (titleView != null) {
+            titleView.setTextColor(palette.textPrimary);
+        }
+        if (descView != null) {
+            descView.setTextColor(palette.textSecondary);
+        }
+        if (previewA != null) {
+            previewA.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
+        }
+        if (previewB != null) {
+            previewB.setBackground(UiPaletteManager.createFilledDrawable(this, palette.rise));
+        }
+        if (previewC != null) {
+            previewC.setBackground(UiPaletteManager.createFilledDrawable(this, palette.fall));
+        }
     }
 
     // 切换主题并通知服务刷新悬浮窗。
@@ -457,7 +472,4 @@ public class SettingsSectionActivity extends AppCompatActivity {
         finish();
     }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
 }

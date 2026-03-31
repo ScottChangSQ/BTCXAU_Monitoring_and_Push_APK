@@ -38,11 +38,16 @@ public class EquityCurveView extends View {
     private final Paint crosshairPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint drawdownFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint drawdownStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint drawdownBoundaryPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint drawdownPeakMarkerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint drawdownValleyMarkerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tooltipBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tooltipTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path equityPath = new Path();
     private final Path balancePath = new Path();
+    private final Path drawdownDiamondPath = new Path();
     private final List<CurvePoint> points = new ArrayList<>();
+    private final List<String> tooltipExtraLines = new ArrayList<>();
     private final GestureDetector gestureDetector;
 
     private float chartLeft;
@@ -85,11 +90,11 @@ public class EquityCurveView extends View {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
         equityPaint.setColor(palette.primary);
         equityPaint.setStyle(Paint.Style.STROKE);
-        equityPaint.setStrokeWidth(dp(2f));
+        equityPaint.setStrokeWidth(dp(2.2f));
 
         balancePaint.setColor(palette.btc);
         balancePaint.setStyle(Paint.Style.STROKE);
-        balancePaint.setStrokeWidth(dp(1.6f));
+        balancePaint.setStrokeWidth(dp(1.7f));
 
         markerPaint.setStyle(Paint.Style.FILL);
 
@@ -98,9 +103,12 @@ public class EquityCurveView extends View {
 
         drawdownFillPaint.setStyle(Paint.Style.FILL);
         drawdownStrokePaint.setStyle(Paint.Style.STROKE);
-        drawdownStrokePaint.setStrokeWidth(dp(1.2f));
-        drawdownFillPaint.setColor(applyAlpha(palette.primarySoft, 150));
-        drawdownStrokePaint.setColor(applyAlpha(palette.primary, 215));
+        drawdownBoundaryPaint.setStyle(Paint.Style.STROKE);
+        drawdownPeakMarkerPaint.setStyle(Paint.Style.FILL);
+        drawdownValleyMarkerPaint.setStyle(Paint.Style.FILL);
+        drawdownStrokePaint.setStrokeWidth(dp(1.6f));
+        drawdownBoundaryPaint.setStrokeWidth(dp(1f));
+        applyDrawdownPalette();
 
         tooltipBgPaint.setColor(ContextCompat.getColor(context, R.color.bg_surface));
         tooltipBgPaint.setStyle(Paint.Style.FILL);
@@ -139,8 +147,7 @@ public class EquityCurveView extends View {
         gridPaint.setColor(applyAlpha(palette.stroke, 170));
         equityPaint.setColor(palette.primary);
         balancePaint.setColor(palette.btc);
-        drawdownFillPaint.setColor(applyAlpha(palette.primarySoft, 150));
-        drawdownStrokePaint.setColor(applyAlpha(palette.primary, 215));
+        applyDrawdownPalette();
         crosshairPaint.setColor(applyAlpha(palette.textSecondary, 220));
         tooltipBgPaint.setColor(applyAlpha(palette.card, 240));
         tooltipTextPaint.setColor(palette.textPrimary);
@@ -157,6 +164,7 @@ public class EquityCurveView extends View {
             points.addAll(data);
             points.sort((left, right) -> Long.compare(left.getTimestamp(), right.getTimestamp()));
         }
+        tooltipExtraLines.clear();
         highlightedIndex = -1;
         longPressing = false;
         dispatchHighlightedPoint();
@@ -173,6 +181,31 @@ public class EquityCurveView extends View {
         drawdownEndTs = Math.max(0L, endTs);
         drawdownPeakBalance = peakBalance;
         drawdownValleyBalance = valleyBalance;
+        invalidate();
+    }
+
+    // 同步外部共享十字光标时，给顶部弹窗补充附图数据。
+    public void setTooltipExtraLines(@Nullable List<String> lines) {
+        tooltipExtraLines.clear();
+        if (lines != null) {
+            tooltipExtraLines.addAll(lines);
+        }
+        invalidate();
+    }
+
+    // 由宿主把共享时间戳同步到主图，不触发反向回调。
+    public void syncHighlightTimestamp(long timestamp) {
+        if (timestamp <= 0L || points.isEmpty()) {
+            clearSyncedHighlight();
+            return;
+        }
+        highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(timestamp)));
+        invalidate();
+    }
+
+    // 清除宿主同步过来的十字光标状态。
+    public void clearSyncedHighlight() {
+        highlightedIndex = -1;
         invalidate();
     }
 
@@ -282,15 +315,25 @@ public class EquityCurveView extends View {
                 Math.min(chartRight, Math.max(startX, endX)),
                 chartBottom
         );
-        if (area.width() <= dp(1f)) {
-            return;
+        float minWidth = dp(12f);
+        if (area.width() < minWidth) {
+            float center = (area.left + area.right) / 2f;
+            area.left = Math.max(chartLeft, center - minWidth / 2f);
+            area.right = Math.min(chartRight, center + minWidth / 2f);
+            if (area.width() < minWidth) {
+                area.left = Math.max(chartLeft, area.right - minWidth);
+                area.right = Math.min(chartRight, area.left + minWidth);
+            }
         }
         float peakY = mapY(drawdownPeakBalance, chartMin, chartMax, chartTop, chartBottom);
         float valleyY = mapY(drawdownValleyBalance, chartMin, chartMax, chartTop, chartBottom);
-        canvas.drawRoundRect(area, dp(8f), dp(8f), drawdownFillPaint);
+        canvas.drawRect(area, drawdownFillPaint);
+        canvas.drawLine(area.left, chartTop, area.left, chartBottom, drawdownBoundaryPaint);
+        canvas.drawLine(area.right, chartTop, area.right, chartBottom, drawdownBoundaryPaint);
         canvas.drawLine(startX, peakY, endX, valleyY, drawdownStrokePaint);
-        canvas.drawCircle(startX, peakY, dp(3f), drawdownStrokePaint);
-        canvas.drawCircle(endX, valleyY, dp(3f), drawdownStrokePaint);
+        drawPeakMarker(canvas, startX, peakY);
+        drawValleyMarker(canvas, endX, valleyY);
+        canvas.drawText("最大回撤", Math.min(chartRight - dp(34f), area.left + dp(4f)), chartTop + dp(10f), labelPaint);
     }
 
     private void drawHighlight(Canvas canvas, int index) {
@@ -306,19 +349,22 @@ public class EquityCurveView extends View {
         markerPaint.setColor(palette.btc);
         canvas.drawCircle(x, yBalance, dp(3.5f), markerPaint);
 
-        String line1 = formatLabelTime(point.getTimestamp());
-        String line2 = "净值 $" + FormatUtils.formatPrice(point.getEquity());
-        String line3 = "结余 $" + FormatUtils.formatPrice(point.getBalance());
-        double pct = (point.getBalance() - baseBalance) / Math.max(1e-9, baseBalance) * 100d;
-        String line4 = String.format(Locale.getDefault(), "收益 %+.2f%%", pct);
+        List<String> tooltipLines = new ArrayList<>();
+        tooltipLines.add(formatLabelTime(point.getTimestamp()));
+        tooltipLines.add("净值 $" + FormatUtils.formatPrice(point.getEquity()));
+        tooltipLines.add("结余 $" + FormatUtils.formatPrice(point.getBalance()));
+        double pct = (point.getEquity() - baseBalance) / Math.max(1e-9, baseBalance) * 100d;
+        tooltipLines.add(String.format(Locale.getDefault(), "收益 %+.2f%%", pct));
+        tooltipLines.addAll(tooltipExtraLines);
 
-        float maxWidth = Math.max(tooltipTextPaint.measureText(line1),
-                Math.max(Math.max(tooltipTextPaint.measureText(line2), tooltipTextPaint.measureText(line3)),
-                        tooltipTextPaint.measureText(line4)));
+        float maxWidth = 0f;
+        for (String line : tooltipLines) {
+            maxWidth = Math.max(maxWidth, tooltipTextPaint.measureText(line));
+        }
         float padding = dp(6f);
         float lineHeight = dp(11f);
         float boxWidth = maxWidth + padding * 2;
-        float boxHeight = lineHeight * 4 + padding * 2;
+        float boxHeight = lineHeight * tooltipLines.size() + padding * 2;
 
         float boxLeft = x + dp(8f);
         if (boxLeft + boxWidth > chartRight) {
@@ -327,11 +373,15 @@ public class EquityCurveView extends View {
         boxLeft = Math.max(chartLeft, boxLeft);
         float boxTop = chartTop + dp(4f);
         RectF rect = new RectF(boxLeft, boxTop, boxLeft + boxWidth, boxTop + boxHeight);
-        canvas.drawRoundRect(rect, dp(6f), dp(6f), tooltipBgPaint);
-        canvas.drawText(line1, boxLeft + padding, boxTop + padding + lineHeight * 0.8f, tooltipTextPaint);
-        canvas.drawText(line2, boxLeft + padding, boxTop + padding + lineHeight * 1.8f, tooltipTextPaint);
-        canvas.drawText(line3, boxLeft + padding, boxTop + padding + lineHeight * 2.8f, tooltipTextPaint);
-        canvas.drawText(line4, boxLeft + padding, boxTop + padding + lineHeight * 3.8f, tooltipTextPaint);
+        canvas.drawRoundRect(rect, dp(2f), dp(2f), tooltipBgPaint);
+        for (int i = 0; i < tooltipLines.size(); i++) {
+            canvas.drawText(
+                    tooltipLines.get(i),
+                    boxLeft + padding,
+                    boxTop + padding + lineHeight * (i + 0.8f),
+                    tooltipTextPaint
+            );
+        }
     }
 
     private void updateHighlightByX(float x) {
@@ -494,6 +544,32 @@ public class EquityCurveView extends View {
 
     private float dp(float value) {
         return value * getResources().getDisplayMetrics().density;
+    }
+
+    private void applyDrawdownPalette() {
+        drawdownFillPaint.setColor(0x33FFD54F);
+        drawdownStrokePaint.setColor(0xFFFFB300);
+        drawdownBoundaryPaint.setColor(0xCCFFB300);
+        drawdownPeakMarkerPaint.setColor(0xFFFFECB3);
+        drawdownValleyMarkerPaint.setColor(0xFFFF7043);
+    }
+
+    private void drawPeakMarker(Canvas canvas, float x, float y) {
+        float half = dp(3.6f);
+        canvas.drawRect(x - half, y - half, x + half, y + half, drawdownPeakMarkerPaint);
+        canvas.drawRect(x - half, y - half, x + half, y + half, drawdownStrokePaint);
+    }
+
+    private void drawValleyMarker(Canvas canvas, float x, float y) {
+        float radius = dp(4.5f);
+        drawdownDiamondPath.reset();
+        drawdownDiamondPath.moveTo(x, y - radius);
+        drawdownDiamondPath.lineTo(x + radius, y);
+        drawdownDiamondPath.lineTo(x, y + radius);
+        drawdownDiamondPath.lineTo(x - radius, y);
+        drawdownDiamondPath.close();
+        canvas.drawPath(drawdownDiamondPath, drawdownValleyMarkerPaint);
+        canvas.drawPath(drawdownDiamondPath, drawdownStrokePaint);
     }
 
     private int applyAlpha(int color, int alpha) {

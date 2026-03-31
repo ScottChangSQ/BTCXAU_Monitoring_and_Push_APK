@@ -3,7 +3,6 @@
     <item>
         <shape android:shape="rectangle">
             <solid android:color="#12233D" />
-            <corners android:radius="@dimen/radius_sm" />
         </shape>
     </item>
     <item
@@ -11,9 +10,6 @@
         android:gravity="bottom">
         <shape android:shape="rectangle">
             <solid android:color="@color/accent_cyan" />
-            <corners
-                android:bottomLeftRadius="@dimen/radius_sm"
-                android:bottomRightRadius="@dimen/radius_sm" />
         </shape>
     </item>
 </layer-list>

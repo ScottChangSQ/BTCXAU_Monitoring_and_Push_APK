@@ -113,7 +113,7 @@ public class SettingsActivity extends AppCompatActivity {
         if (view == null) {
             return;
         }
-        view.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        view.setBackground(UiPaletteManager.createListRowBackground(this, palette.surfaceEnd, palette.stroke));
     }
 
     // 打开指定设置分组页。

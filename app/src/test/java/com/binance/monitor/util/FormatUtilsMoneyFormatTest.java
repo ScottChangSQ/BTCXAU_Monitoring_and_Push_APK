@@ -28,4 +28,15 @@ public class FormatUtilsMoneyFormatTest {
     public void shouldFormatNegativeSignedMoneyWithoutDecimal() {
         assertEquals("-$1,235", FormatUtils.formatSignedMoneyNoDecimal(-1234.56));
     }
+
+    @Test
+    public void shouldFormatZeroSignedMoneyWithoutPrefix() {
+        assertEquals("$0.00", FormatUtils.formatSignedMoney(0d));
+    }
+
+    @Test
+    public void shouldFormatRoundedZeroSignedMoneyWithoutPrefix() {
+        assertEquals("$0.00", FormatUtils.formatSignedMoney(0.004d));
+        assertEquals("$0", FormatUtils.formatSignedMoneyNoDecimal(0.4d));
+    }
 }

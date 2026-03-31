@@ -41,6 +41,13 @@ def _install_test_stubs():
 
                 return decorator
 
+            def websocket(self, *args, **kwargs):
+                def decorator(func):
+                    return func
+
+                return decorator
+
+
         class _HTTPException(Exception):
             def __init__(self, status_code=500, detail=""):
                 super().__init__(detail)
@@ -51,6 +58,10 @@ def _install_test_stubs():
         fastapi_stub.HTTPException = _HTTPException
         fastapi_stub.Header = lambda default=None, **kwargs: default
         fastapi_stub.Query = lambda default=None, **kwargs: default
+        fastapi_stub.Request = type("Request", (), {})
+        fastapi_stub.Response = type("Response", (), {})
+        fastapi_stub.WebSocket = type("WebSocket", (), {})
+        fastapi_stub.WebSocketDisconnect = Exception
         sys.modules["fastapi"] = fastapi_stub
 
     if "fastapi.middleware.gzip" not in sys.modules:
@@ -61,6 +72,11 @@ def _install_test_stubs():
 
         gzip_stub.GZipMiddleware = _GZipMiddleware
         sys.modules["fastapi.middleware.gzip"] = gzip_stub
+
+    if "websockets" not in sys.modules:
+        websockets_stub = types.ModuleType("websockets")
+        websockets_stub.connect = lambda *args, **kwargs: None
+        sys.modules["websockets"] = websockets_stub
 
 
 _install_test_stubs()
@@ -168,6 +184,68 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertNotIn("pendingOrders", response)
         self.assertNotIn("curvePoints", response)
         self.assertNotIn("overviewMetrics", response)
+
+    def test_rebuild_curve_includes_open_positions(self):
+        helper = getattr(server_v2, "_replay_curve_from_history", None)
+        self.assertIsNotNone(helper, "缺少 _replay_curve_from_history，无法验证曲线重算")
+
+        deals = [
+            {
+                "timestamp": 1000,
+                "price": 100.0,
+                "profit": 0.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 0,
+                "deal_type": 0,
+                "volume": 1.0,
+                "symbol": "XAUUSD",
+                "position_id": 1,
+            },
+            {
+                "timestamp": 1500,
+                "price": 110.0,
+                "profit": 10.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 1,
+                "deal_type": 0,
+                "volume": 1.0,
+                "symbol": "XAUUSD",
+                "position_id": 1,
+            },
+        ]
+
+        open_positions = [
+            {
+                "positionTicket": 99,
+                "code": "BTCUSD",
+                "productName": "BTCUSD",
+                "side": "Buy",
+                "quantity": 0.5,
+                "costPrice": 200.0,
+                "latestPrice": 210.0,
+            }
+        ]
+
+        points = helper(
+            deal_history=deals,
+            start_balance=1000.0,
+            open_positions=open_positions,
+            current_balance=1010.0,
+            current_equity=1030.0,
+            contract_size_fn=lambda symbol: 1.0,
+            now_ms=2000,
+        )
+
+        self.assertGreater(len(points), 2)
+        self.assertAlmostEqual(points[0]["equity"] - points[0]["balance"], 5.0)
+        self.assertTrue(
+            any(abs(point["equity"] - point["balance"]) > 0.0 for point in points[:-1]),
+            "曲线点应在有未平仓时 equity 与 balance 不一致",
+        )
+        self.assertEqual(points[-1]["balance"], 1010.0)
+        self.assertEqual(points[-1]["equity"], 1030.0)
 
 
 if __name__ == "__main__":

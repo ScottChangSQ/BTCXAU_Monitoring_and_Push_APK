@@ -31,14 +31,24 @@
                 android:text="点击分类进入下一级页面"
                 android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_16"
+                android:text="常规设置"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
             <LinearLayout
                 android:id="@+id/itemDisplay"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginTop="@dimen/space_8"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/card_content_padding">
+                android:paddingHorizontal="@dimen/page_horizontal_padding"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackgroundBorderless">
 
                 <TextView
                     android:layout_width="0dp"
@@ -48,22 +58,32 @@
                     android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=">"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="16sp" />
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="@dimen/space_8"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_chevron_right"
+                    android:tint="@color/text_secondary" />
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="@dimen/page_horizontal_padding"
+                android:background="@color/divider" />
 
             <LinearLayout
                 android:id="@+id/itemGateway"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="@dimen/space_2"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/card_content_padding">
+                android:paddingHorizontal="@dimen/page_horizontal_padding"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackgroundBorderless">
 
                 <TextView
                     android:layout_width="0dp"
@@ -73,22 +93,32 @@
                     android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=">"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="16sp" />
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="@dimen/space_8"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_chevron_right"
+                    android:tint="@color/text_secondary" />
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="@dimen/page_horizontal_padding"
+                android:background="@color/divider" />
 
             <LinearLayout
                 android:id="@+id/itemTheme"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="@dimen/space_2"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/card_content_padding">
+                android:paddingHorizontal="@dimen/page_horizontal_padding"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackgroundBorderless">
 
                 <TextView
                     android:layout_width="0dp"
@@ -98,22 +128,42 @@
                     android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=">"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="16sp" />
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="@dimen/space_8"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_chevron_right"
+                    android:tint="@color/text_secondary" />
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="@dimen/page_horizontal_padding"
+                android:background="@color/divider" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="12dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="辅助工具"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
             <LinearLayout
                 android:id="@+id/itemTab"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="@dimen/space_8"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/card_content_padding">
+                android:paddingHorizontal="@dimen/page_horizontal_padding"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackgroundBorderless">
 
                 <TextView
                     android:layout_width="0dp"
@@ -123,22 +173,32 @@
                     android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=">"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="16sp" />
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="@dimen/space_8"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_chevron_right"
+                    android:tint="@color/text_secondary" />
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="@dimen/page_horizontal_padding"
+                android:background="@color/divider" />
 
             <LinearLayout
                 android:id="@+id/itemCache"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="@dimen/space_2"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/card_content_padding">
+                android:paddingHorizontal="@dimen/page_horizontal_padding"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackgroundBorderless">
 
                 <TextView
                     android:layout_width="0dp"
@@ -148,23 +208,32 @@
                     android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=">"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="16sp" />
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="@dimen/space_8"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_chevron_right"
+                    android:tint="@color/text_secondary" />
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="@dimen/page_horizontal_padding"
+                android:background="@color/divider" />
 
             <LinearLayout
                 android:id="@+id/itemLogs"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_marginTop="10dp"
-                android:layout_marginBottom="@dimen/space_20"
+                android:layout_marginTop="@dimen/space_2"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/card_content_padding">
+                android:paddingHorizontal="@dimen/page_horizontal_padding"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackgroundBorderless">
 
                 <TextView
                     android:layout_width="0dp"
@@ -174,13 +243,18 @@
                     android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=">"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="16sp" />
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="@dimen/space_8"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_chevron_right"
+                    android:tint="@color/text_secondary" />
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/space_20" />
         </LinearLayout>
     </ScrollView>
 
@@ -190,14 +264,14 @@
         android:layout_height="@dimen/bottom_nav_height"
         android:background="@drawable/bg_bottom_nav"
         android:orientation="horizontal"
-        android:padding="@dimen/space_8">
+        android:padding="0dp">
 
         <TextView
             android:id="@+id/tabMarketMonitor"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_unselected"
+            android:background="@drawable/bg_tab_wechat_unselected"
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
@@ -208,9 +282,8 @@
             android:id="@+id/tabMarketChart"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_unselected"
+            android:background="@drawable/bg_tab_wechat_unselected"
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
@@ -221,9 +294,8 @@
             android:id="@+id/tabAccountStats"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_unselected"
+            android:background="@drawable/bg_tab_wechat_unselected"
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/text_secondary"
@@ -234,9 +306,8 @@
             android:id="@+id/tabSettings"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_selected"
+            android:background="@drawable/bg_tab_wechat_selected"
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/white"

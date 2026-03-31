@@ -15,9 +15,19 @@
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java)
   图表视口计算工具，负责 K 线横向边界和右侧留白相关数学逻辑。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
-  账户统计页入口，负责账户概览、收益统计、月收益表、交易记录和账户标题展示。
+  账户统计页入口，负责账户概览、收益统计、净值/结余主图、附图、交易分布、交易记录和账户标题展示。
 - [app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java)
-  净值/结余曲线控件，负责绘制账户曲线并标记最大回撤区间。
+  净值/结余曲线控件，负责绘制账户曲线，并用高对比样式标记当前周期下的最大回撤区间。
+- [app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java)
+  账户统计分析工具，负责从曲线与交易记录中计算最大回撤、回撤附图、日收益率、交易散点和持仓时间分布。
+- [app/src/main/java/com/binance/monitor/ui/account/DrawdownChartView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/DrawdownChartView.java)
+  回撤附图控件，负责绘制基于净值序列的回撤曲线。
+- [app/src/main/java/com/binance/monitor/ui/account/DailyReturnChartView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/DailyReturnChartView.java)
+  日收益率附图控件，负责绘制正负日收益柱状分布。
+- [app/src/main/java/com/binance/monitor/ui/account/TradeDistributionScatterView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/TradeDistributionScatterView.java)
+  历史交易分布图控件，负责绘制“最大回撤 vs 收益率”散点。
+- [app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java)
+  持仓时间分布图控件，负责绘制不同持仓时长桶的交易数量。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java)
   账户预加载管理器，负责后台轻量同步和前台页面进入时的全量补齐。
 - [app/src/main/java/com/binance/monitor/ui/account/Mt5BridgeGatewayClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/Mt5BridgeGatewayClient.java)
@@ -63,8 +73,8 @@
   后台轻量同步账户数据，前台页面打开时补完整数据。
 - `AccountStatsBridgeActivity` -> `Mt5BridgeGatewayClient`
   获取账户概览、持仓、挂单、交易记录、权益曲线并更新界面。
-- `AccountStatsBridgeActivity` -> `EquityCurveView`
-  把筛选后的曲线数据交给曲线控件，并同步最大回撤高亮。
+- `AccountStatsBridgeActivity` -> `CurveAnalyticsHelper` -> `EquityCurveView` / `DrawdownChartView` / `DailyReturnChartView` / `TradeDistributionScatterView` / `HoldingDurationDistributionView`
+  先把曲线和交易记录转成统一统计结果，再驱动主图、副图和两张分布图。
 - `SettingsActivity` -> `SettingsSectionActivity`
   设置首页只负责分类入口，具体设置都在二级页里完成。
 - `SettingsSectionActivity` -> `ConfigManager`
@@ -85,4 +95,6 @@
 - `MA / EMA` 默认关闭，降低初始图表干扰。
 - 设置页拆成“目录首页 + 二级详情页”，提升设置层级清晰度。
 - 月收益表改为“左侧年份整块 + 右侧双行月份 + 横向滚动”，解决年份不对齐和百分比显示不全的问题。
+- MT5 网关曲线改为“成交 + 持仓 + 价格”重放，解决净值与结余长期重合的问题。
+- 账户统计页把最大回撤、回撤附图、日收益率和交易分布统一建立在同一套净值口径上，避免不同模块口径不一致。
 - 异常交易提醒先在 App 端提升为更强系统通知；服务器端异常判断迁移后续再评估，不在本轮硬塞进去。
