@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.main;
 
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -21,6 +22,7 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
@@ -353,6 +355,23 @@ public class MainActivity extends AppCompatActivity {
             text = AppConstants.SYMBOL_BTC;
         }
         binding.tvMainSymbolPickerLabel.setText(text);
+        applyMainSymbolPickerIndicator();
+    }
+
+    // 给产品选择标签补上下拉箭头，明确提示该区域可点击展开。
+    private void applyMainSymbolPickerIndicator() {
+        if (binding == null || binding.tvMainSymbolPickerLabel == null) {
+            return;
+        }
+        Drawable arrow = ContextCompat.getDrawable(this, R.drawable.ic_spinner_arrow);
+        if (arrow == null) {
+            return;
+        }
+        Drawable tintedArrow = DrawableCompat.wrap(arrow.mutate());
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        DrawableCompat.setTint(tintedArrow, palette.textSecondary);
+        binding.tvMainSymbolPickerLabel.setCompoundDrawablePadding(Math.round(6 * getResources().getDisplayMetrics().density));
+        binding.tvMainSymbolPickerLabel.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, tintedArrow, null);
     }
 
     private void setupObservers() {
@@ -561,10 +580,12 @@ public class MainActivity extends AppCompatActivity {
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        UiPaletteManager.applySystemBars(this, palette);
         tabActiveColor = palette.primary;
         tabInactiveColor = palette.textSecondary;
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.tvMainSymbolPickerLabel.setTextColor(palette.textPrimary);
+        applyMainSymbolPickerIndicator();
         if (binding.spinnerSymbolPicker.getAdapter() instanceof BaseAdapter) {
             ((BaseAdapter) binding.spinnerSymbolPicker.getAdapter()).notifyDataSetChanged();
         }

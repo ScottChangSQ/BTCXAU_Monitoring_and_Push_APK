@@ -309,26 +309,11 @@ public class KlineChartView extends View {
         textPaint.setTextSize(dp(9f));
         upPaint.setColor(0xFF16C784);
         downPaint.setColor(0xFFF6465D);
-        bollMidPaint.setColor(0xFFF2C94C);
-        bollUpPaint.setColor(0xFFD946EF);
-        bollDnPaint.setColor(0xFF8B5CF6);
         bollMidPaint.setStrokeWidth(dp(1f));
         bollUpPaint.setStrokeWidth(dp(1f));
         bollDnPaint.setStrokeWidth(dp(1f));
-        line1Paint.setColor(0xFFF2C94C);
-        line2Paint.setColor(0xFF8B5CF6);
         line1Paint.setStrokeWidth(dp(1f));
         line2Paint.setStrokeWidth(dp(1f));
-        macdDifPaint.setColor(0xFFF2C94C);
-        macdDeaPaint.setColor(0xFF8B5CF6);
-        stochKPaint.setColor(0xFFF2C94C);
-        stochDPaint.setColor(0xFF8B5CF6);
-        maPaint.setColor(0xFF60A5FA);
-        emaPaint.setColor(0xFF34D399);
-        sraPaint.setColor(0xFFF59E0B);
-        avlPaint.setColor(0xFF22D3EE);
-        rsiPaint.setColor(0xFFFFB020);
-        kdjJPaint.setColor(0xFFFF5A5F);
         macdDifPaint.setStrokeWidth(dp(1.4f));
         macdDeaPaint.setStrokeWidth(dp(1.4f));
         stochKPaint.setStrokeWidth(dp(1.3f));
@@ -392,6 +377,7 @@ public class KlineChartView extends View {
         volumeThresholdPaint.setStrokeWidth(dp(1f));
         volumeThresholdPaint.setColor(0xE6FFFFFF);
         volumeThresholdPaint.setPathEffect(new DashPathEffect(new float[]{dp(4f), dp(3f)}, 0f));
+        applyClassicIndicatorColors();
     }
 
     public void applyPalette(@Nullable UiPaletteManager.Palette palette) {
@@ -405,21 +391,7 @@ public class KlineChartView extends View {
         textPaint.setColor(palette.textSecondary);
         upPaint.setColor(palette.rise);
         downPaint.setColor(palette.fall);
-        bollMidPaint.setColor(palette.primary);
-        bollUpPaint.setColor(palette.btc);
-        bollDnPaint.setColor(palette.xau);
-        line1Paint.setColor(palette.primary);
-        line2Paint.setColor(palette.btc);
-        macdDifPaint.setColor(palette.primary);
-        macdDeaPaint.setColor(palette.xau);
-        stochKPaint.setColor(palette.primary);
-        stochDPaint.setColor(palette.btc);
-        maPaint.setColor(palette.primary);
-        emaPaint.setColor(palette.rise);
-        sraPaint.setColor(palette.xau);
-        avlPaint.setColor(palette.btc);
-        rsiPaint.setColor(palette.primary);
-        kdjJPaint.setColor(palette.fall);
+        applyClassicIndicatorColors();
         crossPaint.setColor(applyAlpha(palette.textSecondary, 235));
         crossLabelBgPaint.setColor(applyAlpha(palette.card, 235));
         crossLabelTextPaint.setColor(palette.textPrimary);
@@ -442,6 +414,25 @@ public class KlineChartView extends View {
         aggregateCostHintTextPaint.setColor(applyAlpha(palette.textPrimary, 205));
         volumeThresholdPaint.setColor(applyAlpha(palette.textPrimary, 210));
         invalidate();
+    }
+
+    // 指标曲线使用固定经典配色，避免主题切换后多条线过于接近。
+    private void applyClassicIndicatorColors() {
+        bollMidPaint.setColor(0xFFF5C542);
+        bollUpPaint.setColor(0xFF3B82F6);
+        bollDnPaint.setColor(0xFF8B5CF6);
+        line1Paint.setColor(0xFFF59E0B);
+        line2Paint.setColor(0xFF06B6D4);
+        macdDifPaint.setColor(0xFFF59E0B);
+        macdDeaPaint.setColor(0xFF06B6D4);
+        stochKPaint.setColor(0xFFF59E0B);
+        stochDPaint.setColor(0xFF06B6D4);
+        maPaint.setColor(0xFF2563EB);
+        emaPaint.setColor(0xFF10B981);
+        sraPaint.setColor(0xFFF97316);
+        avlPaint.setColor(0xFF7C3AED);
+        rsiPaint.setColor(0xFFE11D48);
+        kdjJPaint.setColor(0xFFEC4899);
     }
 
     public void setOnCrosshairListener(@Nullable OnCrosshairListener listener) {

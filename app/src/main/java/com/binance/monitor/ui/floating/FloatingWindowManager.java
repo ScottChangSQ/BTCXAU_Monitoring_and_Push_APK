@@ -1,6 +1,6 @@
 /*
- * 悬浮窗管理器，负责渲染统一快照下的连接状态、合并盈亏、产品行情卡片与分产品盈亏。
- * 数据由 MonitorService 一次性喂入，布局支持整块长按拖动、最小化、点击还原和异常闪烁提示。
+ * 悬浮窗管理器，负责渲染统一快照下的连接状态、合并盈亏和产品简表。
+ * 数据由 MonitorService 一次性喂入，布局支持整块拖动、最小化、点击还原和异常闪烁提示。
  */
 package com.binance.monitor.ui.floating;
 
@@ -11,10 +11,12 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
 import android.widget.LinearLayout;
@@ -32,11 +34,8 @@ import com.binance.monitor.util.PermissionHelper;
 
 import java.util.ArrayList;
 import java.util.List;
-
 public class FloatingWindowManager {
-    private static final int MINI_SIZE_DP = 25;
-    private static final long DRAG_LONG_PRESS_MS = 220L;
-    private static final long DRAG_FRAME_INTERVAL_MS = 16L;
+    private static final long DRAG_FRAME_INTERVAL_MS = 12L;
 
     private final Context context;
     private final WindowManager windowManager;
@@ -60,6 +59,7 @@ public class FloatingWindowManager {
     private long lastDragLayoutAt;
     private int lastDragLayoutX = Integer.MIN_VALUE;
     private int lastDragLayoutY = Integer.MIN_VALUE;
+    private DragAndClickListener dragAndClickListener;
 
     public FloatingWindowManager(Context context) {
         this.context = context.getApplicationContext();
@@ -157,11 +157,27 @@ public class FloatingWindowManager {
         layoutParams.gravity = Gravity.TOP | Gravity.END;
         layoutParams.x = dp(12);
         layoutParams.y = dp(120);
+        ViewGroup.LayoutParams expandedParams = binding.layoutExpanded.getLayoutParams();
+        expandedParams.width = dp(FloatingWindowLayoutHelper.resolveExpandedWidthDp());
+        binding.layoutExpanded.setLayoutParams(expandedParams);
+        int horizontalPadding = dp(FloatingWindowLayoutHelper.resolveHorizontalPaddingDp());
+        binding.layoutExpanded.setPadding(
+                horizontalPadding,
+                binding.layoutExpanded.getPaddingTop(),
+                horizontalPadding,
+                binding.layoutExpanded.getPaddingBottom()
+        );
         applyWindowAlpha();
         binding.btnMinimize.setOnClickListener(v -> setMinimized(true));
-        DragAndClickListener dragListener = new DragAndClickListener();
-        binding.rootFloating.setOnTouchListener(dragListener);
-        binding.viewMiniSquare.setOnTouchListener(dragListener);
+        dragAndClickListener = new DragAndClickListener();
+        bindDragSurface(binding.rootFloating);
+        bindDragSurface(binding.layoutExpanded);
+        bindDragSurface(binding.tvOverlayStatus);
+        bindDragSurface(binding.tvOverlayConnection);
+        bindDragSurface(binding.tvOverlayEmpty);
+        bindDragSurface(binding.layoutSymbolCards);
+        bindDragSurface(binding.btnMinimize);
+        bindDragSurface(binding.viewMiniSquare);
         windowManager.addView(binding.getRoot(), layoutParams);
         showing = true;
     }
@@ -178,36 +194,21 @@ public class FloatingWindowManager {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
         applyWindowAlpha();
         binding.layoutExpanded.setBackground(UiPaletteManager.createFloatingBackground(context, palette));
-        binding.viewMiniSquare.setBackground(UiPaletteManager.createFilledDrawable(context, palette.primary));
         binding.tvOverlayConnection.setText(snapshot.getConnectionStatus() == null || snapshot.getConnectionStatus().trim().isEmpty()
                 ? context.getString(R.string.status_unknown)
                 : snapshot.getConnectionStatus());
         binding.tvOverlayConnection.setTextColor(palette.textSecondary);
-        renderSummaryHeader(palette);
-        renderSymbolCards(palette);
-        boolean hasItems = !snapshot.getCards().isEmpty();
+        List<FloatingSymbolCardData> visibleCards = collectVisibleCards();
+        renderSummaryHeader(palette, visibleCards);
+        int renderedCount = renderSymbolCards(visibleCards, palette);
+        boolean hasItems = renderedCount > 0;
         binding.tvOverlayEmpty.setVisibility(hasItems ? View.GONE : View.VISIBLE);
         binding.tvOverlayEmpty.setTextColor(palette.textSecondary);
         refreshMinimizedState(false);
     }
 
-    private void renderSummaryHeader(UiPaletteManager.Palette palette) {
-        double totalPnl = 0d;
-        for (FloatingSymbolCardData card : snapshot.getCards()) {
-            if (card != null) {
-                totalPnl += card.getTotalPnl();
-            }
-        }
-        boolean hasCard = !snapshot.getCards().isEmpty();
-        String text = hasCard ? FormatUtils.formatSigned(totalPnl) : "0.00";
-        binding.tvOverlayStatus.setText(text);
-        binding.tvOverlayStatus.setTextColor(resolvePnlColor(totalPnl, hasCard));
-        binding.tvOverlayStatus.setTextSize(hasCard ? 20f : 18f);
-        binding.btnMinimize.setTextColor(palette.textPrimary);
-    }
-
-    private void renderSymbolCards(UiPaletteManager.Palette palette) {
-        binding.layoutSymbolCards.removeAllViews();
+    private List<FloatingSymbolCardData> collectVisibleCards() {
+        List<FloatingSymbolCardData> visible = new ArrayList<>();
         for (FloatingSymbolCardData card : snapshot.getCards()) {
             if (card == null) {
                 continue;
@@ -218,90 +219,141 @@ public class FloatingWindowManager {
             if (!showXau && AppConstants.SYMBOL_XAU.equalsIgnoreCase(card.getCode())) {
                 continue;
             }
-            binding.layoutSymbolCards.addView(buildSymbolCard(card, palette));
+            visible.add(card);
         }
+        return visible;
     }
 
-    private View buildSymbolCard(FloatingSymbolCardData card, UiPaletteManager.Palette palette) {
+    private void renderSummaryHeader(UiPaletteManager.Palette palette, List<FloatingSymbolCardData> visibleCards) {
+        double totalPnl = 0d;
+        for (FloatingSymbolCardData card : visibleCards) {
+            if (card != null) {
+                totalPnl += card.getTotalPnl();
+            }
+        }
+        boolean hasCard = !visibleCards.isEmpty();
+        String text = FormatUtils.formatSignedMoneyNoDecimal(hasCard ? totalPnl : 0d);
+        binding.tvOverlayStatus.setText(text);
+        binding.tvOverlayStatus.setTextColor(resolvePnlColor(totalPnl, hasCard));
+        binding.tvOverlayStatus.setTextSize(hasCard ? 17f : 16f);
+        binding.btnMinimize.setTextColor(palette.textPrimary);
+        binding.btnMinimize.setBackground(UiPaletteManager.createOutlinedDrawable(context, palette.control, palette.stroke));
+        binding.viewMiniSquare.setText(text);
+        binding.viewMiniSquare.setTextColor(resolvePnlColor(totalPnl, hasCard));
+        binding.viewMiniSquare.setTypeface(null, android.graphics.Typeface.BOLD);
+        binding.viewMiniSquare.setBackground(UiPaletteManager.createOutlinedDrawable(
+                context,
+                applyAlpha(palette.card, 238),
+                applyAlpha(resolvePnlColor(totalPnl, hasCard), 168)
+        ));
+    }
+
+    private int renderSymbolCards(List<FloatingSymbolCardData> visibleCards, UiPaletteManager.Palette palette) {
+        binding.layoutSymbolCards.removeAllViews();
+        for (int i = 0; i < visibleCards.size(); i++) {
+            FloatingSymbolCardData card = visibleCards.get(i);
+            if (card == null) {
+                continue;
+            }
+            binding.layoutSymbolCards.addView(buildSymbolCard(card, palette, i > 0));
+        }
+        return binding.layoutSymbolCards.getChildCount();
+    }
+
+    private View buildSymbolCard(FloatingSymbolCardData card,
+                                 UiPaletteManager.Palette palette,
+                                 boolean addTopSpacing) {
         LinearLayout cardView = new LinearLayout(context);
         cardView.setOrientation(LinearLayout.VERTICAL);
-        cardView.setBackground(UiPaletteManager.createOutlinedDrawable(context, palette.card, palette.stroke));
-        cardView.setPadding(dp(10), dp(9), dp(10), dp(9));
+        cardView.setPadding(0, addTopSpacing ? dp(4) : 0, 0, 0);
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        cardParams.topMargin = dp(8);
         cardView.setLayoutParams(cardParams);
 
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setLayoutParams(new LinearLayout.LayoutParams(
+                dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
 
         TextView labelView = new TextView(context);
         labelView.setText(card.getLabel());
         labelView.setTextColor(palette.textPrimary);
-        labelView.setTextSize(11f);
+        labelView.setTextSize(10f);
         labelView.setTypeface(null, android.graphics.Typeface.BOLD);
+        labelView.setSingleLine(true);
+        labelView.setMaxLines(1);
+        labelView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
+                dp(FloatingWindowLayoutHelper.resolveSymbolLabelColumnWidthDp()),
+                LinearLayout.LayoutParams.WRAP_CONTENT
         );
         labelView.setLayoutParams(labelParams);
 
         TextView pnlView = new TextView(context);
         LinearLayout.LayoutParams pnlParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(FloatingWindowLayoutHelper.resolvePnlColumnWidthDp()),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
         pnlView.setLayoutParams(pnlParams);
         double totalPnl = card.getTotalPnl();
-        pnlView.setText(FormatUtils.formatSigned(totalPnl));
+        pnlView.setText(FormatUtils.formatSignedMoneyNoDecimal(totalPnl));
         pnlView.setTextColor(totalPnl >= 0d ? palette.rise : palette.fall);
-        pnlView.setTextSize(12f);
+        pnlView.setTextSize(10f);
         pnlView.setTypeface(null, android.graphics.Typeface.BOLD);
+        pnlView.setGravity(Gravity.END);
         headerRow.addView(labelView);
         headerRow.addView(pnlView);
         cardView.addView(headerRow);
 
         TextView priceView = new TextView(context);
         LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        priceParams.topMargin = dp(4);
+        priceParams.topMargin = dp(1);
         priceView.setLayoutParams(priceParams);
         priceView.setText(card.hasLatestPrice() ? FormatUtils.formatPriceWithUnit(card.getLatestPrice()) : "--");
         priceView.setTextColor(palette.textPrimary);
-        priceView.setTextSize(18f);
+        priceView.setTextSize(13f);
         priceView.setTypeface(null, android.graphics.Typeface.BOLD);
+        priceView.setGravity(Gravity.START);
+        priceView.setSingleLine(true);
+        priceView.setMaxLines(1);
+        priceView.setEllipsize(TextUtils.TruncateAt.END);
         cardView.addView(priceView);
 
         TextView volumeView = new TextView(context);
-        volumeView.setText("成交量 " + FormatUtils.formatVolume(card.getVolume()));
-        volumeView.setTextColor(palette.textSecondary);
-        volumeView.setTextSize(10f);
         LinearLayout.LayoutParams volumeParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        volumeParams.topMargin = dp(4);
+        volumeParams.topMargin = dp(1);
         volumeView.setLayoutParams(volumeParams);
+        volumeView.setText("成交量 " + FormatUtils.formatVolume(card.getVolume()));
+        volumeView.setTextColor(palette.textSecondary);
+        volumeView.setTextSize(8.5f);
+        volumeView.setGravity(Gravity.START);
         cardView.addView(volumeView);
 
         TextView amountView = new TextView(context);
-        amountView.setText("成交额 " + FormatUtils.formatAmount(card.getAmount()));
-        amountView.setTextColor(palette.textSecondary);
-        amountView.setTextSize(10f);
         LinearLayout.LayoutParams amountParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        amountParams.topMargin = dp(2);
+        amountParams.topMargin = dp(1);
         amountView.setLayoutParams(amountParams);
+        amountView.setText("成交额 " + FormatUtils.formatAmount(card.getAmount()));
+        amountView.setTextColor(palette.textSecondary);
+        amountView.setTextSize(8.5f);
+        amountView.setGravity(Gravity.START);
         cardView.addView(amountView);
 
+        bindDragSurface(cardView);
         cardView.setOnClickListener(v -> openChartForSymbol(card.getCode()));
         return cardView;
     }
@@ -310,13 +362,48 @@ public class FloatingWindowManager {
         if (binding == null) {
             return;
         }
+        if (forceBlink) {
+            View root = binding.getRoot();
+            root.setVisibility(View.INVISIBLE);
+            applyWindowModeVisibility();
+            root.post(() -> {
+                if (binding == null) {
+                    return;
+                }
+                requestImmediateWindowRelayout();
+                root.setVisibility(View.VISIBLE);
+                applyMiniBlinkState(true);
+            });
+            return;
+        }
+        applyWindowModeVisibility();
+        applyMiniBlinkState(false);
+    }
+
+    // 统一切换展开态和最小化态的可见性，避免两个状态同时参与测量。
+    private void applyWindowModeVisibility() {
+        if (binding == null) {
+            return;
+        }
         binding.layoutExpanded.setVisibility(minimized ? View.GONE : View.VISIBLE);
         binding.viewMiniSquare.setVisibility(minimized ? View.VISIBLE : View.GONE);
+        if (minimized) {
+            binding.viewMiniSquare.bringToFront();
+        }
+        requestImmediateWindowRelayout();
+    }
+
+    // 控制最小化方块闪烁状态，避免状态切换时遗留半透明效果。
+    private void applyMiniBlinkState(boolean forceBlink) {
+        if (binding == null) {
+            return;
+        }
         if (minimized && (forceBlink || System.currentTimeMillis() < miniBlinkEndAt)) {
             startMiniBlink();
         } else if (!minimized) {
             handler.removeCallbacks(miniBlinkRunnable);
             miniBlinkActive = false;
+            miniBlinkDimmed = false;
             binding.viewMiniSquare.setAlpha(1f);
         }
     }
@@ -324,6 +411,33 @@ public class FloatingWindowManager {
     private void setMinimized(boolean minimized) {
         this.minimized = minimized;
         refreshMinimizedState(true);
+    }
+
+    // 将拖动与点击判定统一挂到所有可操作区域，避免产品区单独吃掉手势。
+    private void bindDragSurface(View target) {
+        if (target == null) {
+            return;
+        }
+        target.setOnTouchListener(dragAndClickListener);
+    }
+
+    // 立即触发浮层重排，减少最小化时先出现在左侧再跳到右侧的闪动。
+    private void requestImmediateWindowRelayout() {
+        if (!showing || binding == null || layoutParams == null) {
+            return;
+        }
+        View root = binding.getRoot();
+        int widthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+        int heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+        root.measure(widthSpec, heightSpec);
+        root.layout(0, 0, root.getMeasuredWidth(), root.getMeasuredHeight());
+        root.requestLayout();
+        layoutParams.width = root.getMeasuredWidth();
+        layoutParams.height = root.getMeasuredHeight();
+        try {
+            windowManager.updateViewLayout(root, layoutParams);
+        } catch (Exception ignored) {
+        }
     }
 
     private void applyWindowAlpha() {
@@ -390,6 +504,11 @@ public class FloatingWindowManager {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
+    private int applyAlpha(int color, int alpha) {
+        int safeAlpha = Math.max(0, Math.min(255, alpha));
+        return (color & 0x00FFFFFF) | (safeAlpha << 24);
+    }
+
     private class DragAndClickListener implements View.OnTouchListener {
         private int downX;
         private int downY;
@@ -418,9 +537,6 @@ public class FloatingWindowManager {
                     float moveX = event.getRawX() - rawX;
                     float moveY = event.getRawY() - rawY;
                     if (!draggingWindow) {
-                        if (SystemClock.elapsedRealtime() - downAt < DRAG_LONG_PRESS_MS) {
-                            return true;
-                        }
                         if (Math.hypot(moveX, moveY) < dragSlopPx) {
                             return true;
                         }
@@ -480,7 +596,6 @@ public class FloatingWindowManager {
                 return;
             }
             if (performClickIfTouched(binding.btnMinimize, event)) {
-                setMinimized(true);
                 return;
             }
             performChildRowClick(binding.layoutSymbolCards, event);

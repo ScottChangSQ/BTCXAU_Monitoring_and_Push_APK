@@ -6,11 +6,11 @@
 
     <LinearLayout
         android:id="@+id/layoutExpanded"
-        android:layout_width="196dp"
+        android:layout_width="132dp"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_overlay"
         android:orientation="vertical"
-        android:padding="12dp">
+        android:padding="8dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -26,38 +26,38 @@
                 android:maxLines="1"
                 android:text="0.00"
                 android:textColor="@color/text_primary"
-                android:textSize="20sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/btnMinimize"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:background="@drawable/bg_overlay_mini"
                 android:gravity="center"
                 android:text="@string/overlay_minimize"
                 android:textColor="@color/text_primary"
-                android:textSize="10sp" />
+                android:textSize="8sp" />
         </LinearLayout>
 
         <TextView
             android:id="@+id/tvOverlayConnection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:maxLines="1"
             android:text="实时行情连接中"
             android:textColor="@color/text_secondary"
-            android:textSize="10sp" />
+            android:textSize="8sp" />
 
         <TextView
             android:id="@+id/tvOverlayEmpty"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="6dp"
             android:text="暂无已启用产品数据"
             android:textColor="@color/text_secondary"
-            android:textSize="10sp"
+            android:textSize="8sp"
             android:visibility="gone" />
 
         <LinearLayout
@@ -70,11 +70,17 @@
 
     <TextView
         android:id="@+id/viewMiniSquare"
-        android:layout_width="25dp"
-        android:layout_height="25dp"
+        android:layout_width="wrap_content"
+        android:layout_height="22dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
         android:background="@drawable/bg_overlay_mini"
         android:gravity="center"
-        android:text="浮"
+        android:minWidth="40dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:text="0.00"
         android:textColor="@color/text_primary"
         android:textSize="10sp"
         android:textStyle="bold"

@@ -81,7 +81,7 @@ public class FloatingPositionAggregator {
         );
         List<FloatingSymbolCardData> result = new ArrayList<>();
         for (String symbol : visibleSymbols) {
-            FloatingPositionPnlItem pnlItem = grouped.get(symbol);
+            FloatingPositionPnlItem pnlItem = findPnlItemForSymbol(symbol, grouped);
             KlineData kline = latestKlines == null ? null : latestKlines.get(symbol);
             double totalPnl = pnlItem == null ? 0d : pnlItem.getTotalPnl();
             String label = resolveCardLabel(symbol, pnlItem);
@@ -160,11 +160,17 @@ public class FloatingPositionAggregator {
     }
 
     private static boolean isBtcSymbol(String code) {
+        if (code == null) {
+            return false;
+        }
         return AppConstants.SYMBOL_BTC.equalsIgnoreCase(code)
                 || code.startsWith("BTC");
     }
 
     private static boolean isXauSymbol(String code) {
+        if (code == null) {
+            return false;
+        }
         return AppConstants.SYMBOL_XAU.equalsIgnoreCase(code)
                 || code.startsWith("XAU");
     }
@@ -213,11 +219,31 @@ public class FloatingPositionAggregator {
         return result;
     }
 
+    // 兼容 MT5 持仓代码和 Binance 行情代码不一致的场景，保证悬浮窗仍能显示对应盈亏。
+    private static FloatingPositionPnlItem findPnlItemForSymbol(String symbol,
+                                                                Map<String, FloatingPositionPnlItem> grouped) {
+        if (grouped == null || grouped.isEmpty()) {
+            return null;
+        }
+        FloatingPositionPnlItem direct = grouped.get(symbol);
+        if (direct != null) {
+            return direct;
+        }
+        for (Map.Entry<String, FloatingPositionPnlItem> entry : grouped.entrySet()) {
+            if (entry == null || entry.getValue() == null) {
+                continue;
+            }
+            String code = entry.getKey();
+            if ((isBtcSymbol(symbol) && isBtcSymbol(code))
+                    || (isXauSymbol(symbol) && isXauSymbol(code))) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
     // 统一悬浮窗产品标题，优先使用已有持仓标签，否则回退资产简称。
     private static String resolveCardLabel(String symbol, FloatingPositionPnlItem item) {
-        if (item != null && item.getLabel() != null && !item.getLabel().trim().isEmpty()) {
-            return item.getLabel().trim();
-        }
         return AppConstants.symbolToAsset(symbol);
     }
 }

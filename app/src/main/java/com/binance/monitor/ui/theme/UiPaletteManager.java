@@ -4,12 +4,18 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.Button;
 import android.widget.SeekBar;
 
+import androidx.activity.ComponentActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.binance.monitor.R;
 import com.binance.monitor.data.local.ConfigManager;
@@ -121,8 +127,8 @@ public final class UiPaletteManager {
     public static GradientDrawable createFloatingBackground(Context context, Palette palette) {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{palette.card, palette.primarySoft});
-        drawable.setCornerRadius(dp(context, 14));
+                new int[]{palette.card, palette.control});
+        drawable.setCornerRadius(dp(context, 12));
         drawable.setStroke(dp(context, 1), palette.stroke);
         return drawable;
     }
@@ -151,6 +157,27 @@ public final class UiPaletteManager {
         }
         root.setBackground(createPageBackground(root.getContext(), palette));
         applyRecursively(root, palette);
+    }
+
+    // 按当前主题同步系统状态栏和导航栏，避免深浅主题下图标不可见。
+    public static void applySystemBars(ComponentActivity activity, Palette palette) {
+        if (activity == null || palette == null) {
+            return;
+        }
+        Window window = activity.getWindow();
+        if (window == null) {
+            return;
+        }
+        window.setStatusBarColor(palette.surfaceStart);
+        window.setNavigationBarColor(palette.surfaceEnd);
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
+        if (controller == null) {
+            return;
+        }
+        controller.setAppearanceLightStatusBars(isLightColor(palette.surfaceStart));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            controller.setAppearanceLightNavigationBars(isLightColor(palette.surfaceEnd));
+        }
     }
 
     private static void applyRecursively(View view, Palette palette) {
@@ -198,6 +225,10 @@ public final class UiPaletteManager {
 
     public static int subtleText(Context context) {
         return ContextCompat.getColor(context, R.color.text_secondary);
+    }
+
+    private static boolean isLightColor(int color) {
+        return ColorUtils.calculateLuminance(color) >= 0.55d;
     }
 
     private static int dp(Context context, int value) {

@@ -1,3 +1,7 @@
+/*
+ * 账户统计桥接页，负责账户总览、持仓、交易记录与刷新状态的统一展示。
+ * 该页面同时对接网关快照、历史缓存和本地筛选交互。
+ */
 package com.binance.monitor.ui.account;
 
 import android.content.Intent;
@@ -14,6 +18,7 @@ import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.util.TypedValue;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
@@ -167,6 +172,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
     private volatile boolean loading;
+    private boolean snapshotLoopEnabled;
     private long connectedUpdateAtMs;
     private long nextRefreshAtMs;
     private int tabActiveColor = 0xFF07C160;
@@ -239,13 +245,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private final Runnable refreshRunnable = new Runnable() {
         @Override
         public void run() {
+            clearScheduledRefresh();
             requestSnapshot();
-            if (userLoggedIn) {
-                scheduleNextSnapshot(dynamicRefreshDelayMs);
-            } else {
-                nextRefreshAtMs = 0L;
-                scheduledRefreshDelayMs = 0L;
-            }
         }
     };
 
@@ -293,10 +294,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         bindLocalMeta();
         applyPaletteStyles();
         applyPreloadedCacheIfAvailable();
+        snapshotLoopEnabled = true;
         if (userLoggedIn) {
             requestSnapshot();
-            scheduleNextSnapshot(dynamicRefreshDelayMs);
         } else {
+            clearScheduledRefresh();
             setConnectionStatus(false);
         }
         startOverviewHeaderTicker();
@@ -309,17 +311,21 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(true);
         }
+        snapshotLoopEnabled = true;
         if (userLoggedIn) {
-            scheduleNextSnapshot(dynamicRefreshDelayMs);
+            if (!loading && nextRefreshAtMs <= 0L) {
+                requestSnapshot();
+            }
+        } else {
+            clearScheduledRefresh();
         }
         startOverviewHeaderTicker();
     }
 
     @Override
     protected void onPause() {
-        refreshHandler.removeCallbacks(refreshRunnable);
-        nextRefreshAtMs = 0L;
-        scheduledRefreshDelayMs = 0L;
+        snapshotLoopEnabled = false;
+        clearScheduledRefresh();
         stopOverviewHeaderTicker();
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(false);
@@ -330,9 +336,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        refreshHandler.removeCallbacks(refreshRunnable);
-        nextRefreshAtMs = 0L;
-        scheduledRefreshDelayMs = 0L;
+        snapshotLoopEnabled = false;
+        clearScheduledRefresh();
         stopOverviewHeaderTicker();
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(false);
@@ -586,7 +591,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     updateOverviewHeader();
                     persistUiState();
                     requestSnapshot();
-                    scheduleNextSnapshot(dynamicRefreshDelayMs);
                 })
                 .show();
     }
@@ -614,9 +618,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         userLoggedIn = false;
         gatewayConnected = false;
         loginPasswordInput = "";
-        refreshHandler.removeCallbacks(refreshRunnable);
-        nextRefreshAtMs = 0L;
-        scheduledRefreshDelayMs = 0L;
+        clearScheduledRefresh();
         connectedError = "";
         connectedSource = "未登录";
         connectedGateway = "--";
@@ -724,19 +726,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             refreshTrades(true);
         }));
 
-        ArrayAdapter<String> sortAdapter = createTradeFilterAdapter(
-                new String[]{FILTER_SORT, SORT_CLOSE_TIME, SORT_OPEN_TIME, SORT_PROFIT});
+        ArrayAdapter<String> sortAdapter = createTradeFilterAdapter(createTradeSortOptions());
         binding.spinnerTradeSort.setAdapter(sortAdapter);
-        binding.spinnerTradeSort.setOnTouchListener((v, event) -> {
-            if (event != null && event.getAction() == MotionEvent.ACTION_UP) {
-                showTradeSortPopupMenu(v);
-            }
-            return true;
-        });
+        binding.spinnerTradeSort.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
+            handleSortSelection(safeSpinnerValue(binding.spinnerTradeSort, selectedTradeSortFilter, FILTER_SORT), true);
+            updateTradeFilterDisplayTexts();
+            refreshTrades(true, true);
+        }));
 
         setSpinnerSelectionByValue(binding.spinnerTradeProduct, selectedTradeProductFilter);
         setSpinnerSelectionByValue(binding.spinnerTradeSide, selectedTradeSideFilter);
-        setSpinnerSelectionByValue(binding.spinnerTradeSort, selectedTradeSortFilter);
+        setSpinnerSelectionByValue(binding.spinnerTradeSort, resolveSortSelectionValue(selectedTradeSortFilter));
         selectedTradeProductFilter = safeSpinnerValue(binding.spinnerTradeProduct, selectedTradeProductFilter, FILTER_PRODUCT);
         selectedTradeSideFilter = safeSpinnerValue(binding.spinnerTradeSide, selectedTradeSideFilter, FILTER_SIDE);
         selectedTradeSortFilter = safeSpinnerValue(binding.spinnerTradeSort, selectedTradeSortFilter, FILTER_SORT);
@@ -744,7 +744,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         updateTradeFilterDisplayTexts();
         binding.tvTradeProductLabel.setOnClickListener(v -> binding.spinnerTradeProduct.performClick());
         binding.tvTradeSideLabel.setOnClickListener(v -> binding.spinnerTradeSide.performClick());
-        binding.tvTradeSortLabel.setOnClickListener(this::showTradeSortPopupMenu);
+        binding.tvTradeSortLabel.setOnClickListener(v -> binding.spinnerTradeSort.performClick());
 
         binding.btnApplyManualRange.setOnClickListener(v -> applyManualCurveRange());
     }
@@ -787,9 +787,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (sortText.isEmpty()) {
             sortText = FILTER_SORT;
         }
-        if (!FILTER_SORT.equals(sortText)) {
-            sortText = sortText + (tradeSortDescending ? " ↓" : " ↑");
-        }
         binding.tvTradeSortLabel.setText(sortText);
     }
 
@@ -811,14 +808,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             selectedTradeSortFilter = raw;
             return;
         }
-        if (userAction) {
-            if (normalized.equals(lastExplicitTradeSortMode)
-                    && !FILTER_SORT.equals(selectedTradeSortFilter)) {
-                tradeSortDescending = !tradeSortDescending;
-            } else {
-                tradeSortDescending = false;
-            }
-        }
+        tradeSortDescending = isDescendingSortLabel(raw);
         lastExplicitTradeSortMode = normalized;
         selectedTradeSortFilter = raw;
     }
@@ -827,7 +817,42 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (rawSort == null || rawSort.trim().isEmpty() || FILTER_SORT.equals(rawSort)) {
             return SORT_CLOSE_TIME;
         }
-        return rawSort;
+        return stripSortDirection(rawSort);
+    }
+
+    private String[] createTradeSortOptions() {
+        return new String[]{
+                FILTER_SORT,
+                buildSortOption(SORT_CLOSE_TIME, true),
+                buildSortOption(SORT_CLOSE_TIME, false),
+                buildSortOption(SORT_OPEN_TIME, true),
+                buildSortOption(SORT_OPEN_TIME, false),
+                buildSortOption(SORT_PROFIT, true),
+                buildSortOption(SORT_PROFIT, false)
+        };
+    }
+
+    private String buildSortOption(String base, boolean descending) {
+        return base + (descending ? " ↓" : " ↑");
+    }
+
+    private String resolveSortSelectionValue(String rawValue) {
+        String safeValue = trim(rawValue);
+        if (safeValue.isEmpty() || FILTER_SORT.equals(safeValue)) {
+            return FILTER_SORT;
+        }
+        if (safeValue.endsWith("↓") || safeValue.endsWith("↑")) {
+            return safeValue;
+        }
+        return buildSortOption(normalizeSortValue(safeValue), tradeSortDescending);
+    }
+
+    private String stripSortDirection(String value) {
+        return trim(value).replace(" ↓", "").replace(" ↑", "");
+    }
+
+    private boolean isDescendingSortLabel(String value) {
+        return !trim(value).endsWith("↑");
     }
 
     private void showTradeSortPopupMenu(View anchor) {
@@ -852,7 +877,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             handleSortSelection(chosen, true);
             setSpinnerSelectionByValue(binding.spinnerTradeSort, chosen);
             updateTradeFilterDisplayTexts();
-            refreshTrades(true);
+            refreshTrades(true, true);
             return true;
         });
         popup.show();
@@ -1445,6 +1470,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (!userLoggedIn) {
             return;
         }
+        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository == null
+                ? null
+                : accountStorageRepository.loadStoredSnapshot();
         if (preloadManager == null) {
             applyStoredSnapshotIfAvailable();
             return;
@@ -1471,9 +1499,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setConnectionStatus(cache.isConnected());
         updateOverviewHeader();
         logConnectionEvent(cache.isConnected());
-        applySnapshot(cache.getSnapshot(), cache.isConnected());
-        persistSnapshotToStorage(
+        AccountSnapshot mergedSnapshot = AccountSnapshotRestoreHelper.mergeMissingTrades(
                 cache.getSnapshot(),
+                storedSnapshot
+        );
+        applySnapshot(mergedSnapshot, cache.isConnected());
+        persistSnapshotToStorage(
+                mergedSnapshot,
                 cache.isConnected(),
                 connectedAccount,
                 connectedServer,
@@ -1523,27 +1555,44 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void updateOverviewHeader() {
-        String displayName = trim(connectedAccountName);
-        if (displayName.isEmpty()) {
-            displayName = trim(connectedAccount);
-        }
-        if (displayName.isEmpty()) {
-            displayName = ACCOUNT;
-        }
-        String title = "账户-" + displayName;
+        String displayAccount = AccountOverviewTitleHelper.resolveDisplayAccount(
+                connectedAccount,
+                connectedAccountName,
+                ACCOUNT
+        );
+        String title = "账户-" + displayAccount;
         if (!connectedLeverageText.isEmpty()) {
-            title = title + "-" + connectedLeverageText;
+            String leverageText = "（" + connectedLeverageText + "）";
+            SpannableStringBuilder builder = new SpannableStringBuilder(title).append(leverageText);
+            int leverageStart = builder.length() - leverageText.length();
+            builder.setSpan(new AbsoluteSizeSpan(12, true),
+                    leverageStart,
+                    builder.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            builder.setSpan(new ForegroundColorSpan(ContextCompat.getColor(this, R.color.text_secondary)),
+                    leverageStart,
+                    builder.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            binding.tvAccountOverviewTitle.setText(builder);
+        } else {
+            binding.tvAccountOverviewTitle.setText(title);
         }
-        binding.tvAccountOverviewTitle.setText(title);
         binding.tvAccountMeta.setText("更新时间 " + formatRefreshMetaText());
     }
 
     private void scheduleNextSnapshot(long delayMs) {
-        long safeDelay = Math.max(1_000L, delayMs);
+        long safeDelay = AccountRefreshMetaHelper.normalizeDelayMs(delayMs);
         refreshHandler.removeCallbacks(refreshRunnable);
         scheduledRefreshDelayMs = safeDelay;
         nextRefreshAtMs = System.currentTimeMillis() + safeDelay;
         refreshHandler.postDelayed(refreshRunnable, safeDelay);
+    }
+
+    // 清空已排队的下一次刷新，保证页面显示与真实调度保持一致。
+    private void clearScheduledRefresh() {
+        refreshHandler.removeCallbacks(refreshRunnable);
+        nextRefreshAtMs = 0L;
+        scheduledRefreshDelayMs = 0L;
     }
 
     private void startOverviewHeaderTicker() {
@@ -1556,25 +1605,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private String formatRefreshMetaText() {
-        long updateAt = connectedUpdateAtMs > 0L ? connectedUpdateAtMs : System.currentTimeMillis();
-        long intervalMs = scheduledRefreshDelayMs > 0L ? scheduledRefreshDelayMs : dynamicRefreshDelayMs;
-        long intervalSeconds = Math.max(1L, intervalMs / 1_000L);
-        long remainSeconds = resolveRemainingRefreshSeconds(intervalSeconds);
+        long nowMs = System.currentTimeMillis();
+        long updateAt = connectedUpdateAtMs > 0L ? connectedUpdateAtMs : nowMs;
+        long intervalSeconds = AccountRefreshMetaHelper.resolveIntervalSeconds(
+                scheduledRefreshDelayMs,
+                dynamicRefreshDelayMs
+        );
+        long remainSeconds = AccountRefreshMetaHelper.resolveRemainingSeconds(
+                nextRefreshAtMs,
+                nowMs,
+                intervalSeconds
+        );
         return FormatUtils.formatDateTime(updateAt) + "（" + remainSeconds + "秒/" + intervalSeconds + "秒）";
-    }
-
-    private long resolveRemainingRefreshSeconds(long intervalSeconds) {
-        if (intervalSeconds <= 0L) {
-            return 1L;
-        }
-        if (nextRefreshAtMs <= 0L) {
-            return intervalSeconds;
-        }
-        long remainMs = Math.max(0L, nextRefreshAtMs - System.currentTimeMillis());
-        if (remainMs <= 0L) {
-            return intervalSeconds;
-        }
-        return Math.max(1L, (remainMs + 999L) / 1_000L);
     }
 
     private void requestSnapshot() {
@@ -1582,6 +1624,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             loading = false;
             gatewayConnected = false;
             setConnectionStatus(false);
+            clearScheduledRefresh();
             updateOverviewHeader();
             return;
         }
@@ -1679,6 +1722,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 }
                 adjustRefreshCadence(finalConnected, finalUnchanged);
                 loading = false;
+                if (shouldKeepRefreshLoop()) {
+                    scheduleNextSnapshot(dynamicRefreshDelayMs);
+                } else {
+                    clearScheduledRefresh();
+                }
+                updateOverviewHeader();
             });
         });
     }
@@ -1728,7 +1777,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (!connected) {
             unchangedRefreshStreak = 0;
             dynamicRefreshDelayMs = Math.min(ACCOUNT_REFRESH_MAX_MS, ACCOUNT_REFRESH_MIN_MS * 2L);
-            updateOverviewHeader();
             return;
         }
         if (unchanged) {
@@ -1739,7 +1787,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         dynamicRefreshDelayMs = Math.min(
                 ACCOUNT_REFRESH_MAX_MS,
                 ACCOUNT_REFRESH_MIN_MS + unchangedRefreshStreak * 2_000L);
-        updateOverviewHeader();
+    }
+
+    // 仅在页面处于活跃状态且用户保持登录时，才继续排队下一次刷新。
+    private boolean shouldKeepRefreshLoop() {
+        return snapshotLoopEnabled && userLoggedIn && !isFinishing() && !isDestroyed();
     }
 
     private String normalizeSource(String source) {
@@ -2206,7 +2258,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedLeverageText = extractLeverageText(latestOverviewMetrics);
         updateOverviewHeader();
 
-        List<AccountMetric> overview = buildOverviewMetrics(latestOverviewMetrics);
+        List<AccountMetric> overview = buildOverviewMetrics(
+                latestOverviewMetrics,
+                buildPositionListWithNaturalDayPnl(basePositions, baseTrades)
+        );
 
         overviewAdapter.submitList(overview);
         updateTradeProductOptions();
@@ -2377,7 +2432,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return normalized;
     }
 
-    private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview) {
+    private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview,
+                                                     List<PositionItem> currentPositions) {
         List<AccountMetric> result = new ArrayList<>();
         if (allCurvePoints.isEmpty()) {
             latestCumulativePnl = 0d;
@@ -2411,7 +2467,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         double marketValue = 0d;
         double positionPnl = 0d;
-        for (PositionItem item : basePositions) {
+        List<PositionItem> metricsPositions = currentPositions == null ? new ArrayList<>() : currentPositions;
+        for (PositionItem item : metricsPositions) {
             marketValue += item.getMarketValue();
             positionPnl += item.getTotalPnL() + item.getStorageFee();
         }
@@ -4321,8 +4378,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? ACCOUNT_INITIAL_BALANCE
                 : Math.max(1d, allCurvePoints.get(allCurvePoints.size() - 1).getBalance());
         double ratio = safeDivide(totalPnl, totalAsset);
-        overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics));
-        binding.tvPositionPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics, list));
+        binding.tvPositionPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
         binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(totalPnl, ratio));
     }
 
@@ -4474,21 +4531,34 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 "持仓盈亏: %s | 持仓收益率: %s",
                 pnlText,
                 ratioText);
-        SpannableString spannable = new SpannableString(summary);
+        SpannableStringBuilder spannable = new SpannableStringBuilder(summary);
 
         int pnlColor = ContextCompat.getColor(this, totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
         int ratioColor = ContextCompat.getColor(this, ratio >= 0d ? R.color.accent_green : R.color.accent_red);
+        int pnlLabelEnd = summary.indexOf(pnlText) - 1;
+        if (pnlLabelEnd > 0) {
+            spannable.setSpan(new StyleSpan(Typeface.BOLD),
+                    0,
+                    pnlLabelEnd,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
 
         int pnlStart = summary.indexOf(pnlText);
         if (pnlStart >= 0) {
             spannable.setSpan(new ForegroundColorSpan(pnlColor),
                     pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new AbsoluteSizeSpan(20, true),
+            spannable.setSpan(new AbsoluteSizeSpan(18, true),
+                    pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            spannable.setSpan(new StyleSpan(Typeface.BOLD),
                     pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         int ratioStart = summary.lastIndexOf(ratioText);
         if (ratioStart >= 0) {
             spannable.setSpan(new ForegroundColorSpan(ratioColor),
+                    ratioStart, ratioStart + ratioText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            spannable.setSpan(new AbsoluteSizeSpan(16, true),
+                    ratioStart, ratioStart + ratioText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            spannable.setSpan(new StyleSpan(Typeface.BOLD),
                     ratioStart, ratioStart + ratioText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         return spannable;
@@ -4791,6 +4861,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void refreshTrades(boolean scrollToTop) {
+        refreshTrades(scrollToTop, false);
+    }
+
+    private void refreshTrades(boolean scrollToTop, boolean collapseExpanded) {
+        if (collapseExpanded && tradeAdapter != null) {
+            tradeAdapter.collapseAllExpandedRows();
+        }
         List<TradeRecordItem> filtered = new ArrayList<>();
         String product = (String) binding.spinnerTradeProduct.getSelectedItem();
         String side = (String) binding.spinnerTradeSide.getSelectedItem();
@@ -5097,6 +5174,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        UiPaletteManager.applySystemBars(this, palette);
         tabActiveColor = palette.primary;
         tabInactiveColor = palette.textSecondary;
         updateBottomTabs(false, false, true, false);

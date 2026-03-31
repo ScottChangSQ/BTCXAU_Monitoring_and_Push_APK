@@ -31,6 +31,14 @@ public final class FormatUtils {
         return format.format(value);
     }
 
+    public static String formatSignedMoney(double value) {
+        return (value >= 0d ? "+$" : "-$") + formatPrice(Math.abs(value));
+    }
+
+    public static String formatSignedMoneyNoDecimal(double value) {
+        return (value >= 0d ? "+$" : "-$") + decimal("#,##0", Math.abs(value));
+    }
+
     public static String formatPriceWithUnit(double value) {
         return "$" + formatPrice(value);
     }
@@ -40,7 +48,7 @@ public final class FormatUtils {
     }
 
     public static String formatSignedPriceWithUnit(double value) {
-        return "$" + formatSigned(value);
+        return formatSignedMoney(value);
     }
 
     public static String formatVolumeWithUnit(double value, String unit) {

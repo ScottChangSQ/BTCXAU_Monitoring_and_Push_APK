@@ -62,6 +62,11 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         diffResult.dispatchUpdatesTo(this);
     }
 
+    // 在排序切换时清空全部展开状态，避免旧明细跟着新顺序保留下来。
+    public void collapseAllExpandedRows() {
+        expandedKeys.clear();
+    }
+
     private List<String> buildRowKeys(List<TradeRecordItem> data) {
         List<String> keys = new ArrayList<>();
         if (data == null || data.isEmpty()) {

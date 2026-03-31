@@ -97,6 +97,7 @@ public class SettingsActivity extends AppCompatActivity {
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        UiPaletteManager.applySystemBars(this, palette);
         tabActiveColor = palette.primary;
         tabInactiveColor = palette.textSecondary;
         styleEntry(binding.itemDisplay, palette);

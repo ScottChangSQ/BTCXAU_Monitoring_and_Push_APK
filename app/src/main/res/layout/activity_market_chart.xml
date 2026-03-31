@@ -491,7 +491,8 @@
                     android:layout_marginTop="4dp"
                     android:text="持仓盈亏: -- | 持仓收益率: --"
                     android:textColor="#8FA6C7"
-                    android:textSize="11sp" />
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/tvChartPositionAggregateTitle"

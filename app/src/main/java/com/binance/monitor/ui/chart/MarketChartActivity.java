@@ -3,9 +3,15 @@ package com.binance.monitor.ui.chart;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.AbsoluteSizeSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -22,6 +28,7 @@ import android.view.ViewGroup;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.binance.monitor.R;
@@ -734,9 +741,52 @@ public class MarketChartActivity extends AppCompatActivity {
         return new ArrayList<>(merged.values());
     }
 
-    private String buildPositionPnlSummaryForChart(double totalPnl, double ratio) {
-        return "持仓盈亏: " + formatSignedUsd(totalPnl)
-                + " | 持仓收益率: " + String.format(Locale.getDefault(), "%+.2f%%", ratio * 100d);
+    private CharSequence buildPositionPnlSummaryForChart(double totalPnl, double ratio) {
+        String pnlText = formatSignedUsd(totalPnl);
+        String ratioText = String.format(Locale.getDefault(), "%+.2f%%", ratio * 100d);
+        String summary = "持仓盈亏: " + pnlText + " | 持仓收益率: " + ratioText;
+        SpannableStringBuilder spannable = new SpannableStringBuilder(summary);
+        int pnlColor = ContextCompat.getColor(this, totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
+        int ratioColor = ContextCompat.getColor(this, ratio >= 0d ? R.color.accent_green : R.color.accent_red);
+
+        int pnlLabelEnd = summary.indexOf(pnlText) - 1;
+        if (pnlLabelEnd > 0) {
+            spannable.setSpan(new StyleSpan(Typeface.BOLD),
+                    0,
+                    pnlLabelEnd,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        int pnlStart = summary.indexOf(pnlText);
+        if (pnlStart >= 0) {
+            spannable.setSpan(new ForegroundColorSpan(pnlColor),
+                    pnlStart,
+                    pnlStart + pnlText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            spannable.setSpan(new AbsoluteSizeSpan(16, true),
+                    pnlStart,
+                    pnlStart + pnlText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            spannable.setSpan(new StyleSpan(Typeface.BOLD),
+                    pnlStart,
+                    pnlStart + pnlText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        int ratioStart = summary.lastIndexOf(ratioText);
+        if (ratioStart >= 0) {
+            spannable.setSpan(new ForegroundColorSpan(ratioColor),
+                    ratioStart,
+                    ratioStart + ratioText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            spannable.setSpan(new AbsoluteSizeSpan(15, true),
+                    ratioStart,
+                    ratioStart + ratioText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            spannable.setSpan(new StyleSpan(Typeface.BOLD),
+                    ratioStart,
+                    ratioStart + ratioText.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return spannable;
     }
 
     private void setupBottomNav() {
@@ -2082,6 +2132,23 @@ public class MarketChartActivity extends AppCompatActivity {
             text = AppConstants.SYMBOL_BTC;
         }
         binding.tvChartSymbolPickerLabel.setText(text);
+        applyChartSymbolPickerIndicator();
+    }
+
+    // 给顶部产品标签补上下拉箭头，避免像普通文本一样不明显。
+    private void applyChartSymbolPickerIndicator() {
+        if (binding == null || binding.tvChartSymbolPickerLabel == null) {
+            return;
+        }
+        Drawable arrow = ContextCompat.getDrawable(this, R.drawable.ic_spinner_arrow);
+        if (arrow == null) {
+            return;
+        }
+        Drawable tintedArrow = DrawableCompat.wrap(arrow.mutate());
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        DrawableCompat.setTint(tintedArrow, palette.textSecondary);
+        binding.tvChartSymbolPickerLabel.setCompoundDrawablePadding(dpToPx(6f));
+        binding.tvChartSymbolPickerLabel.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, tintedArrow, null);
     }
 
     private void updateIntervalButtons() {
@@ -2142,6 +2209,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        UiPaletteManager.applySystemBars(this, palette);
         tabActiveColor = palette.primary;
         tabInactiveColor = palette.textSecondary;
         binding.klineChartView.applyPalette(palette);
@@ -2150,6 +2218,7 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.cardChartPositions.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.tvChartSymbolPickerLabel.setTextColor(palette.textPrimary);
+        applyChartSymbolPickerIndicator();
         binding.btnRetryLoad.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
         binding.btnRetryLoad.setTextColor(ContextCompat.getColor(this, R.color.white));
         binding.tvChartState.setTextColor(palette.textSecondary);
@@ -2158,7 +2227,7 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.tvChartRefreshCountdown.setTextColor(palette.textSecondary);
         binding.tvChartRefreshCountdown.setBackground(null);
         binding.tvChartPositionTitle.setTextColor(palette.textPrimary);
-        binding.tvChartPositionSummary.setTextColor(palette.textSecondary);
+        binding.tvChartPositionSummary.setTextColor(palette.textPrimary);
         binding.tvChartPositionAggregateTitle.setTextColor(palette.textPrimary);
         binding.tvChartPositionDetailTitle.setTextColor(palette.textPrimary);
         binding.tvChartPendingOrdersTitle.setTextColor(palette.textPrimary);
