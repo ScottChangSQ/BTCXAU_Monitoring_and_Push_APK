@@ -208,12 +208,20 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
             double pendingPrice = item.getPendingPrice() > 0d ? item.getPendingPrice() : item.getLatestPrice();
+            double displayLots = Math.abs(item.getPendingLots()) > 1e-9
+                    ? Math.abs(item.getPendingLots())
+                    : Math.abs(item.getQuantity());
+            String qtyText = displayLots > 1e-9
+                    ? String.format(Locale.getDefault(), "%.2f 手", displayLots)
+                    : (item.getPendingCount() > 0
+                    ? (item.getPendingCount() + " 单")
+                    : "0.00 手");
             String pendingPriceText = String.format(Locale.getDefault(), "%,.2f", pendingPrice);
             String summaryRaw = String.format(Locale.getDefault(),
-                    "%s | %s | %.2f 手 | $%s",
+                    "%s | %s | %s | $%s",
                     item.getProductName(),
                     sideText,
-                    item.getPendingLots(),
+                    qtyText,
                     pendingPriceText);
             SpannableStringBuilder summarySpan = new SpannableStringBuilder(summaryRaw);
             int sideStart = summaryRaw.indexOf(sideText);

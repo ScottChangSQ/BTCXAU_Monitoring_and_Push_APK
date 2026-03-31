@@ -55,15 +55,84 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.settings.SettingsSectionActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.main.MainActivity"
             android:exported="true"
-            android:screenOrientation="portrait">
+            android:screenOrientation="portrait" />
+
+        <activity-alias
+            android:name=".launcher.IconFinancialAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_theme_financial"
+            android:label="@string/app_name"
+            android:roundIcon="@drawable/ic_launcher_theme_financial"
+            android:targetActivity=".ui.main.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".launcher.IconVintageAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_theme_vintage"
+            android:label="@string/app_name"
+            android:roundIcon="@drawable/ic_launcher_theme_vintage"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".launcher.IconBinanceAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_theme_binance"
+            android:label="@string/app_name"
+            android:roundIcon="@drawable/ic_launcher_theme_binance"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".launcher.IconTradingViewAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_theme_tradingview"
+            android:label="@string/app_name"
+            android:roundIcon="@drawable/ic_launcher_theme_tradingview"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".launcher.IconLightAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_theme_light"
+            android:label="@string/app_name"
+            android:roundIcon="@drawable/ic_launcher_theme_light"
+            android:targetActivity=".ui.main.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".service.MonitorService"

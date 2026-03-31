@@ -7,10 +7,12 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
+import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
 import android.util.TypedValue;
 import android.text.TextUtils;
@@ -42,6 +44,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.data.local.LogManager;
+import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.ActivityAccountStatsBinding;
@@ -79,6 +82,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -102,8 +106,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final String SORT_PROFIT = "盈利水平";
     private static final long ACCOUNT_REFRESH_MIN_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
     private static final long ACCOUNT_REFRESH_MAX_MS = AppConstants.ACCOUNT_REFRESH_MAX_INTERVAL_MS;
-    private static final int TAB_ACTIVE_COLOR = 0xFF07C160;
-    private static final int TAB_INACTIVE_COLOR = 0xFF7F8EA9;
+    private static final TimeZone BEIJING_TIME_ZONE = TimeZone.getTimeZone("Asia/Shanghai");
 
     private static final String PREFS_UI_STATE = "account_stats_ui_state";
     private static final String PREF_RANGE = "pref_range";
@@ -120,6 +123,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final String PREF_FILTER_SIDE = "pref_filter_side";
     private static final String PREF_FILTER_SORT = "pref_filter_sort";
     private static final String PREF_FILTER_SORT_DESC = "pref_filter_sort_desc";
+    private static final String PREF_LOGIN_ENABLED = "pref_login_enabled";
+    private static final String PREF_LOGIN_ACCOUNT = "pref_login_account";
+    private static final String PREF_LOGIN_PASSWORD = "pref_login_password";
+    private static final String PREF_LOGIN_SERVER = "pref_login_server";
     private static final int DATE_TARGET_START = 0;
     private static final int DATE_TARGET_END = 1;
 
@@ -147,6 +154,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private ActivityAccountStatsBinding binding;
     private AccountStatsPreloadManager preloadManager;
     private Mt5BridgeGatewayClient gatewayClient;
+    private AccountStorageRepository accountStorageRepository;
     private AccountMetricAdapter overviewAdapter;
     private StatsMetricAdapter indicatorAdapter;
     private PositionAggregateAdapter positionAggregateAdapter;
@@ -161,6 +169,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private volatile boolean loading;
     private long connectedUpdateAtMs;
     private long nextRefreshAtMs;
+    private int tabActiveColor = 0xFF07C160;
+    private int tabInactiveColor = 0xFF7F8EA9;
 
     private AccountTimeRange selectedRange = AccountTimeRange.D7;
     private ReturnStatsMode returnStatsMode = ReturnStatsMode.MONTH;
@@ -191,6 +201,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private double curveBaseBalance = ACCOUNT_INITIAL_BALANCE;
 
     private String connectedAccount = ACCOUNT;
+    private String connectedAccountName = ACCOUNT;
     private String connectedServer = SERVER;
     private String connectedSource = "历史数据（网关离线）";
     private String connectedGateway = "--";
@@ -198,6 +209,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String connectedLeverageText = "";
     private String connectedError = "";
     private String dataQualitySummary = "";
+    private boolean userLoggedIn;
+    private boolean gatewayConnected;
+    private String loginAccountInput = ACCOUNT;
+    private String loginPasswordInput = "";
+    private String loginServerInput = SERVER;
     private final Map<Long, CurvePoint> curveHistory = new TreeMap<>();
     private final Map<String, TradeRecordItem> tradeHistory = new LinkedHashMap<>();
     private List<PositionItem> connectedPositionCache = new ArrayList<>();
@@ -224,7 +240,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         @Override
         public void run() {
             requestSnapshot();
-            scheduleNextSnapshot(dynamicRefreshDelayMs);
+            if (userLoggedIn) {
+                scheduleNextSnapshot(dynamicRefreshDelayMs);
+            } else {
+                nextRefreshAtMs = 0L;
+                scheduledRefreshDelayMs = 0L;
+            }
         }
     };
 
@@ -243,7 +264,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
 
         preloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
-        gatewayClient = new Mt5BridgeGatewayClient();
+        gatewayClient = new Mt5BridgeGatewayClient(getApplicationContext());
+        accountStorageRepository = new AccountStorageRepository(getApplicationContext());
         logManager = LogManager.getInstance(getApplicationContext());
         ioExecutor = Executors.newSingleThreadExecutor();
 
@@ -271,8 +293,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         bindLocalMeta();
         applyPaletteStyles();
         applyPreloadedCacheIfAvailable();
-        requestSnapshot();
-        scheduleNextSnapshot(dynamicRefreshDelayMs);
+        if (userLoggedIn) {
+            requestSnapshot();
+            scheduleNextSnapshot(dynamicRefreshDelayMs);
+        } else {
+            setConnectionStatus(false);
+        }
         startOverviewHeaderTicker();
     }
 
@@ -283,7 +309,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(true);
         }
-        scheduleNextSnapshot(dynamicRefreshDelayMs);
+        if (userLoggedIn) {
+            scheduleNextSnapshot(dynamicRefreshDelayMs);
+        }
         startOverviewHeaderTicker();
     }
 
@@ -339,7 +367,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setupOverviewHeader() {
-        binding.tvAccountConnectionStatus.setOnClickListener(v -> showConnectionDialog());
+        binding.tvAccountConnectionStatus.setOnClickListener(v -> {
+            if (!userLoggedIn) {
+                showLoginDialog();
+            } else {
+                showConnectionDialog();
+            }
+        });
     }
 
     private void restoreUiState() {
@@ -395,6 +429,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         selectedTradeSideFilter = prefs.getString(PREF_FILTER_SIDE, FILTER_SIDE);
         selectedTradeSortFilter = prefs.getString(PREF_FILTER_SORT, FILTER_SORT);
         tradeSortDescending = prefs.getBoolean(PREF_FILTER_SORT_DESC, true);
+        userLoggedIn = prefs.getBoolean(PREF_LOGIN_ENABLED, false);
+        loginAccountInput = trim(prefs.getString(PREF_LOGIN_ACCOUNT, ACCOUNT));
+        if (loginAccountInput.isEmpty()) {
+            loginAccountInput = ACCOUNT;
+        }
+        loginPasswordInput = trim(prefs.getString(PREF_LOGIN_PASSWORD, ""));
+        loginServerInput = trim(prefs.getString(PREF_LOGIN_SERVER, SERVER));
+        if (loginServerInput.isEmpty()) {
+            loginServerInput = SERVER;
+        }
 
         if (selectedTradeProductFilter == null || selectedTradeProductFilter.trim().isEmpty()) {
             selectedTradeProductFilter = FILTER_PRODUCT;
@@ -440,6 +484,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         editor.putString(PREF_FILTER_SIDE, selectedTradeSideFilter);
         editor.putString(PREF_FILTER_SORT, selectedTradeSortFilter);
         editor.putBoolean(PREF_FILTER_SORT_DESC, tradeSortDescending);
+        editor.putBoolean(PREF_LOGIN_ENABLED, userLoggedIn);
+        editor.putString(PREF_LOGIN_ACCOUNT, trim(loginAccountInput).isEmpty() ? ACCOUNT : trim(loginAccountInput));
+        editor.putString(PREF_LOGIN_PASSWORD, trim(loginPasswordInput));
+        editor.putString(PREF_LOGIN_SERVER, trim(loginServerInput).isEmpty() ? SERVER : trim(loginServerInput));
         editor.apply();
     }
 
@@ -477,11 +525,108 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 + "更新时间信息：" + connectedUpdate
                 + (connectedError.isEmpty() ? "" : "\n失败原因：" + connectedError)
                 + (dataQualitySummary.isEmpty() ? "" : "\n数据校对：" + dataQualitySummary);
-        new MaterialAlertDialogBuilder(this)
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this)
                 .setTitle("账户连接详情")
                 .setMessage(message)
-                .setPositiveButton("确定", null)
+                .setPositiveButton("确定", null);
+        if (userLoggedIn) {
+            builder.setNegativeButton("退出登录", (dialog, which) -> logoutAccount());
+        }
+        builder.show();
+    }
+
+    private void showLoginDialog() {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int horizontal = dpToPx(16);
+        int top = dpToPx(8);
+        int bottom = dpToPx(4);
+        container.setPadding(horizontal, top, horizontal, bottom);
+
+        EditText accountInput = createLoginField("账户名称", false);
+        accountInput.setText(trim(loginAccountInput).isEmpty() ? ACCOUNT : trim(loginAccountInput));
+        container.addView(accountInput);
+
+        EditText passwordInput = createLoginField("账户密码", true);
+        if (!trim(loginPasswordInput).isEmpty()) {
+            passwordInput.setText(loginPasswordInput);
+        }
+        container.addView(passwordInput);
+
+        EditText serverInput = createLoginField("服务器信息", false);
+        serverInput.setText(trim(loginServerInput).isEmpty() ? SERVER : trim(loginServerInput));
+        container.addView(serverInput);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("账户登录")
+                .setView(container)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("登录", (dialog, which) -> {
+                    String account = trim(accountInput.getText() == null ? "" : accountInput.getText().toString());
+                    String password = trim(passwordInput.getText() == null ? "" : passwordInput.getText().toString());
+                    String server = trim(serverInput.getText() == null ? "" : serverInput.getText().toString());
+                    if (account.isEmpty() || password.isEmpty() || server.isEmpty()) {
+                        Toast.makeText(this, "请完整填写账户、密码和服务器信息", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    userLoggedIn = true;
+                    loginAccountInput = account;
+                    loginPasswordInput = password;
+                    loginServerInput = server;
+                    connectedAccount = account;
+                    connectedAccountName = account;
+                    connectedServer = server;
+                    connectedSource = "登录后同步中";
+                    connectedGateway = "--";
+                    connectedUpdateAtMs = System.currentTimeMillis();
+                    connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
+                    connectedError = "";
+                    gatewayConnected = false;
+                    setConnectionStatus(gatewayConnected);
+                    updateOverviewHeader();
+                    persistUiState();
+                    requestSnapshot();
+                    scheduleNextSnapshot(dynamicRefreshDelayMs);
+                })
                 .show();
+    }
+
+    private EditText createLoginField(String hint, boolean passwordMode) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setSingleLine(true);
+        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        input.setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dpToPx(8);
+        input.setLayoutParams(params);
+        if (passwordMode) {
+            input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        } else {
+            input.setInputType(InputType.TYPE_CLASS_TEXT);
+        }
+        return input;
+    }
+
+    private void logoutAccount() {
+        userLoggedIn = false;
+        gatewayConnected = false;
+        loginPasswordInput = "";
+        refreshHandler.removeCallbacks(refreshRunnable);
+        nextRefreshAtMs = 0L;
+        scheduledRefreshDelayMs = 0L;
+        connectedError = "";
+        connectedSource = "未登录";
+        connectedGateway = "--";
+        connectedAccountName = trim(loginAccountInput).isEmpty() ? ACCOUNT : trim(loginAccountInput);
+        connectedLeverageText = "";
+        connectedUpdateAtMs = System.currentTimeMillis();
+        connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
+        setConnectionStatus(false);
+        updateOverviewHeader();
+        persistUiState();
     }
 
     private void setupBottomNav() {
@@ -512,8 +657,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
-        tab.setTextColor(selected ? TAB_ACTIVE_COLOR : TAB_INACTIVE_COLOR);
+        tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
         tab.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
     }
 
     private void placeCurveSectionToBottom() {
@@ -1280,31 +1426,40 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void bindLocalMeta() {
-        connectedAccount = ACCOUNT;
-        connectedServer = SERVER;
-        connectedSource = "历史数据（网关离线）";
+        connectedAccount = userLoggedIn ? loginAccountInput : ACCOUNT;
+        connectedAccountName = connectedAccount;
+        connectedServer = userLoggedIn ? loginServerInput : SERVER;
+        connectedSource = userLoggedIn ? "历史数据（网关离线）" : "未登录";
         connectedGateway = "--";
         connectedUpdateAtMs = System.currentTimeMillis();
         connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
         connectedLeverageText = "";
         connectedError = "";
         dataQualitySummary = "";
+        gatewayConnected = false;
         setConnectionStatus(false);
         updateOverviewHeader();
     }
 
     private void applyPreloadedCacheIfAvailable() {
+        if (!userLoggedIn) {
+            return;
+        }
         if (preloadManager == null) {
+            applyStoredSnapshotIfAvailable();
             return;
         }
         AccountStatsPreloadManager.Cache cache = preloadManager.getLatestCache();
         if (cache == null || cache.getSnapshot() == null) {
+            applyStoredSnapshotIfAvailable();
             return;
         }
         if (System.currentTimeMillis() - cache.getFetchedAt() > AppConstants.ACCOUNT_REFRESH_INTERVAL_MS * 3L) {
+            applyStoredSnapshotIfAvailable();
             return;
         }
         connectedAccount = cache.getAccount().isEmpty() ? ACCOUNT : cache.getAccount();
+        connectedAccountName = connectedAccount;
         connectedServer = cache.getServer().isEmpty() ? SERVER : cache.getServer();
         connectedSource = normalizeSource(cache.getSource());
         connectedGateway = cache.getGateway().isEmpty() ? "--" : cache.getGateway();
@@ -1317,10 +1472,65 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         updateOverviewHeader();
         logConnectionEvent(cache.isConnected());
         applySnapshot(cache.getSnapshot(), cache.isConnected());
+        persistSnapshotToStorage(
+                cache.getSnapshot(),
+                cache.isConnected(),
+                connectedAccount,
+                connectedServer,
+                connectedSource,
+                connectedGateway,
+                connectedUpdateAtMs,
+                connectedError,
+                cache.getFetchedAt()
+        );
+    }
+
+    private void applyStoredSnapshotIfAvailable() {
+        if (accountStorageRepository == null) {
+            return;
+        }
+        AccountStorageRepository.StoredSnapshot snapshot = accountStorageRepository.loadStoredSnapshot();
+        if (snapshot.getPositions().isEmpty()
+                && snapshot.getPendingOrders().isEmpty()
+                && snapshot.getTrades().isEmpty()
+                && snapshot.getCurvePoints().isEmpty()) {
+            return;
+        }
+        connectedAccount = snapshot.getAccount().isEmpty() ? ACCOUNT : snapshot.getAccount();
+        connectedAccountName = connectedAccount;
+        connectedServer = snapshot.getServer().isEmpty() ? SERVER : snapshot.getServer();
+        connectedSource = snapshot.getSource().isEmpty() ? "历史数据（本地恢复）" : snapshot.getSource();
+        connectedGateway = snapshot.getGateway().isEmpty() ? "--" : snapshot.getGateway();
+        long updateAt = snapshot.getUpdatedAt() > 0L ? snapshot.getUpdatedAt() : snapshot.getFetchedAt();
+        connectedUpdateAtMs = updateAt > 0L ? updateAt : System.currentTimeMillis();
+        connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
+        connectedError = snapshot.getError();
+        setConnectionStatus(snapshot.isConnected());
+        updateOverviewHeader();
+        applySnapshot(buildAccountSnapshot(snapshot), snapshot.isConnected());
+    }
+
+    private AccountSnapshot buildAccountSnapshot(AccountStorageRepository.StoredSnapshot snapshot) {
+        return new AccountSnapshot(
+                snapshot.getOverviewMetrics(),
+                snapshot.getCurvePoints(),
+                snapshot.getCurveIndicators(),
+                snapshot.getPositions(),
+                snapshot.getPendingOrders(),
+                snapshot.getTrades(),
+                snapshot.getStatsMetrics()
+        );
     }
 
     private void updateOverviewHeader() {
-        String title = "账户总览-" + connectedAccount;
+        String displayName = trim(connectedAccountName);
+        if (displayName.isEmpty()) {
+            displayName = trim(connectedAccount);
+        }
+        if (displayName.isEmpty()) {
+            displayName = ACCOUNT;
+        }
+        String title = "账户-" + displayName;
         if (!connectedLeverageText.isEmpty()) {
             title = title + "-" + connectedLeverageText;
         }
@@ -1368,6 +1578,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void requestSnapshot() {
+        if (!userLoggedIn) {
+            loading = false;
+            gatewayConnected = false;
+            setConnectionStatus(false);
+            updateOverviewHeader();
+            return;
+        }
         if (loading) {
             return;
         }
@@ -1379,6 +1596,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             AccountSnapshot snapshot;
             boolean connected;
             String account;
+            String accountName;
             String server;
             String source;
             String gateway;
@@ -1386,20 +1604,35 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             String error;
 
             if (remote.isSuccess()) {
-                snapshot = remote.getSnapshot();
-                connected = true;
-                account = remote.getAccount(ACCOUNT);
-                server = remote.getServer(SERVER);
-                source = normalizeSource(remote.getLocalizedSource());
-                gateway = remote.getGatewayEndpoint();
-                updatedAt = remote.getUpdatedAt() > 0L ? remote.getUpdatedAt() : System.currentTimeMillis();
-                error = "";
+                boolean loginMatched = isLoginCredentialMatched(remote);
+                if (loginMatched) {
+                    snapshot = remote.getSnapshot();
+                    connected = true;
+                    account = remote.getAccount(trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput);
+                    accountName = remote.getAccountName(account);
+                    server = remote.getServer(trim(loginServerInput).isEmpty() ? SERVER : loginServerInput);
+                    source = normalizeSource(remote.getLocalizedSource());
+                    gateway = remote.getGatewayEndpoint();
+                    updatedAt = remote.getUpdatedAt() > 0L ? remote.getUpdatedAt() : System.currentTimeMillis();
+                    error = "";
+                } else {
+                    snapshot = null;
+                    connected = false;
+                    account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
+                    accountName = account;
+                    server = trim(loginServerInput).isEmpty() ? SERVER : loginServerInput;
+                    source = "登录校验失败";
+                    gateway = remote.getGatewayEndpoint();
+                    updatedAt = System.currentTimeMillis();
+                    error = "登录账户或服务器与网关返回不一致";
+                }
             } else {
                 // 断线时保持当前界面数据，不回落到演示/备用数据。
                 snapshot = null;
                 connected = false;
-                account = ACCOUNT;
-                server = SERVER;
+                account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
+                accountName = account;
+                server = trim(loginServerInput).isEmpty() ? SERVER : loginServerInput;
                 source = "历史数据（网关离线）";
                 gateway = "Gateway offline";
                 updatedAt = System.currentTimeMillis();
@@ -1409,6 +1642,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             final AccountSnapshot finalSnapshot = snapshot;
             final boolean finalConnected = connected;
             final String finalAccount = account;
+            final String finalAccountName = accountName;
             final String finalServer = server;
             final String finalSource = source;
             final String finalGateway = gateway;
@@ -1418,6 +1652,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
             runOnUiThread(() -> {
                 connectedAccount = finalAccount;
+                connectedAccountName = finalAccountName;
                 connectedServer = finalServer;
                 connectedSource = finalSource;
                 connectedGateway = finalGateway;
@@ -1430,11 +1665,63 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 logConnectionEvent(finalConnected);
                 if (finalSnapshot != null) {
                     applySnapshot(finalSnapshot, finalConnected);
+                    persistSnapshotToStorage(
+                            finalSnapshot,
+                            finalConnected,
+                            finalAccount,
+                            finalServer,
+                            finalSource,
+                            finalGateway,
+                            finalUpdatedAt,
+                            finalError,
+                            System.currentTimeMillis()
+                    );
                 }
                 adjustRefreshCadence(finalConnected, finalUnchanged);
                 loading = false;
             });
         });
+    }
+
+    private void persistSnapshotToStorage(AccountSnapshot snapshot,
+                                          boolean connected,
+                                          String account,
+                                          String server,
+                                          String source,
+                                          String gateway,
+                                          long updatedAt,
+                                          String error,
+                                          long fetchedAt) {
+        if (accountStorageRepository == null || snapshot == null) {
+            return;
+        }
+        accountStorageRepository.persistSnapshot(new AccountStorageRepository.StoredSnapshot(
+                connected,
+                account,
+                server,
+                source,
+                gateway,
+                updatedAt,
+                error,
+                fetchedAt,
+                snapshot.getOverviewMetrics(),
+                snapshot.getCurvePoints(),
+                snapshot.getCurveIndicators(),
+                snapshot.getPositions(),
+                snapshot.getPendingOrders(),
+                snapshot.getTrades(),
+                snapshot.getStatsMetrics()
+        ));
+    }
+
+    private boolean isLoginCredentialMatched(Mt5BridgeGatewayClient.SnapshotResult remote) {
+        String expectedAccount = trim(loginAccountInput);
+        String expectedServer = trim(loginServerInput);
+        String remoteAccount = trim(remote.getAccount(""));
+        String remoteServer = trim(remote.getServer(""));
+        boolean accountMatched = expectedAccount.isEmpty() || remoteAccount.equalsIgnoreCase(expectedAccount);
+        boolean serverMatched = expectedServer.isEmpty() || remoteServer.equalsIgnoreCase(expectedServer);
+        return accountMatched && serverMatched;
     }
 
     private void adjustRefreshCadence(boolean connected, boolean unchanged) {
@@ -1474,14 +1761,25 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void setConnectionStatus(boolean connected) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        binding.tvAccountConnectionStatus.setText(connected ? "已连接账户" : "未连接账户");
-        binding.tvAccountConnectionStatus.setBackground(connected
-                ? UiPaletteManager.createFilledDrawable(this, palette.primary)
-                : UiPaletteManager.createOutlinedDrawable(this,
-                UiPaletteManager.neutralFill(this),
-                UiPaletteManager.neutralStroke(this)));
-        binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(this,
-                connected ? R.color.white : R.color.text_secondary));
+        gatewayConnected = connected;
+        if (!userLoggedIn) {
+            binding.tvAccountConnectionStatus.setText("未登录账户");
+            binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createOutlinedDrawable(this,
+                    UiPaletteManager.neutralFill(this),
+                    UiPaletteManager.neutralStroke(this)));
+            binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+            return;
+        }
+        binding.tvAccountConnectionStatus.setText(connected ? "已连接账户" : "已登录账户");
+        if (connected) {
+            binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
+            binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(this, R.color.white));
+        } else {
+            binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createOutlinedDrawable(this,
+                    UiPaletteManager.neutralFill(this),
+                    UiPaletteManager.neutralStroke(this)));
+            binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        }
     }
 
     private void logConnectionEvent(boolean connected) {
@@ -2154,7 +2452,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         for (TradeRecordItem item : trades) {
             long closeTime = item.getCloseTime() > 0L ? item.getCloseTime() : item.getTimestamp();
             if (closeTime >= start && closeTime <= end) {
-                sum += item.getProfit();
+                sum += item.getProfit() + item.getStorageFee();
             }
         }
         return sum;
@@ -2173,7 +2471,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private long startOfToday() {
-        Calendar calendar = Calendar.getInstance();
+        Calendar calendar = Calendar.getInstance(BEIJING_TIME_ZONE);
         calendar.set(Calendar.HOUR_OF_DAY, 0);
         calendar.set(Calendar.MINUTE, 0);
         calendar.set(Calendar.SECOND, 0);
@@ -2182,7 +2480,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private long endOfToday() {
-        Calendar calendar = Calendar.getInstance();
+        Calendar calendar = Calendar.getInstance(BEIJING_TIME_ZONE);
         calendar.set(Calendar.HOUR_OF_DAY, 23);
         calendar.set(Calendar.MINUTE, 59);
         calendar.set(Calendar.SECOND, 59);
@@ -2756,10 +3054,21 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderCurveWithIndicators(List<CurvePoint> points) {
+        DrawdownSegment drawdownSegment = resolveMaxDrawdownSegment(points);
         curveBaseBalance = resolveCurvePercentBase(points);
         binding.equityCurveView.setBaseBalance(curveBaseBalance);
+        if (drawdownSegment == null) {
+            binding.equityCurveView.setDrawdownHighlight(0L, 0L, 0d, 0d);
+        } else {
+            binding.equityCurveView.setDrawdownHighlight(
+                    drawdownSegment.peakTimestamp,
+                    drawdownSegment.valleyTimestamp,
+                    drawdownSegment.peakBalance,
+                    drawdownSegment.valleyBalance
+            );
+        }
         binding.equityCurveView.setPoints(points);
-        defaultCurveMeta = buildCurveMeta(points);
+        defaultCurveMeta = buildCurveMeta(points, drawdownSegment);
         binding.tvCurveMeta.setText(defaultCurveMeta);
         indicatorAdapter.submitList(buildCurveIndicators(points));
     }
@@ -2780,39 +3089,65 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return Math.max(1e-9, ACCOUNT_INITIAL_BALANCE);
     }
 
-    private String buildCurveMeta(List<CurvePoint> points) {
+    private String buildCurveMeta(List<CurvePoint> points, @Nullable DrawdownSegment drawdownSegment) {
         if (points == null || points.isEmpty()) {
             return "--";
         }
         double start = points.get(0).getBalance();
         double current = points.get(points.size() - 1).getBalance();
-        double peak = start;
-        double valley = start;
         double currentEquity = points.get(points.size() - 1).getEquity();
-        int peakIndex = 0;
-        int valleyIndex = 0;
-        for (int i = 1; i < points.size(); i++) {
-            double value = points.get(i).getBalance();
-            if (value >= peak) {
-                peak = value;
-                peakIndex = i;
-            }
-            if (value <= valley) {
-                valley = value;
-                valleyIndex = i;
-            }
+        if (drawdownSegment == null) {
+            return String.format(Locale.getDefault(),
+                    "起点净值 $%s | 当前净值 $%s | 当前权益 $%s | 收益率 %+.2f%%",
+                    FormatUtils.formatPrice(start),
+                    FormatUtils.formatPrice(current),
+                    FormatUtils.formatPrice(currentEquity),
+                    safeDivide(current - start, Math.max(1d, start)) * 100d);
         }
-        double drawdown = safeDivide(peak - valley, peak);
         String summary = String.format(Locale.getDefault(),
-                "起点净值 $%s | 当前净值 $%s | 峰值 %s | 谷值 %s | 最大回撤 %.2f%% | 收益率 %+.2f%%",
+                "起点净值 $%s | 当前净值 $%s | 最大回撤区间 %s -> %s | 最大回撤 %.2f%% | 收益率 %+.2f%%",
                 FormatUtils.formatPrice(start),
                 FormatUtils.formatPrice(current),
-                FormatUtils.formatTime(points.get(peakIndex).getTimestamp()),
-                FormatUtils.formatTime(points.get(valleyIndex).getTimestamp()),
-                drawdown * 100d,
+                FormatUtils.formatTime(drawdownSegment.peakTimestamp),
+                FormatUtils.formatTime(drawdownSegment.valleyTimestamp),
+                drawdownSegment.drawdownRate * 100d,
                 safeDivide(current - start, Math.max(1d, start)) * 100d);
         summary = summary + " | 当前净值 $" + FormatUtils.formatPrice(currentEquity);
         return summary;
+    }
+
+    @Nullable
+    private DrawdownSegment resolveMaxDrawdownSegment(List<CurvePoint> points) {
+        if (points == null || points.size() < 2) {
+            return null;
+        }
+        List<CurvePoint> sorted = new ArrayList<>(points);
+        sorted.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
+        CurvePoint peakPoint = sorted.get(0);
+        CurvePoint maxPeakPoint = null;
+        CurvePoint maxValleyPoint = null;
+        double maxDrawdown = 0d;
+        for (CurvePoint point : sorted) {
+            if (point.getBalance() >= peakPoint.getBalance()) {
+                peakPoint = point;
+            }
+            double drawdown = safeDivide(peakPoint.getBalance() - point.getBalance(), peakPoint.getBalance());
+            if (drawdown > maxDrawdown) {
+                maxDrawdown = drawdown;
+                maxPeakPoint = peakPoint;
+                maxValleyPoint = point;
+            }
+        }
+        if (maxPeakPoint == null || maxValleyPoint == null || maxDrawdown <= 0d) {
+            return null;
+        }
+        return new DrawdownSegment(
+                maxPeakPoint.getTimestamp(),
+                maxValleyPoint.getTimestamp(),
+                maxPeakPoint.getBalance(),
+                maxValleyPoint.getBalance(),
+                maxDrawdown
+        );
     }
 
     private List<AccountMetric> buildCurveIndicators(List<CurvePoint> points) {
@@ -3534,60 +3869,125 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void rebuildMonthlyTableTwoRowsV3(TableLayout table, List<YearlyReturnRow> rows) {
         table.removeAllViews();
-        table.setShrinkAllColumns(true);
-        table.setStretchAllColumns(true);
+        table.setShrinkAllColumns(false);
+        table.setStretchAllColumns(false);
+        table.addView(createMonthlyReturnsHeaderRow());
 
         for (YearlyReturnRow row : rows) {
-            View.OnClickListener yearClick = null;
-            if (row.startMs > 0L && row.endMs > row.startMs) {
-                long startMs = row.startMs;
-                long endMs = row.endMs;
-                yearClick = v -> applyCurveRangeFromTableSelection(startMs, endMs);
+            table.addView(createMonthlyReturnsYearRow(row));
+        }
+    }
+
+    private TableRow createMonthlyReturnsHeaderRow() {
+        TableRow row = new TableRow(this);
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.HORIZONTAL);
+        container.addView(createLinearReturnsCell("年份", 74, RETURNS_BODY_HEIGHT_DP * 2 + 2, true, null, null));
+        LinearLayout halves = new LinearLayout(this);
+        halves.setOrientation(LinearLayout.VERTICAL);
+        halves.addView(createMonthlyHalfRow(true, 1, 6, null));
+        halves.addView(createMonthlyHalfRow(true, 7, 12, null));
+        container.addView(halves);
+        row.addView(container);
+        return row;
+    }
+
+    private TableRow createMonthlyReturnsYearRow(YearlyReturnRow rowData) {
+        TableRow row = new TableRow(this);
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.HORIZONTAL);
+        container.setBaselineAligned(false);
+
+        View.OnClickListener yearClick = null;
+        if (rowData.startMs > 0L && rowData.endMs > rowData.startMs) {
+            long startMs = rowData.startMs;
+            long endMs = rowData.endMs;
+            yearClick = v -> applyCurveRangeFromTableSelection(startMs, endMs);
+        }
+        int yearColor = ContextCompat.getColor(this, rowData.yearReturnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+        String yearValueText = formatReturnValue(rowData.yearReturnRate, rowData.yearReturnAmount);
+        TextView yearCell = createLinearReturnsCell(
+                buildLabelValueText(rowData.year + "年", yearValueText, yearColor),
+                74,
+                RETURNS_BODY_HEIGHT_DP * 2 + 2,
+                false,
+                null,
+                yearClick
+        );
+        yearCell.setBackgroundResource(R.drawable.bg_returns_table_year_top);
+        yearCell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.2f);
+        yearCell.setPadding(dpToPx(4), dpToPx(6), dpToPx(4), dpToPx(6));
+        container.addView(yearCell);
+
+        LinearLayout halves = new LinearLayout(this);
+        halves.setOrientation(LinearLayout.VERTICAL);
+        halves.addView(createMonthlyHalfRow(false, 1, 6, rowData));
+        halves.addView(createMonthlyHalfRow(false, 7, 12, rowData));
+        container.addView(halves);
+        row.addView(container);
+        return row;
+    }
+
+    private LinearLayout createMonthlyHalfRow(boolean header,
+                                              int startMonth,
+                                              int endMonth,
+                                              @Nullable YearlyReturnRow rowData) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        for (int month = startMonth; month <= endMonth; month++) {
+            if (header) {
+                row.addView(createLinearReturnsCell(month + "月", 68, RETURNS_HEADER_HEIGHT_DP, true, null, null));
+                continue;
             }
+            row.addView(createLinearMonthReturnCell(month, rowData == null ? null : rowData.monthly.get(month)));
+        }
+        return row;
+    }
 
-            int yearColor = ContextCompat.getColor(this, row.yearReturnRate >= 0d ? R.color.accent_green : R.color.accent_red);
-            String yearValueText = formatReturnValue(row.yearReturnRate, row.yearReturnAmount);
-
-            TableRow firstRow = new TableRow(this);
-            firstRow.setBaselineAligned(false);
-            TableLayout.LayoutParams firstRowParams = new TableLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
-            firstRowParams.setMargins(0, 0, 0, 0);
-            firstRow.setLayoutParams(firstRowParams);
-            TextView yearCell = createReturnsCell(
-                    buildLabelValueText(row.year + "年", yearValueText, yearColor),
-                    0,
+    private TextView createLinearMonthReturnCell(int month, @Nullable MonthReturnInfo info) {
+        TextView cell;
+        if (info == null || !info.hasData) {
+            cell = createLinearReturnsCell(buildLabelValueText(month + "月", "--", null),
+                    68,
+                    RETURNS_BODY_HEIGHT_DP,
                     false,
                     null,
-                    yearClick);
-            applyReturnsCellLayout(yearCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
-                    0, 0, 0, 0);
-            yearCell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f);
-            firstRow.addView(yearCell);
-            for (int month = 1; month <= 6; month++) {
-                firstRow.addView(createMonthReturnCellV3(month, row.monthly.get(month), 0, 1f, 0));
-            }
-            table.addView(firstRow);
-
-            TableRow secondRow = new TableRow(this);
-            secondRow.setBaselineAligned(false);
-            TableLayout.LayoutParams secondRowParams = new TableLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
-            int overlapPx = -dpToPx(1);
-            secondRowParams.setMargins(0, overlapPx, 0, 0);
-            secondRow.setLayoutParams(secondRowParams);
-            TextView placeholder = createReturnsCell("", 0, false, null, null);
-            applyReturnsCellLayout(placeholder, 0, 1f, RETURNS_BODY_HEIGHT_DP,
-                    0, overlapPx, 0, 0);
-            placeholder.setText("");
-            secondRow.addView(placeholder);
-            for (int month = 7; month <= 12; month++) {
-                secondRow.addView(createMonthReturnCellV3(month, row.monthly.get(month), 0, 1f, overlapPx));
-            }
-            table.addView(secondRow);
+                    null);
+        } else {
+            int textColor = ContextCompat.getColor(this, info.returnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+            String text = formatReturnValue(info.returnRate, info.returnAmount);
+            long startMs = info.startMs;
+            long endMs = info.endMs;
+            cell = createLinearReturnsCell(
+                    buildLabelValueText(month + "月", text, textColor),
+                    68,
+                    RETURNS_BODY_HEIGHT_DP,
+                    false,
+                    null,
+                    v -> applyCurveRangeFromTableSelection(startMs, endMs)
+            );
         }
+        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.2f);
+        return cell;
+    }
+
+    private TextView createLinearReturnsCell(CharSequence text,
+                                             int widthDp,
+                                             int heightDp,
+                                             boolean header,
+                                             @Nullable Integer textColor,
+                                             @Nullable View.OnClickListener clickListener) {
+        TextView cell = createReturnsCell(text, 0, header, textColor, clickListener);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dpToPx(widthDp), dpToPx(heightDp));
+        int marginPx = dpToPx(RETURNS_CELL_MARGIN_DP);
+        params.setMargins(marginPx, marginPx, marginPx, marginPx);
+        cell.setLayoutParams(params);
+        cell.setMinWidth(dpToPx(widthDp));
+        cell.setMaxWidth(dpToPx(widthDp));
+        cell.setMinHeight(dpToPx(heightDp));
+        cell.setGravity(Gravity.CENTER);
+        cell.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        return cell;
     }
 
     private TextView createMonthReturnCellV3(int month,
@@ -3713,13 +4113,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         cell.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
         cell.setIncludeFontPadding(false);
         cell.setText(text);
-        cell.setTextSize(header ? 11f : 7.6f);
+        cell.setTextSize(header ? 11f : 8.6f);
         String plain = text == null ? "" : text.toString();
         cell.setEllipsize(null);
         if (plain.contains("\n")) {
             cell.setLines(2);
             cell.setMaxLines(2);
-            cell.setLineSpacing(dpToPx(1), 1.08f);
+            cell.setLineSpacing(0f, 1.02f);
         } else {
             cell.setLines(1);
             cell.setMaxLines(1);
@@ -3921,6 +4321,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? ACCOUNT_INITIAL_BALANCE
                 : Math.max(1d, allCurvePoints.get(allCurvePoints.size() - 1).getBalance());
         double ratio = safeDivide(totalPnl, totalAsset);
+        overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics));
         binding.tvPositionPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
         binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(totalPnl, ratio));
     }
@@ -3933,7 +4334,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         List<PositionItem> normalizedSource = deduplicatePositionItems(source);
         long start = startOfToday();
-        long now = System.currentTimeMillis();
+        long end = endOfToday();
         Map<String, Double> todayClosedByKey = new HashMap<>();
         if (trades != null) {
             for (TradeRecordItem trade : trades) {
@@ -3941,12 +4342,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     continue;
                 }
                 long closeTime = resolveCloseTime(trade);
-                if (closeTime < start || closeTime > now) {
+                if (closeTime < start || closeTime > end) {
                     continue;
                 }
                 String key = buildPositionSideKey(trade.getCode(), trade.getProductName(), trade.getSide());
                 double sum = todayClosedByKey.getOrDefault(key, 0d);
-                todayClosedByKey.put(key, sum + trade.getProfit());
+                todayClosedByKey.put(key, sum + trade.getProfit() + trade.getStorageFee());
             }
         }
 
@@ -4043,7 +4444,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 aggregate = new PositionAggregate(item.getProductName(), side);
                 grouped.put(key, aggregate);
             }
-            double quantity = Math.max(0d, item.getQuantity());
+            double quantity = Math.max(0d, Math.abs(item.getQuantity()));
             aggregate.totalQuantity += quantity;
             aggregate.weightedCostAmount += quantity * item.getCostPrice();
             aggregate.weightedQuantity += quantity;
@@ -4081,6 +4482,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         int pnlStart = summary.indexOf(pnlText);
         if (pnlStart >= 0) {
             spannable.setSpan(new ForegroundColorSpan(pnlColor),
+                    pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            spannable.setSpan(new AbsoluteSizeSpan(20, true),
                     pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         int ratioStart = summary.lastIndexOf(ratioText);
@@ -4694,11 +5097,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        tabActiveColor = palette.primary;
+        tabInactiveColor = palette.textSecondary;
         updateBottomTabs(false, false, true, false);
         configureToggleButtonsV2();
         binding.equityCurveView.refreshPalette();
-        boolean connected = "已连接账户".contentEquals(binding.tvAccountConnectionStatus.getText());
-        setConnectionStatus(connected);
+        setConnectionStatus(gatewayConnected);
     }
 
     private String percent(double ratio) {
@@ -4795,6 +5199,26 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         private YearlyReturnRow(int year) {
             this.year = year;
+        }
+    }
+
+    private static class DrawdownSegment {
+        private final long peakTimestamp;
+        private final long valleyTimestamp;
+        private final double peakBalance;
+        private final double valleyBalance;
+        private final double drawdownRate;
+
+        private DrawdownSegment(long peakTimestamp,
+                                long valleyTimestamp,
+                                double peakBalance,
+                                double valleyBalance,
+                                double drawdownRate) {
+            this.peakTimestamp = peakTimestamp;
+            this.valleyTimestamp = valleyTimestamp;
+            this.peakBalance = peakBalance;
+            this.valleyBalance = valleyBalance;
+            this.drawdownRate = drawdownRate;
         }
     }
 

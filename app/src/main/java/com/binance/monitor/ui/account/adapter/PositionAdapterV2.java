@@ -226,8 +226,9 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
                     summaryPnl >= 0d ? R.color.accent_green : R.color.accent_red);
             String pnlText = signedMoney(summaryPnl);
+            double displayQty = Math.abs(item.getQuantity());
             String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
-                    item.getProductName(), sideText, item.getQuantity(), pnlText);
+                    item.getProductName(), sideText, displayQty, pnlText);
             SpannableStringBuilder span = new SpannableStringBuilder(raw);
             int sideStart = raw.indexOf(sideText);
             if (sideStart >= 0) {
@@ -267,7 +268,8 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             }
             binding.tvMetrics.setText(metricsSpan);
             String totalPnlText = signedMoney(item.getTotalPnL());
-            String returnRateText = String.format(Locale.getDefault(), "%+.2f%%", item.getReturnRate() * 100d);
+            double displayReturnRate = resolveDisplayReturnRate(item);
+            String returnRateText = String.format(Locale.getDefault(), "%+.2f%%", displayReturnRate * 100d);
             String pnlRaw = String.format(Locale.getDefault(),
                     "盈亏 %s | 收益率 %s",
                     totalPnlText,
@@ -282,7 +284,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             }
             int returnRateStart = pnlRaw.lastIndexOf(returnRateText);
             if (returnRateStart >= 0) {
-                pnlSpan.setSpan(new ForegroundColorSpan(resolveRatioColor(binding.getRoot(), item.getReturnRate())),
+                pnlSpan.setSpan(new ForegroundColorSpan(resolveRatioColor(binding.getRoot(), displayReturnRate)),
                         returnRateStart,
                         returnRateStart + returnRateText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -345,6 +347,24 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
 
         private static String sideCn(String side) {
             return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
+        }
+
+        // 收益率优先按持仓成本重算，避免网关侧方向口径差异导致盈亏正负号颠倒。
+        private static double resolveDisplayReturnRate(PositionItem item) {
+            if (item == null) {
+                return 0d;
+            }
+            double qty = Math.abs(item.getQuantity());
+            double cost = Math.abs(item.getCostPrice());
+            double pnl = item.getTotalPnL() + item.getStorageFee();
+            if (qty > 1e-9 && cost > 1e-9) {
+                return pnl / (qty * cost);
+            }
+            double source = item.getReturnRate();
+            if (Math.abs(pnl) > 1e-9 && Math.abs(source) > 1e-9 && Math.signum(source) != Math.signum(pnl)) {
+                return Math.copySign(Math.abs(source), pnl);
+            }
+            return source;
         }
 
         private static int resolveSideColor(View root, String side) {

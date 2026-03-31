@@ -25,7 +25,7 @@ public class MonitorRepository {
     private final LogManager logManager;
     private final AbnormalRecordManager recordManager;
     private final MutableLiveData<String> connectionStatus = new MutableLiveData<>("连接中");
-    private final MutableLiveData<Boolean> monitoringEnabled = new MutableLiveData<>(false);
+    private final MutableLiveData<Boolean> monitoringEnabled = new MutableLiveData<>(true);
     private final MutableLiveData<Long> lastUpdateTime = new MutableLiveData<>(0L);
     private final MutableLiveData<Map<String, Double>> latestPrices = new MutableLiveData<>(Collections.emptyMap());
     private final MutableLiveData<Map<String, KlineData>> latestClosedKlines = new MutableLiveData<>(Collections.emptyMap());

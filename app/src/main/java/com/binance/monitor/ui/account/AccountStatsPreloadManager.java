@@ -3,16 +3,19 @@ package com.binance.monitor.ui.account;
 import android.content.Context;
 
 import com.binance.monitor.constants.AppConstants;
+import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class AccountStatsPreloadManager {
+    private static final long BACKGROUND_REFRESH_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS * 2L;
 
     private static volatile AccountStatsPreloadManager instance;
 
-    private final Mt5BridgeGatewayClient gatewayClient = new Mt5BridgeGatewayClient();
+    private final Mt5BridgeGatewayClient gatewayClient;
+    private final AccountStorageRepository accountStorageRepository;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Object lock = new Object();
     private static final long MIN_REFRESH_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
@@ -22,10 +25,12 @@ public class AccountStatsPreloadManager {
     private volatile boolean started;
     private volatile boolean loading;
     private volatile boolean liveScreenActive;
-    private volatile int unchangedStreak;
+    private volatile boolean fullSnapshotActive;
     private volatile long nextDelayMs = MIN_REFRESH_MS;
 
     private AccountStatsPreloadManager(Context context) {
+        gatewayClient = new Mt5BridgeGatewayClient(context.getApplicationContext());
+        accountStorageRepository = new AccountStorageRepository(context.getApplicationContext());
     }
 
     public static AccountStatsPreloadManager getInstance(Context context) {
@@ -60,9 +65,18 @@ public class AccountStatsPreloadManager {
         liveScreenActive = active;
     }
 
+    public void setFullSnapshotActive(boolean active) {
+        boolean changed = fullSnapshotActive != active;
+        fullSnapshotActive = active;
+        if (!changed || !active || !started) {
+            return;
+        }
+        nextDelayMs = MIN_REFRESH_MS;
+        executor.execute(this::fetchOnce);
+    }
+
     public void clearLatestCache() {
         latestCache = null;
-        unchangedStreak = 0;
         nextDelayMs = MIN_REFRESH_MS;
     }
 
@@ -93,10 +107,11 @@ public class AccountStatsPreloadManager {
                 nextDelayMs = MAX_REFRESH_MS;
                 return;
             }
-            Mt5BridgeGatewayClient.SnapshotResult result = gatewayClient.fetch(AccountTimeRange.ALL);
+            Mt5BridgeGatewayClient.SnapshotResult result = fullSnapshotActive
+                    ? gatewayClient.fetch(AccountTimeRange.ALL)
+                    : gatewayClient.fetchLive(AccountTimeRange.ALL);
             if (!result.isSuccess()) {
-                unchangedStreak = 0;
-                nextDelayMs = Math.min(MAX_REFRESH_MS, Math.max(MIN_REFRESH_MS * 2L, nextDelayMs));
+                nextDelayMs = fullSnapshotActive ? MIN_REFRESH_MS : BACKGROUND_REFRESH_MS;
                 Cache previous = latestCache;
                 if (previous != null) {
                     latestCache = new Cache(
@@ -113,12 +128,7 @@ public class AccountStatsPreloadManager {
                 return;
             }
             AccountSnapshot snapshot = result.getSnapshot();
-            if (result.isUnchanged()) {
-                unchangedStreak = Math.min(8, unchangedStreak + 1);
-            } else {
-                unchangedStreak = 0;
-            }
-            nextDelayMs = Math.min(MAX_REFRESH_MS, MIN_REFRESH_MS + unchangedStreak * 2_000L);
+            nextDelayMs = fullSnapshotActive ? MIN_REFRESH_MS : BACKGROUND_REFRESH_MS;
             latestCache = new Cache(
                     true,
                     snapshot,
@@ -129,9 +139,9 @@ public class AccountStatsPreloadManager {
                     result.getUpdatedAt(),
                     "",
                     System.currentTimeMillis());
+            persistPreloadSnapshot(snapshot, result, fullSnapshotActive);
         } catch (Exception exception) {
-            unchangedStreak = 0;
-            nextDelayMs = Math.min(MAX_REFRESH_MS, Math.max(MIN_REFRESH_MS * 2L, nextDelayMs));
+            nextDelayMs = fullSnapshotActive ? MIN_REFRESH_MS : BACKGROUND_REFRESH_MS;
             Cache previous = latestCache;
             if (previous != null) {
                 latestCache = new Cache(
@@ -147,6 +157,37 @@ public class AccountStatsPreloadManager {
             }
         } finally {
             loading = false;
+        }
+    }
+
+    private void persistPreloadSnapshot(AccountSnapshot snapshot,
+                                        Mt5BridgeGatewayClient.SnapshotResult result,
+                                        boolean fullSnapshot) {
+        if (accountStorageRepository == null || snapshot == null || result == null) {
+            return;
+        }
+        AccountStorageRepository.StoredSnapshot storedSnapshot =
+                new AccountStorageRepository.StoredSnapshot(
+                        true,
+                        result.getAccount(""),
+                        result.getServer(""),
+                        result.getLocalizedSource(),
+                        result.getGatewayEndpoint(),
+                        result.getUpdatedAt(),
+                        "",
+                        System.currentTimeMillis(),
+                        snapshot.getOverviewMetrics(),
+                        snapshot.getCurvePoints(),
+                        snapshot.getCurveIndicators(),
+                        snapshot.getPositions(),
+                        snapshot.getPendingOrders(),
+                        snapshot.getTrades(),
+                        snapshot.getStatsMetrics()
+                );
+        if (fullSnapshot) {
+            accountStorageRepository.persistSnapshot(storedSnapshot);
+        } else {
+            accountStorageRepository.persistLiveSnapshot(storedSnapshot);
         }
     }
 

@@ -43,6 +43,9 @@ public class NotificationHelper {
                 NotificationManager.IMPORTANCE_HIGH
         );
         alertChannel.setDescription("异常交易提醒");
+        alertChannel.enableVibration(true);
+        alertChannel.enableLights(true);
+        alertChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
 
         manager.createNotificationChannel(serviceChannel);
         manager.createNotificationChannel(alertChannel);
@@ -92,6 +95,9 @@ public class NotificationHelper {
                 .setContentText(content)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(content))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setDefaults(Notification.DEFAULT_ALL)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
                 .build();

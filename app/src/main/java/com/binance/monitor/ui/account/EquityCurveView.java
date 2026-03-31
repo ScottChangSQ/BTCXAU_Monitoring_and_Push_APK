@@ -36,6 +36,8 @@ public class EquityCurveView extends View {
     private final Paint balancePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint crosshairPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint drawdownFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint drawdownStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tooltipBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tooltipTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path equityPath = new Path();
@@ -52,6 +54,10 @@ public class EquityCurveView extends View {
     private long chartStartTs;
     private long chartEndTs;
     private double baseBalance = 1d;
+    private long drawdownStartTs;
+    private long drawdownEndTs;
+    private double drawdownPeakBalance;
+    private double drawdownValleyBalance;
 
     private int highlightedIndex = -1;
     private boolean longPressing;
@@ -90,6 +96,12 @@ public class EquityCurveView extends View {
         crosshairPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
         crosshairPaint.setStrokeWidth(dp(1f));
 
+        drawdownFillPaint.setStyle(Paint.Style.FILL);
+        drawdownStrokePaint.setStyle(Paint.Style.STROKE);
+        drawdownStrokePaint.setStrokeWidth(dp(1.2f));
+        drawdownFillPaint.setColor(applyAlpha(palette.primarySoft, 150));
+        drawdownStrokePaint.setColor(applyAlpha(palette.primary, 215));
+
         tooltipBgPaint.setColor(ContextCompat.getColor(context, R.color.bg_surface));
         tooltipBgPaint.setStyle(Paint.Style.FILL);
 
@@ -122,8 +134,16 @@ public class EquityCurveView extends View {
 
     public void refreshPalette() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(getContext());
+        labelPaint.setColor(palette.textSecondary);
+        axisPaint.setColor(applyAlpha(palette.textSecondary, 210));
+        gridPaint.setColor(applyAlpha(palette.stroke, 170));
         equityPaint.setColor(palette.primary);
         balancePaint.setColor(palette.btc);
+        drawdownFillPaint.setColor(applyAlpha(palette.primarySoft, 150));
+        drawdownStrokePaint.setColor(applyAlpha(palette.primary, 215));
+        crosshairPaint.setColor(applyAlpha(palette.textSecondary, 220));
+        tooltipBgPaint.setColor(applyAlpha(palette.card, 240));
+        tooltipTextPaint.setColor(palette.textPrimary);
         invalidate();
     }
 
@@ -145,6 +165,14 @@ public class EquityCurveView extends View {
 
     public void setBaseBalance(double value) {
         baseBalance = Math.max(1e-9, value);
+        invalidate();
+    }
+
+    public void setDrawdownHighlight(long startTs, long endTs, double peakBalance, double valleyBalance) {
+        drawdownStartTs = Math.max(0L, startTs);
+        drawdownEndTs = Math.max(0L, endTs);
+        drawdownPeakBalance = peakBalance;
+        drawdownValleyBalance = valleyBalance;
         invalidate();
     }
 
@@ -213,6 +241,7 @@ public class EquityCurveView extends View {
             chartEndTs = chartStartTs + 1L;
         }
 
+        drawDrawdownHighlight(canvas);
         equityPath.reset();
         balancePath.reset();
         for (int i = 0; i < points.size(); i++) {
@@ -239,6 +268,29 @@ public class EquityCurveView extends View {
         drawAxes(canvas, chartLeft, chartTop, chartRight, chartBottom);
         drawYLabels(canvas, chartLeft, chartRight, chartTop, chartBottom, chartMin, chartMax, baseBalance);
         drawXLabels(canvas, chartLeft, chartRight, chartBottom);
+    }
+
+    private void drawDrawdownHighlight(Canvas canvas) {
+        if (drawdownStartTs <= 0L || drawdownEndTs <= drawdownStartTs) {
+            return;
+        }
+        float startX = mapX(drawdownStartTs, chartStartTs, chartEndTs, chartLeft, chartRight);
+        float endX = mapX(drawdownEndTs, chartStartTs, chartEndTs, chartLeft, chartRight);
+        RectF area = new RectF(
+                Math.max(chartLeft, Math.min(startX, endX)),
+                chartTop,
+                Math.min(chartRight, Math.max(startX, endX)),
+                chartBottom
+        );
+        if (area.width() <= dp(1f)) {
+            return;
+        }
+        float peakY = mapY(drawdownPeakBalance, chartMin, chartMax, chartTop, chartBottom);
+        float valleyY = mapY(drawdownValleyBalance, chartMin, chartMax, chartTop, chartBottom);
+        canvas.drawRoundRect(area, dp(8f), dp(8f), drawdownFillPaint);
+        canvas.drawLine(startX, peakY, endX, valleyY, drawdownStrokePaint);
+        canvas.drawCircle(startX, peakY, dp(3f), drawdownStrokePaint);
+        canvas.drawCircle(endX, valleyY, dp(3f), drawdownStrokePaint);
     }
 
     private void drawHighlight(Canvas canvas, int index) {
@@ -442,5 +494,10 @@ public class EquityCurveView extends View {
 
     private float dp(float value) {
         return value * getResources().getDisplayMetrics().density;
+    }
+
+    private int applyAlpha(int color, int alpha) {
+        int safeAlpha = Math.max(0, Math.min(255, alpha));
+        return (color & 0x00FFFFFF) | (safeAlpha << 24);
     }
 }

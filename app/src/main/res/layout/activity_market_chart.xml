@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#111B2E"
+    android:background="@drawable/bg_app"
     android:orientation="vertical">
 
     <androidx.core.widget.NestedScrollView
@@ -29,20 +29,34 @@
                 android:orientation="vertical"
                 android:padding="2dp">
 
-                <LinearLayout
+                <FrameLayout
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                    android:layout_height="@dimen/control_height_md">
 
                     <androidx.appcompat.widget.AppCompatSpinner
                         android:id="@+id/spinnerSymbolPicker"
                         android:layout_width="match_parent"
-                        android:layout_height="@dimen/control_height_md"
+                        android:layout_height="match_parent"
                         android:background="@drawable/bg_spinner_filter"
                         android:minWidth="0dp"
                         android:popupBackground="@drawable/bg_spinner_popup"
                         android:spinnerMode="dropdown" />
-                </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvChartSymbolPickerLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:clickable="true"
+                        android:ellipsize="end"
+                        android:focusable="true"
+                        android:gravity="center_vertical|start"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:paddingStart="@dimen/space_12"
+                        android:paddingEnd="32dp"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp" />
+                </FrameLayout>
             </LinearLayout>
 
             <LinearLayout
@@ -219,6 +233,19 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent" />
 
+                    <TextView
+                        android:id="@+id/tvChartRefreshCountdown"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end|top"
+                        android:layout_marginEnd="4dp"
+                        android:layout_marginTop="4dp"
+                        android:includeFontPadding="false"
+                        android:text="--秒/--秒"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
                     <LinearLayout
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -250,14 +277,16 @@
                         android:id="@+id/btnScrollToLatest"
                         android:layout_width="25dp"
                         android:layout_height="25dp"
-                        android:layout_gravity="top|start"
+                        android:layout_gravity="bottom|end"
+                        android:layout_marginEnd="2dp"
+                        android:layout_marginBottom="2dp"
                         android:background="@drawable/bg_scroll_to_latest"
                         android:contentDescription="@string/chart_back_to_latest"
                         android:padding="4dp"
                         android:scaleType="centerInside"
                         android:src="@drawable/ic_scroll_to_latest_arrow"
                         android:tint="#E6EEF9"
-                        android:visibility="gone" />
+                        android:visibility="invisible" />
                 </FrameLayout>
 
                 <TextView
@@ -443,7 +472,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:background="@drawable/bg_chart_position_card"
                 android:orientation="vertical"
                 android:padding="8dp">
 
@@ -461,16 +489,72 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="等待账户持仓数据..."
+                    android:text="持仓盈亏: -- | 持仓收益率: --"
                     android:textColor="#8FA6C7"
                     android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/tvChartPositionAggregateTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="按产品汇总"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerChartPositionByProduct"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:nestedScrollingEnabled="false" />
+
+                <TextView
+                    android:id="@+id/tvChartPositionDetailTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="持仓明细"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerChartPositions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:nestedScrollingEnabled="false" />
+
+                <TextView
+                    android:id="@+id/tvChartPendingOrdersTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="挂单明细"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerChartPendingOrders"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:nestedScrollingEnabled="false" />
+
+                <TextView
+                    android:id="@+id/tvChartPendingOrdersEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="暂无挂单"
+                    android:textColor="#8FA6C7"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
 
                 <LinearLayout
                     android:id="@+id/layoutChartPositionRows"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:orientation="vertical" />
+                    android:orientation="vertical"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <View
@@ -496,7 +580,7 @@
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
@@ -509,7 +593,7 @@
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/white"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
@@ -522,7 +606,7 @@
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
@@ -535,7 +619,7 @@
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
     </LinearLayout>
 

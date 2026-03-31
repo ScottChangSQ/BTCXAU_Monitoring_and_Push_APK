@@ -72,38 +72,6 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/status_monitor"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-
-                    <TextView
-                        android:id="@+id/tvMonitoringStatus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:background="@drawable/bg_chip_unselected"
-                        android:ellipsize="end"
-                        android:maxLines="1"
-                        android:paddingLeft="10dp"
-                        android:paddingTop="4dp"
-                        android:paddingRight="10dp"
-                        android:paddingBottom="4dp"
-                        android:text="@string/monitoring_stopped"
-                        android:textColor="@color/text_primary"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
                     android:orientation="horizontal">
 
                     <TextView
@@ -124,28 +92,10 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
-                <Button
-                    android:id="@+id/btnToggleMonitoring"
-                    android:layout_width="match_parent"
-                    android:layout_height="@dimen/control_height_md"
-                    android:layout_marginTop="12dp"
-                    android:background="@drawable/bg_chip_selected"
-                    android:gravity="center"
-                    android:includeFontPadding="true"
-                    android:maxLines="1"
-                    android:minHeight="0dp"
-                    android:paddingTop="0dp"
-                    android:paddingBottom="0dp"
-                    android:text="@string/toggle_start"
-                    android:textAllCaps="false"
-                    android:textColor="@color/white"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="12dp"
                     android:orientation="horizontal">
 
                     <Button
@@ -211,14 +161,34 @@
                     android:layout_marginTop="12dp"
                     android:orientation="horizontal">
 
-                    <androidx.appcompat.widget.AppCompatSpinner
-                        android:id="@+id/spinnerSymbolPicker"
+                    <FrameLayout
                         android:layout_width="match_parent"
-                        android:layout_height="@dimen/control_height_md"
-                        android:background="@drawable/bg_spinner_filter"
-                        android:minWidth="0dp"
-                        android:popupBackground="@drawable/bg_spinner_popup"
-                        android:spinnerMode="dropdown" />
+                        android:layout_height="@dimen/control_height_md">
+
+                        <androidx.appcompat.widget.AppCompatSpinner
+                            android:id="@+id/spinnerSymbolPicker"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="@drawable/bg_spinner_filter"
+                            android:minWidth="0dp"
+                            android:popupBackground="@drawable/bg_spinner_popup"
+                            android:spinnerMode="dropdown" />
+
+                        <TextView
+                            android:id="@+id/tvMainSymbolPickerLabel"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:clickable="true"
+                            android:ellipsize="end"
+                            android:focusable="true"
+                            android:gravity="center_vertical|start"
+                            android:includeFontPadding="false"
+                            android:maxLines="1"
+                            android:paddingStart="@dimen/space_12"
+                            android:paddingEnd="32dp"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp" />
+                    </FrameLayout>
                 </LinearLayout>
 
                 <TextView
@@ -652,7 +622,7 @@
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
@@ -665,7 +635,7 @@
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
@@ -678,7 +648,7 @@
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
     </LinearLayout>
 

@@ -8,9 +8,11 @@ import android.text.TextUtils;
 import android.graphics.Typeface;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.BaseAdapter;
 import android.widget.EditText;
 import android.widget.SpinnerAdapter;
 import android.widget.TextView;
@@ -49,8 +51,6 @@ import java.util.UUID;
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQUEST_CODE_NOTIFICATION = 100;
-    private static final int TAB_ACTIVE_COLOR = 0xFF07C160;
-    private static final int TAB_INACTIVE_COLOR = 0xFF7F8EA9;
 
     private ActivityMainBinding binding;
     private MainViewModel viewModel;
@@ -63,8 +63,10 @@ public class MainActivity extends AppCompatActivity {
     private ItemMetricBinding metricPercentBinding;
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private boolean applyingConfig;
-    private boolean monitoringEnabled;
+    private int tabActiveColor = 0xFF07C160;
+    private int tabInactiveColor = 0xFF7F8EA9;
     private long lastMarketUpdateMs;
+    private ArrayAdapter<String> symbolAdapter;
     private List<AbnormalRecord> recentRecordsSource = Collections.emptyList();
     private final Handler recentRecordsHandler = new Handler(Looper.getMainLooper());
     private final Runnable recentRecordsRefreshRunnable = new Runnable() {
@@ -202,8 +204,9 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
-        tab.setTextColor(selected ? TAB_ACTIVE_COLOR : TAB_INACTIVE_COLOR);
+        tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
         tab.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        tab.setTextSize(13f);
     }
 
     private void setupActions() {
@@ -212,16 +215,6 @@ public class MainActivity extends AppCompatActivity {
             SymbolConfig config = viewModel.resetSymbolConfig(selectedSymbol);
             applySymbolConfig(config);
             sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-        });
-        binding.btnToggleMonitoring.setOnClickListener(v -> {
-            persistCurrentSymbolConfig();
-            if (monitoringEnabled) {
-                sendServiceAction(AppConstants.ACTION_STOP_MONITORING);
-            } else {
-                sendServiceAction(AppConstants.ACTION_START_MONITORING);
-                promptNotificationPermissionIfNeeded();
-                promptBatteryOptimizationIfNeeded();
-            }
         });
         binding.btnOpenBinance.setOnClickListener(v -> {
             if (!AppLaunchHelper.openBinance(this)) {
@@ -265,14 +258,9 @@ public class MainActivity extends AppCompatActivity {
         if (symbols.isEmpty()) {
             symbols.add(AppConstants.SYMBOL_BTC);
         }
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(
-                this,
-                R.layout.item_spinner_filter,
-                android.R.id.text1,
-                symbols
-        );
-        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
-        binding.spinnerSymbolPicker.setAdapter(adapter);
+        symbolAdapter = createSymbolAdapter(symbols);
+        binding.spinnerSymbolPicker.setAdapter(symbolAdapter);
+        binding.tvMainSymbolPickerLabel.setOnClickListener(v -> binding.spinnerSymbolPicker.performClick());
         binding.spinnerSymbolPicker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -284,6 +272,7 @@ public class MainActivity extends AppCompatActivity {
                 if (symbol.isEmpty()) {
                     return;
                 }
+                updateMainSymbolPickerLabel(symbol);
                 switchSymbol(symbol);
             }
 
@@ -292,6 +281,43 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         syncSymbolSelector();
+    }
+
+    // 统一产品下拉项文字样式，避免在不同主题下文字不可见。
+    private ArrayAdapter<String> createSymbolAdapter(List<String> symbols) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
+                this,
+                R.layout.item_spinner_filter,
+                android.R.id.text1,
+                symbols
+        ) {
+            @Override
+            public View getView(int position, @Nullable View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                styleSymbolSpinnerItem(view);
+                return view;
+            }
+
+            @Override
+            public View getDropDownView(int position, @Nullable View convertView, ViewGroup parent) {
+                View view = super.getDropDownView(position, convertView, parent);
+                styleSymbolSpinnerItem(view);
+                return view;
+            }
+        };
+        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
+        return adapter;
+    }
+
+    // 强制设置颜色与字号，确保产品选项稳定显示。
+    private void styleSymbolSpinnerItem(@Nullable View view) {
+        if (!(view instanceof TextView)) {
+            return;
+        }
+        TextView textView = (TextView) view;
+        textView.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        textView.setTextSize(14f);
+        textView.setTypeface(null, Typeface.NORMAL);
     }
 
     private void syncSymbolSelector() {
@@ -312,38 +338,27 @@ public class MainActivity extends AppCompatActivity {
             if (binding.spinnerSymbolPicker.getSelectedItemPosition() != i) {
                 binding.spinnerSymbolPicker.setSelection(i, false);
             }
+            updateMainSymbolPickerLabel(symbol);
             return;
         }
+        updateMainSymbolPickerLabel(target);
+    }
+
+    private void updateMainSymbolPickerLabel(String symbol) {
+        if (binding == null || binding.tvMainSymbolPickerLabel == null) {
+            return;
+        }
+        String text = symbol == null ? "" : symbol.trim().toUpperCase(java.util.Locale.ROOT);
+        if (text.isEmpty()) {
+            text = AppConstants.SYMBOL_BTC;
+        }
+        binding.tvMainSymbolPickerLabel.setText(text);
     }
 
     private void setupObservers() {
         viewModel.getConnectionStatus().observe(this, status -> {
             binding.tvConnectionStatus.setText(status);
             applyConnectionChipStyle();
-        });
-        viewModel.getMonitoringEnabled().observe(this, enabled -> {
-            monitoringEnabled = Boolean.TRUE.equals(enabled);
-            binding.tvMonitoringStatus.setText(monitoringEnabled
-                    ? R.string.monitoring_running
-                    : R.string.monitoring_stopped);
-            binding.tvMonitoringStatus.setBackground(monitoringEnabled
-                    ? UiPaletteManager.createFilledDrawable(this, ContextCompat.getColor(this, R.color.accent_green))
-                    : UiPaletteManager.createOutlinedDrawable(this,
-                    UiPaletteManager.neutralFill(this),
-                    UiPaletteManager.neutralStroke(this)));
-            binding.tvMonitoringStatus.setTextColor(ContextCompat.getColor(this,
-                    monitoringEnabled ? R.color.white : R.color.text_primary));
-            binding.btnToggleMonitoring.setText(monitoringEnabled
-                    ? R.string.toggle_stop
-                    : R.string.toggle_start);
-            UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-            binding.btnToggleMonitoring.setBackground(UiPaletteManager.createFilledDrawable(
-                    this,
-                    monitoringEnabled
-                            ? ContextCompat.getColor(this, R.color.accent_red)
-                            : palette.primary));
-            binding.btnToggleMonitoring.setTextColor(ContextCompat.getColor(this,
-                    R.color.white));
         });
         viewModel.getLastUpdateTime().observe(this, time -> {
             lastMarketUpdateMs = time == null ? 0L : time;
@@ -546,24 +561,16 @@ public class MainActivity extends AppCompatActivity {
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        tabActiveColor = palette.primary;
+        tabInactiveColor = palette.textSecondary;
+        binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
+        binding.tvMainSymbolPickerLabel.setTextColor(palette.textPrimary);
+        if (binding.spinnerSymbolPicker.getAdapter() instanceof BaseAdapter) {
+            ((BaseAdapter) binding.spinnerSymbolPicker.getAdapter()).notifyDataSetChanged();
+        }
         updateBottomTabs(true, false, false, false);
         applyConnectionChipStyle();
         syncSymbolSelector();
-        if (monitoringEnabled) {
-            binding.btnToggleMonitoring.setBackground(
-                    UiPaletteManager.createFilledDrawable(this, ContextCompat.getColor(this, R.color.accent_red)));
-            binding.btnToggleMonitoring.setTextColor(ContextCompat.getColor(this, R.color.white));
-            binding.tvMonitoringStatus.setBackground(
-                    UiPaletteManager.createFilledDrawable(this, ContextCompat.getColor(this, R.color.accent_green)));
-            binding.tvMonitoringStatus.setTextColor(ContextCompat.getColor(this, R.color.white));
-        } else {
-            binding.btnToggleMonitoring.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
-            binding.btnToggleMonitoring.setTextColor(ContextCompat.getColor(this, R.color.white));
-            binding.tvMonitoringStatus.setBackground(UiPaletteManager.createOutlinedDrawable(this,
-                    palette.primarySoft,
-                    palette.primary));
-            binding.tvMonitoringStatus.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-        }
     }
 
     private String formatMarketUpdateText(long timestampMs) {

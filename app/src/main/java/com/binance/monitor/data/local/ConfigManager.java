@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.model.SymbolConfig;
+import com.binance.monitor.util.GatewayUrlResolver;
 
 public class ConfigManager {
 
@@ -14,6 +15,7 @@ public class ConfigManager {
     private static final String KEY_FLOATING_ALPHA = "floating_alpha";
     private static final String KEY_SHOW_BTC = "show_btc";
     private static final String KEY_SHOW_XAU = "show_xau";
+    private static final String KEY_MT5_GATEWAY_URL = "mt5_gateway_url";
     private static final String KEY_COLOR_PALETTE = "color_palette";
     private static final String KEY_TAB_MARKET_MONITOR_VISIBLE = "tab_market_monitor_visible";
     private static final String KEY_TAB_MARKET_CHART_VISIBLE = "tab_market_chart_visible";
@@ -107,6 +109,31 @@ public class ConfigManager {
 
     public void setShowXau(boolean show) {
         preferences.edit().putBoolean(KEY_SHOW_XAU, show).apply();
+    }
+
+    public String getMt5GatewayBaseUrl() {
+        String stored = preferences.getString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL);
+        return GatewayUrlResolver.resolveBaseUrl(stored, AppConstants.MT5_GATEWAY_BASE_URL);
+    }
+
+    public void setMt5GatewayBaseUrl(String baseUrl) {
+        preferences.edit()
+                .putString(KEY_MT5_GATEWAY_URL, GatewayUrlResolver.resolveBaseUrl(baseUrl, AppConstants.MT5_GATEWAY_BASE_URL))
+                .apply();
+    }
+
+    public String getBinanceRestBaseUrl() {
+        return GatewayUrlResolver.buildBinanceRestBaseUrl(
+                getMt5GatewayBaseUrl(),
+                AppConstants.MT5_GATEWAY_BASE_URL
+        );
+    }
+
+    public String getBinanceWebSocketBaseUrl() {
+        return GatewayUrlResolver.buildBinanceWebSocketBaseUrl(
+                getMt5GatewayBaseUrl(),
+                AppConstants.MT5_GATEWAY_BASE_URL
+        );
     }
 
     public int getColorPalette() {

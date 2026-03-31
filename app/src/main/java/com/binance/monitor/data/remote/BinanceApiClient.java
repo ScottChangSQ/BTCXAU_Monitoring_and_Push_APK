@@ -1,6 +1,13 @@
+/*
+ * 负责 Binance 行情 REST / 历史文件请求与图表数据回退，
+ * 供主监控页与图表页统一获取 K 线数据。
+ */
 package com.binance.monitor.data.remote;
 
+import android.content.Context;
+
 import com.binance.monitor.constants.AppConstants;
+import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.KlineData;
 
@@ -36,6 +43,8 @@ public class BinanceApiClient {
     private static final long SHARED_RESPONSE_CACHE_TTL_MS = 8_000L;
     private static final int SHARED_RESPONSE_CACHE_MAX_SIZE = 120;
     private static final Map<String, CachedArray> SHARED_RESPONSE_CACHE = new ConcurrentHashMap<>();
+    private final ChartKlineFallbackLoader chartKlineFallbackLoader = new ChartKlineFallbackLoader();
+    private final ConfigManager configManager;
 
     private static final class CachedArray {
         private final String body;
@@ -50,6 +59,11 @@ public class BinanceApiClient {
     private final OkHttpClient client;
 
     public BinanceApiClient() {
+        this(null);
+    }
+
+    public BinanceApiClient(Context context) {
+        configManager = context == null ? null : ConfigManager.getInstance(context.getApplicationContext());
         client = new OkHttpClient.Builder()
                 .connectTimeout(6, TimeUnit.SECONDS)
                 .readTimeout(10, TimeUnit.SECONDS)
@@ -115,13 +129,15 @@ public class BinanceApiClient {
                 lastError = new IOException("请求失败(" + url + "): " + e.getMessage(), e);
             }
         }
-        try {
-            List<CandleEntry> fallback = fetchFromBinanceVision(symbol, normalizedInterval, limit);
-            if (!fallback.isEmpty()) {
-                return fallback;
+        if (shouldUseDirectBinanceFallback()) {
+            try {
+                List<CandleEntry> fallback = fetchFromBinanceVision(symbol, normalizedInterval, limit);
+                if (!fallback.isEmpty()) {
+                    return fallback;
+                }
+            } catch (Exception e) {
+                lastError = new IOException("Binance Vision 回退失败: " + e.getMessage(), e);
             }
-        } catch (Exception e) {
-            lastError = new IOException("Binance Vision 回退失败: " + e.getMessage(), e);
         }
         if (lastError != null) {
             throw lastError;
@@ -161,13 +177,15 @@ public class BinanceApiClient {
                 lastError = e;
             }
         }
-        try {
-            List<CandleEntry> fallback = fetchFromBinanceVisionBefore(symbol, normalizedInterval, limit, endTimeInclusive);
-            if (!fallback.isEmpty()) {
-                return fallback;
+        if (shouldUseDirectBinanceFallback()) {
+            try {
+                List<CandleEntry> fallback = fetchFromBinanceVisionBefore(symbol, normalizedInterval, limit, endTimeInclusive);
+                if (!fallback.isEmpty()) {
+                    return fallback;
+                }
+            } catch (Exception e) {
+                lastError = e;
             }
-        } catch (Exception e) {
-            lastError = e;
         }
         if (lastError != null) {
             throw new IOException("历史分页请求失败: " + lastError.getMessage(), lastError);
@@ -210,15 +228,48 @@ public class BinanceApiClient {
                 lastError = e;
             }
         }
-        List<CandleEntry> fallback = fetchKlineHistory(symbol, normalizedInterval, Math.max(limit, 50));
-        List<CandleEntry> filtered = filterAfter(fallback, startTimeInclusive);
-        if (!filtered.isEmpty()) {
-            return filtered;
+        if (shouldUseDirectBinanceFallback()) {
+            List<CandleEntry> fallback = fetchKlineHistory(symbol, normalizedInterval, Math.max(limit, 50));
+            List<CandleEntry> filtered = filterAfter(fallback, startTimeInclusive);
+            if (!filtered.isEmpty()) {
+                return filtered;
+            }
         }
         if (lastError != null) {
             throw new IOException("增量K线请求失败: " + lastError.getMessage(), lastError);
         }
         return new ArrayList<>();
+    }
+
+    // 图表专用：只使用 Binance REST K 线接口拉取完整窗口，避免混入历史文件等二级数据源。
+    public List<CandleEntry> fetchChartKlineFullWindow(String symbol, String interval, int limit) throws Exception {
+        String normalizedInterval = normalizeInterval(interval);
+        int safeLimit = clampLimit(limit);
+        if (isWeeklyOrMonthly(normalizedInterval)) {
+            int dailyLimit = Math.min(1500, "1w".equals(normalizedInterval)
+                    ? Math.max(200, safeLimit * 9)
+                    : Math.max(300, safeLimit * 35));
+            List<CandleEntry> daily = fetchChartKlineFullWindow(symbol, "1d", dailyLimit);
+            return aggregateDailyToInterval(daily, symbol, normalizedInterval, safeLimit, Long.MAX_VALUE);
+        }
+        return requestChartRestKlines(symbol, normalizedInterval, safeLimit, null);
+    }
+
+    // 图表专用：左滑历史分页同样仅走 Binance REST，并按 endTime 截断。
+    public List<CandleEntry> fetchChartKlineHistoryBefore(String symbol,
+                                                          String interval,
+                                                          int limit,
+                                                          long endTimeInclusive) throws Exception {
+        String normalizedInterval = normalizeInterval(interval);
+        int safeLimit = clampLimit(limit);
+        if (isWeeklyOrMonthly(normalizedInterval)) {
+            int dailyLimit = Math.min(1500, "1w".equals(normalizedInterval)
+                    ? Math.max(260, safeLimit * 10)
+                    : Math.max(360, safeLimit * 38));
+            List<CandleEntry> daily = fetchChartKlineHistoryBefore(symbol, "1d", dailyLimit, endTimeInclusive);
+            return aggregateDailyToInterval(daily, symbol, normalizedInterval, safeLimit, endTimeInclusive);
+        }
+        return requestChartRestKlines(symbol, normalizedInterval, safeLimit, endTimeInclusive);
     }
 
     private List<CandleEntry> fetchRecentRealtimeKlines(String symbol, int limit) {
@@ -240,6 +291,23 @@ public class BinanceApiClient {
             }
         }
         return new ArrayList<>();
+    }
+
+    // 图表专用 REST 请求：读取完整字段并按开盘时间去重排序。
+    private List<CandleEntry> requestChartRestKlines(String symbol,
+                                                     String interval,
+                                                     int limit,
+                                                     Long endTimeInclusive) throws Exception {
+        Set<String> candidates = buildChartRestCandidates(symbol, interval, limit, endTimeInclusive);
+        return chartKlineFallbackLoader.load(
+                candidates,
+                symbol,
+                endTimeInclusive,
+                this::requestJsonArray,
+                () -> endTimeInclusive == null
+                        ? fetchKlineHistory(symbol, interval, limit)
+                        : fetchKlineHistoryBefore(symbol, interval, limit, endTimeInclusive)
+        );
     }
 
     private CandleEntry selectLatestClosed(List<CandleEntry> history, long now) {
@@ -324,22 +392,34 @@ public class BinanceApiClient {
     }
 
     private Set<String> buildCandidateUrls(String symbol, String interval, int limit) {
-        String primary = AppConstants.buildRestUrl(symbol, interval, limit);
+        String primary = AppConstants.buildRestUrl(getConfiguredRestBaseUrl(), symbol, interval, limit);
         Set<String> urls = new LinkedHashSet<>();
         urls.add(primary);
-
-        String canonical = "https://fapi.binance.com/fapi/v1/klines?symbol="
-                + symbol + "&interval=" + interval + "&limit=" + clampLimit(limit);
-        urls.add(canonical);
-        urls.add(canonical.replace("fapi.binance.com", "fapi1.binance.com"));
-        urls.add(canonical.replace("fapi.binance.com", "fapi2.binance.com"));
-        urls.add(canonical.replace("fapi.binance.com", "fapi3.binance.com"));
-        urls.add(canonical.replace("fapi.binance.com", "fapi4.binance.com"));
-
-        addHostFallback(urls, primary,
-                "fapi.binance.com",
-                new String[]{"fapi1.binance.com", "fapi2.binance.com", "fapi3.binance.com", "fapi4.binance.com"});
         return urls;
+    }
+
+    // 图表链路固定使用 Binance 官方 REST 主域及其同源镜像，避免接入其他口径数据。
+    private Set<String> buildChartRestCandidates(String symbol, String interval, int limit, Long endTimeInclusive) {
+        int safeLimit = clampLimit(limit);
+        String primary = AppConstants.buildRestUrl(getConfiguredRestBaseUrl(), symbol, interval, safeLimit);
+        if (endTimeInclusive != null && endTimeInclusive > 0L) {
+            primary = appendQuery(primary, "endTime", String.valueOf(endTimeInclusive));
+        }
+        Set<String> urls = new LinkedHashSet<>();
+        urls.add(primary);
+        return urls;
+    }
+
+    private String getConfiguredRestBaseUrl() {
+        if (configManager == null) {
+            return AppConstants.BASE_REST_URL;
+        }
+        return configManager.getBinanceRestBaseUrl();
+    }
+
+    private boolean shouldUseDirectBinanceFallback() {
+        String baseUrl = getConfiguredRestBaseUrl();
+        return baseUrl != null && baseUrl.contains("binance.com");
     }
 
     private Set<String> buildCandidateUrlsWithEndTime(String symbol, String interval, int limit, long endTime) {

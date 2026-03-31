@@ -10,10 +10,6 @@ model_auto_compact_token_limit = 900000
 
 [model_providers.OpenAI]
 name = "OpenAI"
-base_url = "https://fuckcode.me"
+base_url = "https://api.baldduck.cn"
 wire_api = "responses"
-supports_websockets = true
 requires_openai_auth = true
-
-[features]
-responses_websockets_v2 = true

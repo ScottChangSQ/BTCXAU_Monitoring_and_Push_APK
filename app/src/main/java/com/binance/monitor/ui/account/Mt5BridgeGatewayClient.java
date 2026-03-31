@@ -1,13 +1,17 @@
 package com.binance.monitor.ui.account;
 
+import android.content.Context;
+
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.constants.AppConstants;
+import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.util.GatewayUrlResolver;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -40,6 +44,18 @@ public class Mt5BridgeGatewayClient {
     private static final int GATEWAY_PORT = 8787;
     private static final int LAN_SCAN_THREAD_COUNT = 24;
     private static final long LAN_SCAN_COOLDOWN_MS = 2 * 60 * 1000L;
+    private static final String SNAPSHOT_SCOPE = "snapshot";
+    private static final String SUMMARY_SCOPE = "summary";
+    private static final String LIVE_SCOPE = "live";
+    private static final String PENDING_SCOPE = "pending";
+    private static final String TRADES_SCOPE = "trades";
+    private static final String CURVE_SCOPE = "curve";
+    private static final String SNAPSHOT_ENDPOINT = "/v1/snapshot";
+    private static final String SUMMARY_ENDPOINT = "/v1/summary";
+    private static final String LIVE_ENDPOINT = "/v1/live";
+    private static final String PENDING_ENDPOINT = "/v1/pending";
+    private static final String TRADES_ENDPOINT = "/v1/trades";
+    private static final String CURVE_ENDPOINT = "/v1/curve";
 
     private static volatile String discoveredLanBaseUrl = "";
     private static volatile long lastLanScanAtMs = 0L;
@@ -55,8 +71,8 @@ public class Mt5BridgeGatewayClient {
             .build();
 
     private final Object syncLock = new Object();
-    private long syncSeq;
-    private String syncRangeKey = "";
+    private final Map<String, Long> syncSeqByRequestKey = new HashMap<>();
+    private String activeRangeKey = "";
     private String syncBaseUrl = "";
     private List<AccountMetric> cachedOverviewMetrics = new ArrayList<>();
     private List<AccountMetric> cachedCurveIndicators = new ArrayList<>();
@@ -66,35 +82,122 @@ public class Mt5BridgeGatewayClient {
     private final LinkedHashMap<String, PositionItem> cachedPendingOrders = new LinkedHashMap<>();
     private final LinkedHashMap<String, TradeRecordItem> cachedTrades = new LinkedHashMap<>();
 
-    private final List<String> baseUrls;
+    @Nullable
+    private final ConfigManager configManager;
 
     public Mt5BridgeGatewayClient() {
-        Set<String> urls = new LinkedHashSet<>();
-        urls.add(AppConstants.MT5_GATEWAY_BASE_URL);
-        urls.add("http://10.0.2.2:8787");
-        urls.add("http://127.0.0.1:8787");
-        urls.add("http://localhost:8787");
-        baseUrls = new ArrayList<>(urls);
+        this.configManager = null;
+    }
+
+    public Mt5BridgeGatewayClient(@Nullable Context context) {
+        this.configManager = context == null
+                ? null
+                : ConfigManager.getInstance(context.getApplicationContext());
     }
 
     public SnapshotResult fetch(AccountTimeRange range) {
+        return fetchComposite(range);
+    }
+
+    public SnapshotResult fetchSummary(AccountTimeRange range) {
+        return fetchScope(range, SUMMARY_SCOPE, SUMMARY_ENDPOINT);
+    }
+
+    public SnapshotResult fetchLive(AccountTimeRange range) {
+        return fetchScope(range, LIVE_SCOPE, LIVE_ENDPOINT);
+    }
+
+    static String buildSyncRequestKey(String scope, String rangeKey) {
+        String normalizedScope = scope == null || scope.trim().isEmpty() ? SNAPSHOT_SCOPE : scope.trim();
+        String normalizedRange = rangeKey == null || rangeKey.trim().isEmpty() ? "7d" : rangeKey.trim();
+        return normalizedScope + ":" + normalizedRange;
+    }
+
+    private SnapshotResult fetchComposite(AccountTimeRange range) {
+        String rangeKey = mapRange(range);
+        synchronized (syncLock) {
+            ensureRangeContextLocked(rangeKey);
+        }
+
+        if (!hasScopeSyncLocked(buildSyncRequestKey(SNAPSHOT_SCOPE, rangeKey))) {
+            return fetchScope(range, SNAPSHOT_SCOPE, SNAPSHOT_ENDPOINT);
+        }
+
+        SnapshotResult liveResult = fetchScope(range, LIVE_SCOPE, LIVE_ENDPOINT);
+        if (!liveResult.isSuccess()) {
+            return fallbackToSnapshot(range, liveResult.getError());
+        }
+
+        SnapshotResult pendingResult = fetchScope(range, PENDING_SCOPE, PENDING_ENDPOINT);
+        if (!pendingResult.isSuccess()) {
+            return fallbackToSnapshot(range, pendingResult.getError());
+        }
+
+        SnapshotResult tradesResult = fetchScope(range, TRADES_SCOPE, TRADES_ENDPOINT);
+        if (!tradesResult.isSuccess()) {
+            return fallbackToSnapshot(range, tradesResult.getError());
+        }
+
+        SnapshotResult curveResult = fetchScope(range, CURVE_SCOPE, CURVE_ENDPOINT);
+        if (!curveResult.isSuccess()) {
+            return fallbackToSnapshot(range, curveResult.getError());
+        }
+
+        SnapshotResult result = new SnapshotResult();
+        result.success = true;
+        result.account = liveResult.account;
+        result.server = liveResult.server;
+        result.source = liveResult.source;
+        result.updatedAt = liveResult.updatedAt;
+        result.connectedBaseUrl = liveResult.connectedBaseUrl;
+        result.deltaResponse = liveResult.deltaResponse
+                || pendingResult.deltaResponse
+                || tradesResult.deltaResponse
+                || curveResult.deltaResponse;
+        result.unchanged = liveResult.unchanged
+                && pendingResult.unchanged
+                && tradesResult.unchanged
+                && curveResult.unchanged;
+        synchronized (syncLock) {
+            result.snapshot = buildSnapshotFromCacheLocked();
+        }
+        return result;
+    }
+
+    private boolean hasScopeSyncLocked(String requestKey) {
+        return syncSeqByRequestKey.containsKey(requestKey) && syncSeqByRequestKey.get(requestKey) != null;
+    }
+
+    private SnapshotResult fallbackToSnapshot(AccountTimeRange range, String reason) {
+        synchronized (syncLock) {
+            resetSyncStateLocked();
+        }
+        SnapshotResult fallback = fetchScope(range, SNAPSHOT_SCOPE, SNAPSHOT_ENDPOINT);
+        if (!fallback.isSuccess() && reason != null && !reason.trim().isEmpty()) {
+            fallback.error = reason + " ; " + fallback.getError();
+        }
+        return fallback;
+    }
+
+    private SnapshotResult fetchScope(AccountTimeRange range, String scope, String endpointPath) {
         SnapshotResult result = new SnapshotResult();
         List<String> errors = new ArrayList<>();
         Set<String> attempted = new HashSet<>();
         String rangeKey = mapRange(range);
+        String requestKey = buildSyncRequestKey(scope, rangeKey);
 
         if (!discoveredLanBaseUrl.isEmpty()) {
-            if (fetchFromBaseUrl(discoveredLanBaseUrl, rangeKey, result, errors)) {
+            if (fetchFromBaseUrl(discoveredLanBaseUrl, endpointPath, rangeKey, scope, result, errors)) {
                 return result;
             }
             attempted.add(discoveredLanBaseUrl);
         }
 
-        for (String baseUrl : baseUrls) {
+        for (String baseUrl : buildCandidateBaseUrls()) {
             if (attempted.contains(baseUrl)) {
                 continue;
             }
-            if (fetchFromBaseUrl(baseUrl, rangeKey, result, errors)) {
+            if (fetchFromBaseUrl(baseUrl, endpointPath, rangeKey, scope, result, errors)) {
                 return result;
             }
             attempted.add(baseUrl);
@@ -102,7 +205,7 @@ public class Mt5BridgeGatewayClient {
 
         String discovered = discoverLanGatewayBaseUrl();
         if (!discovered.isEmpty() && !attempted.contains(discovered)) {
-            if (fetchFromBaseUrl(discovered, rangeKey, result, errors)) {
+            if (fetchFromBaseUrl(discovered, endpointPath, rangeKey, scope, result, errors)) {
                 return result;
             }
         } else if (discovered.isEmpty()) {
@@ -114,21 +217,24 @@ public class Mt5BridgeGatewayClient {
     }
 
     private boolean fetchFromBaseUrl(String baseUrl,
+                                     String endpointPath,
                                      String rangeKey,
+                                     String scope,
                                      SnapshotResult result,
                                      List<String> errors) {
         String normalizedBase = normalizeBaseUrl(baseUrl);
+        String requestKey = buildSyncRequestKey(scope, rangeKey);
         long localSyncSeq;
         boolean canUseDelta;
         synchronized (syncLock) {
-            localSyncSeq = syncSeq;
-            canUseDelta = syncSeq > 0L
-                    && rangeKey.equals(syncRangeKey)
-                    && normalizedBase.equals(syncBaseUrl)
-                    && !cachedOverviewMetrics.isEmpty();
+            ensureRangeContextLocked(rangeKey);
+            localSyncSeq = syncSeqByRequestKey.containsKey(requestKey)
+                    ? Math.max(0L, syncSeqByRequestKey.get(requestKey))
+                    : 0L;
+            canUseDelta = localSyncSeq > 0L && normalizedBase.equals(syncBaseUrl);
         }
 
-        String url = normalizedBase + "/v1/snapshot?range=" + rangeKey;
+        String url = normalizedBase + endpointPath + "?range=" + rangeKey;
         if (canUseDelta) {
             url = url + "&since=" + localSyncSeq + "&delta=1";
         } else {
@@ -151,6 +257,8 @@ public class Mt5BridgeGatewayClient {
             result.account = meta == null ? "" : meta.optString("login", "");
             result.server = meta == null ? "" : meta.optString("server", "");
             result.source = meta == null ? "MT5网关" : meta.optString("source", "MT5网关");
+            result.accountName = meta == null ? "" : meta.optString("name", "");
+            result.leverage = meta == null ? 0d : meta.optDouble("leverage", 0d);
             result.updatedAt = meta == null ? 0L : meta.optLong("updatedAt", 0L);
             result.connectedBaseUrl = normalizedBase;
             long remoteSyncSeq = meta == null ? 0L : meta.optLong("syncSeq", 0L);
@@ -158,27 +266,13 @@ public class Mt5BridgeGatewayClient {
             boolean unchanged = root.optBoolean("unchanged", false);
 
             synchronized (syncLock) {
-                if (!rangeKey.equals(syncRangeKey) || !normalizedBase.equals(syncBaseUrl)) {
+                ensureRangeContextLocked(rangeKey);
+                if (!syncBaseUrl.isEmpty() && !normalizedBase.equals(syncBaseUrl)) {
                     resetSyncStateLocked();
+                    activeRangeKey = rangeKey;
                 }
-
-                if (!isDelta) {
-                    cachedOverviewMetrics = parseMetrics(root.optJSONArray("overviewMetrics"));
-                    cachedCurveIndicators = parseMetrics(root.optJSONArray("curveIndicators"));
-                    cachedStatsMetrics = parseMetrics(root.optJSONArray("statsMetrics"));
-                    rebuildCurveCache(root.optJSONArray("curvePoints"));
-                    rebuildPositionCache(cachedPositions, root.optJSONArray("positions"));
-                    rebuildPositionCache(cachedPendingOrders, root.optJSONArray("pendingOrders"));
-                    rebuildTradeCache(root.optJSONArray("trades"));
-                } else if (!unchanged) {
-                    updateMetricsIfPresent(root, "overviewMetrics", true);
-                    updateMetricsIfPresent(root, "curveIndicators", false);
-                    updateMetricsIfPresent(root, "statsMetrics", false);
-                    applyDelta(root.optJSONObject("delta"));
-                }
-
-                syncSeq = Math.max(syncSeq, remoteSyncSeq);
-                syncRangeKey = rangeKey;
+                applyScopePayloadLocked(scope, root, isDelta, unchanged);
+                syncSeqByRequestKey.put(requestKey, Math.max(localSyncSeq, remoteSyncSeq));
                 syncBaseUrl = normalizedBase;
 
                 result.snapshot = buildSnapshotFromCacheLocked();
@@ -194,7 +288,7 @@ public class Mt5BridgeGatewayClient {
         } catch (Exception exception) {
             synchronized (syncLock) {
                 if (canUseDelta) {
-                    resetSyncStateLocked();
+                    syncSeqByRequestKey.remove(requestKey);
                 }
             }
             errors.add(normalizedBase + " -> " + exception.getMessage());
@@ -335,14 +429,20 @@ public class Mt5BridgeGatewayClient {
     }
 
     private String normalizeBaseUrl(String baseUrl) {
-        if (baseUrl == null || baseUrl.trim().isEmpty()) {
-            return "http://10.0.2.2:8787";
+        return GatewayUrlResolver.normalizeBaseUrl(baseUrl, "http://10.0.2.2:8787");
+    }
+
+    private List<String> buildCandidateBaseUrls() {
+        Set<String> urls = new LinkedHashSet<>();
+        if (configManager != null) {
+            urls.add(configManager.getMt5GatewayBaseUrl());
+        } else {
+            urls.add(AppConstants.MT5_GATEWAY_BASE_URL);
         }
-        String trimmed = baseUrl.trim();
-        if (trimmed.endsWith("/")) {
-            return trimmed.substring(0, trimmed.length() - 1);
-        }
-        return trimmed;
+        urls.add("http://10.0.2.2:8787");
+        urls.add("http://127.0.0.1:8787");
+        urls.add("http://localhost:8787");
+        return new ArrayList<>(urls);
     }
 
     private String mapRange(AccountTimeRange range) {
@@ -447,54 +547,91 @@ public class Mt5BridgeGatewayClient {
     }
 
     private PositionItem parsePositionItem(JSONObject item) {
+        String productName = optStringAny(item, "--",
+                "productName", "name", "symbol", "instrument", "contract", "product");
+        String code = optStringAny(item, productName,
+                "code", "symbol", "instrument", "productCode", "contract");
+        String side = optStringAny(item, "Buy", "side", "direction", "type", "positionSide");
+        double quantity = optDoubleAny(item, 0d, "quantity", "lots", "volume", "qty");
+        double sellableQuantity = optDoubleAny(item, quantity, "sellableQuantity", "availableQuantity", "freeQuantity");
+        double costPrice = optDoubleAny(item, 0d, "costPrice", "openPrice", "open_price", "priceOpen", "avgPrice");
+        double latestPrice = optDoubleAny(item, 0d, "latestPrice", "lastPrice", "markPrice", "priceCurrent", "pendingPrice");
+        double marketValue = optDoubleAny(item, 0d, "marketValue", "notional", "positionValue");
+        double positionRatio = optDoubleAny(item, 0d, "positionRatio", "ratio", "weight");
+        double dayPnl = optDoubleAny(item, 0d, "dayPnL", "dayPnlAmount", "dailyPnl");
+        double totalPnl = optDoubleAny(item, 0d, "totalPnL", "pnl", "profit");
+        double storageFee = optDoubleAny(item, 0d, "storageFee", "swap", "storage", "swapFee");
+        double returnRate = normalizeReturnRate(
+                side,
+                quantity,
+                costPrice,
+                totalPnl + storageFee,
+                optDoubleAny(item, 0d, "returnRate", "pnlRate", "yieldRate"));
+        double pendingLots = optDoubleAny(item, 0d, "pendingLots", "pendingQuantity", "pendingVolume");
+        int pendingCount = item.optInt("pendingCount", item.optInt("pendingOrderCount", 0));
+        double pendingPrice = optDoubleAny(item, 0d, "pendingPrice", "pendingAvgPrice");
         return new PositionItem(
-                item.optString("productName", "--"),
-                item.optString("code", "--"),
-                item.optString("side", "Buy"),
-                item.optLong("positionTicket", item.optLong("ticket", 0L)),
-                item.optLong("orderId", 0L),
-                item.optDouble("quantity", 0d),
-                item.optDouble("sellableQuantity", 0d),
-                item.optDouble("costPrice", 0d),
-                item.optDouble("latestPrice", 0d),
-                item.optDouble("marketValue", 0d),
-                item.optDouble("positionRatio", 0d),
-                item.optDouble("dayPnL", 0d),
-                item.optDouble("totalPnL", 0d),
-                item.optDouble("returnRate", 0d),
-                item.optDouble("pendingLots", 0d),
-                item.optInt("pendingCount", 0),
-                item.optDouble("pendingPrice", 0d),
+                productName,
+                code,
+                side,
+                item.optLong("positionTicket", item.optLong("positionId", item.optLong("ticket", 0L))),
+                item.optLong("orderId", item.optLong("order", item.optLong("ticket", 0L))),
+                quantity,
+                sellableQuantity,
+                costPrice,
+                latestPrice,
+                marketValue,
+                positionRatio,
+                dayPnl,
+                totalPnl,
+                returnRate,
+                pendingLots,
+                pendingCount,
+                pendingPrice,
                 optDoubleAny(item, 0d, "takeProfit", "tp", "tpPrice", "take_profit"),
                 optDoubleAny(item, 0d, "stopLoss", "sl", "slPrice", "stop_loss"),
-                optDoubleAny(item, 0d, "storageFee", "swap", "storage", "swapFee"));
+                storageFee);
     }
 
     private PositionItem parsePendingOrderItem(JSONObject item) {
+        String productName = optStringAny(item, "--",
+                "productName", "name", "symbol", "instrument", "contract", "product");
+        String code = optStringAny(item, productName,
+                "code", "symbol", "instrument", "productCode", "contract");
+        String side = optStringAny(item, "Buy", "side", "direction", "type", "positionSide");
+        double quantity = optDoubleAny(item, 0d, "quantity", "lots", "volume", "qty");
+        double pendingLots = optDoubleAny(item, quantity, "pendingLots", "pendingQuantity", "pendingVolume");
+        double pendingPrice = optDoubleAny(item, 0d, "pendingPrice", "price", "orderPrice");
+        double latestPrice = optDoubleAny(item, pendingPrice, "latestPrice", "lastPrice", "markPrice");
         return new PositionItem(
-                item.optString("productName", "--"),
-                item.optString("code", "--"),
-                item.optString("side", "Buy"),
+                productName,
+                code,
+                side,
                 0L,
                 item.optLong("orderId", item.optLong("ticket", 0L)),
-                item.optDouble("quantity", 0d),
-                item.optDouble("sellableQuantity", 0d),
-                item.optDouble("costPrice", 0d),
-                item.optDouble("latestPrice", item.optDouble("pendingPrice", 0d)),
+                quantity,
+                optDoubleAny(item, quantity, "sellableQuantity", "availableQuantity"),
+                optDoubleAny(item, 0d, "costPrice", "openPrice", "open_price", "priceOpen"),
+                latestPrice,
                 item.optDouble("marketValue", 0d),
                 item.optDouble("positionRatio", 0d),
                 item.optDouble("dayPnL", 0d),
                 item.optDouble("totalPnL", 0d),
                 item.optDouble("returnRate", 0d),
-                item.optDouble("pendingLots", item.optDouble("quantity", 0d)),
-                item.optInt("pendingCount", 1),
-                item.optDouble("pendingPrice", 0d),
+                pendingLots,
+                item.optInt("pendingCount", item.optInt("pendingOrderCount", 1)),
+                pendingPrice,
                 optDoubleAny(item, 0d, "takeProfit", "tp", "tpPrice", "take_profit"),
                 optDoubleAny(item, 0d, "stopLoss", "sl", "slPrice", "stop_loss"),
                 0d);
     }
 
     private TradeRecordItem parseTradeItem(JSONObject item) {
+        String productName = optStringAny(item, "--",
+                "productName", "name", "symbol", "instrument", "contract", "product");
+        String code = optStringAny(item, productName,
+                "code", "symbol", "instrument", "productCode", "contract");
+        String side = optStringAny(item, "Buy", "side", "direction", "type", "positionSide");
         double price = item.optDouble("price", 0d);
         double openPrice = optDoubleAny(item, price,
                 "openPrice", "open_price", "open", "priceOpen", "entryPrice", "entry_price");
@@ -502,9 +639,9 @@ public class Mt5BridgeGatewayClient {
                 "closePrice", "close_price", "close", "priceClose", "exitPrice", "exit_price");
         return new TradeRecordItem(
                 item.optLong("timestamp", 0L),
-                item.optString("productName", "--"),
-                item.optString("code", "--"),
-                item.optString("side", "Buy"),
+                productName,
+                code,
+                side,
                 price,
                 item.optDouble("quantity", 0d),
                 item.optDouble("amount", 0d),
@@ -522,9 +659,18 @@ public class Mt5BridgeGatewayClient {
                 item.optInt("entryType", 0));
     }
 
+    private void ensureRangeContextLocked(String rangeKey) {
+        String normalizedRange = rangeKey == null ? "" : rangeKey.trim();
+        if (normalizedRange.equals(activeRangeKey)) {
+            return;
+        }
+        resetSyncStateLocked();
+        activeRangeKey = normalizedRange;
+    }
+
     private void resetSyncStateLocked() {
-        syncSeq = 0L;
-        syncRangeKey = "";
+        syncSeqByRequestKey.clear();
+        activeRangeKey = "";
         syncBaseUrl = "";
         cachedOverviewMetrics = new ArrayList<>();
         cachedCurveIndicators = new ArrayList<>();
@@ -533,6 +679,92 @@ public class Mt5BridgeGatewayClient {
         cachedPositions.clear();
         cachedPendingOrders.clear();
         cachedTrades.clear();
+    }
+
+    private void applyScopePayloadLocked(String scope,
+                                         JSONObject root,
+                                         boolean isDelta,
+                                         boolean unchanged) {
+        if (root == null) {
+            return;
+        }
+        if (!isDelta) {
+            applyScopeFullPayloadLocked(scope, root);
+            return;
+        }
+        if (unchanged) {
+            return;
+        }
+        applyScopeDeltaPayloadLocked(scope, root);
+    }
+
+    private void applyScopeFullPayloadLocked(String scope, JSONObject root) {
+        if (SNAPSHOT_SCOPE.equals(scope)) {
+            cachedOverviewMetrics = parseMetrics(root.optJSONArray("overviewMetrics"));
+            cachedCurveIndicators = parseMetrics(root.optJSONArray("curveIndicators"));
+            cachedStatsMetrics = parseMetrics(root.optJSONArray("statsMetrics"));
+            rebuildCurveCache(root.optJSONArray("curvePoints"));
+            rebuildPositionCache(cachedPositions, root.optJSONArray("positions"));
+            rebuildPositionCache(cachedPendingOrders, root.optJSONArray("pendingOrders"));
+            rebuildTradeCache(root.optJSONArray("trades"));
+            return;
+        }
+        if (SUMMARY_SCOPE.equals(scope)) {
+            updateMetricsIfPresent(root, "overviewMetrics", true);
+            updateMetricsIfPresent(root, "statsMetrics", true);
+            return;
+        }
+        if (LIVE_SCOPE.equals(scope)) {
+            updateMetricsIfPresent(root, "overviewMetrics", true);
+            updateMetricsIfPresent(root, "statsMetrics", true);
+            rebuildPositionCache(cachedPositions, root.optJSONArray("positions"));
+            return;
+        }
+        if (PENDING_SCOPE.equals(scope)) {
+            rebuildPositionCache(cachedPendingOrders, root.optJSONArray("pendingOrders"));
+            return;
+        }
+        if (TRADES_SCOPE.equals(scope)) {
+            rebuildTradeCache(root.optJSONArray("trades"));
+            return;
+        }
+        if (CURVE_SCOPE.equals(scope)) {
+            updateMetricsIfPresent(root, "curveIndicators", true);
+            rebuildCurveCache(root.optJSONArray("curvePoints"));
+        }
+    }
+
+    private void applyScopeDeltaPayloadLocked(String scope, JSONObject root) {
+        if (SNAPSHOT_SCOPE.equals(scope)) {
+            updateMetricsIfPresent(root, "overviewMetrics", true);
+            updateMetricsIfPresent(root, "curveIndicators", false);
+            updateMetricsIfPresent(root, "statsMetrics", false);
+            applyDelta(root.optJSONObject("delta"));
+            return;
+        }
+        if (SUMMARY_SCOPE.equals(scope)) {
+            updateMetricsIfPresent(root, "overviewMetrics", true);
+            updateMetricsIfPresent(root, "statsMetrics", true);
+            return;
+        }
+        if (LIVE_SCOPE.equals(scope)) {
+            updateMetricsIfPresent(root, "overviewMetrics", true);
+            updateMetricsIfPresent(root, "statsMetrics", true);
+            applyPositionDelta(cachedPositions, root.optJSONObject("delta") == null ? null : root.optJSONObject("delta").optJSONObject("positions"), false);
+            return;
+        }
+        if (PENDING_SCOPE.equals(scope)) {
+            applyPositionDelta(cachedPendingOrders, root.optJSONObject("delta") == null ? null : root.optJSONObject("delta").optJSONObject("pendingOrders"), true);
+            return;
+        }
+        if (TRADES_SCOPE.equals(scope)) {
+            applyTradeDelta(root.optJSONObject("delta") == null ? null : root.optJSONObject("delta").optJSONObject("trades"));
+            return;
+        }
+        if (CURVE_SCOPE.equals(scope)) {
+            updateMetricsIfPresent(root, "curveIndicators", false);
+            applyCurveDelta(root.optJSONObject("delta") == null ? null : root.optJSONObject("delta").optJSONObject("curvePoints"));
+        }
     }
 
     private void updateMetricsIfPresent(JSONObject root, String key, boolean allowEmptyReplace) {
@@ -773,6 +1005,46 @@ public class Mt5BridgeGatewayClient {
         return fallback;
     }
 
+    private String optStringAny(JSONObject item, String fallback, String... keys) {
+        if (item == null || keys == null) {
+            return fallback;
+        }
+        for (String key : keys) {
+            if (key == null || key.trim().isEmpty() || !item.has(key)) {
+                continue;
+            }
+            String value = item.optString(key, "").trim();
+            if (!value.isEmpty()) {
+                return value;
+            }
+        }
+        return fallback;
+    }
+
+    private double normalizeReturnRate(String side,
+                                       double quantity,
+                                       double costPrice,
+                                       double pnlWithStorage,
+                                       double sourceRate) {
+        double absQty = Math.abs(quantity);
+        double absCost = Math.abs(costPrice);
+        if (absQty > 1e-9 && absCost > 1e-9) {
+            double calculated = pnlWithStorage / (absQty * absCost);
+            if (Math.abs(sourceRate) <= 1e-9) {
+                return calculated;
+            }
+            if (Math.abs(pnlWithStorage) > 1e-9 && Math.signum(sourceRate) != Math.signum(pnlWithStorage)) {
+                return calculated;
+            }
+            return sourceRate;
+        }
+        if (Math.abs(pnlWithStorage) > 1e-9 && Math.abs(sourceRate) > 1e-9
+                && Math.signum(sourceRate) != Math.signum(pnlWithStorage)) {
+            return Math.copySign(Math.abs(sourceRate), pnlWithStorage);
+        }
+        return sourceRate;
+    }
+
     private static final class SubnetInfo {
         private final String prefix;
         private final int selfHost;
@@ -788,8 +1060,10 @@ public class Mt5BridgeGatewayClient {
         private boolean unchanged;
         private boolean deltaResponse;
         private String account = "";
+        private String accountName = "";
         private String server = "";
         private String source = "";
+        private double leverage;
         private long updatedAt;
         private String connectedBaseUrl = "";
         private String error = "";
@@ -827,6 +1101,17 @@ public class Mt5BridgeGatewayClient {
                 return fallback;
             }
             return server.trim();
+        }
+
+        public String getAccountName(String fallback) {
+            if (accountName == null || accountName.trim().isEmpty()) {
+                return fallback == null ? "" : fallback.trim();
+            }
+            return accountName.trim();
+        }
+
+        public double getLeverage() {
+            return leverage;
         }
 
         public String getLocalizedSource() {

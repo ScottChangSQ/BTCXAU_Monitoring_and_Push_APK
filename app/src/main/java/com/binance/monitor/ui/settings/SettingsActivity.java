@@ -1,54 +1,44 @@
+/*
+ * 设置首页，只负责按微信式目录展示设置分类入口。
+ * 具体设置内容下沉到 SettingsSectionActivity，避免首页过长。
+ */
 package com.binance.monitor.ui.settings;
 
 import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.Bundle;
-import android.widget.ArrayAdapter;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.ContextCompat;
-import androidx.lifecycle.ViewModelProvider;
 
-import com.binance.monitor.R;
-import com.binance.monitor.constants.AppConstants;
-import com.binance.monitor.data.local.AbnormalRecordManager;
-import com.binance.monitor.data.local.KlineCacheStore;
 import com.binance.monitor.databinding.ActivitySettingsBinding;
-import com.binance.monitor.ui.account.AccountStatsPreloadManager;
-import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.log.LogActivity;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.main.MainActivity;
-import com.binance.monitor.ui.main.MainViewModel;
 import com.binance.monitor.ui.theme.UiPaletteManager;
-import com.binance.monitor.util.PermissionHelper;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-
-import java.io.File;
 
 public class SettingsActivity extends AppCompatActivity {
 
+    public static final String SECTION_DISPLAY = "display";
+    public static final String SECTION_GATEWAY = "gateway";
+    public static final String SECTION_THEME = "theme";
+    public static final String SECTION_TAB = "tab";
+    public static final String SECTION_CACHE = "cache";
+
     private ActivitySettingsBinding binding;
-    private MainViewModel viewModel;
-    private boolean applying;
-    private static final int TAB_ACTIVE_COLOR = 0xFF07C160;
-    private static final int TAB_INACTIVE_COLOR = 0xFF7F8EA9;
+    private int tabActiveColor = 0xFF07C160;
+    private int tabInactiveColor = 0xFF7F8EA9;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         binding = ActivitySettingsBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
-
-        viewModel = new ViewModelProvider(this).get(MainViewModel.class);
-        setupPaletteSelector();
+        setupEntries();
         setupBottomNav();
-        setupActions();
     }
 
     @Override
@@ -56,9 +46,19 @@ public class SettingsActivity extends AppCompatActivity {
         super.onResume();
         applyPaletteStyles();
         updateBottomTabs();
-        applySettings();
     }
 
+    // 绑定首页分类入口。
+    private void setupEntries() {
+        binding.itemDisplay.setOnClickListener(v -> openSection(SECTION_DISPLAY, "悬浮窗与显示"));
+        binding.itemGateway.setOnClickListener(v -> openSection(SECTION_GATEWAY, "MT5 网关地址"));
+        binding.itemTheme.setOnClickListener(v -> openSection(SECTION_THEME, "主题设置"));
+        binding.itemTab.setOnClickListener(v -> openSection(SECTION_TAB, "Tab 页管理"));
+        binding.itemCache.setOnClickListener(v -> openSection(SECTION_CACHE, "缓存管理"));
+        binding.itemLogs.setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
+    }
+
+    // 绑定底部导航。
     private void setupBottomNav() {
         updateBottomTabs();
         binding.tabMarketMonitor.setOnClickListener(v -> openMarketMonitor());
@@ -67,6 +67,7 @@ public class SettingsActivity extends AppCompatActivity {
         binding.tabSettings.setOnClickListener(v -> updateBottomTabs());
     }
 
+    // 刷新底部导航状态。
     private void updateBottomTabs() {
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
@@ -79,226 +80,47 @@ public class SettingsActivity extends AppCompatActivity {
         styleNavTab(binding.tabSettings, true);
     }
 
+    // 绘制单个底部导航按钮。
     private void styleNavTab(TextView tab, boolean selected) {
         if (tab == null) {
             return;
         }
-        tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
-        tab.setTextColor(selected ? TAB_ACTIVE_COLOR : TAB_INACTIVE_COLOR);
+        tab.setBackgroundResource(selected
+                ? com.binance.monitor.R.drawable.bg_tab_wechat_selected
+                : com.binance.monitor.R.drawable.bg_tab_wechat_unselected);
+        tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
         tab.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        tab.setTextSize(13f);
     }
 
-    private void setupPaletteSelector() {
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(
-                this,
-                R.layout.item_spinner_filter,
-                android.R.id.text1,
-                UiPaletteManager.labels());
-        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
-        binding.spinnerColorPalette.setAdapter(adapter);
-        binding.tvThemePaletteLabel.setOnClickListener(v -> binding.spinnerColorPalette.performClick());
-        binding.spinnerColorPalette.setOnItemSelectedListener(new com.binance.monitor.ui.account.SimpleSelectionListener(() -> {
-            if (applying) {
-                return;
-            }
-            int selected = binding.spinnerColorPalette.getSelectedItemPosition();
-            if (selected == viewModel.getColorPalette()) {
-                return;
-            }
-            viewModel.setColorPalette(selected);
-            binding.tvThemePaletteLabel.setText(UiPaletteManager.labels()[selected]);
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-            applyPaletteStyles();
-            updateBottomTabs();
-        }));
-    }
-
-    private void setupActions() {
-        binding.btnViewLogs.setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
-        binding.btnClearCache.setOnClickListener(v -> confirmAndClearCache());
-        binding.switchFloatingEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            if (isChecked && !PermissionHelper.canDrawOverlays(this)) {
-                PermissionHelper.openOverlaySettings(this);
-                return;
-            }
-            viewModel.setFloatingEnabled(isChecked);
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-        });
-        binding.seekFloatingAlpha.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) {
-                int safeValue = Math.max(20, progress);
-                binding.tvAlphaValue.setText(getString(R.string.alpha_suffix, safeValue));
-                if (fromUser && !applying) {
-                    viewModel.setFloatingAlpha(safeValue);
-                    sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-                }
-            }
-
-            @Override
-            public void onStartTrackingTouch(android.widget.SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(android.widget.SeekBar seekBar) {
-            }
-        });
-        binding.switchShowBtc.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            viewModel.setShowBtc(isChecked);
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-        });
-        binding.switchShowXau.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            viewModel.setShowXau(isChecked);
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-        });
-        binding.switchTabMarketMonitor.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            if (!canApplyTabVisibility("market", isChecked)) {
-                resetTabSwitches();
-                return;
-            }
-            viewModel.setTabMarketMonitorVisible(isChecked);
-            updateBottomTabs();
-        });
-        binding.switchTabMarketChart.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            if (!canApplyTabVisibility("chart", isChecked)) {
-                resetTabSwitches();
-                return;
-            }
-            viewModel.setTabMarketChartVisible(isChecked);
-            updateBottomTabs();
-        });
-        binding.switchTabAccountStats.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            if (!canApplyTabVisibility("account", isChecked)) {
-                resetTabSwitches();
-                return;
-            }
-            viewModel.setTabAccountStatsVisible(isChecked);
-            updateBottomTabs();
-        });
-    }
-
-    private boolean canApplyTabVisibility(String tabKey, boolean targetVisible) {
-        boolean marketVisible = "market".equals(tabKey) ? targetVisible : viewModel.isTabMarketMonitorVisible();
-        boolean chartVisible = "chart".equals(tabKey) ? targetVisible : viewModel.isTabMarketChartVisible();
-        boolean accountVisible = "account".equals(tabKey) ? targetVisible : viewModel.isTabAccountStatsVisible();
-        if (marketVisible || chartVisible || accountVisible) {
-            return true;
-        }
-        Toast.makeText(this, "至少保留一个业务 Tab 页", Toast.LENGTH_SHORT).show();
-        return false;
-    }
-
-    private void resetTabSwitches() {
-        applying = true;
-        binding.switchTabMarketMonitor.setChecked(viewModel.isTabMarketMonitorVisible());
-        binding.switchTabMarketChart.setChecked(viewModel.isTabMarketChartVisible());
-        binding.switchTabAccountStats.setChecked(viewModel.isTabAccountStatsVisible());
-        applying = false;
-    }
-
-    private void confirmAndClearCache() {
-        new MaterialAlertDialogBuilder(this)
-                .setTitle("清理缓存")
-                .setMessage("将清理行情缓存、异常记录缓存、账户预加载缓存和运行时临时缓存，是否继续？")
-                .setNegativeButton("取消", null)
-                .setPositiveButton("清理", (dialog, which) -> clearCacheData())
-                .show();
-    }
-
-    private void clearCacheData() {
-        int klineDeleted = new KlineCacheStore(this).clearAll();
-        AbnormalRecordManager.getInstance(getApplicationContext()).clearAll();
-        AccountStatsPreloadManager.getInstance(getApplicationContext()).clearLatestCache();
-        getSharedPreferences(MarketChartActivity.PREF_RUNTIME_NAME, MODE_PRIVATE).edit().clear().apply();
-        int cacheDeleted = deleteDirectoryChildren(getCacheDir());
-        Toast.makeText(this,
-                "缓存已清理（K线文件 " + klineDeleted + "，临时文件 " + cacheDeleted + "）",
-                Toast.LENGTH_SHORT).show();
-    }
-
-    private int deleteDirectoryChildren(File directory) {
-        if (directory == null || !directory.exists() || !directory.isDirectory()) {
-            return 0;
-        }
-        File[] children = directory.listFiles();
-        if (children == null || children.length == 0) {
-            return 0;
-        }
-        int deleted = 0;
-        for (File child : children) {
-            deleted += deleteRecursively(child);
-        }
-        return deleted;
-    }
-
-    private int deleteRecursively(File file) {
-        if (file == null || !file.exists()) {
-            return 0;
-        }
-        int deleted = 0;
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) {
-                for (File child : children) {
-                    deleted += deleteRecursively(child);
-                }
-            }
-        }
-        if (file.delete()) {
-            deleted++;
-        }
-        return deleted;
-    }
-
-    private void applySettings() {
-        applying = true;
-        binding.spinnerColorPalette.setSelection(viewModel.getColorPalette(), false);
-        binding.tvThemePaletteLabel.setText(UiPaletteManager.labels()[viewModel.getColorPalette()]);
-        binding.switchFloatingEnabled.setChecked(viewModel.isFloatingEnabled());
-        int alpha = viewModel.getFloatingAlpha();
-        binding.seekFloatingAlpha.setProgress(alpha);
-        binding.tvAlphaValue.setText(getString(R.string.alpha_suffix, alpha));
-        binding.switchShowBtc.setChecked(viewModel.isShowBtc());
-        binding.switchShowXau.setChecked(viewModel.isShowXau());
-        binding.switchTabMarketMonitor.setChecked(viewModel.isTabMarketMonitorVisible());
-        binding.switchTabMarketChart.setChecked(viewModel.isTabMarketChartVisible());
-        binding.switchTabAccountStats.setChecked(viewModel.isTabAccountStatsVisible());
-        applying = false;
-    }
-
+    // 应用当前主题色到首页目录和底部导航。
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
-        binding.btnViewLogs.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-        binding.btnViewLogs.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-        binding.btnClearCache.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-        binding.btnClearCache.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-        binding.spinnerColorPalette.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
-        binding.tvThemePaletteLabel.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        tabActiveColor = palette.primary;
+        tabInactiveColor = palette.textSecondary;
+        styleEntry(binding.itemDisplay, palette);
+        styleEntry(binding.itemGateway, palette);
+        styleEntry(binding.itemTheme, palette);
+        styleEntry(binding.itemTab, palette);
+        styleEntry(binding.itemCache, palette);
+        styleEntry(binding.itemLogs, palette);
     }
 
-    private void sendServiceAction(String action) {
-        Intent intent = new Intent(this, MonitorService.class);
-        intent.setAction(action);
-        ContextCompat.startForegroundService(this, intent);
+    // 统一绘制设置入口样式。
+    private void styleEntry(android.view.View view, UiPaletteManager.Palette palette) {
+        if (view == null) {
+            return;
+        }
+        view.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+    }
+
+    // 打开指定设置分组页。
+    private void openSection(String section, String title) {
+        Intent intent = new Intent(this, SettingsSectionActivity.class);
+        intent.putExtra(SettingsSectionActivity.EXTRA_SECTION, section);
+        intent.putExtra(SettingsSectionActivity.EXTRA_TITLE, title);
+        startActivity(intent);
     }
 
     private void openMarketMonitor() {

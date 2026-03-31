@@ -107,6 +107,14 @@ public class MainViewModel extends AndroidViewModel {
         repository.getConfigManager().setColorPalette(paletteId);
     }
 
+    public String getMt5GatewayBaseUrl() {
+        return repository.getConfigManager().getMt5GatewayBaseUrl();
+    }
+
+    public void setMt5GatewayBaseUrl(String baseUrl) {
+        repository.getConfigManager().setMt5GatewayBaseUrl(baseUrl);
+    }
+
     public boolean isTabMarketMonitorVisible() {
         return repository.getConfigManager().isTabMarketMonitorVisible();
     }

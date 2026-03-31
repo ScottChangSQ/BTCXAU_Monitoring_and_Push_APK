@@ -13,12 +13,16 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
+import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.remote.BinanceApiClient;
 import com.binance.monitor.data.remote.WebSocketManager;
 import com.binance.monitor.data.repository.MonitorRepository;
+import com.binance.monitor.ui.floating.FloatingPositionAggregator;
+import com.binance.monitor.ui.floating.FloatingSymbolCardData;
+import com.binance.monitor.ui.floating.FloatingWindowSnapshot;
 import com.binance.monitor.ui.floating.FloatingWindowManager;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.NotificationHelper;
@@ -63,6 +67,7 @@ public class MonitorService extends Service {
     private AbnormalRecordManager recordManager;
     private NotificationHelper notificationHelper;
     private FloatingWindowManager floatingWindowManager;
+    private AccountStorageRepository accountStorageRepository;
     private BinanceApiClient apiClient;
     private WebSocketManager webSocketManager;
     private ExecutorService executorService;
@@ -83,10 +88,11 @@ public class MonitorService extends Service {
         recordManager = repository.getRecordManager();
         notificationHelper = new NotificationHelper(this);
         floatingWindowManager = new FloatingWindowManager(this);
-        apiClient = new BinanceApiClient();
-        webSocketManager = new WebSocketManager();
+        accountStorageRepository = new AccountStorageRepository(this);
+        apiClient = new BinanceApiClient(this);
+        webSocketManager = new WebSocketManager(this);
         executorService = Executors.newSingleThreadExecutor();
-        repository.setMonitoringEnabled(false);
+        repository.setMonitoringEnabled(true);
         logManager.info("服务初始化完成");
         applyFloatingPreferences();
     }
@@ -512,12 +518,36 @@ public class MonitorService extends Service {
             mainHandler.post(this::refreshFloatingWindow);
             return;
         }
-        floatingWindowManager.update(
-                repository.getLatestPriceSnapshot(),
+        floatingWindowManager.update(buildFloatingSnapshot());
+    }
+
+    // 组装一份统一悬浮窗快照，确保所有字段在同一次 UI 刷新中一起变化。
+    private FloatingWindowSnapshot buildFloatingSnapshot() {
+        List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
+                accountStorageRepository == null ? new ArrayList<>() : accountStorageRepository.loadPositions(),
                 repository.getLatestClosedKlineSnapshot(),
-                Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue()),
-                repository.getConnectionStatus().getValue()
+                configManager.isShowBtc(),
+                configManager.isShowXau()
         );
+        return new FloatingWindowSnapshot(
+                repository.getConnectionStatus().getValue(),
+                resolveFloatingUpdatedAt(cards),
+                cards
+        );
+    }
+
+    // 从产品卡片里挑出本轮悬浮窗的统一刷新时间。
+    private long resolveFloatingUpdatedAt(List<FloatingSymbolCardData> cards) {
+        long updatedAt = 0L;
+        if (cards == null || cards.isEmpty()) {
+            return updatedAt;
+        }
+        for (FloatingSymbolCardData card : cards) {
+            if (card != null) {
+                updatedAt = Math.max(updatedAt, card.getUpdatedAt());
+            }
+        }
+        return updatedAt;
     }
 
     private static class PendingRound {

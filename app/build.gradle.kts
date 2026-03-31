@@ -72,4 +72,7 @@ dependencies {
     implementation(libs.lifecycle.livedata)
     implementation(libs.swiperefreshlayout)
     implementation(libs.okhttp)
+    implementation(libs.room.runtime)
+    annotationProcessor(libs.room.compiler)
+    testImplementation("junit:junit:4.13.2")
 }

@@ -1,11 +1,15 @@
 package com.binance.monitor.ui.account;
 
+import android.content.Context;
+
 import com.binance.monitor.constants.AppConstants;
+import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.util.GatewayUrlResolver;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -21,14 +25,27 @@ import okhttp3.Response;
 
 public class Mt5GatewayClient {
 
+    private final ConfigManager configManager;
+
     private final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .build();
 
+    public Mt5GatewayClient() {
+        this.configManager = null;
+    }
+
+    public Mt5GatewayClient(Context context) {
+        this.configManager = context == null
+                ? null
+                : ConfigManager.getInstance(context.getApplicationContext());
+    }
+
     public SnapshotResult fetch(AccountStatsRepository.TimeRange range) {
         SnapshotResult result = new SnapshotResult();
-        String url = AppConstants.MT5_GATEWAY_BASE_URL + "/v1/snapshot?range=" + mapRange(range);
+        String url = GatewayUrlResolver.buildEndpoint(resolveBaseUrl(), "/v1/snapshot")
+                + "?range=" + mapRange(range);
         Request request = new Request.Builder().url(url).get().build();
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
@@ -61,6 +78,13 @@ public class Mt5GatewayClient {
             result.error = exception.getMessage();
             return result;
         }
+    }
+
+    private String resolveBaseUrl() {
+        if (configManager == null) {
+            return GatewayUrlResolver.normalizeBaseUrl(AppConstants.MT5_GATEWAY_BASE_URL, "http://10.0.2.2:8787");
+        }
+        return configManager.getMt5GatewayBaseUrl();
     }
 
     private String mapRange(AccountStatsRepository.TimeRange range) {

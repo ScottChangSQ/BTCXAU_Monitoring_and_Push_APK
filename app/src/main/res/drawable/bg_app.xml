@@ -4,16 +4,16 @@
         <shape android:shape="rectangle">
             <gradient
                 android:angle="270"
-                android:centerColor="@color/bg_card"
-                android:endColor="@color/vintage_paper_dark"
-                android:startColor="@color/bg_surface" />
+                android:centerColor="#0E1A30"
+                android:endColor="#09111F"
+                android:startColor="#13243D" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
             <gradient
                 android:angle="90"
-                android:endColor="#00FFFFFF"
+                android:endColor="#00000000"
                 android:startColor="@color/grain_overlay" />
         </shape>
     </item>

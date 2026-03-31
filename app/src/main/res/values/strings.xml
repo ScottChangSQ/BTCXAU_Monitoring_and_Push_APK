@@ -76,6 +76,7 @@
     <string name="open_app_failed">未能打开应用</string>
     <string name="overlay_minimize">-</string>
     <string name="overlay_update">更新 %1$s</string>
+    <string name="overlay_total_pnl">盈亏汇总 %1$s</string>
     <string name="record_line_single">%1$s 的 %2$s 出现异常！</string>
     <string name="record_line_both">%1$s 的 %2$s 出现异常！ %3$s 的 %4$s 出现异常！</string>
     <string name="battery_optimization_required">为保证锁屏和后台持续监控，建议关闭该应用的电池优化限制。</string>
@@ -99,4 +100,8 @@
     <string name="chart_info_template">%1$s | O:%2$s H:%3$s L:%4$s C:%5$s | VOL:%6$s | MACD:%7$s K:%8$s D:%9$s</string>
     <string name="chart_gesture_hint">手势支持：双指缩放、左右滑动、长按十字线。</string>
     <string name="chart_back_to_latest">回到最新</string>
+    <string name="mt5_gateway_section_title">MT5 网关地址</string>
+    <string name="mt5_gateway_input_hint">例如 http://43.155.214.62:8787</string>
+    <string name="mt5_gateway_save">保存并应用</string>
+    <string name="mt5_gateway_saved">MT5 网关地址已更新：%1$s</string>
 </resources>

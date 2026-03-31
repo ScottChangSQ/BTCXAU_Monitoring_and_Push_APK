@@ -71,7 +71,7 @@ public final class AppConstants {
     public static final String MT5_WEB_URL = "https://www.metatrader5.com/zh";
     public static final String MT5_PACKAGE = "net.metaquotes.metatrader5";
     public static final String MT5_GATEWAY_BASE_URL = BuildConfig.MT5_GATEWAY_BASE_URL;
-    public static final long ACCOUNT_REFRESH_INTERVAL_MS = 8000L;
+    public static final long ACCOUNT_REFRESH_INTERVAL_MS = 5000L;
     public static final long ACCOUNT_REFRESH_MAX_INTERVAL_MS = 30000L;
 
     private AppConstants() {
@@ -82,11 +82,16 @@ public final class AppConstants {
     }
 
     public static String buildRestUrl(String symbol, String interval, int limit) {
+        return buildRestUrl(BASE_REST_URL, symbol, interval, limit);
+    }
+
+    public static String buildRestUrl(String baseRestUrl, String symbol, String interval, int limit) {
         String safeSymbol = symbol == null || symbol.trim().isEmpty() ? SYMBOL_BTC : symbol.trim();
         String safeInterval = interval == null || interval.trim().isEmpty() ? "1m" : interval.trim();
         int safeLimit = Math.max(1, Math.min(1500, limit));
-        if (BASE_REST_URL.contains("{symbol}")) {
-            String url = BASE_REST_URL.replace("{symbol}", safeSymbol);
+        String base = sanitizeBaseUrl(baseRestUrl, BASE_REST_URL);
+        if (base.contains("{symbol}")) {
+            String url = base.replace("{symbol}", safeSymbol);
             if (url.contains("{interval}")) {
                 url = url.replace("{interval}", safeInterval);
             } else if (!url.contains("interval=")) {
@@ -101,22 +106,31 @@ public final class AppConstants {
             }
             return url;
         }
-        String separator = BASE_REST_URL.contains("?") ? "&" : "?";
-        return BASE_REST_URL + separator + "symbol=" + safeSymbol + "&interval=" + safeInterval + "&limit=" + safeLimit;
+        String separator = base.contains("?") ? "&" : "?";
+        return base + separator + "symbol=" + safeSymbol + "&interval=" + safeInterval + "&limit=" + safeLimit;
     }
 
     public static String buildWebSocketUrl(String symbol) {
+        return buildWebSocketUrl(BASE_WS_URL, symbol);
+    }
+
+    public static String buildWebSocketUrl(String baseWsUrl, String symbol) {
         String stream = symbol.toLowerCase() + "@kline_1m";
-        if (BASE_WS_URL.contains("{stream}")) {
-            return BASE_WS_URL.replace("{stream}", stream);
+        String baseUrl = sanitizeBaseUrl(baseWsUrl, BASE_WS_URL);
+        if (baseUrl.contains("{stream}")) {
+            return baseUrl.replace("{stream}", stream);
         }
-        String base = BASE_WS_URL.endsWith("/") ? BASE_WS_URL : (BASE_WS_URL + "/");
+        String base = baseUrl.endsWith("/") ? baseUrl : (baseUrl + "/");
         return base + stream;
     }
 
     public static String buildCombinedWebSocketUrl(Collection<String> symbols) {
+        return buildCombinedWebSocketUrl(BASE_WS_URL, symbols);
+    }
+
+    public static String buildCombinedWebSocketUrl(String baseWsUrl, Collection<String> symbols) {
         if (symbols == null || symbols.isEmpty()) {
-            return buildWebSocketUrl(SYMBOL_BTC);
+            return buildWebSocketUrl(baseWsUrl, SYMBOL_BTC);
         }
         StringBuilder streams = new StringBuilder();
         for (String symbol : symbols) {
@@ -129,12 +143,13 @@ public final class AppConstants {
             streams.append(symbol.trim().toLowerCase(Locale.ROOT)).append("@kline_1m");
         }
         if (streams.length() == 0) {
-            return buildWebSocketUrl(SYMBOL_BTC);
+            return buildWebSocketUrl(baseWsUrl, SYMBOL_BTC);
         }
-        if (BASE_WS_URL.contains("{stream}")) {
-            return BASE_WS_URL.replace("{stream}", streams.toString());
+        String baseUrl = sanitizeBaseUrl(baseWsUrl, BASE_WS_URL);
+        if (baseUrl.contains("{stream}")) {
+            return baseUrl.replace("{stream}", streams.toString());
         }
-        String base = BASE_WS_URL.trim();
+        String base = baseUrl.trim();
         if (base.endsWith("/ws") || base.endsWith("/ws/")) {
             base = base.replaceAll("/ws/?$", "");
         } else if (base.endsWith("/stream") || base.endsWith("/stream/")) {

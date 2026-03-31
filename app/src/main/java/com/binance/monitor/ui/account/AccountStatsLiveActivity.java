@@ -77,7 +77,7 @@ public class AccountStatsLiveActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
 
         fallbackRepository = new AccountStatsRepository();
-        gatewayClient = new Mt5GatewayClient();
+        gatewayClient = new Mt5GatewayClient(getApplicationContext());
         ioExecutor = Executors.newSingleThreadExecutor();
         overviewAdapter = new AccountMetricAdapter();
         indicatorAdapter = new StatsMetricAdapter();

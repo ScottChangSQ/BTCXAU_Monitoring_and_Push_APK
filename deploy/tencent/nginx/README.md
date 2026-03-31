@@ -1,12 +1,16 @@
-# Nginx Reverse Proxy Sample
+# Nginx 统一入口样例
 
-This sample proxies `https://mt5-api.example.com` to local gateway `http://127.0.0.1:8787`.
+这个样例把同一个公网域名下的 3 条路径统一代理出去：
 
-## Usage
+- `/mt5/*` -> 本机 `127.0.0.1:8787`
+- `/binance-rest/*` -> `https://fapi.binance.com`
+- `/binance-ws/*` -> `https://fstream.binance.com`
 
-1. Replace domain and cert paths in `mt5_gateway.conf`.
-2. Install the file into `/etc/nginx/conf.d/`.
-3. Validate and reload:
+## 使用方法
+
+1. 把 `gateway.example.com` 和证书路径改成你的实际值
+2. 将文件放到 `/etc/nginx/conf.d/`
+3. 执行校验并重载
 
 ```bash
 nginx -t

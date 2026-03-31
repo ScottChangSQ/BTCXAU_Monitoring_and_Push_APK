@@ -1,9 +1,11 @@
 package com.binance.monitor.data.remote;
 
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
 import com.binance.monitor.constants.AppConstants;
+import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.KlineData;
 
 import org.json.JSONObject;
@@ -29,6 +31,7 @@ public class WebSocketManager {
     }
 
     private final OkHttpClient client;
+    private final ConfigManager configManager;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, Boolean> managedSymbols = new ConcurrentHashMap<>();
     private volatile Listener listener;
@@ -38,6 +41,11 @@ public class WebSocketManager {
     private volatile boolean reconnectScheduled;
 
     public WebSocketManager() {
+        this(null);
+    }
+
+    public WebSocketManager(Context context) {
+        configManager = context == null ? null : ConfigManager.getInstance(context.getApplicationContext());
         client = new OkHttpClient.Builder()
                 .pingInterval(AppConstants.WS_PING_INTERVAL_SECONDS, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
@@ -93,7 +101,7 @@ public class WebSocketManager {
         int currentAttempt = reconnectAttempt;
         notifyStateAll(false, currentAttempt, reconnecting ? "重连中" : "连接中");
         Request request = new Request.Builder()
-                .url(AppConstants.buildCombinedWebSocketUrl(new HashSet<>(managedSymbols.keySet())))
+                .url(AppConstants.buildCombinedWebSocketUrl(getConfiguredWebSocketBaseUrl(), new HashSet<>(managedSymbols.keySet())))
                 .build();
         socket = client.newWebSocket(request, new WebSocketListener() {
             @Override
@@ -216,5 +224,12 @@ public class WebSocketManager {
         for (String symbol : managedSymbols.keySet()) {
             currentListener.onSocketError(symbol, message);
         }
+    }
+
+    private String getConfiguredWebSocketBaseUrl() {
+        if (configManager == null) {
+            return AppConstants.BASE_WS_URL;
+        }
+        return configManager.getBinanceWebSocketBaseUrl();
     }
 }

@@ -1,9 +1,12 @@
+/*
+ * 悬浮窗管理器，负责渲染统一快照下的连接状态、合并盈亏、产品行情卡片与分产品盈亏。
+ * 数据由 MonitorService 一次性喂入，布局支持整块长按拖动、最小化、点击还原和异常闪烁提示。
+ */
 package com.binance.monitor.ui.floating;
 
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.PixelFormat;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -12,67 +15,59 @@ import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.WindowManager;
+import android.widget.LinearLayout;
 import android.widget.TextView;
+
+import androidx.core.content.ContextCompat;
 
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
-import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.databinding.LayoutFloatingWindowBinding;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
-import com.binance.monitor.util.AppLaunchHelper;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.PermissionHelper;
 
-import java.util.Collections;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 public class FloatingWindowManager {
     private static final int MINI_SIZE_DP = 25;
-    private static final int EXPANDED_PADDING_DP = 10;
-    private static final int MINIMIZE_BTN_SIZE_DP = 18;
+    private static final long DRAG_LONG_PRESS_MS = 220L;
+    private static final long DRAG_FRAME_INTERVAL_MS = 16L;
 
     private final Context context;
     private final WindowManager windowManager;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final int dragSlopPx;
 
     private LayoutFloatingWindowBinding binding;
     private WindowManager.LayoutParams layoutParams;
     private boolean enabled;
     private int alphaPercent = 88;
-    private boolean showBtc = true;
-    private boolean showXau = true;
     private boolean showing;
     private boolean minimized;
-
-    private Map<String, Double> prices = Collections.emptyMap();
-    private Map<String, KlineData> klines = Collections.emptyMap();
-    private boolean monitoringEnabled;
-    private String connectionStatus = "";
-
+    private boolean draggingWindow;
+    private boolean pendingRender;
+    private FloatingWindowSnapshot snapshot = new FloatingWindowSnapshot("", 0L, new ArrayList<>());
+    private boolean showBtc = true;
+    private boolean showXau = true;
     private long miniBlinkEndAt;
     private boolean miniBlinkActive;
     private boolean miniBlinkDimmed;
-    private long btcBlinkEndAt;
-    private long xauBlinkEndAt;
-    private boolean priceBlinkActive;
-    private boolean priceBlinkDimmed;
-    private long lastDragUpdateAt;
-    private float lastAppliedAlpha = -1f;
-    private int lastAppliedWidth = Integer.MIN_VALUE;
-    private int lastAppliedHeight = Integer.MIN_VALUE;
-    private boolean draggingWindow;
-    private boolean pendingRender;
-    private int cachedExpandedWidth;
-    private float cachedExpandedCenterX;
-    private float cachedExpandedCenterY;
+    private long lastDragLayoutAt;
+    private int lastDragLayoutX = Integer.MIN_VALUE;
+    private int lastDragLayoutY = Integer.MIN_VALUE;
 
     public FloatingWindowManager(Context context) {
         this.context = context.getApplicationContext();
         this.windowManager = (WindowManager) this.context.getSystemService(Context.WINDOW_SERVICE);
+        this.dragSlopPx = Math.max(6, ViewConfiguration.get(this.context).getScaledTouchSlop());
     }
 
+    // 应用悬浮窗显示偏好。
     public void applyPreferences(boolean enabled, int alphaPercent, boolean showBtc, boolean showXau) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             handler.post(() -> applyPreferences(enabled, alphaPercent, showBtc, showXau));
@@ -90,21 +85,21 @@ public class FloatingWindowManager {
         render();
     }
 
-    public void update(Map<String, Double> prices,
-                       Map<String, KlineData> klines,
-                       boolean monitoringEnabled,
-                       String connectionStatus) {
+    // 刷新悬浮窗展示内容。
+    public void update(FloatingWindowSnapshot snapshot) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            Map<String, Double> priceCopy = prices == null ? Collections.emptyMap() : prices;
-            Map<String, KlineData> klineCopy = klines == null ? Collections.emptyMap() : klines;
-            String statusCopy = connectionStatus == null ? "" : connectionStatus;
-            handler.post(() -> update(priceCopy, klineCopy, monitoringEnabled, statusCopy));
+            FloatingWindowSnapshot copy = snapshot == null
+                    ? new FloatingWindowSnapshot("", 0L, new ArrayList<>())
+                    : new FloatingWindowSnapshot(
+                    snapshot.getConnectionStatus(),
+                    snapshot.getUpdatedAt(),
+                    snapshot.getCards());
+            handler.post(() -> update(copy));
             return;
         }
-        this.prices = prices;
-        this.klines = klines;
-        this.monitoringEnabled = monitoringEnabled;
-        this.connectionStatus = connectionStatus == null ? "" : connectionStatus;
+        this.snapshot = snapshot == null
+                ? new FloatingWindowSnapshot("", 0L, new ArrayList<>())
+                : snapshot;
         if (draggingWindow) {
             pendingRender = true;
             return;
@@ -112,39 +107,37 @@ public class FloatingWindowManager {
         render();
     }
 
+    // 异常发生时让最小化方块闪烁，方便后台感知。
     public void notifyAbnormalEvent(String symbol) {
         handler.post(() -> {
-            long endAt = System.currentTimeMillis() + 10_000L;
-            miniBlinkEndAt = Math.max(miniBlinkEndAt, endAt);
-            if (AppConstants.SYMBOL_BTC.equals(symbol)) {
-                btcBlinkEndAt = endAt;
-            } else if (AppConstants.SYMBOL_XAU.equals(symbol)) {
-                xauBlinkEndAt = endAt;
-            }
-            startPriceBlinkIfNeeded();
+            miniBlinkEndAt = Math.max(miniBlinkEndAt, System.currentTimeMillis() + 10_000L);
             if (minimized) {
                 startMiniBlink();
             }
         });
     }
 
+    // 主动隐藏悬浮窗。
     public void hide() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             handler.post(this::hide);
             return;
         }
-        stopAllBlinking();
-        if (showing && binding != null) {
-            try {
-                windowManager.removeView(binding.getRoot());
-            } catch (Exception ignored) {
-            }
+        if (!showing || binding == null) {
+            return;
         }
-        showing = false;
+        handler.removeCallbacks(miniBlinkRunnable);
+        miniBlinkActive = false;
+        try {
+            windowManager.removeView(binding.getRoot());
+        } catch (Exception ignored) {
+        }
         binding = null;
         layoutParams = null;
+        showing = false;
         minimized = false;
-        lastAppliedAlpha = -1f;
+        draggingWindow = false;
+        pendingRender = false;
     }
 
     private void showIfPossible() {
@@ -162,22 +155,15 @@ public class FloatingWindowManager {
                 PixelFormat.TRANSLUCENT
         );
         layoutParams.gravity = Gravity.TOP | Gravity.END;
-        layoutParams.x = 24;
-        layoutParams.y = 180;
+        layoutParams.x = dp(12);
+        layoutParams.y = dp(120);
         applyWindowAlpha();
-        View.OnTouchListener dragListener = new DragAndClickListener();
-        binding.layoutExpanded.setOnTouchListener(dragListener);
-        binding.viewMiniSquare.setOnTouchListener(dragListener);
         binding.btnMinimize.setOnClickListener(v -> setMinimized(true));
-        try {
-            windowManager.addView(binding.getRoot(), layoutParams);
-            showing = true;
-            refreshMinimizedState(true);
-        } catch (Exception ignored) {
-            showing = false;
-            binding = null;
-            layoutParams = null;
-        }
+        DragAndClickListener dragListener = new DragAndClickListener();
+        binding.rootFloating.setOnTouchListener(dragListener);
+        binding.viewMiniSquare.setOnTouchListener(dragListener);
+        windowManager.addView(binding.getRoot(), layoutParams);
+        showing = true;
     }
 
     private void render() {
@@ -185,217 +171,167 @@ public class FloatingWindowManager {
             hide();
             return;
         }
-        if (draggingWindow) {
-            pendingRender = true;
-            return;
-        }
-        if (!showing) {
-            showIfPossible();
-        }
+        showIfPossible();
         if (!showing || binding == null) {
             return;
         }
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
         applyWindowAlpha();
-        binding.tvOverlayStatus.setText(monitoringEnabled
-                ? context.getString(R.string.overlay_running)
-                : context.getString(R.string.overlay_stopped));
-        binding.tvOverlayConnection.setText(connectionStatus);
-        renderSymbol(binding.layoutBtc, binding.tvBtcPrice, binding.tvBtcVolume, binding.tvBtcAmount,
-                AppConstants.SYMBOL_BTC, showBtc);
-        renderSymbol(binding.layoutXau, binding.tvXauPrice, binding.tvXauVolume, binding.tvXauAmount,
-                AppConstants.SYMBOL_XAU, showXau);
-        if (!priceBlinkActive) {
-            applyIdlePriceColors();
-        }
-        if (!minimized) {
-            cacheExpandedAnchor();
-        }
+        binding.layoutExpanded.setBackground(UiPaletteManager.createFloatingBackground(context, palette));
+        binding.viewMiniSquare.setBackground(UiPaletteManager.createFilledDrawable(context, palette.primary));
+        binding.tvOverlayConnection.setText(snapshot.getConnectionStatus() == null || snapshot.getConnectionStatus().trim().isEmpty()
+                ? context.getString(R.string.status_unknown)
+                : snapshot.getConnectionStatus());
+        binding.tvOverlayConnection.setTextColor(palette.textSecondary);
+        renderSummaryHeader(palette);
+        renderSymbolCards(palette);
+        boolean hasItems = !snapshot.getCards().isEmpty();
+        binding.tvOverlayEmpty.setVisibility(hasItems ? View.GONE : View.VISIBLE);
+        binding.tvOverlayEmpty.setTextColor(palette.textSecondary);
         refreshMinimizedState(false);
     }
 
-    private void renderSymbol(View container,
-                              TextView priceView,
-                              TextView volumeView,
-                              TextView amountView,
-                              String symbol,
-                              boolean visible) {
-        container.setVisibility(visible ? View.VISIBLE : View.GONE);
-        if (!visible) {
-            return;
+    private void renderSummaryHeader(UiPaletteManager.Palette palette) {
+        double totalPnl = 0d;
+        for (FloatingSymbolCardData card : snapshot.getCards()) {
+            if (card != null) {
+                totalPnl += card.getTotalPnl();
+            }
         }
-        Double price = prices.get(symbol);
-        KlineData kline = klines.get(symbol);
-        String unit = AppConstants.symbolToAsset(symbol);
-        priceView.setText(price == null ? "--" : FormatUtils.formatPriceNoDecimalWithUnit(price));
-        if (kline == null) {
-            volumeView.setText(context.getString(R.string.overlay_waiting));
-            amountView.setText("--");
-            return;
-        }
-        volumeView.setText(FormatUtils.formatVolumeWithUnit(kline.getVolume(), unit));
-        amountView.setText(FormatUtils.formatAmount(kline.getQuoteAssetVolume()).replace("M$", " M$"));
+        boolean hasCard = !snapshot.getCards().isEmpty();
+        String text = hasCard ? FormatUtils.formatSigned(totalPnl) : "0.00";
+        binding.tvOverlayStatus.setText(text);
+        binding.tvOverlayStatus.setTextColor(resolvePnlColor(totalPnl, hasCard));
+        binding.tvOverlayStatus.setTextSize(hasCard ? 20f : 18f);
+        binding.btnMinimize.setTextColor(palette.textPrimary);
     }
 
-    private void refreshMinimizedState(boolean forceLayout) {
-        if (binding == null || layoutParams == null) {
+    private void renderSymbolCards(UiPaletteManager.Palette palette) {
+        binding.layoutSymbolCards.removeAllViews();
+        for (FloatingSymbolCardData card : snapshot.getCards()) {
+            if (card == null) {
+                continue;
+            }
+            if (!showBtc && AppConstants.SYMBOL_BTC.equalsIgnoreCase(card.getCode())) {
+                continue;
+            }
+            if (!showXau && AppConstants.SYMBOL_XAU.equalsIgnoreCase(card.getCode())) {
+                continue;
+            }
+            binding.layoutSymbolCards.addView(buildSymbolCard(card, palette));
+        }
+    }
+
+    private View buildSymbolCard(FloatingSymbolCardData card, UiPaletteManager.Palette palette) {
+        LinearLayout cardView = new LinearLayout(context);
+        cardView.setOrientation(LinearLayout.VERTICAL);
+        cardView.setBackground(UiPaletteManager.createOutlinedDrawable(context, palette.card, palette.stroke));
+        cardView.setPadding(dp(10), dp(9), dp(10), dp(9));
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        cardParams.topMargin = dp(8);
+        cardView.setLayoutParams(cardParams);
+
+        LinearLayout headerRow = new LinearLayout(context);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView labelView = new TextView(context);
+        labelView.setText(card.getLabel());
+        labelView.setTextColor(palette.textPrimary);
+        labelView.setTextSize(11f);
+        labelView.setTypeface(null, android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+        );
+        labelView.setLayoutParams(labelParams);
+
+        TextView pnlView = new TextView(context);
+        LinearLayout.LayoutParams pnlParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        pnlView.setLayoutParams(pnlParams);
+        double totalPnl = card.getTotalPnl();
+        pnlView.setText(FormatUtils.formatSigned(totalPnl));
+        pnlView.setTextColor(totalPnl >= 0d ? palette.rise : palette.fall);
+        pnlView.setTextSize(12f);
+        pnlView.setTypeface(null, android.graphics.Typeface.BOLD);
+        headerRow.addView(labelView);
+        headerRow.addView(pnlView);
+        cardView.addView(headerRow);
+
+        TextView priceView = new TextView(context);
+        LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        priceParams.topMargin = dp(4);
+        priceView.setLayoutParams(priceParams);
+        priceView.setText(card.hasLatestPrice() ? FormatUtils.formatPriceWithUnit(card.getLatestPrice()) : "--");
+        priceView.setTextColor(palette.textPrimary);
+        priceView.setTextSize(18f);
+        priceView.setTypeface(null, android.graphics.Typeface.BOLD);
+        cardView.addView(priceView);
+
+        TextView volumeView = new TextView(context);
+        volumeView.setText("成交量 " + FormatUtils.formatVolume(card.getVolume()));
+        volumeView.setTextColor(palette.textSecondary);
+        volumeView.setTextSize(10f);
+        LinearLayout.LayoutParams volumeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        volumeParams.topMargin = dp(4);
+        volumeView.setLayoutParams(volumeParams);
+        cardView.addView(volumeView);
+
+        TextView amountView = new TextView(context);
+        amountView.setText("成交额 " + FormatUtils.formatAmount(card.getAmount()));
+        amountView.setTextColor(palette.textSecondary);
+        amountView.setTextSize(10f);
+        LinearLayout.LayoutParams amountParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        amountParams.topMargin = dp(2);
+        amountView.setLayoutParams(amountParams);
+        cardView.addView(amountView);
+
+        cardView.setOnClickListener(v -> openChartForSymbol(card.getCode()));
+        return cardView;
+    }
+
+    private void refreshMinimizedState(boolean forceBlink) {
+        if (binding == null) {
             return;
         }
         binding.layoutExpanded.setVisibility(minimized ? View.GONE : View.VISIBLE);
         binding.viewMiniSquare.setVisibility(minimized ? View.VISIBLE : View.GONE);
-        int targetWidth = minimized ? dp(25) : WindowManager.LayoutParams.WRAP_CONTENT;
-        int targetHeight = minimized ? dp(25) : WindowManager.LayoutParams.WRAP_CONTENT;
-        boolean sizeChanged = forceLayout
-                || layoutParams.width != targetWidth
-                || layoutParams.height != targetHeight
-                || lastAppliedWidth != targetWidth
-                || lastAppliedHeight != targetHeight;
-        if (sizeChanged) {
-            layoutParams.width = targetWidth;
-            layoutParams.height = targetHeight;
-            if (showing && !draggingWindow) {
-                try {
-                    windowManager.updateViewLayout(binding.getRoot(), layoutParams);
-                } catch (Exception ignored) {
-                }
-            }
-            lastAppliedWidth = targetWidth;
-            lastAppliedHeight = targetHeight;
-        }
-        if (!minimized) {
-            miniBlinkActive = false;
-            miniBlinkDimmed = false;
-            binding.viewMiniSquare.setAlpha(1f);
-            setMiniSquareBackground(false);
-            startPriceBlinkIfNeeded();
-            return;
-        }
-        if (System.currentTimeMillis() < miniBlinkEndAt) {
+        if (minimized && (forceBlink || System.currentTimeMillis() < miniBlinkEndAt)) {
             startMiniBlink();
-        } else {
+        } else if (!minimized) {
+            handler.removeCallbacks(miniBlinkRunnable);
+            miniBlinkActive = false;
             binding.viewMiniSquare.setAlpha(1f);
-            setMiniSquareBackground(false);
         }
     }
 
     private void setMinimized(boolean minimized) {
-        if (this.minimized == minimized) {
-            if (this.minimized && System.currentTimeMillis() < miniBlinkEndAt) {
-                startMiniBlink();
-            }
-            return;
-        }
-        remapPositionForToggle(minimized);
         this.minimized = minimized;
         refreshMinimizedState(true);
     }
 
-    private void remapPositionForToggle(boolean targetMinimized) {
-        if (layoutParams == null || binding == null) {
-            return;
-        }
-        int oldWidth = binding.getRoot().getWidth();
-        if (oldWidth <= 0) {
-            oldWidth = targetMinimized
-                    ? Math.max(cachedExpandedWidth, dp(MINI_SIZE_DP))
-                    : dp(MINI_SIZE_DP);
-        }
-        float sourceCenterX;
-        float sourceCenterY;
-        int newWidth;
-        float targetCenterX;
-        float targetCenterY;
-
-        if (targetMinimized) {
-            cacheExpandedAnchor();
-            sourceCenterX = resolveExpandedAnchorCenterX();
-            sourceCenterY = resolveExpandedAnchorCenterY();
-            newWidth = dp(MINI_SIZE_DP);
-            targetCenterX = newWidth / 2f;
-            targetCenterY = dp(MINI_SIZE_DP) / 2f;
-        } else {
-            sourceCenterX = dp(MINI_SIZE_DP) / 2f;
-            sourceCenterY = dp(MINI_SIZE_DP) / 2f;
-            newWidth = cachedExpandedWidth > 0 ? cachedExpandedWidth : oldWidth;
-            targetCenterX = cachedExpandedCenterX > 0f
-                    ? cachedExpandedCenterX
-                    : defaultExpandedAnchorCenter();
-            targetCenterY = cachedExpandedCenterY > 0f
-                    ? cachedExpandedCenterY
-                    : defaultExpandedAnchorCenter();
-        }
-        remapWindowByCenter(oldWidth, newWidth, sourceCenterX, sourceCenterY, targetCenterX, targetCenterY);
-    }
-
-    private void remapWindowByCenter(int oldWidth,
-                                     int newWidth,
-                                     float sourceCenterX,
-                                     float sourceCenterY,
-                                     float targetCenterX,
-                                     float targetCenterY) {
+    private void applyWindowAlpha() {
         if (layoutParams == null) {
             return;
         }
-        float nextX = layoutParams.x + (oldWidth - newWidth) + (targetCenterX - sourceCenterX);
-        float nextY = layoutParams.y + (sourceCenterY - targetCenterY);
-        layoutParams.x = Math.max(0, Math.round(nextX));
-        layoutParams.y = Math.max(0, Math.round(nextY));
-    }
-
-    private void cacheExpandedAnchor() {
-        if (binding == null) {
-            return;
-        }
-        int width = binding.getRoot().getWidth();
-        if (width > 0) {
-            cachedExpandedWidth = width;
-        }
-        cachedExpandedCenterX = resolveExpandedAnchorCenterX();
-        cachedExpandedCenterY = resolveExpandedAnchorCenterY();
-    }
-
-    private float resolveExpandedAnchorCenterX() {
-        if (binding != null
-                && binding.layoutExpanded.getVisibility() == View.VISIBLE
-                && binding.btnMinimize.getWidth() > 0) {
-            return binding.layoutExpanded.getLeft()
-                    + binding.btnMinimize.getLeft()
-                    + binding.btnMinimize.getWidth() / 2f;
-        }
-        return defaultExpandedAnchorCenter();
-    }
-
-    private float resolveExpandedAnchorCenterY() {
-        if (binding != null
-                && binding.layoutExpanded.getVisibility() == View.VISIBLE
-                && binding.btnMinimize.getHeight() > 0) {
-            return binding.layoutExpanded.getTop()
-                    + binding.btnMinimize.getTop()
-                    + binding.btnMinimize.getHeight() / 2f;
-        }
-        return defaultExpandedAnchorCenter();
-    }
-
-    private float defaultExpandedAnchorCenter() {
-        return dp(EXPANDED_PADDING_DP) + dp(MINIMIZE_BTN_SIZE_DP) / 2f;
-    }
-
-    private void applyWindowAlpha() {
-        if (layoutParams == null || binding == null) {
-            return;
-        }
-        float opacity = resolveBackgroundOpacity();
-        if (Math.abs(lastAppliedAlpha - opacity) >= 0.001f) {
-            int alpha = resolveBackgroundAlpha();
-            applyBackgroundAlpha(binding.layoutExpanded, alpha);
-            applyBackgroundAlpha(binding.btnMinimize, alpha);
-            applyBackgroundAlpha(binding.viewMiniSquare, alpha);
-            lastAppliedAlpha = opacity;
-        }
-        if (layoutParams.alpha == 1f) {
-            return;
-        }
-        layoutParams.alpha = 1f;
-        if (showing && !draggingWindow) {
+        layoutParams.alpha = Math.max(0.2f, Math.min(1f, alphaPercent / 100f));
+        if (showing && binding != null) {
             try {
                 windowManager.updateViewLayout(binding.getRoot(), layoutParams);
             } catch (Exception ignored) {
@@ -403,160 +339,55 @@ public class FloatingWindowManager {
         }
     }
 
+    private void openChartForSymbol(String symbol) {
+        if (symbol == null || symbol.trim().isEmpty()) {
+            return;
+        }
+        Intent intent = new Intent(context, MarketChartActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL, symbol.trim());
+        context.startActivity(intent);
+    }
+
+    private int resolvePnlColor(double totalPnl, boolean hasPosition) {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
+        if (!hasPosition) {
+            return palette.textPrimary;
+        }
+        return totalPnl >= 0d ? palette.rise : palette.fall;
+    }
+
     private void startMiniBlink() {
-        if (!minimized || binding == null) {
-            return;
-        }
-        if (System.currentTimeMillis() >= miniBlinkEndAt) {
-            miniBlinkActive = false;
-            binding.viewMiniSquare.setAlpha(1f);
-            setMiniSquareBackground(false);
-            return;
-        }
-        if (miniBlinkActive) {
+        if (miniBlinkActive || binding == null) {
             return;
         }
         miniBlinkActive = true;
-        miniBlinkDimmed = false;
         handler.removeCallbacks(miniBlinkRunnable);
         handler.post(miniBlinkRunnable);
-    }
-
-    private void startPriceBlinkIfNeeded() {
-        if (binding == null || minimized) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        if (now >= btcBlinkEndAt && now >= xauBlinkEndAt) {
-            return;
-        }
-        if (priceBlinkActive) {
-            return;
-        }
-        priceBlinkActive = true;
-        handler.removeCallbacks(priceBlinkRunnable);
-        handler.post(priceBlinkRunnable);
-    }
-
-    private void stopAllBlinking() {
-        miniBlinkActive = false;
-        priceBlinkActive = false;
-        handler.removeCallbacks(miniBlinkRunnable);
-        handler.removeCallbacks(priceBlinkRunnable);
-        if (binding != null) {
-            binding.viewMiniSquare.setAlpha(1f);
-            setMiniSquareBackground(false);
-            applyIdlePriceColors();
-        }
     }
 
     private final Runnable miniBlinkRunnable = new Runnable() {
         @Override
         public void run() {
-            if (!miniBlinkActive || binding == null) {
+            if (binding == null || !minimized) {
                 miniBlinkActive = false;
-                if (binding != null) {
-                    binding.viewMiniSquare.setAlpha(1f);
-                    setMiniSquareBackground(false);
-                }
-                return;
-            }
-            if (!minimized) {
-                miniBlinkActive = false;
-                binding.viewMiniSquare.setAlpha(1f);
-                setMiniSquareBackground(false);
-                return;
-            }
-            if (System.currentTimeMillis() >= miniBlinkEndAt) {
-                miniBlinkActive = false;
-                binding.viewMiniSquare.setAlpha(1f);
-                setMiniSquareBackground(false);
-                return;
-            }
-            miniBlinkDimmed = !miniBlinkDimmed;
-            setMiniSquareBackground(miniBlinkDimmed);
-            binding.viewMiniSquare.setAlpha(miniBlinkDimmed ? 0.65f : 1f);
-            handler.postDelayed(this, 300L);
-        }
-    };
-
-    private void setMiniSquareBackground(boolean blinking) {
-        if (binding == null) {
-            return;
-        }
-        binding.viewMiniSquare.setBackgroundResource(blinking
-                ? R.drawable.bg_overlay_mini_blink
-                : R.drawable.bg_overlay_mini);
-        applyBackgroundAlpha(binding.viewMiniSquare, resolveBackgroundAlpha());
-    }
-
-    private void applyBackgroundAlpha(View view, int alpha) {
-        if (view == null) {
-            return;
-        }
-        Drawable drawable = view.getBackground();
-        if (drawable != null) {
-            drawable.mutate().setAlpha(alpha);
-        }
-    }
-
-    private float resolveBackgroundOpacity() {
-        int safePercent = Math.max(20, Math.min(100, alphaPercent));
-        return safePercent / 100f;
-    }
-
-    private int resolveBackgroundAlpha() {
-        return Math.round(resolveBackgroundOpacity() * 255f);
-    }
-
-    private final Runnable priceBlinkRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (binding == null || minimized) {
-                priceBlinkActive = false;
-                if (binding != null) {
-                    applyIdlePriceColors();
-                }
                 return;
             }
             long now = System.currentTimeMillis();
-            boolean btcActive = now < btcBlinkEndAt;
-            boolean xauActive = now < xauBlinkEndAt;
-            if (!btcActive && !xauActive) {
-                priceBlinkActive = false;
-                applyIdlePriceColors();
+            if (now >= miniBlinkEndAt) {
+                miniBlinkActive = false;
+                miniBlinkDimmed = false;
+                binding.viewMiniSquare.setAlpha(1f);
                 return;
             }
-            priceBlinkDimmed = !priceBlinkDimmed;
-            UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
-            if (btcActive) {
-                binding.tvBtcPrice.setAlpha(1f);
-                binding.tvBtcPrice.setTextColor(priceBlinkDimmed ? context.getColor(R.color.accent_red) : palette.btc);
-            } else {
-                binding.tvBtcPrice.setAlpha(1f);
-                binding.tvBtcPrice.setTextColor(palette.btc);
-            }
-            if (xauActive) {
-                binding.tvXauPrice.setAlpha(1f);
-                binding.tvXauPrice.setTextColor(priceBlinkDimmed ? context.getColor(R.color.accent_red) : palette.xau);
-            } else {
-                binding.tvXauPrice.setAlpha(1f);
-                binding.tvXauPrice.setTextColor(palette.xau);
-            }
+            miniBlinkDimmed = !miniBlinkDimmed;
+            binding.viewMiniSquare.setAlpha(miniBlinkDimmed ? 0.35f : 1f);
             handler.postDelayed(this, 300L);
         }
     };
 
-    private void applyIdlePriceColors() {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
-        binding.tvBtcPrice.setAlpha(1f);
-        binding.tvXauPrice.setAlpha(1f);
-        binding.tvBtcPrice.setTextColor(palette.btc);
-        binding.tvXauPrice.setTextColor(palette.xau);
-    }
-
     private int dp(int value) {
-        return (int) (value * context.getResources().getDisplayMetrics().density);
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
     private class DragAndClickListener implements View.OnTouchListener {
@@ -564,60 +395,73 @@ public class FloatingWindowManager {
         private int downY;
         private float rawX;
         private float rawY;
-        private boolean dragging;
-        private View touchTarget;
+        private long downAt;
 
         @Override
         public boolean onTouch(View v, MotionEvent event) {
-            if (layoutParams == null || binding == null) {
+            if (binding == null || layoutParams == null) {
                 return false;
             }
-            switch (event.getAction()) {
+            switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     downX = layoutParams.x;
                     downY = layoutParams.y;
                     rawX = event.getRawX();
                     rawY = event.getRawY();
-                    dragging = false;
+                    downAt = SystemClock.elapsedRealtime();
                     draggingWindow = false;
-                    touchTarget = v;
+                    lastDragLayoutAt = 0L;
+                    lastDragLayoutX = layoutParams.x;
+                    lastDragLayoutY = layoutParams.y;
                     return true;
                 case MotionEvent.ACTION_MOVE:
-                    long now = SystemClock.uptimeMillis();
-                    if (now - lastDragUpdateAt < 8L) {
-                        return true;
+                    float moveX = event.getRawX() - rawX;
+                    float moveY = event.getRawY() - rawY;
+                    if (!draggingWindow) {
+                        if (SystemClock.elapsedRealtime() - downAt < DRAG_LONG_PRESS_MS) {
+                            return true;
+                        }
+                        if (Math.hypot(moveX, moveY) < dragSlopPx) {
+                            return true;
+                        }
                     }
-                    lastDragUpdateAt = now;
-                    int deltaX = (int) (event.getRawX() - rawX);
-                    int deltaY = (int) (event.getRawY() - rawY);
-                    if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
-                        dragging = true;
-                        draggingWindow = true;
+                    int deltaX = Math.round(rawX - event.getRawX());
+                    int deltaY = Math.round(event.getRawY() - rawY);
+                    int targetX = downX + deltaX;
+                    int targetY = Math.max(0, downY + deltaY);
+                    long now = SystemClock.elapsedRealtime();
+                    boolean movedEnough = Math.abs(targetX - lastDragLayoutX) >= 2 || Math.abs(targetY - lastDragLayoutY) >= 2;
+                    boolean frameReady = now - lastDragLayoutAt >= DRAG_FRAME_INTERVAL_MS;
+                    if (movedEnough && frameReady) {
+                        layoutParams.x = targetX;
+                        layoutParams.y = targetY;
+                        try {
+                            windowManager.updateViewLayout(binding.getRoot(), layoutParams);
+                            lastDragLayoutAt = now;
+                            lastDragLayoutX = targetX;
+                            lastDragLayoutY = targetY;
+                        } catch (Exception ignored) {
+                        }
                     }
-                    layoutParams.x = downX - deltaX;
-                    layoutParams.y = downY + deltaY;
-                    try {
-                        windowManager.updateViewLayout(binding.getRoot(), layoutParams);
-                    } catch (Exception ignored) {
-                    }
+                    draggingWindow = true;
                     return true;
                 case MotionEvent.ACTION_UP:
-                    draggingWindow = false;
-                    applyWindowAlpha();
-                    refreshMinimizedState(false);
-                    if (pendingRender) {
-                        pendingRender = false;
-                        render();
-                    }
-                    if (!dragging) {
-                        handleClick(touchTarget, event);
-                    }
-                    return true;
                 case MotionEvent.ACTION_CANCEL:
+                    if (draggingWindow
+                            && (layoutParams.x != downX + Math.round(rawX - event.getRawX())
+                            || layoutParams.y != Math.max(0, downY + Math.round(event.getRawY() - rawY)))) {
+                        layoutParams.x = downX + Math.round(rawX - event.getRawX());
+                        layoutParams.y = Math.max(0, downY + Math.round(event.getRawY() - rawY));
+                        try {
+                            windowManager.updateViewLayout(binding.getRoot(), layoutParams);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    boolean wasDragging = draggingWindow;
                     draggingWindow = false;
-                    applyWindowAlpha();
-                    refreshMinimizedState(false);
-                    if (pendingRender) {
+                    if (!wasDragging && SystemClock.elapsedRealtime() - downAt < 250L) {
+                        handleClick(event);
+                    } else if (pendingRender) {
                         pendingRender = false;
                         render();
                     }
@@ -627,45 +471,51 @@ public class FloatingWindowManager {
             }
         }
 
-        private void handleClick(View target, MotionEvent event) {
-            if (target == binding.viewMiniSquare) {
+        private void handleClick(MotionEvent event) {
+            if (binding == null) {
+                return;
+            }
+            if (minimized) {
                 setMinimized(false);
                 return;
             }
-            if (target == binding.layoutExpanded) {
-                if (isInMinimizeArea(event.getX(), event.getY())) {
-                    setMinimized(true);
-                } else if (isInSymbolArea(binding.layoutBtc, event.getX(), event.getY())) {
-                    openChartForSymbol(AppConstants.SYMBOL_BTC);
-                } else if (isInSymbolArea(binding.layoutXau, event.getX(), event.getY())) {
-                    openChartForSymbol(AppConstants.SYMBOL_XAU);
-                } else {
-                    AppLaunchHelper.openBinance(context);
-                }
+            if (performClickIfTouched(binding.btnMinimize, event)) {
+                setMinimized(true);
+                return;
             }
+            performChildRowClick(binding.layoutSymbolCards, event);
         }
 
-        private boolean isInMinimizeArea(float x, float y) {
-            return x >= 0 && y >= 0 && x <= dp(28) && y <= dp(28);
-        }
-
-        private boolean isInSymbolArea(View symbolView, float x, float y) {
-            if (symbolView == null || symbolView.getVisibility() != View.VISIBLE) {
+        private boolean performChildRowClick(LinearLayout container, MotionEvent event) {
+            if (container == null || container.getChildCount() == 0) {
                 return false;
             }
-            return x >= symbolView.getLeft()
-                    && x <= symbolView.getRight()
-                    && y >= symbolView.getTop()
-                    && y <= symbolView.getBottom();
+            for (int i = 0; i < container.getChildCount(); i++) {
+                View child = container.getChildAt(i);
+                if (performClickIfTouched(child, event)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
-        private void openChartForSymbol(String symbol) {
-            Intent intent = new Intent(context, MarketChartActivity.class);
-            intent.putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL, symbol);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            context.startActivity(intent);
+        private boolean performClickIfTouched(View target, MotionEvent event) {
+            if (target == null || target.getVisibility() != View.VISIBLE) {
+                return false;
+            }
+            int[] location = new int[2];
+            target.getLocationOnScreen(location);
+            float rawTouchX = event.getRawX();
+            float rawTouchY = event.getRawY();
+            boolean touched = rawTouchX >= location[0]
+                    && rawTouchX <= location[0] + target.getWidth()
+                    && rawTouchY >= location[1]
+                    && rawTouchY <= location[1] + target.getHeight();
+            if (!touched) {
+                return false;
+            }
+            target.performClick();
+            return true;
         }
     }
 }
