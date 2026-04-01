@@ -32,6 +32,7 @@ import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.PermissionHelper;
+import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -193,7 +194,6 @@ public class FloatingWindowManager {
             return;
         }
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
-        applyWindowAlpha();
         binding.layoutExpanded.setBackground(UiPaletteManager.createFloatingBackground(context, palette));
         binding.tvOverlayConnection.setText(snapshot.getConnectionStatus() == null || snapshot.getConnectionStatus().trim().isEmpty()
                 ? context.getString(R.string.status_unknown)
@@ -201,6 +201,7 @@ public class FloatingWindowManager {
         binding.tvOverlayConnection.setTextColor(palette.textSecondary);
         List<FloatingSymbolCardData> visibleCards = collectVisibleCards();
         renderSummaryHeader(palette, visibleCards);
+        applyWindowAlpha();
         int renderedCount = renderSymbolCards(visibleCards, palette);
         boolean hasItems = renderedCount > 0;
         binding.tvOverlayEmpty.setVisibility(hasItems ? View.GONE : View.VISIBLE);
@@ -226,6 +227,7 @@ public class FloatingWindowManager {
     }
 
     private void renderSummaryHeader(UiPaletteManager.Palette palette, List<FloatingSymbolCardData> visibleCards) {
+        boolean masked = SensitiveDisplayMasker.isEnabled(context);
         double totalPnl = 0d;
         for (FloatingSymbolCardData card : visibleCards) {
             if (card != null) {
@@ -233,19 +235,23 @@ public class FloatingWindowManager {
             }
         }
         boolean hasCard = !visibleCards.isEmpty();
-        String text = FormatUtils.formatSignedMoneyNoDecimal(hasCard ? totalPnl : 0d);
+        String text = masked
+                ? SensitiveDisplayMasker.MASK_TEXT
+                : FormatUtils.formatSignedMoneyNoDecimal(hasCard ? totalPnl : 0d);
         binding.tvOverlayStatus.setText(text);
-        binding.tvOverlayStatus.setTextColor(resolvePnlColor(totalPnl, hasCard));
-        binding.tvOverlayStatus.setTextSize(hasCard ? 17f : 16f);
+        int pnlColor = masked ? palette.textPrimary : resolvePnlColor(totalPnl, hasCard);
+        binding.tvOverlayStatus.setTextColor(pnlColor);
+        binding.tvOverlayStatus.setTextSize(hasCard ? 13f : 12f);
+        binding.tvOverlayStatus.setTypeface(null, android.graphics.Typeface.BOLD);
         binding.btnMinimize.setTextColor(palette.textPrimary);
         binding.btnMinimize.setBackground(UiPaletteManager.createOutlinedDrawable(context, palette.control, palette.stroke));
         binding.viewMiniSquare.setText(text);
-        binding.viewMiniSquare.setTextColor(resolvePnlColor(totalPnl, hasCard));
+        binding.viewMiniSquare.setTextColor(pnlColor);
         binding.viewMiniSquare.setTypeface(null, android.graphics.Typeface.BOLD);
         binding.viewMiniSquare.setBackground(UiPaletteManager.createOutlinedDrawable(
                 context,
                 applyAlpha(palette.card, 238),
-                applyAlpha(resolvePnlColor(totalPnl, hasCard), 168)
+                applyAlpha(pnlColor, 168)
         ));
     }
 
@@ -264,6 +270,7 @@ public class FloatingWindowManager {
     private View buildSymbolCard(FloatingSymbolCardData card,
                                  UiPaletteManager.Palette palette,
                                  boolean addTopSpacing) {
+        boolean masked = SensitiveDisplayMasker.isEnabled(context);
         LinearLayout cardView = new LinearLayout(context);
         cardView.setOrientation(LinearLayout.VERTICAL);
         cardView.setPadding(0, addTopSpacing ? dp(4) : 0, 0, 0);
@@ -302,8 +309,10 @@ public class FloatingWindowManager {
         );
         pnlView.setLayoutParams(pnlParams);
         double totalPnl = card.getTotalPnl();
-        pnlView.setText(FormatUtils.formatSignedMoneyNoDecimal(totalPnl));
-        pnlView.setTextColor(totalPnl >= 0d ? palette.rise : palette.fall);
+        pnlView.setText(masked
+                ? SensitiveDisplayMasker.MASK_TEXT
+                : FormatUtils.formatSignedMoneyNoDecimal(totalPnl));
+        pnlView.setTextColor(masked ? palette.textPrimary : (totalPnl >= 0d ? palette.rise : palette.fall));
         pnlView.setTextSize(10f);
         pnlView.setTypeface(null, android.graphics.Typeface.BOLD);
         pnlView.setGravity(Gravity.END);
@@ -318,7 +327,9 @@ public class FloatingWindowManager {
         );
         priceParams.topMargin = dp(1);
         priceView.setLayoutParams(priceParams);
-        priceView.setText(card.hasLatestPrice() ? FormatUtils.formatPriceWithUnit(card.getLatestPrice()) : "--");
+        priceView.setText(card.hasLatestPrice()
+                ? SensitiveDisplayMasker.maskPrice(FormatUtils.formatPriceWithUnit(card.getLatestPrice()), masked)
+                : "--");
         priceView.setTextColor(palette.textPrimary);
         priceView.setTextSize(13f);
         priceView.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -335,7 +346,9 @@ public class FloatingWindowManager {
         );
         volumeParams.topMargin = dp(1);
         volumeView.setLayoutParams(volumeParams);
-        volumeView.setText("成交量 " + FormatUtils.formatVolume(card.getVolume()));
+        volumeView.setText("成交量 " + SensitiveDisplayMasker.maskQuantity(
+                FormatUtils.formatVolume(card.getVolume()),
+                masked));
         volumeView.setTextColor(palette.textSecondary);
         volumeView.setTextSize(8.5f);
         volumeView.setGravity(Gravity.START);
@@ -348,7 +361,9 @@ public class FloatingWindowManager {
         );
         amountParams.topMargin = dp(1);
         amountView.setLayoutParams(amountParams);
-        amountView.setText("成交额 " + FormatUtils.formatAmount(card.getAmount()));
+        amountView.setText("成交额 " + SensitiveDisplayMasker.maskAmount(
+                FormatUtils.formatAmount(card.getAmount()),
+                masked));
         amountView.setTextColor(palette.textSecondary);
         amountView.setTextSize(8.5f);
         amountView.setGravity(Gravity.START);

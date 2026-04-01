@@ -138,4 +138,12 @@ public class MainViewModel extends AndroidViewModel {
     public void setTabAccountStatsVisible(boolean visible) {
         repository.getConfigManager().setTabAccountStatsVisible(visible);
     }
+
+    public boolean isDataMasked() {
+        return repository.getConfigManager().isDataMasked();
+    }
+
+    public void setDataMasked(boolean masked) {
+        repository.getConfigManager().setDataMasked(masked);
+    }
 }

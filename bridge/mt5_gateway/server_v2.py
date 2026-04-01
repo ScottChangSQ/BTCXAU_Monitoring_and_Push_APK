@@ -44,17 +44,31 @@ SNAPSHOT_DELTA_ENABLED = os.getenv("SNAPSHOT_DELTA_ENABLED", "1").strip().lower(
 SNAPSHOT_DELTA_FALLBACK_RATIO = float(os.getenv("SNAPSHOT_DELTA_FALLBACK_RATIO", "0.85"))
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
+ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "500")))
+ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
+ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "8")))
+ABNORMAL_FETCH_CACHE_MS = max(1000, int(os.getenv("ABNORMAL_FETCH_CACHE_MS", "4000")))
+ABNORMAL_DELTA_ENABLED = os.getenv("ABNORMAL_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+ABNORMAL_SYMBOLS = ("BTCUSDT", "XAUUSD")
 
 app = FastAPI(title="MT5 Bridge Gateway", version="1.1.0")
 app.add_middleware(GZipMiddleware, minimum_size=512)
 state_lock = Lock()
 snapshot_cache_lock = Lock()
+abnormal_state_lock = Lock()
 ea_snapshot_cache: Optional[Dict] = None
 ea_snapshot_received_at_ms = 0
 ea_snapshot_change_digest = ""
 mt5_last_connected_path = ""
 snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
 snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
+abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
+abnormal_record_store: List[Dict[str, Any]] = []
+abnormal_alert_store: List[Dict[str, Any]] = []
+abnormal_last_close_time_by_symbol: Dict[str, int] = {}
+abnormal_last_notify_at: Dict[str, int] = {}
+abnormal_kline_cache: Dict[str, Dict[str, Any]] = {}
+abnormal_sync_state: Dict[str, Any] = {}
 
 
 def _now_ms() -> int:
@@ -78,6 +92,454 @@ def _safe_div(a: float, b: float) -> float:
     if abs(b) < 1e-9:
         return 0.0
     return a / b
+
+
+def _normalize_abnormal_symbol(symbol: str) -> str:
+    value = str(symbol or "").strip().upper()
+    if value in {"BTC", "BTCUSD", "BTCUSDT", "XBT"}:
+        return "BTCUSDT"
+    if value in {"XAU", "XAUUSD", "GOLD"}:
+        return "XAUUSD"
+    return value
+
+
+def _default_abnormal_symbol_config(symbol: str) -> Dict[str, Any]:
+    normalized = _normalize_abnormal_symbol(symbol)
+    if normalized == "XAUUSD":
+        return {
+            "symbol": normalized,
+            "volumeThreshold": 3000.0,
+            "amountThreshold": 15000000.0,
+            "priceChangeThreshold": 10.0,
+            "volumeEnabled": True,
+            "amountEnabled": True,
+            "priceChangeEnabled": True,
+        }
+    return {
+        "symbol": "BTCUSDT",
+        "volumeThreshold": 1000.0,
+        "amountThreshold": 70000000.0,
+        "priceChangeThreshold": 200.0,
+        "volumeEnabled": True,
+        "amountEnabled": True,
+        "priceChangeEnabled": True,
+    }
+
+
+def _abnormal_bool(value: Any, fallback: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return fallback
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return fallback
+
+
+def _abnormal_float(value: Any, fallback: float) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(fallback)
+
+
+def _sanitize_abnormal_symbol_config(symbol: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    defaults = _default_abnormal_symbol_config(symbol)
+    return {
+        "symbol": defaults["symbol"],
+        "volumeThreshold": max(0.0, _abnormal_float(payload.get("volumeThreshold"), defaults["volumeThreshold"])),
+        "amountThreshold": max(0.0, _abnormal_float(payload.get("amountThreshold"), defaults["amountThreshold"])),
+        "priceChangeThreshold": max(0.0, _abnormal_float(payload.get("priceChangeThreshold"), defaults["priceChangeThreshold"])),
+        "volumeEnabled": _abnormal_bool(payload.get("volumeEnabled"), defaults["volumeEnabled"]),
+        "amountEnabled": _abnormal_bool(payload.get("amountEnabled"), defaults["amountEnabled"]),
+        "priceChangeEnabled": _abnormal_bool(payload.get("priceChangeEnabled"), defaults["priceChangeEnabled"]),
+    }
+
+
+def _ensure_abnormal_defaults_locked() -> None:
+    symbols = abnormal_config_state.setdefault("symbols", {})
+    for symbol in ABNORMAL_SYMBOLS:
+        normalized = _normalize_abnormal_symbol(symbol)
+        if normalized not in symbols:
+            symbols[normalized] = _default_abnormal_symbol_config(normalized)
+
+
+def _copy_abnormal_config_locked() -> Dict[str, Any]:
+    _ensure_abnormal_defaults_locked()
+    return {
+        "logicAnd": bool(abnormal_config_state.get("logicAnd", False)),
+        "symbols": {
+            symbol: dict(config)
+            for symbol, config in (abnormal_config_state.get("symbols") or {}).items()
+        },
+    }
+
+
+def _abnormal_snapshot_digest(snapshot: Dict[str, Any]) -> str:
+    payload = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+def _build_abnormal_snapshot_locked() -> Dict[str, Any]:
+    config_snapshot = _copy_abnormal_config_locked()
+    return {
+        "abnormalMeta": {
+            "updatedAt": _now_ms(),
+            "logicAnd": bool(config_snapshot.get("logicAnd", False)),
+            "recordCount": len(abnormal_record_store),
+            "alertCount": len(abnormal_alert_store),
+        },
+        "configs": [
+            dict(config_snapshot["symbols"][symbol])
+            for symbol in ABNORMAL_SYMBOLS
+            if symbol in config_snapshot["symbols"]
+        ],
+        "records": [dict(item) for item in abnormal_record_store],
+        "alerts": [dict(item) for item in abnormal_alert_store],
+    }
+
+
+def _commit_abnormal_snapshot_locked() -> None:
+    snapshot = _build_abnormal_snapshot_locked()
+    digest = _abnormal_snapshot_digest(snapshot)
+    state = abnormal_sync_state
+    if not state:
+        abnormal_sync_state.update({
+            "seq": 1,
+            "digest": digest,
+            "snapshot": snapshot,
+            "previousSeq": 0,
+            "previousSnapshot": None,
+        })
+        return
+    if state.get("digest") == digest:
+        abnormal_sync_state["snapshot"] = snapshot
+        return
+    previous_seq = int(state.get("seq", 0))
+    previous_snapshot = state.get("snapshot")
+    abnormal_sync_state.update({
+        "seq": previous_seq + 1,
+        "digest": digest,
+        "snapshot": snapshot,
+        "previousSeq": previous_seq,
+        "previousSnapshot": previous_snapshot,
+    })
+
+
+def _build_full_abnormal_response(snapshot: Dict[str, Any], sync_seq: int) -> Dict[str, Any]:
+    meta = dict(snapshot.get("abnormalMeta") or {})
+    meta["syncSeq"] = sync_seq
+    meta["deltaEnabled"] = ABNORMAL_DELTA_ENABLED
+    return {
+        "abnormalMeta": meta,
+        "configs": snapshot.get("configs") or [],
+        "records": snapshot.get("records") or [],
+        "alerts": snapshot.get("alerts") or [],
+        "isDelta": False,
+        "unchanged": False,
+    }
+
+
+def _diff_abnormal_items(previous: List[Dict[str, Any]], current: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    previous_ids = {str(item.get("id", "")) for item in (previous or [])}
+    return [dict(item) for item in (current or []) if str(item.get("id", "")) not in previous_ids]
+
+
+def _parse_recent_closed_kline(row: List[Any], symbol: str, now_ms: int) -> Optional[Dict[str, Any]]:
+    if row is None or len(row) < 8:
+        return None
+    try:
+        open_time = int(row[0])
+        close_time = int(row[6])
+        if close_time <= 0 or close_time >= now_ms:
+            return None
+        open_price = float(row[1])
+        close_price = float(row[4])
+        volume = float(row[5])
+        amount = float(row[7])
+    except Exception:
+        return None
+    price_change = abs(close_price - open_price)
+    percent_change = abs(_safe_div(close_price - open_price, open_price) * 100.0)
+    return {
+        "symbol": _normalize_abnormal_symbol(symbol),
+        "openTime": open_time,
+        "closeTime": close_time,
+        "openPrice": open_price,
+        "closePrice": close_price,
+        "volume": volume,
+        "amount": amount,
+        "priceChange": price_change,
+        "percentChange": percent_change,
+    }
+
+
+def _fetch_recent_closed_binance_klines(symbol: str, limit: int = ABNORMAL_KLINE_LIMIT) -> List[Dict[str, Any]]:
+    normalized_symbol = _normalize_abnormal_symbol(symbol)
+    now_ms = _now_ms()
+    with abnormal_state_lock:
+        cached = abnormal_kline_cache.get(normalized_symbol)
+        if cached and now_ms - int(cached.get("fetchedAt", 0) or 0) <= ABNORMAL_FETCH_CACHE_MS:
+            return [dict(item) for item in (cached.get("items") or [])]
+
+    upstream_url = _build_binance_rest_upstream_url(
+        "/fapi/v1/klines",
+        {"symbol": normalized_symbol, "interval": "1m", "limit": max(2, limit)},
+    )
+    request = urllib.request.Request(
+        upstream_url,
+        headers={"User-Agent": "mt5-gateway-abnormal-monitor/1.0"},
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=12) as response:
+        body = response.read().decode("utf-8")
+    rows = json.loads(body or "[]")
+    items: List[Dict[str, Any]] = []
+    for row in rows:
+        item = _parse_recent_closed_kline(row, normalized_symbol, now_ms)
+        if item is not None:
+            items.append(item)
+    items.sort(key=lambda current: int(current.get("closeTime", 0) or 0))
+    with abnormal_state_lock:
+        abnormal_kline_cache[normalized_symbol] = {
+            "fetchedAt": now_ms,
+            "items": [dict(item) for item in items],
+        }
+    return items
+
+
+def _evaluate_abnormal_kline(kline: Dict[str, Any], config: Dict[str, Any], use_and_mode: bool) -> Dict[str, Any]:
+    enabled_count = 0
+    triggered: List[str] = []
+    if config.get("volumeEnabled", False):
+        enabled_count += 1
+        if float(kline.get("volume", 0.0) or 0.0) >= float(config.get("volumeThreshold", 0.0) or 0.0):
+            triggered.append("成交量")
+    if config.get("amountEnabled", False):
+        enabled_count += 1
+        if float(kline.get("amount", 0.0) or 0.0) >= float(config.get("amountThreshold", 0.0) or 0.0):
+            triggered.append("成交额")
+    if config.get("priceChangeEnabled", False):
+        enabled_count += 1
+        if float(kline.get("priceChange", 0.0) or 0.0) >= float(config.get("priceChangeThreshold", 0.0) or 0.0):
+            triggered.append("价格变化")
+    if enabled_count == 0:
+        return {"participating": False, "abnormal": False, "summary": ""}
+    abnormal = len(triggered) == enabled_count if use_and_mode else bool(triggered)
+    return {"participating": True, "abnormal": abnormal, "summary": " / ".join(triggered)}
+
+
+def _build_abnormal_record(symbol: str, kline: Dict[str, Any], summary: str) -> Dict[str, Any]:
+    normalized_symbol = _normalize_abnormal_symbol(symbol)
+    close_time = int(kline.get("closeTime", 0) or 0)
+    record_id = hashlib.sha1(f"{normalized_symbol}:{close_time}:{summary}".encode("utf-8")).hexdigest()
+    return {
+        "id": record_id,
+        "symbol": normalized_symbol,
+        "timestamp": _now_ms(),
+        "closeTime": close_time,
+        "openPrice": float(kline.get("openPrice", 0.0) or 0.0),
+        "closePrice": float(kline.get("closePrice", 0.0) or 0.0),
+        "volume": float(kline.get("volume", 0.0) or 0.0),
+        "amount": float(kline.get("amount", 0.0) or 0.0),
+        "priceChange": float(kline.get("priceChange", 0.0) or 0.0),
+        "percentChange": float(kline.get("percentChange", 0.0) or 0.0),
+        "triggerSummary": summary or "",
+    }
+
+
+def _compose_abnormal_alert_line(asset: str, trigger_summary: str) -> str:
+    return f"{asset} 的 {trigger_summary} 出现异常！"
+
+
+def _is_abnormal_alert_eligible_locked(record: Optional[Dict[str, Any]], now_ms: int) -> bool:
+    if not record:
+        return False
+    symbol = _normalize_abnormal_symbol(record.get("symbol"))
+    last_notify = int(abnormal_last_notify_at.get(symbol, 0) or 0)
+    return now_ms - last_notify >= 5 * 60 * 1000
+
+
+def _build_abnormal_alert(symbols: List[str], close_time: int, content: str) -> Dict[str, Any]:
+    normalized_symbols = sorted({_normalize_abnormal_symbol(symbol) for symbol in (symbols or []) if symbol})
+    alert_key = ",".join(normalized_symbols)
+    alert_id = hashlib.sha1(f"{alert_key}:{close_time}:{content}".encode("utf-8")).hexdigest()
+    return {
+        "id": alert_id,
+        "symbols": normalized_symbols,
+        "title": "异常提醒",
+        "content": content,
+        "closeTime": int(close_time or 0),
+        "createdAt": _now_ms(),
+    }
+
+
+def _build_abnormal_alerts_locked(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[int, Dict[str, Dict[str, Any]]] = {}
+    for record in records or []:
+        close_time = int(record.get("closeTime", 0) or 0)
+        if close_time <= 0:
+            continue
+        grouped.setdefault(close_time, {})[_normalize_abnormal_symbol(record.get("symbol"))] = record
+
+    created: List[Dict[str, Any]] = []
+    for close_time in sorted(grouped.keys()):
+        current_group = grouped.get(close_time) or {}
+        now_ms = _now_ms()
+        btc_record = current_group.get("BTCUSDT")
+        xau_record = current_group.get("XAUUSD")
+        btc_eligible = _is_abnormal_alert_eligible_locked(btc_record, now_ms)
+        xau_eligible = _is_abnormal_alert_eligible_locked(xau_record, now_ms)
+        if btc_eligible and xau_eligible:
+            content = _compose_abnormal_alert_line("BTC", str(btc_record.get("triggerSummary", "")))
+            content += "\n" + _compose_abnormal_alert_line("XAU", str(xau_record.get("triggerSummary", "")))
+            created.append(_build_abnormal_alert(["BTCUSDT", "XAUUSD"], close_time, content))
+            abnormal_last_notify_at["BTCUSDT"] = now_ms
+            abnormal_last_notify_at["XAUUSD"] = now_ms
+            continue
+        if btc_eligible and btc_record:
+            created.append(_build_abnormal_alert(
+                ["BTCUSDT"],
+                close_time,
+                _compose_abnormal_alert_line("BTC", str(btc_record.get("triggerSummary", ""))),
+            ))
+            abnormal_last_notify_at["BTCUSDT"] = now_ms
+        if xau_eligible and xau_record:
+            created.append(_build_abnormal_alert(
+                ["XAUUSD"],
+                close_time,
+                _compose_abnormal_alert_line("XAU", str(xau_record.get("triggerSummary", ""))),
+            ))
+            abnormal_last_notify_at["XAUUSD"] = now_ms
+    return created
+
+
+def _append_abnormal_updates_locked(records: List[Dict[str, Any]]) -> None:
+    existing_record_ids = {str(item.get("id", "")) for item in abnormal_record_store}
+    appended_records: List[Dict[str, Any]] = []
+    for record in sorted(records or [], key=lambda item: (int(item.get("closeTime", 0) or 0), str(item.get("symbol", "")))):
+        record_id = str(record.get("id", ""))
+        if not record_id or record_id in existing_record_ids:
+            continue
+        abnormal_record_store.insert(0, dict(record))
+        existing_record_ids.add(record_id)
+        appended_records.append(dict(record))
+    if appended_records:
+        del abnormal_record_store[ABNORMAL_RECORD_LIMIT:]
+
+    existing_alert_ids = {str(item.get("id", "")) for item in abnormal_alert_store}
+    for alert in _build_abnormal_alerts_locked(appended_records):
+        alert_id = str(alert.get("id", ""))
+        if not alert_id or alert_id in existing_alert_ids:
+            continue
+        abnormal_alert_store.insert(0, dict(alert))
+        existing_alert_ids.add(alert_id)
+    if abnormal_alert_store:
+        del abnormal_alert_store[ABNORMAL_ALERT_LIMIT:]
+
+    _commit_abnormal_snapshot_locked()
+
+
+def _set_abnormal_config(payload: Dict[str, Any]) -> Dict[str, Any]:
+    with abnormal_state_lock:
+        _ensure_abnormal_defaults_locked()
+        current = _copy_abnormal_config_locked()
+        normalized = {
+            "logicAnd": _abnormal_bool((payload or {}).get("logicAnd"), current.get("logicAnd", False)),
+            "symbols": {symbol: _default_abnormal_symbol_config(symbol) for symbol in ABNORMAL_SYMBOLS},
+        }
+        raw_configs = (payload or {}).get("configs")
+        if isinstance(raw_configs, list):
+            for item in raw_configs:
+                if not isinstance(item, dict):
+                    continue
+                symbol = _normalize_abnormal_symbol(item.get("symbol"))
+                if symbol not in normalized["symbols"]:
+                    continue
+                normalized["symbols"][symbol] = _sanitize_abnormal_symbol_config(symbol, item)
+        changed = normalized != current
+        if changed:
+            abnormal_config_state["logicAnd"] = normalized["logicAnd"]
+            abnormal_config_state["symbols"] = normalized["symbols"]
+            _commit_abnormal_snapshot_locked()
+        return {
+            "ok": True,
+            "changed": changed,
+            "config": {
+                "logicAnd": normalized["logicAnd"],
+                "configs": [dict(normalized["symbols"][symbol]) for symbol in ABNORMAL_SYMBOLS],
+            },
+        }
+
+
+def _refresh_abnormal_state() -> None:
+    with abnormal_state_lock:
+        _ensure_abnormal_defaults_locked()
+        config_snapshot = _copy_abnormal_config_locked()
+        last_close_by_symbol = dict(abnormal_last_close_time_by_symbol)
+
+    new_records: List[Dict[str, Any]] = []
+    for symbol in ABNORMAL_SYMBOLS:
+        recent_klines = _fetch_recent_closed_binance_klines(symbol, ABNORMAL_KLINE_LIMIT)
+        symbol_config = (config_snapshot.get("symbols") or {}).get(symbol) or _default_abnormal_symbol_config(symbol)
+        last_close_time = int(last_close_by_symbol.get(symbol, 0) or 0)
+        for kline in recent_klines:
+            close_time = int(kline.get("closeTime", 0) or 0)
+            if close_time <= last_close_time:
+                continue
+            evaluation = _evaluate_abnormal_kline(kline, symbol_config, bool(config_snapshot.get("logicAnd", False)))
+            if evaluation.get("abnormal"):
+                new_records.append(_build_abnormal_record(symbol, kline, str(evaluation.get("summary", ""))))
+            last_close_time = max(last_close_time, close_time)
+        if last_close_time > 0:
+            last_close_by_symbol[symbol] = last_close_time
+
+    with abnormal_state_lock:
+        for symbol, close_time in last_close_by_symbol.items():
+            abnormal_last_close_time_by_symbol[symbol] = max(
+                int(abnormal_last_close_time_by_symbol.get(symbol, 0) or 0),
+                int(close_time or 0),
+            )
+        if new_records or not abnormal_sync_state:
+            _append_abnormal_updates_locked(new_records)
+
+
+def _build_abnormal_response(since_seq: int, delta: bool) -> Dict[str, Any]:
+    _refresh_abnormal_state()
+    with abnormal_state_lock:
+        _ensure_abnormal_defaults_locked()
+        if not abnormal_sync_state:
+            _commit_abnormal_snapshot_locked()
+        snapshot = abnormal_sync_state.get("snapshot") or _build_abnormal_snapshot_locked()
+        sync_seq = int(abnormal_sync_state.get("seq", 1) or 1)
+        previous_seq = int(abnormal_sync_state.get("previousSeq", 0) or 0)
+        previous_snapshot = abnormal_sync_state.get("previousSnapshot")
+
+    if not ABNORMAL_DELTA_ENABLED or not delta or since_seq <= 0:
+        return _build_full_abnormal_response(snapshot, sync_seq)
+
+    meta = dict(snapshot.get("abnormalMeta") or {})
+    meta["syncSeq"] = sync_seq
+    meta["deltaEnabled"] = ABNORMAL_DELTA_ENABLED
+
+    if since_seq == sync_seq:
+        return {"abnormalMeta": meta, "isDelta": True, "unchanged": True}
+
+    if previous_snapshot is not None and since_seq == previous_seq:
+        return {
+            "abnormalMeta": meta,
+            "isDelta": True,
+            "unchanged": False,
+            "delta": {
+                "records": _diff_abnormal_items(previous_snapshot.get("records") or [], snapshot.get("records") or []),
+                "alerts": _diff_abnormal_items(previous_snapshot.get("alerts") or [], snapshot.get("alerts") or []),
+            },
+        }
+
+    return _build_full_abnormal_response(snapshot, sync_seq)
 
 
 def _is_buy_trade_type(trade_type: int) -> bool:
@@ -1778,6 +2240,25 @@ def curve(
 ):
     try:
         return _build_curve_snapshot_response(range.lower(), since_seq=since, delta=(delta == 1))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/abnormal")
+def abnormal(
+    since: int = Query(default=0, ge=0),
+    delta: int = Query(default=1, ge=0, le=1),
+):
+    try:
+        return _build_abnormal_response(since_seq=since, delta=(delta == 1))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/v1/abnormal/config")
+def abnormal_config(payload: Dict[str, Any]):
+    try:
+        return _set_abnormal_config(payload or {})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

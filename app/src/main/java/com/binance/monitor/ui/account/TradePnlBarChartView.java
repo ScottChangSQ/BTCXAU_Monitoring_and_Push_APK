@@ -1,3 +1,7 @@
+/*
+ * 交易盈亏柱状图，负责展示不同品种在当前筛选条件下的总盈亏。
+ * 供 AccountStatsBridgeActivity 的交易统计区直接绘制使用。
+ */
 package com.binance.monitor.ui.account;
 
 import android.content.Context;
@@ -38,6 +42,7 @@ public class TradePnlBarChartView extends View {
     private final Paint positivePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint negativePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint emptyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private boolean masked;
 
     public TradePnlBarChartView(Context context) {
         this(context, null);
@@ -78,6 +83,15 @@ public class TradePnlBarChartView extends View {
         invalidate();
     }
 
+    // 根据隐私状态切换为占位态。
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
+        invalidate();
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -87,8 +101,8 @@ public class TradePnlBarChartView extends View {
             return;
         }
 
-        float left = dp(12f);
-        float right = width - dp(12f);
+        float left = dp(22f);
+        float right = width - dp(16f);
         float chartTop = dp(30f);
         float axisBottom = height - dp(40f);
         float codeBaseline = height - dp(10f);
@@ -124,6 +138,11 @@ public class TradePnlBarChartView extends View {
         canvas.drawLine(left, zeroY, right, zeroY, axisPaint);
         canvas.drawLine(left, chartTop, left, axisBottom, gridPaint);
         canvas.drawLine(right, chartTop, right, axisBottom, gridPaint);
+
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
 
         if (entries.isEmpty()) {
             canvas.drawText("暂无柱状统计数据", width / 2f, height / 2f, emptyPaint);

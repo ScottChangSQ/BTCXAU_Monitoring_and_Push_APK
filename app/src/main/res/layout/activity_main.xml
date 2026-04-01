@@ -63,8 +63,7 @@
                         android:paddingBottom="4dp"
                         android:text="@string/status_unknown"
                         android:textColor="@color/white"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
+                        android:textSize="12sp" />
 
                 </LinearLayout>
 
@@ -88,8 +87,7 @@
                         android:layout_marginStart="8dp"
                         android:text="@string/last_update_placeholder"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
+                        android:textSize="12sp" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -113,8 +111,7 @@
                         android:text="@string/open_binance"
                         android:textAllCaps="false"
                         android:textColor="@color/bg_primary"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
+                        android:textSize="14sp" />
 
                     <Button
                         android:id="@+id/btnOpenMt5"
@@ -132,8 +129,7 @@
                         android:text="@string/open_mt5"
                         android:textAllCaps="false"
                         android:textColor="@color/bg_primary"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
+                        android:textSize="14sp" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -199,8 +195,7 @@
                     android:maxLines="1"
                     android:text="--"
                     android:textColor="@color/text_primary"
-                    android:textSize="32sp"
-                    android:textStyle="bold" />
+                    android:textSize="32sp" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -360,11 +355,12 @@
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
+                    <androidx.appcompat.widget.AppCompatCheckBox
                         android:id="@+id/switchVolume"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
+                        android:minHeight="0dp"
                         android:text="@string/enable_short"
                         android:textColor="@color/text_primary"
                         android:textSize="12sp" />
@@ -403,11 +399,12 @@
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
+                    <androidx.appcompat.widget.AppCompatCheckBox
                         android:id="@+id/switchAmount"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
+                        android:minHeight="0dp"
                         android:text="@string/enable_short"
                         android:textColor="@color/text_primary"
                         android:textSize="12sp" />
@@ -446,11 +443,12 @@
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
+                    <androidx.appcompat.widget.AppCompatCheckBox
                         android:id="@+id/switchPriceChange"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
+                        android:minHeight="0dp"
                         android:text="@string/enable_short"
                         android:textColor="@color/text_primary"
                         android:textSize="12sp" />
@@ -474,7 +472,11 @@
                             android:id="@+id/radioLogicOr"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
+                            android:background="@null"
+                            android:button="@null"
                             android:checked="true"
+                            android:minHeight="0dp"
+                            android:paddingHorizontal="6dp"
                             android:text="@string/logic_or"
                             android:textColor="@color/text_primary"
                             android:textSize="13sp" />
@@ -484,6 +486,10 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
+                            android:background="@null"
+                            android:button="@null"
+                            android:minHeight="0dp"
+                            android:paddingHorizontal="6dp"
                             android:text="@string/logic_and"
                             android:textColor="@color/text_primary"
                             android:textSize="13sp" />
@@ -503,8 +509,7 @@
                         android:text="@string/restore_default"
                         android:textAllCaps="false"
                         android:textColor="@color/bg_primary"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
+                        android:textSize="14sp" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -527,11 +532,12 @@
                     android:text="@string/floating_card_title"
                     android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchFloatingEnabled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
+                    android:minHeight="0dp"
                     android:text="@string/floating_window"
                     android:textColor="@color/text_primary"
                     android:textSize="13sp" />
@@ -552,18 +558,20 @@
                     android:max="100"
                     android:progress="88" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchShowBtc"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:minHeight="0dp"
                     android:text="@string/show_btc"
                     android:textColor="@color/text_primary"
                     android:textSize="13sp" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchShowXau"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:minHeight="0dp"
                     android:text="@string/show_xau"
                     android:textColor="@color/text_primary"
                     android:textSize="13sp" />
@@ -587,7 +595,6 @@
             android:textAllCaps="false"
             android:textColor="@color/bg_primary"
             android:textSize="14sp"
-            android:textStyle="bold"
             android:visibility="gone" />
     </LinearLayout>
     </androidx.core.widget.NestedScrollView>
@@ -609,8 +616,7 @@
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/white"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabMarketChart"
@@ -621,8 +627,7 @@
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabAccountStats"
@@ -633,8 +638,7 @@
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabSettings"
@@ -645,8 +649,7 @@
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
     </LinearLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView

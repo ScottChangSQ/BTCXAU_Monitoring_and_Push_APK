@@ -119,6 +119,7 @@ public class MainActivity extends AppCompatActivity {
         applyPaletteStyles();
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
+        renderMarket(viewModel.getLatestPrices().getValue(), viewModel.getLatestClosedKlines().getValue());
         startRecentRecordsAutoRefresh();
         startUpdateTimeTicker();
     }
@@ -207,7 +208,7 @@ public class MainActivity extends AppCompatActivity {
         }
         tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
         tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        tab.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        tab.setTypeface(null, Typeface.NORMAL);
         tab.setTextSize(13f);
     }
 
@@ -233,6 +234,7 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             viewModel.setUseAndMode(checkedId == R.id.radioLogicAnd);
+            applyLogicModeStyles();
             sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
         });
         binding.switchVolume.setOnCheckedChangeListener((buttonView, isChecked) -> persistIfReady());
@@ -496,7 +498,8 @@ public class MainActivity extends AppCompatActivity {
         Double price = prices != null ? prices.get(selectedSymbol) : null;
         KlineData data = klines != null ? klines.get(selectedSymbol) : null;
         String unit = AppConstants.symbolToAsset(selectedSymbol);
-        binding.tvCurrentPrice.setText(price == null ? "--" : FormatUtils.formatPriceWithUnit(price));
+        String priceText = price == null ? "--" : FormatUtils.formatPriceWithUnit(price);
+        binding.tvCurrentPrice.setText(priceText);
         if (data == null) {
             setMetric(metricOpenBinding, "--");
             setMetric(metricCloseBinding, "--");
@@ -531,6 +534,28 @@ public class MainActivity extends AppCompatActivity {
         binding.radioLogicOr.setChecked(!viewModel.isUseAndMode());
         binding.radioLogicAnd.setChecked(viewModel.isUseAndMode());
         applyingConfig = false;
+        applyLogicModeStyles();
+    }
+
+    // 用纯文字高亮展示 OR / AND，去掉按钮底框和圆形选中标记。
+    private void applyLogicModeStyles() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        styleLogicOption(binding.radioLogicOr, !viewModel.isUseAndMode(), palette);
+        styleLogicOption(binding.radioLogicAnd, viewModel.isUseAndMode(), palette);
+    }
+
+    // 统一逻辑选项的颜色和下划线，选中项更醒目。
+    private void styleLogicOption(TextView optionView,
+                                  boolean selected,
+                                  UiPaletteManager.Palette palette) {
+        if (optionView == null || palette == null) {
+            return;
+        }
+        optionView.setTextColor(selected ? palette.primary : palette.textSecondary);
+        optionView.setTypeface(null, Typeface.NORMAL);
+        optionView.setPaintFlags(selected
+                ? (optionView.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG)
+                : (optionView.getPaintFlags() & ~android.graphics.Paint.UNDERLINE_TEXT_FLAG));
     }
 
     private void switchSymbol(String symbol) {
@@ -586,6 +611,7 @@ public class MainActivity extends AppCompatActivity {
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.tvMainSymbolPickerLabel.setTextColor(palette.textPrimary);
         applyMainSymbolPickerIndicator();
+        applyLogicModeStyles();
         if (binding.spinnerSymbolPicker.getAdapter() instanceof BaseAdapter) {
             ((BaseAdapter) binding.spinnerSymbolPicker.getAdapter()).notifyDataSetChanged();
         }

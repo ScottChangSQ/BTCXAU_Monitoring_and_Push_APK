@@ -1,3 +1,7 @@
+/*
+ * 行情图表页，负责展示 K 线、指标、异常交易标注以及当前持仓相关信息。
+ * 与行情接口、账户快照预加载、主题系统和异常记录模块协同工作。
+ */
 package com.binance.monitor.ui.chart;
 
 import android.content.Intent;
@@ -7,11 +11,11 @@ import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
-import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -36,6 +40,7 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.KlineCacheStore;
+import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.local.db.repository.ChartHistoryRepository;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.CandleEntry;
@@ -43,6 +48,7 @@ import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.remote.BinanceApiClient;
 import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
+import com.binance.monitor.ui.account.AccountSnapshotDisplayResolver;
 import com.binance.monitor.ui.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
@@ -55,6 +61,7 @@ import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.util.SensitiveDisplayMasker;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.text.DecimalFormat;
@@ -128,6 +135,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private final Map<String, String> persistedSignatures = new ConcurrentHashMap<>();
     private KlineCacheStore klineCacheStore;
     private ChartHistoryRepository chartHistoryRepository;
+    private AccountStorageRepository accountStorageRepository;
     private AccountStatsPreloadManager accountStatsPreloadManager;
     private AbnormalRecordManager abnormalRecordManager;
 
@@ -171,6 +179,8 @@ public class MarketChartActivity extends AppCompatActivity {
     private PositionAggregateAdapter chartPositionAggregateAdapter;
     private PositionAdapterV2 chartPositionAdapter;
     private PendingOrderAdapter chartPendingOrderAdapter;
+    private final List<PositionItem> lastChartPositions = new ArrayList<>();
+    private final List<PositionItem> lastChartPendingOrders = new ArrayList<>();
     private int pricePaneLeftPx;
     private int pricePaneTopPx;
     private int pricePaneRightPx;
@@ -178,7 +188,9 @@ public class MarketChartActivity extends AppCompatActivity {
     private long nextAutoRefreshAtMs;
     private volatile boolean loadingMore;
     private long lastSuccessUpdateMs;
+    private long lastSuccessfulRequestLatencyMs = -1L;
     private List<AbnormalRecord> abnormalRecords = new ArrayList<>();
+    private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> refreshChartOverlays();
     private final Runnable autoRefreshRunnable = new Runnable() {
         @Override
         public void run() {
@@ -205,6 +217,7 @@ public class MarketChartActivity extends AppCompatActivity {
         ioExecutor = Executors.newFixedThreadPool(2);
         klineCacheStore = new KlineCacheStore(this);
         chartHistoryRepository = new ChartHistoryRepository(this);
+        accountStorageRepository = new AccountStorageRepository(getApplicationContext());
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
         abnormalRecordManager = AbnormalRecordManager.getInstance(getApplicationContext());
         applyIntentSymbol(getIntent(), false);
@@ -224,6 +237,7 @@ public class MarketChartActivity extends AppCompatActivity {
         normalizeOptionButtons();
         binding.btnRetryLoad.setOnClickListener(v -> requestKlines());
         applyPaletteStyles();
+        applyPrivacyMaskState();
         restorePersistedCache(buildCacheKey(selectedSymbol, selectedInterval));
         updateStateCount();
         updateRefreshCountdownText();
@@ -234,7 +248,9 @@ public class MarketChartActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         applyPaletteStyles();
+        applyPrivacyMaskState();
         if (accountStatsPreloadManager != null) {
+            accountStatsPreloadManager.addCacheListener(accountCacheListener);
             accountStatsPreloadManager.setFullSnapshotActive(true);
         }
         requestKlines();
@@ -253,6 +269,7 @@ public class MarketChartActivity extends AppCompatActivity {
     protected void onPause() {
         stopAutoRefresh();
         if (accountStatsPreloadManager != null) {
+            accountStatsPreloadManager.removeCacheListener(accountCacheListener);
             accountStatsPreloadManager.setFullSnapshotActive(false);
         }
         super.onPause();
@@ -261,6 +278,9 @@ public class MarketChartActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         stopAutoRefresh();
+        if (accountStatsPreloadManager != null) {
+            accountStatsPreloadManager.removeCacheListener(accountCacheListener);
+        }
         if (runningTask != null) {
             runningTask.cancel(true);
             runningTask = null;
@@ -332,6 +352,16 @@ public class MarketChartActivity extends AppCompatActivity {
         });
         binding.btnScrollToLatest.setVisibility(android.view.View.INVISIBLE);
         refreshChartOverlays();
+    }
+
+    // 根据隐私状态控制敏感叠加层和当前持仓模块，不再使用整页遮罩。
+    private void applyPrivacyMaskState() {
+        if (binding == null || binding.klineChartView == null) {
+            return;
+        }
+        boolean masked = SensitiveDisplayMasker.isEnabled(this);
+        binding.klineChartView.setOverlayVisibility(!masked, !masked, !masked);
+        updateChartPositionPanel(lastChartPositions, lastChartPendingOrders);
     }
 
     private void setupSymbolSelector() {
@@ -635,6 +665,15 @@ public class MarketChartActivity extends AppCompatActivity {
                 || chartPendingOrderAdapter == null) {
             return;
         }
+        lastChartPositions.clear();
+        if (positions != null) {
+            lastChartPositions.addAll(positions);
+        }
+        lastChartPendingOrders.clear();
+        if (pendingOrders != null) {
+            lastChartPendingOrders.addAll(pendingOrders);
+        }
+        boolean masked = SensitiveDisplayMasker.isEnabled(this);
         List<PositionItem> filteredPositions = new ArrayList<>();
         if (positions != null) {
             for (PositionItem item : positions) {
@@ -661,6 +700,9 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         filteredPendingOrders.sort((a, b) -> Double.compare(resolvePendingSortWeight(b), resolvePendingSortWeight(a)));
 
+        chartPositionAggregateAdapter.setMasked(masked);
+        chartPositionAdapter.setMasked(masked);
+        chartPendingOrderAdapter.setMasked(masked);
         chartPositionAggregateAdapter.submitList(buildPositionAggregatesForChart(filteredPositions));
         chartPositionAdapter.submitList(filteredPositions);
         chartPendingOrderAdapter.submitList(filteredPendingOrders);
@@ -678,10 +720,18 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         double ratio = totalMarketValue <= 1e-9 ? 0d : totalPnl / totalMarketValue;
         if (filteredPositions.isEmpty()) {
-            binding.tvChartPositionSummary.setText("当前暂无持仓，挂单 " + filteredPendingOrders.size() + " 笔");
+            if (masked) {
+                binding.tvChartPositionSummary.setText("当前持仓：**** | 当前挂单：****");
+            } else {
+                binding.tvChartPositionSummary.setText("当前暂无持仓，挂单 " + filteredPendingOrders.size() + " 笔");
+            }
             return;
         }
-        binding.tvChartPositionSummary.setText(buildPositionPnlSummaryForChart(totalPnl, ratio));
+        if (masked) {
+            binding.tvChartPositionSummary.setText("持仓盈亏: **** | 持仓收益率: ****");
+        } else {
+            binding.tvChartPositionSummary.setText(buildPositionPnlSummaryForChart(totalPnl, ratio));
+        }
     }
 
     private double resolvePendingLots(@Nullable PositionItem item) {
@@ -749,13 +799,6 @@ public class MarketChartActivity extends AppCompatActivity {
         int pnlColor = ContextCompat.getColor(this, totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
         int ratioColor = ContextCompat.getColor(this, ratio >= 0d ? R.color.accent_green : R.color.accent_red);
 
-        int pnlLabelEnd = summary.indexOf(pnlText) - 1;
-        if (pnlLabelEnd > 0) {
-            spannable.setSpan(new StyleSpan(Typeface.BOLD),
-                    0,
-                    pnlLabelEnd,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
         int pnlStart = summary.indexOf(pnlText);
         if (pnlStart >= 0) {
             spannable.setSpan(new ForegroundColorSpan(pnlColor),
@@ -763,10 +806,6 @@ public class MarketChartActivity extends AppCompatActivity {
                     pnlStart + pnlText.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             spannable.setSpan(new AbsoluteSizeSpan(16, true),
-                    pnlStart,
-                    pnlStart + pnlText.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new StyleSpan(Typeface.BOLD),
                     pnlStart,
                     pnlStart + pnlText.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -778,10 +817,6 @@ public class MarketChartActivity extends AppCompatActivity {
                     ratioStart + ratioText.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             spannable.setSpan(new AbsoluteSizeSpan(15, true),
-                    ratioStart,
-                    ratioStart + ratioText.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new StyleSpan(Typeface.BOLD),
                     ratioStart,
                     ratioStart + ratioText.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -815,7 +850,7 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         button.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
         button.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        button.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        button.setTypeface(null, Typeface.NORMAL);
         button.setTextSize(13f);
     }
 
@@ -983,6 +1018,7 @@ public class MarketChartActivity extends AppCompatActivity {
         final long previousLatestOpenTime = loadedCandles.isEmpty()
                 ? -1L
                 : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
+        final long requestStartedAtMs = SystemClock.elapsedRealtime();
         showLoading(true);
         binding.tvError.setVisibility(android.view.View.GONE);
         binding.btnRetryLoad.setVisibility(android.view.View.GONE);
@@ -1018,6 +1054,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     if (!(autoRefresh && binding.klineChartView.hasActiveCrosshair())) {
                         renderInfoWithLatest();
                     }
+                    lastSuccessfulRequestLatencyMs = Math.max(0L, SystemClock.elapsedRealtime() - requestStartedAtMs);
                     lastSuccessUpdateMs = System.currentTimeMillis();
                     updateStateCount();
                     binding.tvError.setVisibility(android.view.View.GONE);
@@ -1223,15 +1260,12 @@ public class MarketChartActivity extends AppCompatActivity {
         if (binding == null || binding.tvChartRefreshCountdown == null) {
             return;
         }
-        int periodSeconds = (int) Math.max(1L, resolveAutoRefreshDelayMs() / 1_000L);
-        if (nextAutoRefreshAtMs <= 0L) {
-            binding.tvChartRefreshCountdown.setText("--秒/" + periodSeconds + "秒");
-            updateRefreshCountdownPosition();
-            return;
-        }
-        long remainingMs = Math.max(0L, nextAutoRefreshAtMs - System.currentTimeMillis());
-        int remainSeconds = (int) Math.ceil(remainingMs / 1000d);
-        binding.tvChartRefreshCountdown.setText(remainSeconds + "秒/" + periodSeconds + "秒");
+        binding.tvChartRefreshCountdown.setText(ChartRefreshMetaFormatter.buildCountdownText(
+                nextAutoRefreshAtMs,
+                System.currentTimeMillis(),
+                resolveAutoRefreshDelayMs(),
+                lastSuccessfulRequestLatencyMs
+        ));
         updateRefreshCountdownPosition();
     }
 
@@ -1557,64 +1591,68 @@ public class MarketChartActivity extends AppCompatActivity {
             return;
         }
         List<KlineChartView.PriceAnnotation> abnormalAnnotations = new ArrayList<>();
-        if (abnormalRecords != null) {
-            int color = Color.parseColor("#F2C94C");
-            int overlayCount = 0;
-            for (AbnormalRecord record : abnormalRecords) {
-                if (record == null) {
-                    continue;
-                }
-                if (!matchesSelectedSymbol(record.getSymbol(), record.getSymbol())) {
-                    continue;
-                }
-                double price = record.getClosePrice() > 0d ? record.getClosePrice() : record.getOpenPrice();
-                if (price <= 0d) {
-                    continue;
-                }
-                long anchorTime = record.getCloseTime() > 0L
-                        ? Math.max(1L, record.getCloseTime() - 1L)
-                        : record.getTimestamp();
-                if (anchorTime <= 0L) {
-                    continue;
-                }
-                String label = "ABN $" + FormatUtils.formatPrice(price);
-                String summary = record.getTriggerSummary() == null ? "" : record.getTriggerSummary().trim();
-                if (!summary.isEmpty()) {
-                    String shortSummary = summary.length() > 12 ? summary.substring(0, 12) + "…" : summary;
-                    label = label + " " + shortSummary;
-                }
-                abnormalAnnotations.add(new KlineChartView.PriceAnnotation(
-                        anchorTime,
-                        price,
-                        label,
-                        color,
-                        "abn|" + record.getId()));
-                overlayCount++;
-                if (overlayCount >= 180) {
-                    break;
-                }
-            }
+        ConfigManager configManager = ConfigManager.getInstance(this);
+        SymbolConfig config = configManager == null ? null : configManager.getSymbolConfig(selectedSymbol);
+        List<AbnormalRecord> filteredRecords = filterAbnormalRecordsForSelectedSymbol();
+        List<AbnormalRecord> derivedRecords = HistoricalAbnormalRecordBuilder.buildFromCandles(
+                selectedSymbol,
+                loadedCandles,
+                config,
+                configManager != null && configManager.isUseAndMode()
+        );
+        List<AbnormalRecord> mergedRecords = HistoricalAbnormalRecordBuilder.merge(filteredRecords, derivedRecords);
+        List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> groupedAnnotations =
+                AbnormalAnnotationOverlayBuilder.build(mergedRecords, loadedCandles);
+        for (AbnormalAnnotationOverlayBuilder.BucketAnnotation item : groupedAnnotations) {
+            abnormalAnnotations.add(new KlineChartView.PriceAnnotation(
+                    item.anchorTimeMs,
+                    item.price,
+                    item.label,
+                    item.color,
+                    item.groupId,
+                    item.count,
+                    item.intensity
+            ));
         }
-        abnormalAnnotations.sort((a, b) -> Long.compare(a.anchorTimeMs, b.anchorTimeMs));
         binding.klineChartView.setAbnormalAnnotations(abnormalAnnotations);
+    }
+
+    // 先按当前选中标的筛掉无关异常记录，避免聚合器承担页面状态判断。
+    private List<AbnormalRecord> filterAbnormalRecordsForSelectedSymbol() {
+        List<AbnormalRecord> filtered = new ArrayList<>();
+        if (abnormalRecords == null || abnormalRecords.isEmpty()) {
+            return filtered;
+        }
+        for (AbnormalRecord record : abnormalRecords) {
+            if (record == null || !matchesSelectedSymbol(record.getSymbol(), record.getSymbol())) {
+                continue;
+            }
+            filtered.add(record);
+        }
+        return filtered;
     }
 
     private void updateAccountAnnotationsOverlay() {
         if (binding == null || binding.klineChartView == null) {
             return;
         }
-        AccountSnapshot snapshot = null;
-        if (accountStatsPreloadManager != null) {
-            AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager.getLatestCache();
-            if (cache != null) {
-                snapshot = cache.getSnapshot();
-            }
+        if (!ConfigManager.getInstance(this).isAccountSessionActive()) {
+            clearAccountAnnotationsOverlay();
+            return;
         }
+        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
+                ? null
+                : accountStatsPreloadManager.getLatestCache();
+        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository == null
+                ? null
+                : accountStorageRepository.loadStoredSnapshot();
+        AccountSnapshot snapshot = AccountSnapshotDisplayResolver.resolve(
+                cache,
+                storedSnapshot,
+                System.currentTimeMillis()
+        );
         if (snapshot == null) {
-            binding.klineChartView.setPositionAnnotations(new ArrayList<>());
-            binding.klineChartView.setPendingAnnotations(new ArrayList<>());
-            binding.klineChartView.setAggregateCostAnnotation(null);
-            updateChartPositionPanel(new ArrayList<>(), new ArrayList<>());
+            clearAccountAnnotationsOverlay();
             return;
         }
 
@@ -1632,6 +1670,14 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.klineChartView.setPendingAnnotations(buildPendingAnnotations(pendingOrders, trades));
         binding.klineChartView.setAggregateCostAnnotation(buildAggregateCostAnnotation(positions));
         updateChartPositionPanel(positions, pendingOrders);
+    }
+
+    // 当没有任何可用账户快照时，统一清空图表上的持仓与挂单标注。
+    private void clearAccountAnnotationsOverlay() {
+        binding.klineChartView.setPositionAnnotations(new ArrayList<>());
+        binding.klineChartView.setPendingAnnotations(new ArrayList<>());
+        binding.klineChartView.setAggregateCostAnnotation(null);
+        updateChartPositionPanel(new ArrayList<>(), new ArrayList<>());
     }
 
     private List<KlineChartView.PriceAnnotation> buildPositionAnnotations(List<PositionItem> positions,
@@ -2180,7 +2226,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private void styleTabButton(Button button, boolean selected) {
         button.setBackgroundColor(Color.TRANSPARENT);
         button.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        button.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        button.setTypeface(null, Typeface.NORMAL);
         button.setPaintFlags(selected
                 ? (button.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG)
                 : (button.getPaintFlags() & ~android.graphics.Paint.UNDERLINE_TEXT_FLAG));
@@ -2213,9 +2259,9 @@ public class MarketChartActivity extends AppCompatActivity {
         tabActiveColor = palette.primary;
         tabInactiveColor = palette.textSecondary;
         binding.klineChartView.applyPalette(palette);
-        binding.cardSymbolPanel.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-        binding.cardChartPanel.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-        binding.cardChartPositions.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        binding.cardSymbolPanel.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
+        binding.cardChartPanel.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
+        binding.cardChartPositions.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.tvChartSymbolPickerLabel.setTextColor(palette.textPrimary);
         applyChartSymbolPickerIndicator();
@@ -2241,6 +2287,7 @@ public class MarketChartActivity extends AppCompatActivity {
         syncSymbolSelector();
         updateIntervalButtons();
         updateIndicatorButtons();
+        applyPrivacyMaskState();
     }
 
     private void openMarketMonitor() {

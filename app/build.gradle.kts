@@ -75,4 +75,5 @@ dependencies {
     implementation(libs.room.runtime)
     annotationProcessor(libs.room.compiler)
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

@@ -45,12 +45,12 @@
         <item name="strokeColor">@color/stroke_card</item>
         <item name="strokeWidth">1dp</item>
         <item name="backgroundTint">@color/bg_input</item>
-        <item name="cornerRadius">@dimen/radius_sm</item>
+        <item name="cornerRadius">0dp</item>
         <item name="android:minHeight">@dimen/control_height_md</item>
     </style>
 
     <style name="TextAppearance.BinanceMonitor.Title" parent="TextAppearance.Material3.TitleMedium">
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:textColor">@color/text_primary</item>
     </style>
 

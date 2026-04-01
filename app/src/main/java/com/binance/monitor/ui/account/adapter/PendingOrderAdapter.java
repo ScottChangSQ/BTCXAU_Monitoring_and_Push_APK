@@ -17,6 +17,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,6 +34,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
     private final List<PositionItem> items = new ArrayList<>();
     private final List<String> rowKeys = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
+    private boolean masked;
 
     public void submitList(List<PositionItem> data) {
         List<PositionItem> nextItems = data == null ? new ArrayList<>() : new ArrayList<>(data);
@@ -61,6 +63,15 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         diffResult.dispatchUpdatesTo(this);
     }
 
+    // 行情持仓页关闭隐私显示时，统一把挂单数量和价格打码。
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
+        notifyDataSetChanged();
+    }
+
     private List<String> buildRowKeys(List<PositionItem> data) {
         List<String> keys = new ArrayList<>();
         if (data == null || data.isEmpty()) {
@@ -87,7 +98,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, false);
+        holder.bind(item, expanded, false, masked);
         holder.binding.layoutHeader.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= rowKeys.size()) {
@@ -112,7 +123,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE));
+        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE), masked);
     }
 
     @Override
@@ -204,7 +215,18 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             this.binding = binding;
         }
 
-        void bind(PositionItem item, boolean expanded, boolean animateExpand) {
+        void bind(PositionItem item, boolean expanded, boolean animateExpand, boolean masked) {
+            if (masked) {
+                binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                updateExpandState(expanded, animateExpand);
+                binding.tvProduct.setVisibility(View.GONE);
+                binding.tvBase.setVisibility(View.GONE);
+                binding.tvMetrics.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvMetrics.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                binding.tvPnL.setVisibility(View.GONE);
+                return;
+            }
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
             double pendingPrice = item.getPendingPrice() > 0d ? item.getPendingPrice() : item.getLatestPrice();
@@ -218,11 +240,11 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                     : "0.00 手");
             String pendingPriceText = String.format(Locale.getDefault(), "%,.2f", pendingPrice);
             String summaryRaw = String.format(Locale.getDefault(),
-                    "%s | %s | %s | $%s",
+                    "%s | %s | %s | %s",
                     item.getProductName(),
                     sideText,
                     qtyText,
-                    pendingPriceText);
+                    "$" + pendingPriceText);
             SpannableStringBuilder summarySpan = new SpannableStringBuilder(summaryRaw);
             int sideStart = summaryRaw.indexOf(sideText);
             if (sideStart >= 0) {
@@ -238,9 +260,9 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             binding.tvProduct.setVisibility(View.GONE);
             binding.tvBase.setVisibility(View.GONE);
             binding.tvMetrics.setText(String.format(Locale.getDefault(),
-                    "价位 $%s | 现价 $%s\n止盈 %s | 止损 %s",
-                    pendingPriceText,
-                    FormatUtils.formatPrice(item.getLatestPrice()),
+                    "价位 %s | 现价 %s\n止盈 %s | 止损 %s",
+                    "$" + pendingPriceText,
+                    "$" + FormatUtils.formatPrice(item.getLatestPrice()),
                     optionalPrice(item.getTakeProfit()),
                     optionalPrice(item.getStopLoss())));
             binding.tvPnL.setVisibility(View.GONE);

@@ -12,6 +12,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemStatsMetricBinding;
 import com.binance.monitor.ui.account.MetricNameTranslator;
 import com.binance.monitor.ui.account.model.AccountMetric;
+import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -24,12 +25,21 @@ import java.util.Locale;
 public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.Holder> {
 
     private final List<AccountMetric> items = new ArrayList<>();
+    private boolean masked;
 
     public void submitList(List<AccountMetric> data) {
         items.clear();
         if (data != null) {
             items.addAll(data);
         }
+        notifyDataSetChanged();
+    }
+
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
         notifyDataSetChanged();
     }
 
@@ -41,7 +51,7 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
 
     @Override
     public void onBindViewHolder(@NonNull Holder holder, int position) {
-        holder.bind(items.get(position));
+        holder.bind(items.get(position), masked);
     }
 
     @Override
@@ -57,10 +67,17 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
             this.binding = binding;
         }
 
-        void bind(AccountMetric item) {
+        void bind(AccountMetric item, boolean masked) {
             String nameCn = MetricNameTranslator.toChinese(item.getName());
-            String value = item.getValue();
+            String value = masked
+                    ? SensitiveDisplayMasker.maskValue(item.getValue(), true)
+                    : item.getValue();
             binding.tvName.setText(nameCn);
+            if (masked) {
+                binding.tvValue.setText(value);
+                binding.tvValue.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                return;
+            }
             if (isStreakMetric(nameCn)) {
                 binding.tvValue.setText(buildStreakSpan(value));
                 binding.tvValue.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
@@ -68,6 +85,11 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
             }
             if (isTradeRatioMetric(nameCn)) {
                 binding.tvValue.setText(buildTradeRatioSpan(nameCn, value));
+                binding.tvValue.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                return;
+            }
+            if (isGrossPairMetric(nameCn)) {
+                binding.tvValue.setText(buildGrossPairSpan(value));
                 binding.tvValue.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
                 return;
             }
@@ -89,6 +111,13 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
             }
             String normalized = label.replace(" ", "");
             return normalized.contains("盈利交易") || normalized.contains("亏损交易");
+        }
+
+        private boolean isGrossPairMetric(String label) {
+            if (label == null) {
+                return false;
+            }
+            return label.replace(" ", "").contains("毛利/毛损");
         }
 
         private CharSequence buildStreakSpan(String raw) {
@@ -117,8 +146,8 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
                 return "--";
             }
             SpannableString span = new SpannableString(raw);
-            int lineBreak = raw.indexOf('\n');
-            if (lineBreak < 0 || lineBreak >= raw.length() - 1) {
+            int divider = raw.indexOf(") ");
+            if (divider < 0 || divider >= raw.length() - 2) {
                 return span;
             }
             int color = ContextCompat.getColor(binding.getRoot().getContext(),
@@ -126,7 +155,29 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
                             ? R.color.accent_red
                             : R.color.accent_green);
             span.setSpan(new ForegroundColorSpan(color),
-                    lineBreak + 1,
+                    divider + 2,
+                    raw.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            return span;
+        }
+
+        private CharSequence buildGrossPairSpan(String raw) {
+            if (raw == null || raw.trim().isEmpty()) {
+                return "--";
+            }
+            SpannableString span = new SpannableString(raw);
+            int divider = raw.indexOf(" / ");
+            if (divider <= 0 || divider >= raw.length() - 3) {
+                return span;
+            }
+            int positiveColor = ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_green);
+            int negativeColor = ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_red);
+            span.setSpan(new ForegroundColorSpan(positiveColor),
+                    0,
+                    divider,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            span.setSpan(new ForegroundColorSpan(negativeColor),
+                    divider + 3,
                     raw.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             return span;

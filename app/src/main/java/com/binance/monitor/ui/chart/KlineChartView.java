@@ -1,3 +1,7 @@
+/*
+ * K 线图自定义绘制控件，负责行情主图、指标、副图和各类价格标注的渲染与交互。
+ * 与行情图页、主题系统和异常交易标注模块协同工作。
+ */
 package com.binance.monitor.ui.chart;
 
 import android.content.Context;
@@ -36,17 +40,31 @@ public class KlineChartView extends View {
         public final String label;
         public final int color;
         public final String groupId;
+        public final int eventCount;
+        public final float intensity;
 
         public PriceAnnotation(long anchorTimeMs, double price, String label, int color) {
-            this(anchorTimeMs, price, label, color, "");
+            this(anchorTimeMs, price, label, color, "", 1, 0f);
         }
 
         public PriceAnnotation(long anchorTimeMs, double price, String label, int color, @Nullable String groupId) {
+            this(anchorTimeMs, price, label, color, groupId, 1, 0f);
+        }
+
+        public PriceAnnotation(long anchorTimeMs,
+                               double price,
+                               String label,
+                               int color,
+                               @Nullable String groupId,
+                               int eventCount,
+                               float intensity) {
             this.anchorTimeMs = anchorTimeMs;
             this.price = price;
             this.label = label == null ? "" : label;
             this.color = color;
             this.groupId = groupId == null ? "" : groupId.trim();
+            this.eventCount = Math.max(1, eventCount);
+            this.intensity = Math.max(0f, Math.min(1f, intensity));
         }
     }
 
@@ -157,6 +175,8 @@ public class KlineChartView extends View {
     private final Paint crossLabelTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint popupBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint popupTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint popupPositiveTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint popupNegativeTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint latestPriceGuidePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint latestPriceTagPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint latestPriceTagTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -208,6 +228,7 @@ public class KlineChartView extends View {
     private float candleGap;
     private float minWidth;
     private float maxWidth;
+    private static final float DEFAULT_CANDLE_WIDTH_DP = 1.8f;
     // 图表右侧固定保留绘图区 1/7 的空白，避免最新 K 线贴边。
     private static final float RIGHT_BLANK_RATIO = 1f / 7f;
     private float offsetCandles;
@@ -233,6 +254,9 @@ public class KlineChartView extends View {
     private final List<PriceAnnotation> abnormalAnnotations = new ArrayList<>();
     @Nullable
     private AggregateCostAnnotation aggregateCostAnnotation;
+    private boolean showPositionAnnotations = true;
+    private boolean showPendingAnnotations = true;
+    private boolean showAggregateCostAnnotation = true;
     private String highlightedAnnotationGroupId = "";
     private boolean crosshairOnCandle = true;
     private float verticalScale = 1f;
@@ -332,13 +356,17 @@ public class KlineChartView extends View {
         popupBgPaint.setColor(0xEE1B2A40);
         popupTextPaint.setColor(0xFFE2EDFF);
         popupTextPaint.setTextSize(dp(9f));
+        popupPositiveTextPaint.setColor(0xFF16C784);
+        popupPositiveTextPaint.setTextSize(dp(9f));
+        popupNegativeTextPaint.setColor(0xFFF6465D);
+        popupNegativeTextPaint.setTextSize(dp(9f));
         latestPriceGuidePaint.setStyle(Paint.Style.STROKE);
         latestPriceGuidePaint.setStrokeWidth(dp(1f));
         latestPriceGuidePaint.setPathEffect(new DashPathEffect(new float[]{dp(4f), dp(3f)}, 0f));
         latestPriceTagPaint.setColor(0xFF16C784);
         latestPriceTagTextPaint.setColor(0xFFFFFFFF);
         latestPriceTagTextPaint.setTextSize(dp(9f));
-        latestPriceTagTextPaint.setFakeBoldText(true);
+        latestPriceTagTextPaint.setFakeBoldText(false);
         paneBorderPaint.setStyle(Paint.Style.STROKE);
         paneBorderPaint.setStrokeWidth(dp(1f));
         paneBorderPaint.setColor(0xFF3D5577);
@@ -351,7 +379,7 @@ public class KlineChartView extends View {
         extremeLabelBgPaint.setColor(0xCC1D2A3F);
         extremeLabelTextPaint.setColor(0xFFE2EDFF);
         extremeLabelTextPaint.setTextSize(dp(8f));
-        extremeLabelTextPaint.setFakeBoldText(true);
+        extremeLabelTextPaint.setFakeBoldText(false);
 
         overlayDashPaint.setStyle(Paint.Style.STROKE);
         overlayDashPaint.setStrokeWidth(dp(0.55f));
@@ -359,18 +387,18 @@ public class KlineChartView extends View {
         overlayPointPaint.setStyle(Paint.Style.FILL);
         overlayLabelBgPaint.setColor(0xCC1D2A3F);
         overlayLabelTextPaint.setTextSize(dp(8f));
-        overlayLabelTextPaint.setFakeBoldText(true);
+        overlayLabelTextPaint.setFakeBoldText(false);
 
         aggregateCostLinePaint.setStyle(Paint.Style.STROKE);
-        aggregateCostLinePaint.setStrokeWidth(dp(0.8f));
+        aggregateCostLinePaint.setStrokeWidth(dp(0.55f));
         aggregateCostLinePaint.setColor(0xE6FFFFFF);
         aggregateCostTagPaint.setColor(0xE6FFFFFF);
         aggregateCostTagTextPaint.setColor(0xFF111827);
         aggregateCostTagTextPaint.setTextSize(dp(8.5f));
-        aggregateCostTagTextPaint.setFakeBoldText(true);
+        aggregateCostTagTextPaint.setFakeBoldText(false);
         aggregateCostHintTextPaint.setColor(0xCCE2EDFF);
         aggregateCostHintTextPaint.setTextSize(dp(8f));
-        aggregateCostHintTextPaint.setFakeBoldText(true);
+        aggregateCostHintTextPaint.setFakeBoldText(false);
         aggregateCostHintTextPaint.setTextAlign(Paint.Align.RIGHT);
 
         volumeThresholdPaint.setStyle(Paint.Style.STROKE);
@@ -397,6 +425,8 @@ public class KlineChartView extends View {
         crossLabelTextPaint.setColor(palette.textPrimary);
         popupBgPaint.setColor(applyAlpha(palette.card, 230));
         popupTextPaint.setColor(palette.textPrimary);
+        popupPositiveTextPaint.setColor(palette.rise);
+        popupNegativeTextPaint.setColor(palette.fall);
         latestPriceTagPaint.setColor(palette.primary);
         latestPriceTagTextPaint.setColor(palette.textPrimary);
         latestPriceGuidePaint.setColor(applyAlpha(palette.primary, 220));
@@ -493,6 +523,16 @@ public class KlineChartView extends View {
 
     public void setAggregateCostAnnotation(@Nullable AggregateCostAnnotation annotation) {
         aggregateCostAnnotation = annotation;
+        invalidate();
+    }
+
+    // 统一控制敏感叠加层显示，隐私关闭时保留 K 线主体但隐藏持仓相关标注。
+    public void setOverlayVisibility(boolean showPositionAnnotations,
+                                     boolean showPendingAnnotations,
+                                     boolean showAggregateCostAnnotation) {
+        this.showPositionAnnotations = showPositionAnnotations;
+        this.showPendingAnnotations = showPendingAnnotations;
+        this.showAggregateCostAnnotation = showAggregateCostAnnotation;
         invalidate();
     }
 
@@ -595,7 +635,7 @@ public class KlineChartView extends View {
             candles.addAll(items);
             Collections.sort(candles, (left, right) -> Long.compare(left.getOpenTime(), right.getOpenTime()));
         }
-        offsetCandles = 0f;
+        resetViewportToDefault();
         requestingMore = false;
         lastRequestedBefore = Long.MIN_VALUE;
         computeIndicators();
@@ -774,8 +814,13 @@ public class KlineChartView extends View {
                 false
         );
         float visibleCount = Math.max(8f, effectivePlotWidth() / Math.max(1f, slot()));
+        float rightBlankSlots = resolveRightBlankSlotsForOffset();
         int start = Math.max(0, (int) Math.floor(visibleEndFloat - visibleCount - 2f));
-        int end = Math.min(candles.size() - 1, (int) Math.ceil(visibleEndFloat + 2f));
+        int end = KlineViewportHelper.resolveVisibleRenderEndIndex(
+                candles.size(),
+                visibleEndFloat,
+                rightBlankSlots
+        );
 
         double min = Double.MAX_VALUE;
         double max = -Double.MAX_VALUE;
@@ -829,10 +874,16 @@ public class KlineChartView extends View {
         drawCandles(canvas, start, end, visiblePriceMin, visiblePriceMax, drawStep);
         drawVisibleExtremes(canvas, start, end, visiblePriceMin, visiblePriceMax);
         drawLatestPriceGuide(canvas);
-        drawOverlayAnnotations(canvas, positionAnnotations);
-        drawOverlayAnnotations(canvas, pendingAnnotations);
+        if (showPositionAnnotations) {
+            drawOverlayAnnotations(canvas, positionAnnotations);
+        }
+        if (showPendingAnnotations) {
+            drawOverlayAnnotations(canvas, pendingAnnotations);
+        }
         drawOverlayAnnotations(canvas, abnormalAnnotations);
-        drawAggregateCostAnnotation(canvas);
+        if (showAggregateCostAnnotation) {
+            drawAggregateCostAnnotation(canvas);
+        }
         int infoIndex = resolveInfoIndex(end);
         drawPriceOhlcInfo(canvas, infoIndex);
         if (showBoll) {
@@ -879,7 +930,7 @@ public class KlineChartView extends View {
         for (int i = start; i <= end; i += stride) {
             CandleEntry candle = candles.get(i);
             float x = xFor(i, visibleEndFloat);
-            if (x < priceRect.left - slot() || x > priceRect.right + slot()) {
+            if (x < priceRect.left - slot()) {
                 continue;
             }
             float yOpen = yFor(candle.getOpen(), min, max, priceRect);
@@ -1266,9 +1317,9 @@ public class KlineChartView extends View {
             float lineWidth = hasGroupHighlight
                     ? (selected ? dp(1.2f) : dp(0.35f))
                     : dp(0.55f);
-            float pointRadius = abnormalPointOnly
-                    ? (selected ? dp(2.8f) : dp(2.2f))
-                    : (hasGroupHighlight ? (selected ? dp(2.4f) : dp(1.1f)) : dp(1.7f));
+            float pointRadius = hasGroupHighlight
+                    ? (selected ? dp(2.4f) : dp(1.1f))
+                    : dp(1.7f);
             if (!abnormalPointOnly) {
                 overlayDashPaint.setColor(lineColor);
                 overlayDashPaint.setStrokeWidth(lineWidth);
@@ -1282,7 +1333,19 @@ public class KlineChartView extends View {
                 continue;
             }
             overlayPointPaint.setColor(lineColor);
-            canvas.drawCircle(x, y, pointRadius, overlayPointPaint);
+            if (abnormalPointOnly) {
+                float capsuleHalfWidth = selected ? dp(2.6f) : dp(2.2f);
+                float capsuleHalfHeight = dp(selected ? 4.2f : 3.4f) + dp(7.2f) * annotation.intensity;
+                RectF capsule = new RectF(
+                        x - capsuleHalfWidth,
+                        y - capsuleHalfHeight,
+                        x + capsuleHalfWidth,
+                        y + capsuleHalfHeight
+                );
+                canvas.drawRoundRect(capsule, capsuleHalfWidth, capsuleHalfWidth, overlayPointPaint);
+            } else {
+                canvas.drawCircle(x, y, pointRadius, overlayPointPaint);
+            }
 
             if (!abnormalPointOnly && !annotation.label.isEmpty()) {
                 drawOverlayLabel(canvas, annotation.label, y, lineColor, selected);
@@ -1301,7 +1364,7 @@ public class KlineChartView extends View {
             return Float.NaN;
         }
         if (isAbnormalAnnotation(annotation)) {
-            return priceRect.bottom - dp(3.6f);
+            return priceRect.bottom - dp(8f);
         }
         return yFor(annotation.price, visiblePriceMin, visiblePriceMax, priceRect);
     }
@@ -1333,20 +1396,10 @@ public class KlineChartView extends View {
         String text = aggregateCostAnnotation.priceLabel.isEmpty()
                 ? FormatUtils.formatPrice(aggregateCostAnnotation.price)
                 : aggregateCostAnnotation.priceLabel;
-        float padX = dp(5f);
-        float padY = dp(3f);
-        float boxH = dp(14f);
-        float boxW = aggregateCostTagTextPaint.measureText(text) + padX * 2f;
-        float left = priceRect.right + dp(3f);
-        float top = clamp(y - boxH / 2f, priceRect.top, priceRect.bottom - boxH);
-        RectF box = new RectF(left, top, left + boxW, top + boxH);
-        canvas.drawRoundRect(box, dp(3f), dp(3f), aggregateCostTagPaint);
-        canvas.drawText(text, box.left + padX, box.bottom - padY, aggregateCostTagTextPaint);
-        if (!aggregateCostAnnotation.symbolLabel.isEmpty()) {
-            String hint = aggregateCostAnnotation.symbolLabel + " 成本";
-            float hintBaseline = clamp(y - dp(6f), priceRect.top + dp(8f), priceRect.bottom - dp(2f));
-            canvas.drawText(hint, priceRect.right - dp(2f), hintBaseline, aggregateCostHintTextPaint);
-        }
+        String hint = "成本线：" + text;
+        aggregateCostHintTextPaint.setTextAlign(Paint.Align.CENTER);
+        float hintBaseline = clamp(y - dp(5f), priceRect.top + dp(8f), priceRect.bottom - dp(2f));
+        canvas.drawText(hint, priceRect.centerX(), hintBaseline, aggregateCostHintTextPaint);
     }
 
     private void drawVolumeThreshold(Canvas canvas, double maxVolume) {
@@ -1470,7 +1523,7 @@ public class KlineChartView extends View {
             float valueWidth = popupTextPaint.measureText(value);
             float valueX = box.right - pad - valueWidth;
             canvas.drawText(leftLabels[i], labelX, baseline, popupTextPaint);
-            canvas.drawText(value, valueX, baseline, popupTextPaint);
+            canvas.drawText(value, valueX, baseline, resolvePopupValuePaint(i, hasCandle ? candle.getClose() - candle.getOpen() : 0d));
         }
     }
 
@@ -2195,6 +2248,27 @@ public class KlineChartView extends View {
         return candleWidth + candleGap;
     }
 
+    // 将视口恢复到默认状态，供首次进入、切换标的和切换周期时复位。
+    private void resetViewportToDefault() {
+        candleWidth = dp(DEFAULT_CANDLE_WIDTH_DP);
+        verticalScale = 1f;
+        offsetCandles = 0f;
+    }
+
+    // 十字弹窗中的涨跌金额按正负切换颜色，其余字段沿用默认文字色。
+    private Paint resolvePopupValuePaint(int rowIndex, double deltaValue) {
+        if (rowIndex != 5) {
+            return popupTextPaint;
+        }
+        if (deltaValue > 0d) {
+            return popupPositiveTextPaint;
+        }
+        if (deltaValue < 0d) {
+            return popupNegativeTextPaint;
+        }
+        return popupTextPaint;
+    }
+
     private void requestDisallow(boolean disallow) {
         if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(disallow);
     }
@@ -2226,25 +2300,27 @@ public class KlineChartView extends View {
             float spanYDelta = detector.getCurrentSpanY() - detector.getPreviousSpanY();
             float absX = Math.abs(spanXDelta);
             float absY = Math.abs(spanYDelta);
-            boolean verticalDominant = absY > absX * 1.12f;
-            boolean horizontalDominant = absX > absY * 1.12f;
-            if (verticalDominant) {
-                float rawYScale = detector.getPreviousSpanY() <= 1e-3f
-                        ? detector.getScaleFactor()
-                        : detector.getCurrentSpanY() / detector.getPreviousSpanY();
-                float smoothYScale = 1f + (rawYScale - 1f) * 0.5f;
+            ChartScaleGestureResolver.Mode scaleMode = ChartScaleGestureResolver.resolveMode(absX, absY);
+            float rawYScale = detector.getPreviousSpanY() <= 1e-3f
+                    ? detector.getScaleFactor()
+                    : detector.getCurrentSpanY() / detector.getPreviousSpanY();
+            float smoothYScale = 1f + (rawYScale - 1f) * 0.5f;
+            if (scaleMode == ChartScaleGestureResolver.Mode.VERTICAL) {
                 verticalScale = clamp(verticalScale * smoothYScale, MIN_VERTICAL_SCALE, MAX_VERTICAL_SCALE);
                 requestFrame();
                 return true;
             }
             float beforeSlot = slot();
             int focusIndex = xToIndex(detector.getFocusX(), visibleEndFloat);
-            float rawScale = horizontalDominant
+            float rawScale = scaleMode == ChartScaleGestureResolver.Mode.HORIZONTAL
                     ? (detector.getPreviousSpanX() <= 1e-3f
                     ? detector.getScaleFactor()
                     : detector.getCurrentSpanX() / detector.getPreviousSpanX())
                     : detector.getScaleFactor();
             float smoothScale = 1f + (rawScale - 1f) * 0.6f;
+            if (scaleMode == ChartScaleGestureResolver.Mode.DIAGONAL) {
+                verticalScale = clamp(verticalScale * smoothYScale, MIN_VERTICAL_SCALE, MAX_VERTICAL_SCALE);
+            }
             candleWidth = clamp(candleWidth * smoothScale, minWidth, maxWidth);
             float afterSlot = slot();
             if (focusIndex >= 0) {

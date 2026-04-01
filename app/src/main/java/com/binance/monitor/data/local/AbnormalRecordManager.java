@@ -1,3 +1,7 @@
+/*
+ * 异常记录本地存储管理器，负责把异常事件落盘并提供列表观察能力。
+ * 主页面、图表页和监控服务都通过这里共享异常记录数据。
+ */
 package com.binance.monitor.data.local;
 
 import android.content.Context;
@@ -23,7 +27,8 @@ import java.util.UUID;
 
 public class AbnormalRecordManager {
 
-    private static final int MAX_RECORDS = 500;
+    // 图表页需要保留更长的异常历史，避免圆点因为本地缓存过小而缺失。
+    private static final int MAX_RECORDS = 5000;
     private static volatile AbnormalRecordManager instance;
 
     private final File storeFile;
@@ -55,6 +60,18 @@ public class AbnormalRecordManager {
         trimLocked();
         persistLocked();
         publishLocked();
+    }
+
+    // 仅在本地不存在相同记录时才写入，避免服务端增量同步导致重复项。
+    public synchronized boolean addRecordIfAbsent(AbnormalRecord record) {
+        if (record == null || containsRecordIdLocked(record.getId())) {
+            return false;
+        }
+        cache.add(0, record);
+        trimLocked();
+        persistLocked();
+        publishLocked();
+        return true;
     }
 
     public synchronized AbnormalRecord createRecord(String symbol,
@@ -97,6 +114,19 @@ public class AbnormalRecordManager {
         while (cache.size() > MAX_RECORDS) {
             cache.remove(cache.size() - 1);
         }
+    }
+
+    // 判断当前缓存里是否已经存在同一条异常记录。
+    private boolean containsRecordIdLocked(String recordId) {
+        if (recordId == null || recordId.trim().isEmpty()) {
+            return false;
+        }
+        for (AbnormalRecord item : cache) {
+            if (item != null && recordId.equals(item.getId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void publishLocked() {

@@ -25,9 +25,11 @@ public class HoldingDurationDistributionView extends View {
     private final Paint axisPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint barPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint winBarPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint lossBarPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint valuePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint emptyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private boolean masked;
 
     public HoldingDurationDistributionView(Context context) {
         this(context, null);
@@ -43,7 +45,7 @@ public class HoldingDurationDistributionView extends View {
         gridPaint.setStyle(Paint.Style.STROKE);
         labelPaint.setTextSize(dp(8f));
         labelPaint.setTextAlign(Paint.Align.CENTER);
-        valuePaint.setTextSize(dp(8.2f));
+        valuePaint.setTextSize(dp(7.8f));
         valuePaint.setTextAlign(Paint.Align.CENTER);
         emptyPaint.setTextAlign(Paint.Align.CENTER);
         emptyPaint.setTextSize(dp(10f));
@@ -59,7 +61,8 @@ public class HoldingDurationDistributionView extends View {
         gridPaint.setStrokeWidth(dp(0.8f));
         labelPaint.setColor(palette.textSecondary);
         valuePaint.setColor(palette.textPrimary);
-        barPaint.setColor(applyAlpha(palette.primary, 220));
+        winBarPaint.setColor(applyAlpha(palette.rise, 225));
+        lossBarPaint.setColor(applyAlpha(palette.fall, 225));
         emptyPaint.setColor(palette.textSecondary);
         invalidate();
     }
@@ -73,6 +76,15 @@ public class HoldingDurationDistributionView extends View {
         invalidate();
     }
 
+    // 根据隐私状态切换为占位态。
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
+        invalidate();
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -82,11 +94,16 @@ public class HoldingDurationDistributionView extends View {
             return;
         }
 
-        float left = dp(16f);
-        float right = width - dp(12f);
+        float left = dp(22f);
+        float right = width - dp(16f);
         float top = dp(12f);
-        float bottom = height - dp(34f);
+        float bottom = height - dp(24f);
         drawFrame(canvas, left, top, right, bottom);
+
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
 
         if (buckets.isEmpty()) {
             canvas.drawText("暂无持仓时长数据", width / 2f, height / 2f, emptyPaint);
@@ -99,19 +116,37 @@ public class HoldingDurationDistributionView extends View {
         }
 
         float slotWidth = (right - left) / Math.max(1, buckets.size());
-        float barWidth = Math.max(dp(12f), slotWidth * 0.52f);
+        float barWidth = Math.max(dp(12f), slotWidth * 0.48f);
         for (int i = 0; i < buckets.size(); i++) {
             CurveAnalyticsHelper.DurationBucket bucket = buckets.get(i);
             float centerX = left + slotWidth * i + slotWidth / 2f;
-            float barTop = bottom - (bottom - top - dp(8f)) * (bucket.getCount() / (float) maxCount);
-            RectF rect = new RectF(centerX - barWidth / 2f, barTop, centerX + barWidth / 2f, bottom);
-            canvas.drawRoundRect(rect, dp(2f), dp(2f), barPaint);
-            canvas.drawText(String.valueOf(bucket.getCount()), centerX, Math.max(top + dp(10f), barTop - dp(4f)), valuePaint);
-            drawMultilineLabel(canvas, bucket.getLabel(), centerX, bottom + dp(12f));
+            float usableHeight = bottom - top - dp(14f);
+            float totalTop = bottom - usableHeight * (bucket.getCount() / (float) maxCount);
+            float winTop = bottom - usableHeight * (bucket.getWinCount() / (float) maxCount);
+            float lossTop = bottom - usableHeight * (bucket.getLossCount() / (float) maxCount);
+            if (bucket.getLossCount() > 0) {
+                RectF lossRect = new RectF(centerX - barWidth / 2f, lossTop, centerX + barWidth / 2f, bottom);
+                canvas.drawRect(lossRect, lossBarPaint);
+            }
+            if (bucket.getWinCount() > 0) {
+                float winBottom = bucket.getLossCount() > 0 ? lossTop : bottom;
+                RectF winRect = new RectF(centerX - barWidth / 2f, Math.min(winTop, winBottom), centerX + barWidth / 2f, winBottom);
+                canvas.drawRect(winRect, winBarPaint);
+            }
+            canvas.drawText(
+                    String.format(Locale.getDefault(), "%d(%d/%d)",
+                            bucket.getCount(),
+                            bucket.getWinCount(),
+                            bucket.getLossCount()),
+                    centerX,
+                    Math.max(top + dp(10f), totalTop - dp(4f)),
+                    valuePaint);
+            drawSingleLineLabel(canvas, bucket.getLabel(), centerX, bottom + dp(12f));
         }
 
         canvas.drawText(String.format(Locale.getDefault(), "最高 %d 笔", maxCount),
-                left + dp(24f), top + dp(2f), labelPaint);
+                left + dp(22f), top + dp(2f), labelPaint);
+        canvas.drawText("总(盈/亏)", right - dp(26f), top + dp(2f), labelPaint);
     }
 
     // 绘制基础网格。
@@ -124,18 +159,12 @@ public class HoldingDurationDistributionView extends View {
         canvas.drawLine(left, bottom, right, bottom, axisPaint);
     }
 
-    // 绘制两行桶标签，避免横向挤压太重。
-    private void drawMultilineLabel(Canvas canvas, String label, float centerX, float baselineY) {
+    // 绘制单行桶标签，避免横轴文案换行。
+    private void drawSingleLineLabel(Canvas canvas, String label, float centerX, float baselineY) {
         if (label == null || label.trim().isEmpty()) {
             return;
         }
-        String[] parts = label.replace("-", "-\n").split("\n");
-        if (parts.length <= 1) {
-            canvas.drawText(label, centerX, baselineY, labelPaint);
-            return;
-        }
-        canvas.drawText(parts[0], centerX, baselineY - dp(2f), labelPaint);
-        canvas.drawText(parts[1], centerX, baselineY + dp(8f), labelPaint);
+        canvas.drawText(label, centerX, baselineY, labelPaint);
     }
 
     // dp 转像素。

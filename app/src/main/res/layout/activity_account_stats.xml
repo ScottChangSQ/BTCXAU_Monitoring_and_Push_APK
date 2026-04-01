@@ -6,13 +6,17 @@
     android:background="@drawable/bg_app"
     android:orientation="vertical">
 
-    <androidx.core.widget.NestedScrollView
-        android:id="@+id/scrollAccountStats"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:padding="@dimen/page_horizontal_padding">
+        android:layout_weight="1">
+
+        <androidx.core.widget.NestedScrollView
+            android:id="@+id/scrollAccountStats"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:padding="@dimen/page_horizontal_padding">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -28,7 +32,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/card_content_padding">
+                    android:paddingTop="@dimen/card_content_padding"
+                    android:paddingBottom="@dimen/card_content_padding"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -44,6 +51,18 @@
                             android:text="账户总览（账号）"
                             android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
+                        <androidx.appcompat.widget.AppCompatImageView
+                            android:id="@+id/ivAccountPrivacyToggle"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:layout_marginEnd="6dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:padding="6dp"
+                            android:tint="@color/text_secondary"
+                            app:srcCompat="@drawable/ic_privacy_visible" />
+
                         <TextView
                             android:id="@+id/tvAccountConnectionStatus"
                             android:layout_width="wrap_content"
@@ -55,8 +74,7 @@
                             android:paddingVertical="3dp"
                             android:text="未连接账户"
                             android:textColor="@color/text_secondary"
-                            android:textSize="11sp"
-                            android:textStyle="bold" />
+                            android:textSize="11sp" />
                     </LinearLayout>
 
                     <TextView
@@ -87,7 +105,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/card_content_padding">
+                    android:paddingTop="@dimen/card_content_padding"
+                    android:paddingBottom="@dimen/card_content_padding"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -95,7 +116,6 @@
                         android:text="净值曲线 / 结余曲线"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
-                        android:textStyle="bold"
                         android:visibility="gone" />
 
                     <TextView
@@ -272,11 +292,10 @@
                             android:id="@+id/tvManualDatePickerTitle"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="sans-serif-medium"
+                            android:fontFamily="sans-serif"
                             android:text="选择日期"
                             android:textColor="@color/text_primary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
+                            android:textSize="12sp" />
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -338,7 +357,7 @@
                         android:id="@+id/equityCurveView"
                         android:layout_width="match_parent"
                         android:layout_height="220dp"
-                        android:layout_marginTop="8dp" />
+                        android:layout_marginTop="6dp" />
 
                     <TextView
                         android:id="@+id/tvCurveMeta"
@@ -353,13 +372,13 @@
                         android:id="@+id/drawdownChartView"
                         android:layout_width="match_parent"
                         android:layout_height="132dp"
-                        android:layout_marginTop="4dp" />
+                        android:layout_marginTop="2dp" />
 
                     <com.binance.monitor.ui.account.DailyReturnChartView
                         android:id="@+id/dailyReturnChartView"
                         android:layout_width="match_parent"
                         android:layout_height="132dp"
-                        android:layout_marginTop="2dp" />
+                        android:layout_marginTop="1dp" />
 
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/recyclerCurveIndicators"
@@ -380,7 +399,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/card_content_padding">
+                    android:paddingTop="@dimen/card_content_padding"
+                    android:paddingBottom="@dimen/card_content_padding"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -394,67 +416,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:text="区间收益（月)"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
-
-                    <com.google.android.material.button.MaterialButtonToggleGroup
-                        android:id="@+id/toggleReturnStatsMode"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        app:singleSelection="true">
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnReturnDay"
-                            android:layout_width="0dp"
-                            android:layout_height="@dimen/control_height_md"
-                            android:layout_weight="1"
-                            android:ellipsize="none"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:minWidth="0dp"
-                            android:text="日收益"
-                            android:textAllCaps="false"
-                            android:textSize="10sp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnReturnMonth"
-                            android:layout_width="0dp"
-                            android:layout_height="@dimen/control_height_md"
-                            android:layout_weight="1"
-                            android:ellipsize="none"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:minWidth="0dp"
-                            android:text="月收益"
-                            android:textAllCaps="false"
-                            android:textSize="10sp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnReturnYear"
-                            android:layout_width="0dp"
-                            android:layout_height="@dimen/control_height_md"
-                            android:layout_weight="1"
-                            android:ellipsize="none"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:minWidth="0dp"
-                            android:text="年收益"
-                            android:textAllCaps="false"
-                            android:textSize="10sp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnReturnStage"
-                            android:layout_width="0dp"
-                            android:layout_height="@dimen/control_height_md"
-                            android:layout_weight="1"
-                            android:ellipsize="none"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:minWidth="0dp"
-                            android:text="阶段收益"
-                            android:textAllCaps="false"
-                            android:textSize="10sp" />
-                    </com.google.android.material.button.MaterialButtonToggleGroup>
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel"
+                        android:visibility="gone" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -463,24 +426,72 @@
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
 
-                        <TextView
-                            android:id="@+id/tvReturnsPeriod"
+                        <com.google.android.material.button.MaterialButtonToggleGroup
+                            android:id="@+id/toggleReturnStatsMode"
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/control_height_md"
-                            android:layout_weight="0.92"
-                            android:background="@drawable/bg_inline_button"
-                            android:gravity="center_vertical"
-                            android:paddingHorizontal="10dp"
-                            android:text="统计日期"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1.75"
+                            app:singleSelection="true">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnReturnDay"
+                                android:layout_width="0dp"
+                                android:layout_height="@dimen/control_height_md"
+                                android:layout_weight="1"
+                                android:ellipsize="none"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:minWidth="0dp"
+                                android:text="日收益"
+                                android:textAllCaps="false"
+                                android:textSize="10sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnReturnMonth"
+                                android:layout_width="0dp"
+                                android:layout_height="@dimen/control_height_md"
+                                android:layout_weight="1"
+                                android:ellipsize="none"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:minWidth="0dp"
+                                android:text="月收益"
+                                android:textAllCaps="false"
+                                android:textSize="10sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnReturnYear"
+                                android:layout_width="0dp"
+                                android:layout_height="@dimen/control_height_md"
+                                android:layout_weight="1"
+                                android:ellipsize="none"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:minWidth="0dp"
+                                android:text="年收益"
+                                android:textAllCaps="false"
+                                android:textSize="10sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnReturnStage"
+                                android:layout_width="0dp"
+                                android:layout_height="@dimen/control_height_md"
+                                android:layout_weight="1"
+                                android:ellipsize="none"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:minWidth="0dp"
+                                android:text="阶段收益"
+                                android:textAllCaps="false"
+                                android:textSize="10sp" />
+                        </com.google.android.material.button.MaterialButtonToggleGroup>
 
                         <com.google.android.material.button.MaterialButtonToggleGroup
                             android:id="@+id/toggleReturnsValueMode"
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/control_height_md"
-                            android:layout_marginStart="6dp"
-                            android:layout_weight="1.08"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="0.85"
                             app:singleSelection="true">
 
                             <com.google.android.material.button.MaterialButton
@@ -505,6 +516,18 @@
                         </com.google.android.material.button.MaterialButtonToggleGroup>
                     </LinearLayout>
 
+                    <TextView
+                        android:id="@+id/tvReturnsPeriod"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/control_height_md"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/bg_inline_button"
+                        android:gravity="center_vertical"
+                        android:paddingHorizontal="10dp"
+                        android:text="统计日期"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
                     <LinearLayout
                         android:id="@+id/layoutReturnPeriodPickerPanel"
                         android:layout_width="match_parent"
@@ -519,11 +542,10 @@
                             android:id="@+id/tvReturnPeriodPickerTitle"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="sans-serif-medium"
+                            android:fontFamily="sans-serif"
                             android:text="选择统计年月"
                             android:textColor="@color/text_primary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
+                            android:textSize="12sp" />
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -610,7 +632,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/card_content_padding">
+                    android:paddingTop="@dimen/card_content_padding"
+                    android:paddingBottom="@dimen/card_content_padding"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -624,8 +649,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
                         android:textColor="@color/text_primary"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
+                        android:textSize="14sp" />
 
                     <TextView
                         android:id="@+id/tvPositionAggregateTitle"
@@ -865,8 +889,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="0次"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="12sp"
-                                    android:textStyle="bold" />
+                                    android:textSize="12sp" />
                             </LinearLayout>
 
                             <LinearLayout
@@ -879,7 +902,7 @@
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="结余："
+                                    android:text="库存费："
                                     android:textColor="@color/text_secondary"
                                     android:textSize="11sp" />
 
@@ -889,8 +912,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="$0.00"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="12sp"
-                                    android:textStyle="bold" />
+                                    android:textSize="12sp" />
                             </LinearLayout>
                         </LinearLayout>
 
@@ -921,8 +943,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="$0.00"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="12sp"
-                                    android:textStyle="bold" />
+                                    android:textSize="12sp" />
                             </LinearLayout>
 
                             <LinearLayout
@@ -935,7 +956,7 @@
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="库存费："
+                                    android:text="结余："
                                     android:textColor="@color/text_secondary"
                                     android:textSize="11sp" />
 
@@ -945,8 +966,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="$0.00"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="12sp"
-                                    android:textStyle="bold" />
+                                    android:textSize="12sp" />
                             </LinearLayout>
                         </LinearLayout>
                     </LinearLayout>
@@ -1022,8 +1042,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
+                        android:textSize="12sp" />
 
                     <TextView
                         android:id="@+id/tvTradePnlLegend"
@@ -1045,7 +1064,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_12"
                         android:text="全周期历史交易分布"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp" />
 
                     <com.binance.monitor.ui.account.TradeDistributionScatterView
                         android:id="@+id/tradeDistributionScatterView"
@@ -1058,7 +1078,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_12"
                         android:text="全周期持仓时间分布"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp" />
 
                     <com.binance.monitor.ui.account.HoldingDurationDistributionView
                         android:id="@+id/holdingDurationDistributionView"
@@ -1068,7 +1089,26 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
+        </androidx.core.widget.NestedScrollView>
+
+        <TextView
+            android:id="@+id/tvLoginSuccessBanner"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:alpha="0"
+            android:clickable="false"
+            android:focusable="false"
+            android:gravity="center"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:text="@string/account_login_success_banner"
+            android:textColor="@color/white"
+            android:textSize="15sp"
+            android:translationY="8dp"
+            android:visibility="gone" />
+
+    </FrameLayout>
 
     <LinearLayout
         android:id="@+id/tabBar"
@@ -1087,8 +1127,7 @@
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabMarketChart"
@@ -1099,8 +1138,7 @@
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabAccountStats"
@@ -1111,8 +1149,7 @@
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/white"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabSettings"
@@ -1123,8 +1160,7 @@
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
     </LinearLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView

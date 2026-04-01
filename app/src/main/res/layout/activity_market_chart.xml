@@ -6,15 +6,19 @@
     android:background="@drawable/bg_app"
     android:orientation="vertical">
 
-    <androidx.core.widget.NestedScrollView
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingStart="2dp"
-        android:paddingTop="2dp"
-        android:paddingEnd="2dp"
-        android:paddingBottom="2dp">
+        android:layout_weight="1">
+
+        <androidx.core.widget.NestedScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingStart="2dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="2dp"
+            android:paddingBottom="2dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -243,8 +247,7 @@
                         android:includeFontPadding="false"
                         android:text="--秒/--秒"
                         android:textColor="@color/text_secondary"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
+                        android:textSize="11sp" />
 
                     <LinearLayout
                         android:layout_width="wrap_content"
@@ -481,8 +484,7 @@
                     android:layout_height="wrap_content"
                     android:text="当前持仓"
                     android:textColor="#E6EEF9"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
+                    android:textSize="13sp" />
 
                 <TextView
                     android:id="@+id/tvChartPositionSummary"
@@ -491,8 +493,7 @@
                     android:layout_marginTop="4dp"
                     android:text="持仓盈亏: -- | 持仓收益率: --"
                     android:textColor="#8FA6C7"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
+                    android:textSize="13sp" />
 
                 <TextView
                     android:id="@+id/tvChartPositionAggregateTitle"
@@ -562,7 +563,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="4dp" />
         </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
+        </androidx.core.widget.NestedScrollView>
+
+    </FrameLayout>
 
     <LinearLayout
         android:id="@+id/tabBar"
@@ -570,58 +573,51 @@
         android:layout_height="@dimen/bottom_nav_height"
         android:background="@drawable/bg_bottom_nav"
         android:orientation="horizontal"
-        android:padding="@dimen/space_8">
+        android:padding="0dp">
 
         <TextView
             android:id="@+id/tabMarketMonitor"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_unselected"
+            android:background="@drawable/bg_tab_wechat_unselected"
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabMarketChart"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_selected"
+            android:background="@drawable/bg_tab_wechat_selected"
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/white"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabAccountStats"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_unselected"
+            android:background="@drawable/bg_tab_wechat_unselected"
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabSettings"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_8"
             android:layout_weight="1"
-            android:background="@drawable/bg_chip_unselected"
+            android:background="@drawable/bg_tab_wechat_unselected"
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
     </LinearLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView

@@ -36,6 +36,7 @@ public final class AppConstants {
     public static final long STALE_RECONNECT_COOLDOWN_MS = 60_000L;
     public static final long NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000L;
     public static final long MERGE_WINDOW_MS = 4000L;
+    public static final long ABNORMAL_SYNC_INTERVAL_MS = 8000L;
 
     public static final String SERVICE_CHANNEL_ID = "monitor_service_channel";
     public static final String ALERT_CHANNEL_ID = "monitor_alert_channel";

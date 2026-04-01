@@ -9,13 +9,19 @@
 - [app/src/main/java/com/binance/monitor/data/remote/WebSocketManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/WebSocketManager.java)
   Binance WebSocket 管理器，负责通过韩国服务器的 `/binance-ws` 订阅实时行情。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
-  图表页入口，负责 K 线请求调度、周期切换、指标开关和图表刷新。
+  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏和右上角刷新/延迟信息。
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java)
-  K 线绘制控件，负责主图、副图、指标和右侧留白绘制。
+  K 线绘制控件，负责主图、副图、指标、右侧留白、异常点胶囊、成本线和缩放交互。
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java)
   图表视口计算工具，负责 K 线横向边界和右侧留白相关数学逻辑。
+- [app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java)
+  倒计时文案工具，负责拼接“剩余秒数/周期秒数 延迟ms”。
+- [app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java)
+  缩放方向判定工具，负责把双指手势分成横向、纵向和斜向整体缩放。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
-  账户统计页入口，负责账户概览、收益统计、净值/结余主图、附图、交易分布、交易记录和账户标题展示。
+  账户统计页入口，负责账户概览、收益统计、净值/结余主图、附图、交易分布、交易记录、隐私小眼睛和登录成功提示动画。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountConnectionTransitionHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountConnectionTransitionHelper.java)
+  账户连接状态过渡工具，负责判断何时展示一次性的登录成功提示。
 - [app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java)
   净值/结余曲线控件，负责绘制账户曲线，并用高对比样式标记当前周期下的最大回撤区间。
 - [app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java)
@@ -43,9 +49,11 @@
 - [app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java)
   设置首页目录，只负责显示设置分类入口。
 - [app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java)
-  设置二级页，负责显示悬浮窗、网关地址、主题、Tab、缓存管理等具体设置。
+  设置二级页，负责显示悬浮窗、网关地址、主题、Tab、缓存管理等具体设置，并去掉重复隐私入口。
 - [app/src/main/java/com/binance/monitor/data/local/ConfigManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/ConfigManager.java)
   本地配置中心，负责保存主题、悬浮窗、Tab、网关地址和其他持久化开关。
+- [app/src/main/java/com/binance/monitor/ui/theme/UiPaletteManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/theme/UiPaletteManager.java)
+  主题与控件样式管理器，负责页面底色、按钮、复选控件和整体方正风格。
 - [app/src/main/java/com/binance/monitor/util/GatewayUrlResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/util/GatewayUrlResolver.java)
   网关地址标准化工具，把用户输入整理成统一可用的基础地址。
 - [app/src/main/java/com/binance/monitor/util/NotificationHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/util/NotificationHelper.java)
@@ -69,10 +77,16 @@
   把行情和持仓聚合成统一快照，再一次性刷新悬浮窗。
 - `MarketChartActivity` -> `ChartHistoryRepository` -> Room
   先读本地历史，再按需补网络数据。
+- `MarketChartActivity` -> `ChartRefreshMetaFormatter`
+  把自动刷新倒计时和最近一次成功请求延迟整理成统一文案。
+- `KlineChartView` -> `ChartScaleGestureResolver`
+  根据双指跨度变化决定走横向、纵向还是整体缩放。
 - `AccountStatsPreloadManager` -> `Mt5BridgeGatewayClient` -> `server_v2.py`
   后台轻量同步账户数据，前台页面打开时补完整数据。
 - `AccountStatsBridgeActivity` -> `Mt5BridgeGatewayClient`
   获取账户概览、持仓、挂单、交易记录、权益曲线并更新界面。
+- `AccountStatsBridgeActivity` -> `AccountConnectionTransitionHelper`
+  判断账户连接是否从未连接切到已连接，决定是否播放登录成功提示。
 - `AccountStatsBridgeActivity` -> `CurveAnalyticsHelper` -> `EquityCurveView` / `DrawdownChartView` / `DailyReturnChartView` / `TradeDistributionScatterView` / `HoldingDurationDistributionView`
   先把曲线和交易记录转成统一统计结果，再驱动主图、副图和两张分布图。
 - `SettingsActivity` -> `SettingsSectionActivity`
@@ -92,9 +106,14 @@
 - 悬浮窗拖动增加长按触发、位移阈值和帧节流，减少拖动卡顿和误触。
 - 图表历史、历史交易、账户摘要、持仓快照统一切到 Room，满足“拉过就长期保留”的要求。
 - 图表刷新前不再清空已显示 K 线，避免刷新瞬间白屏。
+- 行情持仓页的隐私隐藏改为“保留 K 线主体、只隐藏持仓相关叠加层 + 当前持仓模块打码”，避免整页遮罩把行情走势一起盖掉。
+- 隐私入口统一收口到账户统计页的小眼睛，设置页不再保留重复开关，避免两套入口互相打架。
+- K 线缩放增加斜向整体缩放分支，解决双指斜拉时只能勉强落到横向或纵向的问题。
 - `MA / EMA` 默认关闭，降低初始图表干扰。
 - 设置页拆成“目录首页 + 二级详情页”，提升设置层级清晰度。
-- 月收益表改为“左侧年份整块 + 右侧双行月份 + 横向滚动”，解决年份不对齐和百分比显示不全的问题。
+- 主题递归样式不再把 `Switch / RadioButton / CheckBox` 当普通按钮套背景，解决 OR / AND、启用开关下方方框背景问题。
+- 登录成功提示只在“未连接 -> 已连接”时触发一次，避免自动刷新期间重复弹出。
+- 月收益表改为“左侧年份整块 + 右侧三行月份 + 横向滚动”，解决年份不对齐和百分比显示不全的问题。
 - MT5 网关曲线改为“成交 + 持仓 + 价格”重放，解决净值与结余长期重合的问题。
 - 账户统计页把最大回撤、回撤附图、日收益率和交易分布统一建立在同一套净值口径上，避免不同模块口径不一致。
 - 异常交易提醒先在 App 端提升为更强系统通知；服务器端异常判断迁移后续再评估，不在本轮硬塞进去。

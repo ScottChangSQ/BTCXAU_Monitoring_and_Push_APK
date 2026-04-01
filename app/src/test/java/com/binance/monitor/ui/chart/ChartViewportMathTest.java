@@ -12,6 +12,11 @@ import org.junit.Test;
 public class ChartViewportMathTest {
 
     @Test
+    public void resolveDefaultRightBlankSlots_matchesReferenceDockingBlank() {
+        assertEquals(12.5f, ChartViewportMath.resolveDefaultRightBlankSlots(), 0.0001f);
+    }
+
+    @Test
     public void resolveVisibleEndFloatIncludesRightBlankSlots() {
         assertEquals(105f, ChartViewportMath.resolveVisibleEndFloat(100, 0f, 6f), 0.0001f);
     }

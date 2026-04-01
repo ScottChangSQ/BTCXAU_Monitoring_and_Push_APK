@@ -193,6 +193,8 @@ public final class CurveAnalyticsHelper {
         private final long minDurationMs;
         private final long maxDurationMs;
         private int count;
+        private int winCount;
+        private int lossCount;
 
         public DurationBucket(String label, long minDurationMs, long maxDurationMs) {
             this.label = label;
@@ -208,12 +210,25 @@ public final class CurveAnalyticsHelper {
             return count;
         }
 
+        public int getWinCount() {
+            return winCount;
+        }
+
+        public int getLossCount() {
+            return lossCount;
+        }
+
         private boolean matches(long durationMs) {
             return durationMs > minDurationMs && durationMs <= maxDurationMs;
         }
 
-        private void increment() {
+        private void increment(double profitWithStorage) {
             count++;
+            if (profitWithStorage >= 0d) {
+                winCount++;
+            } else {
+                lossCount++;
+            }
         }
     }
 
@@ -332,13 +347,13 @@ public final class CurveAnalyticsHelper {
 
     public static List<DurationBucket> buildHoldingDurationDistribution(@Nullable List<TradeRecordItem> trades) {
         List<DurationBucket> buckets = new ArrayList<>();
-        buckets.add(new DurationBucket("0-30分钟", 0L, HALF_HOUR_MS));
-        buckets.add(new DurationBucket("30分钟-4小时", HALF_HOUR_MS, FOUR_HOURS_MS));
-        buckets.add(new DurationBucket("4-12小时", FOUR_HOURS_MS, TWELVE_HOURS_MS));
-        buckets.add(new DurationBucket("12-24小时", TWELVE_HOURS_MS, ONE_DAY_MS));
+        buckets.add(new DurationBucket("0-30分", 0L, HALF_HOUR_MS));
+        buckets.add(new DurationBucket("30分-4时", HALF_HOUR_MS, FOUR_HOURS_MS));
+        buckets.add(new DurationBucket("4-12时", FOUR_HOURS_MS, TWELVE_HOURS_MS));
+        buckets.add(new DurationBucket("12-24时", TWELVE_HOURS_MS, ONE_DAY_MS));
         buckets.add(new DurationBucket("1-3天", ONE_DAY_MS, THREE_DAYS_MS));
         buckets.add(new DurationBucket("3-7天", THREE_DAYS_MS, SEVEN_DAYS_MS));
-        buckets.add(new DurationBucket("7天以上", SEVEN_DAYS_MS, Long.MAX_VALUE));
+        buckets.add(new DurationBucket("7天+", SEVEN_DAYS_MS, Long.MAX_VALUE));
         if (trades == null || trades.isEmpty()) {
             return buckets;
         }
@@ -347,9 +362,10 @@ public final class CurveAnalyticsHelper {
                 continue;
             }
             long durationMs = resolveHoldingDuration(item);
+            double profitWithStorage = item.getProfit() + item.getStorageFee();
             for (DurationBucket bucket : buckets) {
                 if (bucket.matches(durationMs)) {
-                    bucket.increment();
+                    bucket.increment(profitWithStorage);
                     break;
                 }
             }

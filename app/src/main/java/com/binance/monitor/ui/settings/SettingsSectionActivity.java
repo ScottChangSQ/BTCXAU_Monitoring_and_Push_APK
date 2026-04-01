@@ -114,7 +114,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         }
         tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
         tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        tab.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        tab.setTypeface(null, Typeface.NORMAL);
         tab.setTextSize(13f);
     }
 
@@ -321,7 +321,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.switchTabMarketChart.setChecked(viewModel.isTabMarketChartVisible());
         binding.switchTabAccountStats.setChecked(viewModel.isTabAccountStatsVisible());
         binding.etMt5GatewayUrl.setText(viewModel.getMt5GatewayBaseUrl());
-        binding.tvMt5GatewayCurrent.setText(viewModel.getMt5GatewayBaseUrl());
         applying = false;
     }
 
@@ -417,7 +416,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         String normalized = viewModel.getMt5GatewayBaseUrl();
         binding.etMt5GatewayUrl.setText(normalized);
         binding.etMt5GatewayUrl.setSelection(normalized.length());
-        binding.tvMt5GatewayCurrent.setText(normalized);
         AccountStatsPreloadManager.getInstance(getApplicationContext()).clearLatestCache();
         sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
         Toast.makeText(this, getString(R.string.mt5_gateway_saved, normalized), Toast.LENGTH_SHORT).show();

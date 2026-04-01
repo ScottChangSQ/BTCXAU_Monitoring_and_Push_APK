@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
+import com.binance.monitor.util.SensitiveDisplayMasker;
 import com.binance.monitor.util.FormatUtils;
 
 import java.util.ArrayList;
@@ -21,12 +22,22 @@ import java.util.Locale;
 
 public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggregateAdapter.Holder> {
     private final List<AggregateItem> items = new ArrayList<>();
+    private boolean masked;
 
     public void submitList(List<AggregateItem> data) {
         items.clear();
         if (data != null) {
             items.addAll(data);
         }
+        notifyDataSetChanged();
+    }
+
+    // 行情持仓页关闭隐私显示时，用于统一把数量、成本和盈亏替换为星号。
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
         notifyDataSetChanged();
     }
 
@@ -38,7 +49,7 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
 
     @Override
     public void onBindViewHolder(@NonNull Holder holder, int position) {
-        holder.bind(items.get(position));
+        holder.bind(items.get(position), masked);
     }
 
     @Override
@@ -54,15 +65,23 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             this.binding = binding;
         }
 
-        void bind(AggregateItem item) {
+        void bind(AggregateItem item, boolean masked) {
+            if (masked) {
+                binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                binding.tvExpandHint.setVisibility(View.GONE);
+                binding.layoutDetail.setVisibility(View.GONE);
+                return;
+            }
             int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
                     item.totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
             String pnlText = signedMoney(item.totalPnl);
-            String costText = String.format(Locale.getDefault(), "%,.0f", item.avgCostPrice);
+            String qtyText = String.format(Locale.getDefault(), "%.2f 手", item.quantity);
+            String costText = "$" + String.format(Locale.getDefault(), "%,.0f", item.avgCostPrice);
             String raw = String.format(Locale.getDefault(),
-                    "%s | %.2f 手 | 成本 $%s | %s",
+                    "%s | %s | 成本 %s | %s",
                     item.productName,
-                    item.quantity,
+                    qtyText,
                     costText,
                     pnlText);
             SpannableString span = new SpannableString(raw);

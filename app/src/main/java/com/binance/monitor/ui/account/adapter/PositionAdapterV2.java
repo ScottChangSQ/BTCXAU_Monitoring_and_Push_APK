@@ -18,6 +18,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
     private final List<PositionItem> items = new ArrayList<>();
     private final List<String> rowKeys = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
+    private boolean masked;
 
     public void submitList(List<PositionItem> data) {
         List<PositionItem> nextItems = data == null ? new ArrayList<>() : new ArrayList<>(data);
@@ -62,6 +64,15 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         diffResult.dispatchUpdatesTo(this);
     }
 
+    // 行情持仓页关闭隐私显示时，统一把持仓数量、价格、盈亏和收益率打码。
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
+        notifyDataSetChanged();
+    }
+
     private List<String> buildRowKeys(List<PositionItem> data) {
         List<String> keys = new ArrayList<>();
         if (data == null || data.isEmpty()) {
@@ -88,7 +99,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, false);
+        holder.bind(item, expanded, false, masked);
         holder.binding.layoutHeader.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= rowKeys.size()) {
@@ -113,7 +124,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE));
+        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE), masked);
     }
 
     @Override
@@ -219,7 +230,20 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             this.binding = binding;
         }
 
-        void bind(PositionItem item, boolean expanded, boolean animateExpand) {
+        void bind(PositionItem item, boolean expanded, boolean animateExpand, boolean masked) {
+            if (masked) {
+                binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                updateExpandState(expanded, animateExpand);
+                binding.tvProduct.setVisibility(View.GONE);
+                binding.tvBase.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvMetrics.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvPnL.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvBase.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                binding.tvMetrics.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                binding.tvPnL.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                return;
+            }
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
             double summaryPnl = item.getTotalPnL() + item.getStorageFee();
@@ -227,8 +251,9 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                     summaryPnl >= 0d ? R.color.accent_green : R.color.accent_red);
             String pnlText = signedMoney(summaryPnl);
             double displayQty = Math.abs(item.getQuantity());
-            String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
-                    item.getProductName(), sideText, displayQty, pnlText);
+            String qtyText = String.format(Locale.getDefault(), "%.2f 手", displayQty);
+            String raw = String.format(Locale.getDefault(), "%s | %s | %s | %s",
+                    item.getProductName(), sideText, qtyText, pnlText);
             SpannableStringBuilder span = new SpannableStringBuilder(raw);
             int sideStart = raw.indexOf(sideText);
             if (sideStart >= 0) {
@@ -248,10 +273,12 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             updateExpandState(expanded, animateExpand);
 
             binding.tvProduct.setVisibility(View.GONE);
+            String costText = "$" + FormatUtils.formatPrice(item.getCostPrice());
+            String latestText = "$" + FormatUtils.formatPrice(item.getLatestPrice());
             binding.tvBase.setText(String.format(Locale.getDefault(),
-                    "成本 $%s | 最新 $%s",
-                    FormatUtils.formatPrice(item.getCostPrice()),
-                    FormatUtils.formatPrice(item.getLatestPrice())));
+                    "成本 %s | 最新 %s",
+                    costText,
+                    latestText));
             String storageFeeText = signedMoney(item.getStorageFee());
             String metricsRaw = String.format(Locale.getDefault(),
                     "止盈 %s | 止损 %s | 库存费 %s",

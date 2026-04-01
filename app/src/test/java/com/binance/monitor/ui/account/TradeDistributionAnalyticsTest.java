@@ -116,8 +116,17 @@ public class TradeDistributionAnalyticsTest {
                         Arrays.asList(shortTrade, swingTrade, longTrade));
 
         assertEquals(7, buckets.size());
+        assertEquals("30分-4时", buckets.get(1).getLabel());
+        assertEquals("1-3天", buckets.get(4).getLabel());
+        assertEquals("7天+", buckets.get(6).getLabel());
         assertEquals(1, buckets.get(1).getCount());
+        assertEquals(1, buckets.get(1).getWinCount());
+        assertEquals(0, buckets.get(1).getLossCount());
         assertEquals(1, buckets.get(4).getCount());
+        assertEquals(1, buckets.get(4).getWinCount());
+        assertEquals(0, buckets.get(4).getLossCount());
         assertEquals(1, buckets.get(6).getCount());
+        assertEquals(0, buckets.get(6).getWinCount());
+        assertEquals(1, buckets.get(6).getLossCount());
     }
 }

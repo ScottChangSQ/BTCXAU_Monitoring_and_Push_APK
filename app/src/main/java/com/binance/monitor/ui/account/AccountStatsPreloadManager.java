@@ -1,13 +1,24 @@
+/*
+ * 账户快照预加载管理器，负责后台拉取 MT5 网关快照并向页面分发最新缓存。
+ * 供账户页、图表页等依赖账户信息的界面复用。
+ */
 package com.binance.monitor.ui.account;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 
 import com.binance.monitor.constants.AppConstants;
+import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
 
-import java.util.concurrent.ExecutorService;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 public class AccountStatsPreloadManager {
     private static final long BACKGROUND_REFRESH_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS * 2L;
@@ -16,7 +27,10 @@ public class AccountStatsPreloadManager {
 
     private final Mt5BridgeGatewayClient gatewayClient;
     private final AccountStorageRepository accountStorageRepository;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ConfigManager configManager;
+    private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Set<CacheListener> cacheListeners = new CopyOnWriteArraySet<>();
     private final Object lock = new Object();
     private static final long MIN_REFRESH_MS = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
     private static final long MAX_REFRESH_MS = AppConstants.ACCOUNT_REFRESH_MAX_INTERVAL_MS;
@@ -27,10 +41,13 @@ public class AccountStatsPreloadManager {
     private volatile boolean liveScreenActive;
     private volatile boolean fullSnapshotActive;
     private volatile long nextDelayMs = MIN_REFRESH_MS;
+    private ScheduledFuture<?> scheduledFetchFuture;
+    private long scheduleGeneration;
 
     private AccountStatsPreloadManager(Context context) {
         gatewayClient = new Mt5BridgeGatewayClient(context.getApplicationContext());
         accountStorageRepository = new AccountStorageRepository(context.getApplicationContext());
+        configManager = ConfigManager.getInstance(context.getApplicationContext());
     }
 
     public static AccountStatsPreloadManager getInstance(Context context) {
@@ -61,6 +78,26 @@ public class AccountStatsPreloadManager {
         return latestCache;
     }
 
+    // 注册缓存更新监听，页面可在首屏时收到最新快照并立即刷新。
+    public void addCacheListener(CacheListener listener) {
+        if (listener == null) {
+            return;
+        }
+        cacheListeners.add(listener);
+        Cache cache = latestCache;
+        if (cache != null) {
+            mainHandler.post(() -> listener.onCacheUpdated(cache));
+        }
+    }
+
+    // 移除缓存更新监听，避免页面离开后继续接收刷新。
+    public void removeCacheListener(CacheListener listener) {
+        if (listener == null) {
+            return;
+        }
+        cacheListeners.remove(listener);
+    }
+
     public void setLiveScreenActive(boolean active) {
         liveScreenActive = active;
     }
@@ -72,29 +109,53 @@ public class AccountStatsPreloadManager {
             return;
         }
         nextDelayMs = MIN_REFRESH_MS;
-        executor.execute(this::fetchOnce);
+        scheduleFetch(0L);
     }
 
     public void clearLatestCache() {
-        latestCache = null;
+        updateLatestCache(null);
         nextDelayMs = MIN_REFRESH_MS;
     }
 
+    // 重新安排下一次拉取，进入全量页面时可立即打断休眠并刷新。
     private void scheduleFetch(long delayMs) {
-        executor.execute(() -> {
-            if (delayMs > 0L) {
-                try {
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException ignored) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
+        synchronized (lock) {
+            if (!started) {
+                return;
             }
-            fetchOnce();
-            if (started) {
-                scheduleFetch(nextDelayMs);
+            scheduleGeneration++;
+            long generation = scheduleGeneration;
+            cancelScheduledFetchLocked();
+            scheduledFetchFuture = executor.schedule(
+                    () -> runScheduledFetch(generation),
+                    Math.max(0L, delayMs),
+                    TimeUnit.MILLISECONDS
+            );
+        }
+    }
+
+    // 执行一次拉取，并在当前调度代次仍有效时安排下一次刷新。
+    private void runScheduledFetch(long generation) {
+        fetchOnce();
+        synchronized (lock) {
+            if (!started || generation != scheduleGeneration) {
+                return;
             }
-        });
+            scheduledFetchFuture = executor.schedule(
+                    () -> runScheduledFetch(generation),
+                    Math.max(0L, nextDelayMs),
+                    TimeUnit.MILLISECONDS
+            );
+        }
+    }
+
+    // 取消尚未开始执行的定时任务，避免休眠中的旧任务阻塞紧急刷新。
+    private void cancelScheduledFetchLocked() {
+        if (scheduledFetchFuture == null) {
+            return;
+        }
+        scheduledFetchFuture.cancel(false);
+        scheduledFetchFuture = null;
     }
 
     private void fetchOnce() {
@@ -103,6 +164,13 @@ public class AccountStatsPreloadManager {
         }
         loading = true;
         try {
+            if (configManager != null && !configManager.isAccountSessionActive()) {
+                accountStorageRepository.clearRuntimeSnapshot();
+                accountStorageRepository.clearTradeHistory();
+                clearLatestCache();
+                nextDelayMs = MAX_REFRESH_MS;
+                return;
+            }
             if (liveScreenActive) {
                 nextDelayMs = MAX_REFRESH_MS;
                 return;
@@ -114,7 +182,7 @@ public class AccountStatsPreloadManager {
                 nextDelayMs = fullSnapshotActive ? MIN_REFRESH_MS : BACKGROUND_REFRESH_MS;
                 Cache previous = latestCache;
                 if (previous != null) {
-                    latestCache = new Cache(
+                    updateLatestCache(new Cache(
                             false,
                             previous.snapshot,
                             previous.account,
@@ -123,13 +191,13 @@ public class AccountStatsPreloadManager {
                             previous.gateway,
                             previous.updatedAt,
                             result.getError(),
-                            System.currentTimeMillis());
+                            System.currentTimeMillis()));
                 }
                 return;
             }
             AccountSnapshot snapshot = result.getSnapshot();
             nextDelayMs = fullSnapshotActive ? MIN_REFRESH_MS : BACKGROUND_REFRESH_MS;
-            latestCache = new Cache(
+            updateLatestCache(new Cache(
                     true,
                     snapshot,
                     result.getAccount(""),
@@ -138,13 +206,13 @@ public class AccountStatsPreloadManager {
                     result.getGatewayEndpoint(),
                     result.getUpdatedAt(),
                     "",
-                    System.currentTimeMillis());
+                    System.currentTimeMillis()));
             persistPreloadSnapshot(snapshot, result, fullSnapshotActive);
         } catch (Exception exception) {
             nextDelayMs = fullSnapshotActive ? MIN_REFRESH_MS : BACKGROUND_REFRESH_MS;
             Cache previous = latestCache;
             if (previous != null) {
-                latestCache = new Cache(
+                updateLatestCache(new Cache(
                         false,
                         previous.snapshot,
                         previous.account,
@@ -153,11 +221,29 @@ public class AccountStatsPreloadManager {
                         previous.gateway,
                         previous.updatedAt,
                         exception.getMessage(),
-                        System.currentTimeMillis());
+                        System.currentTimeMillis()));
             }
         } finally {
             loading = false;
         }
+    }
+
+    // 更新最新缓存并把刷新结果派发给前台页面。
+    private void updateLatestCache(Cache cache) {
+        latestCache = cache;
+        notifyCacheListeners(cache);
+    }
+
+    // 在主线程通知页面刷新，避免监听方自己再切线程。
+    private void notifyCacheListeners(Cache cache) {
+        if (cacheListeners.isEmpty()) {
+            return;
+        }
+        mainHandler.post(() -> {
+            for (CacheListener listener : cacheListeners) {
+                listener.onCacheUpdated(cache);
+            }
+        });
     }
 
     private void persistPreloadSnapshot(AccountSnapshot snapshot,
@@ -257,5 +343,9 @@ public class AccountStatsPreloadManager {
         public long getFetchedAt() {
             return fetchedAt;
         }
+    }
+
+    public interface CacheListener {
+        void onCacheUpdated(Cache cache);
     }
 }

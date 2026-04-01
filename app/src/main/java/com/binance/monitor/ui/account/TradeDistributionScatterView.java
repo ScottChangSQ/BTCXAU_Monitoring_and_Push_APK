@@ -46,6 +46,7 @@ public class TradeDistributionScatterView extends View {
     private double chartMinY;
     private double chartMaxY;
     private int selectedIndex = -1;
+    private boolean masked;
 
     public TradeDistributionScatterView(Context context) {
         this(context, null);
@@ -108,8 +109,22 @@ public class TradeDistributionScatterView extends View {
         invalidate();
     }
 
+    // 根据隐私状态切换为占位态。
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
+        selectedIndex = -1;
+        invalidate();
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (masked) {
+            selectedIndex = -1;
+            return false;
+        }
         return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event);
     }
 
@@ -122,11 +137,16 @@ public class TradeDistributionScatterView extends View {
             return;
         }
 
-        chartLeft = dp(40f);
-        chartRight = width - dp(14f);
+        chartLeft = dp(22f);
+        chartRight = width - dp(16f);
         chartTop = dp(12f);
-        chartBottom = height - dp(30f);
+        chartBottom = height - dp(24f);
         drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
+
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
 
         if (points.isEmpty()) {
             canvas.drawText("暂无交易分布数据", width / 2f, height / 2f, emptyPaint);
@@ -156,7 +176,7 @@ public class TradeDistributionScatterView extends View {
             float cx = mapX(point.getMaxDrawdownRate(), chartMinX, chartMaxX, chartLeft, chartRight);
             float cy = mapY(point.getReturnRate(), chartMinY, chartMaxY, chartTop, chartBottom);
             Paint fillPaint = point.isPositive() ? positivePaint : negativePaint;
-            float radius = point.isHighlight() || i == selectedIndex ? dp(5f) : dp(3.8f);
+            float radius = point.isHighlight() || i == selectedIndex ? dp(4.2f) : dp(3.0f);
             canvas.drawCircle(cx, cy, radius, fillPaint);
             if (point.isHighlight() || i == selectedIndex) {
                 canvas.drawCircle(cx, cy, radius + dp(1.6f), highlightPaint);
@@ -168,13 +188,18 @@ public class TradeDistributionScatterView extends View {
         }
 
         canvas.drawText(String.format(Locale.getDefault(), "%.1f%%", chartMinX * 100d),
-                chartLeft, chartBottom + dp(16f), labelPaint);
-        canvas.drawText("0%", chartRight - dp(8f), chartBottom + dp(16f), labelPaint);
+                chartLeft, chartBottom + dp(14f), labelPaint);
+        canvas.drawText("0%", getWidth() - dp(20f), chartBottom + dp(14f), labelPaint);
         canvas.drawText(String.format(Locale.getDefault(), "+%.1f%%", chartMaxY * 100d),
-                chartLeft - dp(16f), chartTop + dp(2f), labelPaint);
+                dp(4f), chartTop + dp(2f), labelPaint);
         canvas.drawText(String.format(Locale.getDefault(), "%.1f%%", chartMinY * 100d),
-                chartLeft - dp(18f), chartBottom + dp(2f), labelPaint);
-        canvas.drawText("最大回撤", chartRight - dp(24f), chartBottom + dp(16f), labelPaint);
+                dp(4f), chartBottom + dp(2f), labelPaint);
+        String axisTitle = "最大回撤";
+        float titleWidth = labelPaint.measureText(axisTitle);
+        canvas.drawText(axisTitle,
+                chartLeft + (chartRight - chartLeft - titleWidth) / 2f,
+                chartBottom + dp(14f),
+                labelPaint);
         canvas.save();
         canvas.rotate(-90f, dp(10f), chartTop + (chartBottom - chartTop) / 2f);
         canvas.drawText("收益率", dp(10f), chartTop + (chartBottom - chartTop) / 2f, labelPaint);

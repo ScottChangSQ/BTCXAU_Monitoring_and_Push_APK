@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="TextAppearance.BinanceMonitor.PageTitle" parent="TextAppearance.Material3.HeadlineSmall">
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">24sp</item>
     </style>
 
     <style name="TextAppearance.BinanceMonitor.SectionTitle" parent="TextAppearance.Material3.TitleMedium">
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">18sp</item>
     </style>
 
     <style name="TextAppearance.BinanceMonitor.SectionLabel" parent="TextAppearance.Material3.TitleSmall">
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">14sp</item>
     </style>
@@ -31,7 +31,7 @@
     </style>
 
     <style name="TextAppearance.BinanceMonitor.BodyStrong" parent="TextAppearance.Material3.BodyMedium">
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">13sp</item>
     </style>
@@ -43,19 +43,19 @@
     </style>
 
     <style name="TextAppearance.BinanceMonitor.MetaStrong" parent="TextAppearance.Material3.BodySmall">
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:textColor">@color/text_secondary</item>
         <item name="android:textSize">11sp</item>
     </style>
 
     <style name="TextAppearance.BinanceMonitor.Value" parent="TextAppearance.Material3.TitleSmall">
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">15sp</item>
     </style>
 
     <style name="TextAppearance.BinanceMonitor.ValueCompact" parent="TextAppearance.Material3.BodyMedium">
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">12sp</item>
     </style>
@@ -63,7 +63,7 @@
     <style name="Widget.BinanceMonitor.Button.Primary" parent="Widget.Material3.Button">
         <item name="backgroundTint">@color/accent_blue</item>
         <item name="android:textColor">@color/white</item>
-        <item name="cornerRadius">@dimen/radius_sm</item>
+        <item name="cornerRadius">0dp</item>
         <item name="android:minHeight">@dimen/control_height_md</item>
         <item name="android:textAllCaps">false</item>
     </style>
@@ -73,7 +73,7 @@
         <item name="strokeColor">@color/stroke_card</item>
         <item name="strokeWidth">1dp</item>
         <item name="backgroundTint">@color/bg_card</item>
-        <item name="cornerRadius">@dimen/radius_sm</item>
+        <item name="cornerRadius">0dp</item>
         <item name="android:minHeight">@dimen/control_height_md</item>
         <item name="android:textAllCaps">false</item>
     </style>

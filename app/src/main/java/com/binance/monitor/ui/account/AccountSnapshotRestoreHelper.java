@@ -1,6 +1,6 @@
 /*
  * 账户快照恢复辅助类，用于把预加载快照缺失但本地已留存的数据先补回页面。
- * 当前主要用于交易记录，避免账户统计页每次打开都先显示空白。
+ * 当前主要用于首屏回填交易记录与本地留存快照，避免页面先显示空白。
  */
 package com.binance.monitor.ui.account;
 
@@ -36,5 +36,35 @@ final class AccountSnapshotRestoreHelper {
                 storedSnapshot.getTrades(),
                 preloadSnapshot.getStatsMetrics() == null ? new ArrayList<>() : preloadSnapshot.getStatsMetrics()
         );
+    }
+
+    // 把本地持久化快照转换成页面可直接使用的账户快照。
+    static AccountSnapshot restoreStoredSnapshot(AccountStorageRepository.StoredSnapshot storedSnapshot) {
+        if (!hasStoredSnapshotData(storedSnapshot)) {
+            return null;
+        }
+        return new AccountSnapshot(
+                storedSnapshot.getOverviewMetrics(),
+                storedSnapshot.getCurvePoints(),
+                storedSnapshot.getCurveIndicators(),
+                storedSnapshot.getPositions(),
+                storedSnapshot.getPendingOrders(),
+                storedSnapshot.getTrades(),
+                storedSnapshot.getStatsMetrics()
+        );
+    }
+
+    // 判断本地持久化快照是否带有可展示的数据，避免空快照误触发回填。
+    static boolean hasStoredSnapshotData(AccountStorageRepository.StoredSnapshot storedSnapshot) {
+        if (storedSnapshot == null) {
+            return false;
+        }
+        return !storedSnapshot.getOverviewMetrics().isEmpty()
+                || !storedSnapshot.getCurvePoints().isEmpty()
+                || !storedSnapshot.getCurveIndicators().isEmpty()
+                || !storedSnapshot.getPositions().isEmpty()
+                || !storedSnapshot.getPendingOrders().isEmpty()
+                || !storedSnapshot.getTrades().isEmpty()
+                || !storedSnapshot.getStatsMetrics().isEmpty();
     }
 }

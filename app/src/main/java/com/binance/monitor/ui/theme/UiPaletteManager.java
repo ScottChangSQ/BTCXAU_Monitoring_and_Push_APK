@@ -9,6 +9,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.SeekBar;
 
 import androidx.activity.ComponentActivity;
@@ -16,6 +17,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.core.widget.CompoundButtonCompat;
 
 import com.binance.monitor.R;
 import com.binance.monitor.data.local.ConfigManager;
@@ -128,27 +130,17 @@ public final class UiPaletteManager {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{palette.card, palette.control});
-        drawable.setCornerRadius(dp(context, 2));
+        drawable.setCornerRadius(0f);
         drawable.setStroke(dp(context, 1), palette.stroke);
         return drawable;
     }
 
     public static GradientDrawable createFilledDrawable(Context context, int fillColor) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setCornerRadius(dp(context, 2));
-        drawable.setColor(fillColor);
-        drawable.setStroke(dp(context, 1), fillColor);
-        return drawable;
+        return createRectDrawable(context, fillColor, fillColor, 0);
     }
 
     public static GradientDrawable createOutlinedDrawable(Context context, int fillColor, int strokeColor) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setCornerRadius(dp(context, 2));
-        drawable.setColor(fillColor);
-        drawable.setStroke(dp(context, 1), strokeColor);
-        return drawable;
+        return createRectDrawable(context, fillColor, strokeColor, 0);
     }
 
     private static GradientDrawable createRectDrawable(Context context,
@@ -221,6 +213,11 @@ public final class UiPaletteManager {
             seekBar.setProgressTintList(ColorStateList.valueOf(palette.primary));
             seekBar.setThumbTintList(ColorStateList.valueOf(palette.primary));
             seekBar.setProgressBackgroundTintList(ColorStateList.valueOf(palette.stroke));
+        } else if (view instanceof CompoundButton) {
+            CompoundButton button = (CompoundButton) view;
+            button.setBackground(null);
+            button.setTextColor(palette.textPrimary);
+            CompoundButtonCompat.setButtonTintList(button, createCompoundButtonTintList(palette));
         } else if (view instanceof Button && !(view instanceof MaterialButton)) {
             Button button = (Button) view;
             if (button.getCurrentTextColor() != ContextCompat.getColor(context, R.color.white)) {
@@ -255,6 +252,16 @@ public final class UiPaletteManager {
 
     private static boolean isLightColor(int color) {
         return ColorUtils.calculateLuminance(color) >= 0.55d;
+    }
+
+    // 统一复选控件的勾选色，避免被当成普通按钮套上背景框。
+    private static ColorStateList createCompoundButtonTintList(Palette palette) {
+        int[][] states = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{}
+        };
+        int[] colors = new int[]{palette.primary, palette.textSecondary};
+        return new ColorStateList(states, colors);
     }
 
     private static int dp(Context context, int value) {

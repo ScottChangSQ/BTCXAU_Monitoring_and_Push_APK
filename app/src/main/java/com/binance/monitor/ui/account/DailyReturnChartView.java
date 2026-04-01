@@ -24,7 +24,7 @@ import java.util.Locale;
 public class DailyReturnChartView extends View {
 
     public interface OnTimeHighlightListener {
-        void onTimeHighlight(@Nullable Long timestamp);
+        void onTimeHighlight(@Nullable Long timestamp, float xRatio);
     }
 
     private final List<CurveAnalyticsHelper.DailyReturnPoint> points = new ArrayList<>();
@@ -47,7 +47,9 @@ public class DailyReturnChartView extends View {
     private long seriesStartTs;
     private long seriesEndTs;
     private int highlightedIndex = -1;
+    private float highlightedXRatio = -1f;
     private boolean longPressing;
+    private boolean masked;
     private OnTimeHighlightListener onTimeHighlightListener;
 
     public DailyReturnChartView(Context context) {
@@ -118,6 +120,7 @@ public class DailyReturnChartView extends View {
             points.addAll(source);
         }
         highlightedIndex = -1;
+        highlightedXRatio = -1f;
         longPressing = false;
         invalidate();
     }
@@ -129,29 +132,45 @@ public class DailyReturnChartView extends View {
         invalidate();
     }
 
+    // 根据隐私状态切换为占位态。
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
+        clearSyncedHighlight();
+        invalidate();
+    }
+
     // 注册共享十字光标回调。
     public void setOnTimeHighlightListener(@Nullable OnTimeHighlightListener listener) {
         onTimeHighlightListener = listener;
     }
 
     // 宿主同步外部十字光标。
-    public void syncHighlightTimestamp(long timestamp) {
+    public void syncHighlightTimestamp(long timestamp, float xRatio) {
         if (timestamp <= 0L || points.isEmpty()) {
             clearSyncedHighlight();
             return;
         }
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(timestamp)));
+        highlightedXRatio = clampRatio(xRatio);
         invalidate();
     }
 
     // 清空宿主同步的十字光标。
     public void clearSyncedHighlight() {
         highlightedIndex = -1;
+        highlightedXRatio = -1f;
         invalidate();
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (masked) {
+            clearHighlight();
+            return false;
+        }
         gestureDetector.onTouchEvent(event);
         if (points.isEmpty()) {
             return super.onTouchEvent(event);
@@ -179,11 +198,16 @@ public class DailyReturnChartView extends View {
             return;
         }
 
-        chartLeft = dp(38f);
-        chartRight = width - dp(36f);
+        chartLeft = dp(34f);
+        chartRight = width - dp(28f);
         chartTop = dp(10f);
         chartBottom = height - dp(10f);
         drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
+
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
 
         if (points.isEmpty()) {
             canvas.drawText("暂无日收益数据", width / 2f, height / 2f, emptyPaint);
@@ -223,17 +247,18 @@ public class DailyReturnChartView extends View {
 
         if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
             CurveAnalyticsHelper.DailyReturnPoint point = points.get(highlightedIndex);
-            float highlightX = mapX(point.getTimestamp(), startTs, endTs, chartLeft, chartRight);
+            float highlightX = resolveHighlightX(startTs, endTs);
             canvas.drawLine(highlightX, chartTop, highlightX, chartBottom, crosshairPaint);
         }
 
         canvas.drawText(String.format(Locale.getDefault(), "+%.1f%%", maxAbs * 100d),
-                chartLeft + dp(18f), chartTop + dp(2f), labelPaint);
+                dp(4f), chartTop + dp(2f), labelPaint);
         canvas.drawText(String.format(Locale.getDefault(), "-%.1f%%", maxAbs * 100d),
-                chartLeft + dp(18f), chartBottom + dp(2f), labelPaint);
+                dp(4f), chartBottom + dp(2f), labelPaint);
+        float rightEdge = getWidth() - dp(6f);
         canvas.save();
-        canvas.rotate(-90f, chartRight + dp(18f), chartTop + (chartBottom - chartTop) / 2f);
-        canvas.drawText("当前区间日收益", chartRight + dp(18f), chartTop + (chartBottom - chartTop) / 2f, labelPaint);
+        canvas.rotate(-90f, rightEdge, chartTop + (chartBottom - chartTop) / 2f);
+        canvas.drawText("当前区间日收益", rightEdge, chartTop + (chartBottom - chartTop) / 2f, labelPaint);
         canvas.restore();
     }
 
@@ -280,12 +305,13 @@ public class DailyReturnChartView extends View {
             return;
         }
         float clamped = Math.max(chartLeft, Math.min(chartRight, x));
+        highlightedXRatio = clampRatio((clamped - chartLeft) / range);
         long startTs = viewportStartTs > 0L ? viewportStartTs : seriesStartTs;
         long endTs = viewportEndTs > startTs ? viewportEndTs : Math.max(startTs + 1L, seriesEndTs);
         long targetTs = startTs + Math.round((clamped - chartLeft) / range * (endTs - startTs));
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(targetTs)));
         if (notify && onTimeHighlightListener != null) {
-            onTimeHighlightListener.onTimeHighlight(points.get(highlightedIndex).getTimestamp());
+            onTimeHighlightListener.onTimeHighlight(points.get(highlightedIndex).getTimestamp(), highlightedXRatio);
         }
         invalidate();
     }
@@ -308,10 +334,11 @@ public class DailyReturnChartView extends View {
     private void clearHighlight() {
         longPressing = false;
         requestParentDisallowIntercept(false);
+        highlightedXRatio = -1f;
         if (highlightedIndex != -1) {
             highlightedIndex = -1;
             if (onTimeHighlightListener != null) {
-                onTimeHighlightListener.onTimeHighlight(null);
+                onTimeHighlightListener.onTimeHighlight(null, -1f);
             }
             invalidate();
         }
@@ -322,5 +349,19 @@ public class DailyReturnChartView extends View {
         if (getParent() != null) {
             getParent().requestDisallowInterceptTouchEvent(disallow);
         }
+    }
+
+    private float resolveHighlightX(long startTs, long endTs) {
+        if (highlightedXRatio >= 0f) {
+            return chartLeft + highlightedXRatio * (chartRight - chartLeft);
+        }
+        if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
+            return mapX(points.get(highlightedIndex).getTimestamp(), startTs, endTs, chartLeft, chartRight);
+        }
+        return chartLeft;
+    }
+
+    private float clampRatio(float ratio) {
+        return Math.max(0f, Math.min(1f, ratio));
     }
 }

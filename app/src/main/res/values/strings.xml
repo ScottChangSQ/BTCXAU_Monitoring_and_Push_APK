@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">BTC/XAU 异常监控</string>
+    <string name="app_name">交易终端</string>
     <string name="status_unknown">等待数据</string>
     <string name="monitoring_running">监控中</string>
     <string name="monitoring_stopped">监控已停止</string>
@@ -100,8 +100,12 @@
     <string name="chart_info_template">%1$s | O:%2$s H:%3$s L:%4$s C:%5$s | VOL:%6$s | MACD:%7$s K:%8$s D:%9$s</string>
     <string name="chart_gesture_hint">手势支持：双指缩放、左右滑动、长按十字线。</string>
     <string name="chart_back_to_latest">回到最新</string>
-    <string name="mt5_gateway_section_title">MT5 网关地址</string>
-    <string name="mt5_gateway_input_hint">例如 http://43.155.214.62:8787</string>
+    <string name="privacy_mask_switch">隐私隐藏</string>
+    <string name="privacy_mask_title">隐私隐藏中</string>
+    <string name="privacy_mask_hint">已隐藏账户号、价格、数量和盈亏等敏感数据</string>
+    <string name="mt5_gateway_section_title">网关地址</string>
+    <string name="mt5_gateway_input_hint"></string>
     <string name="mt5_gateway_save">保存并应用</string>
-    <string name="mt5_gateway_saved">MT5 网关地址已更新：%1$s</string>
+    <string name="mt5_gateway_saved">网关地址已更新：%1$s</string>
+    <string name="account_login_success_banner">登录成功</string>
 </resources>

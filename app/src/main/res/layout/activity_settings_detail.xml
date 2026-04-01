@@ -19,8 +19,7 @@
             android:gravity="center"
             android:text="←"
             android:textColor="@color/text_primary"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:textSize="18sp" />
 
         <TextView
             android:id="@+id/tvSettingsDetailTitle"
@@ -56,11 +55,12 @@
                     android:text="悬浮窗与显示"
                     android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchFloatingEnabled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_12"
+                    android:minHeight="0dp"
                     android:text="@string/floating_window"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp" />
@@ -80,19 +80,21 @@
                     android:max="100"
                     android:progress="88" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchShowBtc"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_12"
+                    android:minHeight="0dp"
                     android:text="@string/show_btc"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchShowXau"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:minHeight="0dp"
                     android:text="@string/show_xau"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp" />
@@ -115,8 +117,7 @@
                     android:id="@+id/inputLayoutMt5GatewayUrl"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:hint="@string/mt5_gateway_input_hint">
+                    android:layout_marginTop="@dimen/space_8">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etMt5GatewayUrl"
@@ -128,13 +129,6 @@
                         android:textSize="14sp" />
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <TextView
-                    android:id="@+id/tvMt5GatewayCurrent"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
-
                 <Button
                     android:id="@+id/btnSaveMt5GatewayUrl"
                     android:layout_width="match_parent"
@@ -142,8 +136,7 @@
                     android:layout_marginTop="@dimen/space_12"
                     android:background="@drawable/bg_inline_button"
                     android:text="@string/mt5_gateway_save"
-                    android:textAllCaps="false"
-                    android:textStyle="bold" />
+                    android:textAllCaps="false" />
             </LinearLayout>
 
             <LinearLayout
@@ -187,8 +180,7 @@
                             android:layout_height="wrap_content"
                             android:text="金融专业风"
                             android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
+                            android:textSize="14sp" />
 
                         <TextView
                             android:id="@+id/tvThemeFinancialDesc"
@@ -249,8 +241,7 @@
                             android:layout_height="wrap_content"
                             android:text="复古风"
                             android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
+                            android:textSize="14sp" />
 
                         <TextView
                             android:id="@+id/tvThemeVintageDesc"
@@ -311,8 +302,7 @@
                             android:layout_height="wrap_content"
                             android:text="币安风格"
                             android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
+                            android:textSize="14sp" />
 
                         <TextView
                             android:id="@+id/tvThemeBinanceDesc"
@@ -373,8 +363,7 @@
                             android:layout_height="wrap_content"
                             android:text="TradingView 风格"
                             android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
+                            android:textSize="14sp" />
 
                         <TextView
                             android:id="@+id/tvThemeTradingViewDesc"
@@ -435,8 +424,7 @@
                             android:layout_height="wrap_content"
                             android:text="浅色风格"
                             android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
+                            android:textSize="14sp" />
 
                         <TextView
                             android:id="@+id/tvThemeLightDesc"
@@ -497,27 +485,30 @@
                     android:text="可隐藏底部导航中的页签（至少保留一个业务页签）。"
                     android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchTabMarketMonitor"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_12"
+                    android:minHeight="0dp"
                     android:text="@string/nav_market_monitor"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchTabMarketChart"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:minHeight="0dp"
                     android:text="@string/nav_market_chart"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchTabAccountStats"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:minHeight="0dp"
                     android:text="@string/nav_account_stats"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp" />
@@ -555,8 +546,7 @@
                     android:text="清理缓存数据"
                     android:textAllCaps="false"
                     android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
+                    android:textSize="14sp" />
             </LinearLayout>
 
             <Button
@@ -572,8 +562,7 @@
                 android:text="@string/view_logs"
                 android:textAllCaps="false"
                 android:textColor="@color/text_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                android:textSize="14sp" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
@@ -594,8 +583,7 @@
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabMarketChart"
@@ -606,8 +594,7 @@
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabAccountStats"
@@ -618,8 +605,7 @@
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/tabSettings"
@@ -630,8 +616,7 @@
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/white"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13sp" />
     </LinearLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView

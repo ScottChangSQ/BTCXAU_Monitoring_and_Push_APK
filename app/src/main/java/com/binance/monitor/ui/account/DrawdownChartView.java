@@ -24,7 +24,7 @@ import java.util.Locale;
 public class DrawdownChartView extends View {
 
     public interface OnTimeHighlightListener {
-        void onTimeHighlight(@Nullable Long timestamp);
+        void onTimeHighlight(@Nullable Long timestamp, float xRatio);
     }
 
     private final List<CurveAnalyticsHelper.DrawdownPoint> points = new ArrayList<>();
@@ -49,7 +49,9 @@ public class DrawdownChartView extends View {
     private long seriesStartTs;
     private long seriesEndTs;
     private int highlightedIndex = -1;
+    private float highlightedXRatio = -1f;
     private boolean longPressing;
+    private boolean masked;
     private OnTimeHighlightListener onTimeHighlightListener;
 
     public DrawdownChartView(Context context) {
@@ -120,6 +122,7 @@ public class DrawdownChartView extends View {
             points.addAll(source);
         }
         highlightedIndex = -1;
+        highlightedXRatio = -1f;
         longPressing = false;
         invalidate();
     }
@@ -131,29 +134,45 @@ public class DrawdownChartView extends View {
         invalidate();
     }
 
+    // 根据隐私状态切换为占位态。
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
+        clearSyncedHighlight();
+        invalidate();
+    }
+
     // 注册共享十字光标回调。
     public void setOnTimeHighlightListener(@Nullable OnTimeHighlightListener listener) {
         onTimeHighlightListener = listener;
     }
 
     // 宿主同步外部十字光标。
-    public void syncHighlightTimestamp(long timestamp) {
+    public void syncHighlightTimestamp(long timestamp, float xRatio) {
         if (timestamp <= 0L || points.isEmpty()) {
             clearSyncedHighlight();
             return;
         }
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(timestamp)));
+        highlightedXRatio = clampRatio(xRatio);
         invalidate();
     }
 
     // 清空宿主同步的十字光标。
     public void clearSyncedHighlight() {
         highlightedIndex = -1;
+        highlightedXRatio = -1f;
         invalidate();
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (masked) {
+            clearHighlight();
+            return false;
+        }
         gestureDetector.onTouchEvent(event);
         if (points.size() < 2) {
             return super.onTouchEvent(event);
@@ -181,11 +200,16 @@ public class DrawdownChartView extends View {
             return;
         }
 
-        chartLeft = dp(38f);
+        chartLeft = dp(34f);
         chartTop = dp(10f);
-        chartRight = width - dp(36f);
+        chartRight = width - dp(28f);
         chartBottom = height - dp(10f);
         drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
+
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
 
         if (points.size() < 2) {
             canvas.drawText("暂无回撤数据", width / 2f, height / 2f, emptyPaint);
@@ -233,7 +257,7 @@ public class DrawdownChartView extends View {
         canvas.drawCircle(valleyX, valleyY, dp(3.2f), markerPaint);
         if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
             CurveAnalyticsHelper.DrawdownPoint point = points.get(highlightedIndex);
-            float highlightX = mapX(point.getTimestamp(), startTs, endTs, chartLeft, chartRight);
+            float highlightX = resolveHighlightX(startTs, endTs);
             float highlightY = mapY(point.getDrawdownRate(), chartMin, chartMax, chartTop, chartBottom);
             canvas.drawLine(highlightX, chartTop, highlightX, chartBottom, crosshairPaint);
             canvas.drawCircle(highlightX, highlightY, dp(3.4f), markerPaint);
@@ -258,12 +282,13 @@ public class DrawdownChartView extends View {
 
     // 绘制两端刻度和回撤说明。
     private void drawLabels(Canvas canvas, float left, float right, float top, float bottom, double minDrawdown) {
-        canvas.drawText("0%", left - dp(26f), top + dp(4f), labelPaint);
+        canvas.drawText("0%", dp(4f), top + dp(4f), labelPaint);
         canvas.drawText(String.format(Locale.getDefault(), "%.1f%%", minDrawdown * 100d),
-                left - dp(34f), bottom + dp(2f), labelPaint);
+                dp(4f), bottom + dp(2f), labelPaint);
+        float rightEdge = getWidth() - dp(6f);
         canvas.save();
-        canvas.rotate(-90f, right + dp(18f), top + (bottom - top) / 2f);
-        canvas.drawText("当前区间回撤", right + dp(18f), top + (bottom - top) / 2f, labelPaint);
+        canvas.rotate(-90f, rightEdge, top + (bottom - top) / 2f);
+        canvas.drawText("当前区间回撤", rightEdge, top + (bottom - top) / 2f, labelPaint);
         canvas.restore();
     }
 
@@ -274,12 +299,13 @@ public class DrawdownChartView extends View {
             return;
         }
         float clamped = Math.max(chartLeft, Math.min(chartRight, x));
+        highlightedXRatio = clampRatio((clamped - chartLeft) / range);
         long startTs = viewportStartTs > 0L ? viewportStartTs : seriesStartTs;
         long endTs = viewportEndTs > startTs ? viewportEndTs : Math.max(startTs + 1L, seriesEndTs);
         long targetTs = startTs + Math.round((clamped - chartLeft) / range * (endTs - startTs));
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(targetTs)));
         if (notify && onTimeHighlightListener != null) {
-            onTimeHighlightListener.onTimeHighlight(points.get(highlightedIndex).getTimestamp());
+            onTimeHighlightListener.onTimeHighlight(points.get(highlightedIndex).getTimestamp(), highlightedXRatio);
         }
         invalidate();
     }
@@ -302,10 +328,11 @@ public class DrawdownChartView extends View {
     private void clearHighlight() {
         longPressing = false;
         requestParentDisallowIntercept(false);
+        highlightedXRatio = -1f;
         if (highlightedIndex != -1) {
             highlightedIndex = -1;
             if (onTimeHighlightListener != null) {
-                onTimeHighlightListener.onTimeHighlight(null);
+                onTimeHighlightListener.onTimeHighlight(null, -1f);
             }
             invalidate();
         }
@@ -334,6 +361,20 @@ public class DrawdownChartView extends View {
     // dp 转像素。
     private float dp(float value) {
         return value * getResources().getDisplayMetrics().density;
+    }
+
+    private float resolveHighlightX(long startTs, long endTs) {
+        if (highlightedXRatio >= 0f) {
+            return chartLeft + highlightedXRatio * (chartRight - chartLeft);
+        }
+        if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
+            return mapX(points.get(highlightedIndex).getTimestamp(), startTs, endTs, chartLeft, chartRight);
+        }
+        return chartLeft;
+    }
+
+    private float clampRatio(float ratio) {
+        return Math.max(0f, Math.min(1f, ratio));
     }
 
     // 应用透明度，避免附图过于厚重。

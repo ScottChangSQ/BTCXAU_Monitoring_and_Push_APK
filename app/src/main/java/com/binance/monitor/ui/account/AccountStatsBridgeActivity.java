@@ -21,7 +21,6 @@ import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
-import android.text.style.StyleSpan;
 import android.util.TypedValue;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
@@ -45,17 +44,20 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.ActivityAccountStatsBinding;
+import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
@@ -73,6 +75,7 @@ import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.util.SensitiveDisplayMasker;
 import com.binance.monitor.ui.widget.TradeScrollBarView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
@@ -102,6 +105,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final int RETURNS_CELL_MARGIN_DP = 1;
     private static final int RETURNS_HEADER_HEIGHT_DP = 28;
     private static final int RETURNS_BODY_HEIGHT_DP = 42;
+    private static final int RETURNS_MONTH_GROUP_HEIGHT_DP = 44;
     private static final int RETURNS_STAGE_HEIGHT_DP = 38;
     private static final String ACCOUNT = "7400048";
     private static final String SERVER = "ICMarketsSC-MT5-6";
@@ -175,6 +179,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private ExecutorService ioExecutor;
 
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
+    private final AccountSnapshotRequestGuard snapshotRequestGuard = new AccountSnapshotRequestGuard();
     private volatile boolean loading;
     private boolean snapshotLoopEnabled;
     private long connectedUpdateAtMs;
@@ -248,6 +253,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private long scheduledRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private int unchangedRefreshStreak = 0;
     private boolean draggingTradeScrollBar;
+    private final Runnable hideLoginSuccessBannerRunnable = this::hideLoginSuccessBannerNow;
 
     private final Runnable refreshRunnable = new Runnable() {
         @Override
@@ -300,6 +306,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setupOverviewHeader();
         bindLocalMeta();
         applyPaletteStyles();
+        applyPrivacyMaskState();
         applyPreloadedCacheIfAvailable();
         snapshotLoopEnabled = true;
         if (userLoggedIn) {
@@ -315,6 +322,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         applyPaletteStyles();
+        applyPrivacyMaskState();
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(true);
         }
@@ -334,6 +342,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         snapshotLoopEnabled = false;
         clearScheduledRefresh();
         stopOverviewHeaderTicker();
+        binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
+        hideLoginSuccessBannerNow();
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(false);
         }
@@ -346,6 +356,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         snapshotLoopEnabled = false;
         clearScheduledRefresh();
         stopOverviewHeaderTicker();
+        if (binding != null && binding.tvLoginSuccessBanner != null) {
+            binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
+        }
         if (preloadManager != null) {
             preloadManager.setLiveScreenActive(false);
         }
@@ -379,6 +392,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setupOverviewHeader() {
+        binding.ivAccountPrivacyToggle.setOnClickListener(v -> togglePrivacyMaskState());
         binding.tvAccountConnectionStatus.setOnClickListener(v -> {
             if (!userLoggedIn) {
                 showLoginDialog();
@@ -441,7 +455,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         selectedTradeSideFilter = prefs.getString(PREF_FILTER_SIDE, FILTER_SIDE);
         selectedTradeSortFilter = prefs.getString(PREF_FILTER_SORT, FILTER_SORT);
         tradeSortDescending = prefs.getBoolean(PREF_FILTER_SORT_DESC, true);
-        userLoggedIn = prefs.getBoolean(PREF_LOGIN_ENABLED, false);
+        boolean persistedLoginEnabled = prefs.getBoolean(PREF_LOGIN_ENABLED, false);
+        boolean sessionActive = ConfigManager.getInstance(getApplicationContext()).isAccountSessionActive();
+        userLoggedIn = persistedLoginEnabled && sessionActive;
         loginAccountInput = trim(prefs.getString(PREF_LOGIN_ACCOUNT, ACCOUNT));
         if (loginAccountInput.isEmpty()) {
             loginAccountInput = ACCOUNT;
@@ -464,6 +480,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         lastExplicitTradeSortMode = FILTER_SORT.equals(selectedTradeSortFilter)
                 ? SORT_CLOSE_TIME
                 : normalizeSortValue(selectedTradeSortFilter);
+        ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(userLoggedIn);
     }
 
     private void persistUiState() {
@@ -530,21 +547,96 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void showConnectionDialog() {
-        String message = "账号信息：" + connectedAccount + "\n"
-                + "服务器信息：" + connectedServer + "\n"
-                + "数据源信息：" + connectedSource + "\n"
-                + "网关信息：" + connectedGateway + "\n"
-                + "更新时间信息：" + connectedUpdate
-                + (connectedError.isEmpty() ? "" : "\n失败原因：" + connectedError)
-                + (dataQualitySummary.isEmpty() ? "" : "\n数据校对：" + dataQualitySummary);
+        boolean masked = isPrivacyMasked();
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setBackground(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+        content.setPadding(dpToPx(18), dpToPx(14), dpToPx(18), dpToPx(6));
+
+        TextView titleView = new TextView(this);
+        titleView.setText("账户连接详情");
+        titleView.setTextColor(palette.textPrimary);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+        content.addView(titleView);
+
+        TextView subtitleView = new TextView(this);
+        subtitleView.setText("当前账户连接状态");
+        subtitleView.setTextColor(palette.textSecondary);
+        subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        subtitleParams.topMargin = dpToPx(4);
+        content.addView(subtitleView, subtitleParams);
+
+        content.addView(createConnectionDetailRow("账号信息",
+                AccountStatsPrivacyFormatter.maskValue(connectedAccount, masked), palette));
+        content.addView(createConnectionDetailRow("服务器信息",
+                AccountStatsPrivacyFormatter.maskValue(connectedServer, masked), palette));
+        content.addView(createConnectionDetailRow("数据源信息",
+                AccountStatsPrivacyFormatter.maskValue(connectedSource, masked), palette));
+        content.addView(createConnectionDetailRow("网关信息",
+                AccountStatsPrivacyFormatter.maskValue(connectedGateway, masked), palette));
+        content.addView(createConnectionDetailRow("更新时间信息",
+                AccountStatsPrivacyFormatter.maskValue(connectedUpdate, masked), palette));
+        if (!connectedError.isEmpty()) {
+            content.addView(createConnectionDetailRow("失败原因",
+                    AccountStatsPrivacyFormatter.maskValue(connectedError, masked), palette));
+        }
+        if (!dataQualitySummary.isEmpty()) {
+            content.addView(createConnectionDetailRow("数据校对",
+                    AccountStatsPrivacyFormatter.maskValue(dataQualitySummary, masked), palette));
+        }
         MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this)
-                .setTitle("账户连接详情")
-                .setMessage(message)
+                .setView(content)
                 .setPositiveButton("确定", null);
         if (userLoggedIn) {
             builder.setNegativeButton("退出登录", (dialog, which) -> logoutAccount());
         }
-        builder.show();
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+        }
+        dialog.show();
+        if (dialog.getButton(AlertDialog.BUTTON_POSITIVE) != null) {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
+        }
+        if (userLoggedIn && dialog.getButton(AlertDialog.BUTTON_NEGATIVE) != null) {
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(palette.fall);
+        }
+    }
+
+    // 用当前主题渲染连接详情行，保证文字可读性和整体风格一致。
+    private View createConnectionDetailRow(String label,
+                                           String value,
+                                           UiPaletteManager.Palette palette) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        row.setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dpToPx(8);
+        row.setLayoutParams(params);
+
+        TextView labelView = new TextView(this);
+        labelView.setText(label);
+        labelView.setTextColor(palette.textSecondary);
+        labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        row.addView(labelView);
+
+        TextView valueView = new TextView(this);
+        valueView.setText(trim(value).isEmpty() ? "--" : value);
+        valueView.setTextColor(palette.textPrimary);
+        valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        valueParams.topMargin = dpToPx(4);
+        row.addView(valueView, valueParams);
+        return row;
     }
 
     private void showLoginDialog() {
@@ -594,6 +686,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
                     connectedError = "";
                     gatewayConnected = false;
+                    ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(true);
+                    if (preloadManager != null) {
+                        preloadManager.clearLatestCache();
+                        preloadManager.setFullSnapshotActive(true);
+                    }
                     setConnectionStatus(gatewayConnected);
                     updateOverviewHeader();
                     persistUiState();
@@ -622,20 +719,86 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void logoutAccount() {
+        snapshotRequestGuard.invalidateSession();
         userLoggedIn = false;
         gatewayConnected = false;
+        loading = false;
         loginPasswordInput = "";
+        connectedAccount = "";
         clearScheduledRefresh();
+        ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(false);
+        if (preloadManager != null) {
+            preloadManager.setFullSnapshotActive(false);
+            preloadManager.clearLatestCache();
+        }
+        clearRuntimeAccountState();
+        clearPersistedAccountState();
         connectedError = "";
         connectedSource = "未登录";
         connectedGateway = "--";
-        connectedAccountName = trim(loginAccountInput).isEmpty() ? ACCOUNT : trim(loginAccountInput);
+        connectedAccountName = "";
         connectedLeverageText = "";
-        connectedUpdateAtMs = System.currentTimeMillis();
-        connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
+        connectedUpdateAtMs = 0L;
+        connectedUpdate = "--";
         setConnectionStatus(false);
         updateOverviewHeader();
+        applyLoggedOutEmptyState();
         persistUiState();
+    }
+
+    // 退出登录时清空页面持有的账户内存态，避免旧数据继续展示。
+    private void clearRuntimeAccountState() {
+        basePositions = new ArrayList<>();
+        basePendingOrders = new ArrayList<>();
+        baseTrades = new ArrayList<>();
+        allCurvePoints = new ArrayList<>();
+        displayedCurvePoints = new ArrayList<>();
+        latestOverviewMetrics = new ArrayList<>();
+        connectedPositionCache = new ArrayList<>();
+        connectedPendingCache = new ArrayList<>();
+        connectedOverviewCache = new ArrayList<>();
+        curveHistory.clear();
+        tradeHistory.clear();
+        lastPositionLogStates.clear();
+        lastPendingLogStates.clear();
+        knownTradeOpenLogKeys.clear();
+        knownTradeCloseLogKeys.clear();
+        knownTradeStateByKey.clear();
+        lastHistoryRecordCount = 0;
+        lastTradePnlMismatchState = null;
+        accountLogBaselineReady = false;
+        latestCumulativePnl = 0d;
+        dataQualitySummary = "";
+    }
+
+    // 退出登录后顺手清掉本地账户缓存，避免其他页面继续读到旧快照。
+    private void clearPersistedAccountState() {
+        if (accountStorageRepository == null) {
+            return;
+        }
+        accountStorageRepository.clearRuntimeSnapshot();
+        accountStorageRepository.clearTradeHistory();
+    }
+
+    // 构造一个空账户快照，复用现有页面渲染链路统一清空界面。
+    private AccountSnapshot buildEmptyAccountSnapshot() {
+        return new AccountSnapshot(
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>()
+        );
+    }
+
+    // 登出后立即切回彻底空态，避免列表或图表继续残留上一账户数据。
+    private void applyLoggedOutEmptyState() {
+        latestOverviewMetrics = new ArrayList<>();
+        connectedOverviewCache = new ArrayList<>();
+        applySnapshot(buildEmptyAccountSnapshot(), false);
+        overviewAdapter.submitList(buildDisconnectedOverviewMetrics());
     }
 
     private void setupBottomNav() {
@@ -667,7 +830,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
         tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        tab.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        tab.setTypeface(null, Typeface.NORMAL);
         tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
     }
 
@@ -716,6 +879,56 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         binding.recyclerStats.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerStats.setAdapter(statsAdapter);
+    }
+
+    // 账户统计页不再用整页遮罩，而是统一切到局部打码 + 图表占位态。
+    private void applyPrivacyMaskState() {
+        if (binding == null) {
+            return;
+        }
+        boolean masked = isPrivacyMasked();
+        overviewAdapter.setMasked(masked);
+        indicatorAdapter.setMasked(masked);
+        positionAggregateAdapter.setMasked(masked);
+        positionAdapter.setMasked(masked);
+        pendingOrderAdapter.setMasked(masked);
+        tradeAdapter.setMasked(masked);
+        statsAdapter.setMasked(masked);
+        binding.equityCurveView.setMasked(masked);
+        binding.drawdownChartView.setMasked(masked);
+        binding.dailyReturnChartView.setMasked(masked);
+        binding.tradePnlBarChart.setMasked(masked);
+        binding.tradeDistributionScatterView.setMasked(masked);
+        binding.holdingDurationDistributionView.setMasked(masked);
+        updateAccountPrivacyToggle(masked);
+        updateOverviewHeader();
+        renderReturnStatsTable(allCurvePoints);
+        applyCurrentCurveRangeFromAllPoints();
+        refreshTradeStats();
+        refreshPositions();
+        refreshTrades(false);
+    }
+
+    private boolean isPrivacyMasked() {
+        return SensitiveDisplayMasker.isEnabled(this);
+    }
+
+    private void togglePrivacyMaskState() {
+        boolean masked = !isPrivacyMasked();
+        ConfigManager.getInstance(getApplicationContext()).setDataMasked(masked);
+        sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+        applyPrivacyMaskState();
+    }
+
+    private void updateAccountPrivacyToggle(boolean masked) {
+        if (binding == null || binding.ivAccountPrivacyToggle == null) {
+            return;
+        }
+        binding.ivAccountPrivacyToggle.setImageResource(masked
+                ? R.drawable.ic_privacy_hidden
+                : R.drawable.ic_privacy_visible);
+        binding.ivAccountPrivacyToggle.setContentDescription(masked ? "显示隐私数据" : "隐藏隐私数据");
+        binding.ivAccountPrivacyToggle.setAlpha(masked ? 0.9f : 1f);
     }
 
     private void setupFilters() {
@@ -1024,6 +1237,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         button.setMinWidth(0);
         button.setMinimumWidth(0);
         button.setPadding(0, 0, 0, 0);
+        button.setCornerRadius(0);
+        button.setShapeAppearanceModel(button.getShapeAppearanceModel().toBuilder()
+                .setAllCornerSizes(0f)
+                .build());
 
         int[][] states = new int[][]{
                 new int[]{android.R.attr.state_checked},
@@ -1099,7 +1316,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setupCurveInteraction() {
-        binding.equityCurveView.setOnPointHighlightListener(point -> {
+        binding.equityCurveView.setOnPointHighlightListener((point, xRatio) -> {
             if (syncingCurveHighlight) {
                 return;
             }
@@ -1107,9 +1324,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 clearSharedCurveHighlight();
                 return;
             }
-            applySharedCurveHighlight(point.getTimestamp());
+            applySharedCurveHighlight(point.getTimestamp(), xRatio);
         });
-        binding.drawdownChartView.setOnTimeHighlightListener(timestamp -> {
+        binding.drawdownChartView.setOnTimeHighlightListener((timestamp, xRatio) -> {
             if (syncingCurveHighlight) {
                 return;
             }
@@ -1117,9 +1334,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 clearSharedCurveHighlight();
                 return;
             }
-            applySharedCurveHighlight(timestamp);
+            applySharedCurveHighlight(timestamp, xRatio);
         });
-        binding.dailyReturnChartView.setOnTimeHighlightListener(timestamp -> {
+        binding.dailyReturnChartView.setOnTimeHighlightListener((timestamp, xRatio) -> {
             if (syncingCurveHighlight) {
                 return;
             }
@@ -1127,7 +1344,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 clearSharedCurveHighlight();
                 return;
             }
-            applySharedCurveHighlight(timestamp);
+            applySharedCurveHighlight(timestamp, xRatio);
         });
     }
 
@@ -1536,7 +1753,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void applyPreloadedCacheIfAvailable() {
-        if (!userLoggedIn) {
+        if (!isAccountSessionReady()) {
+            applyLoggedOutEmptyState();
             return;
         }
         AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository == null
@@ -1587,7 +1805,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void applyStoredSnapshotIfAvailable() {
-        if (accountStorageRepository == null) {
+        if (accountStorageRepository == null || !isAccountSessionReady()) {
             return;
         }
         AccountStorageRepository.StoredSnapshot snapshot = accountStorageRepository.loadStoredSnapshot();
@@ -1624,13 +1842,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void updateOverviewHeader() {
-        String displayAccount = AccountOverviewTitleHelper.resolveDisplayAccount(
-                connectedAccount,
-                connectedAccountName,
-                ACCOUNT
-        );
-        String title = "账户-" + displayAccount;
-        if (!connectedLeverageText.isEmpty()) {
+        boolean masked = isPrivacyMasked();
+        boolean disconnected = !userLoggedIn && !gatewayConnected;
+        String title = disconnected
+                ? "账户总览（未连接）"
+                : AccountStatsPrivacyFormatter.formatOverviewTitle(
+                AccountOverviewTitleHelper.resolveDisplayAccount(
+                        connectedAccount,
+                        connectedAccountName,
+                        ACCOUNT
+                ),
+                masked);
+        if (!masked && !connectedLeverageText.isEmpty()) {
             String leverageText = "（" + connectedLeverageText + "）";
             SpannableStringBuilder builder = new SpannableStringBuilder(title).append(leverageText);
             int leverageStart = builder.length() - leverageText.length();
@@ -1646,7 +1869,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         } else {
             binding.tvAccountOverviewTitle.setText(title);
         }
-        binding.tvAccountMeta.setText("更新时间 " + formatRefreshMetaText());
+        binding.tvAccountMeta.setText(disconnected
+                ? "更新时间 --"
+                : AccountStatsPrivacyFormatter.formatRefreshMeta(formatRefreshMetaText(), masked));
+    }
+
+    private boolean isAccountSessionReady() {
+        return userLoggedIn && ConfigManager.getInstance(getApplicationContext()).isAccountSessionActive();
     }
 
     private void scheduleNextSnapshot(long delayMs) {
@@ -1701,6 +1930,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         loading = true;
+        final AccountSnapshotRequestGuard.RequestToken requestToken = snapshotRequestGuard.openRequest();
         AccountTimeRange fetchRange = AccountTimeRange.ALL;
 
         ioExecutor.execute(() -> {
@@ -1763,6 +1993,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             final boolean finalUnchanged = remote.isUnchanged();
 
             runOnUiThread(() -> {
+                if (!snapshotRequestGuard.shouldApply(requestToken)) {
+                    return;
+                }
+                boolean previousConnected = gatewayConnected;
                 connectedAccount = finalAccount;
                 connectedAccountName = finalAccountName;
                 connectedServer = finalServer;
@@ -1773,6 +2007,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 connectedError = finalError;
 
                 setConnectionStatus(finalConnected);
+                if (AccountConnectionTransitionHelper.shouldShowLoginSuccess(previousConnected, finalConnected, userLoggedIn)) {
+                    showLoginSuccessBanner();
+                }
                 updateOverviewHeader();
                 logConnectionEvent(finalConnected);
                 if (finalSnapshot != null) {
@@ -2506,6 +2743,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         List<AccountMetric> result = new ArrayList<>();
         if (allCurvePoints.isEmpty()) {
             latestCumulativePnl = 0d;
+            if (!userLoggedIn && !gatewayConnected) {
+                return buildDisconnectedOverviewMetrics();
+            }
             result.add(new AccountMetric("总资产", "$" + FormatUtils.formatPrice(ACCOUNT_INITIAL_BALANCE)));
             result.add(new AccountMetric("净资产", "$" + FormatUtils.formatPrice(ACCOUNT_INITIAL_BALANCE)));
             result.add(new AccountMetric("可用预付款", "$0.00"));
@@ -2542,7 +2782,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             positionPnl += item.getTotalPnL() + item.getStorageFee();
         }
         double positionRatio = safeDivide(marketValue, Math.max(1d, netAsset));
-        double positionPnlRate = safeDivide(positionPnl, Math.max(1d, totalAsset));
+        double positionPnlRate = safeDivide(positionPnl, Math.max(1d, marketValue));
 
         double dayClosedPnl = calcTodayClosedPnl(baseTrades);
         double dayStartAsset = calcTodayStartAsset(totalAsset, dayClosedPnl, allCurvePoints);
@@ -2565,6 +2805,24 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         result.add(new AccountMetric("当日收益率", percent(dayReturn)));
         result.add(new AccountMetric("累计盈亏", signedMoney(cumulativePnl)));
         result.add(new AccountMetric("累计收益率", percent(cumulativeRate)));
+        return result;
+    }
+
+    // 退出登录后账户概览统一显示为空值，避免误把默认值当成真实账户数据。
+    private List<AccountMetric> buildDisconnectedOverviewMetrics() {
+        List<AccountMetric> result = new ArrayList<>();
+        result.add(new AccountMetric("总资产", "--"));
+        result.add(new AccountMetric("净资产", "--"));
+        result.add(new AccountMetric("可用预付款", "--"));
+        result.add(new AccountMetric("保证金", "--"));
+        result.add(new AccountMetric("仓位占比", "--"));
+        result.add(new AccountMetric("持仓市值", "--"));
+        result.add(new AccountMetric("持仓盈亏", "--"));
+        result.add(new AccountMetric("持仓收益率", "--"));
+        result.add(new AccountMetric("当日盈亏", "--"));
+        result.add(new AccountMetric("当日收益率", "--"));
+        result.add(new AccountMetric("累计盈亏", "--"));
+        result.add(new AccountMetric("累计收益率", "--"));
         return result;
     }
 
@@ -2772,6 +3030,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void refreshTradeStats() {
+        boolean masked = isPrivacyMasked();
         statsAdapter.submitList(buildTradeStatsMetrics(baseTrades, allCurvePoints));
         List<TradePnlBarChartView.Entry> entries = buildTradePnlChartEntries(baseTrades, tradePnlSideMode);
         binding.tradePnlBarChart.setEntries(entries);
@@ -2794,6 +3053,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             sideLabel = "全部";
         }
         String pnlText = signedMoney(totalPnl);
+        if (masked) {
+            binding.tvTradePnlSummary.setText(String.format(
+                    Locale.getDefault(),
+                    "全周期总计盈亏（%s）: %s",
+                    sideLabel,
+                    SensitiveDisplayMasker.MASK_TEXT));
+            binding.tvTradePnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+            binding.tvTradePnlLegend.setVisibility(View.GONE);
+            return;
+        }
         String summaryText = String.format(
                 Locale.getDefault(),
                 "全周期总计盈亏（%s）: %s",
@@ -2923,7 +3192,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? (grossProfit > 0d ? Double.POSITIVE_INFINITY : 0d)
                 : grossProfit / Math.abs(grossLoss);
 
-        String sharpe = calcBalanceSharpe(curvePoints);
+        String sharpe = calcEquityCurveSharpe(curvePoints);
         long avgDurationMs = durationCount <= 0 ? 0L : durationSumMs / durationCount;
         String avgDurationText = durationCount <= 0 ? "--" : formatDuration(avgDurationMs);
 
@@ -2939,8 +3208,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         result.add(new AccountMetric("亏损交易", formatTradeRatioMetric(lossCount, lossRate)));
         result.add(new AccountMetric("最好交易", hasBestTrade ? signedMoney(bestTrade) : "--"));
         result.add(new AccountMetric("最差交易", hasWorstTrade ? signedMoney(worstTrade) : "--"));
-        result.add(new AccountMetric("毛利", signedMoney(grossProfit)));
-        result.add(new AccountMetric("毛损", signedMoney(grossLoss)));
+        result.add(new AccountMetric("毛利/毛损", TradeStatsTextFormatter.formatGrossPair(grossProfit, grossLoss)));
         result.add(new AccountMetric("最大连续盈利", formatStreak(maxWinStreak, maxWinAmount)));
         result.add(new AccountMetric("最大连续亏损", formatStreak(maxLossStreak, maxLossAmount)));
         result.add(new AccountMetric("利润因子", Double.isInfinite(profitFactor)
@@ -3091,14 +3359,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private String formatStreak(int count, double amount) {
-        if (count <= 0) {
-            return "0次\n--";
-        }
-        return String.format(Locale.getDefault(), "%d次\n%s", count, signedMoney(amount));
+        return TradeStatsTextFormatter.formatStreakMetric(count, amount);
     }
 
     private String formatTradeRatioMetric(int count, double ratio) {
-        return String.format(Locale.getDefault(), "%d次\n%s", count, percentRaw(ratio));
+        return TradeStatsTextFormatter.formatTradeRatioMetric(count, ratio);
     }
 
     private void applyCurrentCurveRangeFromAllPoints() {
@@ -3223,13 +3488,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.dailyReturnChartView.setViewport(viewportStartTs, viewportEndTs);
         binding.dailyReturnChartView.setPoints(displayedDailyReturnPoints);
         defaultCurveMeta = buildCurveMeta(points, drawdownSegment);
-        binding.tvCurveMeta.setText(defaultCurveMeta);
+        binding.tvCurveMeta.setText(isPrivacyMasked()
+                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
+                : defaultCurveMeta);
         clearSharedCurveHighlight();
         indicatorAdapter.submitList(buildCurveIndicators(points));
     }
 
     // 把任一子图的时间点同步成三联图共享十字光标。
-    private void applySharedCurveHighlight(long timestamp) {
+    private void applySharedCurveHighlight(long timestamp, float xRatio) {
+        if (isPrivacyMasked()) {
+            clearSharedCurveHighlight();
+            return;
+        }
         CurvePoint point = findNearestCurvePoint(timestamp);
         if (point == null) {
             clearSharedCurveHighlight();
@@ -3242,9 +3513,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         extraLines.add("日收益 " + formatPercentValue(dailyReturnPoint == null ? null : dailyReturnPoint.getReturnRate(), true));
         syncingCurveHighlight = true;
         binding.equityCurveView.setTooltipExtraLines(extraLines);
-        binding.equityCurveView.syncHighlightTimestamp(point.getTimestamp());
-        binding.drawdownChartView.syncHighlightTimestamp(point.getTimestamp());
-        binding.dailyReturnChartView.syncHighlightTimestamp(point.getTimestamp());
+        binding.equityCurveView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
+        binding.drawdownChartView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
+        binding.dailyReturnChartView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
         syncingCurveHighlight = false;
     }
 
@@ -3255,7 +3526,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.equityCurveView.clearSyncedHighlight();
         binding.drawdownChartView.clearSyncedHighlight();
         binding.dailyReturnChartView.clearSyncedHighlight();
-        binding.tvCurveMeta.setText(defaultCurveMeta);
+        binding.tvCurveMeta.setText(isPrivacyMasked()
+                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
+                : defaultCurveMeta);
         syncingCurveHighlight = false;
     }
 
@@ -3517,14 +3790,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void renderReturnStatsTable(List<CurvePoint> source) {
         binding.tableMonthlyReturns.removeAllViews();
+        binding.tvMonthlyReturnsHint.setVisibility(View.GONE);
+        binding.tvMonthlyReturnsHint.setText("");
         if (source == null || source.size() < 2) {
-            binding.tvMonthlyReturnsTitle.setText("收益统计");
             binding.tvReturnsPeriod.setText("--");
-            binding.tvMonthlyReturnsHint.setText("暂无收益统计数据");
             return;
         }
         long referenceTime = resolveReturnStatsReferenceTime(source);
-        binding.tvReturnsPeriod.setText(formatMonthLabel(referenceTime));
+        String periodText = isPrivacyMasked()
+                ? SensitiveDisplayMasker.MASK_TEXT
+                : formatMonthLabel(referenceTime);
+        binding.tvReturnsPeriod.setText(periodText);
         List<CurvePoint> scoped = source;
         if (scoped.size() < 2) {
             scoped = new ArrayList<>();
@@ -3535,7 +3811,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             case DAY:
                 binding.tvReturnsPeriod.setVisibility(View.VISIBLE);
                 binding.tvReturnsPeriod.setClickable(true);
-                binding.tvReturnsPeriod.setText(formatMonthLabel(referenceTime));
+                binding.tvReturnsPeriod.setText(periodText);
                 renderDailyReturnsTable(scoped, referenceTime);
                 break;
             case YEAR:
@@ -3599,7 +3875,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         List<CurvePoint> sorted = new ArrayList<>(source);
         sorted.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
         if (sorted.size() < 2) {
-            binding.tvMonthlyReturnsHint.setText("暂无日收益统计数据");
             return;
         }
 
@@ -3607,9 +3882,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         target.setTimeInMillis(referenceTime);
         int year = target.get(Calendar.YEAR);
         int month = target.get(Calendar.MONTH);
-
-        binding.tvMonthlyReturnsTitle.setText("区间收益（日）");
-        binding.tvMonthlyReturnsHint.setText("点击具体日期可查看该日净值曲线区间");
 
         Map<Integer, DayBucket> dayBuckets = new LinkedHashMap<>();
         Map<Integer, Double> closeByDay = new LinkedHashMap<>();
@@ -3647,15 +3919,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderMonthlyReturnsTable(List<CurvePoint> source) {
-        binding.tvMonthlyReturnsTitle.setText("区间收益（月）");
-        binding.tvMonthlyReturnsHint.setText("点击月份可查看对应区间净值曲线");
-
         List<YearlyReturnRow> rows = buildMonthlyReturnRows(source);
         if (rows.isEmpty()) {
-            binding.tvMonthlyReturnsHint.setText("暂无月收益统计数据");
             return;
         }
-        rebuildMonthlyTableTwoRowsV3(binding.tableMonthlyReturns, rows);
+        rebuildMonthlyTableThreeRowsV4(binding.tableMonthlyReturns, rows);
     }
 
     private void rebuildDailyTable(TableLayout table,
@@ -3777,9 +4045,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderYearlyReturnsTable(List<CurvePoint> source) {
-        binding.tvMonthlyReturnsTitle.setText("区间收益（年）");
-        binding.tvMonthlyReturnsHint.setText("点击年份可查看该年净值曲线");
-
         TableLayout table = binding.tableMonthlyReturns;
         table.removeAllViews();
         table.setStretchAllColumns(false);
@@ -3807,7 +4072,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
 
         if (yearBuckets.isEmpty()) {
-            binding.tvMonthlyReturnsHint.setText("暂无年收益统计数据");
             return;
         }
 
@@ -3836,9 +4100,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderStageReturnsTable(List<CurvePoint> source, long referenceTime) {
-        binding.tvMonthlyReturnsTitle.setText("区间收益（阶段）");
-        binding.tvMonthlyReturnsHint.setText("支持近1日/近7日/近30日/近3月/近1年/今年以来/全部/自定义");
-
         TableLayout table = binding.tableMonthlyReturns;
         table.removeAllViews();
         table.setStretchAllColumns(false);
@@ -4124,6 +4385,121 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
+    private void rebuildMonthlyTableThreeRowsV4(TableLayout table, List<YearlyReturnRow> rows) {
+        table.removeAllViews();
+        table.setShrinkAllColumns(false);
+        table.setStretchAllColumns(false);
+        for (YearlyReturnRow row : rows) {
+            table.addView(createMonthlyGroupedBlock(row));
+        }
+    }
+
+    private LinearLayout createMonthlyGroupedBlock(YearlyReturnRow rowData) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.HORIZONTAL);
+        block.setGravity(Gravity.TOP);
+        TableLayout.LayoutParams blockParams = new TableLayout.LayoutParams(
+                TableLayout.LayoutParams.MATCH_PARENT,
+                TableLayout.LayoutParams.WRAP_CONTENT);
+        blockParams.topMargin = dpToPx(RETURNS_CELL_MARGIN_DP);
+        block.setLayoutParams(blockParams);
+
+        TextView yearCell = createMonthlyYearSummaryCell(rowData);
+        LinearLayout.LayoutParams yearParams = new LinearLayout.LayoutParams(
+                0,
+                dpToPx(RETURNS_MONTH_GROUP_HEIGHT_DP * 3 + RETURNS_CELL_MARGIN_DP * 2),
+                0.94f);
+        yearParams.rightMargin = dpToPx(RETURNS_CELL_MARGIN_DP);
+        yearCell.setLayoutParams(yearParams);
+        block.addView(yearCell);
+
+        LinearLayout monthColumn = new LinearLayout(this);
+        monthColumn.setOrientation(LinearLayout.VERTICAL);
+        monthColumn.setLayoutParams(new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                4f));
+        monthColumn.addView(createMonthlyGroupedLine(rowData, 1, 4));
+        monthColumn.addView(createMonthlyGroupedLine(rowData, 5, 8));
+        monthColumn.addView(createMonthlyGroupedLine(rowData, 9, 12));
+        block.addView(monthColumn);
+        return block;
+    }
+
+    private LinearLayout createMonthlyGroupedLine(YearlyReturnRow rowData,
+                                                  int startMonth,
+                                                  int endMonth) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        for (int month = startMonth; month <= endMonth; month++) {
+            TextView cell = createMonthlyGroupedCell(month, rowData.monthly.get(month));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    0,
+                    dpToPx(RETURNS_MONTH_GROUP_HEIGHT_DP),
+                    1f);
+            if (month < endMonth) {
+                params.rightMargin = dpToPx(RETURNS_CELL_MARGIN_DP);
+            }
+            if (endMonth < 12) {
+                params.bottomMargin = dpToPx(RETURNS_CELL_MARGIN_DP);
+            }
+            cell.setLayoutParams(params);
+            row.addView(cell);
+        }
+        return row;
+    }
+
+    private TextView createMonthlyYearSummaryCell(YearlyReturnRow rowData) {
+        View.OnClickListener yearClick = null;
+        if (rowData.startMs > 0L && rowData.endMs > rowData.startMs) {
+            long startMs = rowData.startMs;
+            long endMs = rowData.endMs;
+            yearClick = v -> applyCurveRangeFromTableSelection(startMs, endMs);
+        }
+        int valueColor = ContextCompat.getColor(this, rowData.yearReturnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+        TextView cell = createReturnsCell(
+                buildLabelValueText(rowData.year + "年",
+                        formatReturnValue(rowData.yearReturnRate, rowData.yearReturnAmount),
+                        valueColor),
+                0,
+                false,
+                null,
+                yearClick);
+        cell.setGravity(Gravity.CENTER);
+        cell.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.8f);
+        cell.setPadding(dpToPx(4), dpToPx(3), dpToPx(4), dpToPx(3));
+        return cell;
+    }
+
+    private TextView createMonthlyGroupedCell(int month, @Nullable MonthReturnInfo info) {
+        Integer valueColor = info != null && info.hasData
+                ? ContextCompat.getColor(this, info.returnRate >= 0d ? R.color.accent_green : R.color.accent_red)
+                : null;
+        TextView cell = createReturnsCell(
+                buildLabelValueText(month + "月", formatMonthlyGroupedValue(info), valueColor),
+                0,
+                false,
+                null,
+                resolveMonthlyHeatCellClickListener(info));
+        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.2f);
+        cell.setPadding(dpToPx(3), dpToPx(3), dpToPx(3), dpToPx(3));
+        return cell;
+    }
+
+    private String formatMonthlyGroupedValue(@Nullable MonthReturnInfo info) {
+        if (info == null || !info.hasData) {
+            return "--";
+        }
+        if (isPrivacyMasked()) {
+            return SensitiveDisplayMasker.MASK_TEXT;
+        }
+        return formatReturnValue(info.returnRate, info.returnAmount);
+    }
+
     private TableRow createMonthlyReturnsHeaderRow() {
         TableRow row = new TableRow(this);
         row.addView(createMonthlyHeatCell("年份", 1.18f, true, null, null, null));
@@ -4157,6 +4533,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String formatMonthlyHeatCellValue(@Nullable MonthReturnInfo info) {
         if (info == null || !info.hasData) {
             return "--";
+        }
+        if (isPrivacyMasked()) {
+            return SensitiveDisplayMasker.MASK_TEXT;
         }
         if (returnValueMode == ReturnValueMode.AMOUNT) {
             return formatCompactSignedAmount(info.returnAmount);
@@ -4234,8 +4613,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                              @Nullable Double heatRate,
                                              @Nullable View.OnClickListener clickListener) {
         TableRow row = new TableRow(this);
-        row.addView(createAlignedReturnsCell(label, header, false, header ? 1.04f : 1f, null, heatRate, clickListener));
-        row.addView(createAlignedReturnsCell(value, header, true, 0.96f, valueColor, heatRate, clickListener));
+        row.addView(createAlignedReturnsCell(label, header, false, 1f, null, heatRate, clickListener));
+        row.addView(createAlignedReturnsCell(value, header, true, 1f, valueColor, heatRate, clickListener));
         return row;
     }
 
@@ -4257,11 +4636,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         cell.setSingleLine(true);
         cell.setMaxLines(1);
         cell.setEllipsize(TextUtils.TruncateAt.END);
-        cell.setText(makeNonBreakingText(text == null ? "--" : text.toString()));
+        String displayText = text == null ? "--" : text.toString();
+        boolean maskedValue = !header && alignEnd && isPrivacyMasked() && !"--".equals(displayText.trim());
+        if (maskedValue) {
+            displayText = SensitiveDisplayMasker.MASK_TEXT;
+        }
+        cell.setText(makeNonBreakingText(displayText));
         cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, header ? 10f : 9.6f);
-        cell.setTextColor(textColor != null
-                ? textColor
-                : ContextCompat.getColor(this, header ? R.color.text_primary : R.color.text_secondary));
+        int neutralColor = ContextCompat.getColor(this, header ? R.color.text_primary : R.color.text_secondary);
+        cell.setTextColor(AccountStatsPrivacyFormatter.resolveValueColor(textColor, neutralColor, maskedValue));
         cell.setBackground(buildReturnsCellBackground(heatRate, header));
         if (clickListener != null) {
             cell.setOnClickListener(clickListener);
@@ -4322,6 +4705,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (safeValue.isEmpty()) {
             safeValue = "--";
         }
+        boolean maskedValue = isPrivacyMasked() && !"--".equals(safeValue);
+        if (maskedValue) {
+            safeValue = SensitiveDisplayMasker.MASK_TEXT;
+        }
         SpannableStringBuilder builder = new SpannableStringBuilder();
         if (!safeLabel.isEmpty()) {
             builder.append(safeLabel);
@@ -4329,7 +4716,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         int valueStart = builder.length();
         builder.append(makeNonBreakingText(safeValue));
-        if (valueColor != null) {
+        if (valueColor != null && !maskedValue) {
             builder.setSpan(new ForegroundColorSpan(valueColor),
                     valueStart,
                     builder.length(),
@@ -4416,8 +4803,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         valueView.setGravity(Gravity.CENTER);
         valueView.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
         valueView.setIncludeFontPadding(false);
-        valueView.setText(makeNonBreakingText(value == null ? "00.0%" : value));
-        valueView.setTextColor(valueColor != null ? valueColor : ContextCompat.getColor(this, R.color.text_secondary));
+        String displayValue = value == null ? "00.0%" : value;
+        boolean masked = isPrivacyMasked() && value != null;
+        if (masked) {
+            displayValue = SensitiveDisplayMasker.MASK_TEXT;
+        }
+        valueView.setText(makeNonBreakingText(displayValue));
+        valueView.setTextColor(masked
+                ? ContextCompat.getColor(this, R.color.text_secondary)
+                : (valueColor != null ? valueColor : ContextCompat.getColor(this, R.color.text_secondary)));
         valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.0f);
         valueView.setSingleLine(true);
         valueView.setMaxLines(1);
@@ -4447,7 +4841,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         int fill = header
                 ? blendColor(palette.surfaceEnd, palette.textPrimary, 0.10f)
                 : palette.surfaceEnd;
-        if (!header && rate != null) {
+        if (!header && rate != null && !isPrivacyMasked()) {
             float intensity = Math.min(1f, 0.18f + (float) Math.abs(rate) * 4.2f);
             fill = blendColor(palette.surfaceEnd, rate >= 0d ? palette.rise : palette.fall, intensity * 0.42f);
         }
@@ -4588,9 +4982,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void refreshPositions() {
+        boolean masked = isPrivacyMasked();
         List<PositionItem> list = buildPositionListWithNaturalDayPnl(basePositions, baseTrades);
         list.sort(Comparator.comparing(PositionItem::getProductName));
 
+        positionAggregateAdapter.setMasked(masked);
+        positionAdapter.setMasked(masked);
+        pendingOrderAdapter.setMasked(masked);
         positionAggregateAdapter.submitList(buildPositionAggregates(list));
         positionAdapter.submitList(list);
 
@@ -4606,13 +5004,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         for (PositionItem item : list) {
             totalPnl += item.getTotalPnL() + item.getStorageFee();
         }
-        double totalAsset = allCurvePoints.isEmpty()
-                ? ACCOUNT_INITIAL_BALANCE
-                : Math.max(1d, allCurvePoints.get(allCurvePoints.size() - 1).getBalance());
-        double ratio = safeDivide(totalPnl, totalAsset);
+        double totalMarketValue = 0d;
+        for (PositionItem item : list) {
+            totalMarketValue += Math.max(0d, Math.abs(item.getMarketValue()));
+        }
+        double ratio = safeDivide(totalPnl, Math.max(1d, totalMarketValue));
         overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics, list));
         binding.tvPositionPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-        binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(totalPnl, ratio));
+        if (masked) {
+            binding.tvPositionPnlSummary.setText("全周期总计盈亏（持仓）: **** | 持仓收益率: ****");
+        } else {
+            binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(totalPnl, ratio));
+        }
     }
 
     private List<PositionItem> buildPositionListWithNaturalDayPnl(List<PositionItem> source,
@@ -4767,21 +5170,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         int pnlColor = ContextCompat.getColor(this, totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
         int ratioColor = ContextCompat.getColor(this, ratio >= 0d ? R.color.accent_green : R.color.accent_red);
-        int pnlLabelEnd = summary.indexOf(pnlText) - 1;
-        if (pnlLabelEnd > 0) {
-            spannable.setSpan(new StyleSpan(Typeface.BOLD),
-                    0,
-                    pnlLabelEnd,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-
         int pnlStart = summary.indexOf(pnlText);
         if (pnlStart >= 0) {
             spannable.setSpan(new ForegroundColorSpan(pnlColor),
                     pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             spannable.setSpan(new AbsoluteSizeSpan(18, true),
-                    pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new StyleSpan(Typeface.BOLD),
                     pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         int ratioStart = summary.lastIndexOf(ratioText);
@@ -4789,8 +5182,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             spannable.setSpan(new ForegroundColorSpan(ratioColor),
                     ratioStart, ratioStart + ratioText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             spannable.setSpan(new AbsoluteSizeSpan(16, true),
-                    ratioStart, ratioStart + ratioText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new StyleSpan(Typeface.BOLD),
                     ratioStart, ratioStart + ratioText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         return spannable;
@@ -5220,6 +5611,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                        String productFilter,
                                        String sideFilter,
                                        String dateFilter) {
+        boolean masked = isPrivacyMasked();
         double total = 0d;
         double storageTotal = 0d;
         int tradeCount = trades == null ? 0 : trades.size();
@@ -5244,14 +5636,26 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         String storageText = signedMoney(storageTotal);
         double balanceTotal = total + storageTotal;
         String balanceText = signedMoney(balanceTotal);
+        if (masked) {
+            binding.tvTradeSummaryCountValue.setText(SensitiveDisplayMasker.MASK_TEXT);
+            binding.tvTradeSummaryBalanceValue.setText(SensitiveDisplayMasker.MASK_TEXT);
+            binding.tvTradeSummaryPnlValue.setText(SensitiveDisplayMasker.MASK_TEXT);
+            binding.tvTradeSummaryStorageValue.setText(SensitiveDisplayMasker.MASK_TEXT);
+            int defaultColor = ContextCompat.getColor(this, R.color.text_primary);
+            binding.tvTradeSummaryCountValue.setTextColor(defaultColor);
+            binding.tvTradeSummaryBalanceValue.setTextColor(defaultColor);
+            binding.tvTradeSummaryPnlValue.setTextColor(defaultColor);
+            binding.tvTradeSummaryStorageValue.setTextColor(defaultColor);
+            return;
+        }
         binding.tvTradeSummaryCountValue.setText(tradeCount + "次");
-        binding.tvTradeSummaryBalanceValue.setText(balanceText);
+        binding.tvTradeSummaryBalanceValue.setText(storageText);
         binding.tvTradeSummaryPnlValue.setText(pnlText);
-        binding.tvTradeSummaryStorageValue.setText(storageText);
+        binding.tvTradeSummaryStorageValue.setText(balanceText);
         binding.tvTradeSummaryCountValue.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-        binding.tvTradeSummaryBalanceValue.setTextColor(resolveSignedValueColor(balanceTotal));
+        binding.tvTradeSummaryBalanceValue.setTextColor(resolveSignedValueColor(storageTotal));
         binding.tvTradeSummaryPnlValue.setTextColor(resolveSignedValueColor(total));
-        binding.tvTradeSummaryStorageValue.setTextColor(resolveSignedValueColor(storageTotal));
+        binding.tvTradeSummaryStorageValue.setTextColor(resolveSignedValueColor(balanceTotal));
     }
 
     // 统一给盈亏数字着色，0 值保持主文字色。
@@ -5402,7 +5806,80 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.dailyReturnChartView.refreshPalette();
         binding.tradeDistributionScatterView.refreshPalette();
         binding.holdingDurationDistributionView.refreshPalette();
+        if (binding.ivAccountPrivacyToggle != null) {
+            binding.ivAccountPrivacyToggle.setImageTintList(ColorStateList.valueOf(palette.textSecondary));
+        }
+        updateLoginSuccessBannerStyle();
         setConnectionStatus(gatewayConnected);
+        applyPrivacyMaskState();
+    }
+
+    // 登录真正连上网关后，在界面中央显示一条不会拦截点击的短提示。
+    private void showLoginSuccessBanner() {
+        if (binding == null || binding.tvLoginSuccessBanner == null) {
+            return;
+        }
+        updateLoginSuccessBannerStyle();
+        TextView banner = binding.tvLoginSuccessBanner;
+        banner.removeCallbacks(hideLoginSuccessBannerRunnable);
+        banner.animate().cancel();
+        banner.setVisibility(View.VISIBLE);
+        banner.setAlpha(0f);
+        banner.setScaleX(0.92f);
+        banner.setScaleY(0.92f);
+        banner.setTranslationY(dpToPx(8));
+        banner.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .translationY(0f)
+                .setDuration(180L)
+                .start();
+        banner.postDelayed(hideLoginSuccessBannerRunnable, 900L);
+    }
+
+    // 统一刷新登录成功提示的颜色，保证主题切换时样式同步。
+    private void updateLoginSuccessBannerStyle() {
+        if (binding == null || binding.tvLoginSuccessBanner == null) {
+            return;
+        }
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        binding.tvLoginSuccessBanner.setText(R.string.account_login_success_banner);
+        binding.tvLoginSuccessBanner.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
+        binding.tvLoginSuccessBanner.setTextColor(ContextCompat.getColor(this, R.color.white));
+    }
+
+    // 让成功提示快速淡出，避免遮挡中间操作区。
+    private void hideLoginSuccessBannerNow() {
+        if (binding == null || binding.tvLoginSuccessBanner == null) {
+            return;
+        }
+        TextView banner = binding.tvLoginSuccessBanner;
+        banner.removeCallbacks(hideLoginSuccessBannerRunnable);
+        if (banner.getVisibility() != View.VISIBLE) {
+            banner.setAlpha(0f);
+            banner.setTranslationY(dpToPx(8));
+            banner.setVisibility(View.GONE);
+            return;
+        }
+        banner.animate().cancel();
+        banner.animate()
+                .alpha(0f)
+                .scaleX(0.96f)
+                .scaleY(0.96f)
+                .translationY(-dpToPx(4))
+                .setDuration(160L)
+                .withEndAction(() -> {
+                    if (binding == null || binding.tvLoginSuccessBanner == null) {
+                        return;
+                    }
+                    binding.tvLoginSuccessBanner.setVisibility(View.GONE);
+                    binding.tvLoginSuccessBanner.setAlpha(0f);
+                    binding.tvLoginSuccessBanner.setScaleX(1f);
+                    binding.tvLoginSuccessBanner.setScaleY(1f);
+                    binding.tvLoginSuccessBanner.setTranslationY(dpToPx(8));
+                })
+                .start();
     }
 
     private void flattenCardSections(View view, UiPaletteManager.Palette palette) {
@@ -5475,6 +5952,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
+    }
+
+    private void sendServiceAction(String action) {
+        Intent intent = new Intent(this, MonitorService.class);
+        intent.setAction(action);
+        ContextCompat.startForegroundService(this, intent);
     }
 
     private void openSettings() {

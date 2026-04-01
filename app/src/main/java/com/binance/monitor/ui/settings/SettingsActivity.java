@@ -51,7 +51,7 @@ public class SettingsActivity extends AppCompatActivity {
     // 绑定首页分类入口。
     private void setupEntries() {
         binding.itemDisplay.setOnClickListener(v -> openSection(SECTION_DISPLAY, "悬浮窗与显示"));
-        binding.itemGateway.setOnClickListener(v -> openSection(SECTION_GATEWAY, "MT5 网关地址"));
+        binding.itemGateway.setOnClickListener(v -> openSection(SECTION_GATEWAY, "网关地址"));
         binding.itemTheme.setOnClickListener(v -> openSection(SECTION_THEME, "主题设置"));
         binding.itemTab.setOnClickListener(v -> openSection(SECTION_TAB, "Tab 页管理"));
         binding.itemCache.setOnClickListener(v -> openSection(SECTION_CACHE, "缓存管理"));
@@ -89,7 +89,7 @@ public class SettingsActivity extends AppCompatActivity {
                 ? com.binance.monitor.R.drawable.bg_tab_wechat_selected
                 : com.binance.monitor.R.drawable.bg_tab_wechat_unselected);
         tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        tab.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        tab.setTypeface(null, Typeface.NORMAL);
         tab.setTextSize(13f);
     }
 

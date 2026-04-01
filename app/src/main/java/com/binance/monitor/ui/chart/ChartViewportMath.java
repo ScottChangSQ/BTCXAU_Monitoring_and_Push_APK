@@ -11,6 +11,11 @@ public final class ChartViewportMath {
     private ChartViewportMath() {
     }
 
+    // 返回默认右侧留白槽位数，供默认停靠位和测试复用。
+    public static float resolveDefaultRightBlankSlots() {
+        return DEFAULT_DOCKING_SLOTS;
+    }
+
     // 把右侧留白槽位计入可视结束索引，让最新 K 线默认停靠在留白左侧。
     public static float resolveVisibleEndFloat(int candleCount, float offsetCandles, float rightBlankSlots) {
         return Math.max(0f, candleCount - 1f + offsetCandles + Math.max(0f, rightBlankSlots));

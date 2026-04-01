@@ -20,6 +20,8 @@ public class ConfigManager {
     private static final String KEY_TAB_MARKET_MONITOR_VISIBLE = "tab_market_monitor_visible";
     private static final String KEY_TAB_MARKET_CHART_VISIBLE = "tab_market_chart_visible";
     private static final String KEY_TAB_ACCOUNT_STATS_VISIBLE = "tab_account_stats_visible";
+    private static final String KEY_ACCOUNT_SESSION_ACTIVE = "account_session_active";
+    private static final String KEY_DATA_MASKED = "data_masked";
     private static volatile ConfigManager instance;
 
     private final SharedPreferences preferences;
@@ -166,6 +168,22 @@ public class ConfigManager {
 
     public void setTabAccountStatsVisible(boolean visible) {
         preferences.edit().putBoolean(KEY_TAB_ACCOUNT_STATS_VISIBLE, visible).apply();
+    }
+
+    public boolean isAccountSessionActive() {
+        return preferences.getBoolean(KEY_ACCOUNT_SESSION_ACTIVE, false);
+    }
+
+    public void setAccountSessionActive(boolean active) {
+        preferences.edit().putBoolean(KEY_ACCOUNT_SESSION_ACTIVE, active).apply();
+    }
+
+    public boolean isDataMasked() {
+        return preferences.getBoolean(KEY_DATA_MASKED, false);
+    }
+
+    public void setDataMasked(boolean masked) {
+        preferences.edit().putBoolean(KEY_DATA_MASKED, masked).apply();
     }
 
     private String getPrefix(String symbol) {

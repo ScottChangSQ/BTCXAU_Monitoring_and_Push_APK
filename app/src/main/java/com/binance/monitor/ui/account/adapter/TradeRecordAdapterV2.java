@@ -18,6 +18,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemTradeRecordBinding;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
 import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
     private final List<TradeRecordItem> items = new ArrayList<>();
     private final List<String> rowKeys = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
+    private boolean masked;
 
     public void submitList(List<TradeRecordItem> data) {
         List<TradeRecordItem> nextItems = data == null ? new ArrayList<>() : new ArrayList<>(data);
@@ -67,6 +69,14 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         expandedKeys.clear();
     }
 
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
+        notifyDataSetChanged();
+    }
+
     private List<String> buildRowKeys(List<TradeRecordItem> data) {
         List<String> keys = new ArrayList<>();
         if (data == null || data.isEmpty()) {
@@ -93,7 +103,7 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         TradeRecordItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, false);
+        holder.bind(item, expanded, false, masked);
         holder.binding.layoutHeader.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= rowKeys.size()) {
@@ -118,7 +128,7 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         TradeRecordItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE));
+        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE), masked);
     }
 
     @Override
@@ -228,7 +238,22 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             this.binding = binding;
         }
 
-        void bind(TradeRecordItem item, boolean expanded, boolean animateExpand) {
+        void bind(TradeRecordItem item, boolean expanded, boolean animateExpand, boolean masked) {
+            if (masked) {
+                binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                binding.tvTime.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvProduct.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvSide.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvDetail.setText(SensitiveDisplayMasker.MASK_TEXT);
+                binding.tvTime.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                binding.tvProduct.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                binding.tvSide.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                binding.tvDetail.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                binding.tvRemark.setVisibility(View.GONE);
+                updateExpandState(expanded, animateExpand);
+                return;
+            }
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
             double summaryProfit = item.getProfit() + item.getStorageFee();

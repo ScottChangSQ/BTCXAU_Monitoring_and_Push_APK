@@ -2,6 +2,7 @@ package com.binance.monitor.ui.account;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
@@ -26,7 +27,7 @@ import java.util.Locale;
 public class EquityCurveView extends View {
 
     public interface OnPointHighlightListener {
-        void onPointHighlight(@Nullable CurvePoint point);
+        void onPointHighlight(@Nullable CurvePoint point, float xRatio);
     }
 
     private final Paint gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -43,6 +44,7 @@ public class EquityCurveView extends View {
     private final Paint drawdownValleyMarkerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tooltipBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tooltipTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint emptyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path equityPath = new Path();
     private final Path balancePath = new Path();
     private final Path drawdownDiamondPath = new Path();
@@ -65,7 +67,9 @@ public class EquityCurveView extends View {
     private double drawdownValleyBalance;
 
     private int highlightedIndex = -1;
+    private float highlightedXRatio = -1f;
     private boolean longPressing;
+    private boolean masked;
     private OnPointHighlightListener onPointHighlightListener;
 
     public EquityCurveView(Context context) {
@@ -92,9 +96,10 @@ public class EquityCurveView extends View {
         equityPaint.setStyle(Paint.Style.STROKE);
         equityPaint.setStrokeWidth(dp(2.2f));
 
-        balancePaint.setColor(palette.btc);
+        balancePaint.setColor(palette.xau);
         balancePaint.setStyle(Paint.Style.STROKE);
         balancePaint.setStrokeWidth(dp(1.7f));
+        balancePaint.setPathEffect(new DashPathEffect(new float[]{dp(6f), dp(4f)}, 0f));
 
         markerPaint.setStyle(Paint.Style.FILL);
 
@@ -115,6 +120,9 @@ public class EquityCurveView extends View {
 
         tooltipTextPaint.setColor(ContextCompat.getColor(context, R.color.text_primary));
         tooltipTextPaint.setTextSize(dp(9f));
+
+        emptyPaint.setTextAlign(Paint.Align.CENTER);
+        emptyPaint.setTextSize(dp(10f));
 
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override
@@ -146,11 +154,13 @@ public class EquityCurveView extends View {
         axisPaint.setColor(applyAlpha(palette.textSecondary, 210));
         gridPaint.setColor(applyAlpha(palette.stroke, 170));
         equityPaint.setColor(palette.primary);
-        balancePaint.setColor(palette.btc);
+        balancePaint.setColor(palette.xau);
+        balancePaint.setPathEffect(new DashPathEffect(new float[]{dp(6f), dp(4f)}, 0f));
         applyDrawdownPalette();
         crosshairPaint.setColor(applyAlpha(palette.textSecondary, 220));
         tooltipBgPaint.setColor(applyAlpha(palette.card, 240));
         tooltipTextPaint.setColor(palette.textPrimary);
+        emptyPaint.setColor(palette.textSecondary);
         invalidate();
     }
 
@@ -166,6 +176,7 @@ public class EquityCurveView extends View {
         }
         tooltipExtraLines.clear();
         highlightedIndex = -1;
+        highlightedXRatio = -1f;
         longPressing = false;
         dispatchHighlightedPoint();
         invalidate();
@@ -173,6 +184,17 @@ public class EquityCurveView extends View {
 
     public void setBaseBalance(double value) {
         baseBalance = Math.max(1e-9, value);
+        invalidate();
+    }
+
+    // 根据账户统计页隐私状态切换为占位态。
+    public void setMasked(boolean masked) {
+        if (this.masked == masked) {
+            return;
+        }
+        this.masked = masked;
+        clearSyncedHighlight();
+        dispatchHighlightedPoint();
         invalidate();
     }
 
@@ -194,23 +216,29 @@ public class EquityCurveView extends View {
     }
 
     // 由宿主把共享时间戳同步到主图，不触发反向回调。
-    public void syncHighlightTimestamp(long timestamp) {
+    public void syncHighlightTimestamp(long timestamp, float xRatio) {
         if (timestamp <= 0L || points.isEmpty()) {
             clearSyncedHighlight();
             return;
         }
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(timestamp)));
+        highlightedXRatio = clampRatio(xRatio);
         invalidate();
     }
 
     // 清除宿主同步过来的十字光标状态。
     public void clearSyncedHighlight() {
         highlightedIndex = -1;
+        highlightedXRatio = -1f;
         invalidate();
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (masked) {
+            clearHighlight();
+            return false;
+        }
         gestureDetector.onTouchEvent(event);
         if (points.size() < 2) {
             return super.onTouchEvent(event);
@@ -238,14 +266,19 @@ public class EquityCurveView extends View {
             return;
         }
 
-        chartLeft = dp(38f);
+        chartLeft = dp(34f);
         chartTop = dp(12f);
-        chartRight = width - dp(36f);
+        chartRight = width - dp(28f);
         chartBottom = height - dp(24f);
 
         drawGrid(canvas, chartLeft, chartTop, chartRight, chartBottom);
+        drawAxes(canvas, chartLeft, chartTop, chartRight, chartBottom);
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
         if (points.size() < 2) {
-            drawAxes(canvas, chartLeft, chartTop, chartRight, chartBottom);
+            canvas.drawText("暂无曲线数据", width / 2f, height / 2f, emptyPaint);
             return;
         }
 
@@ -298,7 +331,6 @@ public class EquityCurveView extends View {
             drawHighlight(canvas, highlightedIndex);
         }
 
-        drawAxes(canvas, chartLeft, chartTop, chartRight, chartBottom);
         drawYLabels(canvas, chartLeft, chartRight, chartTop, chartBottom, chartMin, chartMax, baseBalance);
         drawXLabels(canvas, chartLeft, chartRight, chartBottom);
     }
@@ -338,7 +370,7 @@ public class EquityCurveView extends View {
 
     private void drawHighlight(Canvas canvas, int index) {
         CurvePoint point = points.get(index);
-        float x = mapX(point.getTimestamp(), chartStartTs, chartEndTs, chartLeft, chartRight);
+        float x = resolveHighlightX(point);
         float yEquity = mapY(point.getEquity(), chartMin, chartMax, chartTop, chartBottom);
         float yBalance = mapY(point.getBalance(), chartMin, chartMax, chartTop, chartBottom);
         canvas.drawLine(x, chartTop, x, chartBottom, crosshairPaint);
@@ -346,7 +378,7 @@ public class EquityCurveView extends View {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(getContext());
         markerPaint.setColor(palette.primary);
         canvas.drawCircle(x, yEquity, dp(4f), markerPaint);
-        markerPaint.setColor(palette.btc);
+        markerPaint.setColor(palette.xau);
         canvas.drawCircle(x, yBalance, dp(3.5f), markerPaint);
 
         List<String> tooltipLines = new ArrayList<>();
@@ -390,15 +422,14 @@ public class EquityCurveView extends View {
             return;
         }
         float clamped = Math.max(chartLeft, Math.min(chartRight, x));
+        highlightedXRatio = clampRatio((clamped - chartLeft) / range);
         double ratio = (clamped - chartLeft) / range;
         long targetTs = chartStartTs + Math.round(ratio * (chartEndTs - chartStartTs));
         int index = findNearestIndexByTimestamp(targetTs);
         index = Math.max(0, Math.min(points.size() - 1, index));
-        if (highlightedIndex != index) {
-            highlightedIndex = index;
-            dispatchHighlightedPoint();
-            invalidate();
-        }
+        highlightedIndex = index;
+        dispatchHighlightedPoint();
+        invalidate();
     }
 
     private int findNearestIndexByTimestamp(long timestamp) {
@@ -433,6 +464,7 @@ public class EquityCurveView extends View {
     private void clearHighlight() {
         longPressing = false;
         requestParentDisallowIntercept(false);
+        highlightedXRatio = -1f;
         if (highlightedIndex != -1) {
             highlightedIndex = -1;
             dispatchHighlightedPoint();
@@ -445,7 +477,8 @@ public class EquityCurveView extends View {
             return;
         }
         onPointHighlightListener.onPointHighlight(
-                highlightedIndex >= 0 && highlightedIndex < points.size() ? points.get(highlightedIndex) : null);
+                highlightedIndex >= 0 && highlightedIndex < points.size() ? points.get(highlightedIndex) : null,
+                highlightedXRatio);
     }
 
     private void requestParentDisallowIntercept(boolean disallow) {
@@ -476,14 +509,25 @@ public class EquityCurveView extends View {
         for (int i = 0; i <= tickCount; i++) {
             double value = min + (max - min) * i / tickCount;
             float y = mapY(value, min, max, top, bottom);
-            String amount = "$" + String.format(Locale.getDefault(), "%,.0f", value);
-            float amountWidth = labelPaint.measureText(amount);
-            canvas.drawText(amount, left - dp(4f) - amountWidth, y + dp(3f), labelPaint);
+            String amount = formatAxisAmount(value);
+            canvas.drawText(amount, dp(4f), y + dp(3f), labelPaint);
 
             double pct = (value - base) / Math.max(1e-9, base) * 100d;
             String percent = String.format(Locale.getDefault(), "%+.1f%%", pct);
-            canvas.drawText(percent, right + dp(4f), y + dp(3f), labelPaint);
+            float percentWidth = labelPaint.measureText(percent);
+            canvas.drawText(percent, getWidth() - dp(4f) - percentWidth, y + dp(3f), labelPaint);
         }
+    }
+
+    private String formatAxisAmount(double value) {
+        double absValue = Math.abs(value);
+        if (absValue >= 1_000_000d) {
+            return String.format(Locale.getDefault(), "$%.1fM", value / 1_000_000d);
+        }
+        if (absValue >= 1_000d) {
+            return String.format(Locale.getDefault(), "$%.1fk", value / 1_000d);
+        }
+        return String.format(Locale.getDefault(), "$%.0f", value);
     }
 
     private double niceStep(double rawStep) {
@@ -544,6 +588,17 @@ public class EquityCurveView extends View {
 
     private float dp(float value) {
         return value * getResources().getDisplayMetrics().density;
+    }
+
+    private float resolveHighlightX(CurvePoint point) {
+        if (highlightedXRatio >= 0f) {
+            return chartLeft + highlightedXRatio * (chartRight - chartLeft);
+        }
+        return mapX(point.getTimestamp(), chartStartTs, chartEndTs, chartLeft, chartRight);
+    }
+
+    private float clampRatio(float ratio) {
+        return Math.max(0f, Math.min(1f, ratio));
     }
 
     private void applyDrawdownPalette() {

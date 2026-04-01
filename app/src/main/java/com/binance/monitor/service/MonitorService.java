@@ -14,9 +14,11 @@ import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
+import com.binance.monitor.data.model.AbnormalAlertItem;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
+import com.binance.monitor.data.remote.AbnormalGatewayClient;
 import com.binance.monitor.data.remote.BinanceApiClient;
 import com.binance.monitor.data.remote.WebSocketManager;
 import com.binance.monitor.data.repository.MonitorRepository;
@@ -30,8 +32,10 @@ import com.binance.monitor.util.NotificationHelper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -45,11 +49,19 @@ public class MonitorService extends Service {
     private final Map<String, Long> lastPricePublishAt = new HashMap<>();
     private final Map<String, Double> lastPublishedPrice = new HashMap<>();
     private final Map<Long, PendingRound> pendingRounds = new HashMap<>();
+    private final Set<String> seenAlertIds = new LinkedHashSet<>();
     private final Runnable connectionWatchdogRunnable = new Runnable() {
         @Override
         public void run() {
             checkStreamFreshness();
             mainHandler.postDelayed(this, AppConstants.CONNECTION_HEARTBEAT_INTERVAL_MS);
+        }
+    };
+    private final Runnable abnormalSyncRunnable = new Runnable() {
+        @Override
+        public void run() {
+            requestAbnormalSync();
+            mainHandler.postDelayed(this, AppConstants.ABNORMAL_SYNC_INTERVAL_MS);
         }
     };
     private final Runnable floatingRefreshRunnable = new Runnable() {
@@ -69,6 +81,7 @@ public class MonitorService extends Service {
     private FloatingWindowManager floatingWindowManager;
     private AccountStorageRepository accountStorageRepository;
     private BinanceApiClient apiClient;
+    private AbnormalGatewayClient abnormalGatewayClient;
     private WebSocketManager webSocketManager;
     private ExecutorService executorService;
     private boolean pipelineStarted;
@@ -78,6 +91,9 @@ public class MonitorService extends Service {
     private long lastForcedReconnectAt;
     private long lastStaleRestRefreshAt;
     private volatile boolean staleRestRefreshInFlight;
+    private volatile boolean abnormalSyncInFlight;
+    private long abnormalSyncSeq;
+    private boolean abnormalBootstrapSynced;
 
     @Override
     public void onCreate() {
@@ -90,6 +106,7 @@ public class MonitorService extends Service {
         floatingWindowManager = new FloatingWindowManager(this);
         accountStorageRepository = new AccountStorageRepository(this);
         apiClient = new BinanceApiClient(this);
+        abnormalGatewayClient = new AbnormalGatewayClient(this);
         webSocketManager = new WebSocketManager(this);
         executorService = Executors.newSingleThreadExecutor();
         repository.setMonitoringEnabled(true);
@@ -116,6 +133,8 @@ public class MonitorService extends Service {
                 break;
             case AppConstants.ACTION_REFRESH_CONFIG:
                 applyFloatingPreferences();
+                syncAbnormalConfigAsync();
+                scheduleAbnormalSync(0L);
                 break;
             case AppConstants.ACTION_BOOTSTRAP:
             default:
@@ -178,6 +197,8 @@ public class MonitorService extends Service {
         fetchBootstrapData();
         mainHandler.removeCallbacks(connectionWatchdogRunnable);
         mainHandler.postDelayed(connectionWatchdogRunnable, AppConstants.CONNECTION_HEARTBEAT_INTERVAL_MS);
+        syncAbnormalConfigAsync();
+        scheduleAbnormalSync(800L);
         webSocketManager.connect(AppConstants.MONITOR_SYMBOLS, new WebSocketManager.Listener() {
             @Override
             public void onSocketStateChanged(String symbol, boolean connected, int reconnectAttempt, String message) {
@@ -197,9 +218,6 @@ public class MonitorService extends Service {
                     if (data.isClosed()) {
                         maybePublishPrice(symbol, data, now, true);
                         repository.updateClosedKline(data);
-                        if (Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
-                            handleClosedKline(data);
-                        }
                     } else {
                         maybePublishPrice(symbol, data, now, false);
                     }
@@ -236,6 +254,135 @@ public class MonitorService extends Service {
             }
             mainHandler.post(() -> requestFloatingWindowRefresh(true));
         });
+    }
+
+    // 按固定节奏向网关拉取异常记录，首轮只落历史数据，不补发旧提醒。
+    private void requestAbnormalSync() {
+        if (abnormalGatewayClient == null || executorService == null || abnormalSyncInFlight) {
+            return;
+        }
+        abnormalSyncInFlight = true;
+        long sinceSeq = abnormalBootstrapSynced ? abnormalSyncSeq : 0L;
+        executorService.execute(() -> {
+            AbnormalGatewayClient.SyncResult result = abnormalGatewayClient.fetch(sinceSeq);
+            mainHandler.post(() -> applyAbnormalSyncResult(result));
+        });
+    }
+
+    // 同步完成后统一写入本地记录，并只对真正新的提醒发通知。
+    private void applyAbnormalSyncResult(@Nullable AbnormalGatewayClient.SyncResult result) {
+        abnormalSyncInFlight = false;
+        if (result == null || !result.isSuccess()) {
+            String error = result == null ? "未知错误" : result.getError();
+            if (error != null && !error.trim().isEmpty()) {
+                logManager.warn("异常同步失败: " + error);
+            }
+            return;
+        }
+        abnormalSyncSeq = Math.max(abnormalSyncSeq, result.getSyncSeq());
+        int appendedCount = 0;
+        for (AbnormalRecord record : result.getRecords()) {
+            if (recordManager.addRecordIfAbsent(record)) {
+                appendedCount++;
+            }
+        }
+        boolean canNotify = abnormalBootstrapSynced;
+        for (AbnormalAlertItem alert : result.getAlerts()) {
+            boolean unseen = rememberAlertId(alert == null ? "" : alert.getId());
+            if (canNotify && unseen) {
+                dispatchSyncedAlert(alert);
+            }
+        }
+        abnormalBootstrapSynced = true;
+        if (appendedCount > 0) {
+            logManager.info("异常同步完成，新增记录 " + appendedCount + " 条");
+        }
+    }
+
+    // 把新的服务端提醒转成系统通知与悬浮窗闪动提示。
+    private void dispatchSyncedAlert(@Nullable AbnormalAlertItem alert) {
+        if (alert == null) {
+            return;
+        }
+        if (!Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
+            return;
+        }
+        String title = alert.getTitle() == null || alert.getTitle().trim().isEmpty()
+                ? getString(R.string.alert_title)
+                : alert.getTitle().trim();
+        String content = alert.getContent() == null ? "" : alert.getContent().trim();
+        notificationHelper.notifyAlert(resolveAlertNotificationId(alert), title, content);
+        for (String symbol : alert.getSymbols()) {
+            if (symbol != null && !symbol.trim().isEmpty()) {
+                floatingWindowManager.notifyAbnormalEvent(symbol);
+            }
+        }
+        if (!content.isEmpty()) {
+            logManager.warn("服务端异常提醒: " + content.replace("\n", " | "));
+        }
+    }
+
+    // 记住已经处理过的提醒，避免全量同步或重复增量时再次弹出。
+    private boolean rememberAlertId(String alertId) {
+        if (alertId == null || alertId.trim().isEmpty()) {
+            return false;
+        }
+        synchronized (seenAlertIds) {
+            boolean added = seenAlertIds.add(alertId);
+            if (seenAlertIds.size() > 240) {
+                String first = seenAlertIds.iterator().next();
+                seenAlertIds.remove(first);
+            }
+            return added;
+        }
+    }
+
+    private int resolveAlertNotificationId(AbnormalAlertItem alert) {
+        boolean hasBtc = false;
+        boolean hasXau = false;
+        if (alert != null) {
+            for (String symbol : alert.getSymbols()) {
+                if (AppConstants.SYMBOL_BTC.equals(symbol)) {
+                    hasBtc = true;
+                } else if (AppConstants.SYMBOL_XAU.equals(symbol)) {
+                    hasXau = true;
+                }
+            }
+        }
+        if (hasBtc && hasXau) {
+            return AppConstants.COMBINED_ALERT_NOTIFICATION_ID;
+        }
+        if (hasXau) {
+            return AppConstants.XAU_ALERT_NOTIFICATION_ID;
+        }
+        return AppConstants.BTC_ALERT_NOTIFICATION_ID;
+    }
+
+    // 把当前本地阈值配置推到网关端，保证服务端判断与设置页一致。
+    private void syncAbnormalConfigAsync() {
+        if (abnormalGatewayClient == null || executorService == null || configManager == null) {
+            return;
+        }
+        List<SymbolConfig> configs = new ArrayList<>();
+        for (String symbol : AppConstants.MONITOR_SYMBOLS) {
+            configs.add(configManager.getSymbolConfig(symbol));
+        }
+        boolean logicAnd = configManager.isUseAndMode();
+        executorService.execute(() -> {
+            AbnormalGatewayClient.PushResult result = abnormalGatewayClient.pushConfig(logicAnd, configs);
+            if (result != null && !result.isSuccess() && result.getError() != null && !result.getError().trim().isEmpty()) {
+                logManager.warn("异常配置同步失败: " + result.getError());
+            }
+        });
+    }
+
+    private void scheduleAbnormalSync(long delayMs) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> scheduleAbnormalSync(delayMs));
+            return;
+        }
+        mainHandler.removeCallbacks(abnormalSyncRunnable);
+        mainHandler.postDelayed(abnormalSyncRunnable, Math.max(0L, delayMs));
     }
 
     private void handleClosedKline(KlineData data) {
