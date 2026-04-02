@@ -34,4 +34,9 @@ public final class KlineViewportHelper {
         float safeBlankSlots = Math.max(0f, rightBlankSlots);
         return Math.min(candleCount - 1, (int) Math.ceil(visibleEndFloat + safeBlankSlots + 2f));
     }
+
+    // 只有视口仍贴着最新K线时，自动刷新才继续跟随到最右侧。
+    public static boolean shouldFollowLatestOnAutoRefresh(float offsetCandles) {
+        return Math.max(0f, offsetCandles) <= 0.25f;
+    }
 }

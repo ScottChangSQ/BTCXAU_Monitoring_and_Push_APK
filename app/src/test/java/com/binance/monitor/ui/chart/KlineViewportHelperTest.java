@@ -22,4 +22,18 @@ public class KlineViewportHelperTest {
 
         assertEquals(99, endIndex);
     }
+
+    @Test
+    public void shouldFollowLatestOnAutoRefreshWhenOffsetIsNearZero() {
+        boolean followLatest = KlineViewportHelper.shouldFollowLatestOnAutoRefresh(0.12f);
+
+        assertEquals(true, followLatest);
+    }
+
+    @Test
+    public void shouldStopFollowingLatestWhenUserHasScrolledAway() {
+        boolean followLatest = KlineViewportHelper.shouldFollowLatestOnAutoRefresh(1.2f);
+
+        assertEquals(false, followLatest);
+    }
 }

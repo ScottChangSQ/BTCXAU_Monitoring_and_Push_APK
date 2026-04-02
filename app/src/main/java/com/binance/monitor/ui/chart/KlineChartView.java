@@ -552,6 +552,11 @@ public class KlineChartView extends View {
         return latestCandleOutOfBounds;
     }
 
+    // 当前视口是否仍贴着最新K线，用于决定自动刷新时是否继续跟随。
+    public boolean isFollowingLatestViewport() {
+        return KlineViewportHelper.shouldFollowLatestOnAutoRefresh(offsetCandles);
+    }
+
     public void scrollToLatest() {
         if (candles.isEmpty()) {
             return;

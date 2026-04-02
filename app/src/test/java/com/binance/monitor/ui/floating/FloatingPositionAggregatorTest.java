@@ -113,6 +113,7 @@ public class FloatingPositionAggregatorTest {
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 positions,
                 latestKlines,
+                new HashMap<>(),
                 true,
                 true
         );
@@ -124,5 +125,39 @@ public class FloatingPositionAggregatorTest {
         assertEquals(AppConstants.SYMBOL_XAU, cards.get(1).getCode());
         assertEquals("XAU", cards.get(1).getLabel());
         assertEquals(4d, cards.get(1).getTotalPnl(), 0.0001d);
+    }
+
+    // 悬浮窗价格应优先使用实时价格缓存，不能继续落回旧的已收盘 K 线价格。
+    @Test
+    public void buildSymbolCardsPrefersRealtimePrices() {
+        List<PositionItem> positions = Arrays.asList(
+                new PositionItem("BTCUSD", "BTCUSD", "Sell", 1L, 11L,
+                        0.05d, 0.05d, 66000d, 67000d, 3350d, 0.1d,
+                        -10d, -20d, -0.03d, 0d, 0, 0d, 0d, 0d, 0d)
+        );
+        Map<String, com.binance.monitor.data.model.KlineData> latestKlines = new HashMap<>();
+        latestKlines.put(AppConstants.SYMBOL_BTC, new com.binance.monitor.data.model.KlineData(
+                AppConstants.SYMBOL_BTC,
+                66_000d,
+                67_000d,
+                123d,
+                456_000d,
+                1_000L,
+                2_000L,
+                true
+        ));
+        Map<String, Double> latestPrices = new HashMap<>();
+        latestPrices.put(AppConstants.SYMBOL_BTC, 67_123.4d);
+
+        List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
+                positions,
+                latestKlines,
+                latestPrices,
+                true,
+                true
+        );
+
+        assertEquals(1, cards.size());
+        assertEquals(67_123.4d, cards.get(0).getLatestPrice(), 0.0001d);
     }
 }

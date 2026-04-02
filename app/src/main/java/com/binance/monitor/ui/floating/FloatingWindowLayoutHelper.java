@@ -6,11 +6,9 @@ package com.binance.monitor.ui.floating;
 
 final class FloatingWindowLayoutHelper {
 
-    private static final int EXPANDED_WIDTH_DP = 110;
-    private static final int HORIZONTAL_PADDING_DP = 5;
-    private static final int TRAILING_INSET_DP = 4;
-    private static final int SYMBOL_LABEL_COLUMN_WIDTH_DP = 28;
-    private static final int PNL_COLUMN_WIDTH_DP = 64;
+    private static final int EXPANDED_WIDTH_DP = 104;
+    private static final int HORIZONTAL_PADDING_DP = 6;
+    private static final int TRAILING_INSET_DP = 0;
 
     private FloatingWindowLayoutHelper() {
     }
@@ -29,14 +27,6 @@ final class FloatingWindowLayoutHelper {
 
     static int resolveTrailingInsetDp() {
         return TRAILING_INSET_DP;
-    }
-
-    static int resolveSymbolLabelColumnWidthDp() {
-        return SYMBOL_LABEL_COLUMN_WIDTH_DP;
-    }
-
-    static int resolvePnlColumnWidthDp() {
-        return PNL_COLUMN_WIDTH_DP;
     }
 
     static int resolveValueRowWidthDp() {

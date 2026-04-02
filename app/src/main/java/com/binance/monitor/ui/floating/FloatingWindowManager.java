@@ -282,42 +282,26 @@ public class FloatingWindowManager {
 
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setGravity(Gravity.CENTER);
         headerRow.setLayoutParams(new LinearLayout.LayoutParams(
                 dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
 
-        TextView labelView = new TextView(context);
-        labelView.setText(card.getLabel());
-        labelView.setTextColor(palette.textPrimary);
-        labelView.setTextSize(10f);
-        labelView.setTypeface(null, android.graphics.Typeface.BOLD);
-        labelView.setSingleLine(true);
-        labelView.setMaxLines(1);
-        labelView.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
-                dp(FloatingWindowLayoutHelper.resolveSymbolLabelColumnWidthDp()),
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        labelView.setLayoutParams(labelParams);
-
-        TextView pnlView = new TextView(context);
-        LinearLayout.LayoutParams pnlParams = new LinearLayout.LayoutParams(
-                dp(FloatingWindowLayoutHelper.resolvePnlColumnWidthDp()),
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        pnlView.setLayoutParams(pnlParams);
         double totalPnl = card.getTotalPnl();
-        pnlView.setText(masked
-                ? SensitiveDisplayMasker.MASK_TEXT
-                : FormatUtils.formatSignedMoneyNoDecimal(totalPnl));
-        pnlView.setTextColor(masked ? palette.textPrimary : (totalPnl >= 0d ? palette.rise : palette.fall));
-        pnlView.setTextSize(10f);
-        pnlView.setTypeface(null, android.graphics.Typeface.BOLD);
-        pnlView.setGravity(Gravity.END);
-        headerRow.addView(labelView);
-        headerRow.addView(pnlView);
+        TextView titleView = new TextView(context);
+        titleView.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        titleView.setText(FloatingWindowTextFormatter.formatCardTitle(card.getLabel(), totalPnl, masked));
+        titleView.setTextColor(masked ? palette.textPrimary : (totalPnl >= 0d ? palette.rise : palette.fall));
+        titleView.setTextSize(10f);
+        titleView.setGravity(Gravity.CENTER);
+        titleView.setSingleLine(true);
+        titleView.setMaxLines(1);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        headerRow.addView(titleView);
         cardView.addView(headerRow);
 
         TextView priceView = new TextView(context);
@@ -332,8 +316,7 @@ public class FloatingWindowManager {
                 : "--");
         priceView.setTextColor(palette.textPrimary);
         priceView.setTextSize(13f);
-        priceView.setTypeface(null, android.graphics.Typeface.BOLD);
-        priceView.setGravity(Gravity.START);
+        priceView.setGravity(Gravity.CENTER_HORIZONTAL);
         priceView.setSingleLine(true);
         priceView.setMaxLines(1);
         priceView.setEllipsize(TextUtils.TruncateAt.END);
@@ -351,7 +334,7 @@ public class FloatingWindowManager {
                 masked));
         volumeView.setTextColor(palette.textSecondary);
         volumeView.setTextSize(8.5f);
-        volumeView.setGravity(Gravity.START);
+        volumeView.setGravity(Gravity.CENTER_HORIZONTAL);
         cardView.addView(volumeView);
 
         TextView amountView = new TextView(context);
@@ -366,7 +349,7 @@ public class FloatingWindowManager {
                 masked));
         amountView.setTextColor(palette.textSecondary);
         amountView.setTextSize(8.5f);
-        amountView.setGravity(Gravity.START);
+        amountView.setGravity(Gravity.CENTER_HORIZONTAL);
         cardView.addView(amountView);
 
         bindDragSurface(cardView);

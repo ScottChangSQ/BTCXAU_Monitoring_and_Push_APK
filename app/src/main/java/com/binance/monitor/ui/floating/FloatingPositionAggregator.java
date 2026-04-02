@@ -63,11 +63,12 @@ public class FloatingPositionAggregator {
     // 生成悬浮窗产品卡片，确保已启用的产品即使当前无持仓也会展示行情。
     public static List<FloatingSymbolCardData> buildSymbolCards(List<PositionItem> positions,
                                                                 Map<String, KlineData> latestKlines,
+                                                                Map<String, Double> latestPrices,
                                                                 boolean showBtc,
                                                                 boolean showXau) {
         Map<String, FloatingPositionPnlItem> grouped = new LinkedHashMap<>();
         if (positions != null) {
-            for (FloatingPositionPnlItem item : aggregate(positions, extractLatestPrices(latestKlines), showBtc, showXau)) {
+            for (FloatingPositionPnlItem item : aggregate(positions, latestPrices, showBtc, showXau)) {
                 if (item != null) {
                     grouped.put(item.getCode(), item);
                 }
@@ -85,11 +86,14 @@ public class FloatingPositionAggregator {
             KlineData kline = latestKlines == null ? null : latestKlines.get(symbol);
             double totalPnl = pnlItem == null ? 0d : pnlItem.getTotalPnl();
             String label = resolveCardLabel(symbol, pnlItem);
-            boolean hasPrice = kline != null;
-            double latestPrice = hasPrice ? kline.getClosePrice() : 0d;
-            double volume = hasPrice ? kline.getVolume() : 0d;
-            double amount = hasPrice ? kline.getQuoteAssetVolume() : 0d;
-            long updatedAt = hasPrice ? Math.max(kline.getCloseTime(), kline.getOpenTime()) : 0L;
+            double realtimePrice = resolveMarketPrice(symbol, latestPrices);
+            boolean hasPrice = !Double.isNaN(realtimePrice) || kline != null;
+            double latestPrice = !Double.isNaN(realtimePrice)
+                    ? realtimePrice
+                    : (kline == null ? 0d : kline.getClosePrice());
+            double volume = kline == null ? 0d : kline.getVolume();
+            double amount = kline == null ? 0d : kline.getQuoteAssetVolume();
+            long updatedAt = kline == null ? 0L : Math.max(kline.getCloseTime(), kline.getOpenTime());
             result.add(new FloatingSymbolCardData(
                     symbol,
                     label,
@@ -202,21 +206,6 @@ public class FloatingPositionAggregator {
             return xau == null ? Double.NaN : xau;
         }
         return Double.NaN;
-    }
-
-    // 从最新 K 线缓存里抽取产品价格。
-    private static Map<String, Double> extractLatestPrices(Map<String, KlineData> latestKlines) {
-        Map<String, Double> result = new LinkedHashMap<>();
-        if (latestKlines == null || latestKlines.isEmpty()) {
-            return result;
-        }
-        for (Map.Entry<String, KlineData> entry : latestKlines.entrySet()) {
-            if (entry == null || entry.getValue() == null) {
-                continue;
-            }
-            result.put(entry.getKey(), entry.getValue().getClosePrice());
-        }
-        return result;
     }
 
     // 兼容 MT5 持仓代码和 Binance 行情代码不一致的场景，保证悬浮窗仍能显示对应盈亏。

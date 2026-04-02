@@ -5,6 +5,7 @@
 package com.binance.monitor.ui.chart;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
@@ -84,6 +85,7 @@ public class MarketChartActivity extends AppCompatActivity {
 
     public static final String EXTRA_TARGET_SYMBOL = "extra_target_symbol";
     public static final String PREF_RUNTIME_NAME = "market_chart_runtime";
+    private static final String PREF_KEY_SELECTED_INTERVAL = "selected_interval";
 
     private static final long AUTO_REFRESH_INTERVAL_MS = 5_000L;
     private static final int HISTORY_PERSIST_LIMIT = 5_000;
@@ -221,6 +223,7 @@ public class MarketChartActivity extends AppCompatActivity {
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
         abnormalRecordManager = AbnormalRecordManager.getInstance(getApplicationContext());
         applyIntentSymbol(getIntent(), false);
+        restoreSelectedInterval();
         if (abnormalRecordManager != null) {
             abnormalRecordManager.getRecordsLiveData().observe(this, records -> {
                 abnormalRecords = records == null ? new ArrayList<>() : new ArrayList<>(records);
@@ -869,6 +872,7 @@ public class MarketChartActivity extends AppCompatActivity {
             return;
         }
         selectedInterval = option;
+        persistSelectedInterval();
         updateIntervalButtons();
         requestKlines();
         scheduleNextAutoRefresh();
@@ -1039,12 +1043,19 @@ public class MarketChartActivity extends AppCompatActivity {
                     List<CandleEntry> toDisplay = mergeLatestData(new ArrayList<>(), processed);
                     activeDataKey = key;
                     boolean candlesChanged = !isSameCandleSeries(loadedCandles, toDisplay);
+                    boolean shouldFollowLatest = autoRefresh
+                            && binding != null
+                            && binding.klineChartView != null
+                            && binding.klineChartView.isFollowingLatestViewport();
                     if (candlesChanged) {
                         loadedCandles.clear();
                         loadedCandles.addAll(toDisplay);
                         klineCache.put(key, new ArrayList<>(toDisplay));
                         if (autoRefresh) {
                             binding.klineChartView.setCandlesKeepingViewport(loadedCandles);
+                            if (shouldFollowLatest) {
+                                binding.klineChartView.scrollToLatest();
+                            }
                         } else {
                             binding.klineChartView.setCandles(loadedCandles);
                         }
@@ -2208,6 +2219,50 @@ public class MarketChartActivity extends AppCompatActivity {
         styleTabButton(binding.btnInterval1w, selectedInterval == INTERVALS[7]);
         styleTabButton(binding.btnInterval1mo, selectedInterval == INTERVALS[8]);
         styleTabButton(binding.btnInterval1y, selectedInterval == INTERVALS[9]);
+    }
+
+    // 恢复上次退出前的K线周期，避免每次重进都回到默认值。
+    private void restoreSelectedInterval() {
+        SharedPreferences preferences = getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE);
+        String resolvedKey = MarketChartRuntimeHelper.resolveStoredIntervalKey(
+                preferences.getString(PREF_KEY_SELECTED_INTERVAL, selectedInterval.key),
+                selectedInterval.key,
+                resolveSupportedIntervalKeys()
+        );
+        IntervalOption option = findIntervalOptionByKey(resolvedKey);
+        if (option != null) {
+            selectedInterval = option;
+        }
+    }
+
+    // 持久化当前选中的K线周期，供下次进入时恢复。
+    private void persistSelectedInterval() {
+        getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(PREF_KEY_SELECTED_INTERVAL, selectedInterval.key)
+                .apply();
+    }
+
+    // 输出当前页面支持的全部周期键，供运行态恢复时校验。
+    private String[] resolveSupportedIntervalKeys() {
+        String[] keys = new String[INTERVALS.length];
+        for (int i = 0; i < INTERVALS.length; i++) {
+            keys[i] = INTERVALS[i].key;
+        }
+        return keys;
+    }
+
+    // 根据周期键回查具体的周期配置。
+    private IntervalOption findIntervalOptionByKey(String key) {
+        if (key == null || key.trim().isEmpty()) {
+            return null;
+        }
+        for (IntervalOption option : INTERVALS) {
+            if (option != null && key.equalsIgnoreCase(option.key)) {
+                return option;
+            }
+        }
+        return null;
     }
 
     private void updateIndicatorButtons() {

@@ -555,17 +555,13 @@ public class MonitorService extends Service {
         long lastAt = lastPricePublishAt.getOrDefault(symbol, 0L);
         Double lastPrice = lastPublishedPrice.get(symbol);
         boolean intervalReached = now - lastAt >= AppConstants.PRICE_UPDATE_THROTTLE_MS;
-        boolean deltaReached = lastPrice == null || Math.abs(price - lastPrice) >= minPriceDelta(price);
-        if (!force && !intervalReached && !deltaReached) {
+        boolean priceChanged = lastPrice == null || Double.compare(price, lastPrice) != 0;
+        if (!force && !priceChanged && !intervalReached) {
             return;
         }
         repository.updatePrice(symbol, price);
         lastPricePublishAt.put(symbol, now);
         lastPublishedPrice.put(symbol, price);
-    }
-
-    private double minPriceDelta(double price) {
-        return Math.max(0.1d, Math.abs(price) * 0.0002d);
     }
 
     private void requestFloatingWindowRefresh(boolean immediate) {
@@ -668,6 +664,7 @@ public class MonitorService extends Service {
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 accountStorageRepository == null ? new ArrayList<>() : accountStorageRepository.loadPositions(),
                 repository.getLatestClosedKlineSnapshot(),
+                repository.getLatestPriceSnapshot(),
                 configManager.isShowBtc(),
                 configManager.isShowXau()
         );
