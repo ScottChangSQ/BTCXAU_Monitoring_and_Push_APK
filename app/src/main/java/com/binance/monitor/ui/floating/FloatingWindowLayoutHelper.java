@@ -4,11 +4,17 @@
  */
 package com.binance.monitor.ui.floating;
 
+import android.view.Gravity;
+
 final class FloatingWindowLayoutHelper {
 
-    private static final int EXPANDED_WIDTH_DP = 104;
-    private static final int HORIZONTAL_PADDING_DP = 6;
+    private static final int EXPANDED_WIDTH_DP = 96;
+    private static final int HORIZONTAL_PADDING_DP = 4;
     private static final int TRAILING_INSET_DP = 0;
+    private static final int MINIMIZE_BUTTON_SIZE_DP = 14;
+    private static final int MINI_MIN_WIDTH_DP = 30;
+    private static final int MINI_HORIZONTAL_PADDING_DP = 6;
+    private static final int MINI_END_MARGIN_DP = 4;
 
     private FloatingWindowLayoutHelper() {
     }
@@ -31,5 +37,29 @@ final class FloatingWindowLayoutHelper {
 
     static int resolveValueRowWidthDp() {
         return resolveExpandedContentWidthDp() - TRAILING_INSET_DP;
+    }
+
+    static int resolveSymbolHeaderGravity() {
+        return Gravity.START | Gravity.CENTER_VERTICAL;
+    }
+
+    static int resolveSymbolTextGravity() {
+        return Gravity.START | Gravity.CENTER_VERTICAL;
+    }
+
+    static int resolveMinimizeButtonSizeDp() {
+        return MINIMIZE_BUTTON_SIZE_DP;
+    }
+
+    static int resolveMiniMinWidthDp() {
+        return MINI_MIN_WIDTH_DP;
+    }
+
+    static int resolveMiniHorizontalPaddingDp() {
+        return MINI_HORIZONTAL_PADDING_DP;
+    }
+
+    static int resolveMiniEndMarginDp() {
+        return MINI_END_MARGIN_DP;
     }
 }

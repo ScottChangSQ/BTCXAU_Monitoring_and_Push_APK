@@ -162,6 +162,10 @@ public class FloatingWindowManager {
         ViewGroup.LayoutParams expandedParams = binding.layoutExpanded.getLayoutParams();
         expandedParams.width = dp(FloatingWindowLayoutHelper.resolveExpandedWidthDp());
         binding.layoutExpanded.setLayoutParams(expandedParams);
+        ViewGroup.LayoutParams minimizeParams = binding.btnMinimize.getLayoutParams();
+        minimizeParams.width = dp(FloatingWindowLayoutHelper.resolveMinimizeButtonSizeDp());
+        minimizeParams.height = dp(FloatingWindowLayoutHelper.resolveMinimizeButtonSizeDp());
+        binding.btnMinimize.setLayoutParams(minimizeParams);
         int horizontalPadding = dp(FloatingWindowLayoutHelper.resolveHorizontalPaddingDp());
         binding.layoutExpanded.setPadding(
                 horizontalPadding,
@@ -169,6 +173,16 @@ public class FloatingWindowManager {
                 horizontalPadding,
                 binding.layoutExpanded.getPaddingBottom()
         );
+        binding.viewMiniSquare.setMinWidth(dp(FloatingWindowLayoutHelper.resolveMiniMinWidthDp()));
+        int miniPadding = dp(FloatingWindowLayoutHelper.resolveMiniHorizontalPaddingDp());
+        binding.viewMiniSquare.setPadding(miniPadding,
+                binding.viewMiniSquare.getPaddingTop(),
+                miniPadding,
+                binding.viewMiniSquare.getPaddingBottom());
+        ViewGroup.MarginLayoutParams miniParams =
+                (ViewGroup.MarginLayoutParams) binding.viewMiniSquare.getLayoutParams();
+        miniParams.rightMargin = dp(FloatingWindowLayoutHelper.resolveMiniEndMarginDp());
+        binding.viewMiniSquare.setLayoutParams(miniParams);
         applyWindowAlpha();
         binding.btnMinimize.setOnClickListener(v -> setMinimized(true));
         dragAndClickListener = new DragAndClickListener();
@@ -235,9 +249,7 @@ public class FloatingWindowManager {
             }
         }
         boolean hasCard = !visibleCards.isEmpty();
-        String text = masked
-                ? SensitiveDisplayMasker.MASK_TEXT
-                : FormatUtils.formatSignedMoneyNoDecimal(hasCard ? totalPnl : 0d);
+        String text = FloatingWindowTextFormatter.formatPnlAmount(hasCard ? totalPnl : 0d, masked);
         binding.tvOverlayStatus.setText(text);
         int pnlColor = masked ? palette.textPrimary : resolvePnlColor(totalPnl, hasCard);
         binding.tvOverlayStatus.setTextColor(pnlColor);
@@ -282,7 +294,7 @@ public class FloatingWindowManager {
 
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER);
+        headerRow.setGravity(FloatingWindowLayoutHelper.resolveSymbolHeaderGravity());
         headerRow.setLayoutParams(new LinearLayout.LayoutParams(
                 dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -297,7 +309,7 @@ public class FloatingWindowManager {
         titleView.setText(FloatingWindowTextFormatter.formatCardTitle(card.getLabel(), totalPnl, masked));
         titleView.setTextColor(masked ? palette.textPrimary : (totalPnl >= 0d ? palette.rise : palette.fall));
         titleView.setTextSize(10f);
-        titleView.setGravity(Gravity.CENTER);
+        titleView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         titleView.setSingleLine(true);
         titleView.setMaxLines(1);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
@@ -316,7 +328,7 @@ public class FloatingWindowManager {
                 : "--");
         priceView.setTextColor(palette.textPrimary);
         priceView.setTextSize(13f);
-        priceView.setGravity(Gravity.CENTER_HORIZONTAL);
+        priceView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         priceView.setSingleLine(true);
         priceView.setMaxLines(1);
         priceView.setEllipsize(TextUtils.TruncateAt.END);
@@ -334,7 +346,7 @@ public class FloatingWindowManager {
                 masked));
         volumeView.setTextColor(palette.textSecondary);
         volumeView.setTextSize(8.5f);
-        volumeView.setGravity(Gravity.CENTER_HORIZONTAL);
+        volumeView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         cardView.addView(volumeView);
 
         TextView amountView = new TextView(context);
@@ -349,7 +361,7 @@ public class FloatingWindowManager {
                 masked));
         amountView.setTextColor(palette.textSecondary);
         amountView.setTextSize(8.5f);
-        amountView.setGravity(Gravity.CENTER_HORIZONTAL);
+        amountView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         cardView.addView(amountView);
 
         bindDragSurface(cardView);

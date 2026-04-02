@@ -5,12 +5,14 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.SeekBar;
+import android.widget.TextView;
 
 import androidx.activity.ComponentActivity;
 import androidx.core.content.ContextCompat;
@@ -196,6 +198,47 @@ public final class UiPaletteManager {
         }
     }
 
+    // 统一底部导航按钮样式，确保不同主题下背景和文字同步切换。
+    public static void styleBottomNavTab(TextView tab, boolean selected, Palette palette) {
+        if (tab == null || palette == null) {
+            return;
+        }
+        Context context = tab.getContext();
+        int fillColor = selected ? palette.control : palette.card;
+        int strokeColor = selected ? palette.primary : palette.stroke;
+        tab.setBackground(createOutlinedDrawable(context, fillColor, strokeColor));
+        tab.setTextColor(selected ? palette.primary : palette.textSecondary);
+        tab.setTypeface(null, android.graphics.Typeface.NORMAL);
+        tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+    }
+
+    // 统一图表页按钮样式，避免周期和指标按钮各自维护颜色逻辑。
+    public static void styleInlineTextButton(Button button,
+                                             boolean selected,
+                                             Palette palette,
+                                             float textSizeSp) {
+        if (button == null || palette == null) {
+            return;
+        }
+        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setTextColor(selected ? palette.primary : palette.textSecondary);
+        button.setTypeface(null, android.graphics.Typeface.NORMAL);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
+        button.setPaintFlags(selected
+                ? (button.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG)
+                : (button.getPaintFlags() & ~android.graphics.Paint.UNDERLINE_TEXT_FLAG));
+    }
+
+    // 统一产品下拉项文字样式，避免主题切换后出现不可读颜色。
+    public static void styleSpinnerItemText(TextView textView, Palette palette, float textSizeSp) {
+        if (textView == null || palette == null) {
+            return;
+        }
+        textView.setTextColor(palette.textPrimary);
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
+        textView.setTypeface(null, android.graphics.Typeface.NORMAL);
+    }
+
     private static void applyRecursively(View view, Palette palette) {
         Context context = view.getContext();
         if (view instanceof MaterialCardView) {
@@ -222,7 +265,7 @@ public final class UiPaletteManager {
             Button button = (Button) view;
             if (button.getCurrentTextColor() != ContextCompat.getColor(context, R.color.white)) {
                 button.setBackground(createOutlinedDrawable(context, palette.card, palette.stroke));
-                button.setTextColor(ContextCompat.getColor(context, R.color.text_primary));
+                button.setTextColor(palette.textPrimary);
             }
         }
 

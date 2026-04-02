@@ -52,6 +52,8 @@ public class DailyReturnChartView extends View {
     private boolean longPressing;
     private boolean masked;
     private boolean showBottomTimeLabels;
+    private boolean mergeWithPreviousPane;
+    private boolean mergeWithNextPane;
     private OnTimeHighlightListener onTimeHighlightListener;
 
     public DailyReturnChartView(Context context) {
@@ -143,6 +145,24 @@ public class DailyReturnChartView extends View {
         invalidate();
     }
 
+    // 控制是否与上一张图共用边界。
+    public void setMergeWithPreviousPane(boolean merge) {
+        if (mergeWithPreviousPane == merge) {
+            return;
+        }
+        mergeWithPreviousPane = merge;
+        invalidate();
+    }
+
+    // 控制是否与下一张图共用边界。
+    public void setMergeWithNextPane(boolean merge) {
+        if (mergeWithNextPane == merge) {
+            return;
+        }
+        mergeWithNextPane = merge;
+        invalidate();
+    }
+
     // 根据隐私状态切换为占位态。
     public void setMasked(boolean masked) {
         if (this.masked == masked) {
@@ -211,8 +231,13 @@ public class DailyReturnChartView extends View {
 
         chartLeft = dp(34f);
         chartRight = width - dp(28f);
-        chartTop = dp(10f);
-        chartBottom = height - (showBottomTimeLabels ? dp(24f) : dp(10f));
+        chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
+        chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
+                mergeWithNextPane,
+                showBottomTimeLabels,
+                dp(10f),
+                dp(24f)
+        );
         drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
 
         if (masked) {
@@ -262,10 +287,16 @@ public class DailyReturnChartView extends View {
             canvas.drawLine(highlightX, chartTop, highlightX, chartBottom, crosshairPaint);
         }
 
+        float topBaseline = chartTop + dp(mergeWithPreviousPane ? 8f : 2f);
+        float bottomBaseline = CurvePaneSpacingHelper.resolveBottomLabelBaseline(
+                chartBottom,
+                mergeWithNextPane && !showBottomTimeLabels,
+                dp(2f)
+        );
         canvas.drawText(String.format(Locale.getDefault(), "+%.1f%%", maxAbs * 100d),
-                dp(4f), chartTop + dp(2f), labelPaint);
+                dp(4f), topBaseline, labelPaint);
         canvas.drawText(String.format(Locale.getDefault(), "-%.1f%%", maxAbs * 100d),
-                dp(4f), chartBottom + dp(2f), labelPaint);
+                dp(4f), bottomBaseline, labelPaint);
         float rightEdge = getWidth() - dp(6f);
         canvas.save();
         canvas.rotate(-90f, rightEdge, chartTop + (chartBottom - chartTop) / 2f);
@@ -325,7 +356,7 @@ public class DailyReturnChartView extends View {
         long targetTs = startTs + Math.round((clamped - chartLeft) / range * (endTs - startTs));
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(targetTs)));
         if (notify && onTimeHighlightListener != null) {
-            onTimeHighlightListener.onTimeHighlight(points.get(highlightedIndex).getTimestamp(), highlightedXRatio);
+            onTimeHighlightListener.onTimeHighlight(targetTs, highlightedXRatio);
         }
         invalidate();
     }

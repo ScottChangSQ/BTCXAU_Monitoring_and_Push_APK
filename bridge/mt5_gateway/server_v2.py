@@ -40,8 +40,14 @@ GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull 
 EA_SNAPSHOT_TTL_SEC = int(os.getenv("EA_SNAPSHOT_TTL_SEC", "35"))
 EA_INGEST_TOKEN = os.getenv("EA_INGEST_TOKEN", "").strip()
 SNAPSHOT_BUILD_CACHE_MS = int(os.getenv("SNAPSHOT_BUILD_CACHE_MS", "8000"))
+SNAPSHOT_BUILD_MAX_STALE_MS = max(
+    SNAPSHOT_BUILD_CACHE_MS,
+    int(os.getenv("SNAPSHOT_BUILD_MAX_STALE_MS", "30000"))
+)
+SNAPSHOT_BUILD_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_BUILD_CACHE_MAX_ENTRIES", "6")))
 SNAPSHOT_DELTA_ENABLED = os.getenv("SNAPSHOT_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 SNAPSHOT_DELTA_FALLBACK_RATIO = float(os.getenv("SNAPSHOT_DELTA_FALLBACK_RATIO", "0.85"))
+SNAPSHOT_SYNC_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_SYNC_CACHE_MAX_ENTRIES", "12")))
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
 ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "500")))
@@ -73,6 +79,35 @@ abnormal_sync_state: Dict[str, Any] = {}
 
 def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+# 统一裁剪缓存条目，只保留最近访问的部分，避免快照缓存长期堆满内存。
+def _trim_cache_entries_locked(cache: Dict[str, Any], limit: int) -> None:
+    while len(cache) > max(1, limit):
+        oldest_key = next(iter(cache))
+        cache.pop(oldest_key, None)
+
+
+# 统一写入有序缓存，命中时会刷新顺序，便于按最近使用裁剪。
+def _remember_cache_entry_locked(cache: Dict[str, Any], key: str, value: Any, limit: int) -> None:
+    cache.pop(key, None)
+    cache[key] = value
+    _trim_cache_entries_locked(cache, limit)
+
+
+# 仅在 EA 推送仍新鲜时延长快照缓存寿命，减少固定轮询下的一快一慢交替。
+def _should_slide_snapshot_build_cache(cached: Optional[Dict[str, Any]], now_ms: int) -> bool:
+    if not cached:
+        return False
+    built_at = int(cached.get("builtAt", 0))
+    age = now_ms - built_at
+    if age <= SNAPSHOT_BUILD_CACHE_MS or age > SNAPSHOT_BUILD_MAX_STALE_MS:
+        return False
+    snapshot = cached.get("snapshot") or {}
+    source = str((snapshot.get("accountMeta") or {}).get("source", ""))
+    if "EA Push" not in source:
+        return False
+    return _is_ea_snapshot_fresh()
 
 
 def _fmt_money(value: float) -> str:
@@ -1802,11 +1837,22 @@ def _build_snapshot_with_cache(range_key: str) -> Dict:
     with snapshot_cache_lock:
         cached = snapshot_build_cache.get(range_key)
         if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+            cached["lastAccessAt"] = now_ms
+            _remember_cache_entry_locked(snapshot_build_cache, range_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+            return cached.get("snapshot")
+        if _should_slide_snapshot_build_cache(cached, now_ms):
+            cached["builtAt"] = now_ms
+            cached["lastAccessAt"] = now_ms
+            _remember_cache_entry_locked(snapshot_build_cache, range_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
             return cached.get("snapshot")
 
     snapshot = _normalize_snapshot(_select_snapshot(range_key), "MT5 Gateway")
     with snapshot_cache_lock:
-        snapshot_build_cache[range_key] = {"builtAt": now_ms, "snapshot": snapshot}
+        _remember_cache_entry_locked(snapshot_build_cache, range_key, {
+            "builtAt": now_ms,
+            "lastAccessAt": now_ms,
+            "snapshot": snapshot,
+        }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
     return snapshot
 
 
@@ -1929,13 +1975,13 @@ def _build_projected_snapshot_response(range_key: str, since_seq: int, delta: bo
 
         if state is None:
             sync_seq = 1
-            snapshot_sync_cache[cache_key] = {
+            _remember_cache_entry_locked(snapshot_sync_cache, cache_key, {
                 "seq": sync_seq,
                 "digest": digest,
                 "snapshot": projected_snapshot,
                 "previousSeq": 0,
                 "previousSnapshot": None,
-            }
+            }, SNAPSHOT_SYNC_CACHE_MAX_ENTRIES)
             changed = True
         else:
             if state.get("digest") == digest:
@@ -1944,17 +1990,18 @@ def _build_projected_snapshot_response(range_key: str, since_seq: int, delta: bo
                 projected_snapshot = state.get("snapshot") or projected_snapshot
                 previous_seq = int(state.get("previousSeq", 0))
                 previous_snapshot = state.get("previousSnapshot")
+                _remember_cache_entry_locked(snapshot_sync_cache, cache_key, state, SNAPSHOT_SYNC_CACHE_MAX_ENTRIES)
             else:
                 previous_seq = int(state.get("seq", 0))
                 previous_snapshot = state.get("snapshot")
                 sync_seq = previous_seq + 1
-                snapshot_sync_cache[cache_key] = {
+                _remember_cache_entry_locked(snapshot_sync_cache, cache_key, {
                     "seq": sync_seq,
                     "digest": digest,
                     "snapshot": projected_snapshot,
                     "previousSeq": previous_seq,
                     "previousSnapshot": previous_snapshot,
-                }
+                }, SNAPSHOT_SYNC_CACHE_MAX_ENTRIES)
                 changed = True
 
     if not SNAPSHOT_DELTA_ENABLED or not delta or since_seq <= 0:
@@ -2243,6 +2290,7 @@ def ingest_ea_snapshot(payload: Dict, x_bridge_token: Optional[str] = Header(def
     if changed:
         with snapshot_cache_lock:
             snapshot_build_cache.clear()
+            snapshot_sync_cache.clear()
 
     return {"ok": True, "receivedAt": ea_snapshot_received_at_ms, "changed": changed}
 

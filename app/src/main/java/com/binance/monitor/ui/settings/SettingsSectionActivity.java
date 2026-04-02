@@ -46,8 +46,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
     private ActivitySettingsDetailBinding binding;
     private MainViewModel viewModel;
     private boolean applying;
-    private int tabActiveColor = 0xFF07C160;
-    private int tabInactiveColor = 0xFF7F8EA9;
     private String sectionKey = SettingsActivity.SECTION_DISPLAY;
     private String sectionTitle = "设置";
 
@@ -96,11 +94,13 @@ public class SettingsSectionActivity extends AppCompatActivity {
 
     // 刷新底部导航状态。
     private void updateBottomTabs() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
                 binding.tabSettings);
+        binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
         styleNavTab(binding.tabMarketMonitor, false);
         styleNavTab(binding.tabMarketChart, false);
         styleNavTab(binding.tabAccountStats, false);
@@ -109,13 +109,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
 
     // 绘制单个底部导航按钮。
     private void styleNavTab(TextView tab, boolean selected) {
-        if (tab == null) {
-            return;
-        }
-        tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
-        tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        tab.setTypeface(null, Typeface.NORMAL);
-        tab.setTextSize(13f);
+        UiPaletteManager.styleBottomNavTab(tab, selected, UiPaletteManager.resolve(this));
     }
 
     // 绑定各个设置控件行为。
@@ -329,8 +323,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(this, palette);
-        tabActiveColor = palette.primary;
-        tabInactiveColor = palette.textSecondary;
         binding.btnBack.setTextColor(palette.textPrimary);
         binding.tvSettingsDetailTitle.setText(sectionTitle);
         binding.tvSettingsDetailTitle.setTextColor(palette.textPrimary);

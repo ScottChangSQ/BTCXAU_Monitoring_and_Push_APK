@@ -77,9 +77,10 @@
                     android:scrollbars="none">
 
                     <LinearLayout
+                        android:id="@+id/layoutIntervalTabs"
                         android:layout_width="wrap_content"
                         android:layout_height="match_parent"
-                        android:background="#17233A"
+                        android:background="@android:color/transparent"
                         android:gravity="center_vertical"
                         android:orientation="horizontal"
                         android:paddingStart="@dimen/space_4"
@@ -95,7 +96,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="1分"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                         <Button
@@ -108,7 +109,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="5分"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                         <Button
@@ -121,7 +122,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="15分"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                         <Button
@@ -134,7 +135,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="30分"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                         <Button
@@ -147,7 +148,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="1小时"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                         <Button
@@ -160,7 +161,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="4小时"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                         <Button
@@ -173,7 +174,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="日线"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                         <Button
@@ -186,7 +187,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="周线"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                         <Button
@@ -199,7 +200,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="月线"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
 
                         <Button
@@ -212,7 +213,7 @@
                             android:paddingEnd="@dimen/space_8"
                             android:text="年线"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
                 </HorizontalScrollView>
@@ -223,7 +224,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_8"
                     android:text="@string/chart_info_empty"
-                    android:textColor="#B8C7DF"
+                    android:textColor="@color/text_secondary"
                     android:textSize="11sp"
                     android:visibility="gone" />
 
@@ -271,7 +272,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginStart="@dimen/space_4"
                             android:text="@string/chart_loading_overlay_text"
-                            android:textColor="#B8C7DF"
+                            android:textColor="@color/text_secondary"
                             android:textSize="11sp"
                             android:visibility="gone" />
                     </LinearLayout>
@@ -288,7 +289,7 @@
                         android:padding="4dp"
                         android:scaleType="centerInside"
                         android:src="@drawable/ic_scroll_to_latest_arrow"
-                        android:tint="#E6EEF9"
+                        android:tint="@color/text_primary"
                         android:visibility="invisible" />
                 </FrameLayout>
 
@@ -298,7 +299,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text=""
-                    android:textColor="#8FA6C7"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
 
                 <TextView
@@ -306,7 +307,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:textColor="#F87171"
+                    android:textColor="@color/accent_red"
                     android:textSize="12sp"
                     android:visibility="gone" />
 
@@ -329,9 +330,10 @@
                     android:scrollbars="none">
 
                     <LinearLayout
+                        android:id="@+id/layoutIndicatorTabs"
                         android:layout_width="wrap_content"
                         android:layout_height="match_parent"
-                        android:background="#17233A"
+                        android:background="@android:color/transparent"
                         android:gravity="center_vertical"
                         android:orientation="horizontal"
                         android:paddingStart="@dimen/space_4"
@@ -347,7 +349,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="VOL"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
 
                         <Button
@@ -360,7 +362,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="MACD"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
 
                         <Button
@@ -373,7 +375,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="STOCHRSI"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
 
                         <Button
@@ -386,7 +388,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="BOLL"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
 
                         <Button
@@ -399,7 +401,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="MA"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
 
                         <Button
@@ -412,7 +414,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="EMA"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
 
                         <Button
@@ -425,7 +427,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="SRA"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
 
                         <Button
@@ -438,7 +440,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="AVL"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
 
                         <Button
@@ -451,7 +453,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="RSI"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
 
                         <Button
@@ -464,7 +466,7 @@
                             android:paddingEnd="@dimen/space_12"
                             android:text="KDJ"
                             android:textAllCaps="false"
-                            android:textColor="#7F8EA9"
+                            android:textColor="@color/text_secondary"
                             android:textSize="10sp" />
                     </LinearLayout>
                 </HorizontalScrollView>
@@ -483,7 +485,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="当前持仓"
-                    android:textColor="#E6EEF9"
+                    android:textColor="@color/text_primary"
                     android:textSize="13sp" />
 
                 <TextView
@@ -492,7 +494,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="持仓盈亏: -- | 持仓收益率: --"
-                    android:textColor="#8FA6C7"
+                    android:textColor="@color/text_secondary"
                     android:textSize="13sp" />
 
                 <TextView
@@ -546,7 +548,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="暂无挂单"
-                    android:textColor="#8FA6C7"
+                    android:textColor="@color/text_secondary"
                     android:textSize="11sp"
                     android:visibility="gone" />
 
@@ -571,7 +573,7 @@
         android:id="@+id/tabBar"
         android:layout_width="match_parent"
         android:layout_height="@dimen/bottom_nav_height"
-        android:background="@drawable/bg_bottom_nav"
+        android:background="@android:color/transparent"
         android:orientation="horizontal"
         android:padding="0dp">
 
@@ -580,7 +582,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_unselected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
@@ -591,7 +593,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_selected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/white"
@@ -602,7 +604,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_unselected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/text_secondary"
@@ -613,7 +615,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_unselected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/text_secondary"

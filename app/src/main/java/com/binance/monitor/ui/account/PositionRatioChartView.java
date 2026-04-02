@@ -53,6 +53,8 @@ public class PositionRatioChartView extends View {
     private float highlightedXRatio = -1f;
     private boolean longPressing;
     private boolean masked;
+    private boolean mergeWithPreviousPane;
+    private boolean mergeWithNextPane;
     private OnTimeHighlightListener onTimeHighlightListener;
 
     public PositionRatioChartView(Context context) {
@@ -151,6 +153,24 @@ public class PositionRatioChartView extends View {
         onTimeHighlightListener = listener;
     }
 
+    // 控制是否与上一张图共用边界。
+    public void setMergeWithPreviousPane(boolean merge) {
+        if (mergeWithPreviousPane == merge) {
+            return;
+        }
+        mergeWithPreviousPane = merge;
+        invalidate();
+    }
+
+    // 控制是否与下一张图共用边界。
+    public void setMergeWithNextPane(boolean merge) {
+        if (mergeWithNextPane == merge) {
+            return;
+        }
+        mergeWithNextPane = merge;
+        invalidate();
+    }
+
     // 宿主同步外部十字光标。
     public void syncHighlightTimestamp(long timestamp, float xRatio) {
         if (timestamp <= 0L || points.isEmpty()) {
@@ -203,9 +223,14 @@ public class PositionRatioChartView extends View {
         }
 
         chartLeft = dp(34f);
-        chartTop = dp(10f);
+        chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
         chartRight = width - dp(28f);
-        chartBottom = height - dp(10f);
+        chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
+                mergeWithNextPane,
+                false,
+                dp(10f),
+                0f
+        );
         drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
 
         if (masked) {
@@ -283,9 +308,15 @@ public class PositionRatioChartView extends View {
 
     // 绘制仓位比例刻度和标题。
     private void drawLabels(Canvas canvas, float top, float bottom, double chartMax) {
+        float topBaseline = top + dp(mergeWithPreviousPane ? 8f : 4f);
+        float bottomBaseline = CurvePaneSpacingHelper.resolveBottomLabelBaseline(
+                bottom,
+                mergeWithNextPane,
+                dp(2f)
+        );
         canvas.drawText(String.format(Locale.getDefault(), "%.1f%%", chartMax * 100d),
-                dp(4f), top + dp(4f), labelPaint);
-        canvas.drawText("0%", dp(4f), bottom + dp(2f), labelPaint);
+                dp(4f), topBaseline, labelPaint);
+        canvas.drawText("0%", dp(4f), bottomBaseline, labelPaint);
         float rightEdge = getWidth() - dp(6f);
         canvas.save();
         canvas.rotate(-90f, rightEdge, top + (bottom - top) / 2f);
@@ -306,7 +337,7 @@ public class PositionRatioChartView extends View {
         long targetTs = startTs + Math.round((clamped - chartLeft) / range * (endTs - startTs));
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(targetTs)));
         if (notify && onTimeHighlightListener != null) {
-            onTimeHighlightListener.onTimeHighlight(points.get(highlightedIndex).getTimestamp(), highlightedXRatio);
+            onTimeHighlightListener.onTimeHighlight(targetTs, highlightedXRatio);
         }
         invalidate();
     }

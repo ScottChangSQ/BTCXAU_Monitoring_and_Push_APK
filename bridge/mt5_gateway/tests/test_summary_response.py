@@ -91,6 +91,74 @@ import server_v2  # noqa: E402
 class SummaryResponseTests(unittest.TestCase):
     """验证后台摘要响应会去掉大体积列表字段。"""
 
+    def test_trim_cache_entries_locked_keeps_newest_entries_only(self):
+        helper = getattr(server_v2, "_trim_cache_entries_locked", None)
+        self.assertIsNotNone(helper, "缺少 _trim_cache_entries_locked，无法验证快照缓存裁剪")
+
+        cache = {
+            "1d:snapshot": {"seq": 1},
+            "7d:snapshot": {"seq": 2},
+            "1m:curve": {"seq": 3},
+        }
+
+        helper(cache, 2)
+
+        self.assertEqual(["7d:snapshot", "1m:curve"], list(cache.keys()))
+
+    def test_should_slide_snapshot_build_cache_only_for_fresh_ea_snapshot(self):
+        helper = getattr(server_v2, "_should_slide_snapshot_build_cache", None)
+        self.assertIsNotNone(helper, "缺少 _should_slide_snapshot_build_cache，无法验证缓存平滑命中")
+
+        original_is_fresh = server_v2._is_ea_snapshot_fresh
+        try:
+            server_v2._is_ea_snapshot_fresh = lambda: True
+            self.assertTrue(helper({
+                "builtAt": 1000,
+                "snapshot": {"accountMeta": {"source": "MT5 EA Push"}},
+            }, 9500))
+
+            server_v2._is_ea_snapshot_fresh = lambda: False
+            self.assertFalse(helper({
+                "builtAt": 1000,
+                "snapshot": {"accountMeta": {"source": "MT5 EA Push"}},
+            }, 9500))
+
+            server_v2._is_ea_snapshot_fresh = lambda: True
+            self.assertFalse(helper({
+                "builtAt": 1000,
+                "snapshot": {"accountMeta": {"source": "MT5 Python Pull"}},
+            }, 9500))
+        finally:
+            server_v2._is_ea_snapshot_fresh = original_is_fresh
+
+    def test_ingest_ea_snapshot_clears_snapshot_sync_cache_when_payload_changes(self):
+        server_v2.snapshot_build_cache.clear()
+        server_v2.snapshot_sync_cache.clear()
+        server_v2.snapshot_build_cache["7d"] = {"builtAt": 1, "snapshot": {"accountMeta": {"source": "old"}}}
+        server_v2.snapshot_sync_cache["7d:snapshot"] = {"seq": 9, "snapshot": {"accountMeta": {"source": "old"}}}
+
+        payload = {
+            "accountMeta": {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 EA Push",
+                "updatedAt": 1774868116886,
+            },
+            "overviewMetrics": [],
+            "curveIndicators": [],
+            "curvePoints": [],
+            "positions": [],
+            "pendingOrders": [],
+            "trades": [],
+            "statsMetrics": [],
+        }
+
+        response = server_v2.ingest_ea_snapshot(payload, x_bridge_token=None)
+
+        self.assertTrue(response["changed"])
+        self.assertEqual({}, server_v2.snapshot_build_cache)
+        self.assertEqual({}, server_v2.snapshot_sync_cache)
+
     def test_build_summary_response_omits_heavy_collections(self):
         snapshot = {
             "accountMeta": {

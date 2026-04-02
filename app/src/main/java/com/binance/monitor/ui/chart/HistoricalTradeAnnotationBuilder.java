@@ -1,6 +1,6 @@
 /*
- * 历史成交图表标记构建器，负责把已平仓历史成交映射到当前可见 K 线时间桶。
- * 行情图页通过这里把账户成交记录转换成轻量图表标记，避免在 Activity 里堆积映射细节。
+ * 历史成交图表标记构建器，负责把已平仓历史成交映射成开仓点、平仓点和连线所需的时间价格信息。
+ * 行情图页通过这里把账户成交记录转换成图表叠加层输入，避免在 Activity 里堆积映射细节。
  */
 package com.binance.monitor.ui.chart;
 
@@ -22,7 +22,7 @@ final class HistoricalTradeAnnotationBuilder {
     private HistoricalTradeAnnotationBuilder() {
     }
 
-    // 只把当前产品、已平仓且落在可见 K 线窗口内的成交转换成图表标记。
+    // 只把当前产品、已平仓且落在可见 K 线窗口内的成交转换成开平仓标记。
     static List<TradeAnnotation> build(@Nullable String selectedSymbol,
                                        @Nullable List<TradeRecordItem> trades,
                                        @Nullable List<CandleEntry> candles) {
@@ -36,49 +36,74 @@ final class HistoricalTradeAnnotationBuilder {
             if (!isClosedTrade(trade) || !matchesSelectedSymbol(selectedSymbol, trade)) {
                 continue;
             }
-            long anchorTime = resolveAnchorTime(candles, resolveCloseTime(trade));
-            if (anchorTime <= 0L) {
+            long closeTime = resolveCloseTime(trade);
+            long exitAnchorTime = resolveAnchorTime(candles, closeTime, false);
+            if (exitAnchorTime <= 0L) {
                 continue;
             }
+            long openTime = resolveOpenTime(trade);
+            long entryAnchorTime = resolveAnchorTime(candles, openTime, true);
+            double openPrice = resolveOpenPrice(trade);
             double closePrice = resolveClosePrice(trade);
-            if (closePrice <= 0d) {
+            if (entryAnchorTime <= 0L || openPrice <= 0d || closePrice <= 0d) {
                 continue;
             }
             result.add(new TradeAnnotation(
-                    anchorTime,
+                    entryAnchorTime,
+                    openPrice,
+                    exitAnchorTime,
                     closePrice,
-                    buildLabel(trade),
-                    resolveTradeColor(trade),
-                    buildGroupId(trade, anchorTime, closePrice)
+                    normalizeTradeSide(trade.getSide()),
+                    Math.abs(trade.getQuantity()),
+                    trade.getProfit() + trade.getStorageFee(),
+                    resolveProductName(trade),
+                    resolveCode(trade),
+                    openTime,
+                    closeTime,
+                    trade.getOrderId(),
+                    trade.getPositionId(),
+                    buildGroupId(trade, exitAnchorTime, closePrice)
             ));
         }
         result.sort(Comparator
-                .comparingLong((TradeAnnotation item) -> item.anchorTimeMs)
-                .thenComparingDouble(item -> item.price));
+                .comparingLong((TradeAnnotation item) -> item.exitAnchorTimeMs)
+                .thenComparingDouble(item -> item.exitPrice));
         return result;
     }
 
-    // 仅展示已经结束的历史成交，当前未平仓和无平仓时间的数据不进入图表层。
+    // 仅展示已经结束的历史成交，优先按 MT5 entryType 识别平仓/反手成交，旧数据再用时间字段兜底。
     private static boolean isClosedTrade(@Nullable TradeRecordItem trade) {
         if (trade == null) {
             return false;
         }
         long closeTime = resolveCloseTime(trade);
         long openTime = resolveOpenTime(trade);
-        return closeTime > 0L
-                && closeTime >= openTime
-                && Math.abs(trade.getQuantity()) > 1e-9;
+        if (Math.abs(trade.getQuantity()) <= 1e-9 || closeTime <= 0L || closeTime < openTime) {
+            return false;
+        }
+        int entryType = trade.getEntryType();
+        if (entryType == 1 || entryType == 2 || entryType == 3) {
+            return true;
+        }
+        if (entryType == 0) {
+            // 开仓成交不画到历史成交层；旧快照若缺少 entryType，但 open/close 时间明显不同，仍保留。
+            return closeTime > openTime;
+        }
+        return closeTime >= openTime;
     }
 
     // 将平仓时间映射到当前图表窗口内对应的 K 线时间桶，窗口外的历史成交直接忽略。
-    private static long resolveAnchorTime(List<CandleEntry> candles, long closeTime) {
-        if (candles == null || candles.isEmpty() || closeTime <= 0L) {
+    private static long resolveAnchorTime(List<CandleEntry> candles, long targetTime, boolean clampToWindowStart) {
+        if (candles == null || candles.isEmpty() || targetTime <= 0L) {
             return 0L;
         }
         long firstOpen = candles.get(0).getOpenTime();
         long lastOpen = candles.get(candles.size() - 1).getOpenTime();
         long intervalMs = estimateIntervalMs(candles);
-        if (closeTime < firstOpen || closeTime > lastOpen + intervalMs) {
+        if (targetTime < firstOpen) {
+            return clampToWindowStart ? firstOpen : 0L;
+        }
+        if (targetTime > lastOpen + intervalMs) {
             return 0L;
         }
         for (CandleEntry candle : candles) {
@@ -87,11 +112,11 @@ final class HistoricalTradeAnnotationBuilder {
             }
             long openTime = candle.getOpenTime();
             long candleClose = candle.getCloseTime() > openTime ? candle.getCloseTime() : openTime + intervalMs;
-            if (closeTime >= openTime && closeTime <= candleClose) {
+            if (targetTime >= openTime && targetTime <= candleClose) {
                 return openTime;
             }
         }
-        return floorAnchorTime(candles, closeTime);
+        return floorAnchorTime(candles, targetTime);
     }
 
     private static long floorAnchorTime(List<CandleEntry> candles, long closeTime) {
@@ -170,16 +195,25 @@ final class HistoricalTradeAnnotationBuilder {
         return trade.getPrice();
     }
 
-    private static String buildLabel(TradeRecordItem trade) {
-        String side = normalizeTradeSide(trade == null ? null : trade.getSide());
-        double totalPnl = (trade == null ? 0d : trade.getProfit() + trade.getStorageFee());
-        return side + " " + FormatUtils.formatSignedMoneyNoDecimal(totalPnl);
+    private static double resolveOpenPrice(TradeRecordItem trade) {
+        if (trade == null) {
+            return 0d;
+        }
+        if (trade.getOpenPrice() > 0d) {
+            return trade.getOpenPrice();
+        }
+        return trade.getPrice();
     }
 
-    private static int resolveTradeColor(TradeRecordItem trade) {
-        return "SELL".equals(normalizeTradeSide(trade == null ? null : trade.getSide()))
-                ? SELL_COLOR
-                : BUY_COLOR;
+    private static String resolveProductName(@Nullable TradeRecordItem trade) {
+        if (trade == null || trade.getProductName() == null || trade.getProductName().trim().isEmpty()) {
+            return resolveCode(trade);
+        }
+        return trade.getProductName().trim();
+    }
+
+    private static String resolveCode(@Nullable TradeRecordItem trade) {
+        return trade == null || trade.getCode() == null ? "" : trade.getCode().trim();
     }
 
     private static String normalizeTradeSide(@Nullable String side) {
@@ -220,17 +254,48 @@ final class HistoricalTradeAnnotationBuilder {
     }
 
     static final class TradeAnnotation {
-        final long anchorTimeMs;
-        final double price;
-        final String label;
-        final int color;
+        final long entryAnchorTimeMs;
+        final double entryPrice;
+        final long exitAnchorTimeMs;
+        final double exitPrice;
+        final String side;
+        final double quantity;
+        final double totalPnl;
+        final String productName;
+        final String code;
+        final long openTimeMs;
+        final long closeTimeMs;
+        final long orderId;
+        final long positionId;
         final String groupId;
 
-        private TradeAnnotation(long anchorTimeMs, double price, String label, int color, String groupId) {
-            this.anchorTimeMs = anchorTimeMs;
-            this.price = price;
-            this.label = label == null ? "" : label;
-            this.color = color;
+        private TradeAnnotation(long entryAnchorTimeMs,
+                                double entryPrice,
+                                long exitAnchorTimeMs,
+                                double exitPrice,
+                                String side,
+                                double quantity,
+                                double totalPnl,
+                                String productName,
+                                String code,
+                                long openTimeMs,
+                                long closeTimeMs,
+                                long orderId,
+                                long positionId,
+                                String groupId) {
+            this.entryAnchorTimeMs = entryAnchorTimeMs;
+            this.entryPrice = entryPrice;
+            this.exitAnchorTimeMs = exitAnchorTimeMs;
+            this.exitPrice = exitPrice;
+            this.side = side == null ? "BUY" : side;
+            this.quantity = quantity;
+            this.totalPnl = totalPnl;
+            this.productName = productName == null ? "" : productName;
+            this.code = code == null ? "" : code;
+            this.openTimeMs = openTimeMs;
+            this.closeTimeMs = closeTimeMs;
+            this.orderId = orderId;
+            this.positionId = positionId;
             this.groupId = groupId == null ? "" : groupId;
         }
     }

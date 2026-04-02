@@ -39,10 +39,15 @@
    - `GATEWAY_HOST=127.0.0.1`
    - `GATEWAY_PORT=8787`
    - `GATEWAY_MODE=auto`
+   - `SNAPSHOT_BUILD_CACHE_MS=8000`
+   - `SNAPSHOT_BUILD_MAX_STALE_MS=30000`
+   - `SNAPSHOT_BUILD_CACHE_MAX_ENTRIES=6`
+   - `SNAPSHOT_SYNC_CACHE_MAX_ENTRIES=12`
 
 说明：
 - 如果网关前面还有 Caddy / Nginx，建议 `GATEWAY_HOST` 固定为 `127.0.0.1`，不要直接对公网暴露 `8787`。
 - 这个网关现在也可直接转发 Binance REST / WebSocket，方便 App 统一只连韩国服务器。
+- EA 推送活跃时，网关会在短时间内平滑续用最近一次快照缓存，减少固定轮询下“一快一慢”交替；同时快照缓存会按最近使用裁剪，避免历史范围缓存长期堆积占内存。
 
 ## 2）启动
 

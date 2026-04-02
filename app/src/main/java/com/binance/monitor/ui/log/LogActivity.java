@@ -1,3 +1,7 @@
+/*
+ * 日志页，负责展示本地运行日志并提供复制、全选和批量删除能力。
+ * 关联 LogViewModel、LogAdapter 和统一主题管理。
+ */
 package com.binance.monitor.ui.log;
 
 import android.content.ClipData;
@@ -15,6 +19,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.data.model.AppLogEntry;
 import com.binance.monitor.databinding.ActivityLogBinding;
 import com.binance.monitor.ui.adapter.LogAdapter;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 
 public class LogActivity extends AppCompatActivity {
@@ -53,8 +58,28 @@ public class LogActivity extends AppCompatActivity {
                     ? android.view.View.VISIBLE
                     : android.view.View.GONE);
         });
+        applyPaletteStyles();
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        applyPaletteStyles();
+    }
+
+    // 把日志页和列表内容统一切到当前主题，避免切主题后仍残留默认样式。
+    private void applyPaletteStyles() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
+        UiPaletteManager.applySystemBars(this, palette);
+        binding.recyclerLogs.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
+        binding.tvLogTitle.setTextColor(palette.textPrimary);
+        binding.tvLogSubtitle.setTextColor(palette.textSecondary);
+        binding.tvLogsEmpty.setTextColor(palette.textSecondary);
+        adapter.setPalette(palette);
+    }
+
+    // 复制单条日志内容，方便用户快速粘贴到外部排查。
     private void copyToClipboard(AppLogEntry entry) {
         ClipboardManager manager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (manager != null) {

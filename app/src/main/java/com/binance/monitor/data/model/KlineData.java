@@ -8,6 +8,8 @@ public class KlineData {
 
     private final String symbol;
     private final double openPrice;
+    private final double highPrice;
+    private final double lowPrice;
     private final double closePrice;
     private final double volume;
     private final double quoteAssetVolume;
@@ -17,6 +19,8 @@ public class KlineData {
 
     public KlineData(String symbol,
                      double openPrice,
+                     double highPrice,
+                     double lowPrice,
                      double closePrice,
                      double volume,
                      double quoteAssetVolume,
@@ -25,6 +29,8 @@ public class KlineData {
                      boolean closed) {
         this.symbol = symbol;
         this.openPrice = openPrice;
+        this.highPrice = highPrice;
+        this.lowPrice = lowPrice;
         this.closePrice = closePrice;
         this.volume = volume;
         this.quoteAssetVolume = quoteAssetVolume;
@@ -37,6 +43,8 @@ public class KlineData {
         return new KlineData(
                 symbol,
                 item.getDouble(1),
+                item.getDouble(2),
+                item.getDouble(3),
                 item.getDouble(4),
                 item.getDouble(5),
                 item.getDouble(7),
@@ -50,6 +58,8 @@ public class KlineData {
         return new KlineData(
                 symbol,
                 Double.parseDouble(kline.getString("o")),
+                Double.parseDouble(kline.getString("h")),
+                Double.parseDouble(kline.getString("l")),
                 Double.parseDouble(kline.getString("c")),
                 Double.parseDouble(kline.getString("v")),
                 Double.parseDouble(kline.getString("q")),
@@ -65,6 +75,14 @@ public class KlineData {
 
     public double getOpenPrice() {
         return openPrice;
+    }
+
+    public double getHighPrice() {
+        return highPrice;
+    }
+
+    public double getLowPrice() {
+        return lowPrice;
     }
 
     public double getClosePrice() {

@@ -26,6 +26,7 @@ import com.binance.monitor.data.remote.AbnormalGatewayClient;
 import com.binance.monitor.data.remote.BinanceApiClient;
 import com.binance.monitor.data.remote.WebSocketManager;
 import com.binance.monitor.data.repository.MonitorRepository;
+import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.ui.floating.FloatingPositionAggregator;
 import com.binance.monitor.ui.floating.FloatingSymbolCardData;
 import com.binance.monitor.ui.floating.FloatingWindowSnapshot;
@@ -55,18 +56,20 @@ public class MonitorService extends Service {
     private final Map<String, Double> lastPublishedPrice = new HashMap<>();
     private final Map<Long, PendingRound> pendingRounds = new HashMap<>();
     private final Set<String> seenAlertIds = new LinkedHashSet<>();
+    private final AppForegroundTracker.ForegroundStateListener appForegroundListener =
+            foreground -> mainHandler.post(this::rescheduleRuntimePolicies);
     private final Runnable connectionWatchdogRunnable = new Runnable() {
         @Override
         public void run() {
             checkStreamFreshness();
-            mainHandler.postDelayed(this, AppConstants.CONNECTION_HEARTBEAT_INTERVAL_MS);
+            scheduleConnectionWatchdog(resolveHeartbeatDelayMs());
         }
     };
     private final Runnable abnormalSyncRunnable = new Runnable() {
         @Override
         public void run() {
             requestAbnormalSync();
-            mainHandler.postDelayed(this, AppConstants.ABNORMAL_SYNC_INTERVAL_MS);
+            scheduleAbnormalSync(resolveAbnormalSyncDelayMs());
         }
     };
     private final Runnable floatingRefreshRunnable = new Runnable() {
@@ -118,6 +121,7 @@ public class MonitorService extends Service {
         abnormalGatewayClient = new AbnormalGatewayClient(this);
         webSocketManager = new WebSocketManager(this);
         executorService = Executors.newSingleThreadExecutor();
+        AppForegroundTracker.getInstance().addListener(appForegroundListener);
         repository.setMonitoringEnabled(true);
         logManager.info("服务初始化完成");
         applyFloatingPreferences();
@@ -173,6 +177,7 @@ public class MonitorService extends Service {
         if (floatingWindowManager != null) {
             floatingWindowManager.hide();
         }
+        AppForegroundTracker.getInstance().removeListener(appForegroundListener);
         logManager.info("服务已销毁");
     }
 
@@ -204,8 +209,7 @@ public class MonitorService extends Service {
         pipelineStarted = true;
         repository.setConnectionStatus(getString(R.string.connection_connecting));
         fetchBootstrapData();
-        mainHandler.removeCallbacks(connectionWatchdogRunnable);
-        mainHandler.postDelayed(connectionWatchdogRunnable, AppConstants.CONNECTION_HEARTBEAT_INTERVAL_MS);
+        scheduleConnectionWatchdog(resolveHeartbeatDelayMs());
         syncAbnormalConfigAsync();
         scheduleAbnormalSync(800L);
         webSocketManager.connect(AppConstants.MONITOR_SYMBOLS, new WebSocketManager.Listener() {
@@ -417,6 +421,29 @@ public class MonitorService extends Service {
         mainHandler.postDelayed(abnormalSyncRunnable, Math.max(0L, delayMs));
     }
 
+    // 按当前前后台状态重新安排固定任务节奏。
+    private void rescheduleRuntimePolicies() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::rescheduleRuntimePolicies);
+            return;
+        }
+        if (!pipelineStarted) {
+            return;
+        }
+        scheduleConnectionWatchdog(resolveHeartbeatDelayMs());
+        scheduleAbnormalSync(resolveAbnormalSyncDelayMs());
+    }
+
+    // 安排下一次连接心跳检查。
+    private void scheduleConnectionWatchdog(long delayMs) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> scheduleConnectionWatchdog(delayMs));
+            return;
+        }
+        mainHandler.removeCallbacks(connectionWatchdogRunnable);
+        mainHandler.postDelayed(connectionWatchdogRunnable, Math.max(0L, delayMs));
+    }
+
     private void handleClosedKline(KlineData data) {
         if (data == null || configManager == null || recordManager == null) {
             return;
@@ -614,7 +641,8 @@ public class MonitorService extends Service {
         }
         long now = System.currentTimeMillis();
         long elapsed = now - lastFloatingRefreshAt;
-        if (immediate || elapsed >= AppConstants.FLOATING_UPDATE_THROTTLE_MS) {
+        long throttleMs = resolveFloatingRefreshThrottleMs();
+        if (immediate || elapsed >= throttleMs) {
             mainHandler.removeCallbacks(floatingRefreshRunnable);
             floatingRefreshScheduled = false;
             lastFloatingRefreshAt = now;
@@ -624,9 +652,27 @@ public class MonitorService extends Service {
         if (floatingRefreshScheduled) {
             return;
         }
-        long delay = Math.max(120L, AppConstants.FLOATING_UPDATE_THROTTLE_MS - elapsed);
+        long delay = Math.max(120L, throttleMs - elapsed);
         floatingRefreshScheduled = true;
         mainHandler.postDelayed(floatingRefreshRunnable, delay);
+    }
+
+    // 读取当前连接心跳节奏。
+    private long resolveHeartbeatDelayMs() {
+        return MonitorRuntimePolicyHelper.resolveHeartbeatDelayMs(
+                AppForegroundTracker.getInstance().isForeground());
+    }
+
+    // 读取当前异常同步节奏。
+    private long resolveAbnormalSyncDelayMs() {
+        return MonitorRuntimePolicyHelper.resolveAbnormalSyncDelayMs(
+                AppForegroundTracker.getInstance().isForeground());
+    }
+
+    // 后台时放慢悬浮窗刷新，减少不必要的主线程绘制。
+    private long resolveFloatingRefreshThrottleMs() {
+        return MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(
+                AppForegroundTracker.getInstance().isForeground());
     }
 
     private void checkStreamFreshness() {

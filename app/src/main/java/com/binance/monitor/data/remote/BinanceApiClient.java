@@ -93,6 +93,8 @@ public class BinanceApiClient {
         return new KlineData(
                 selected.getSymbol(),
                 selected.getOpen(),
+                selected.getHigh(),
+                selected.getLow(),
                 selected.getClose(),
                 selected.getVolume(),
                 selected.getQuoteVolume(),

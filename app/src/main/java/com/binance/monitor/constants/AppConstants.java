@@ -31,12 +31,16 @@ public final class AppConstants {
     public static final long WS_PING_INTERVAL_SECONDS = 45L;
     public static final long PRICE_UPDATE_THROTTLE_MS = 2_000L;
     public static final long FLOATING_UPDATE_THROTTLE_MS = 1_500L;
+    public static final long FLOATING_UPDATE_BACKGROUND_THROTTLE_MS = 5_000L;
     public static final long CONNECTION_HEARTBEAT_INTERVAL_MS = 30_000L;
+    public static final long CONNECTION_HEARTBEAT_BACKGROUND_INTERVAL_MS = 60_000L;
     public static final long SOCKET_STALE_TIMEOUT_MS = 70_000L;
     public static final long STALE_RECONNECT_COOLDOWN_MS = 60_000L;
     public static final long NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000L;
     public static final long MERGE_WINDOW_MS = 4000L;
     public static final long ABNORMAL_SYNC_INTERVAL_MS = 8000L;
+    public static final long ABNORMAL_SYNC_BACKGROUND_INTERVAL_MS = 20_000L;
+    public static final long CHART_AUTO_REFRESH_INTERVAL_MS = 5_000L;
 
     public static final String SERVICE_CHANNEL_ID = "monitor_service_channel";
     public static final String ALERT_CHANNEL_ID = "monitor_alert_channel";

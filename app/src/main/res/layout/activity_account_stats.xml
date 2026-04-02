@@ -146,7 +146,8 @@
                             android:text="1D"
                             android:textAllCaps="false"
                             android:textSize="10sp"
-                            app:cornerRadius="0dp" />
+                            app:cornerRadius="0dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange7d"
@@ -162,7 +163,8 @@
                             android:text="7D"
                             android:textAllCaps="false"
                             android:textSize="10sp"
-                            app:cornerRadius="0dp" />
+                            app:cornerRadius="0dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1m"
@@ -178,7 +180,8 @@
                             android:text="1M"
                             android:textAllCaps="false"
                             android:textSize="10sp"
-                            app:cornerRadius="0dp" />
+                            app:cornerRadius="0dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange3m"
@@ -194,7 +197,8 @@
                             android:text="3M"
                             android:textAllCaps="false"
                             android:textSize="10sp"
-                            app:cornerRadius="0dp" />
+                            app:cornerRadius="0dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1y"
@@ -210,7 +214,8 @@
                             android:text="1Y"
                             android:textAllCaps="false"
                             android:textSize="10sp"
-                            app:cornerRadius="0dp" />
+                            app:cornerRadius="0dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRangeAll"
@@ -226,7 +231,8 @@
                             android:text="ALL"
                             android:textAllCaps="false"
                             android:textSize="10sp"
-                            app:cornerRadius="0dp" />
+                            app:cornerRadius="0dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <LinearLayout
@@ -458,7 +464,8 @@
                                 android:text="日收益"
                                 android:textAllCaps="false"
                                 android:textSize="10sp"
-                                app:cornerRadius="0dp" />
+                                app:cornerRadius="0dp"
+                                app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnReturnMonth"
@@ -472,7 +479,8 @@
                                 android:text="月收益"
                                 android:textAllCaps="false"
                                 android:textSize="10sp"
-                                app:cornerRadius="0dp" />
+                                app:cornerRadius="0dp"
+                                app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnReturnYear"
@@ -486,7 +494,8 @@
                                 android:text="年收益"
                                 android:textAllCaps="false"
                                 android:textSize="10sp"
-                                app:cornerRadius="0dp" />
+                                app:cornerRadius="0dp"
+                                app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnReturnStage"
@@ -500,7 +509,8 @@
                                 android:text="阶段收益"
                                 android:textAllCaps="false"
                                 android:textSize="10sp"
-                                app:cornerRadius="0dp" />
+                                app:cornerRadius="0dp"
+                                app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
 
                         <com.google.android.material.button.MaterialButtonToggleGroup
@@ -519,7 +529,8 @@
                                 android:text="收益率"
                                 android:textAllCaps="false"
                                 android:textSize="10sp"
-                                app:cornerRadius="0dp" />
+                                app:cornerRadius="0dp"
+                                app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnReturnsAmount"
@@ -530,7 +541,8 @@
                                 android:text="收益额"
                                 android:textAllCaps="false"
                                 android:textSize="10sp"
-                                app:cornerRadius="0dp" />
+                                app:cornerRadius="0dp"
+                                app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
                     </LinearLayout>
 
@@ -1032,7 +1044,8 @@
                             android:text="全部"
                             android:textAllCaps="false"
                             android:textSize="11sp"
-                            app:cornerRadius="0dp" />
+                            app:cornerRadius="0dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnTradePnlBuy"
@@ -1043,7 +1056,8 @@
                             android:text="买入"
                             android:textAllCaps="false"
                             android:textSize="11sp"
-                            app:cornerRadius="0dp" />
+                            app:cornerRadius="0dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnTradePnlSell"
@@ -1054,7 +1068,8 @@
                             android:text="卖出"
                             android:textAllCaps="false"
                             android:textSize="11sp"
-                            app:cornerRadius="0dp" />
+                            app:cornerRadius="0dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <TextView
@@ -1135,7 +1150,7 @@
         android:id="@+id/tabBar"
         android:layout_width="match_parent"
         android:layout_height="@dimen/bottom_nav_height"
-        android:background="@drawable/bg_bottom_nav"
+        android:background="@android:color/transparent"
         android:orientation="horizontal"
         android:padding="0dp">
 
@@ -1144,7 +1159,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_unselected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
@@ -1155,7 +1170,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_unselected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
@@ -1166,7 +1181,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_selected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/white"
@@ -1177,7 +1192,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_unselected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/text_secondary"

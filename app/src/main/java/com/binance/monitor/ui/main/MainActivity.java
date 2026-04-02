@@ -65,8 +65,6 @@ public class MainActivity extends AppCompatActivity {
     private ItemMetricBinding metricPercentBinding;
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private boolean applyingConfig;
-    private int tabActiveColor = 0xFF07C160;
-    private int tabInactiveColor = 0xFF7F8EA9;
     private long lastMarketUpdateMs;
     private ArrayAdapter<String> symbolAdapter;
     private List<AbnormalRecord> recentRecordsSource = Collections.emptyList();
@@ -191,11 +189,13 @@ public class MainActivity extends AppCompatActivity {
                                   boolean chartSelected,
                                   boolean accountSelected,
                                   boolean settingsSelected) {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
                 binding.tabSettings);
+        binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
         styleNavTab(binding.tabMarketMonitor, marketSelected);
         styleNavTab(binding.tabMarketChart, chartSelected);
         styleNavTab(binding.tabAccountStats, accountSelected);
@@ -203,13 +203,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void styleNavTab(TextView tab, boolean selected) {
-        if (tab == null) {
-            return;
-        }
-        tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
-        tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        tab.setTypeface(null, Typeface.NORMAL);
-        tab.setTextSize(13f);
+        UiPaletteManager.styleBottomNavTab(tab, selected, UiPaletteManager.resolve(this));
     }
 
     private void setupActions() {
@@ -319,9 +313,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         TextView textView = (TextView) view;
-        textView.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-        textView.setTextSize(14f);
-        textView.setTypeface(null, Typeface.NORMAL);
+        UiPaletteManager.styleSpinnerItemText(textView, UiPaletteManager.resolve(this), 14f);
     }
 
     private void syncSymbolSelector() {
@@ -515,9 +507,8 @@ public class MainActivity extends AppCompatActivity {
         setMetric(metricAmountBinding, FormatUtils.formatAmount(data.getQuoteAssetVolume()).replace("M$", " M$"));
         setMetric(metricChangeBinding, FormatUtils.formatSignedPriceWithUnit(data.getPriceChange()));
         setMetric(metricPercentBinding, FormatUtils.formatPercent(data.getPercentChange()));
-        int changeColor = data.getPriceChange() >= 0
-                ? ContextCompat.getColor(this, R.color.accent_green)
-                : ContextCompat.getColor(this, R.color.accent_red);
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        int changeColor = data.getPriceChange() >= 0 ? palette.rise : palette.fall;
         metricChangeBinding.tvMetricValue.setTextColor(changeColor);
         metricPercentBinding.tvMetricValue.setTextColor(changeColor);
     }
@@ -525,7 +516,7 @@ public class MainActivity extends AppCompatActivity {
     private void setMetric(ItemMetricBinding bindingItem, String value) {
         bindingItem.tvMetricValue.setText(value);
         if (bindingItem == metricChangeBinding || bindingItem == metricPercentBinding) {
-            bindingItem.tvMetricValue.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+            bindingItem.tvMetricValue.setTextColor(UiPaletteManager.resolve(this).textPrimary);
         }
     }
 
@@ -606,8 +597,6 @@ public class MainActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(this, palette);
-        tabActiveColor = palette.primary;
-        tabInactiveColor = palette.textSecondary;
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.tvMainSymbolPickerLabel.setTextColor(palette.textPrimary);
         applyMainSymbolPickerIndicator();

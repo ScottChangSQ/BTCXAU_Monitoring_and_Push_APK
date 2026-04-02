@@ -1,7 +1,37 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已继续针对图5收口账户曲线长按残留问题：附图长按联动现在区分“主图最近点联动”和“附图精确时间联动”，仓位图、回撤图、日收益图传来的当前横轴时间不再被后续的 `xRatio` 二次改写。
+- 已新增并通过本轮定点验证：`AccountCurveHighlightHelperTest` 新增“附图精确时间优先”用例；并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest"` 与 `.\gradlew.bat assembleDebug`。
+- 已继续针对图4收口账户曲线残留问题：仓位比例图现在会在历史 `positionRatio` 缺失且当前空仓时，优先按历史成交开平时间回放持仓暴露补出曲线；回撤图、日收益图、仓位图长按时也改成直接把“当前手指所在横轴时间”回传给主图联动。
+- 已新增并通过本轮定点验证：`AccountCurvePositionRatioHelperTest` 新增历史成交回放用例；并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountCurvePositionRatioHelperTest" --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest"` 与 `.\gradlew.bat assembleDebug`。
+- 已继续补完悬浮窗与账户曲线的二次修订：顶部总盈亏与最小化态零值统一显示 `$-`，展开态/最小化态右侧留白已进一步收紧，仓位比例图在历史比率缺失时会按当前持仓市值做兜底估算，附图长按时主图弹窗和图外摘要会按横轴位置插值联动。
+- 已新增并通过本轮定点验证：`AccountCurvePositionRatioHelperTest`，并补强通过 `AccountCurveHighlightHelperTest`、`FloatingWindowTextFormatterTest`、`FloatingWindowLayoutHelperTest`。
+- 已重新通过 `.\gradlew.bat testDebugUnitTest assembleDebug` 完整验证。
+- 已补完用户最新追加的 4 项修订：悬浮窗产品信息统一左对齐、盈亏为 `0` 时显示 `$-`、账户曲线归一化时保留仓位比例、附图长按改成按共享横轴位置实时联动主图弹窗。
+- 已新增并通过本轮定点验证：`AccountCurvePointNormalizerTest`、`AccountCurveHighlightHelperTest`，并补强通过 `FloatingWindowTextFormatterTest`、`FloatingWindowLayoutHelperTest`。
+- 已重新通过 `.\gradlew.bat testDebugUnitTest assembleDebug` 完整验证。
+- 第三步骤仍在继续推进，当前已补完新一轮“主题收口 + 预加载节奏收口”的主流程缺口。
+- 已补完账户预加载策略辅助：新增 `AccountPreloadPolicyHelper`，`AccountStatsPreloadManager` 已从半改状态修复为完整可编译版本，并正式接入 `AppForegroundTracker` 的前后台节奏切换。
+- 已补完日志页主题收口：`activity_log.xml` 旧按钮背景已移除，`LogActivity` 已接入统一页面主题和系统栏主题，日志列表条目也会跟随当前主题刷新。
+- 已补完悬浮窗布局主题收口：`layout_floating_window.xml` 不再直接绑定旧的展开态/最小化固定背景，继续统一交给运行时主题绘制。
+- 已补完设置详情页主题残留收口：`activity_settings_detail.xml` 里的主题预览色块和操作按钮不再直接绑 `bg_overlay_mini / bg_inline_button`，全部改为运行时主题绘制。
+- 已新增并通过本轮定点验证：`AccountPreloadPolicyHelperTest`、`LogLayoutThemeResourceTest`、`FloatingWindowLayoutThemeResourceTest`、`LogActivityThemeWiringTest`、`SettingsDetailThemeResourceTest`。
+- 已重新通过本轮整体验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.service.MonitorRuntimePolicyHelperTest" --tests "com.binance.monitor.ui.theme.MarketChartLayoutThemeResourceTest" --tests "com.binance.monitor.ui.theme.BottomNavThemeResourceTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperTest" --tests "com.binance.monitor.ui.account.AccountPreloadPolicyHelperTest" --tests "com.binance.monitor.ui.theme.LogLayoutThemeResourceTest" --tests "com.binance.monitor.ui.theme.FloatingWindowLayoutThemeResourceTest" --tests "com.binance.monitor.ui.theme.LogActivityThemeWiringTest" --tests "com.binance.monitor.ui.theme.SettingsDetailThemeResourceTest" assembleDebug`。
+- 第二步骤除第10条外已继续验证通过，当前已进入第三步骤首轮收口。
+- 已补完第三步骤第一批基础层：应用前后台运行策略已接入，`MonitorService` 的心跳、异常同步、悬浮窗刷新会按前后台切换不同节奏。
+- 已补完第三步骤第一批主题收口：图表页布局里的硬编码十六进制颜色已清空，主界面/图表页/账户页/设置页/设置详情页的底部导航不再直接绑固定背景资源，统一改由运行时主题绘制。
+- 已新增并通过第三步骤定点验证：`MonitorRuntimePolicyHelperTest`、`MarketChartLayoutThemeResourceTest`、`BottomNavThemeResourceTest`，并重新通过 `assembleDebug`。
+- 第10条已按用户最新要求暂缓，不在本轮继续推进。
+- 正在继续第二步骤的第11/12条：图表页已新增“刷新策略辅助”，把 K 线刷新改成“本地窗口足够且实时 1m 收盘新鲜时直接跳过 REST；实时链路变旧时优先做增量补尾；只有本地窗口不完整或缺口过大时才整窗回拉”。
+- 图表页启动时会先吃 `MonitorRepository` 里最新的已收盘 1m 快照，再决定是否真的要发起网络请求，用于把“推送优先 + 本地聚合 + 缺口回补”真正落到请求入口。
+- 已补完 K 线子图拼接：`KlineChartView` 已正式接入连续布局辅助，VOL 高度按要求提升 20%，主图 / VOL / MACD / STOCHRSI 之间不再额外留白，也不再画四个独立外框。
+- 已补完账户统计曲线区四图贴合：净值主图、仓位比例、回撤、日收益四张图改成“首图保留外边距、中间图上下贴边、最底图保留时间轴区”，共享横轴边界不再被内部留白拉开。
+- 已继续补强 K 线切周期等待优化：图表页现在会在后台主动补齐当前产品的 `1m` 底稿缓存，并把它顺手派生为更高周期缓存；实时 `1m` 收盘更新也会同步扇出到这些派生缓存，减少后续切周期时再等网络。
 - 正在继续第二步骤：已先补完“服务端 / 快照格式 / 历史仓位比例”链路，并开始把仓位比例图接到账户统计曲线区。
+- 已补完 K 线历史成交点的已平仓判定：历史成交上图现在优先按 `entryType` 识别平仓/反手成交，开放单不再误画到历史成交点里。
+- 已补上切换 K 线周期的本地预显示：若本地已缓存更小周期数据，切周期时会先本地聚合出目标周期画面，再等待网络回填完整窗口，减少空等和卡顿感。
+- 已补上图表页对监控服务 `1m` 已收盘 K 线的实时接入：当前周期图现在会把最新 `1m` 收盘线直接并入已加载序列，同时同步更新本地 `1m` 缓存，减少等整窗 REST 回填的频率。
 - 已修复异常同步链路的三处关键缺口：远端网关地址不再继续回退到 `10.0.2.2/127.0.0.1/localhost`，相同异常同步错误不再每 8 秒刷一遍日志，本地已收盘 K 线异常判断也重新接回到实时流和 REST 回退流。
 - 已修复“服务端异常同步失败后 APP 不再新增异常提醒 / K 线上无新增异常提示”的问题：服务端失败后会用本地补判做兜底，恢复后又切回服务端同步，并用稳定记录 ID 和通知冷却避免重复提醒。
 - 净值/结余曲线模块已新增仓位比例子图，并把主图时间刻度下放到底部附图，开始按统一横轴联动四张图。
@@ -15,11 +45,31 @@
 - 新一轮第一步骤已继续补强：安装包图标新增 `mipmap/ic_launcher` 与 `mipmap/ic_launcher_round`，应用本体和全部桌面入口别名统一改走这套新图标资源，并重新通过 `assembleDebug testDebugUnitTest`。
 - 已补完本轮第二步骤里的 4 项运行态修订：悬浮窗产品盈亏改成 `BTC（+/-$金额）` 同行展示、宽度收窄并固定；悬浮窗价格改用实时价格缓存，不再落回旧收盘价；K 线位于最右侧时自动刷新继续跟随；K 线周期已支持退出重进后记忆恢复。
 - 已统一把隐私遮罩文案改成单个 `*`，不再使用 `****`，并同步修正相关单测。
+- 新一轮第一步骤已真正收口：账户统计 15 个分段按钮补上 XML 初始方角形状覆盖，安装包默认 launcher 与 5 个主题别名图标统一改到新图标链路，并新增资源契约测试防止回退。
+- 已继续第二步骤中的服务端性能收口：`server_v2.py` 新增快照缓存条目上限、EA 新鲜态下的短时平滑续用，以及 EA 快照变更时同步清空 `snapshot_sync_cache`，用于压住内存和减轻 5 秒轮询下的一快一慢延迟抖动。
 - 已通过 `.\gradlew.bat assembleDebug testDebugUnitTest` 与 `.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response bridge.mt5_gateway.tests.test_abnormal_gateway` 验证。
+- 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest"`。
+- 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.CandleAggregationHelperTest"`。
+- 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.CurvePaneSpacingHelperTest"`。
+- 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.KlinePaneLayoutHelperTest"`。
 - 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.AbnormalGatewayClientTest" --tests "com.binance.monitor.data.local.AbnormalRecordIdentityTest" --tests "com.binance.monitor.service.AbnormalSyncRuntimeHelperTest"`。
 
 ## 上次停在哪个位置
+- 停在“图5反馈里的附图长按弹窗卡值问题已再补一轮时间优先级修复”的状态；若用户仍反馈不跟手，下一步优先在真机上加一层联动日志，核对附图回调时间、主图 override 时间和最终绘制时间是否一致。
+- 停在“用户根据图4反馈的第3/4点已再补一轮真实数据链路与联动时间链路”的状态；若用户仍反馈仓位图为空，下一步优先检查运行设备上的历史成交是否本身缺开/平仓时间，或截图是否来自旧安装包。
+- 停在“用户再次反馈的 4 项残留问题已继续修正并验证通过”的状态；若用户仍反馈仓位图或长按弹窗异常，下一步优先看真实运行数据是否仍来自缺失 `positionRatio` 的旧本地快照。
+- 停在“用户最新追加的 4 项修订已完成并验证通过”的状态；若继续第三步骤，优先回到剩余的主题全覆盖和资源占用收口。
+- 停在“第三步骤第二轮收口已完成：账户预加载前后台节奏正式落地，日志页、悬浮窗、设置详情页的旧固定背景资源又清掉一批，并重新通过定点测试与整包编译”的状态。
+- 停在“第三步骤仍未全部完成，下一轮优先复核仍未完全主题化的旧账户页/遗留布局和通用条目组件”的状态。
+- 停在“第三步骤首轮基础层已经落地：前后台分级刷新已接入服务层，图表页和底部导航的主题漏点已收口，并重新通过定点测试与整包编译”的状态。
+- 停在“第10条先冻结；第11条按本地计算多周期推进；第12条按推送优先 + 本地聚合 + 缺口回补 + 前后台分级刷新推进，并已先把图表页入口从固定 5 秒整窗拉取改成策略分流”的状态。
+- 停在“K 线子图已改成连续拼接布局，VOL 放大 20%，整框边框已移除，并重新通过定点测试和整包编译”的状态。
+- 停在“账户统计曲线区四张图的内部留白已压平，主图与三张附图边界已贴合”的状态。
+- 停在“图表页已新增后台 `1m` 底稿缓存预热和高周期缓存扇出，切周期等待继续往下压”的状态。
 - 停在“历史仓位比例链路已打通，账户统计曲线区已接入仓位比例子图并重新编译通过”的状态。
+- 停在“K 线历史成交点已接入，且已改成只显示已平仓历史成交点；当前未平仓单不会再混进图上”的状态。
+- 停在“切换 K 线周期时已支持本地聚合预显示；当前策略是先用已有小周期缓存拼出目标周期，再由网络回填完整窗口”的状态。
+- 停在“图表页已开始消费监控服务推送的 `1m` 已收盘 K 线；当前策略是高周期图按实时 `1m` 收盘向前合并，缺口仍交给后台整窗请求补齐”的状态。
 - 若下一步继续复核异常同步 / 新增异常提醒 / K 线异常提示，优先看 `MonitorService`、`AbnormalGatewayClient`、`AbnormalRecordManager`、`server_v2.py`。
 - 若下一步继续做账户统计曲线区，优先看 `PositionRatioChartView`、`AccountStatsBridgeActivity`、`activity_account_stats.xml`。
 - 若下一步继续做历史仓位比例来源，优先看 `server_v2.py`、`CurvePoint`、`Mt5BridgeGatewayClient`、`AccountStorageRepository`。
@@ -27,8 +77,28 @@
 - 若下一步继续复核异常圆点来源与覆盖范围，优先看 `HistoricalAbnormalRecordBuilder`、`MarketChartActivity`、`server_v2.py`。
 - 若下一步继续复核无加粗/方角 UI，优先看 `styles.xml`、`themes.xml` 以及 `activity_account_stats.xml`、`activity_main.xml`、`activity_settings.xml`、`activity_settings_detail.xml`。
 - 若下一步继续做第二步骤剩余项，优先看 `MarketChartActivity`、`KlineChartView`、`FloatingWindowManager`、`MonitorService`，尤其是历史成交上图、长按联动、以及多周期数据刷新策略。
+- 若下一步继续压第二步骤的服务器侧资源与延迟问题，优先看 `bridge/mt5_gateway/server_v2.py`、`bridge/mt5_gateway/.env.example`、`bridge/mt5_gateway/tests/test_summary_response.py`。
 
 ## 近期关键决定和原因
+- 附图长按联动新增“精确时间优先”分支；原因是附图已经能直接算出手指所在横轴时间，再被 `xRatio` 二次换算一次，仍有机会让弹窗看起来卡在旧值。
+- 仓位比例图的兜底改成“历史成交回放优先，当前持仓估算兜底”；原因是用户图4里的账户当前可能已经空仓，只看当前持仓会让整段历史仓位继续空白。
+- 附图长按联动的回传时间改成“当前横轴目标时间”而不是“最近数据点时间”；原因是即便 Activity 层已支持插值，附图继续回传最近点也会让联动体验看起来像没跟手。
+- 仓位比例图新增 `AccountCurvePositionRatioHelper` 兜底估算；原因是部分历史曲线仍可能来自不带 `positionRatio` 的旧快照，不能让整张附图继续空白。
+- 附图长按联动改成“按横轴位置插值 + 主图 tooltip override + 图外摘要同步更新”；原因是仅取最近点会在点位较稀时让用户感觉数据始终不变。
+- 悬浮窗顶部总盈亏与最小化态金额统一走 `FloatingWindowTextFormatter`；原因是之前只修了产品卡片，顶部汇总仍残留旧格式化逻辑。
+- 悬浮窗右侧空白继续通过“缩窄展开宽度 + 缩小最小化边距/按钮尺寸”收紧；原因是产品文字左对齐后，原宽度会让最右侧看起来空得过头。
+- 账户曲线归一化改成独立 `AccountCurvePointNormalizer`；原因是仓位比例和净值/结余修正不该继续混在页面类里处理，否则最容易在补点时把 `positionRatio` 丢掉。
+- 附图长按联动改成独立 `AccountCurveHighlightHelper` 且优先按共享横轴 `xRatio` 反推目标时间；原因是仅沿用附图自身回调时间会在点位稀疏时让主图弹窗停在旧值上。
+- 悬浮窗产品卡片的左对齐和零盈亏文案改成统一辅助逻辑；原因是对齐方式和 `$-` 规则需要固定下来，避免后续样式调整时回退。
+- 账户预加载新增独立 `AccountPreloadPolicyHelper`，并让 `AccountStatsPreloadManager` 统一通过它读取前后台节奏；原因是之前半改状态里旧常量和新前后台逻辑混在一起，既编译不过，也不利于后续继续压资源占用。
+- 日志页改成“页面壳子 + 列表条目”一起走运行时主题，而不是只改外层背景；原因是如果只切页面背景，日志列表内容仍会保留默认色，四套主题看起来会像只改了一半。
+- 设置详情页的主题预览色块和操作按钮去掉 XML 固定背景，继续交给 `SettingsSectionActivity` 的运行时绘制；原因是这页本身已有完整主题应用逻辑，保留旧背景只会把主题效果重新写死。
+- 第三步骤的主题收口先从“底部导航 + 图表页按钮条 + 图表页布局硬编码颜色”这一组最大漏点开始；原因是这批固定资源会直接让四套主题在主要页面里表现不完整。
+- 底部导航改成“布局只保留透明占位，真实背景由 `UiPaletteManager` 在运行时按当前主题绘制”；原因是只改文字颜色不够，旧背景资源本身就把默认风格写死了。
+- 前后台分级刷新继续优先落在 `MonitorService`；原因是心跳、异常同步和悬浮窗刷新都集中在这里，改一处就能直接压住电量、CPU 和流量消耗。
+- 图表页刷新入口新增“跳过 / 增量 / 整窗”三档策略；原因是用户已明确第11条走本地多周期、第12条走推送优先架构，继续固定 5 秒整窗拉取既卡顿又耗流量。
+- 只要本地已有完整窗口且最近一根已收盘 `1m` 仍然新鲜，就不再主动打 REST；原因是监控服务已经在持续推送闭合分钟线，图表页应优先消费这条更省电省流量的链路。
+- 若本地窗口完整但实时链路出现断档，优先从最后一根已知 K 线的开盘时间开始做增量补尾，而不是整页重拉；原因是这样能把切周期和从后台恢复时的等待压到最小。
 - 历史仓位比例直接挂到 `curvePoints` 上，而不是单开一条松散数组；原因是这样服务端增量、客户端缓存、本地恢复和图表联动都能复用同一时间轴。
 - 历史仓位比例按“持仓市值 / 当前时点净值”重算；原因是这和账户概览里现有仓位比例口径一致，也能从 MT5 历史成交回放里真实恢复。
 - 净值/结余主图不再自己显示底部时间刻度，时间刻度下放到最底部附图；原因是用户要求多张图合并成一套横轴。
@@ -62,3 +132,10 @@
 - 本地已收盘 K 线补判只负责“记录落库 + 图上可见”，只有在异常同步已经尝试过且当前不健康时才补发本地通知；原因是既要兜住服务端故障，又不能在首次启动和同步恢复后重复提醒。
 - 异常同步失败日志改成“同一错误按冷却时间节流、错误变化时立即重记”；原因是用户日志里 404 / localhost 回退失败会固定频率刷屏。
 - 服务端回补提醒在客户端增加冷却判定；原因是本地兜底通知过的同一轮异常，等服务端恢复后不应再弹第二次。
+- K 线历史成交点优先按 `entryType` 判断是否为平仓/反手成交，只有旧数据缺少该字段时才退回时间字段判断；原因是开放单会把 `timestamp` 误当成平仓时间，导致未平仓单混进历史成交点。
+- 切换 K 线周期先走“本地小周期聚合预显示”，再走真实 REST 完整回填；原因是当前实时流只订阅 `1m`，若每次切周期都先等远端窗口返回，体感卡顿会很明显。
+- `KlineData` 扩展出高低价，并把监控服务的 `1m` 收盘实时并入图表页；原因是没有高低价就无法把实时 `1m` 正确合并进 5m/15m/30m/更高周期的最后一根 K 线。
+- K 线四联图合并优先改“子图内部留白”而不是改 XML 叠层；原因是问题根因在各子图自己的上下内边距，直接改视图布局更稳定，也不会引入触摸区域重叠。
+- 账户统计曲线区四图贴合采用“每张图按是否处于中间层动态压缩上下留白”；原因是这样既能让共享边界贴合，又能保住首图顶部信息和末图底部时间刻度。
+- 多周期切换继续沿用“`1m` 底稿 + 本地扇出高周期缓存”的策略；原因是只要底稿在本地，后续更大周期都可以本地秒级预显示，不必每次切换都等服务器返回完整窗口。
+- 服务器快照缓存新增“最近使用裁剪 + EA 新鲜态短时续用”双策略；原因是一方面旧的 `snapshot/sync` 条目会把大快照长期留在内存里，另一方面 `5s` 轮询对上 `8s` 构建缓存会天然形成一快一慢交替。

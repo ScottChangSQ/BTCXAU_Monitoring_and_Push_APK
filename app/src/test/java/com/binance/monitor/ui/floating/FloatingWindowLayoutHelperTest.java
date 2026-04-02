@@ -3,6 +3,8 @@
  */
 package com.binance.monitor.ui.floating;
 
+import android.view.Gravity;
+
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -11,13 +13,29 @@ public class FloatingWindowLayoutHelperTest {
 
     @Test
     public void expandedLayoutShouldUseTighterWidthPreset() {
-        assertEquals(104, FloatingWindowLayoutHelper.resolveExpandedWidthDp());
-        assertEquals(92, FloatingWindowLayoutHelper.resolveExpandedContentWidthDp());
+        assertEquals(96, FloatingWindowLayoutHelper.resolveExpandedWidthDp());
+        assertEquals(88, FloatingWindowLayoutHelper.resolveExpandedContentWidthDp());
         assertEquals(0, FloatingWindowLayoutHelper.resolveTrailingInsetDp());
     }
 
     @Test
     public void valueRowsShouldFillContentWidth() {
-        assertEquals(92, FloatingWindowLayoutHelper.resolveValueRowWidthDp());
+        assertEquals(88, FloatingWindowLayoutHelper.resolveValueRowWidthDp());
+    }
+
+    @Test
+    public void symbolCardContentShouldUseStartAlignedGravity() {
+        assertEquals(Gravity.START | Gravity.CENTER_VERTICAL,
+                FloatingWindowLayoutHelper.resolveSymbolHeaderGravity());
+        assertEquals(Gravity.START | Gravity.CENTER_VERTICAL,
+                FloatingWindowLayoutHelper.resolveSymbolTextGravity());
+    }
+
+    @Test
+    public void minimizedLayoutShouldUseSmallerTrailingSpace() {
+        assertEquals(14, FloatingWindowLayoutHelper.resolveMinimizeButtonSizeDp());
+        assertEquals(30, FloatingWindowLayoutHelper.resolveMiniMinWidthDp());
+        assertEquals(6, FloatingWindowLayoutHelper.resolveMiniHorizontalPaddingDp());
+        assertEquals(4, FloatingWindowLayoutHelper.resolveMiniEndMarginDp());
     }
 }

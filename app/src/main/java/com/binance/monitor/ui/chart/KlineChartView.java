@@ -180,7 +180,6 @@ public class KlineChartView extends View {
     private final Paint latestPriceGuidePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint latestPriceTagPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint latestPriceTagTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint paneBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint extremeHighPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint extremeLowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint extremeConnectorPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -369,9 +368,6 @@ public class KlineChartView extends View {
         latestPriceTagTextPaint.setColor(0xFFFFFFFF);
         latestPriceTagTextPaint.setTextSize(dp(9f));
         latestPriceTagTextPaint.setFakeBoldText(false);
-        paneBorderPaint.setStyle(Paint.Style.STROKE);
-        paneBorderPaint.setStrokeWidth(dp(1f));
-        paneBorderPaint.setColor(0xFF3D5577);
         extremeHighPaint.setColor(0xFFF2C94C);
         extremeHighPaint.setStyle(Paint.Style.FILL);
         extremeLowPaint.setColor(0xFF22D3EE);
@@ -432,7 +428,6 @@ public class KlineChartView extends View {
         latestPriceTagPaint.setColor(palette.primary);
         latestPriceTagTextPaint.setColor(palette.textPrimary);
         latestPriceGuidePaint.setColor(applyAlpha(palette.primary, 220));
-        paneBorderPaint.setColor(applyAlpha(palette.stroke, 245));
         extremeHighPaint.setColor(palette.xau);
         extremeLowPaint.setColor(palette.btc);
         extremeConnectorPaint.setColor(applyAlpha(palette.textSecondary, 215));
@@ -934,10 +929,6 @@ public class KlineChartView extends View {
             drawCandlePopup(canvas, highlightedIndex);
             drawCrosshairLabels(canvas, highlightedIndex);
         }
-        drawPaneBorder(canvas, priceRect);
-        drawPaneBorder(canvas, volRect);
-        drawPaneBorder(canvas, macdRect);
-        drawPaneBorder(canvas, stochRect);
         drawBottomTimeLabels(canvas, start, end);
     }
 
@@ -1472,13 +1463,6 @@ public class KlineChartView extends View {
         canvas.drawLine(volRect.left, y, volRect.right, y, volumeThresholdPaint);
     }
 
-    private void drawPaneBorder(Canvas canvas, RectF rect) {
-        if (rect == null || rect.isEmpty()) {
-            return;
-        }
-        canvas.drawRect(rect, paneBorderPaint);
-    }
-
     private int resolveDrawStep() {
         float s = slot();
         float targetPx = dp(2.2f);
@@ -1601,36 +1585,28 @@ public class KlineChartView extends View {
         float right = width - dp(38f);
         float top = dp(8f);
         float bottom = height - dp(18f);
-        float pw = 9.36f;
-        float vw = showVolume ? 2f : 0f;
-        float mw = showMacd ? 2f : 0f;
         boolean oscillatorVisible = showStochRsi || showRsi || showKdj;
-        float sw = oscillatorVisible ? 2f : 0f;
-        float gap = dp(10f);
-        int sections = 1 + (showVolume ? 1 : 0) + (showMacd ? 1 : 0) + (oscillatorVisible ? 1 : 0);
-        float total = pw + vw + mw + sw;
-        float unit = (bottom - top - Math.max(0, sections - 1) * gap) / Math.max(1f, total);
+        KlinePaneLayoutHelper.PaneLayout layout = KlinePaneLayoutHelper.compute(
+                top,
+                bottom,
+                showVolume,
+                showMacd,
+                oscillatorVisible
+        );
 
-        float cursor = top;
-        priceRect.set(left, cursor, right, cursor + pw * unit);
-        cursor = priceRect.bottom;
+        priceRect.set(left, layout.price.top, right, layout.price.bottom);
         if (showVolume) {
-            cursor += gap;
-            volRect.set(left, cursor, right, cursor + vw * unit);
-            cursor = volRect.bottom;
+            volRect.set(left, layout.volume.top, right, layout.volume.bottom);
         } else {
             volRect.setEmpty();
         }
         if (showMacd) {
-            cursor += gap;
-            macdRect.set(left, cursor, right, cursor + mw * unit);
-            cursor = macdRect.bottom;
+            macdRect.set(left, layout.macd.top, right, layout.macd.bottom);
         } else {
             macdRect.setEmpty();
         }
         if (oscillatorVisible) {
-            cursor += gap;
-            stochRect.set(left, cursor, right, cursor + sw * unit);
+            stochRect.set(left, layout.oscillator.top, right, layout.oscillator.bottom);
         } else {
             stochRect.setEmpty();
         }

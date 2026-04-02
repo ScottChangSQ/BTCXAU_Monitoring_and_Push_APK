@@ -92,6 +92,8 @@ public class FloatingPositionAggregatorTest {
         latestKlines.put(AppConstants.SYMBOL_BTC, new com.binance.monitor.data.model.KlineData(
                 AppConstants.SYMBOL_BTC,
                 66_000d,
+                67_500d,
+                65_800d,
                 67_123.4d,
                 123d,
                 456_000d,
@@ -102,6 +104,8 @@ public class FloatingPositionAggregatorTest {
         latestKlines.put(AppConstants.SYMBOL_XAU, new com.binance.monitor.data.model.KlineData(
                 AppConstants.SYMBOL_XAU,
                 2_300d,
+                2_335d,
+                2_295d,
                 2_329.5d,
                 456d,
                 789_000d,
@@ -139,6 +143,8 @@ public class FloatingPositionAggregatorTest {
         latestKlines.put(AppConstants.SYMBOL_BTC, new com.binance.monitor.data.model.KlineData(
                 AppConstants.SYMBOL_BTC,
                 66_000d,
+                67_050d,
+                65_950d,
                 67_000d,
                 123d,
                 456_000d,

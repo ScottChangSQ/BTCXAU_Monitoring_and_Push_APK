@@ -22,4 +22,16 @@ public class FloatingWindowTextFormatterTest {
 
         assertEquals("XAU（*）", title);
     }
+
+    @Test
+    public void formatCardTitleShouldShowDashWhenPnlIsZero() {
+        String title = FloatingWindowTextFormatter.formatCardTitle("BTC", 0d, false);
+
+        assertEquals("BTC（$-）", title);
+    }
+
+    @Test
+    public void formatPnlAmountShouldShowDashWhenSummaryPnlIsZero() {
+        assertEquals("$-", FloatingWindowTextFormatter.formatPnlAmount(0d, false));
+    }
 }

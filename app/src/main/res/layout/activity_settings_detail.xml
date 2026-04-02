@@ -134,7 +134,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="@dimen/control_height_md"
                     android:layout_marginTop="@dimen/space_12"
-                    android:background="@drawable/bg_inline_button"
+                    android:background="@android:color/transparent"
                     android:text="@string/mt5_gateway_save"
                     android:textAllCaps="false" />
             </LinearLayout>
@@ -202,21 +202,21 @@
                             android:id="@+id/viewThemeFinancialA"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeFinancialB"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeFinancialC"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -263,21 +263,21 @@
                             android:id="@+id/viewThemeVintageA"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeVintageB"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeVintageC"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -324,21 +324,21 @@
                             android:id="@+id/viewThemeBinanceA"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeBinanceB"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeBinanceC"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -385,21 +385,21 @@
                             android:id="@+id/viewThemeTradingViewA"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeTradingViewB"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeTradingViewC"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -446,21 +446,21 @@
                             android:id="@+id/viewThemeLightA"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeLightB"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
 
                         <View
                             android:id="@+id/viewThemeLightC"
                             android:layout_width="16dp"
                             android:layout_height="16dp"
                             android:layout_marginStart="6dp"
-                            android:background="@drawable/bg_overlay_mini" />
+                            android:background="@android:color/transparent" />
                     </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
@@ -539,7 +539,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="@dimen/control_height_md"
                     android:layout_marginTop="@dimen/space_12"
-                    android:background="@drawable/bg_inline_button"
+                    android:background="@android:color/transparent"
                     android:gravity="center"
                     android:maxLines="1"
                     android:minHeight="0dp"
@@ -555,7 +555,7 @@
                 android:layout_height="@dimen/control_height_md"
                 android:layout_marginTop="@dimen/page_section_gap"
                 android:layout_marginBottom="@dimen/space_20"
-                android:background="@drawable/bg_inline_button"
+                android:background="@android:color/transparent"
                 android:gravity="center"
                 android:maxLines="1"
                 android:minHeight="0dp"
@@ -570,7 +570,7 @@
         android:id="@+id/tabBar"
         android:layout_width="match_parent"
         android:layout_height="@dimen/bottom_nav_height"
-        android:background="@drawable/bg_bottom_nav"
+        android:background="@android:color/transparent"
         android:orientation="horizontal"
         android:padding="0dp">
 
@@ -579,7 +579,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_unselected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
@@ -590,7 +590,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_unselected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
@@ -601,7 +601,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_unselected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="@string/nav_account_stats"
             android:textColor="@color/text_secondary"
@@ -612,7 +612,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_wechat_selected"
+            android:background="@android:color/transparent"
             android:gravity="center"
             android:text="设置"
             android:textColor="@color/white"

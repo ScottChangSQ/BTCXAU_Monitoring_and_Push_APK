@@ -29,8 +29,6 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String SECTION_CACHE = "cache";
 
     private ActivitySettingsBinding binding;
-    private int tabActiveColor = 0xFF07C160;
-    private int tabInactiveColor = 0xFF7F8EA9;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -69,11 +67,13 @@ public class SettingsActivity extends AppCompatActivity {
 
     // 刷新底部导航状态。
     private void updateBottomTabs() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
                 binding.tabSettings);
+        binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
         styleNavTab(binding.tabMarketMonitor, false);
         styleNavTab(binding.tabMarketChart, false);
         styleNavTab(binding.tabAccountStats, false);
@@ -82,15 +82,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     // 绘制单个底部导航按钮。
     private void styleNavTab(TextView tab, boolean selected) {
-        if (tab == null) {
-            return;
-        }
-        tab.setBackgroundResource(selected
-                ? com.binance.monitor.R.drawable.bg_tab_wechat_selected
-                : com.binance.monitor.R.drawable.bg_tab_wechat_unselected);
-        tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        tab.setTypeface(null, Typeface.NORMAL);
-        tab.setTextSize(13f);
+        UiPaletteManager.styleBottomNavTab(tab, selected, UiPaletteManager.resolve(this));
     }
 
     // 应用当前主题色到首页目录和底部导航。
@@ -98,8 +90,6 @@ public class SettingsActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(this, palette);
-        tabActiveColor = palette.primary;
-        tabInactiveColor = palette.textSecondary;
         styleEntry(binding.itemDisplay, palette);
         styleEntry(binding.itemGateway, palette);
         styleEntry(binding.itemTheme, palette);

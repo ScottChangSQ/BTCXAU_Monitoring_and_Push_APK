@@ -51,6 +51,8 @@ public class EquityCurveView extends View {
     private final List<CurvePoint> points = new ArrayList<>();
     private final List<String> tooltipExtraLines = new ArrayList<>();
     private final GestureDetector gestureDetector;
+    @Nullable
+    private CurvePoint tooltipPointOverride;
 
     private float chartLeft;
     private float chartTop;
@@ -71,6 +73,8 @@ public class EquityCurveView extends View {
     private boolean longPressing;
     private boolean masked;
     private boolean showBottomTimeLabels = true;
+    private boolean mergeWithPreviousPane;
+    private boolean mergeWithNextPane;
     private OnPointHighlightListener onPointHighlightListener;
 
     public EquityCurveView(Context context) {
@@ -176,6 +180,7 @@ public class EquityCurveView extends View {
             points.sort((left, right) -> Long.compare(left.getTimestamp(), right.getTimestamp()));
         }
         tooltipExtraLines.clear();
+        tooltipPointOverride = null;
         highlightedIndex = -1;
         highlightedXRatio = -1f;
         longPressing = false;
@@ -194,6 +199,24 @@ public class EquityCurveView extends View {
             return;
         }
         showBottomTimeLabels = show;
+        invalidate();
+    }
+
+    // 控制是否与上一张图共享边界。
+    public void setMergeWithPreviousPane(boolean merge) {
+        if (mergeWithPreviousPane == merge) {
+            return;
+        }
+        mergeWithPreviousPane = merge;
+        invalidate();
+    }
+
+    // 控制是否与下一张图共享边界。
+    public void setMergeWithNextPane(boolean merge) {
+        if (mergeWithNextPane == merge) {
+            return;
+        }
+        mergeWithNextPane = merge;
         invalidate();
     }
 
@@ -222,6 +245,12 @@ public class EquityCurveView extends View {
         if (lines != null) {
             tooltipExtraLines.addAll(lines);
         }
+        invalidate();
+    }
+
+    // 允许宿主按当前横轴位置覆盖弹窗里的净值、结余等数值，避免附图长按时一直停在旧点上。
+    public void setTooltipPointOverride(@Nullable CurvePoint point) {
+        tooltipPointOverride = point;
         invalidate();
     }
 
@@ -277,9 +306,14 @@ public class EquityCurveView extends View {
         }
 
         chartLeft = dp(34f);
-        chartTop = dp(12f);
+        chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(12f));
         chartRight = width - dp(28f);
-        chartBottom = height - (showBottomTimeLabels ? dp(24f) : dp(10f));
+        chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
+                mergeWithNextPane,
+                showBottomTimeLabels,
+                dp(10f),
+                dp(24f)
+        );
 
         drawGrid(canvas, chartLeft, chartTop, chartRight, chartBottom);
         drawAxes(canvas, chartLeft, chartTop, chartRight, chartBottom);
@@ -381,7 +415,8 @@ public class EquityCurveView extends View {
     }
 
     private void drawHighlight(Canvas canvas, int index) {
-        CurvePoint point = points.get(index);
+        CurvePoint rawPoint = points.get(index);
+        CurvePoint point = tooltipPointOverride != null ? tooltipPointOverride : rawPoint;
         float x = resolveHighlightX(point);
         float yEquity = mapY(point.getEquity(), chartMin, chartMax, chartTop, chartBottom);
         float yBalance = mapY(point.getBalance(), chartMin, chartMax, chartTop, chartBottom);
@@ -477,6 +512,7 @@ public class EquityCurveView extends View {
         longPressing = false;
         requestParentDisallowIntercept(false);
         highlightedXRatio = -1f;
+        tooltipPointOverride = null;
         if (highlightedIndex != -1) {
             highlightedIndex = -1;
             dispatchHighlightedPoint();

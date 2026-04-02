@@ -70,6 +70,7 @@ dependencies {
     implementation(libs.recyclerview)
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.lifecycle.livedata)
+    implementation(libs.lifecycle.process)
     implementation(libs.swiperefreshlayout)
     implementation(libs.okhttp)
     implementation(libs.room.runtime)

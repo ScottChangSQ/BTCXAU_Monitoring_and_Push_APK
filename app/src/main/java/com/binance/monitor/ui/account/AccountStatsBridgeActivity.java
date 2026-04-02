@@ -184,8 +184,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private boolean snapshotLoopEnabled;
     private long connectedUpdateAtMs;
     private long nextRefreshAtMs;
-    private int tabActiveColor = 0xFF07C160;
-    private int tabInactiveColor = 0xFF7F8EA9;
 
     private AccountTimeRange selectedRange = AccountTimeRange.D7;
     private ReturnStatsMode returnStatsMode = ReturnStatsMode.MONTH;
@@ -813,11 +811,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                   boolean chartSelected,
                                   boolean accountSelected,
                                   boolean settingsSelected) {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
                 binding.tabSettings);
+        binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
         styleNavTab(binding.tabMarketMonitor, marketSelected);
         styleNavTab(binding.tabMarketChart, chartSelected);
         styleNavTab(binding.tabAccountStats, accountSelected);
@@ -825,13 +825,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void styleNavTab(TextView tab, boolean selected) {
-        if (tab == null) {
-            return;
-        }
-        tab.setBackgroundResource(selected ? R.drawable.bg_tab_wechat_selected : R.drawable.bg_tab_wechat_unselected);
-        tab.setTextColor(selected ? tabActiveColor : tabInactiveColor);
-        tab.setTypeface(null, Typeface.NORMAL);
-        tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        UiPaletteManager.styleBottomNavTab(tab, selected, UiPaletteManager.resolve(this));
     }
 
     private void placeCurveSectionToBottom() {
@@ -1318,7 +1312,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void setupCurveInteraction() {
         binding.equityCurveView.setShowBottomTimeLabels(false);
+        binding.equityCurveView.setMergeWithPreviousPane(false);
+        binding.equityCurveView.setMergeWithNextPane(true);
+        binding.positionRatioChartView.setMergeWithPreviousPane(true);
+        binding.positionRatioChartView.setMergeWithNextPane(true);
+        binding.drawdownChartView.setMergeWithPreviousPane(true);
+        binding.drawdownChartView.setMergeWithNextPane(true);
         binding.dailyReturnChartView.setShowBottomTimeLabels(true);
+        binding.dailyReturnChartView.setMergeWithPreviousPane(true);
+        binding.dailyReturnChartView.setMergeWithNextPane(false);
         binding.equityCurveView.setOnPointHighlightListener((point, xRatio) -> {
             if (syncingCurveHighlight) {
                 return;
@@ -1327,7 +1329,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 clearSharedCurveHighlight();
                 return;
             }
-            applySharedCurveHighlight(point.getTimestamp(), xRatio);
+            applySharedCurveHighlight(point.getTimestamp(), xRatio, false);
         });
         binding.drawdownChartView.setOnTimeHighlightListener((timestamp, xRatio) -> {
             if (syncingCurveHighlight) {
@@ -1337,7 +1339,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 clearSharedCurveHighlight();
                 return;
             }
-            applySharedCurveHighlight(timestamp, xRatio);
+            applySharedCurveHighlight(timestamp, xRatio, true);
         });
         binding.positionRatioChartView.setOnTimeHighlightListener((timestamp, xRatio) -> {
             if (syncingCurveHighlight) {
@@ -1347,7 +1349,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 clearSharedCurveHighlight();
                 return;
             }
-            applySharedCurveHighlight(timestamp, xRatio);
+            applySharedCurveHighlight(timestamp, xRatio, true);
         });
         binding.dailyReturnChartView.setOnTimeHighlightListener((timestamp, xRatio) -> {
             if (syncingCurveHighlight) {
@@ -1357,7 +1359,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 clearSharedCurveHighlight();
                 return;
             }
-            applySharedCurveHighlight(timestamp, xRatio);
+            applySharedCurveHighlight(timestamp, xRatio, true);
         });
     }
 
@@ -2692,63 +2694,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source) {
-        List<CurvePoint> normalized = new ArrayList<>();
-        if (source == null || source.isEmpty()) {
-            long now = System.currentTimeMillis();
-            normalized.add(new CurvePoint(now - 60_000L, ACCOUNT_INITIAL_BALANCE, ACCOUNT_INITIAL_BALANCE));
-            normalized.add(new CurvePoint(now, ACCOUNT_INITIAL_BALANCE, ACCOUNT_INITIAL_BALANCE));
-            return normalized;
-        }
-
-        List<CurvePoint> sorted = new ArrayList<>(source);
-        sorted.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
-
-        double lastEquity = ACCOUNT_INITIAL_BALANCE;
-        double lastBalance = ACCOUNT_INITIAL_BALANCE;
-        boolean first = true;
-        for (CurvePoint point : sorted) {
-            long ts = point.getTimestamp() > 0L ? point.getTimestamp() : System.currentTimeMillis();
-            double equity = point.getEquity();
-            double balance = point.getBalance();
-
-            if (first) {
-                if (equity <= 0d && balance <= 0d) {
-                    equity = ACCOUNT_INITIAL_BALANCE;
-                    balance = ACCOUNT_INITIAL_BALANCE;
-                } else {
-                    if (equity <= 0d) {
-                        equity = balance;
-                    }
-                    if (balance <= 0d) {
-                        balance = equity;
-                    }
-                }
-                first = false;
-            } else {
-                if (equity <= 0d) {
-                    equity = lastEquity;
-                }
-                if (balance <= 0d) {
-                    balance = lastBalance;
-                }
-            }
-
-            if (equity <= 0d) {
-                equity = ACCOUNT_INITIAL_BALANCE;
-            }
-            if (balance <= 0d) {
-                balance = ACCOUNT_INITIAL_BALANCE;
-            }
-            lastEquity = equity;
-            lastBalance = balance;
-            normalized.add(new CurvePoint(ts, equity, balance));
-        }
-
-        if (normalized.size() == 1) {
-            CurvePoint only = normalized.get(0);
-            normalized.add(new CurvePoint(only.getTimestamp() + 60_000L, only.getEquity(), only.getBalance()));
-        }
-        return normalized;
+        return AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);
     }
 
     private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview,
@@ -3476,12 +3422,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderCurveWithIndicators(List<CurvePoint> points) {
-        CurveAnalyticsHelper.DrawdownSegment drawdownSegment = CurveAnalyticsHelper.resolveMaxDrawdownSegment(points);
-        curveBaseBalance = resolveCurvePercentBase(points);
+        List<CurvePoint> effectivePoints = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, basePositions, baseTrades);
+        displayedCurvePoints = effectivePoints;
+        CurveAnalyticsHelper.DrawdownSegment drawdownSegment = CurveAnalyticsHelper.resolveMaxDrawdownSegment(effectivePoints);
+        curveBaseBalance = resolveCurvePercentBase(effectivePoints);
         binding.equityCurveView.setBaseBalance(curveBaseBalance);
-        long viewportStartTs = points != null && !points.isEmpty() ? points.get(0).getTimestamp() : 0L;
-        long viewportEndTs = points != null && points.size() > 1
-                ? points.get(points.size() - 1).getTimestamp()
+        long viewportStartTs = effectivePoints != null && !effectivePoints.isEmpty() ? effectivePoints.get(0).getTimestamp() : 0L;
+        long viewportEndTs = effectivePoints != null && effectivePoints.size() > 1
+                ? effectivePoints.get(effectivePoints.size() - 1).getTimestamp()
                 : viewportStartTs + 1L;
         if (drawdownSegment == null) {
             binding.equityCurveView.setDrawdownHighlight(0L, 0L, 0d, 0d);
@@ -3493,46 +3441,59 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     drawdownSegment.getValleyEquity()
             );
         }
-        binding.equityCurveView.setPoints(points);
+        binding.equityCurveView.setPoints(effectivePoints);
         binding.positionRatioChartView.setViewport(viewportStartTs, viewportEndTs);
-        binding.positionRatioChartView.setPoints(points);
-        displayedDrawdownPoints = CurveAnalyticsHelper.buildDrawdownSeries(points);
-        displayedDailyReturnPoints = CurveAnalyticsHelper.buildDailyReturnSeries(points);
+        binding.positionRatioChartView.setPoints(effectivePoints);
+        displayedDrawdownPoints = CurveAnalyticsHelper.buildDrawdownSeries(effectivePoints);
+        displayedDailyReturnPoints = CurveAnalyticsHelper.buildDailyReturnSeries(effectivePoints);
         binding.drawdownChartView.setViewport(viewportStartTs, viewportEndTs);
         binding.drawdownChartView.setPoints(displayedDrawdownPoints);
         binding.dailyReturnChartView.setViewport(viewportStartTs, viewportEndTs);
         binding.dailyReturnChartView.setPoints(displayedDailyReturnPoints);
-        defaultCurveMeta = buildCurveMeta(points, drawdownSegment);
+        defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
         binding.tvCurveMeta.setText(isPrivacyMasked()
                 ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
                 : defaultCurveMeta);
         clearSharedCurveHighlight();
-        indicatorAdapter.submitList(buildCurveIndicators(points));
+        indicatorAdapter.submitList(buildCurveIndicators(effectivePoints));
     }
 
     // 把任一子图的时间点同步成多联图共享十字光标。
-    private void applySharedCurveHighlight(long timestamp, float xRatio) {
+    private void applySharedCurveHighlight(long timestamp, float xRatio, boolean preferExactTimestamp) {
         if (isPrivacyMasked()) {
             clearSharedCurveHighlight();
             return;
         }
-        CurvePoint point = findNearestCurvePoint(timestamp);
-        if (point == null) {
+        AccountCurveHighlightHelper.HighlightSnapshot snapshot =
+                AccountCurveHighlightHelper.resolveSharedHighlight(
+                        displayedCurvePoints,
+                        displayedDrawdownPoints,
+                        displayedDailyReturnPoints,
+                        timestamp,
+                        xRatio,
+                        preferExactTimestamp
+                );
+        if (snapshot == null) {
             clearSharedCurveHighlight();
             return;
         }
-        CurveAnalyticsHelper.DrawdownPoint drawdownPoint = findNearestDrawdownPoint(timestamp);
-        CurveAnalyticsHelper.DailyReturnPoint dailyReturnPoint = findNearestDailyReturnPoint(timestamp);
+        CurvePoint point = snapshot.getCurvePoint();
+        CurveAnalyticsHelper.DrawdownPoint drawdownPoint = snapshot.getDrawdownPoint();
+        CurveAnalyticsHelper.DailyReturnPoint dailyReturnPoint = snapshot.getDailyReturnPoint();
         List<String> extraLines = new ArrayList<>();
         extraLines.add("仓位 " + formatPercentValue(point.getPositionRatio(), false));
         extraLines.add("回撤 " + formatPercentValue(drawdownPoint == null ? null : drawdownPoint.getDrawdownRate(), false));
         extraLines.add("日收益 " + formatPercentValue(dailyReturnPoint == null ? null : dailyReturnPoint.getReturnRate(), true));
         syncingCurveHighlight = true;
+        binding.tvCurveMeta.setText(isPrivacyMasked()
+                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
+                : buildHighlightCurveMeta(snapshot));
         binding.equityCurveView.setTooltipExtraLines(extraLines);
-        binding.equityCurveView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
-        binding.positionRatioChartView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
-        binding.drawdownChartView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
-        binding.dailyReturnChartView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
+        binding.equityCurveView.setTooltipPointOverride(point);
+        binding.equityCurveView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
+        binding.positionRatioChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
+        binding.drawdownChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
+        binding.dailyReturnChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
         syncingCurveHighlight = false;
     }
 
@@ -3540,6 +3501,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void clearSharedCurveHighlight() {
         syncingCurveHighlight = true;
         binding.equityCurveView.setTooltipExtraLines(null);
+        binding.equityCurveView.setTooltipPointOverride(null);
         binding.equityCurveView.clearSyncedHighlight();
         binding.positionRatioChartView.clearSyncedHighlight();
         binding.drawdownChartView.clearSyncedHighlight();
@@ -3548,6 +3510,26 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
                 : defaultCurveMeta);
         syncingCurveHighlight = false;
+    }
+
+    // 生成长按时的区间曲线摘要，让图外信息栏也随手指位置实时变化。
+    private String buildHighlightCurveMeta(AccountCurveHighlightHelper.HighlightSnapshot snapshot) {
+        if (snapshot == null) {
+            return defaultCurveMeta;
+        }
+        CurvePoint point = snapshot.getCurvePoint();
+        CurveAnalyticsHelper.DrawdownPoint drawdownPoint = snapshot.getDrawdownPoint();
+        CurveAnalyticsHelper.DailyReturnPoint dailyReturnPoint = snapshot.getDailyReturnPoint();
+        double rangeReturn = safeDivide(point.getEquity() - curveBaseBalance, Math.max(1d, curveBaseBalance)) * 100d;
+        return String.format(Locale.getDefault(),
+                "时间 %s | 当前净值 $%s | 当前结余 $%s | 仓位 %s | 回撤 %s | 日收益 %s | 区间收益 %+.2f%%",
+                FormatUtils.formatTime(snapshot.getTargetTimestamp()),
+                FormatUtils.formatPrice(point.getEquity()),
+                FormatUtils.formatPrice(point.getBalance()),
+                formatPercentValue(point.getPositionRatio(), false),
+                formatPercentValue(drawdownPoint == null ? null : drawdownPoint.getDrawdownRate(), false),
+                formatPercentValue(dailyReturnPoint == null ? null : dailyReturnPoint.getReturnRate(), true),
+                rangeReturn);
     }
 
     // 找到当前主图里离目标时间最近的点。
@@ -5814,8 +5796,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(this, palette);
-        tabActiveColor = palette.primary;
-        tabInactiveColor = palette.textSecondary;
         updateBottomTabs(false, false, true, false);
         configureToggleButtonsV2();
         flattenCardSections(binding.scrollAccountStats, palette);
