@@ -143,6 +143,33 @@ public class HistoricalTradeAnnotationBuilderTest {
         assertEquals(BASE_TIME, annotations.get(0).exitAnchorTimeMs);
     }
 
+    @Test
+    public void shouldMapExactBoundaryTimeToNextCandleBucket() {
+        List<CandleEntry> candles = Arrays.asList(
+                buildCandle(BASE_TIME, BASE_TIME + 60_000L),
+                buildCandle(BASE_TIME + 60_000L, BASE_TIME + 120_000L),
+                buildCandle(BASE_TIME + 120_000L, BASE_TIME + 180_000L)
+        );
+        TradeRecordItem trade = buildTrade(
+                "BTCUSDT",
+                "buy",
+                BASE_TIME + 60_000L,
+                BASE_TIME + 120_000L,
+                101d,
+                104d,
+                7d,
+                0d,
+                66L
+        );
+
+        List<HistoricalTradeAnnotationBuilder.TradeAnnotation> annotations =
+                HistoricalTradeAnnotationBuilder.build("BTCUSDT", Collections.singletonList(trade), candles);
+
+        assertEquals(1, annotations.size());
+        assertEquals(BASE_TIME + 60_000L, annotations.get(0).entryAnchorTimeMs);
+        assertEquals(BASE_TIME + 120_000L, annotations.get(0).exitAnchorTimeMs);
+    }
+
     private CandleEntry buildCandle(long openTime, long closeTime) {
         return new CandleEntry("BTCUSDT", openTime, closeTime, 100d, 101d, 99d, 100d, 1d, 1d);
     }

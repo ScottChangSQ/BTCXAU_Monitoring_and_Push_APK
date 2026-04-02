@@ -8,6 +8,8 @@ import com.binance.monitor.util.SensitiveDisplayMasker;
 
 final class FloatingWindowTextFormatter {
 
+    private static final double ZERO_EPSILON = 1e-9;
+
     private FloatingWindowTextFormatter() {
     }
 
@@ -23,9 +25,14 @@ final class FloatingWindowTextFormatter {
         return masked ? SensitiveDisplayMasker.MASK_TEXT : formatVisiblePnl(totalPnl);
     }
 
+    // 判断盈亏是否应按中性色展示，避免 0 值仍被误显示成涨色或跌色。
+    static boolean shouldUseNeutralPnlStyle(double totalPnl) {
+        return Math.abs(totalPnl) < ZERO_EPSILON;
+    }
+
     // 统一处理悬浮窗盈亏显示，零值时按产品要求显示为 $-。
     private static String formatVisiblePnl(double totalPnl) {
-        if (Math.abs(totalPnl) < 1e-9) {
+        if (shouldUseNeutralPnlStyle(totalPnl)) {
             return "$-";
         }
         return FormatUtils.formatSignedMoneyNoDecimal(totalPnl);

@@ -12,7 +12,10 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -306,8 +309,8 @@ public class FloatingWindowManager {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
-        titleView.setText(FloatingWindowTextFormatter.formatCardTitle(card.getLabel(), totalPnl, masked));
-        titleView.setTextColor(masked ? palette.textPrimary : (totalPnl >= 0d ? palette.rise : palette.fall));
+        titleView.setText(buildStyledCardTitle(card, palette, masked));
+        titleView.setTextColor(palette.textPrimary);
         titleView.setTextSize(10f);
         titleView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         titleView.setSingleLine(true);
@@ -486,10 +489,34 @@ public class FloatingWindowManager {
         context.startActivity(intent);
     }
 
+    // 让产品名保持主文字色，只让盈亏金额部分按涨跌或中性色着色。
+    private CharSequence buildStyledCardTitle(FloatingSymbolCardData card,
+                                              UiPaletteManager.Palette palette,
+                                              boolean masked) {
+        String label = card == null || card.getLabel() == null ? "" : card.getLabel().trim();
+        double totalPnl = card == null ? 0d : card.getTotalPnl();
+        String pnlText = FloatingWindowTextFormatter.formatPnlAmount(totalPnl, masked);
+        String title = FloatingWindowTextFormatter.formatCardTitle(label, totalPnl, masked);
+        SpannableStringBuilder styled = new SpannableStringBuilder(title);
+        int pnlStart = Math.min(title.length(), label.length() + 1);
+        int pnlEnd = Math.min(title.length(), pnlStart + pnlText.length());
+        if (pnlStart < pnlEnd) {
+            int pnlColor = masked ? palette.textPrimary : resolvePnlColor(totalPnl, true);
+            styled.setSpan(new ForegroundColorSpan(pnlColor),
+                    pnlStart,
+                    pnlEnd,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return styled;
+    }
+
     private int resolvePnlColor(double totalPnl, boolean hasPosition) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
         if (!hasPosition) {
             return palette.textPrimary;
+        }
+        if (FloatingWindowTextFormatter.shouldUseNeutralPnlStyle(totalPnl)) {
+            return palette.textSecondary;
         }
         return totalPnl >= 0d ? palette.rise : palette.fall;
     }

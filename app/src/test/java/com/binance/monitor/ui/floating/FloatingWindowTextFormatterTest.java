@@ -34,4 +34,11 @@ public class FloatingWindowTextFormatterTest {
     public void formatPnlAmountShouldShowDashWhenSummaryPnlIsZero() {
         assertEquals("$-", FloatingWindowTextFormatter.formatPnlAmount(0d, false));
     }
+
+    @Test
+    public void shouldUseNeutralStyleWhenPnlIsZero() {
+        assertEquals(true, FloatingWindowTextFormatter.shouldUseNeutralPnlStyle(0d));
+        assertEquals(true, FloatingWindowTextFormatter.shouldUseNeutralPnlStyle(1e-10));
+        assertEquals(false, FloatingWindowTextFormatter.shouldUseNeutralPnlStyle(1d));
+    }
 }

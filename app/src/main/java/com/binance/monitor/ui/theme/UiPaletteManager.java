@@ -3,6 +3,7 @@ package com.binance.monitor.ui.theme;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.util.TypedValue;
@@ -14,9 +15,11 @@ import android.widget.CompoundButton;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
+import androidx.annotation.Nullable;
 import androidx.activity.ComponentActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
+import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.core.widget.CompoundButtonCompat;
@@ -204,12 +207,43 @@ public final class UiPaletteManager {
             return;
         }
         Context context = tab.getContext();
-        int fillColor = selected ? palette.control : palette.card;
-        int strokeColor = selected ? palette.primary : palette.stroke;
-        tab.setBackground(createOutlinedDrawable(context, fillColor, strokeColor));
-        tab.setTextColor(selected ? palette.primary : palette.textSecondary);
+        int tintColor = selected ? palette.primary : palette.textSecondary;
+        tab.setBackgroundColor(Color.TRANSPARENT);
+        tab.setTextColor(tintColor);
         tab.setTypeface(null, android.graphics.Typeface.NORMAL);
-        tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+        tab.setIncludeFontPadding(false);
+        tab.setSingleLine(true);
+        tab.setMaxLines(1);
+        tab.setPadding(0, dp(context, 6), 0, dp(context, 4));
+        tab.setCompoundDrawablePadding(dp(context, 2));
+        tab.setGravity(android.view.Gravity.CENTER);
+        Drawable topIcon = resolveBottomNavIconDrawable(context, tab.getId(), tintColor);
+        tab.setCompoundDrawablesRelativeWithIntrinsicBounds(null, topIcon, null, null);
+    }
+
+    // 为底部导航统一分配图标并跟随当前主题着色。
+    @Nullable
+    private static Drawable resolveBottomNavIconDrawable(Context context, int viewId, int tintColor) {
+        int iconRes;
+        if (viewId == R.id.tabMarketMonitor) {
+            iconRes = R.drawable.ic_nav_monitor;
+        } else if (viewId == R.id.tabMarketChart) {
+            iconRes = R.drawable.ic_nav_chart;
+        } else if (viewId == R.id.tabAccountStats) {
+            iconRes = R.drawable.ic_nav_account;
+        } else if (viewId == R.id.tabSettings) {
+            iconRes = R.drawable.ic_nav_settings;
+        } else {
+            return null;
+        }
+        Drawable drawable = ContextCompat.getDrawable(context, iconRes);
+        if (drawable == null) {
+            return null;
+        }
+        Drawable wrapped = DrawableCompat.wrap(drawable.mutate());
+        DrawableCompat.setTint(wrapped, tintColor);
+        return wrapped;
     }
 
     // 统一图表页按钮样式，避免周期和指标按钮各自维护颜色逻辑。

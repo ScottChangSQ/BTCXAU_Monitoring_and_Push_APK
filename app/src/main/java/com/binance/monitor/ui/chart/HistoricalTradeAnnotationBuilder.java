@@ -8,8 +8,6 @@ import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
-import com.binance.monitor.util.FormatUtils;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -106,13 +104,17 @@ final class HistoricalTradeAnnotationBuilder {
         if (targetTime > lastOpen + intervalMs) {
             return 0L;
         }
-        for (CandleEntry candle : candles) {
+        for (int i = 0; i < candles.size(); i++) {
+            CandleEntry candle = candles.get(i);
             if (candle == null) {
                 continue;
             }
             long openTime = candle.getOpenTime();
             long candleClose = candle.getCloseTime() > openTime ? candle.getCloseTime() : openTime + intervalMs;
-            if (targetTime >= openTime && targetTime <= candleClose) {
+            boolean isLast = i == candles.size() - 1;
+            boolean inBucket = targetTime >= openTime
+                    && (targetTime < candleClose || (isLast && targetTime <= candleClose));
+            if (inBucket) {
                 return openTime;
             }
         }

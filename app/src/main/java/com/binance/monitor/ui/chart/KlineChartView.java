@@ -33,6 +33,11 @@ import java.util.Locale;
 import java.util.Set;
 
 public class KlineChartView extends View {
+    public static final int ANNOTATION_KIND_DEFAULT = 0;
+    public static final int ANNOTATION_KIND_HISTORY_ENTRY_BUY = 1;
+    public static final int ANNOTATION_KIND_HISTORY_ENTRY_SELL = 2;
+    public static final int ANNOTATION_KIND_HISTORY_EXIT = 3;
+    public static final int ANNOTATION_KIND_HISTORY_CONNECTOR = 4;
 
     public static class PriceAnnotation {
         public final long anchorTimeMs;
@@ -42,13 +47,17 @@ public class KlineChartView extends View {
         public final String groupId;
         public final int eventCount;
         public final float intensity;
+        public final long secondaryAnchorTimeMs;
+        public final double secondaryPrice;
+        public final int kind;
+        public final String[] detailLines;
 
         public PriceAnnotation(long anchorTimeMs, double price, String label, int color) {
-            this(anchorTimeMs, price, label, color, "", 1, 0f);
+            this(anchorTimeMs, price, label, color, "", 1, 0f, 0L, Double.NaN, ANNOTATION_KIND_DEFAULT, null);
         }
 
         public PriceAnnotation(long anchorTimeMs, double price, String label, int color, @Nullable String groupId) {
-            this(anchorTimeMs, price, label, color, groupId, 1, 0f);
+            this(anchorTimeMs, price, label, color, groupId, 1, 0f, 0L, Double.NaN, ANNOTATION_KIND_DEFAULT, null);
         }
 
         public PriceAnnotation(long anchorTimeMs,
@@ -58,6 +67,21 @@ public class KlineChartView extends View {
                                @Nullable String groupId,
                                int eventCount,
                                float intensity) {
+            this(anchorTimeMs, price, label, color, groupId, eventCount, intensity,
+                    0L, Double.NaN, ANNOTATION_KIND_DEFAULT, null);
+        }
+
+        public PriceAnnotation(long anchorTimeMs,
+                               double price,
+                               String label,
+                               int color,
+                               @Nullable String groupId,
+                               int eventCount,
+                               float intensity,
+                               long secondaryAnchorTimeMs,
+                               double secondaryPrice,
+                               int kind,
+                               @Nullable String[] detailLines) {
             this.anchorTimeMs = anchorTimeMs;
             this.price = price;
             this.label = label == null ? "" : label;
@@ -65,6 +89,10 @@ public class KlineChartView extends View {
             this.groupId = groupId == null ? "" : groupId.trim();
             this.eventCount = Math.max(1, eventCount);
             this.intensity = Math.max(0f, Math.min(1f, intensity));
+            this.secondaryAnchorTimeMs = secondaryAnchorTimeMs;
+            this.secondaryPrice = secondaryPrice;
+            this.kind = kind;
+            this.detailLines = detailLines == null ? new String[0] : detailLines.clone();
         }
     }
 
@@ -929,6 +957,7 @@ public class KlineChartView extends View {
             drawCandlePopup(canvas, highlightedIndex);
             drawCrosshairLabels(canvas, highlightedIndex);
         }
+        drawHighlightedAnnotationPopup(canvas);
         drawBottomTimeLabels(canvas, start, end);
     }
 
@@ -1317,7 +1346,8 @@ public class KlineChartView extends View {
                 continue;
             }
             boolean abnormalPointOnly = isAbnormalAnnotation(annotation);
-            boolean historyTradePointOnly = isHistoricalTradeAnnotation(annotation);
+            boolean historyTradePointOnly = isTradePointAnnotation(annotation);
+            boolean tradeConnector = isTradeConnectorAnnotation(annotation);
             boolean pointOnly = abnormalPointOnly || historyTradePointOnly;
             float y = resolveAnnotationY(annotation);
             if (Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
@@ -1333,6 +1363,23 @@ public class KlineChartView extends View {
             float pointRadius = hasGroupHighlight
                     ? (selected ? dp(2.4f) : dp(1.1f))
                     : dp(1.7f);
+            if (tradeConnector) {
+                float startX = resolveAnnotationXForFloorTime(annotation.anchorTimeMs);
+                float endX = resolveAnnotationXForFloorTime(annotation.secondaryAnchorTimeMs);
+                float endY = resolveAnnotationSecondaryY(annotation);
+                if (Float.isNaN(startX) || Float.isNaN(endX) || Float.isNaN(endY)) {
+                    continue;
+                }
+                overlayDashPaint.setColor(lineColor);
+                overlayDashPaint.setStrokeWidth(hasGroupHighlight ? (selected ? dp(1.3f) : dp(0.6f)) : dp(0.8f));
+                canvas.drawLine(startX, y, endX, endY, overlayDashPaint);
+                float midX = (startX + endX) * 0.5f;
+                float midY = (y + endY) * 0.5f;
+                if (!annotation.label.isEmpty()) {
+                    drawPointOverlayLabel(canvas, annotation.label, midX, midY, lineColor, selected);
+                }
+                continue;
+            }
             if (!pointOnly) {
                 overlayDashPaint.setColor(lineColor);
                 overlayDashPaint.setStrokeWidth(lineWidth);
@@ -1357,7 +1404,7 @@ public class KlineChartView extends View {
                 );
                 canvas.drawRoundRect(capsule, capsuleHalfWidth, capsuleHalfWidth, overlayPointPaint);
             } else if (historyTradePointOnly) {
-                float radius = selected ? dp(3.1f) : dp(2.7f);
+                float radius = selected ? dp(3.3f) : dp(2.9f);
                 canvas.drawCircle(x, y, radius, overlayPointPaint);
             } else {
                 canvas.drawCircle(x, y, pointRadius, overlayPointPaint);
@@ -1382,6 +1429,21 @@ public class KlineChartView extends View {
         return annotation != null && annotation.groupId.startsWith("tradehist|");
     }
 
+    private boolean isTradePointAnnotation(@Nullable PriceAnnotation annotation) {
+        if (!isHistoricalTradeAnnotation(annotation) || annotation == null) {
+            return false;
+        }
+        return annotation.kind == ANNOTATION_KIND_HISTORY_ENTRY_BUY
+                || annotation.kind == ANNOTATION_KIND_HISTORY_ENTRY_SELL
+                || annotation.kind == ANNOTATION_KIND_HISTORY_EXIT;
+    }
+
+    private boolean isTradeConnectorAnnotation(@Nullable PriceAnnotation annotation) {
+        return isHistoricalTradeAnnotation(annotation)
+                && annotation != null
+                && annotation.kind == ANNOTATION_KIND_HISTORY_CONNECTOR;
+    }
+
     private float resolveAnnotationY(@Nullable PriceAnnotation annotation) {
         if (annotation == null) {
             return Float.NaN;
@@ -1390,6 +1452,13 @@ public class KlineChartView extends View {
             return priceRect.bottom - dp(8f);
         }
         return yFor(annotation.price, visiblePriceMin, visiblePriceMax, priceRect);
+    }
+
+    private float resolveAnnotationSecondaryY(@Nullable PriceAnnotation annotation) {
+        if (annotation == null || Double.isNaN(annotation.secondaryPrice) || annotation.secondaryPrice <= 0d) {
+            return Float.NaN;
+        }
+        return yFor(annotation.secondaryPrice, visiblePriceMin, visiblePriceMax, priceRect);
     }
 
     private void drawOverlayLabel(Canvas canvas, String text, float anchorY, int textColor, boolean selected) {
@@ -1433,6 +1502,75 @@ public class KlineChartView extends View {
         canvas.drawRoundRect(box, dp(selected ? 3f : 2.5f), dp(selected ? 3f : 2.5f), overlayLabelBgPaint);
         overlayLabelTextPaint.setColor(textColor);
         canvas.drawText(text, box.left + padX, box.bottom - padY, overlayLabelTextPaint);
+    }
+
+    private void drawHighlightedAnnotationPopup(Canvas canvas) {
+        PriceAnnotation selected = findHighlightedAnnotationWithDetails();
+        if (selected == null || selected.detailLines.length == 0 || priceRect.isEmpty()) {
+            return;
+        }
+        float anchorX;
+        float anchorY;
+        if (isTradeConnectorAnnotation(selected)) {
+            float startX = resolveAnnotationXForFloorTime(selected.anchorTimeMs);
+            float startY = resolveAnnotationY(selected);
+            float endX = resolveAnnotationXForFloorTime(selected.secondaryAnchorTimeMs);
+            float endY = resolveAnnotationSecondaryY(selected);
+            if (Float.isNaN(startX) || Float.isNaN(startY) || Float.isNaN(endX) || Float.isNaN(endY)) {
+                return;
+            }
+            anchorX = (startX + endX) * 0.5f;
+            anchorY = (startY + endY) * 0.5f;
+        } else {
+            anchorX = isAbnormalAnnotation(selected) || isTradePointAnnotation(selected)
+                    ? resolveAnnotationXForFloorTime(selected.anchorTimeMs)
+                    : resolveAnnotationX(selected.anchorTimeMs);
+            anchorY = resolveAnnotationY(selected);
+            if (Float.isNaN(anchorX) || Float.isNaN(anchorY)) {
+                return;
+            }
+        }
+        float padding = dp(6f);
+        float lineHeight = dp(11f);
+        float maxWidth = 0f;
+        for (String line : selected.detailLines) {
+            maxWidth = Math.max(maxWidth, popupTextPaint.measureText(line));
+        }
+        float boxWidth = maxWidth + padding * 2f;
+        float boxHeight = selected.detailLines.length * lineHeight + padding * 2f;
+        float left = anchorX + dp(8f);
+        if (left + boxWidth > priceRect.right) {
+            left = anchorX - boxWidth - dp(8f);
+        }
+        left = clamp(left, priceRect.left, priceRect.right - boxWidth);
+        float top = anchorY - boxHeight - dp(10f);
+        if (top < priceRect.top) {
+            top = anchorY + dp(10f);
+        }
+        top = clamp(top, priceRect.top, priceRect.bottom - boxHeight);
+        RectF box = new RectF(left, top, left + boxWidth, top + boxHeight);
+        canvas.drawRoundRect(box, dp(6f), dp(6f), popupBgPaint);
+        for (int i = 0; i < selected.detailLines.length; i++) {
+            String line = selected.detailLines[i];
+            Paint paint = line.contains("+$") ? popupPositiveTextPaint
+                    : (line.contains("-$") ? popupNegativeTextPaint : popupTextPaint);
+            canvas.drawText(line, box.left + padding, box.top + padding + lineHeight * (i + 0.8f), paint);
+        }
+    }
+
+    @Nullable
+    private PriceAnnotation findHighlightedAnnotationWithDetails() {
+        if (highlightedAnnotationGroupId.isEmpty()) {
+            return null;
+        }
+        for (PriceAnnotation item : historyTradeAnnotations) {
+            if (item != null
+                    && highlightedAnnotationGroupId.equals(resolveAnnotationGroupKey(item))
+                    && item.detailLines.length > 0) {
+                return item;
+            }
+        }
+        return null;
     }
 
     private void drawAggregateCostAnnotation(Canvas canvas) {
@@ -2170,7 +2308,7 @@ public class KlineChartView extends View {
         if (priceRect.isEmpty() || x < priceRect.left || x > priceRect.right || y < priceRect.top || y > priceRect.bottom) {
             return false;
         }
-        PriceAnnotation matched = findNearestAnnotation(y, dp(11f));
+        PriceAnnotation matched = findNearestAnnotation(x, y, dp(14f));
         if (matched == null) {
             return false;
         }
@@ -2208,6 +2346,11 @@ public class KlineChartView extends View {
                 return;
             }
         }
+        for (PriceAnnotation item : historyTradeAnnotations) {
+            if (highlightedAnnotationGroupId.equals(resolveAnnotationGroupKey(item))) {
+                return;
+            }
+        }
         for (PriceAnnotation item : abnormalAnnotations) {
             if (highlightedAnnotationGroupId.equals(resolveAnnotationGroupKey(item))) {
                 return;
@@ -2217,19 +2360,24 @@ public class KlineChartView extends View {
     }
 
     @Nullable
-    private PriceAnnotation findNearestAnnotation(float touchY, float thresholdPx) {
+    private PriceAnnotation findNearestAnnotation(float touchX, float touchY, float thresholdPx) {
         PriceAnnotation nearest = null;
         float nearestDistance = Float.MAX_VALUE;
-        nearest = findNearestAnnotationInList(positionAnnotations, touchY, thresholdPx, nearestDistance);
+        nearest = findNearestAnnotationInList(positionAnnotations, touchX, touchY, thresholdPx, nearestDistance);
         if (nearest != null) {
-            nearestDistance = Math.abs(resolveAnnotationY(nearest) - touchY);
+            nearestDistance = resolveAnnotationTouchDistance(nearest, touchX, touchY);
         }
-        PriceAnnotation pendingNearest = findNearestAnnotationInList(pendingAnnotations, touchY, thresholdPx, nearestDistance);
+        PriceAnnotation pendingNearest = findNearestAnnotationInList(pendingAnnotations, touchX, touchY, thresholdPx, nearestDistance);
         if (pendingNearest != null) {
             nearest = pendingNearest;
-            nearestDistance = Math.abs(resolveAnnotationY(nearest) - touchY);
+            nearestDistance = resolveAnnotationTouchDistance(nearest, touchX, touchY);
         }
-        PriceAnnotation abnormalNearest = findNearestAnnotationInList(abnormalAnnotations, touchY, thresholdPx, nearestDistance);
+        PriceAnnotation historyNearest = findNearestAnnotationInList(historyTradeAnnotations, touchX, touchY, thresholdPx, nearestDistance);
+        if (historyNearest != null) {
+            nearest = historyNearest;
+            nearestDistance = resolveAnnotationTouchDistance(nearest, touchX, touchY);
+        }
+        PriceAnnotation abnormalNearest = findNearestAnnotationInList(abnormalAnnotations, touchX, touchY, thresholdPx, nearestDistance);
         if (abnormalNearest != null) {
             nearest = abnormalNearest;
         }
@@ -2238,6 +2386,7 @@ public class KlineChartView extends View {
 
     @Nullable
     private PriceAnnotation findNearestAnnotationInList(List<PriceAnnotation> source,
+                                                        float touchX,
                                                         float touchY,
                                                         float thresholdPx,
                                                         float currentBestDistance) {
@@ -2250,11 +2399,10 @@ public class KlineChartView extends View {
             if (annotation == null || annotation.price <= 0d) {
                 continue;
             }
-            float y = resolveAnnotationY(annotation);
-            if (Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
+            float distance = resolveAnnotationTouchDistance(annotation, touchX, touchY);
+            if (Float.isNaN(distance)) {
                 continue;
             }
-            float distance = Math.abs(y - touchY);
             if (distance > thresholdPx || distance >= best) {
                 continue;
             }
@@ -2262,6 +2410,53 @@ public class KlineChartView extends View {
             best = distance;
         }
         return nearest;
+    }
+
+    private float resolveAnnotationTouchDistance(@Nullable PriceAnnotation annotation, float touchX, float touchY) {
+        if (annotation == null) {
+            return Float.NaN;
+        }
+        if (isTradeConnectorAnnotation(annotation)) {
+            float startX = resolveAnnotationXForFloorTime(annotation.anchorTimeMs);
+            float startY = resolveAnnotationY(annotation);
+            float endX = resolveAnnotationXForFloorTime(annotation.secondaryAnchorTimeMs);
+            float endY = resolveAnnotationSecondaryY(annotation);
+            if (Float.isNaN(startX) || Float.isNaN(startY) || Float.isNaN(endX) || Float.isNaN(endY)) {
+                return Float.NaN;
+            }
+            return distanceToSegment(touchX, touchY, startX, startY, endX, endY);
+        }
+        float x = isAbnormalAnnotation(annotation) || isTradePointAnnotation(annotation)
+                ? resolveAnnotationXForFloorTime(annotation.anchorTimeMs)
+                : resolveAnnotationX(annotation.anchorTimeMs);
+        float y = resolveAnnotationY(annotation);
+        if (Float.isNaN(x) || Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
+            return Float.NaN;
+        }
+        if (isAbnormalAnnotation(annotation) || isTradePointAnnotation(annotation)) {
+            return distance(touchX, touchY, x, y);
+        }
+        return Math.abs(y - touchY);
+    }
+
+    private float distance(float x1, float y1, float x2, float y2) {
+        float dx = x1 - x2;
+        float dy = y1 - y2;
+        return (float) Math.sqrt(dx * dx + dy * dy);
+    }
+
+    private float distanceToSegment(float px, float py, float x1, float y1, float x2, float y2) {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float denominator = dx * dx + dy * dy;
+        if (denominator <= 1e-6f) {
+            return distance(px, py, x1, y1);
+        }
+        float t = ((px - x1) * dx + (py - y1) * dy) / denominator;
+        t = Math.max(0f, Math.min(1f, t));
+        float projX = x1 + t * dx;
+        float projY = y1 + t * dy;
+        return distance(px, py, projX, projY);
     }
 
     private String resolveAnnotationGroupKey(@Nullable PriceAnnotation annotation) {

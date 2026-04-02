@@ -1,6 +1,11 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已继续修正用户最新反馈的两个细节：悬浮窗产品标题改成“产品名保持主文字色，盈亏金额单独按涨跌或中性色着色”；历史交易开仓点/平仓点的时间锚点改成半开区间映射，修正落在 K 线边界时被归到前一根导致的错点和错连线。
+- 已新增并通过本轮定点验证：`HistoricalTradeAnnotationBuilderTest` 新增“边界时间归到下一根”用例；并重新通过 `FloatingWindowTextFormatterTest` 与 `assembleDebug`。
+- 已继续补完用户最新一轮 4 项修订中的前两项：底部 Tab 已改成参考微信风格的“图标在上、文字在下”的平直导航样式，并新增图表/设置图标；悬浮窗盈亏金额为 `0` 时已改成中性色显示，不再误走红绿涨跌色。
+- 已复核并保留前一轮已落地的后两项：K 线异常交易圆点继续按 `1m` 底稿聚合到当前周期；历史交易叠加层继续沿用“买入/卖出点 + 平仓点 + 虚线连线 + 盈亏标签 + 点击弹窗”的新结构。
+- 已新增并通过本轮定点验证：`FloatingWindowTextFormatterTest` 补了零值中性色规则；并重新通过 `BottomNavThemeResourceTest`、`HistoricalTradeAnnotationBuilderTest`、`AbnormalAnnotationOverlayBuilderTest` 与 `assembleDebug`。
 - 已继续针对图5收口账户曲线长按残留问题：附图长按联动现在区分“主图最近点联动”和“附图精确时间联动”，仓位图、回撤图、日收益图传来的当前横轴时间不再被后续的 `xRatio` 二次改写。
 - 已新增并通过本轮定点验证：`AccountCurveHighlightHelperTest` 新增“附图精确时间优先”用例；并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest"` 与 `.\gradlew.bat assembleDebug`。
 - 已继续针对图4收口账户曲线残留问题：仓位比例图现在会在历史 `positionRatio` 缺失且当前空仓时，优先按历史成交开平时间回放持仓暴露补出曲线；回撤图、日收益图、仓位图长按时也改成直接把“当前手指所在横轴时间”回传给主图联动。
@@ -55,6 +60,8 @@
 - 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.AbnormalGatewayClientTest" --tests "com.binance.monitor.data.local.AbnormalRecordIdentityTest" --tests "com.binance.monitor.service.AbnormalSyncRuntimeHelperTest"`。
 
 ## 上次停在哪个位置
+- 停在“悬浮窗零盈亏颜色已细化到只影响金额、历史交易边界时间错位已修正并验证通过”的状态；若用户继续反馈历史交易点位仍有偏差，下一步优先核对真实交易记录里的 `openTime/openPrice/closeTime/closePrice` 是否本身就是聚合后的仓位级数据。
+- 停在“用户最新 4 项修订里，底部 Tab 重设计与悬浮窗 0 值中性色已补完并验证通过”的状态；若用户继续细调 Tab 视觉，下一步优先按真机截图微调图标尺寸、上下留白和底栏背景厚度。
 - 停在“图5反馈里的附图长按弹窗卡值问题已再补一轮时间优先级修复”的状态；若用户仍反馈不跟手，下一步优先在真机上加一层联动日志，核对附图回调时间、主图 override 时间和最终绘制时间是否一致。
 - 停在“用户根据图4反馈的第3/4点已再补一轮真实数据链路与联动时间链路”的状态；若用户仍反馈仓位图为空，下一步优先检查运行设备上的历史成交是否本身缺开/平仓时间，或截图是否来自旧安装包。
 - 停在“用户再次反馈的 4 项残留问题已继续修正并验证通过”的状态；若用户仍反馈仓位图或长按弹窗异常，下一步优先看真实运行数据是否仍来自缺失 `positionRatio` 的旧本地快照。
@@ -80,6 +87,10 @@
 - 若下一步继续压第二步骤的服务器侧资源与延迟问题，优先看 `bridge/mt5_gateway/server_v2.py`、`bridge/mt5_gateway/.env.example`、`bridge/mt5_gateway/tests/test_summary_response.py`。
 
 ## 近期关键决定和原因
+- 悬浮窗产品标题改成“整行文本仍是一条，但只给金额片段上色”；原因是用户要求产品名 `BTC/XAU` 保持正常色，不能再跟着零盈亏金额一起变中性。
+- 历史交易时间锚点改成“前闭后开，最后一根包含右边界”；原因是开/平仓时间刚好等于下一根 K 线开盘时间时，旧逻辑会错误落到前一根，直接造成点位偏移和连线错接。
+- 底部 Tab 改成“统一图标 + 文字双层结构、按钮本体透明、只用当前主题着色区分选中态”；原因是用户明确参考微信 Tab 风格，同时又不希望继续保留圆角块状按钮。
+- 悬浮窗零盈亏新增独立 `shouldUseNeutralPnlStyle` 判断；原因是仅把文案改成 `$-` 不够，若颜色还沿用涨跌色，视觉上仍会误导用户。
 - 附图长按联动新增“精确时间优先”分支；原因是附图已经能直接算出手指所在横轴时间，再被 `xRatio` 二次换算一次，仍有机会让弹窗看起来卡在旧值。
 - 仓位比例图的兜底改成“历史成交回放优先，当前持仓估算兜底”；原因是用户图4里的账户当前可能已经空仓，只看当前持仓会让整段历史仓位继续空白。
 - 附图长按联动的回传时间改成“当前横轴目标时间”而不是“最近数据点时间”；原因是即便 Activity 层已支持插值，附图继续回传最近点也会让联动体验看起来像没跟手。

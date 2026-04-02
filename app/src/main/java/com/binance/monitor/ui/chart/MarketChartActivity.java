@@ -1916,9 +1916,10 @@ public class MarketChartActivity extends AppCompatActivity {
         ConfigManager configManager = ConfigManager.getInstance(this);
         SymbolConfig config = configManager == null ? null : configManager.getSymbolConfig(selectedSymbol);
         List<AbnormalRecord> filteredRecords = filterAbnormalRecordsForSelectedSymbol();
+        List<CandleEntry> abnormalBaseCandles = resolveAbnormalBaseCandles();
         List<AbnormalRecord> derivedRecords = HistoricalAbnormalRecordBuilder.buildFromCandles(
                 selectedSymbol,
-                loadedCandles,
+                abnormalBaseCandles,
                 config,
                 configManager != null && configManager.isUseAndMode()
         );
@@ -1937,6 +1938,38 @@ public class MarketChartActivity extends AppCompatActivity {
             ));
         }
         binding.klineChartView.setAbnormalAnnotations(abnormalAnnotations);
+    }
+
+    // 异常圆点统一以 1 分钟 K 线为底稿重算，再投影到当前周期，避免高周期直接按粗粒度数据漏计次数。
+    private List<CandleEntry> resolveAbnormalBaseCandles() {
+        if (loadedCandles == null || loadedCandles.isEmpty()) {
+            return new ArrayList<>();
+        }
+        IntervalOption minuteOption = INTERVALS[0];
+        if ("1m".equalsIgnoreCase(selectedInterval.key) && !selectedInterval.yearAggregate) {
+            return new ArrayList<>(loadedCandles);
+        }
+        List<CandleEntry> minuteCandles = getCachedOrPersisted(buildCacheKey(selectedSymbol, minuteOption));
+        if (minuteCandles == null || minuteCandles.isEmpty()) {
+            return new ArrayList<>(loadedCandles);
+        }
+        long startTime = loadedCandles.get(0).getOpenTime();
+        long endTime = loadedCandles.get(loadedCandles.size() - 1).getCloseTime();
+        if (endTime <= 0L) {
+            endTime = loadedCandles.get(loadedCandles.size() - 1).getOpenTime() + 60_000L;
+        }
+        List<CandleEntry> filtered = new ArrayList<>();
+        for (CandleEntry candle : minuteCandles) {
+            if (candle == null) {
+                continue;
+            }
+            long openTime = candle.getOpenTime();
+            if (openTime < startTime || openTime > endTime) {
+                continue;
+            }
+            filtered.add(candle);
+        }
+        return filtered.isEmpty() ? new ArrayList<>(loadedCandles) : filtered;
     }
 
     // 先按当前选中标的筛掉无关异常记录，避免聚合器承担页面状态判断。
@@ -2012,15 +2045,74 @@ public class MarketChartActivity extends AppCompatActivity {
             if (item == null) {
                 continue;
             }
+            String sideLabel = "SELL".equalsIgnoreCase(item.side) ? "卖出" : "买入";
+            int entryColor = "SELL".equalsIgnoreCase(item.side)
+                    ? Color.parseColor("#F6465D")
+                    : Color.parseColor("#4D8BFF");
+            int connectorColor = item.totalPnl >= 0d
+                    ? Color.parseColor("#16C784")
+                    : Color.parseColor("#F6465D");
+            int exitColor = Color.parseColor("#E7EEF7");
+            String pnlLabel = formatSignedUsd(item.totalPnl);
+            String[] detailLines = new String[]{
+                    safeTradePopupValue(item.productName, item.code),
+                    "方向 " + sideLabel,
+                    "开仓 " + FormatUtils.formatTime(item.openTimeMs) + " $" + FormatUtils.formatPrice(item.entryPrice),
+                    "平仓 " + FormatUtils.formatTime(item.closeTimeMs) + " $" + FormatUtils.formatPrice(item.exitPrice),
+                    "数量 " + formatQuantity(item.quantity),
+                    "盈亏 " + pnlLabel
+            };
             result.add(new KlineChartView.PriceAnnotation(
-                    item.anchorTimeMs,
-                    item.price,
-                    item.label,
-                    item.color,
-                    item.groupId
+                    item.entryAnchorTimeMs,
+                    item.entryPrice,
+                    sideLabel,
+                    entryColor,
+                    item.groupId,
+                    1,
+                    0f,
+                    0L,
+                    Double.NaN,
+                    "SELL".equalsIgnoreCase(item.side)
+                            ? KlineChartView.ANNOTATION_KIND_HISTORY_ENTRY_SELL
+                            : KlineChartView.ANNOTATION_KIND_HISTORY_ENTRY_BUY,
+                    detailLines
+            ));
+            result.add(new KlineChartView.PriceAnnotation(
+                    item.entryAnchorTimeMs,
+                    item.entryPrice,
+                    pnlLabel,
+                    connectorColor,
+                    item.groupId,
+                    1,
+                    0f,
+                    item.exitAnchorTimeMs,
+                    item.exitPrice,
+                    KlineChartView.ANNOTATION_KIND_HISTORY_CONNECTOR,
+                    detailLines
+            ));
+            result.add(new KlineChartView.PriceAnnotation(
+                    item.exitAnchorTimeMs,
+                    item.exitPrice,
+                    "平仓",
+                    exitColor,
+                    item.groupId,
+                    1,
+                    0f,
+                    0L,
+                    Double.NaN,
+                    KlineChartView.ANNOTATION_KIND_HISTORY_EXIT,
+                    detailLines
             ));
         }
         return result;
+    }
+
+    private String safeTradePopupValue(String productName, String code) {
+        String name = productName == null ? "" : productName.trim();
+        if (!name.isEmpty()) {
+            return name;
+        }
+        return code == null ? "--" : code.trim();
     }
 
     private List<KlineChartView.PriceAnnotation> buildPositionAnnotations(List<PositionItem> positions,
