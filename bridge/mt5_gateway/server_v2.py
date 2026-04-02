@@ -843,8 +843,16 @@ def _contract_size_for_symbol(symbol: str, cache: Dict[str, float]) -> float:
     return size
 
 
-def _curve_point(timestamp: int, equity: float, balance: float) -> Dict[str, float]:
-    return {"timestamp": int(timestamp), "equity": float(equity), "balance": float(balance)}
+def _curve_point(timestamp: int, equity: float, balance: float, position_ratio: float = 0.0) -> Dict[str, float]:
+    safe_ratio = float(position_ratio or 0.0)
+    if not math.isfinite(safe_ratio) or safe_ratio < 0.0:
+        safe_ratio = 0.0
+    return {
+        "timestamp": int(timestamp),
+        "equity": float(equity),
+        "balance": float(balance),
+        "positionRatio": safe_ratio,
+    }
 
 
 def _add_curve_exposure(
@@ -910,6 +918,46 @@ def _calculate_curve_floating(
     return total
 
 
+def _calculate_curve_market_value(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    last_price_by_symbol: Dict[str, float],
+) -> float:
+    total = 0.0
+    for (symbol, _side), state in exposures.items():
+        volume = float(state.get("volume", 0.0) or 0.0)
+        contract_size = float(state.get("contract_size", 1.0) or 1.0)
+        if volume <= 0.0 or contract_size <= 0.0:
+            continue
+        price = float(last_price_by_symbol.get(symbol, 0.0) or 0.0)
+        if price <= 0.0:
+            continue
+        total += abs(volume * price * contract_size)
+    return total
+
+
+def _curve_position_ratio_from_market_value(market_value: float, equity: float) -> float:
+    ratio = _safe_div(max(0.0, float(market_value or 0.0)), max(1.0, float(equity or 0.0)))
+    if not math.isfinite(ratio) or ratio < 0.0:
+        return 0.0
+    return ratio
+
+
+def _calculate_curve_position_ratio(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    last_price_by_symbol: Dict[str, float],
+    equity: float,
+) -> float:
+    market_value = _calculate_curve_market_value(exposures, last_price_by_symbol)
+    return _curve_position_ratio_from_market_value(market_value, equity)
+
+
+def _resolve_positions_market_value(positions: List[Dict[str, Any]]) -> float:
+    total = 0.0
+    for position in positions or []:
+        total += max(0.0, float(position.get("marketValue", 0.0) or 0.0))
+    return total
+
+
 def _inject_positions_into_exposures(
     exposures: Dict[Tuple[str, str], Dict[str, float]],
     positions: List[Dict[str, Any]],
@@ -950,7 +998,13 @@ def _replay_curve_from_history(
 ) -> List[Dict[str, float]]:
     # 以时间序列方式重放成交和持仓，生成 equity/balance 分离的曲线点
     if not deal_history:
-        return [_curve_point(now_ms, current_equity, current_balance)]
+        market_value = _resolve_positions_market_value(open_positions)
+        return [_curve_point(
+            now_ms,
+            current_equity,
+            current_balance,
+            _curve_position_ratio_from_market_value(market_value, current_equity),
+        )]
 
     exposures: Dict[Tuple[str, str], Dict[str, float]] = {}
     last_price_by_symbol: Dict[str, float] = {}
@@ -964,7 +1018,13 @@ def _replay_curve_from_history(
     points: List[Dict[str, float]] = []
     first_ts = max(int(sorted_deals[0].get("timestamp", 0)), 0)
     floating = _calculate_curve_floating(exposures, last_price_by_symbol)
-    points.append(_curve_point(first_ts, running_balance + floating, running_balance))
+    first_equity = running_balance + floating
+    points.append(_curve_point(
+        first_ts,
+        first_equity,
+        running_balance,
+        _calculate_curve_position_ratio(exposures, last_price_by_symbol, first_equity),
+    ))
 
     for deal in sorted_deals:
         timestamp = int(deal.get("timestamp", 0))
@@ -990,9 +1050,23 @@ def _replay_curve_from_history(
             + float(deal.get("swap", 0.0))
         )
         floating = _calculate_curve_floating(exposures, last_price_by_symbol)
-        points.append(_curve_point(timestamp, running_balance + floating, running_balance))
+        equity = running_balance + floating
+        points.append(_curve_point(
+            timestamp,
+            equity,
+            running_balance,
+            _calculate_curve_position_ratio(exposures, last_price_by_symbol, equity),
+        ))
 
-    points.append(_curve_point(now_ms, current_equity, current_balance))
+    current_market_value = _resolve_positions_market_value(open_positions)
+    if current_market_value <= 0.0:
+        current_market_value = _calculate_curve_market_value(exposures, last_price_by_symbol)
+    points.append(_curve_point(
+        now_ms,
+        current_equity,
+        current_balance,
+        _curve_position_ratio_from_market_value(current_market_value, current_equity),
+    ))
     return points
 
 
@@ -1510,6 +1584,7 @@ def _normalize_digest_curve_points(points: List[Dict]) -> List[Dict]:
         point = {
             "equity": round(float(item.get("equity", 0.0) or 0.0), 2),
             "balance": round(float(item.get("balance", 0.0) or 0.0), 2),
+            "positionRatio": round(float(item.get("positionRatio", 0.0) or 0.0), 6),
         }
         if keep_timestamp:
             point["timestamp"] = int(item.get("timestamp", 0) or 0)

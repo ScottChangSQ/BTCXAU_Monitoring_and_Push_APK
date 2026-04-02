@@ -244,8 +244,20 @@ class SummaryResponseTests(unittest.TestCase):
             any(abs(point["equity"] - point["balance"]) > 0.0 for point in points[:-1]),
             "曲线点应在有未平仓时 equity 与 balance 不一致",
         )
+        self.assertIn("positionRatio", points[0])
+        self.assertGreater(points[0]["positionRatio"], 0.0)
         self.assertEqual(points[-1]["balance"], 1010.0)
         self.assertEqual(points[-1]["equity"], 1030.0)
+        self.assertAlmostEqual(points[-1]["positionRatio"], 105.0 / 1030.0, places=6)
+
+    def test_curve_point_digest_includes_position_ratio(self):
+        helper = getattr(server_v2, "_normalize_digest_curve_points", None)
+        self.assertIsNotNone(helper, "缺少 _normalize_digest_curve_points，无法验证曲线摘要")
+
+        low_ratio = helper([{"timestamp": 1, "equity": 100.0, "balance": 100.0, "positionRatio": 0.10}])
+        high_ratio = helper([{"timestamp": 1, "equity": 100.0, "balance": 100.0, "positionRatio": 0.60}])
+
+        self.assertNotEqual(low_ratio, high_ratio)
 
 
 if __name__ == "__main__":

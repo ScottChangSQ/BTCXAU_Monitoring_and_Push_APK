@@ -496,7 +496,8 @@ public class Mt5BridgeGatewayClient {
             list.add(new CurvePoint(
                     item.optLong("timestamp", 0L),
                     item.optDouble("equity", 0d),
-                    item.optDouble("balance", 0d)));
+                    item.optDouble("balance", 0d),
+                    item.optDouble("positionRatio", 0d)));
         }
         return list;
     }

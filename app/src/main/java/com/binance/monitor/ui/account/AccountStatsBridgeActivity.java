@@ -895,6 +895,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         tradeAdapter.setMasked(masked);
         statsAdapter.setMasked(masked);
         binding.equityCurveView.setMasked(masked);
+        binding.positionRatioChartView.setMasked(masked);
         binding.drawdownChartView.setMasked(masked);
         binding.dailyReturnChartView.setMasked(masked);
         binding.tradePnlBarChart.setMasked(masked);
@@ -1316,6 +1317,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setupCurveInteraction() {
+        binding.equityCurveView.setShowBottomTimeLabels(false);
+        binding.dailyReturnChartView.setShowBottomTimeLabels(true);
         binding.equityCurveView.setOnPointHighlightListener((point, xRatio) -> {
             if (syncingCurveHighlight) {
                 return;
@@ -1327,6 +1330,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             applySharedCurveHighlight(point.getTimestamp(), xRatio);
         });
         binding.drawdownChartView.setOnTimeHighlightListener((timestamp, xRatio) -> {
+            if (syncingCurveHighlight) {
+                return;
+            }
+            if (timestamp == null) {
+                clearSharedCurveHighlight();
+                return;
+            }
+            applySharedCurveHighlight(timestamp, xRatio);
+        });
+        binding.positionRatioChartView.setOnTimeHighlightListener((timestamp, xRatio) -> {
             if (syncingCurveHighlight) {
                 return;
             }
@@ -3481,6 +3494,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             );
         }
         binding.equityCurveView.setPoints(points);
+        binding.positionRatioChartView.setViewport(viewportStartTs, viewportEndTs);
+        binding.positionRatioChartView.setPoints(points);
         displayedDrawdownPoints = CurveAnalyticsHelper.buildDrawdownSeries(points);
         displayedDailyReturnPoints = CurveAnalyticsHelper.buildDailyReturnSeries(points);
         binding.drawdownChartView.setViewport(viewportStartTs, viewportEndTs);
@@ -3495,7 +3510,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         indicatorAdapter.submitList(buildCurveIndicators(points));
     }
 
-    // 把任一子图的时间点同步成三联图共享十字光标。
+    // 把任一子图的时间点同步成多联图共享十字光标。
     private void applySharedCurveHighlight(long timestamp, float xRatio) {
         if (isPrivacyMasked()) {
             clearSharedCurveHighlight();
@@ -3506,24 +3521,27 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             clearSharedCurveHighlight();
             return;
         }
-        CurveAnalyticsHelper.DrawdownPoint drawdownPoint = findNearestDrawdownPoint(point.getTimestamp());
-        CurveAnalyticsHelper.DailyReturnPoint dailyReturnPoint = findNearestDailyReturnPoint(point.getTimestamp());
+        CurveAnalyticsHelper.DrawdownPoint drawdownPoint = findNearestDrawdownPoint(timestamp);
+        CurveAnalyticsHelper.DailyReturnPoint dailyReturnPoint = findNearestDailyReturnPoint(timestamp);
         List<String> extraLines = new ArrayList<>();
+        extraLines.add("仓位 " + formatPercentValue(point.getPositionRatio(), false));
         extraLines.add("回撤 " + formatPercentValue(drawdownPoint == null ? null : drawdownPoint.getDrawdownRate(), false));
         extraLines.add("日收益 " + formatPercentValue(dailyReturnPoint == null ? null : dailyReturnPoint.getReturnRate(), true));
         syncingCurveHighlight = true;
         binding.equityCurveView.setTooltipExtraLines(extraLines);
         binding.equityCurveView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
+        binding.positionRatioChartView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
         binding.drawdownChartView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
         binding.dailyReturnChartView.syncHighlightTimestamp(point.getTimestamp(), xRatio);
         syncingCurveHighlight = false;
     }
 
-    // 清除三联图共享十字光标和附带弹窗。
+    // 清除多联图共享十字光标和附带弹窗。
     private void clearSharedCurveHighlight() {
         syncingCurveHighlight = true;
         binding.equityCurveView.setTooltipExtraLines(null);
         binding.equityCurveView.clearSyncedHighlight();
+        binding.positionRatioChartView.clearSyncedHighlight();
         binding.drawdownChartView.clearSyncedHighlight();
         binding.dailyReturnChartView.clearSyncedHighlight();
         binding.tvCurveMeta.setText(isPrivacyMasked()
@@ -5802,6 +5820,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         configureToggleButtonsV2();
         flattenCardSections(binding.scrollAccountStats, palette);
         binding.equityCurveView.refreshPalette();
+        binding.positionRatioChartView.refreshPalette();
         binding.drawdownChartView.refreshPalette();
         binding.dailyReturnChartView.refreshPalette();
         binding.tradeDistributionScatterView.refreshPalette();

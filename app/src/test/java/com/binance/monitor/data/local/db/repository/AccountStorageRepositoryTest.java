@@ -49,12 +49,12 @@ public class AccountStorageRepositoryTest {
     @Test
     public void mergeCurvePointsKeepsHistoryAndDeduplicatesByTimestamp() {
         List<CurvePoint> existing = Arrays.asList(
-                new CurvePoint(1000L, 100d, 90d),
-                new CurvePoint(2000L, 101d, 91d)
+                new CurvePoint(1000L, 100d, 90d, 0.10d),
+                new CurvePoint(2000L, 101d, 91d, 0.20d)
         );
         List<CurvePoint> incoming = Arrays.asList(
-                new CurvePoint(2000L, 110d, 95d),
-                new CurvePoint(3000L, 120d, 100d)
+                new CurvePoint(2000L, 110d, 95d, 0.55d),
+                new CurvePoint(3000L, 120d, 100d, 0.80d)
         );
 
         List<CurvePoint> merged = AccountStorageRepository.mergeCurvePoints(existing, incoming);
@@ -62,7 +62,39 @@ public class AccountStorageRepositoryTest {
         assertEquals(3, merged.size());
         assertEquals(1000L, merged.get(0).getTimestamp());
         assertEquals(110d, merged.get(1).getEquity(), 0.0001d);
+        assertEquals(0.55d, merged.get(1).getPositionRatio(), 0.0001d);
         assertEquals(3000L, merged.get(2).getTimestamp());
+    }
+
+    // 曲线点写入本地缓存后，历史仓位比例也必须能完整恢复。
+    @Test
+    public void persistMetaSnapshotShouldKeepCurvePointPositionRatio() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        repository.persistMetaSnapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "MT5网关",
+                "http://gateway",
+                2000L,
+                "",
+                2100L,
+                Arrays.asList(new AccountMetric("Total Asset", "$1,000.00")),
+                Arrays.asList(new CurvePoint(1000L, 100d, 90d, 0.32d)),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>()
+        ));
+
+        AccountStorageRepository.StoredSnapshot restored = repository.loadStoredSnapshot();
+
+        assertEquals(1, restored.getCurvePoints().size());
+        assertEquals(0.32d, restored.getCurvePoints().get(0).getPositionRatio(), 0.0001d);
     }
 
     // 轻实时快照只应刷新持仓和摘要，不应清空已有挂单与历史交易。

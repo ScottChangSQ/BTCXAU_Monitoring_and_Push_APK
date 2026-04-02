@@ -70,6 +70,7 @@ public class EquityCurveView extends View {
     private float highlightedXRatio = -1f;
     private boolean longPressing;
     private boolean masked;
+    private boolean showBottomTimeLabels = true;
     private OnPointHighlightListener onPointHighlightListener;
 
     public EquityCurveView(Context context) {
@@ -187,6 +188,15 @@ public class EquityCurveView extends View {
         invalidate();
     }
 
+    // 控制时间刻度放在主图还是最底部附图，便于多图共用同一横轴。
+    public void setShowBottomTimeLabels(boolean show) {
+        if (showBottomTimeLabels == show) {
+            return;
+        }
+        showBottomTimeLabels = show;
+        invalidate();
+    }
+
     // 根据账户统计页隐私状态切换为占位态。
     public void setMasked(boolean masked) {
         if (this.masked == masked) {
@@ -269,7 +279,7 @@ public class EquityCurveView extends View {
         chartLeft = dp(34f);
         chartTop = dp(12f);
         chartRight = width - dp(28f);
-        chartBottom = height - dp(24f);
+        chartBottom = height - (showBottomTimeLabels ? dp(24f) : dp(10f));
 
         drawGrid(canvas, chartLeft, chartTop, chartRight, chartBottom);
         drawAxes(canvas, chartLeft, chartTop, chartRight, chartBottom);
@@ -332,7 +342,9 @@ public class EquityCurveView extends View {
         }
 
         drawYLabels(canvas, chartLeft, chartRight, chartTop, chartBottom, chartMin, chartMax, baseBalance);
-        drawXLabels(canvas, chartLeft, chartRight, chartBottom);
+        if (showBottomTimeLabels) {
+            drawXLabels(canvas, chartLeft, chartRight, chartBottom);
+        }
     }
 
     private void drawDrawdownHighlight(Canvas canvas) {

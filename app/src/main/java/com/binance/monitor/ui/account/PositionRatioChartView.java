@@ -1,13 +1,13 @@
 /*
- * 日收益率附图，负责绘制正负日收益柱状分布。
- * 供 AccountStatsBridgeActivity 展示当前周期下的日收益变化。
+ * 仓位比例附图，负责绘制账户历史仓位比例曲线。
+ * 供 AccountStatsBridgeActivity 在净值/结余曲线模块中展示当前周期仓位变化。
  */
 package com.binance.monitor.ui.account;
 
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.RectF;
+import android.graphics.Path;
 import android.util.AttributeSet;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
@@ -15,28 +15,30 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-public class DailyReturnChartView extends View {
+public class PositionRatioChartView extends View {
 
     public interface OnTimeHighlightListener {
         void onTimeHighlight(@Nullable Long timestamp, float xRatio);
     }
 
-    private final List<CurveAnalyticsHelper.DailyReturnPoint> points = new ArrayList<>();
-    private final Paint axisPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final List<CurvePoint> points = new ArrayList<>();
     private final Paint gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint axisPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint positivePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint negativePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint markerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint crosshairPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint selectionPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint emptyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path linePath = new Path();
+    private final Path fillPath = new Path();
     private final GestureDetector gestureDetector;
 
     private float chartLeft;
@@ -51,29 +53,28 @@ public class DailyReturnChartView extends View {
     private float highlightedXRatio = -1f;
     private boolean longPressing;
     private boolean masked;
-    private boolean showBottomTimeLabels;
     private OnTimeHighlightListener onTimeHighlightListener;
 
-    public DailyReturnChartView(Context context) {
+    public PositionRatioChartView(Context context) {
         this(context, null);
     }
 
-    public DailyReturnChartView(Context context, @Nullable AttributeSet attrs) {
+    public PositionRatioChartView(Context context, @Nullable AttributeSet attrs) {
         this(context, attrs, 0);
     }
 
-    public DailyReturnChartView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
+    public PositionRatioChartView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        axisPaint.setStyle(Paint.Style.STROKE);
         gridPaint.setStyle(Paint.Style.STROKE);
+        axisPaint.setStyle(Paint.Style.STROKE);
+        linePaint.setStyle(Paint.Style.STROKE);
+        linePaint.setStrokeWidth(dp(1.8f));
+        fillPaint.setStyle(Paint.Style.FILL);
         labelPaint.setTextSize(dp(8.5f));
-        labelPaint.setTextAlign(Paint.Align.CENTER);
         emptyPaint.setTextAlign(Paint.Align.CENTER);
         emptyPaint.setTextSize(dp(10f));
         crosshairPaint.setStyle(Paint.Style.STROKE);
         crosshairPaint.setStrokeWidth(dp(1f));
-        selectionPaint.setStyle(Paint.Style.STROKE);
-        selectionPaint.setStrokeWidth(dp(1.2f));
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onDown(MotionEvent e) {
@@ -99,27 +100,28 @@ public class DailyReturnChartView extends View {
         refreshPalette();
     }
 
-    // 刷新主题色。
+    // 刷新主题色，保证切换主题后仓位图与其他附图一致。
     public void refreshPalette() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(getContext());
+        gridPaint.setColor(applyAlpha(palette.stroke, 150));
+        gridPaint.setStrokeWidth(dp(0.8f));
         axisPaint.setColor(applyAlpha(palette.textSecondary, 180));
         axisPaint.setStrokeWidth(dp(1f));
-        gridPaint.setColor(applyAlpha(palette.stroke, 140));
-        gridPaint.setStrokeWidth(dp(0.8f));
+        linePaint.setColor(applyAlpha(palette.primary, 235));
+        fillPaint.setColor(applyAlpha(palette.primary, 50));
         labelPaint.setColor(palette.textSecondary);
-        positivePaint.setColor(applyAlpha(palette.rise, 220));
-        negativePaint.setColor(applyAlpha(palette.fall, 220));
+        markerPaint.setColor(palette.primary);
         crosshairPaint.setColor(applyAlpha(palette.textSecondary, 220));
-        selectionPaint.setColor(applyAlpha(palette.primary, 235));
         emptyPaint.setColor(palette.textSecondary);
         invalidate();
     }
 
-    // 设置日收益数据。
-    public void setPoints(@Nullable List<CurveAnalyticsHelper.DailyReturnPoint> source) {
+    // 设置仓位比例数据并触发重绘。
+    public void setPoints(@Nullable List<CurvePoint> source) {
         points.clear();
         if (source != null) {
             points.addAll(source);
+            points.sort((left, right) -> Long.compare(left.getTimestamp(), right.getTimestamp()));
         }
         highlightedIndex = -1;
         highlightedXRatio = -1f;
@@ -127,19 +129,10 @@ public class DailyReturnChartView extends View {
         invalidate();
     }
 
-    // 设置三联图共享的横轴时间范围。
+    // 设置与主图共享的横轴时间范围。
     public void setViewport(long startTs, long endTs) {
         viewportStartTs = Math.max(0L, startTs);
         viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
-        invalidate();
-    }
-
-    // 控制时间刻度是否放在最底部附图。
-    public void setShowBottomTimeLabels(boolean show) {
-        if (showBottomTimeLabels == show) {
-            return;
-        }
-        showBottomTimeLabels = show;
         invalidate();
     }
 
@@ -183,7 +176,7 @@ public class DailyReturnChartView extends View {
             return false;
         }
         gestureDetector.onTouchEvent(event);
-        if (points.isEmpty()) {
+        if (points.size() < 2) {
             return super.onTouchEvent(event);
         }
         int action = event.getActionMasked();
@@ -210,106 +203,94 @@ public class DailyReturnChartView extends View {
         }
 
         chartLeft = dp(34f);
-        chartRight = width - dp(28f);
         chartTop = dp(10f);
-        chartBottom = height - (showBottomTimeLabels ? dp(24f) : dp(10f));
+        chartRight = width - dp(28f);
+        chartBottom = height - dp(10f);
         drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
 
         if (masked) {
             canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
             return;
         }
-
         if (points.isEmpty()) {
-            canvas.drawText("暂无日收益数据", width / 2f, height / 2f, emptyPaint);
+            canvas.drawText("暂无仓位数据", width / 2f, height / 2f, emptyPaint);
             return;
         }
 
-        double maxAbs = 0.01d;
-        for (CurveAnalyticsHelper.DailyReturnPoint point : points) {
-            maxAbs = Math.max(maxAbs, Math.abs(point.getReturnRate()));
+        double maxRatio = 0.2d;
+        CurvePoint peakPoint = points.get(0);
+        for (CurvePoint point : points) {
+            if (point.getPositionRatio() >= maxRatio) {
+                maxRatio = point.getPositionRatio();
+                peakPoint = point;
+            }
         }
+        double chartMax = Math.max(0.2d, maxRatio * 1.12d);
+        double chartMin = 0d;
         seriesStartTs = points.get(0).getTimestamp();
         seriesEndTs = points.get(points.size() - 1).getTimestamp();
         long startTs = viewportStartTs > 0L ? viewportStartTs : seriesStartTs;
         long endTs = viewportEndTs > startTs ? viewportEndTs : Math.max(startTs + 1L, seriesEndTs);
-        float zeroY = mapY(0d, -maxAbs, maxAbs, chartTop, chartBottom);
-        canvas.drawLine(chartLeft, zeroY, chartRight, zeroY, axisPaint);
 
-        float barWidth = Math.max(dp(2f), Math.min(dp(10f),
-                (chartRight - chartLeft) / Math.max(1f, points.size() * 1.7f)));
+        linePath.reset();
+        fillPath.reset();
+        float zeroY = mapY(0d, chartMin, chartMax, chartTop, chartBottom);
         for (int i = 0; i < points.size(); i++) {
-            CurveAnalyticsHelper.DailyReturnPoint point = points.get(i);
-            float centerX = mapX(point.getTimestamp(), startTs, endTs, chartLeft, chartRight);
-            float targetY = mapY(point.getReturnRate(), -maxAbs, maxAbs, chartTop, chartBottom);
-            RectF rect = new RectF(
-                    centerX - barWidth / 2f,
-                    Math.min(zeroY, targetY),
-                    centerX + barWidth / 2f,
-                    Math.max(zeroY, targetY)
-            );
-            rect.bottom = Math.max(rect.bottom, rect.top + dp(1.2f));
-            canvas.drawRoundRect(rect, dp(2f), dp(2f),
-                    point.getReturnRate() >= 0d ? positivePaint : negativePaint);
-            if (i == highlightedIndex) {
-                canvas.drawRect(rect, selectionPaint);
+            CurvePoint point = points.get(i);
+            float x = mapX(point.getTimestamp(), startTs, endTs, chartLeft, chartRight);
+            float y = mapY(point.getPositionRatio(), chartMin, chartMax, chartTop, chartBottom);
+            if (i == 0) {
+                linePath.moveTo(x, y);
+                fillPath.moveTo(x, zeroY);
+                fillPath.lineTo(x, y);
+            } else {
+                linePath.lineTo(x, y);
+                fillPath.lineTo(x, y);
             }
         }
+        fillPath.lineTo(mapX(points.get(points.size() - 1).getTimestamp(), startTs, endTs, chartLeft, chartRight), zeroY);
+        fillPath.close();
+        canvas.drawPath(fillPath, fillPaint);
+        canvas.drawPath(linePath, linePaint);
 
+        float peakX = mapX(peakPoint.getTimestamp(), startTs, endTs, chartLeft, chartRight);
+        float peakY = mapY(peakPoint.getPositionRatio(), chartMin, chartMax, chartTop, chartBottom);
+        canvas.drawCircle(peakX, peakY, dp(3.2f), markerPaint);
         if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
-            CurveAnalyticsHelper.DailyReturnPoint point = points.get(highlightedIndex);
+            CurvePoint point = points.get(highlightedIndex);
             float highlightX = resolveHighlightX(startTs, endTs);
+            float highlightY = mapY(point.getPositionRatio(), chartMin, chartMax, chartTop, chartBottom);
             canvas.drawLine(highlightX, chartTop, highlightX, chartBottom, crosshairPaint);
+            canvas.drawCircle(highlightX, highlightY, dp(3.4f), markerPaint);
         }
-
-        canvas.drawText(String.format(Locale.getDefault(), "+%.1f%%", maxAbs * 100d),
-                dp(4f), chartTop + dp(2f), labelPaint);
-        canvas.drawText(String.format(Locale.getDefault(), "-%.1f%%", maxAbs * 100d),
-                dp(4f), chartBottom + dp(2f), labelPaint);
-        float rightEdge = getWidth() - dp(6f);
-        canvas.save();
-        canvas.rotate(-90f, rightEdge, chartTop + (chartBottom - chartTop) / 2f);
-        canvas.drawText("当前区间日收益", rightEdge, chartTop + (chartBottom - chartTop) / 2f, labelPaint);
-        canvas.restore();
-        if (showBottomTimeLabels) {
-            drawXLabels(canvas, chartLeft, chartRight, chartBottom, startTs, endTs);
-        }
+        canvas.drawLine(chartLeft, zeroY, chartRight, zeroY, axisPaint);
+        drawLabels(canvas, chartTop, chartBottom, chartMax);
     }
 
-    // 绘制基础网格。
+    // 绘制基础网格和边框。
     private void drawFrame(Canvas canvas, float left, float top, float right, float bottom) {
         float horizontalStep = (bottom - top) / 4f;
-        float verticalStep = (right - left) / 4f;
         for (int i = 0; i <= 4; i++) {
             canvas.drawLine(left, top + horizontalStep * i, right, top + horizontalStep * i, gridPaint);
+        }
+        float verticalStep = (right - left) / 4f;
+        for (int i = 0; i <= 4; i++) {
             canvas.drawLine(left + verticalStep * i, top, left + verticalStep * i, bottom, gridPaint);
         }
         canvas.drawLine(left, top, left, bottom, axisPaint);
         canvas.drawLine(left, bottom, right, bottom, axisPaint);
     }
 
-    // 把时间映射到横坐标，和主图共用同一时间轴。
-    private float mapX(long timestamp, long start, long end, float left, float right) {
-        double ratio = (double) (timestamp - start) / Math.max(1d, (double) (end - start));
-        ratio = Math.max(0d, Math.min(1d, ratio));
-        return (float) (left + ratio * (right - left));
-    }
-
-    // 把收益率映射到纵坐标。
-    private float mapY(double value, double min, double max, float top, float bottom) {
-        double ratio = (value - min) / Math.max(1e-9, max - min);
-        return (float) (bottom - ratio * (bottom - top));
-    }
-
-    // dp 转像素。
-    private float dp(float value) {
-        return value * getResources().getDisplayMetrics().density;
-    }
-
-    // 应用透明度。
-    private int applyAlpha(int color, int alpha) {
-        int safeAlpha = Math.max(0, Math.min(255, alpha));
-        return (color & 0x00FFFFFF) | (safeAlpha << 24);
+    // 绘制仓位比例刻度和标题。
+    private void drawLabels(Canvas canvas, float top, float bottom, double chartMax) {
+        canvas.drawText(String.format(Locale.getDefault(), "%.1f%%", chartMax * 100d),
+                dp(4f), top + dp(4f), labelPaint);
+        canvas.drawText("0%", dp(4f), bottom + dp(2f), labelPaint);
+        float rightEdge = getWidth() - dp(6f);
+        canvas.save();
+        canvas.rotate(-90f, rightEdge, top + (bottom - top) / 2f);
+        canvas.drawText("当前区间仓位比例", rightEdge, top + (bottom - top) / 2f, labelPaint);
+        canvas.restore();
     }
 
     // 按当前横坐标更新共享十字光标。
@@ -330,7 +311,7 @@ public class DailyReturnChartView extends View {
         invalidate();
     }
 
-    // 按时间找到最近的日收益柱。
+    // 按时间找到最近的数据点。
     private int findNearestIndexByTimestamp(long timestamp) {
         int bestIndex = 0;
         long bestDistance = Long.MAX_VALUE;
@@ -365,6 +346,24 @@ public class DailyReturnChartView extends View {
         }
     }
 
+    // 把数值映射到纵坐标。
+    private float mapY(double value, double min, double max, float top, float bottom) {
+        double ratio = (value - min) / Math.max(1e-9, max - min);
+        return (float) (bottom - ratio * (bottom - top));
+    }
+
+    // 把时间映射到横坐标。
+    private float mapX(long timestamp, long start, long end, float left, float right) {
+        double ratio = (double) (timestamp - start) / Math.max(1d, (double) (end - start));
+        ratio = Math.max(0d, Math.min(1d, ratio));
+        return (float) (left + ratio * (right - left));
+    }
+
+    // dp 转像素。
+    private float dp(float value) {
+        return value * getResources().getDisplayMetrics().density;
+    }
+
     private float resolveHighlightX(long startTs, long endTs) {
         if (highlightedXRatio >= 0f) {
             return chartLeft + highlightedXRatio * (chartRight - chartLeft);
@@ -375,20 +374,13 @@ public class DailyReturnChartView extends View {
         return chartLeft;
     }
 
-    private void drawXLabels(Canvas canvas, float left, float right, float bottom, long startTs, long endTs) {
-        String start = formatLabelTime(startTs);
-        String middle = formatLabelTime(startTs + (endTs - startTs) / 2L);
-        String end = formatLabelTime(endTs);
-        canvas.drawText(start, left + labelPaint.measureText(start) / 2f, bottom + dp(12f), labelPaint);
-        canvas.drawText(middle, left + (right - left) / 2f, bottom + dp(12f), labelPaint);
-        canvas.drawText(end, right - labelPaint.measureText(end) / 2f, bottom + dp(12f), labelPaint);
-    }
-
-    private String formatLabelTime(long timestamp) {
-        return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(timestamp);
-    }
-
     private float clampRatio(float ratio) {
         return Math.max(0f, Math.min(1f, ratio));
+    }
+
+    // 应用透明度，避免附图过于厚重。
+    private int applyAlpha(int color, int alpha) {
+        int safeAlpha = Math.max(0, Math.min(255, alpha));
+        return (color & 0x00FFFFFF) | (safeAlpha << 24);
     }
 }

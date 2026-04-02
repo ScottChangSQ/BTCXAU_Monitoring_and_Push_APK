@@ -145,7 +145,8 @@
                             android:paddingHorizontal="0dp"
                             android:text="1D"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="10sp"
+                            app:cornerRadius="0dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange7d"
@@ -160,7 +161,8 @@
                             android:paddingHorizontal="0dp"
                             android:text="7D"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="10sp"
+                            app:cornerRadius="0dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1m"
@@ -175,7 +177,8 @@
                             android:paddingHorizontal="0dp"
                             android:text="1M"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="10sp"
+                            app:cornerRadius="0dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange3m"
@@ -190,7 +193,8 @@
                             android:paddingHorizontal="0dp"
                             android:text="3M"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="10sp"
+                            app:cornerRadius="0dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRange1y"
@@ -205,7 +209,8 @@
                             android:paddingHorizontal="0dp"
                             android:text="1Y"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="10sp"
+                            app:cornerRadius="0dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRangeAll"
@@ -220,7 +225,8 @@
                             android:paddingHorizontal="0dp"
                             android:text="ALL"
                             android:textAllCaps="false"
-                            android:textSize="10sp" />
+                            android:textSize="10sp"
+                            app:cornerRadius="0dp" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <LinearLayout
@@ -356,7 +362,7 @@
                     <com.binance.monitor.ui.account.EquityCurveView
                         android:id="@+id/equityCurveView"
                         android:layout_width="match_parent"
-                        android:layout_height="220dp"
+                        android:layout_height="204dp"
                         android:layout_marginTop="6dp" />
 
                     <TextView
@@ -368,17 +374,23 @@
                         android:textSize="12sp"
                         android:visibility="gone" />
 
+                    <com.binance.monitor.ui.account.PositionRatioChartView
+                        android:id="@+id/positionRatioChartView"
+                        android:layout_width="match_parent"
+                        android:layout_height="104dp"
+                        android:layout_marginTop="0dp" />
+
                     <com.binance.monitor.ui.account.DrawdownChartView
                         android:id="@+id/drawdownChartView"
                         android:layout_width="match_parent"
-                        android:layout_height="132dp"
-                        android:layout_marginTop="2dp" />
+                        android:layout_height="112dp"
+                        android:layout_marginTop="0dp" />
 
                     <com.binance.monitor.ui.account.DailyReturnChartView
                         android:id="@+id/dailyReturnChartView"
                         android:layout_width="match_parent"
-                        android:layout_height="132dp"
-                        android:layout_marginTop="1dp" />
+                        android:layout_height="126dp"
+                        android:layout_marginTop="0dp" />
 
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/recyclerCurveIndicators"
@@ -445,7 +457,8 @@
                                 android:minWidth="0dp"
                                 android:text="日收益"
                                 android:textAllCaps="false"
-                                android:textSize="10sp" />
+                                android:textSize="10sp"
+                                app:cornerRadius="0dp" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnReturnMonth"
@@ -458,7 +471,8 @@
                                 android:minWidth="0dp"
                                 android:text="月收益"
                                 android:textAllCaps="false"
-                                android:textSize="10sp" />
+                                android:textSize="10sp"
+                                app:cornerRadius="0dp" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnReturnYear"
@@ -471,7 +485,8 @@
                                 android:minWidth="0dp"
                                 android:text="年收益"
                                 android:textAllCaps="false"
-                                android:textSize="10sp" />
+                                android:textSize="10sp"
+                                app:cornerRadius="0dp" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnReturnStage"
@@ -484,7 +499,8 @@
                                 android:minWidth="0dp"
                                 android:text="阶段收益"
                                 android:textAllCaps="false"
-                                android:textSize="10sp" />
+                                android:textSize="10sp"
+                                app:cornerRadius="0dp" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
 
                         <com.google.android.material.button.MaterialButtonToggleGroup
@@ -502,7 +518,8 @@
                                 android:minWidth="0dp"
                                 android:text="收益率"
                                 android:textAllCaps="false"
-                                android:textSize="10sp" />
+                                android:textSize="10sp"
+                                app:cornerRadius="0dp" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnReturnsAmount"
@@ -512,7 +529,8 @@
                                 android:minWidth="0dp"
                                 android:text="收益额"
                                 android:textAllCaps="false"
-                                android:textSize="10sp" />
+                                android:textSize="10sp"
+                                app:cornerRadius="0dp" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
                     </LinearLayout>
 
@@ -1013,7 +1031,8 @@
                             android:minWidth="0dp"
                             android:text="全部"
                             android:textAllCaps="false"
-                            android:textSize="11sp" />
+                            android:textSize="11sp"
+                            app:cornerRadius="0dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnTradePnlBuy"
@@ -1023,7 +1042,8 @@
                             android:minWidth="0dp"
                             android:text="买入"
                             android:textAllCaps="false"
-                            android:textSize="11sp" />
+                            android:textSize="11sp"
+                            app:cornerRadius="0dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnTradePnlSell"
@@ -1033,7 +1053,8 @@
                             android:minWidth="0dp"
                             android:text="卖出"
                             android:textAllCaps="false"
-                            android:textSize="11sp" />
+                            android:textSize="11sp"
+                            app:cornerRadius="0dp" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <TextView

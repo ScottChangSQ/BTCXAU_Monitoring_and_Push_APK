@@ -564,6 +564,8 @@ public class AccountStorageRepository {
                         .append(point.getEquity())
                         .append(",\"balance\":")
                         .append(point.getBalance())
+                        .append(",\"positionRatio\":")
+                        .append(point.getPositionRatio())
                         .append("}");
                 first = false;
             }
@@ -585,7 +587,8 @@ public class AccountStorageRepository {
                     result.add(new CurvePoint(
                             item.optLong("timestamp", 0L),
                             item.optDouble("equity", 0d),
-                            item.optDouble("balance", 0d)
+                            item.optDouble("balance", 0d),
+                            item.optDouble("positionRatio", 0d)
                     ));
                 }
             }
