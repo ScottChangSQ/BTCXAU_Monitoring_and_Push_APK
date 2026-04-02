@@ -8,7 +8,7 @@ public class SensitiveDisplayMaskerTest {
 
     @Test
     public void maskAccount_returnsMaskText_whenPrivacyEnabled() {
-        assertEquals("****", SensitiveDisplayMasker.maskAccount("7400048", true));
+        assertEquals(SensitiveDisplayMasker.MASK_TEXT, SensitiveDisplayMasker.maskAccount("7400048", true));
     }
 
     @Test
@@ -18,12 +18,12 @@ public class SensitiveDisplayMaskerTest {
 
     @Test
     public void maskQuantity_returnsMaskText_whenPrivacyEnabled() {
-        assertEquals("****", SensitiveDisplayMasker.maskQuantity("2.50 手", true));
+        assertEquals(SensitiveDisplayMasker.MASK_TEXT, SensitiveDisplayMasker.maskQuantity("2.50 手", true));
     }
 
     @Test
     public void maskAccountId_returnsMaskText_whenPrivacyEnabled() {
-        assertEquals("****", SensitiveDisplayMasker.maskAccountId("7400048", true));
+        assertEquals(SensitiveDisplayMasker.MASK_TEXT, SensitiveDisplayMasker.maskAccountId("7400048", true));
     }
 
     @Test

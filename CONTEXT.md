@@ -2,6 +2,8 @@
 
 ## 当前正在做什么
 - 正在继续第二步骤：已先补完“服务端 / 快照格式 / 历史仓位比例”链路，并开始把仓位比例图接到账户统计曲线区。
+- 已修复异常同步链路的三处关键缺口：远端网关地址不再继续回退到 `10.0.2.2/127.0.0.1/localhost`，相同异常同步错误不再每 8 秒刷一遍日志，本地已收盘 K 线异常判断也重新接回到实时流和 REST 回退流。
+- 已修复“服务端异常同步失败后 APP 不再新增异常提醒 / K 线上无新增异常提示”的问题：服务端失败后会用本地补判做兜底，恢复后又切回服务端同步，并用稳定记录 ID 和通知冷却避免重复提醒。
 - 净值/结余曲线模块已新增仓位比例子图，并把主图时间刻度下放到底部附图，开始按统一横轴联动四张图。
 - 已修正共享高亮逻辑：附图长按时，会按当前目标时间重新取回撤、日收益和仓位比例，不再只沿用旧时间点。
 - 已修复退出登录后账户统计残留旧数据：退出时清空页面态、本地缓存和晚到回写入口，账户概览回到无数据。
@@ -11,14 +13,20 @@
 - 已通过 `.\gradlew.bat testDebugUnitTest assembleDebug` 完整验证。
 - 新一轮第一步骤已继续补强：账户统计页 15 个分段按钮在 XML 初始值层面统一改成 `0dp` 方角，避免 `MaterialButtonToggleGroup` 重新套回圆角。
 - 新一轮第一步骤已继续补强：安装包图标新增 `mipmap/ic_launcher` 与 `mipmap/ic_launcher_round`，应用本体和全部桌面入口别名统一改走这套新图标资源，并重新通过 `assembleDebug testDebugUnitTest`。
+- 已补完本轮第二步骤里的 4 项运行态修订：悬浮窗产品盈亏改成 `BTC（+/-$金额）` 同行展示、宽度收窄并固定；悬浮窗价格改用实时价格缓存，不再落回旧收盘价；K 线位于最右侧时自动刷新继续跟随；K 线周期已支持退出重进后记忆恢复。
+- 已统一把隐私遮罩文案改成单个 `*`，不再使用 `****`，并同步修正相关单测。
+- 已通过 `.\gradlew.bat assembleDebug testDebugUnitTest` 与 `.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response bridge.mt5_gateway.tests.test_abnormal_gateway` 验证。
+- 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.AbnormalGatewayClientTest" --tests "com.binance.monitor.data.local.AbnormalRecordIdentityTest" --tests "com.binance.monitor.service.AbnormalSyncRuntimeHelperTest"`。
 
 ## 上次停在哪个位置
 - 停在“历史仓位比例链路已打通，账户统计曲线区已接入仓位比例子图并重新编译通过”的状态。
+- 若下一步继续复核异常同步 / 新增异常提醒 / K 线异常提示，优先看 `MonitorService`、`AbnormalGatewayClient`、`AbnormalRecordManager`、`server_v2.py`。
 - 若下一步继续做账户统计曲线区，优先看 `PositionRatioChartView`、`AccountStatsBridgeActivity`、`activity_account_stats.xml`。
 - 若下一步继续做历史仓位比例来源，优先看 `server_v2.py`、`CurvePoint`、`Mt5BridgeGatewayClient`、`AccountStorageRepository`。
 - 若下一步继续复核退出登录空态，优先看 `AccountStatsBridgeActivity`、`AccountSnapshotDisplayResolver`。
 - 若下一步继续复核异常圆点来源与覆盖范围，优先看 `HistoricalAbnormalRecordBuilder`、`MarketChartActivity`、`server_v2.py`。
 - 若下一步继续复核无加粗/方角 UI，优先看 `styles.xml`、`themes.xml` 以及 `activity_account_stats.xml`、`activity_main.xml`、`activity_settings.xml`、`activity_settings_detail.xml`。
+- 若下一步继续做第二步骤剩余项，优先看 `MarketChartActivity`、`KlineChartView`、`FloatingWindowManager`、`MonitorService`，尤其是历史成交上图、长按联动、以及多周期数据刷新策略。
 
 ## 近期关键决定和原因
 - 历史仓位比例直接挂到 `curvePoints` 上，而不是单开一条松散数组；原因是这样服务端增量、客户端缓存、本地恢复和图表联动都能复用同一时间轴。
@@ -46,3 +54,11 @@
 - 安装包图标统一绑定新图标资源；原因是仅改应用内图标不够，用户要求安装后的 launcher 图标也同步更新。
 - 账户统计分段按钮的方角修复改成“XML 初始角半径为 0”；原因是仅在 Activity 运行时改角半径会被 `MaterialButtonToggleGroup` 的初始形状缓存覆盖。
 - 第二步骤第 1 项暂时不直接落地伪图；原因是当前历史曲线数据只有净值和结余，没有历史仓位比例，不能在不补数据源的前提下真实绘制仓位比例曲线。
+- 悬浮窗价格改成“实时价格缓存优先、已收盘 K 线只作成交量/成交额回退”；原因是用户指出悬浮窗价格与 K 线页不一致，旧实现只吃已收盘 K 线会天然慢一拍。
+- 实时价格发布不再依赖“大价差阈值”；原因是 BTC 高价位下原阈值会吞掉大量小幅更新，导致悬浮窗与图表不同步。
+- K 线自动刷新前先判断是否仍贴着最新K线，再决定是否 `scrollToLatest()`；原因是用户只要求“当前在最右侧时自动跟随”，不能把用户主动翻历史的视口强拉回去。
+- K 线周期记忆只持久化周期键，不绑定标的；原因是用户只要求记住最后一次周期，切换 BTC/XAU 时仍应沿用同一周期习惯。
+- 隐私遮罩文案统一改成单个 `*`；原因是用户明确要求所有隐藏值都用 `*` 代替，而不是 `****`。
+- 本地已收盘 K 线补判只负责“记录落库 + 图上可见”，只有在异常同步已经尝试过且当前不健康时才补发本地通知；原因是既要兜住服务端故障，又不能在首次启动和同步恢复后重复提醒。
+- 异常同步失败日志改成“同一错误按冷却时间节流、错误变化时立即重记”；原因是用户日志里 404 / localhost 回退失败会固定频率刷屏。
+- 服务端回补提醒在客户端增加冷却判定；原因是本地兜底通知过的同一轮异常，等服务端恢复后不应再弹第二次。

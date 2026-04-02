@@ -9,6 +9,7 @@ import android.content.Context;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
+import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.model.AbnormalRecord;
 
 import org.json.JSONArray;
@@ -20,10 +21,10 @@ import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.UUID;
 
 public class AbnormalRecordManager {
 
@@ -84,7 +85,7 @@ public class AbnormalRecordManager {
                                                     double percentChange,
                                                     String triggerSummary) {
         return new AbnormalRecord(
-                UUID.randomUUID().toString(),
+                buildStableRecordId(symbol, closeTime, triggerSummary),
                 symbol,
                 System.currentTimeMillis(),
                 closeTime,
@@ -96,6 +97,16 @@ public class AbnormalRecordManager {
                 percentChange,
                 triggerSummary
         );
+    }
+
+    // 生成与服务端同口径的稳定记录 ID，便于本地补判和服务端回补去重。
+    static String buildStableRecordId(String symbol, long closeTime, String triggerSummary) {
+        String raw = normalizeStableRecordSymbol(symbol)
+                + ":"
+                + closeTime
+                + ":"
+                + (triggerSummary == null ? "" : triggerSummary.trim());
+        return sha1(raw);
     }
 
     public synchronized void clearAll() {
@@ -171,6 +182,31 @@ public class AbnormalRecordManager {
                 new java.io.FileOutputStream(storeFile, false), StandardCharsets.UTF_8)) {
             writer.write(array.toString());
         } catch (Exception ignored) {
+        }
+    }
+
+    private static String normalizeStableRecordSymbol(String symbol) {
+        String normalized = symbol == null ? "" : symbol.trim().toUpperCase();
+        if (AppConstants.SYMBOL_XAU.equals(normalized) || "XAU".equals(normalized) || "GOLD".equals(normalized)) {
+            return "XAUUSD";
+        }
+        if (AppConstants.SYMBOL_BTC.equals(normalized) || "BTC".equals(normalized) || "BTCUSD".equals(normalized) || "XBT".equals(normalized)) {
+            return "BTCUSDT";
+        }
+        return normalized;
+    }
+
+    private static String sha1(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] bytes = digest.digest((value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(bytes.length * 2);
+            for (byte current : bytes) {
+                builder.append(String.format("%02x", current));
+            }
+            return builder.toString();
+        } catch (Exception exception) {
+            throw new IllegalStateException("生成异常记录ID失败", exception);
         }
     }
 }

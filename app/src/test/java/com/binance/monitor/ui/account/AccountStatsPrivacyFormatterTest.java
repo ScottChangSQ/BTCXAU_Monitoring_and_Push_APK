@@ -1,5 +1,7 @@
 package com.binance.monitor.ui.account;
 
+import com.binance.monitor.util.SensitiveDisplayMasker;
+
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -8,7 +10,7 @@ public class AccountStatsPrivacyFormatterTest {
 
     @Test
     public void formatOverviewTitle_returnsMaskedAccount_whenPrivacyEnabled() {
-        assertEquals("账户-****",
+        assertEquals("账户-" + SensitiveDisplayMasker.MASK_TEXT,
                 AccountStatsPrivacyFormatter.formatOverviewTitle("7400048", true));
     }
 
@@ -20,13 +22,13 @@ public class AccountStatsPrivacyFormatterTest {
 
     @Test
     public void formatRefreshMeta_replacesValue_whenPrivacyEnabled() {
-        assertEquals("更新时间 ****",
+        assertEquals("更新时间 " + SensitiveDisplayMasker.MASK_TEXT,
                 AccountStatsPrivacyFormatter.formatRefreshMeta("09:30 / 5s", true));
     }
 
     @Test
     public void maskValue_returnsMaskText_forReturnTableValue_whenPrivacyEnabled() {
-        assertEquals("****",
+        assertEquals(SensitiveDisplayMasker.MASK_TEXT,
                 AccountStatsPrivacyFormatter.maskValue("+12.43%", true));
     }
 

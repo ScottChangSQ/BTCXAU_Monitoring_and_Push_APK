@@ -94,4 +94,22 @@ public class AbnormalGatewayClientTest {
         assertEquals("BTCUSDT", payload.getJSONArray("configs").getJSONObject(0).getString("symbol"));
         assertEquals("XAUUSD", payload.getJSONArray("configs").getJSONObject(1).getString("symbol"));
     }
+
+    @Test
+    public void resolveCandidateBaseUrlsShouldAvoidLocalFallbacksForRemoteHost() {
+        List<String> urls = AbnormalGatewayClient.resolveCandidateBaseUrls("http://43.155.214.62:8787");
+
+        assertEquals(1, urls.size());
+        assertEquals("http://43.155.214.62:8787", urls.get(0));
+    }
+
+    @Test
+    public void resolveCandidateBaseUrlsShouldKeepLocalFallbacksForLocalHost() {
+        List<String> urls = AbnormalGatewayClient.resolveCandidateBaseUrls("http://127.0.0.1:8787");
+
+        assertEquals(3, urls.size());
+        assertEquals("http://127.0.0.1:8787", urls.get(0));
+        assertEquals("http://10.0.2.2:8787", urls.get(1));
+        assertEquals("http://localhost:8787", urls.get(2));
+    }
 }

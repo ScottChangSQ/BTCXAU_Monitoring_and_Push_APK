@@ -1,3 +1,7 @@
+/*
+ * 行情前台服务，负责拉取/接收行情、同步异常记录、驱动通知，以及刷新悬浮窗。
+ * WebSocket、异常网关、本地异常记录和悬浮窗都在这里汇总调度。
+ */
 package com.binance.monitor.service;
 
 import android.app.Service;
@@ -40,6 +44,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MonitorService extends Service {
+    private static final long ABNORMAL_SYNC_ERROR_LOG_COOLDOWN_MS = 60_000L;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Map<String, Boolean> socketStates = new HashMap<>();
@@ -94,6 +99,10 @@ public class MonitorService extends Service {
     private volatile boolean abnormalSyncInFlight;
     private long abnormalSyncSeq;
     private boolean abnormalBootstrapSynced;
+    private boolean abnormalSyncAttempted;
+    private boolean abnormalSyncHealthy;
+    private String lastAbnormalSyncError = "";
+    private long lastAbnormalSyncErrorAt;
 
     @Override
     public void onCreate() {
@@ -218,6 +227,7 @@ public class MonitorService extends Service {
                     if (data.isClosed()) {
                         maybePublishPrice(symbol, data, now, true);
                         repository.updateClosedKline(data);
+                        handleClosedKline(data);
                     } else {
                         maybePublishPrice(symbol, data, now, false);
                     }
@@ -272,13 +282,26 @@ public class MonitorService extends Service {
     // 同步完成后统一写入本地记录，并只对真正新的提醒发通知。
     private void applyAbnormalSyncResult(@Nullable AbnormalGatewayClient.SyncResult result) {
         abnormalSyncInFlight = false;
+        abnormalSyncAttempted = true;
+        long now = System.currentTimeMillis();
         if (result == null || !result.isSuccess()) {
-            String error = result == null ? "未知错误" : result.getError();
-            if (error != null && !error.trim().isEmpty()) {
+            abnormalSyncHealthy = false;
+            String error = normalizeAbnormalSyncError(result == null ? "未知错误" : result.getError());
+            if (AbnormalSyncRuntimeHelper.shouldLogSyncError(
+                    lastAbnormalSyncError,
+                    lastAbnormalSyncErrorAt,
+                    error,
+                    now,
+                    ABNORMAL_SYNC_ERROR_LOG_COOLDOWN_MS)) {
                 logManager.warn("异常同步失败: " + error);
+                lastAbnormalSyncError = error;
+                lastAbnormalSyncErrorAt = now;
             }
             return;
         }
+        abnormalSyncHealthy = true;
+        lastAbnormalSyncError = "";
+        lastAbnormalSyncErrorAt = 0L;
         abnormalSyncSeq = Math.max(abnormalSyncSeq, result.getSyncSeq());
         int appendedCount = 0;
         for (AbnormalRecord record : result.getRecords()) {
@@ -307,6 +330,14 @@ public class MonitorService extends Service {
         if (!Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
             return;
         }
+        long now = System.currentTimeMillis();
+        if (!AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
+                alert.getSymbols(),
+                lastNotifyAt,
+                now,
+                AppConstants.NOTIFICATION_COOLDOWN_MS)) {
+            return;
+        }
         String title = alert.getTitle() == null || alert.getTitle().trim().isEmpty()
                 ? getString(R.string.alert_title)
                 : alert.getTitle().trim();
@@ -315,6 +346,7 @@ public class MonitorService extends Service {
         for (String symbol : alert.getSymbols()) {
             if (symbol != null && !symbol.trim().isEmpty()) {
                 floatingWindowManager.notifyAbnormalEvent(symbol);
+                lastNotifyAt.put(symbol.trim(), now);
             }
         }
         if (!content.isEmpty()) {
@@ -386,6 +418,9 @@ public class MonitorService extends Service {
     }
 
     private void handleClosedKline(KlineData data) {
+        if (data == null || configManager == null || recordManager == null) {
+            return;
+        }
         EvaluationResult evaluation = evaluate(data, configManager.getSymbolConfig(data.getSymbol()), configManager.isUseAndMode());
         if (!evaluation.participating || !evaluation.abnormal) {
             return;
@@ -401,7 +436,9 @@ public class MonitorService extends Service {
                 data.getPercentChange(),
                 evaluation.summary
         );
-        repository.addRecord(record);
+        if (!recordManager.addRecordIfAbsent(record)) {
+            return;
+        }
         floatingWindowManager.notifyAbnormalEvent(data.getSymbol());
         logManager.warn(data.getSymbol()
                 + " 异常触发: "
@@ -412,7 +449,10 @@ public class MonitorService extends Service {
                 + FormatUtils.formatVolume(data.getVolume())
                 + " | amount="
                 + FormatUtils.formatAmount(data.getQuoteAssetVolume()));
-        queueNotification(record);
+        if (AbnormalSyncRuntimeHelper.shouldUseLocalFallbackNotification(abnormalSyncAttempted, abnormalSyncHealthy)
+                && Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
+            queueNotification(record);
+        }
     }
 
     private EvaluationResult evaluate(KlineData data, SymbolConfig config, boolean useAndMode) {
@@ -462,6 +502,9 @@ public class MonitorService extends Service {
         PendingRound round;
         synchronized (pendingRounds) {
             round = pendingRounds.remove(roundKey);
+        }
+        if (!Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
+            return;
         }
         if (round == null || round.records.isEmpty()) {
             return;
@@ -638,6 +681,7 @@ public class MonitorService extends Service {
                         lastKlineTickAt.put(symbol, fetchedAt);
                         repository.updateClosedKline(data);
                         maybePublishPrice(symbol, data, fetchedAt, true);
+                        handleClosedKline(data);
                         logManager.warn(symbol + " 实时流超时，已回退REST刷新，最近收盘(本地时区) "
                                 + FormatUtils.formatDateTime(data.getCloseTime()));
                     } catch (Exception exception) {
@@ -687,6 +731,12 @@ public class MonitorService extends Service {
             }
         }
         return updatedAt;
+    }
+
+    // 统一整理异常同步错误文案，避免空串和空白内容破坏节流判断。
+    private String normalizeAbnormalSyncError(@Nullable String error) {
+        String safe = error == null ? "" : error.trim();
+        return safe.isEmpty() ? "未知错误" : safe;
     }
 
     private static class PendingRound {

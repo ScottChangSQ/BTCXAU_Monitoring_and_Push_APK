@@ -17,9 +17,11 @@ import com.binance.monitor.util.GatewayUrlResolver;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -225,20 +227,43 @@ public class AbnormalGatewayClient {
     }
 
     private List<String> buildCandidateBaseUrls() {
+        String configuredBaseUrl = configManager != null
+                ? configManager.getMt5GatewayBaseUrl()
+                : AppConstants.MT5_GATEWAY_BASE_URL;
+        return resolveCandidateBaseUrls(configuredBaseUrl);
+    }
+
+    // 远端网关地址只请求自身，只有本地地址才附带模拟器/localhost 回退。
+    static List<String> resolveCandidateBaseUrls(@Nullable String configuredBaseUrl) {
         Set<String> urls = new LinkedHashSet<>();
-        if (configManager != null) {
-            urls.add(configManager.getMt5GatewayBaseUrl());
-        } else {
-            urls.add(AppConstants.MT5_GATEWAY_BASE_URL);
+        String primary = GatewayUrlResolver.normalizeBaseUrl(configuredBaseUrl, AppConstants.MT5_GATEWAY_BASE_URL);
+        urls.add(primary);
+        if (shouldAppendLocalFallbacks(primary)) {
+            urls.add("http://10.0.2.2:8787");
+            urls.add("http://127.0.0.1:8787");
+            urls.add("http://localhost:8787");
         }
-        urls.add("http://10.0.2.2:8787");
-        urls.add("http://127.0.0.1:8787");
-        urls.add("http://localhost:8787");
         List<String> result = new ArrayList<>();
         for (String url : urls) {
             result.add(GatewayUrlResolver.normalizeBaseUrl(url, AppConstants.MT5_GATEWAY_BASE_URL));
         }
         return result;
+    }
+
+    private static boolean shouldAppendLocalFallbacks(String baseUrl) {
+        try {
+            URI uri = new URI(GatewayUrlResolver.normalizeBaseUrl(baseUrl, AppConstants.MT5_GATEWAY_BASE_URL));
+            String host = uri.getHost();
+            if (host == null || host.trim().isEmpty()) {
+                return false;
+            }
+            String normalizedHost = host.trim().toLowerCase(Locale.ROOT);
+            return "127.0.0.1".equals(normalizedHost)
+                    || "localhost".equals(normalizedHost)
+                    || "10.0.2.2".equals(normalizedHost);
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     static String toLocalSymbol(String symbol) {

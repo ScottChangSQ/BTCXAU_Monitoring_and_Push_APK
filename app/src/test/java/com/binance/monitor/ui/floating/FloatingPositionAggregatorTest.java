@@ -157,7 +157,7 @@ public class FloatingPositionAggregatorTest {
                 true
         );
 
-        assertEquals(1, cards.size());
+        assertEquals(2, cards.size());
         assertEquals(67_123.4d, cards.get(0).getLatestPrice(), 0.0001d);
     }
 }

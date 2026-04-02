@@ -9,7 +9,7 @@ import android.content.Context;
 import com.binance.monitor.data.local.ConfigManager;
 
 public final class SensitiveDisplayMasker {
-    public static final String MASK_TEXT = "****";
+    public static final String MASK_TEXT = "*";
 
     private SensitiveDisplayMasker() {
     }

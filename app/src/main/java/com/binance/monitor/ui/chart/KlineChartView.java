@@ -251,11 +251,13 @@ public class KlineChartView extends View {
 
     private final List<PriceAnnotation> positionAnnotations = new ArrayList<>();
     private final List<PriceAnnotation> pendingAnnotations = new ArrayList<>();
+    private final List<PriceAnnotation> historyTradeAnnotations = new ArrayList<>();
     private final List<PriceAnnotation> abnormalAnnotations = new ArrayList<>();
     @Nullable
     private AggregateCostAnnotation aggregateCostAnnotation;
     private boolean showPositionAnnotations = true;
     private boolean showPendingAnnotations = true;
+    private boolean showHistoryTradeAnnotations = true;
     private boolean showAggregateCostAnnotation = true;
     private String highlightedAnnotationGroupId = "";
     private boolean crosshairOnCandle = true;
@@ -512,6 +514,14 @@ public class KlineChartView extends View {
         invalidate();
     }
 
+    public void setHistoryTradeAnnotations(@Nullable List<PriceAnnotation> items) {
+        historyTradeAnnotations.clear();
+        if (items != null && !items.isEmpty()) {
+            historyTradeAnnotations.addAll(items);
+        }
+        invalidate();
+    }
+
     public void setAbnormalAnnotations(@Nullable List<PriceAnnotation> items) {
         abnormalAnnotations.clear();
         if (items != null && !items.isEmpty()) {
@@ -529,9 +539,11 @@ public class KlineChartView extends View {
     // 统一控制敏感叠加层显示，隐私关闭时保留 K 线主体但隐藏持仓相关标注。
     public void setOverlayVisibility(boolean showPositionAnnotations,
                                      boolean showPendingAnnotations,
+                                     boolean showHistoryTradeAnnotations,
                                      boolean showAggregateCostAnnotation) {
         this.showPositionAnnotations = showPositionAnnotations;
         this.showPendingAnnotations = showPendingAnnotations;
+        this.showHistoryTradeAnnotations = showHistoryTradeAnnotations;
         this.showAggregateCostAnnotation = showAggregateCostAnnotation;
         invalidate();
     }
@@ -884,6 +896,9 @@ public class KlineChartView extends View {
         }
         if (showPendingAnnotations) {
             drawOverlayAnnotations(canvas, pendingAnnotations);
+        }
+        if (showHistoryTradeAnnotations) {
+            drawOverlayAnnotations(canvas, historyTradeAnnotations);
         }
         drawOverlayAnnotations(canvas, abnormalAnnotations);
         if (showAggregateCostAnnotation) {
@@ -1311,6 +1326,8 @@ public class KlineChartView extends View {
                 continue;
             }
             boolean abnormalPointOnly = isAbnormalAnnotation(annotation);
+            boolean historyTradePointOnly = isHistoricalTradeAnnotation(annotation);
+            boolean pointOnly = abnormalPointOnly || historyTradePointOnly;
             float y = resolveAnnotationY(annotation);
             if (Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
                 continue;
@@ -1325,13 +1342,13 @@ public class KlineChartView extends View {
             float pointRadius = hasGroupHighlight
                     ? (selected ? dp(2.4f) : dp(1.1f))
                     : dp(1.7f);
-            if (!abnormalPointOnly) {
+            if (!pointOnly) {
                 overlayDashPaint.setColor(lineColor);
                 overlayDashPaint.setStrokeWidth(lineWidth);
                 canvas.drawLine(priceRect.left, y, priceRect.right, y, overlayDashPaint);
             }
 
-            float x = abnormalPointOnly
+            float x = pointOnly
                     ? resolveAnnotationXForFloorTime(annotation.anchorTimeMs)
                     : resolveAnnotationX(annotation.anchorTimeMs);
             if (Float.isNaN(x)) {
@@ -1348,11 +1365,16 @@ public class KlineChartView extends View {
                         y + capsuleHalfHeight
                 );
                 canvas.drawRoundRect(capsule, capsuleHalfWidth, capsuleHalfWidth, overlayPointPaint);
+            } else if (historyTradePointOnly) {
+                float radius = selected ? dp(3.1f) : dp(2.7f);
+                canvas.drawCircle(x, y, radius, overlayPointPaint);
             } else {
                 canvas.drawCircle(x, y, pointRadius, overlayPointPaint);
             }
 
-            if (!abnormalPointOnly && !annotation.label.isEmpty()) {
+            if (historyTradePointOnly && !annotation.label.isEmpty()) {
+                drawPointOverlayLabel(canvas, annotation.label, x, y, lineColor, selected);
+            } else if (!abnormalPointOnly && !annotation.label.isEmpty()) {
                 drawOverlayLabel(canvas, annotation.label, y, lineColor, selected);
             }
         }
@@ -1362,6 +1384,11 @@ public class KlineChartView extends View {
     // 异常点仅绘制红点，不绘制横线和标签。
     private boolean isAbnormalAnnotation(@Nullable PriceAnnotation annotation) {
         return annotation != null && annotation.groupId.startsWith("abn|");
+    }
+
+    // 历史成交点只绘制收盘点标记和短标签，不绘制整条横线。
+    private boolean isHistoricalTradeAnnotation(@Nullable PriceAnnotation annotation) {
+        return annotation != null && annotation.groupId.startsWith("tradehist|");
     }
 
     private float resolveAnnotationY(@Nullable PriceAnnotation annotation) {
@@ -1383,6 +1410,34 @@ public class KlineChartView extends View {
         float top = clamp(anchorY - boxH - dp(2f), priceRect.top, priceRect.bottom - boxH);
         RectF box = new RectF(left, top, left + boxW, top + boxH);
         int labelBgColor = selected ? 0xE61B2A40 : 0xCC1D2A3F;
+        overlayLabelBgPaint.setColor(labelBgColor);
+        canvas.drawRoundRect(box, dp(selected ? 3f : 2.5f), dp(selected ? 3f : 2.5f), overlayLabelBgPaint);
+        overlayLabelTextPaint.setColor(textColor);
+        canvas.drawText(text, box.left + padX, box.bottom - padY, overlayLabelTextPaint);
+    }
+
+    private void drawPointOverlayLabel(Canvas canvas,
+                                       String text,
+                                       float anchorX,
+                                       float anchorY,
+                                       int textColor,
+                                       boolean selected) {
+        float padX = dp(4f);
+        float padY = dp(2f);
+        float boxH = dp(12f);
+        float boxW = overlayLabelTextPaint.measureText(text) + padX * 2f;
+        boolean placeAbove = anchorY > priceRect.centerY();
+        float top = placeAbove
+                ? anchorY - boxH - dp(6f)
+                : anchorY + dp(6f);
+        top = clamp(top, priceRect.top, priceRect.bottom - boxH);
+        float preferredLeft = anchorX + dp(5f);
+        if (preferredLeft + boxW > priceRect.right) {
+            preferredLeft = anchorX - boxW - dp(5f);
+        }
+        float left = clamp(preferredLeft, priceRect.left, priceRect.right - boxW);
+        RectF box = new RectF(left, top, left + boxW, top + boxH);
+        int labelBgColor = selected ? 0xE61B2A40 : 0xD21B2A40;
         overlayLabelBgPaint.setColor(labelBgColor);
         canvas.drawRoundRect(box, dp(selected ? 3f : 2.5f), dp(selected ? 3f : 2.5f), overlayLabelBgPaint);
         overlayLabelTextPaint.setColor(textColor);
