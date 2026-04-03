@@ -53,6 +53,7 @@ SNAPSHOT_DELTA_ENABLED = os.getenv("SNAPSHOT_DELTA_ENABLED", "1").strip().lower(
 SNAPSHOT_DELTA_FALLBACK_RATIO = float(os.getenv("SNAPSHOT_DELTA_FALLBACK_RATIO", "0.85"))
 SNAPSHOT_SYNC_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_SYNC_CACHE_MAX_ENTRIES", "12")))
 SNAPSHOT_RANGE_ALL_DAYS = max(30, int(os.getenv("SNAPSHOT_RANGE_ALL_DAYS", "730")))
+MT5_HISTORY_LOOKAHEAD_HOURS = max(0, int(os.getenv("MT5_HISTORY_LOOKAHEAD_HOURS", "24")))
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
 ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "500")))
@@ -623,6 +624,11 @@ def _is_entry_close(entry_type: int) -> bool:
     return entry_type in (1, 2, 3)
 
 
+def _curve_exposure_side_for_close(deal_type: int) -> str:
+    # 平仓成交方向与原持仓方向相反，关闭曝光时需要回到原持仓侧。
+    return "Sell" if _is_buy_deal_type(deal_type) else "Buy"
+
+
 def _range_hours(range_key: str) -> int:
     mapping = {
         "1d": 24,
@@ -633,6 +639,14 @@ def _range_hours(range_key: str) -> int:
         "all": 24 * SNAPSHOT_RANGE_ALL_DAYS,
     }
     return mapping.get(range_key.lower(), 24 * 7)
+
+
+# MT5 Python 历史接口对“本地无时区 datetime”更稳定，避免 UTC aware 时间把当天后半段成交截掉。
+def _mt5_history_window(range_key: str) -> Tuple[datetime, datetime]:
+    now_local = datetime.now()
+    to_time = now_local + timedelta(hours=MT5_HISTORY_LOOKAHEAD_HOURS)
+    from_time = now_local - timedelta(hours=_range_hours(range_key))
+    return from_time, to_time
 
 
 def _is_mt5_configured() -> bool:
@@ -787,7 +801,19 @@ def _ensure_mt5() -> None:
     for path_value in attempts:
         label = path_value if path_value else "<auto>"
 
-        # First try: initialize with credentials directly.
+        # 优先附着到当前终端已有会话，避免重新拉起鉴权后进入缺历史缓存的上下文。
+        _shutdown_mt5()
+        initialized, init_message = _mt5_initialize(path_value)
+        if not initialized:
+            errors.append(f"init({label})={init_message}")
+        else:
+            logged_in, login_message = _mt5_login()
+            if logged_in:
+                mt5_last_connected_path = label
+                return
+            errors.append(f"login({label})={login_message}")
+
+        # 回退到带鉴权初始化，兼容机器上还没有可复用登录态的场景。
         for server_name in server_candidates:
             _shutdown_mt5()
             initialized, init_message = _mt5_initialize(
@@ -800,19 +826,6 @@ def _ensure_mt5() -> None:
                 mt5_last_connected_path = label
                 return
             errors.append(f"init+login({label},{server_name})={init_message}")
-
-        # Fallback: initialize first, then login.
-        _shutdown_mt5()
-        initialized, init_message = _mt5_initialize(path_value)
-        if not initialized:
-            errors.append(f"init({label})={init_message}")
-            continue
-
-        logged_in, login_message = _mt5_login()
-        if logged_in:
-            mt5_last_connected_path = label
-            return
-        errors.append(f"login({label})={login_message}")
 
     discovered_hint = ", ".join(MT5_TERMINAL_CANDIDATES[:3]) if MT5_TERMINAL_CANDIDATES else "none"
     raise RuntimeError(
@@ -836,9 +849,8 @@ def _deal_profit(deal) -> float:
 
 
 def _build_curve(range_key: str, current_positions: Optional[List[Dict]] = None) -> List[Dict]:
-    now = datetime.now(timezone.utc)
-    from_time = now - timedelta(hours=_range_hours(range_key))
-    deals = mt5.history_deals_get(from_time, now) or []
+    from_time, to_time = _mt5_history_window(range_key)
+    deals = mt5.history_deals_get(from_time, to_time) or []
     account = mt5.account_info()
     if account is None:
         return []
@@ -1105,7 +1117,7 @@ def _replay_curve_from_history(
         direction = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
 
         if _is_entry_close(entry):
-            _remove_curve_exposure(exposures, symbol, direction, volume)
+            _remove_curve_exposure(exposures, symbol, _curve_exposure_side_for_close(deal_type), volume)
         if _is_entry_open(entry):
             contract_size = contract_size_fn(symbol)
             _add_curve_exposure(exposures, symbol, direction, volume, price, contract_size)
@@ -1293,9 +1305,8 @@ def _map_pending_orders() -> List[Dict]:
 
 
 def _map_trades(range_key: str = "all") -> List[Dict]:
-    now = datetime.now(timezone.utc)
-    from_time = now - timedelta(hours=_range_hours(range_key))
-    deals = mt5.history_deals_get(from_time, now) or []
+    from_time, to_time = _mt5_history_window(range_key)
+    deals = mt5.history_deals_get(from_time, to_time) or []
     mapped = []
     open_batches: Dict[str, List[Dict[str, Any]]] = {}
     contract_size_cache: Dict[str, float] = {}

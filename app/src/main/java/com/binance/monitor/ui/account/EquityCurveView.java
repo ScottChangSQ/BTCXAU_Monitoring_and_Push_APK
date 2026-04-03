@@ -102,7 +102,7 @@ public class EquityCurveView extends View {
         equityPaint.setColor(palette.primary);
         equityPaint.setStyle(Paint.Style.STROKE);
         equityPaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveEquityStrokeDp()));
-        equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(5f), dp(4f)}, 0f));
+        equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(3f), dp(2f)}, 0f));
 
         balancePaint.setColor(Color.WHITE);
         balancePaint.setStyle(Paint.Style.STROKE);
@@ -162,7 +162,7 @@ public class EquityCurveView extends View {
         axisPaint.setColor(applyAlpha(palette.textSecondary, 210));
         gridPaint.setColor(applyAlpha(palette.stroke, 170));
         equityPaint.setColor(palette.primary);
-        equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(5f), dp(4f)}, 0f));
+        equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(3f), dp(2f)}, 0f));
         balancePaint.setColor(Color.WHITE);
         balancePaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveBalanceStrokeDp()));
         balancePaint.setPathEffect(null);

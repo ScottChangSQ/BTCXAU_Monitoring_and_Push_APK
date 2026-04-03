@@ -1,8 +1,8 @@
 package com.binance.monitor.ui.main;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 
-import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.model.AbnormalRecord;
 
 import org.junit.Test;
@@ -13,30 +13,35 @@ import java.util.List;
 public class RecentAbnormalRecordHelperTest {
 
     @Test
-    public void buildRecentDisplayShouldMergeSameCloseTimeRecords() {
+    public void buildRecentDisplayShouldKeepLatestRawRecordsWithoutMerging() {
         long now = 2_000_000L;
         List<AbnormalRecord> source = new ArrayList<>();
-        source.add(buildRecord("btc", AppConstants.SYMBOL_BTC, now - 1_000L, "成交量"));
-        source.add(buildRecord("xau", AppConstants.SYMBOL_XAU, now - 1_000L, "价格变化"));
+        AbnormalRecord first = buildRecord("btc", "BTCUSDT", now - 1_000L, "成交量");
+        AbnormalRecord second = buildRecord("xau", "XAUUSD", now - 1_000L, "价格变化");
+        source.add(first);
+        source.add(second);
 
         List<AbnormalRecord> display = RecentAbnormalRecordHelper.buildRecentDisplay(source, now, 10);
 
-        assertEquals(1, display.size());
-        assertEquals("BOTH", display.get(0).getSymbol());
+        assertEquals(2, display.size());
+        assertSame(first, display.get(0));
+        assertSame(second, display.get(1));
     }
 
     @Test
-    public void buildRecentDisplayShouldApplyLimitAndIgnoreOldRecords() {
+    public void buildRecentDisplayShouldApplyLimitWithoutTimeFiltering() {
         long now = 5_000_000L;
         List<AbnormalRecord> source = new ArrayList<>();
-        source.add(buildRecord("old", AppConstants.SYMBOL_BTC, now - 4_000_000L, "过旧"));
+        AbnormalRecord old = buildRecord("old", "BTCUSDT", now - 4_000_000L, "过旧");
+        source.add(old);
         for (int i = 0; i < 12; i++) {
-            source.add(buildRecord("n" + i, AppConstants.SYMBOL_BTC, now - i * 1_000L, "记录" + i));
+            source.add(buildRecord("n" + i, "BTCUSDT", now - i * 1_000L, "记录" + i));
         }
 
         List<AbnormalRecord> display = RecentAbnormalRecordHelper.buildRecentDisplay(source, now, 10);
 
         assertEquals(10, display.size());
+        assertSame(old, display.get(0));
     }
 
     private static AbnormalRecord buildRecord(String id, String symbol, long closeTime, String summary) {

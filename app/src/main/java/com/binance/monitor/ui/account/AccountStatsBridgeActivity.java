@@ -255,6 +255,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String lastLoggedSource = "";
     private String lastLoggedGateway = "";
     private String lastLoggedError = "";
+    private String lastTradeVisibilitySnapshotSignature = "";
+    private String lastTradeFilterVisibilitySignature = "";
     private long dynamicRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private long scheduledRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private int unchangedRefreshStreak = 0;
@@ -1358,7 +1360,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 clearSharedCurveHighlight();
                 return;
             }
-            applySharedCurveHighlight(point.getTimestamp(), xRatio, false);
+            applySharedCurveHighlight(point.getTimestamp(), xRatio, true);
         });
         binding.drawdownChartView.setOnTimeHighlightListener((timestamp, xRatio) -> {
             if (syncingCurveHighlight) {
@@ -2648,6 +2650,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         baseTrades = new ArrayList<>(effectiveTrades);
         baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
         allCurvePoints = normalizeCurvePoints(effectiveCurves, baseTrades);
+        logTradeVisibilitySnapshot(snapshotTrades, effectiveTrades, baseTrades);
         logAccountSnapshotEvents(basePositions, basePendingOrders, baseTrades, remoteConnected);
         ensureReturnStatsAnchor();
         if (!remoteConnected && !connectedOverviewCache.isEmpty()) {
@@ -5635,12 +5638,51 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (tradeSortDescending) {
             java.util.Collections.reverse(filtered);
         }
+        logTradeFilterVisibility(filtered, product, side, normalizedSort);
         tradeAdapter.submitList(filtered);
         binding.recyclerTrades.post(this::updateTradeScrollHandle);
         if (scrollToTop) {
             scrollTradesToTop();
         }
         updateTradePnlSummary(filtered, product, side, FILTER_DATE);
+    }
+
+    // 记录快照交易、历史缓存和页面基表的诊断摘要，定位漏单发生在数据装载的哪一层。
+    private void logTradeVisibilitySnapshot(List<TradeRecordItem> snapshotTrades,
+                                            List<TradeRecordItem> effectiveTrades,
+                                            List<TradeRecordItem> visibleBaseTrades) {
+        if (logManager == null) {
+            return;
+        }
+        String signature = "snapshot{" + TradeVisibilityDiagnosticsHelper.buildTradeSignature(snapshotTrades) + "}"
+                + ", effective{" + TradeVisibilityDiagnosticsHelper.buildTradeSignature(effectiveTrades) + "}"
+                + ", base{" + TradeVisibilityDiagnosticsHelper.buildTradeSignature(visibleBaseTrades) + "}";
+        if (signature.equals(lastTradeVisibilitySnapshotSignature)) {
+            return;
+        }
+        lastTradeVisibilitySnapshotSignature = signature;
+        logManager.info("Trade visibility snapshot: " + signature);
+    }
+
+    // 记录交易筛选条件与筛选结果，判断漏单是否只是被产品/方向/排序状态隐藏。
+    private void logTradeFilterVisibility(List<TradeRecordItem> filteredTrades,
+                                          String product,
+                                          String side,
+                                          String normalizedSort) {
+        if (logManager == null) {
+            return;
+        }
+        String signature = TradeVisibilityDiagnosticsHelper.buildFilterSignature(
+                product,
+                side,
+                normalizedSort,
+                filteredTrades
+        );
+        if (signature.equals(lastTradeFilterVisibilitySignature)) {
+            return;
+        }
+        lastTradeFilterVisibilitySignature = signature;
+        logManager.info("Trade visibility filter: " + signature);
     }
 
     private void scrollTradesToTop() {

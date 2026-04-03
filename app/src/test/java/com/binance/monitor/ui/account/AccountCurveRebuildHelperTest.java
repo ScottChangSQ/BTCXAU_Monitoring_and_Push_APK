@@ -55,4 +55,81 @@ public class AccountCurveRebuildHelperTest {
         assertEquals(110d, rebuilt.get(1).getEquity(), 1e-9);
         assertEquals(120d, rebuilt.get(2).getEquity(), 1e-9);
     }
+
+    @Test
+    public void rebuildShouldPreferSourceFloatingSpreadWhenItExists() {
+        List<CurvePoint> source = Arrays.asList(
+                new CurvePoint(1_000L, 100d, 100d, 0.10d),
+                new CurvePoint(2_000L, 118d, 100d, 0.20d),
+                new CurvePoint(3_000L, 120d, 100d, 0.00d)
+        );
+        List<TradeRecordItem> trades = Arrays.asList(
+                new TradeRecordItem(
+                        3_000L,
+                        "BTC",
+                        "BTC",
+                        "买入",
+                        100d,
+                        1d,
+                        100d,
+                        0d,
+                        "",
+                        20d,
+                        1_000L,
+                        3_000L,
+                        0d,
+                        100d,
+                        120d,
+                        1L,
+                        1L,
+                        1L,
+                        1
+                )
+        );
+
+        List<CurvePoint> rebuilt = AccountCurveRebuildHelper.rebuild(source, trades, 100d);
+
+        assertEquals(100d, rebuilt.get(0).getBalance(), 1e-9);
+        assertEquals(100d, rebuilt.get(1).getBalance(), 1e-9);
+        assertEquals(120d, rebuilt.get(2).getBalance(), 1e-9);
+        assertEquals(100d, rebuilt.get(0).getEquity(), 1e-9);
+        assertEquals(118d, rebuilt.get(1).getEquity(), 1e-9);
+        assertEquals(120d, rebuilt.get(2).getEquity(), 1e-9);
+    }
+
+    @Test
+    public void rebuildShouldIgnoreOutlierSourceFloatingSpread() {
+        List<CurvePoint> source = Arrays.asList(
+                new CurvePoint(1_000L, 100d, 100d, 0.10d),
+                new CurvePoint(2_000L, 5_100d, 100d, 0.20d),
+                new CurvePoint(3_000L, 120d, 100d, 0.00d)
+        );
+        List<TradeRecordItem> trades = Arrays.asList(
+                new TradeRecordItem(
+                        3_000L,
+                        "BTC",
+                        "BTC",
+                        "买入",
+                        100d,
+                        1d,
+                        100d,
+                        0d,
+                        "",
+                        20d,
+                        1_000L,
+                        3_000L,
+                        0d,
+                        100d,
+                        120d,
+                        1L,
+                        1L,
+                        1L,
+                        1
+                )
+        );
+
+        List<CurvePoint> rebuilt = AccountCurveRebuildHelper.rebuild(source, trades, 100d);
+
+        assertEquals(110d, rebuilt.get(1).getEquity(), 1e-9);
+    }
 }

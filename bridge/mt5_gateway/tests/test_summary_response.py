@@ -103,6 +103,18 @@ class SummaryResponseTests(unittest.TestCase):
         finally:
             server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
 
+    def test_deal_time_ms_supports_negative_offset_minutes(self):
+        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+        try:
+            server_v2.MT5_TIME_OFFSET_MINUTES = -180
+            deal = types.SimpleNamespace(time_msc=1775225086619, time=0)
+
+            value = server_v2._deal_time_ms(deal)
+
+            self.assertEqual(1775214286619, value)
+        finally:
+            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+
     def test_map_trades_applies_configured_offset_to_open_and_close_times(self):
         original_mt5 = server_v2.mt5
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
@@ -160,6 +172,174 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(1, len(trades))
         self.assertEqual(1775174628613, trades[0]["openTime"])
         self.assertEqual(1775178421284, trades[0]["closeTime"])
+
+    def test_map_trades_supports_negative_offset_for_recent_closed_trade(self):
+        original_mt5 = server_v2.mt5
+        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+
+        class _FakeMt5:
+            @staticmethod
+            def history_deals_get(from_time, to_time):
+                return [
+                    types.SimpleNamespace(
+                        symbol="BTCUSD",
+                        type=1,
+                        volume=0.01,
+                        ticket=1780804002,
+                        order=1787265273,
+                        position_id=1787265273,
+                        entry=0,
+                        time=1775225086,
+                        time_msc=1775225086619,
+                        price=66878.63,
+                        profit=0.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="open",
+                    ),
+                    types.SimpleNamespace(
+                        symbol="BTCUSD",
+                        type=0,
+                        volume=0.01,
+                        ticket=1780804031,
+                        order=1787265303,
+                        position_id=1787265273,
+                        entry=1,
+                        time=1775225142,
+                        time_msc=1775225142404,
+                        price=66860.77,
+                        profit=0.18,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="close",
+                    ),
+                ]
+
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        server_v2.mt5 = _FakeMt5()
+        server_v2.MT5_TIME_OFFSET_MINUTES = -180
+        try:
+            trades = server_v2._map_trades("1d")
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+
+        self.assertEqual(1, len(trades))
+        self.assertEqual(1775214286619, trades[0]["openTime"])
+        self.assertEqual(1775214342404, trades[0]["closeTime"])
+
+    def test_mt5_history_window_uses_naive_local_datetimes(self):
+        window_builder = getattr(server_v2, "_mt5_history_window", None)
+        self.assertIsNotNone(window_builder, "缺少 _mt5_history_window，无法统一 MT5 历史查询时间口径")
+
+        from_time, to_time = window_builder("1d")
+
+        self.assertIsNone(from_time.tzinfo)
+        self.assertIsNone(to_time.tzinfo)
+        self.assertGreater(to_time, from_time)
+
+    def test_mt5_history_window_extends_upper_bound_with_future_lookahead(self):
+        original_datetime = server_v2.datetime
+        original_lookahead = getattr(server_v2, "MT5_HISTORY_LOOKAHEAD_HOURS", 24)
+
+        class _FakeDateTime(original_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 4, 3, 19, 6, 52)
+
+        server_v2.datetime = _FakeDateTime
+        server_v2.MT5_HISTORY_LOOKAHEAD_HOURS = 24
+        try:
+            from_time, to_time = server_v2._mt5_history_window("1d")
+        finally:
+            server_v2.datetime = original_datetime
+            server_v2.MT5_HISTORY_LOOKAHEAD_HOURS = original_lookahead
+
+        self.assertEqual(original_datetime(2026, 4, 2, 19, 6, 52), from_time)
+        self.assertEqual(original_datetime(2026, 4, 4, 19, 6, 52), to_time)
+
+    def test_map_trades_queries_mt5_with_naive_local_datetimes(self):
+        original_mt5 = server_v2.mt5
+
+        class _FakeMt5:
+            captured_from = None
+            captured_to = None
+
+            @staticmethod
+            def history_deals_get(from_time, to_time):
+                _FakeMt5.captured_from = from_time
+                _FakeMt5.captured_to = to_time
+                return []
+
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        server_v2.mt5 = _FakeMt5()
+        try:
+            trades = server_v2._map_trades("1d")
+        finally:
+            server_v2.mt5 = original_mt5
+
+        self.assertEqual([], trades)
+        self.assertIsNotNone(_FakeMt5.captured_from)
+        self.assertIsNotNone(_FakeMt5.captured_to)
+        self.assertIsNone(_FakeMt5.captured_from.tzinfo)
+        self.assertIsNone(_FakeMt5.captured_to.tzinfo)
+
+    def test_ensure_mt5_prefers_plain_initialize_before_auth_initialize(self):
+        original_mt5 = server_v2.mt5
+        original_login = server_v2.LOGIN
+        original_password = server_v2.PASSWORD
+        original_server = server_v2.SERVER
+        original_candidates = list(server_v2.MT5_TERMINAL_CANDIDATES)
+        original_initialize = server_v2._mt5_initialize
+        original_login_fn = server_v2._mt5_login
+        original_shutdown = server_v2._shutdown_mt5
+
+        calls = []
+
+        class _FakeMt5:
+            pass
+
+        def fake_initialize(path_value, login=None, password=None, server_name=None):
+            calls.append(("init", path_value, login, server_name))
+            return True, "ok"
+
+        def fake_login():
+            calls.append(("login",))
+            return True, "already-logged-in"
+
+        def fake_shutdown():
+            calls.append(("shutdown",))
+
+        server_v2.mt5 = _FakeMt5()
+        server_v2.LOGIN = 7400048
+        server_v2.PASSWORD = "demo"
+        server_v2.SERVER = "ICMarketsSC-MT5-6"
+        server_v2.MT5_TERMINAL_CANDIDATES = []
+        server_v2._mt5_initialize = fake_initialize
+        server_v2._mt5_login = fake_login
+        server_v2._shutdown_mt5 = fake_shutdown
+        try:
+            server_v2._ensure_mt5()
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2.LOGIN = original_login
+            server_v2.PASSWORD = original_password
+            server_v2.SERVER = original_server
+            server_v2.MT5_TERMINAL_CANDIDATES = original_candidates
+            server_v2._mt5_initialize = original_initialize
+            server_v2._mt5_login = original_login_fn
+            server_v2._shutdown_mt5 = original_shutdown
+
+        self.assertGreaterEqual(len(calls), 3)
+        self.assertEqual(("shutdown",), calls[0])
+        self.assertEqual(("init", None, None, None), calls[1])
+        self.assertEqual(("login",), calls[2])
 
     def test_map_trades_pairs_partial_close_with_fifo_open_batches(self):
         original_mt5 = server_v2.mt5
@@ -488,7 +668,7 @@ class SummaryResponseTests(unittest.TestCase):
                 "commission": 0.0,
                 "swap": 0.0,
                 "entry": 1,
-                "deal_type": 0,
+                "deal_type": 1,
                 "volume": 1.0,
                 "symbol": "XAUUSD",
                 "position_id": 1,
@@ -529,6 +709,71 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(points[-1]["balance"], 1010.0)
         self.assertEqual(points[-1]["equity"], 1030.0)
         self.assertAlmostEqual(points[-1]["positionRatio"], 10.5 / 1030.0, places=6)
+
+    def test_rebuild_curve_removes_closed_sell_exposure_before_later_price_updates(self):
+        helper = getattr(server_v2, "_replay_curve_from_history", None)
+        self.assertIsNotNone(helper, "缺少 _replay_curve_from_history，无法验证平仓后残留仓位问题")
+
+        deals = [
+            {
+                "timestamp": 1000,
+                "price": 100.0,
+                "profit": 0.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 0,
+                "deal_type": 1,
+                "volume": 1.0,
+                "symbol": "BTCUSD",
+                "position_id": 1,
+            },
+            {
+                "timestamp": 2000,
+                "price": 101.0,
+                "profit": -1.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 1,
+                "deal_type": 0,
+                "volume": 1.0,
+                "symbol": "BTCUSD",
+                "position_id": 1,
+            },
+            {
+                "timestamp": 3000,
+                "price": 120.0,
+                "profit": 0.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 0,
+                "deal_type": 0,
+                "volume": 1.0,
+                "symbol": "BTCUSD",
+                "position_id": 2,
+            },
+        ]
+
+        points = helper(
+            deal_history=deals,
+            start_balance=1000.0,
+            open_positions=[],
+            current_balance=999.0,
+            current_equity=999.0,
+            leverage=100.0,
+            contract_size_fn=lambda symbol: 1.0,
+            now_ms=4000,
+        )
+
+        point_after_close = next(point for point in points if point["timestamp"] == 2000)
+        point_after_later_open = next(point for point in points if point["timestamp"] == 3000)
+
+        self.assertAlmostEqual(point_after_close["equity"], 999.0)
+        self.assertAlmostEqual(
+            point_after_later_open["equity"],
+            point_after_later_open["balance"],
+            places=6,
+            msg="卖单平仓后不应因为后续同品种价格更新继续残留浮盈亏",
+        )
 
     def test_curve_point_digest_includes_position_ratio(self):
         helper = getattr(server_v2, "_normalize_digest_curve_points", None)

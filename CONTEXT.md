@@ -1,6 +1,40 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已继续定位“MT5 原始层能查到新平仓单 `1787265273`，但网关 `/v1/trades?range=all` 查不到，APP 也看不到”这一类漏单问题。根据用户最新回传，`history_orders_get/history_deals_get` 已确认这笔单在 MT5 原始层存在；同时原始时间戳换算后显示为北京时间 `2026-04-03 22:04:46 / 22:05:42`，说明当前网关漏单与时间口径偏移仍然相关。
+- 已定位并修复新的服务端根因：`bridge/mt5_gateway/server_v2.py` 的 `_mt5_history_window()` 之前把 MT5 历史查询上限固定为 `datetime.now()`，当 MT5 返回时间整体相对本地时钟偏到“未来几小时”时，最新成交会被查询窗口上界直接截掉，导致 MT5 脚本能查到、网关 `/v1/trades` 查不到、APP 历史也看不到。
+- 已在服务端新增 `MT5_HISTORY_LOOKAHEAD_HOURS`（默认 `24` 小时）并让 `_mt5_history_window()` 改为“起点仍按当前时间向过去回看，终点额外向未来预留一段缓冲”，避免最新平仓单因时间口径偏移落到查询窗口之外。
+- 已补上失败先行测试 `test_mt5_history_window_extends_upper_bound_with_future_lookahead`，并重新通过 `.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response` 与 `.\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py`。
+- 当前停点：仓库代码已修复，但服务器上的 `C:\mt5_bundle\mt5_gateway\server_v2.py` 还需要替换成这版并重启网关；替换后应先用 `http://127.0.0.1:8787/v1/trades?range=all` 核对 `1787265273 / 1787265303 / 1780804002 / 1780804031` 是否已返回，再看 APP 历史是否同步恢复。
+- 已定位并修复用户最新反馈的“净值/结余曲线异常高低尖刺”根因：问题不在前端绘图单位，而在 `bridge/mt5_gateway/server_v2.py` 的历史曲线重放逻辑。此前 `_replay_curve_from_history()` 在处理平仓成交时，直接按“当前成交方向”删曝光仓位；但 MT5 的平仓成交方向与原持仓方向相反，导致已平仓仓位没有被真正移除，后续同品种价格更新又继续给这笔旧仓位计算浮盈亏，于是净值曲线会被放大成异常尖刺。
+- 已在服务端新增 `_curve_exposure_side_for_close(deal_type)`，把平仓时删除的曝光侧改为“原持仓方向”；并补上失败先行测试 `test_rebuild_curve_removes_closed_sell_exposure_before_later_price_updates`，验证卖单平仓后不会再因为后续价格变化残留浮盈亏。
+- 已同步修正旧测试里不符合 MT5 真实开平方向的一条样本，并重新通过 `.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response` 与 `.\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py`。
+- 已继续处理用户新提的 3 项：账户曲线长按联动、主界面最近异常记录、净值曲线估算与虚线样式。
+- 已完成主界面最近异常记录修正：`RecentAbnormalRecordHelper` 不再按“最近 1 小时 + 同时刻合并 BTC/XAU”做摘要，当前直接展示原始最新 10 条，避免真正最近的异常被时间过滤和合并逻辑挡掉。
+- 已完成账户曲线兜底重建修正：`AccountCurveRebuildHelper` 由“全局判断是否保留原始浮动差值”改为“逐点优先复用原始曲线里的净值-结余差值，只有缺失时才按持仓时间线性估算”，并在无活动持仓时强制让净值回到结余，减少 3M / 1Y / ALL 长周期下净值估算偏平或偏离的问题。
+- 已继续收口账户曲线长按联动：`AccountStatsBridgeActivity` 中主图长按入口也改成“精确时间优先”，不再让主图已算出的当前时间再次退回到按比例换算，减少 3M / 1Y / ALL 下十字星弹窗卡在旧时刻的问题；`EquityCurveView` 的净值虚线也已改为更密集的虚线节奏。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.main.RecentAbnormalRecordHelperTest" --tests "com.binance.monitor.ui.account.AccountCurveRebuildHelperTest" --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest" --tests "com.binance.monitor.ui.account.EquityCurveViewSourceTest"` 与 `.\gradlew.bat assembleDebug`。
+- 已拿到关键定点证据：在固定窗口 `2026-04-03 00:00:00 -> 2026-04-04 00:00:00` 下，`server_v2.mt5.history_deals_get(...)` 能直接查到目标单 `1780797192 / 1780797197 / position 1787257844`，说明 MT5 原始历史数据是存在的。
+- 已确认当前最核心问题不是 `_map_trades()` 生命周期拼装逻辑本身，而是时间口径被配置项 `MT5_TIME_OFFSET_MINUTES=300` 人为整体向后推了 5 小时：固定窗口诊断里同一笔单经 `server_v2._deal_time_ms(...)` 后显示为 `2026-04-03 22:55:14 / 22:55:28`，而用户直接从 MT5 原始脚本得到的是北京时间 `2026-04-03 17:55:14 / 17:55:28`。
+- 当前停点：应先在服务器把 `MT5_TIME_OFFSET_MINUTES` 改回 `0` 并重启网关，再重新核对 `/health`、`/v1/trades` 与 APP 历史/K 线成交点时间；这一步属于服务端配置修正，不是继续改客户端代码。
+- 已根据用户新回传的 `PLAIN_INIT_TARGET = NO_MATCH`、`AFTER_SERVER_V2_LOGIN_TARGET = NO_MATCH` 修正判断：问题不在 `server_v2._mt5_login()`，因为即使只做最基础的 `mt5.initialize()`，目标单 `#1787257844 / 1780797192 / 1780797197` 也查不到。
+- 已进一步收敛出新的高概率根因：之前多次诊断脚本都使用“`to_time = datetime.now()`”这一类截至当前时刻的查询窗口，而目标单的北京时间是 `2026-04-03 17:55:14 / 17:55:28`；若执行诊断时刻早于这个绝对时间，`history_deals_get()` 返回 `NO_MATCH` 是符合预期的，不能据此判断成交已丢失。
+- 当前停点：下一步需要改用“固定覆盖目标时刻”的显式窗口，例如 `2026-04-03 00:00:00 -> 2026-04-04 00:00:00`，在同一会话里重新核对 `raw deals`、`_map_trades()` 和 `/v1/trades` 是否都能看到目标单，再决定是否继续改代码。
+- 已根据用户最新回传重新收口“BTCUSD 0.01 / #1787257844 缺失”的证据链：`server_v2._ensure_mt5()` 当前连接到的账号、服务器和终端数据目录已确认正确，不再优先怀疑“连错终端/错数据目录”。
+- 已进一步判定用户刚回传的 `raw_deals_count = 2147` 样本还不能证明目标单在 MT5 原始层缺失；原因是那段脚本只打印了 `deals[-20:]`，未先按时间排序，只能作为抽样，不能代表全集检索结果。
+- 当前停点：下一步需要在 `server_v2` 同一会话上下文里，直接按 `1787257844 / 1780797192 / 1780797197 / 1787257848` 做定点过滤；若能查到，根因就回到 `_map_trades()` 或接口缓存层；若查不到，才继续追 MT5 会话历史可见性问题。
+- 已继续深挖“MT5 原始成交有、但 `server_v2` 初始化后原始 `history_deals_get()` 就查不到”这一层，进一步确认问题不在 `_map_trades()`，而在网关连接 MT5 的会话策略：`_ensure_mt5()` 之前优先走“带鉴权初始化”，容易拉起一个没有复用当前终端历史缓存的新上下文，导致你手工脚本能看到的最新成交，在网关进程里查不到。
+- 已把 `bridge/mt5_gateway/server_v2.py` 的 `_ensure_mt5()` 调整为“先无鉴权初始化附着当前终端，再 `_mt5_login()`；只有这条不通时，才回退到带鉴权初始化”，优先复用当前已登录且历史完整的 MT5 会话。
+- 已新增并通过本轮服务端定点验证：`test_ensure_mt5_prefers_plain_initialize_before_auth_initialize`，并重新通过 `.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response` 与 `.\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py`。
+- 当前停点：服务器上的 `C:\mt5_bundle\mt5_gateway\server_v2.py` 还需要再替换为这版并重启计划任务；替换后应先用 `127.0.0.1:8787/v1/trades?range=all` 再核对 `positionId=1787257844` 是否出现。
+- 已定位并修复“服务器 MT5 原始成交存在，但 `/v1/trades` 查不到 2026-04-03 这笔 BTCUSD 0.01 / -0.18”的根因：`bridge/mt5_gateway/server_v2.py` 之前用 `datetime.now(timezone.utc)` 生成 `history_deals_get()` 查询窗口，传入的是带时区的 UTC 时间；而 MT5 Python 历史接口在当前环境下实际更稳定地接受“本地无时区 datetime”，导致当天后半段成交被服务端历史窗口截掉。
+- 已在服务端新增 `_mt5_history_window(range_key)`，统一把历史交易和曲线重建的 MT5 查询窗口改为 `datetime.now()` 生成的本地无时区时间，并已接入 `_map_trades()` 与 `_build_curve()` 两处，避免交易记录和净值/结余曲线继续出现“MT5 脚本能查到、网关接口查不到”的分叉。
+- 已新增并通过本轮服务端定点验证：`test_mt5_history_window_uses_naive_local_datetimes`、`test_map_trades_queries_mt5_with_naive_local_datetimes`，并重新通过 `.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response` 与 `.\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py`。
+- 当前停点：仓库内代码已修复，但服务器上运行的 `C:\mt5_bundle\mt5_gateway\server_v2.py` 还需要替换成这版并重启计划任务；替换并重启后，应先用 `http://127.0.0.1:8787/v1/trades?range=all` 再验证 `positionId=1787257844` 是否已返回，再让 APP 复测。
+- 已进一步确认“APP 历史里缺少 BTCUSD 0.01 交易”不是公网网关缺数据：`http://43.155.214.62:8787` 的 `/v1/snapshot?range=all` 与 `/v1/trades?range=all` 都能查到 `dealTicket=1779633102 / positionId=1786015308` 这笔单，因此根因继续收敛在 APP 页面装载/筛选/展示链路，而不是服务端映射。
+- 已在账户统计页新增最小可观测性日志：`AccountStatsBridgeActivity` 现在会分别记录“快照交易 -> 页面基表”的交易可见性摘要，以及“当前筛选条件 -> 筛选结果”的摘要；摘要会输出总数、小手数交易按产品计数和最多 3 条样本，便于直接判断这笔 `BTCUSD 0.01` 是没进页面、还是进了页面但被筛选隐藏。
+- 已新增并通过本轮定点验证：`TradeVisibilityDiagnosticsHelperTest`、`AccountStatsBridgeActivityTradeDiagnosticsSourceTest`，并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.TradeVisibilityDiagnosticsHelperTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeDiagnosticsSourceTest" --tests "com.binance.monitor.ui.account.AccountSnapshotRestoreHelperTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" assembleDebug`。
+- 当前停点：下一步应安装这版 APK 后打开“账户统计 -> 交易记录”，再到运行日志中查看两条新日志 `Trade visibility snapshot:` 和 `Trade visibility filter:`；只要看这两条，就能明确判断问题在“装载层”还是“筛选层”。
 - 已继续处理“APP 历史里缺少某笔 BTCUSD 0.01 交易”并完成一轮代码修复：服务端测试已确认这类 `0.01` 开平成交按现有 `_map_trades()` 会正确映射成单条生命周期交易，当前更可疑的根因在 APP 历史页对本地/预加载历史的使用策略。
 - 已修正两个客户端漏单入口：`AccountSnapshotRestoreHelper.mergeMissingTrades(...)` 不再只在“预加载交易为空”时才回填本地交易，而是会把本地缺失但预加载快照未带上的历史交易一并合入；`AccountStatsBridgeActivity.applySnapshot(...)` 也改成无论当前是否远端直连，都先合并 `snapshotTrades`，避免旧内存历史挡住本地库/预加载里已经更新的新交易。
 - 已新增并通过本轮定点验证：`AccountSnapshotRestoreHelperTest`、`AccountStatsBridgeActivityTradeHistorySourceTest`、`bridge.mt5_gateway.tests.test_summary_response` 中新增的 `0.01` 生命周期映射测试；并已重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountSnapshotRestoreHelperTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest"`、`.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response` 与 `.\gradlew.bat assembleDebug`。
