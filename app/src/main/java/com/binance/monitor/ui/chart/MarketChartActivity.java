@@ -726,8 +726,12 @@ public class MarketChartActivity extends AppCompatActivity {
         chartPositionAggregateAdapter.submitList(buildPositionAggregatesForChart(filteredPositions));
         chartPositionAdapter.submitList(filteredPositions);
         chartPendingOrderAdapter.submitList(filteredPendingOrders);
+        binding.recyclerChartPositions.setVisibility(filteredPositions.isEmpty() ? View.GONE : View.VISIBLE);
+        if (binding.tvChartPositionsEmpty != null) {
+            binding.tvChartPositionsEmpty.setVisibility(filteredPositions.isEmpty() ? View.VISIBLE : View.GONE);
+        }
         binding.tvChartPendingOrdersTitle.setVisibility(View.VISIBLE);
-        binding.recyclerChartPendingOrders.setVisibility(View.VISIBLE);
+        binding.recyclerChartPendingOrders.setVisibility(filteredPendingOrders.isEmpty() ? View.GONE : View.VISIBLE);
         if (binding.tvChartPendingOrdersEmpty != null) {
             binding.tvChartPendingOrdersEmpty.setVisibility(filteredPendingOrders.isEmpty() ? View.VISIBLE : View.GONE);
         }
@@ -2859,6 +2863,9 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.tvChartPositionAggregateTitle.setTextColor(palette.textPrimary);
         binding.tvChartPositionDetailTitle.setTextColor(palette.textPrimary);
         binding.tvChartPendingOrdersTitle.setTextColor(palette.textPrimary);
+        if (binding.tvChartPositionsEmpty != null) {
+            binding.tvChartPositionsEmpty.setTextColor(palette.textSecondary);
+        }
         binding.btnScrollToLatest.setBackground(UiPaletteManager.createOutlinedDrawable(
                 this,
                 ColorUtils.setAlphaComponent(palette.card, 224),

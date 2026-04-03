@@ -851,12 +851,14 @@ def _build_curve(range_key: str, current_positions: Optional[List[Dict]] = None)
     positions = current_positions or _map_positions()
     contract_cache: Dict[str, float] = {}
     contract_size_fn = lambda symbol: _contract_size_for_symbol(symbol, contract_cache)
+    leverage = float(getattr(mt5.account_info(), "leverage", 0.0) or 0.0) if mt5 is not None else 0.0
     return _replay_curve_from_history(
         deal_history=deal_history,
         start_balance=start_balance,
         open_positions=positions,
         current_balance=current_balance,
         current_equity=current_equity,
+        leverage=leverage,
         contract_size_fn=contract_size_fn,
         now_ms=_now_ms(),
     )
@@ -971,8 +973,12 @@ def _calculate_curve_market_value(
     return total
 
 
-def _curve_position_ratio_from_market_value(market_value: float, equity: float) -> float:
-    ratio = _safe_div(max(0.0, float(market_value or 0.0)), max(1.0, float(equity or 0.0)))
+def _resolve_effective_leverage(leverage: float) -> float:
+    return max(1.0, float(leverage or 0.0))
+
+
+def _curve_position_ratio_from_margin(margin: float, equity: float) -> float:
+    ratio = _safe_div(max(0.0, float(margin or 0.0)), max(1.0, float(equity or 0.0)))
     if not math.isfinite(ratio) or ratio < 0.0:
         return 0.0
     return ratio
@@ -982,9 +988,11 @@ def _calculate_curve_position_ratio(
     exposures: Dict[Tuple[str, str], Dict[str, float]],
     last_price_by_symbol: Dict[str, float],
     equity: float,
+    leverage: float,
 ) -> float:
     market_value = _calculate_curve_market_value(exposures, last_price_by_symbol)
-    return _curve_position_ratio_from_market_value(market_value, equity)
+    margin = _safe_div(market_value, _resolve_effective_leverage(leverage))
+    return _curve_position_ratio_from_margin(margin, equity)
 
 
 def _resolve_positions_market_value(positions: List[Dict[str, Any]]) -> float:
@@ -1029,6 +1037,7 @@ def _replay_curve_from_history(
     open_positions: List[Dict[str, Any]],
     current_balance: float,
     current_equity: float,
+    leverage: float,
     contract_size_fn,
     now_ms: int,
 ) -> List[Dict[str, float]]:
@@ -1039,7 +1048,10 @@ def _replay_curve_from_history(
             now_ms,
             current_equity,
             current_balance,
-            _curve_position_ratio_from_market_value(market_value, current_equity),
+            _curve_position_ratio_from_margin(
+                _safe_div(market_value, _resolve_effective_leverage(leverage)),
+                current_equity,
+            ),
         )]
 
     exposures: Dict[Tuple[str, str], Dict[str, float]] = {}
@@ -1059,7 +1071,7 @@ def _replay_curve_from_history(
         first_ts,
         first_equity,
         running_balance,
-        _calculate_curve_position_ratio(exposures, last_price_by_symbol, first_equity),
+        _calculate_curve_position_ratio(exposures, last_price_by_symbol, first_equity, leverage),
     ))
 
     for deal in sorted_deals:
@@ -1091,7 +1103,7 @@ def _replay_curve_from_history(
             timestamp,
             equity,
             running_balance,
-            _calculate_curve_position_ratio(exposures, last_price_by_symbol, equity),
+            _calculate_curve_position_ratio(exposures, last_price_by_symbol, equity, leverage),
         ))
 
     current_market_value = _resolve_positions_market_value(open_positions)
@@ -1101,7 +1113,10 @@ def _replay_curve_from_history(
         now_ms,
         current_equity,
         current_balance,
-        _curve_position_ratio_from_market_value(current_market_value, current_equity),
+        _curve_position_ratio_from_margin(
+            _safe_div(current_market_value, _resolve_effective_leverage(leverage)),
+            current_equity,
+        ),
     ))
     return points
 

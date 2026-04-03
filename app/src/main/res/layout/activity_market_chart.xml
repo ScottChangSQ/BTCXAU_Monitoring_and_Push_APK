@@ -224,8 +224,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_8"
                     android:text="@string/chart_info_empty"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
                     android:visibility="gone" />
 
                 <FrameLayout
@@ -247,8 +246,7 @@
                         android:layout_marginTop="4dp"
                         android:includeFontPadding="false"
                         android:text="--秒/--秒"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                     <LinearLayout
                         android:layout_width="wrap_content"
@@ -272,8 +270,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginStart="@dimen/space_4"
                             android:text="@string/chart_loading_overlay_text"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
                             android:visibility="gone" />
                     </LinearLayout>
 
@@ -315,8 +312,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text=""
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
                 <TextView
                     android:id="@+id/tvError"
@@ -324,7 +320,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:textColor="@color/accent_red"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption"
                     android:visibility="gone" />
 
                 <Button
@@ -501,8 +497,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="当前持仓"
-                    android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
 
                 <TextView
                     android:id="@+id/tvChartPositionSummary"
@@ -510,8 +505,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="持仓盈亏: -- | 持仓收益率: --"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
                 <TextView
                     android:id="@+id/tvChartPositionAggregateTitle"
@@ -544,6 +538,15 @@
                     android:nestedScrollingEnabled="false" />
 
                 <TextView
+                    android:id="@+id/tvChartPositionsEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="暂无持仓"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
+                    android:visibility="gone" />
+
+                <TextView
                     android:id="@+id/tvChartPendingOrdersTitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -564,8 +567,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="暂无挂单"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
                     android:visibility="gone" />
 
                 <LinearLayout

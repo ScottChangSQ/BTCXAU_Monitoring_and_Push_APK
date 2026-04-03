@@ -344,9 +344,11 @@ public class FloatingWindowManager {
         );
         volumeParams.topMargin = dp(1);
         volumeView.setLayoutParams(volumeParams);
-        volumeView.setText("成交量 " + SensitiveDisplayMasker.maskQuantity(
-                FormatUtils.formatVolume(card.getVolume()),
-                masked));
+        volumeView.setText(FloatingWindowTextFormatter.formatVolumeLine(
+                card.getVolume(),
+                resolveVolumeUnit(card),
+                masked
+        ));
         volumeView.setTextColor(palette.textSecondary);
         volumeView.setTextSize(8.5f);
         volumeView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
@@ -359,9 +361,7 @@ public class FloatingWindowManager {
         );
         amountParams.topMargin = dp(1);
         amountView.setLayoutParams(amountParams);
-        amountView.setText("成交额 " + SensitiveDisplayMasker.maskAmount(
-                FormatUtils.formatAmount(card.getAmount()),
-                masked));
+        amountView.setText(FloatingWindowTextFormatter.formatAmountLine(card.getAmount(), masked));
         amountView.setTextColor(palette.textSecondary);
         amountView.setTextSize(8.5f);
         amountView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
@@ -519,6 +519,17 @@ public class FloatingWindowManager {
             return palette.textSecondary;
         }
         return totalPnl >= 0d ? palette.rise : palette.fall;
+    }
+
+    // 统一把产品代码收敛到悬浮窗需要展示的成交量单位。
+    private String resolveVolumeUnit(FloatingSymbolCardData card) {
+        String code = card == null ? "" : card.getCode();
+        String label = card == null ? "" : card.getLabel();
+        String normalized = (code + " " + label).toUpperCase();
+        if (normalized.contains("XAU")) {
+            return "XAU";
+        }
+        return "BTC";
     }
 
     private void startMiniBlink() {

@@ -222,9 +222,9 @@ public class PositionRatioChartView extends View {
             return;
         }
 
-        chartLeft = dp(34f);
+        chartLeft = dp(42f);
         chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
-        chartRight = width - dp(28f);
+        chartRight = width - dp(34f);
         chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,
                 false,
@@ -308,20 +308,26 @@ public class PositionRatioChartView extends View {
 
     // 绘制仓位比例刻度和标题。
     private void drawLabels(Canvas canvas, float top, float bottom, double chartMax) {
-        float topBaseline = top + dp(mergeWithPreviousPane ? 8f : 4f);
+        float centerY = top + (bottom - top) / 2f;
+        float verticalCenterBaseline = centerY - (labelPaint.descent() + labelPaint.ascent()) / 2f;
+        float topBaseline = top + dp(mergeWithPreviousPane ? 10f : 6f);
         float bottomBaseline = CurvePaneSpacingHelper.resolveBottomLabelBaseline(
                 bottom,
                 mergeWithNextPane,
                 dp(2f)
         );
+        Paint.Align originalAlign = labelPaint.getTextAlign();
+        labelPaint.setTextAlign(Paint.Align.RIGHT);
+        float labelAnchorX = chartLeft - dp(4f);
         canvas.drawText(String.format(Locale.getDefault(), "%.1f%%", chartMax * 100d),
-                dp(4f), topBaseline, labelPaint);
-        canvas.drawText("0%", dp(4f), bottomBaseline, labelPaint);
-        float rightEdge = getWidth() - dp(6f);
+                labelAnchorX, topBaseline, labelPaint);
+        canvas.drawText("0%", labelAnchorX, bottomBaseline, labelPaint);
+        float rightEdge = getWidth() - dp(12f);
         canvas.save();
-        canvas.rotate(-90f, rightEdge, top + (bottom - top) / 2f);
-        canvas.drawText("当前区间仓位比例", rightEdge, top + (bottom - top) / 2f, labelPaint);
+        canvas.rotate(-90f, rightEdge, centerY);
+        canvas.drawText("当前区间仓位", rightEdge, verticalCenterBaseline, labelPaint);
         canvas.restore();
+        labelPaint.setTextAlign(originalAlign);
     }
 
     // 按当前横坐标更新共享十字光标。

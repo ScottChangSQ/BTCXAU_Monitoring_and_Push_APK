@@ -1,5 +1,5 @@
 /*
- * 仓位比例曲线兜底测试，确保历史仓位缺失时仍能用现有持仓估算出可显示的曲线。
+ * 仓位比例曲线兜底测试，确保历史仓位缺失时按保证金 / 净资产口径补出可显示曲线。
  */
 package com.binance.monitor.ui.account;
 
@@ -30,13 +30,13 @@ public class AccountCurvePositionRatioHelperTest {
                         0d, 0d, 0d, 0d, 0, 0d, 0d, 0d, 0d)
         );
 
-        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, positions, null);
+        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, positions, null, 10d);
 
         assertEquals(2, resolved.size());
         assertTrue(resolved.get(0).getPositionRatio() > 0d);
         assertTrue(resolved.get(1).getPositionRatio() > 0d);
-        assertEquals(0.50d, resolved.get(0).getPositionRatio(), 1e-9);
-        assertEquals(0.25d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(0.05d, resolved.get(0).getPositionRatio(), 1e-9);
+        assertEquals(0.025d, resolved.get(1).getPositionRatio(), 1e-9);
     }
 
     @Test
@@ -46,7 +46,7 @@ public class AccountCurvePositionRatioHelperTest {
                 new CurvePoint(2_000L, 200d, 190d, 0.30d)
         );
 
-        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, null, null);
+        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, null, null, 0d);
 
         assertEquals(0.15d, resolved.get(0).getPositionRatio(), 1e-9);
         assertEquals(0.30d, resolved.get(1).getPositionRatio(), 1e-9);
@@ -81,11 +81,11 @@ public class AccountCurvePositionRatioHelperTest {
                 1
         ));
 
-        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, null, trades);
+        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, null, trades, 10d);
 
         assertEquals(3, resolved.size());
         assertEquals(0d, resolved.get(0).getPositionRatio(), 1e-9);
-        assertEquals(0.40d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(0.04d, resolved.get(1).getPositionRatio(), 1e-9);
         assertEquals(0d, resolved.get(2).getPositionRatio(), 1e-9);
     }
 }

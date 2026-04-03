@@ -30,6 +30,23 @@ final class FloatingWindowTextFormatter {
         return Math.abs(totalPnl) < ZERO_EPSILON;
     }
 
+    // 统一格式化悬浮窗 1 分钟成交量行。
+    static String formatVolumeLine(double volume, String unit, boolean masked) {
+        String safeUnit = unit == null ? "" : unit.trim();
+        String volumeText = masked
+                ? SensitiveDisplayMasker.MASK_TEXT
+                : FormatUtils.formatVolumeWithUnit(volume, safeUnit).trim();
+        return "1M量 " + volumeText;
+    }
+
+    // 统一格式化悬浮窗 1 分钟成交额行。
+    static String formatAmountLine(double amount, boolean masked) {
+        String amountText = masked
+                ? SensitiveDisplayMasker.MASK_TEXT
+                : FormatUtils.formatAmount(amount);
+        return "1M额 " + amountText;
+    }
+
     // 统一处理悬浮窗盈亏显示，零值时按产品要求显示为 $-。
     private static String formatVisiblePnl(double totalPnl) {
         if (shouldUseNeutralPnlStyle(totalPnl)) {

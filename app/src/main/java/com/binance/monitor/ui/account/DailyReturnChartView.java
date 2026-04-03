@@ -229,8 +229,8 @@ public class DailyReturnChartView extends View {
             return;
         }
 
-        chartLeft = dp(34f);
-        chartRight = width - dp(28f);
+        chartLeft = dp(42f);
+        chartRight = width - dp(34f);
         chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
         chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,
@@ -287,21 +287,27 @@ public class DailyReturnChartView extends View {
             canvas.drawLine(highlightX, chartTop, highlightX, chartBottom, crosshairPaint);
         }
 
-        float topBaseline = chartTop + dp(mergeWithPreviousPane ? 8f : 2f);
+        float centerY = chartTop + (chartBottom - chartTop) / 2f;
+        float verticalCenterBaseline = centerY - (labelPaint.descent() + labelPaint.ascent()) / 2f;
+        float topBaseline = chartTop + dp(mergeWithPreviousPane ? 10f : 6f);
         float bottomBaseline = CurvePaneSpacingHelper.resolveBottomLabelBaseline(
                 chartBottom,
                 mergeWithNextPane && !showBottomTimeLabels,
                 dp(2f)
         );
+        Paint.Align originalAlign = labelPaint.getTextAlign();
+        labelPaint.setTextAlign(Paint.Align.RIGHT);
+        float labelAnchorX = chartLeft - dp(4f);
         canvas.drawText(String.format(Locale.getDefault(), "+%.1f%%", maxAbs * 100d),
-                dp(4f), topBaseline, labelPaint);
+                labelAnchorX, topBaseline, labelPaint);
         canvas.drawText(String.format(Locale.getDefault(), "-%.1f%%", maxAbs * 100d),
-                dp(4f), bottomBaseline, labelPaint);
-        float rightEdge = getWidth() - dp(6f);
+                labelAnchorX, bottomBaseline, labelPaint);
+        float rightEdge = getWidth() - dp(12f);
         canvas.save();
-        canvas.rotate(-90f, rightEdge, chartTop + (chartBottom - chartTop) / 2f);
-        canvas.drawText("当前区间日收益", rightEdge, chartTop + (chartBottom - chartTop) / 2f, labelPaint);
+        canvas.rotate(-90f, rightEdge, centerY);
+        canvas.drawText("当前区间日收益", rightEdge, verticalCenterBaseline, labelPaint);
         canvas.restore();
+        labelPaint.setTextAlign(originalAlign);
         if (showBottomTimeLabels) {
             drawXLabels(canvas, chartLeft, chartRight, chartBottom, startTs, endTs);
         }

@@ -1524,8 +1524,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 统一提升日期选择器的文字和分隔线可见性。
     private void applyPickerPanelStyle(NumberPicker... pickers) {
-        int textColor = ContextCompat.getColor(this, R.color.text_primary);
-        int dividerColor = ContextCompat.getColor(this, R.color.stroke_card);
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        int textColor = palette.textPrimary;
+        int dividerColor = palette.stroke;
         for (NumberPicker picker : pickers) {
             applyNumberPickerStyle(picker, textColor, dividerColor);
         }
@@ -3422,7 +3423,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderCurveWithIndicators(List<CurvePoint> points) {
-        List<CurvePoint> effectivePoints = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, basePositions, baseTrades);
+        List<CurvePoint> effectivePoints = AccountCurvePositionRatioHelper.ensureVisibleRatios(
+                points,
+                basePositions,
+                baseTrades,
+                parseLeverageNumber(connectedLeverageText)
+        );
         displayedCurvePoints = effectivePoints;
         CurveAnalyticsHelper.DrawdownSegment drawdownSegment = CurveAnalyticsHelper.resolveMaxDrawdownSegment(effectivePoints);
         curveBaseBalance = resolveCurvePercentBase(effectivePoints);

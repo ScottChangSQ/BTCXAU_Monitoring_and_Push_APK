@@ -27,7 +27,8 @@ final class AccountCurvePositionRatioHelper {
     // 确保仓位比例图至少有可显示数据；若历史比率全缺失，则优先回放历史成交，再按当前持仓兜底。
     static List<CurvePoint> ensureVisibleRatios(@Nullable List<CurvePoint> source,
                                                 @Nullable List<PositionItem> positions,
-                                                @Nullable List<TradeRecordItem> trades) {
+                                                @Nullable List<TradeRecordItem> trades,
+                                                double leverage) {
         List<CurvePoint> result = new ArrayList<>();
         if (source == null || source.isEmpty()) {
             return result;
@@ -36,18 +37,19 @@ final class AccountCurvePositionRatioHelper {
             result.addAll(source);
             return result;
         }
-        List<CurvePoint> replayedPoints = rebuildRatiosFromTrades(source, trades);
+        double effectiveLeverage = resolveEffectiveLeverage(leverage);
+        List<CurvePoint> replayedPoints = rebuildRatiosFromTrades(source, trades, effectiveLeverage);
         if (hasVisibleRatio(replayedPoints)) {
             return replayedPoints;
         }
-        double totalMarketValue = resolveCurrentMarketValue(positions);
-        if (totalMarketValue <= RATIO_VISIBLE_THRESHOLD) {
+        double totalMargin = resolveCurrentMargin(positions, effectiveLeverage);
+        if (totalMargin <= RATIO_VISIBLE_THRESHOLD) {
             result.addAll(source);
             return result;
         }
         for (CurvePoint point : source) {
             double equityBase = Math.max(1d, Math.abs(point.getEquity()));
-            double estimatedRatio = Math.max(0d, totalMarketValue / equityBase);
+            double estimatedRatio = Math.max(0d, totalMargin / equityBase);
             result.add(new CurvePoint(
                     point.getTimestamp(),
                     point.getEquity(),
@@ -58,15 +60,16 @@ final class AccountCurvePositionRatioHelper {
         return result;
     }
 
-    // 用历史成交回放每个时间点的持仓暴露，补出已经平仓阶段的历史仓位比例。
+    // 用历史成交回放每个时间点的持仓保证金，补出已经平仓阶段的历史仓位比例。
     private static List<CurvePoint> rebuildRatiosFromTrades(List<CurvePoint> source,
-                                                            @Nullable List<TradeRecordItem> trades) {
+                                                            @Nullable List<TradeRecordItem> trades,
+                                                            double leverage) {
         List<CurvePoint> sortedPoints = new ArrayList<>(source);
         sortedPoints.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
         if (trades == null || trades.isEmpty()) {
             return sortedPoints;
         }
-        Map<Long, Double> exposureEvents = new HashMap<>();
+        Map<Long, Double> marginEvents = new HashMap<>();
         for (TradeRecordItem trade : trades) {
             if (trade == null) {
                 continue;
@@ -75,31 +78,31 @@ final class AccountCurvePositionRatioHelper {
             if (openTime <= 0L) {
                 continue;
             }
-            double exposure = resolveTradeExposure(trade);
-            if (exposure <= RATIO_VISIBLE_THRESHOLD) {
+            double margin = resolveTradeMargin(trade, leverage);
+            if (margin <= RATIO_VISIBLE_THRESHOLD) {
                 continue;
             }
-            accumulateExposure(exposureEvents, openTime, exposure);
+            accumulateExposure(marginEvents, openTime, margin);
             long closeTime = resolveCloseTime(trade);
             if (closeTime > openTime) {
-                accumulateExposure(exposureEvents, closeTime, -exposure);
+                accumulateExposure(marginEvents, closeTime, -margin);
             }
         }
-        if (exposureEvents.isEmpty()) {
+        if (marginEvents.isEmpty()) {
             return sortedPoints;
         }
-        List<Long> eventTimes = new ArrayList<>(exposureEvents.keySet());
+        List<Long> eventTimes = new ArrayList<>(marginEvents.keySet());
         Collections.sort(eventTimes);
         List<CurvePoint> resolved = new ArrayList<>(sortedPoints.size());
-        double activeExposure = 0d;
+        double activeMargin = 0d;
         int eventIndex = 0;
         for (CurvePoint point : sortedPoints) {
             while (eventIndex < eventTimes.size() && eventTimes.get(eventIndex) <= point.getTimestamp()) {
-                activeExposure += exposureEvents.get(eventTimes.get(eventIndex));
+                activeMargin += marginEvents.get(eventTimes.get(eventIndex));
                 eventIndex++;
             }
             double equityBase = Math.max(1d, Math.abs(point.getEquity()));
-            double estimatedRatio = Math.max(0d, activeExposure / equityBase);
+            double estimatedRatio = Math.max(0d, activeMargin / equityBase);
             resolved.add(new CurvePoint(
                     point.getTimestamp(),
                     point.getEquity(),
@@ -120,8 +123,8 @@ final class AccountCurvePositionRatioHelper {
         return false;
     }
 
-    // 汇总当前持仓市值，作为历史仓位缺失时的保守估算输入。
-    private static double resolveCurrentMarketValue(@Nullable List<PositionItem> positions) {
+    // 汇总当前持仓保证金，作为历史仓位缺失时的保守估算输入。
+    private static double resolveCurrentMargin(@Nullable List<PositionItem> positions, double leverage) {
         if (positions == null || positions.isEmpty()) {
             return 0d;
         }
@@ -130,7 +133,7 @@ final class AccountCurvePositionRatioHelper {
             if (item == null) {
                 continue;
             }
-            total += Math.max(0d, Math.abs(item.getMarketValue()));
+            total += Math.max(0d, Math.abs(item.getMarketValue())) / leverage;
         }
         return total;
     }
@@ -144,14 +147,14 @@ final class AccountCurvePositionRatioHelper {
         exposureEvents.put(timestamp, current + delta);
     }
 
-    // 计算单笔成交在持仓期间贡献的名义暴露，优先取成交额，不足时退回开仓价乘数量。
-    private static double resolveTradeExposure(TradeRecordItem trade) {
+    // 计算单笔成交在持仓期间贡献的保证金，优先按成交额 / 杠杆估算。
+    private static double resolveTradeMargin(TradeRecordItem trade, double leverage) {
         double amount = Math.abs(trade.getAmount());
         if (amount > RATIO_VISIBLE_THRESHOLD) {
-            return amount;
+            return amount / leverage;
         }
         double price = trade.getOpenPrice() > 0d ? trade.getOpenPrice() : trade.getPrice();
-        return Math.abs(trade.getQuantity()) * Math.max(0d, price);
+        return Math.abs(trade.getQuantity()) * Math.max(0d, price) / leverage;
     }
 
     // 统一解析开仓时间，旧数据没有开仓时间时退回记录时间。
@@ -170,5 +173,10 @@ final class AccountCurvePositionRatioHelper {
         long openTime = resolveOpenTime(trade);
         long closeTime = trade.getCloseTime();
         return closeTime > openTime ? closeTime : 0L;
+    }
+
+    // 统一保证杠杆至少为 1，避免缺少杠杆配置时出现除零。
+    private static double resolveEffectiveLeverage(double leverage) {
+        return leverage > 1d ? leverage : 1d;
     }
 }

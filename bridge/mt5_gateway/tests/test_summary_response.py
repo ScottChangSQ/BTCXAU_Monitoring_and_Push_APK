@@ -379,6 +379,7 @@ class SummaryResponseTests(unittest.TestCase):
             open_positions=open_positions,
             current_balance=1010.0,
             current_equity=1030.0,
+            leverage=10.0,
             contract_size_fn=lambda symbol: 1.0,
             now_ms=2000,
         )
@@ -393,7 +394,7 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertGreater(points[0]["positionRatio"], 0.0)
         self.assertEqual(points[-1]["balance"], 1010.0)
         self.assertEqual(points[-1]["equity"], 1030.0)
-        self.assertAlmostEqual(points[-1]["positionRatio"], 105.0 / 1030.0, places=6)
+        self.assertAlmostEqual(points[-1]["positionRatio"], 10.5 / 1030.0, places=6)
 
     def test_curve_point_digest_includes_position_ratio(self):
         helper = getattr(server_v2, "_normalize_digest_curve_points", None)

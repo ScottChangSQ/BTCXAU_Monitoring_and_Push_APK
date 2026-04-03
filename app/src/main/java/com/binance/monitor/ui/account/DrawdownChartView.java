@@ -220,9 +220,9 @@ public class DrawdownChartView extends View {
             return;
         }
 
-        chartLeft = dp(34f);
+        chartLeft = dp(42f);
         chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
-        chartRight = width - dp(28f);
+        chartRight = width - dp(34f);
         chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,
                 false,
@@ -307,20 +307,26 @@ public class DrawdownChartView extends View {
 
     // 绘制两端刻度和回撤说明。
     private void drawLabels(Canvas canvas, float left, float right, float top, float bottom, double minDrawdown) {
-        float topBaseline = top + dp(mergeWithPreviousPane ? 8f : 4f);
+        float centerY = top + (bottom - top) / 2f;
+        float verticalCenterBaseline = centerY - (labelPaint.descent() + labelPaint.ascent()) / 2f;
+        float topBaseline = top + dp(mergeWithPreviousPane ? 10f : 6f);
         float bottomBaseline = CurvePaneSpacingHelper.resolveBottomLabelBaseline(
                 bottom,
                 mergeWithNextPane,
                 dp(2f)
         );
-        canvas.drawText("0%", dp(4f), topBaseline, labelPaint);
+        Paint.Align originalAlign = labelPaint.getTextAlign();
+        labelPaint.setTextAlign(Paint.Align.RIGHT);
+        float labelAnchorX = chartLeft - dp(4f);
+        canvas.drawText("0%", labelAnchorX, topBaseline, labelPaint);
         canvas.drawText(String.format(Locale.getDefault(), "%.1f%%", minDrawdown * 100d),
-                dp(4f), bottomBaseline, labelPaint);
-        float rightEdge = getWidth() - dp(6f);
+                labelAnchorX, bottomBaseline, labelPaint);
+        float rightEdge = getWidth() - dp(12f);
         canvas.save();
-        canvas.rotate(-90f, rightEdge, top + (bottom - top) / 2f);
-        canvas.drawText("当前区间回撤", rightEdge, top + (bottom - top) / 2f, labelPaint);
+        canvas.rotate(-90f, rightEdge, centerY);
+        canvas.drawText("当前区间回撤", rightEdge, verticalCenterBaseline, labelPaint);
         canvas.restore();
+        labelPaint.setTextAlign(originalAlign);
     }
 
     // 按当前横坐标更新共享十字光标。

@@ -1,6 +1,11 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已完成本轮 9 项优化的代码收口：图表页“当前持仓”补上独立空态“暂无持仓”，持仓面板与顶部元信息改为统一文字样式；悬浮窗“成交量/成交额”已改成“1M量/1M额”，并给成交量补上 `BTC/XAU` 单位。
+- 已完成账户曲线仓位比例口径修正：客户端兜底与服务端历史曲线重放都从“持仓市值 / 净资产”改成“估算保证金 / 净资产”，当前实现按杠杆把持仓市值折算为保证金，避免仓位比例图继续偏大。
+- 已完成账户曲线附图坐标避让：仓位图、回撤图、日收益图的左右留白与纵轴标签绘制位置已调整，纵轴标题按图形中线绘制，减少几张合并图里纵轴标签互相挤压。
+- 已完成账户统计日期选择面板的主题可读性修正：`NumberPicker` 文本色和分隔线不再写死旧资源色，改为跟随当前主题调色板。
+- 已完成本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.chart.ChartRefreshMetaFormatterTest" --tests "com.binance.monitor.ui.account.AccountCurvePositionRatioHelperTest" --tests "com.binance.monitor.ui.floating.FloatingWindowTextFormatterTest" --tests "com.binance.monitor.ui.theme.MarketChartPositionPanelResourceTest" assembleDebug` 与 `.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response` 已通过。
 - 已完成本轮 11 项优化里的关键收口：历史交易时间错位改到服务端 FIFO 开平配对；图表页开始实时接入未收盘 `1m` K 线；左下角已新增“历史成交 开/关”按钮；悬浮窗价格链路改成每笔实时 tick 都更新快照，并把前台刷新节流压到 `350ms`。
 - 已完成异常同步 404 收口：客户端现在会把 `HTTP 404` 识别成“网关未部署异常接口”，记录一次后暂停后续轮询；服务端示例配置新增 `SNAPSHOT_RANGE_ALL_DAYS`，用于限制 `all` 区间历史回看长度，继续压内存占用。
 - 已完成本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.CandleAggregationHelperTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.data.remote.AbnormalGatewayClientTest" --tests "com.binance.monitor.service.AbnormalSyncRuntimeHelperTest" --tests "com.binance.monitor.service.MonitorRuntimePolicyHelperTest"`、`.\gradlew.bat assembleDebug`、`.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response bridge.mt5_gateway.tests.test_abnormal_gateway` 全部通过。
@@ -65,6 +70,7 @@
 - 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.AbnormalGatewayClientTest" --tests "com.binance.monitor.data.local.AbnormalRecordIdentityTest" --tests "com.binance.monitor.service.AbnormalSyncRuntimeHelperTest"`。
 
 ## 上次停在哪个位置
+- 停在“本轮 9 项优化已完成代码与验证”的状态；若继续真机复核，优先检查仓位比例图现在是否符合“保证金 / 净资产”口径，以及图表页当前持仓空态、日期选择器在四套主题下的可读性。
 - 停在“本轮 11 项优化已完成代码落地和验证”的状态；若下一步继续真机复核，优先检查 1 分钟图实时刷新、历史成交开平点是否与最新安装包和最新网关部署一致。
 - 停在“服务端需要同步部署本轮网关文件”的状态；若远端仍出现 `HTTP 404` 或历史交易时间仍旧不准，优先确认服务器已更新 `bridge/mt5_gateway/server_v2.py`，并按需补上 `SNAPSHOT_RANGE_ALL_DAYS` 配置后重启网关。
 - 停在“历史交易 4 个残留问题已再补一轮根因修复并验证通过”的状态；若用户继续反馈点位仍偏，下一步优先核对真机截图对应的 K 线周期、时区和交易记录原始 `openTime/closeTime` 是否一致。
@@ -95,6 +101,10 @@
 - 若下一步继续压第二步骤的服务器侧资源与延迟问题，优先看 `bridge/mt5_gateway/server_v2.py`、`bridge/mt5_gateway/.env.example`、`bridge/mt5_gateway/tests/test_summary_response.py`。
 
 ## 近期关键决定和原因
+- 仓位比例曲线口径改成“估算保证金 / 净资产”，并统一落到客户端兜底和服务端历史曲线重放两侧；原因是用户明确指出当前区间仓位图不应再按持仓市值计算，否则仓位比例会系统性偏大。
+- 历史保证金在网关侧暂无逐笔原始字段时，先按“持仓市值 / 杠杆”估算；原因是 MT5 当前快照稳定提供杠杆和持仓市值，这条路径能先把口径修正到保证金维度，同时避免继续展示明显错误的市值口径。
+- 图表页“当前持仓”改成和挂单区一样保留独立空态文案，而不是把“暂无持仓”塞在摘要里；原因是用户要求空态展示方式与挂单明细一致。
+- 图表页和账户曲线本轮涉及的元信息文字改为直接复用统一文字样式；原因是用户要求同等级文本大小和格式统一，先从本轮直接涉及的页面入口收口，避免继续散落硬编码字号。
 - 历史交易服务端映射改成“按成交时间顺序 + FIFO 开仓库存”配对，而不是单个生命周期平均价覆盖；原因是多次加仓、部分平仓、反手时，旧逻辑会把平仓点连到错误开仓点。
 - 实时 `1m` K 线改成“未收盘也先进入本地分钟底稿，只在分钟收盘时落盘”；原因是用户反馈 1 分钟图不完整，但把未收盘 tick 每次都写盘又会额外吃 IO 和电量。
 - 多周期实时刷新改成“分钟底稿更新后，只覆盖到 `1d` 及以下周期的最新尾部”；原因是 `1w / 1M / 1y` 若只靠最近 1500 根分钟线回算，会错误覆盖整周/整月/整年桶。

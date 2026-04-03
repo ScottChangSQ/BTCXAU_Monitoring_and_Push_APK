@@ -41,4 +41,16 @@ public class FloatingWindowTextFormatterTest {
         assertEquals(true, FloatingWindowTextFormatter.shouldUseNeutralPnlStyle(1e-10));
         assertEquals(false, FloatingWindowTextFormatter.shouldUseNeutralPnlStyle(1d));
     }
+
+    @Test
+    public void formatVolumeLineShouldUseOneMinuteLabelAndUnit() {
+        assertEquals("1M量 12.35 BTC",
+                FloatingWindowTextFormatter.formatVolumeLine(12.345d, "BTC", false));
+    }
+
+    @Test
+    public void formatAmountLineShouldUseOneMinuteLabel() {
+        assertEquals("1M额 1.23M$",
+                FloatingWindowTextFormatter.formatAmountLine(1_234_567d, false));
+    }
 }
