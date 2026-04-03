@@ -48,6 +48,7 @@ SNAPSHOT_BUILD_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_BUILD_CACHE_MA
 SNAPSHOT_DELTA_ENABLED = os.getenv("SNAPSHOT_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 SNAPSHOT_DELTA_FALLBACK_RATIO = float(os.getenv("SNAPSHOT_DELTA_FALLBACK_RATIO", "0.85"))
 SNAPSHOT_SYNC_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_SYNC_CACHE_MAX_ENTRIES", "12")))
+SNAPSHOT_RANGE_ALL_DAYS = max(30, int(os.getenv("SNAPSHOT_RANGE_ALL_DAYS", "730")))
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
 ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "500")))
@@ -611,7 +612,7 @@ def _range_hours(range_key: str) -> int:
         "1m": 24 * 30,
         "3m": 24 * 90,
         "1y": 24 * 365,
-        "all": 24 * 365 * 10,
+        "all": 24 * SNAPSHOT_RANGE_ALL_DAYS,
     }
     return mapping.get(range_key.lower(), 24 * 7)
 
@@ -1263,8 +1264,9 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
     from_time = now - timedelta(hours=_range_hours(range_key))
     deals = mt5.history_deals_get(from_time, now) or []
     mapped = []
-    lifecycle: Dict[int, Dict[str, float]] = {}
+    open_batches: Dict[str, List[Dict[str, Any]]] = {}
     contract_size_cache: Dict[str, float] = {}
+    volume_epsilon = 1e-9
 
     def contract_size_of(symbol: str) -> float:
         cached = contract_size_cache.get(symbol)
@@ -1276,6 +1278,100 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
             size = float(getattr(sinfo, "trade_contract_size", 1.0))
         contract_size_cache[symbol] = size
         return size
+
+    def lifecycle_key(position_id: int, order_id: int, ticket: int) -> str:
+        if position_id > 0:
+            return f"position:{position_id}"
+        if order_id > 0:
+            return f"order:{order_id}"
+        return f"ticket:{ticket}"
+
+    def infer_original_side(deal_type: int) -> str:
+        return "Buy" if deal_type == 1 else "Sell"
+
+    def append_open_batch(key: str,
+                          side: str,
+                          open_time_ms: int,
+                          open_price: float,
+                          volume: float) -> None:
+        if volume <= volume_epsilon:
+            return
+        queue = open_batches.setdefault(key, [])
+        queue.append({
+            "side": side,
+            "open_time": int(open_time_ms),
+            "open_price": float(open_price),
+            "remaining_volume": float(volume),
+        })
+
+    def consume_open_batches(key: str, close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        queue = open_batches.setdefault(key, [])
+        matches: List[Tuple[Dict[str, Any], float]] = []
+        remaining = float(close_volume)
+        while remaining > volume_epsilon and queue:
+            batch = queue[0]
+            matched = min(remaining, float(batch.get("remaining_volume", 0.0)))
+            if matched <= volume_epsilon:
+                queue.pop(0)
+                continue
+            matches.append((dict(batch), matched))
+            batch["remaining_volume"] = max(0.0, float(batch.get("remaining_volume", 0.0)) - matched)
+            remaining -= matched
+            if float(batch.get("remaining_volume", 0.0)) <= volume_epsilon:
+                queue.pop(0)
+        return matches, max(0.0, remaining)
+
+    def resolve_split_ticket(ticket: int, split_count: int, split_index: int) -> int:
+        if split_count <= 1 or ticket <= 0:
+            return ticket
+        return ticket * 1000 + split_index
+
+    def append_close_record(symbol: str,
+                            ticket: int,
+                            order_id: int,
+                            position_id: int,
+                            entry_type: int,
+                            close_time: int,
+                            close_price: float,
+                            close_volume: float,
+                            total_volume: float,
+                            total_profit: float,
+                            total_commission: float,
+                            total_swap: float,
+                            open_time: int,
+                            open_price: float,
+                            side: str,
+                            split_count: int,
+                            split_index: int,
+                            remark: str) -> None:
+        if close_volume <= volume_epsilon or total_volume <= volume_epsilon:
+            return
+        ratio = close_volume / total_volume
+        storage_fee = (total_commission + total_swap) * ratio
+        amount = abs(close_volume * close_price * contract_size_of(symbol))
+        mapped.append(
+            {
+                "timestamp": close_time,
+                "productName": symbol,
+                "code": symbol,
+                "side": side,
+                "price": close_price,
+                "quantity": close_volume,
+                "amount": amount,
+                "fee": storage_fee,
+                "profit": total_profit * ratio,
+                "openTime": open_time,
+                "closeTime": close_time,
+                "openPrice": open_price if open_price > 0.0 else close_price,
+                "closePrice": close_price if close_price > 0.0 else open_price,
+                "storageFee": storage_fee,
+                "dealTicket": resolve_split_ticket(ticket, split_count, split_index),
+                "orderId": order_id,
+                "positionId": position_id,
+                "entryType": entry_type,
+                "remark": remark or "",
+            }
+        )
 
     sorted_deals = sorted(deals, key=lambda d: int(getattr(d, "time", 0)))
 
@@ -1294,106 +1390,85 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
         ticket = int(getattr(deal, "ticket", 0))
         order_id = int(getattr(deal, "order", 0))
         position_id = int(getattr(deal, "position_id", 0))
-        key = position_id if position_id > 0 else (order_id if order_id > 0 else ticket)
+        key = lifecycle_key(position_id, order_id, ticket)
         entry_type = int(getattr(deal, "entry", 0))
         ts = int(getattr(deal, "time", 0)) * 1000
-        price = float(getattr(deal, "price", 0.0))
-
-        state = lifecycle.setdefault(
-            key,
-            {
-                "open_time": 0.0,
-                "open_price_notional": 0.0,
-                "open_volume": 0.0,
-                "open_price": price,
-                "close_time": 0.0,
-                "close_price": price,
-                "side": "Buy",
-            },
-        )
-
-        if _is_entry_open(entry_type):
-            if state["open_time"] <= 0.0 or ts < state["open_time"]:
-                state["open_time"] = float(ts)
-            state["open_volume"] += volume
-            state["open_price_notional"] += volume * price
-            if state["open_volume"] > 1e-9:
-                state["open_price"] = state["open_price_notional"] / state["open_volume"]
-            state["side"] = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
-
-        if _is_entry_close(entry_type):
-            if ts >= state["close_time"]:
-                state["close_time"] = float(ts)
-                state["close_price"] = price
-
-    for deal in sorted_deals:
-        symbol = getattr(deal, "symbol", "--")
-        if symbol == "--" or not symbol:
-            continue
-        deal_type = int(getattr(deal, "type", -1))
-        if not _is_trade_deal_type(deal_type):
-            continue
-
-        entry_type = int(getattr(deal, "entry", 0))
-        if not _is_entry_close(entry_type):
-            # 交易记录以“成交(平仓/反手)”为口径，避免开仓成交重复占用统计口径。
-            continue
-
-        volume = abs(float(getattr(deal, "volume", 0.0)))
-        if volume <= 0.0:
-            continue
-
         price = float(getattr(deal, "price", 0.0))
         profit = float(getattr(deal, "profit", 0.0))
         commission = float(getattr(deal, "commission", 0.0))
         swap = float(getattr(deal, "swap", 0.0))
-        storage_fee = commission + swap
-        amount = abs(volume * price * contract_size_of(symbol))
+        current_side = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
+        comment = getattr(deal, "comment", "") or ""
 
-        ticket = int(getattr(deal, "ticket", 0))
-        order_id = int(getattr(deal, "order", 0))
-        position_id = int(getattr(deal, "position_id", 0))
-        key = position_id if position_id > 0 else (order_id if order_id > 0 else ticket)
-        state = lifecycle.get(key, {})
-        ts = int(getattr(deal, "time", 0)) * 1000
-
-        open_time = int(state.get("open_time", 0))
-        if open_time <= 0:
-            open_time = ts
-        close_time = ts
-
-        open_price = float(state.get("open_price", price))
-        close_price = price
-        lifecycle_side = str(state.get("side", "")).strip()
-        if lifecycle_side in ("Buy", "Sell"):
-            side = lifecycle_side
+        if _is_entry_close(entry_type):
+            matches, remaining_after_close = consume_open_batches(key, volume)
+            if entry_type == 2 and matches:
+                synthetic_close_volume = 0.0
+                reverse_open_volume = remaining_after_close
+            elif entry_type == 2:
+                synthetic_close_volume = volume
+                reverse_open_volume = 0.0
+            else:
+                synthetic_close_volume = remaining_after_close
+                reverse_open_volume = 0.0
+            split_count = len(matches) + (1 if synthetic_close_volume > volume_epsilon else 0)
+            split_index = 0
+            for batch, matched_volume in matches:
+                split_index += 1
+                append_close_record(
+                    symbol=symbol,
+                    ticket=ticket,
+                    order_id=order_id,
+                    position_id=position_id,
+                    entry_type=entry_type,
+                    close_time=ts,
+                    close_price=price,
+                    close_volume=matched_volume,
+                    total_volume=volume,
+                    total_profit=profit,
+                    total_commission=commission,
+                    total_swap=swap,
+                    open_time=int(batch.get("open_time", ts)),
+                    open_price=float(batch.get("open_price", price)),
+                    side=str(batch.get("side", infer_original_side(deal_type))),
+                    split_count=split_count,
+                    split_index=split_index,
+                    remark=comment,
+                )
+            if synthetic_close_volume > volume_epsilon:
+                split_index += 1
+                append_close_record(
+                    symbol=symbol,
+                    ticket=ticket,
+                    order_id=order_id,
+                    position_id=position_id,
+                    entry_type=entry_type,
+                    close_time=ts,
+                    close_price=price,
+                    close_volume=synthetic_close_volume,
+                    total_volume=volume,
+                    total_profit=profit,
+                    total_commission=commission,
+                    total_swap=swap,
+                    open_time=ts,
+                    open_price=price,
+                    side=infer_original_side(deal_type),
+                    split_count=split_count,
+                    split_index=split_index,
+                    remark=comment,
+                )
         else:
-            # 若窗口内缺失开仓成交，则根据平仓成交方向反推原始持仓方向。
-            side = "Buy" if deal_type == 1 else "Sell"
+            reverse_open_volume = 0.0
 
-        mapped.append(
-            {
-                "timestamp": close_time,
-                "productName": symbol,
-                "code": symbol,
-                "side": side,
-                "price": price,
-                "quantity": volume,
-                "amount": amount,
-                "fee": storage_fee,
-                "profit": profit,
-                "openTime": open_time,
-                "closeTime": close_time,
-                "openPrice": open_price if open_price > 0.0 else price,
-                "closePrice": close_price if close_price > 0.0 else price,
-                "storageFee": storage_fee,
-                "dealTicket": ticket,
-                "orderId": order_id,
-                "positionId": position_id,
-                "entryType": entry_type,
-                "remark": getattr(deal, "comment", "") or "",
-            }
-        )
+        if _is_entry_open(entry_type):
+            open_volume = volume if entry_type != 2 else reverse_open_volume
+            append_open_batch(
+                key=key,
+                side=current_side,
+                open_time_ms=ts,
+                open_price=price,
+                volume=open_volume,
+            )
 
     mapped.sort(key=lambda item: item["timestamp"], reverse=True)
     return mapped

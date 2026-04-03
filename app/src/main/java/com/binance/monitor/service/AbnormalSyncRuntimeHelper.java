@@ -59,6 +59,12 @@ final class AbnormalSyncRuntimeHelper {
         return hasUsableSymbol;
     }
 
+    // 当服务端明确返回 404 时，视为当前网关未部署异常接口，后续轮询应暂停。
+    static boolean isUnsupportedEndpointError(@Nullable String error) {
+        String safeError = safeTrim(error);
+        return !safeError.isEmpty() && safeError.contains("HTTP 404");
+    }
+
     private static String safeTrim(@Nullable String value) {
         return value == null ? "" : value.trim();
     }

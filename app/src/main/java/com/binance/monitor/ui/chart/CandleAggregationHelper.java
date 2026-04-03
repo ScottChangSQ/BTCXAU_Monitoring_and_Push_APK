@@ -133,6 +133,43 @@ final class CandleAggregationHelper {
         return trimToLimit(current, limit);
     }
 
+    // 把实时中的 1 分钟底稿合并进本地分钟缓存；同一分钟只替换，不重复累加。
+    static List<CandleEntry> mergeRealtimeBaseCandle(@Nullable List<CandleEntry> existing,
+                                                     @Nullable CandleEntry incoming,
+                                                     @Nullable String symbol,
+                                                     int limit) {
+        if (incoming == null) {
+            return existing == null ? new ArrayList<>() : new ArrayList<>(existing);
+        }
+        List<CandleEntry> current = existing == null ? new ArrayList<>() : new ArrayList<>(existing);
+        String resolvedSymbol = resolveSymbol(symbol, incoming);
+        CandleEntry normalizedIncoming = new CandleEntry(
+                resolvedSymbol,
+                incoming.getOpenTime(),
+                incoming.getCloseTime(),
+                incoming.getOpen(),
+                incoming.getHigh(),
+                incoming.getLow(),
+                incoming.getClose(),
+                incoming.getVolume(),
+                incoming.getQuoteVolume()
+        );
+        boolean replaced = false;
+        for (int i = 0; i < current.size(); i++) {
+            CandleEntry item = current.get(i);
+            if (item != null && item.getOpenTime() == normalizedIncoming.getOpenTime()) {
+                current.set(i, normalizedIncoming);
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) {
+            current.add(normalizedIncoming);
+        }
+        Collections.sort(current, (left, right) -> Long.compare(left.getOpenTime(), right.getOpenTime()));
+        return trimToLimit(current, limit);
+    }
+
     private static String resolveSymbol(@Nullable String preferredSymbol, @Nullable CandleEntry item) {
         if (preferredSymbol != null && !preferredSymbol.trim().isEmpty()) {
             return preferredSymbol.trim();

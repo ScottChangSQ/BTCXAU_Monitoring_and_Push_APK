@@ -24,6 +24,6 @@ public class MonitorRuntimePolicyHelperTest {
     public void foregroundIntervalsShouldMatchCurrentBaseline() {
         assertEquals(30_000L, MonitorRuntimePolicyHelper.resolveHeartbeatDelayMs(true));
         assertEquals(8_000L, MonitorRuntimePolicyHelper.resolveAbnormalSyncDelayMs(true));
-        assertEquals(1_500L, MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(true));
+        assertEquals(350L, MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(true));
     }
 }

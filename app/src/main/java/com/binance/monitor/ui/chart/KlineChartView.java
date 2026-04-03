@@ -542,6 +542,7 @@ public class KlineChartView extends View {
         if (items != null && !items.isEmpty()) {
             historyTradeAnnotations.addAll(items);
         }
+        sanitizeHighlightedAnnotationGroup();
         invalidate();
     }
 
@@ -568,6 +569,7 @@ public class KlineChartView extends View {
         this.showPendingAnnotations = showPendingAnnotations;
         this.showHistoryTradeAnnotations = showHistoryTradeAnnotations;
         this.showAggregateCostAnnotation = showAggregateCostAnnotation;
+        sanitizeHighlightedAnnotationGroup();
         invalidate();
     }
 
@@ -1364,10 +1366,11 @@ public class KlineChartView extends View {
                     ? (selected ? dp(2.4f) : dp(1.1f))
                     : dp(1.7f);
             if (tradeConnector) {
-                float startX = resolveAnnotationXForFloorTime(annotation.anchorTimeMs);
-                float endX = resolveAnnotationXForFloorTime(annotation.secondaryAnchorTimeMs);
+                float startX = resolveHistoricalAnnotationX(annotation.anchorTimeMs);
+                float endX = resolveHistoricalAnnotationX(annotation.secondaryAnchorTimeMs);
                 float endY = resolveAnnotationSecondaryY(annotation);
-                if (Float.isNaN(startX) || Float.isNaN(endX) || Float.isNaN(endY)) {
+                if (Float.isNaN(startX) || Float.isNaN(endX) || Float.isNaN(endY)
+                        || !HistoricalTradeViewportHelper.isSegmentVisible(startX, endX, priceRect.left, priceRect.right)) {
                     continue;
                 }
                 overlayDashPaint.setColor(lineColor);
@@ -1375,7 +1378,8 @@ public class KlineChartView extends View {
                 canvas.drawLine(startX, y, endX, endY, overlayDashPaint);
                 float midX = (startX + endX) * 0.5f;
                 float midY = (y + endY) * 0.5f;
-                if (!annotation.label.isEmpty()) {
+                if (!annotation.label.isEmpty()
+                        && HistoricalTradeViewportHelper.isPointVisible(midX, priceRect.left, priceRect.right)) {
                     drawPointOverlayLabel(canvas, annotation.label, midX, midY, lineColor, selected);
                 }
                 continue;
@@ -1386,10 +1390,19 @@ public class KlineChartView extends View {
                 canvas.drawLine(priceRect.left, y, priceRect.right, y, overlayDashPaint);
             }
 
-            float x = pointOnly
-                    ? resolveAnnotationXForFloorTime(annotation.anchorTimeMs)
-                    : resolveAnnotationX(annotation.anchorTimeMs);
+            float x;
+            if (historyTradePointOnly) {
+                x = resolveHistoricalAnnotationX(annotation.anchorTimeMs);
+            } else if (abnormalPointOnly) {
+                x = resolveAnnotationXForFloorTime(annotation.anchorTimeMs);
+            } else {
+                x = resolveAnnotationX(annotation.anchorTimeMs);
+            }
             if (Float.isNaN(x)) {
+                continue;
+            }
+            if (historyTradePointOnly
+                    && !HistoricalTradeViewportHelper.isPointVisible(x, priceRect.left, priceRect.right)) {
                 continue;
             }
             overlayPointPaint.setColor(lineColor);
@@ -1410,7 +1423,9 @@ public class KlineChartView extends View {
                 canvas.drawCircle(x, y, pointRadius, overlayPointPaint);
             }
 
-            if (historyTradePointOnly && !annotation.label.isEmpty()) {
+            if (historyTradePointOnly
+                    && !annotation.label.isEmpty()
+                    && HistoricalTradeViewportHelper.isPointVisible(x, priceRect.left, priceRect.right)) {
                 drawPointOverlayLabel(canvas, annotation.label, x, y, lineColor, selected);
             } else if (!abnormalPointOnly && !annotation.label.isEmpty()) {
                 drawOverlayLabel(canvas, annotation.label, y, lineColor, selected);
@@ -1512,9 +1527,9 @@ public class KlineChartView extends View {
         float anchorX;
         float anchorY;
         if (isTradeConnectorAnnotation(selected)) {
-            float startX = resolveAnnotationXForFloorTime(selected.anchorTimeMs);
+            float startX = resolveHistoricalAnnotationX(selected.anchorTimeMs);
             float startY = resolveAnnotationY(selected);
-            float endX = resolveAnnotationXForFloorTime(selected.secondaryAnchorTimeMs);
+            float endX = resolveHistoricalAnnotationX(selected.secondaryAnchorTimeMs);
             float endY = resolveAnnotationSecondaryY(selected);
             if (Float.isNaN(startX) || Float.isNaN(startY) || Float.isNaN(endX) || Float.isNaN(endY)) {
                 return;
@@ -1522,9 +1537,13 @@ public class KlineChartView extends View {
             anchorX = (startX + endX) * 0.5f;
             anchorY = (startY + endY) * 0.5f;
         } else {
-            anchorX = isAbnormalAnnotation(selected) || isTradePointAnnotation(selected)
-                    ? resolveAnnotationXForFloorTime(selected.anchorTimeMs)
-                    : resolveAnnotationX(selected.anchorTimeMs);
+            if (isTradePointAnnotation(selected)) {
+                anchorX = resolveHistoricalAnnotationX(selected.anchorTimeMs);
+            } else if (isAbnormalAnnotation(selected)) {
+                anchorX = resolveAnnotationXForFloorTime(selected.anchorTimeMs);
+            } else {
+                anchorX = resolveAnnotationX(selected.anchorTimeMs);
+            }
             anchorY = resolveAnnotationY(selected);
             if (Float.isNaN(anchorX) || Float.isNaN(anchorY)) {
                 return;
@@ -1560,7 +1579,7 @@ public class KlineChartView extends View {
 
     @Nullable
     private PriceAnnotation findHighlightedAnnotationWithDetails() {
-        if (highlightedAnnotationGroupId.isEmpty()) {
+        if (highlightedAnnotationGroupId.isEmpty() || !showHistoryTradeAnnotations) {
             return null;
         }
         for (PriceAnnotation item : historyTradeAnnotations) {
@@ -2121,6 +2140,15 @@ public class KlineChartView extends View {
         return clamp(xFor(floorIndex, visibleEndFloat), priceRect.left, priceRect.right);
     }
 
+    // 历史成交点允许把窗口外时间继续外推到视图外侧，避免被压到左右边界。
+    private float resolveHistoricalAnnotationX(long anchorTimeMs) {
+        if (anchorTimeMs <= 0L || candles.isEmpty()) {
+            return Float.NaN;
+        }
+        float rawIndex = rawIndexByOpenTimeAllowOverflow(anchorTimeMs);
+        return xFor(rawIndex, visibleEndFloat);
+    }
+
     private long estimateCandleIntervalMs() {
         if (candles == null || candles.size() < 2) {
             return 60_000L;
@@ -2145,6 +2173,29 @@ public class KlineChartView extends View {
             }
         }
         return Math.max(0, Math.min(candles.size() - 1, high));
+    }
+
+    // 历史成交时间允许超出当前已加载窗口，并按固定周期在两端继续外推。
+    private float rawIndexByOpenTimeAllowOverflow(long openTime) {
+        if (candles.isEmpty()) {
+            return 0f;
+        }
+        int last = candles.size() - 1;
+        long firstTime = candles.get(0).getOpenTime();
+        long lastTime = candles.get(last).getOpenTime();
+        if (openTime <= firstTime || openTime >= lastTime) {
+            float overflowIndex = HistoricalTradeViewportHelper.resolveOverflowRawIndex(
+                    openTime,
+                    firstTime,
+                    lastTime,
+                    last,
+                    estimateCandleIntervalMs()
+            );
+            if (!Float.isNaN(overflowIndex)) {
+                return overflowIndex;
+            }
+        }
+        return rawIndexByOpenTime(openTime);
     }
 
     private float rawIndexByOpenTime(long openTime) {
@@ -2346,9 +2397,11 @@ public class KlineChartView extends View {
                 return;
             }
         }
-        for (PriceAnnotation item : historyTradeAnnotations) {
-            if (highlightedAnnotationGroupId.equals(resolveAnnotationGroupKey(item))) {
-                return;
+        if (showHistoryTradeAnnotations) {
+            for (PriceAnnotation item : historyTradeAnnotations) {
+                if (highlightedAnnotationGroupId.equals(resolveAnnotationGroupKey(item))) {
+                    return;
+                }
             }
         }
         for (PriceAnnotation item : abnormalAnnotations) {
@@ -2372,10 +2425,12 @@ public class KlineChartView extends View {
             nearest = pendingNearest;
             nearestDistance = resolveAnnotationTouchDistance(nearest, touchX, touchY);
         }
-        PriceAnnotation historyNearest = findNearestAnnotationInList(historyTradeAnnotations, touchX, touchY, thresholdPx, nearestDistance);
-        if (historyNearest != null) {
-            nearest = historyNearest;
-            nearestDistance = resolveAnnotationTouchDistance(nearest, touchX, touchY);
+        if (showHistoryTradeAnnotations) {
+            PriceAnnotation historyNearest = findNearestAnnotationInList(historyTradeAnnotations, touchX, touchY, thresholdPx, nearestDistance);
+            if (historyNearest != null) {
+                nearest = historyNearest;
+                nearestDistance = resolveAnnotationTouchDistance(nearest, touchX, touchY);
+            }
         }
         PriceAnnotation abnormalNearest = findNearestAnnotationInList(abnormalAnnotations, touchX, touchY, thresholdPx, nearestDistance);
         if (abnormalNearest != null) {
@@ -2417,20 +2472,30 @@ public class KlineChartView extends View {
             return Float.NaN;
         }
         if (isTradeConnectorAnnotation(annotation)) {
-            float startX = resolveAnnotationXForFloorTime(annotation.anchorTimeMs);
+            float startX = resolveHistoricalAnnotationX(annotation.anchorTimeMs);
             float startY = resolveAnnotationY(annotation);
-            float endX = resolveAnnotationXForFloorTime(annotation.secondaryAnchorTimeMs);
+            float endX = resolveHistoricalAnnotationX(annotation.secondaryAnchorTimeMs);
             float endY = resolveAnnotationSecondaryY(annotation);
-            if (Float.isNaN(startX) || Float.isNaN(startY) || Float.isNaN(endX) || Float.isNaN(endY)) {
+            if (Float.isNaN(startX) || Float.isNaN(startY) || Float.isNaN(endX) || Float.isNaN(endY)
+                    || !HistoricalTradeViewportHelper.isSegmentVisible(startX, endX, priceRect.left, priceRect.right)) {
                 return Float.NaN;
             }
             return distanceToSegment(touchX, touchY, startX, startY, endX, endY);
         }
-        float x = isAbnormalAnnotation(annotation) || isTradePointAnnotation(annotation)
-                ? resolveAnnotationXForFloorTime(annotation.anchorTimeMs)
-                : resolveAnnotationX(annotation.anchorTimeMs);
+        float x;
+        if (isTradePointAnnotation(annotation)) {
+            x = resolveHistoricalAnnotationX(annotation.anchorTimeMs);
+        } else if (isAbnormalAnnotation(annotation)) {
+            x = resolveAnnotationXForFloorTime(annotation.anchorTimeMs);
+        } else {
+            x = resolveAnnotationX(annotation.anchorTimeMs);
+        }
         float y = resolveAnnotationY(annotation);
         if (Float.isNaN(x) || Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
+            return Float.NaN;
+        }
+        if (isTradePointAnnotation(annotation)
+                && !HistoricalTradeViewportHelper.isPointVisible(x, priceRect.left, priceRect.right)) {
             return Float.NaN;
         }
         if (isAbnormalAnnotation(annotation) || isTradePointAnnotation(annotation)) {

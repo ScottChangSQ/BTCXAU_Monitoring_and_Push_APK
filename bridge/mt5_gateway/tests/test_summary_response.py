@@ -91,6 +91,83 @@ import server_v2  # noqa: E402
 class SummaryResponseTests(unittest.TestCase):
     """验证后台摘要响应会去掉大体积列表字段。"""
 
+    def test_map_trades_pairs_partial_close_with_fifo_open_batches(self):
+        original_mt5 = server_v2.mt5
+
+        class _FakeMt5:
+            @staticmethod
+            def history_deals_get(from_time, to_time):
+                return [
+                    types.SimpleNamespace(
+                        symbol="BTCUSDT",
+                        type=0,
+                        volume=1.0,
+                        ticket=101,
+                        order=201,
+                        position_id=301,
+                        entry=0,
+                        time=100,
+                        price=100.0,
+                        profit=0.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="open-1",
+                    ),
+                    types.SimpleNamespace(
+                        symbol="BTCUSDT",
+                        type=0,
+                        volume=1.0,
+                        ticket=102,
+                        order=202,
+                        position_id=301,
+                        entry=0,
+                        time=200,
+                        price=110.0,
+                        profit=0.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="open-2",
+                    ),
+                    types.SimpleNamespace(
+                        symbol="BTCUSDT",
+                        type=1,
+                        volume=1.5,
+                        ticket=103,
+                        order=203,
+                        position_id=301,
+                        entry=1,
+                        time=300,
+                        price=120.0,
+                        profit=30.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="close",
+                    ),
+                ]
+
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        server_v2.mt5 = _FakeMt5()
+        try:
+            trades = server_v2._map_trades("1d")
+        finally:
+            server_v2.mt5 = original_mt5
+
+        self.assertEqual(2, len(trades))
+        ordered = sorted(trades, key=lambda item: item["openTime"])
+        self.assertEqual([100000, 200000], [item["openTime"] for item in ordered])
+        self.assertEqual([300000, 300000], [item["closeTime"] for item in ordered])
+        self.assertEqual("Buy", ordered[0]["side"])
+        self.assertEqual("Buy", ordered[1]["side"])
+        self.assertAlmostEqual(100.0, ordered[0]["openPrice"])
+        self.assertAlmostEqual(110.0, ordered[1]["openPrice"])
+        self.assertAlmostEqual(1.0, ordered[0]["quantity"])
+        self.assertAlmostEqual(0.5, ordered[1]["quantity"])
+        self.assertAlmostEqual(20.0, ordered[0]["profit"])
+        self.assertAlmostEqual(10.0, ordered[1]["profit"])
+
     def test_trim_cache_entries_locked_keeps_newest_entries_only(self):
         helper = getattr(server_v2, "_trim_cache_entries_locked", None)
         self.assertIsNotNone(helper, "缺少 _trim_cache_entries_locked，无法验证快照缓存裁剪")

@@ -65,4 +65,12 @@ public class AbnormalSyncRuntimeHelperTest {
 
         assertTrue(eligible);
     }
+
+    @Test
+    public void shouldTreatHttp404AsUnsupportedEndpoint() {
+        assertTrue(AbnormalSyncRuntimeHelper.isUnsupportedEndpointError("http://43.155.214.62:8787 -> HTTP 404"));
+        assertTrue(AbnormalSyncRuntimeHelper.isUnsupportedEndpointError(
+                "http://43.155.214.62:8787 -> HTTP 404 ; http://127.0.0.1:8787 -> failed to connect"));
+        assertFalse(AbnormalSyncRuntimeHelper.isUnsupportedEndpointError("failed to connect to localhost"));
+    }
 }

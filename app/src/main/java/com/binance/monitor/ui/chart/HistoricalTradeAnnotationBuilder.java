@@ -40,7 +40,7 @@ final class HistoricalTradeAnnotationBuilder {
                 continue;
             }
             long openTime = resolveOpenTime(trade);
-            long entryAnchorTime = resolveAnchorTime(candles, openTime, true);
+            long entryAnchorTime = resolveAnchorTime(candles, openTime, false);
             double openPrice = resolveOpenPrice(trade);
             double closePrice = resolveClosePrice(trade);
             if (entryAnchorTime <= 0L || openPrice <= 0d || closePrice <= 0d) {
@@ -99,7 +99,7 @@ final class HistoricalTradeAnnotationBuilder {
         long lastOpen = candles.get(candles.size() - 1).getOpenTime();
         long intervalMs = estimateIntervalMs(candles);
         if (targetTime < firstOpen) {
-            return clampToWindowStart ? firstOpen : 0L;
+            return clampToWindowStart ? firstOpen : targetTime;
         }
         if (targetTime > lastOpen + intervalMs) {
             return 0L;
@@ -230,8 +230,16 @@ final class HistoricalTradeAnnotationBuilder {
         if (trade == null) {
             return "tradehist|na|" + anchorTime;
         }
+        long quantityKey = Math.round(Math.abs(trade.getQuantity()) * 10_000d);
         if (trade.getDealTicket() > 0L) {
-            return "tradehist|deal|" + trade.getDealTicket();
+            return "tradehist|deal|"
+                    + trade.getDealTicket()
+                    + "|"
+                    + resolveOpenTime(trade)
+                    + "|"
+                    + resolveCloseTime(trade)
+                    + "|"
+                    + quantityKey;
         }
         if (trade.getOrderId() > 0L || trade.getPositionId() > 0L) {
             return "tradehist|trade|"
@@ -241,7 +249,6 @@ final class HistoricalTradeAnnotationBuilder {
                     + "|"
                     + resolveCloseTime(trade);
         }
-        long quantityKey = Math.round(Math.abs(trade.getQuantity()) * 10_000d);
         long priceKey = Math.round(Math.abs(closePrice) * 100d);
         return "tradehist|fallback|"
                 + normalizeSymbol(trade.getCode())

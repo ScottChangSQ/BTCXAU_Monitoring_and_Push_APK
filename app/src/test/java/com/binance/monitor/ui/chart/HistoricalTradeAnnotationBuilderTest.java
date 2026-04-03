@@ -118,7 +118,7 @@ public class HistoricalTradeAnnotationBuilderTest {
     }
 
     @Test
-    public void shouldClampOpenAnchorToWindowStartWhenTradeStartsBeforeVisibleRange() {
+    public void shouldKeepActualOpenTimeWhenTradeStartsBeforeVisibleRange() {
         List<CandleEntry> candles = Arrays.asList(
                 buildCandle(BASE_TIME, BASE_TIME + 60_000L),
                 buildCandle(BASE_TIME + 60_000L, BASE_TIME + 120_000L)
@@ -139,7 +139,7 @@ public class HistoricalTradeAnnotationBuilderTest {
                 HistoricalTradeAnnotationBuilder.build("BTCUSDT", Collections.singletonList(trade), candles);
 
         assertEquals(1, annotations.size());
-        assertEquals(BASE_TIME, annotations.get(0).entryAnchorTimeMs);
+        assertEquals(BASE_TIME - 120_000L, annotations.get(0).entryAnchorTimeMs);
         assertEquals(BASE_TIME, annotations.get(0).exitAnchorTimeMs);
     }
 

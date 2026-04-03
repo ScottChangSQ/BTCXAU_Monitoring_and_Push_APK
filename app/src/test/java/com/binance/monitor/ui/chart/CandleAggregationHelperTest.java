@@ -141,6 +141,82 @@ public class CandleAggregationHelperTest {
         assertEquals(100d, merged.getQuoteVolume(), 1e-9);
     }
 
+    @Test
+    public void mergeRealtimeBaseCandleShouldReplaceSameMinuteWithoutDoubleCounting() {
+        List<CandleEntry> base = Arrays.asList(
+                candle(BASE_TIME, 100d, 101d, 99d, 100.5d, 1d, 10d),
+                candle(BASE_TIME + MINUTE, 100.5d, 101.2d, 100d, 100.8d, 2d, 20d)
+        );
+        CandleEntry incoming = new CandleEntry(
+                "BTCUSDT",
+                BASE_TIME + MINUTE,
+                BASE_TIME + MINUTE * 2L - 1L,
+                100.5d,
+                102d,
+                99.8d,
+                101.6d,
+                3.5d,
+                35d
+        );
+
+        List<CandleEntry> updated = CandleAggregationHelper.mergeRealtimeBaseCandle(
+                base,
+                incoming,
+                "BTCUSDT",
+                10
+        );
+
+        assertEquals(2, updated.size());
+        CandleEntry latest = updated.get(1);
+        assertEquals(BASE_TIME + MINUTE, latest.getOpenTime());
+        assertEquals(101.6d, latest.getClose(), 1e-9);
+        assertEquals(3.5d, latest.getVolume(), 1e-9);
+        assertEquals(35d, latest.getQuoteVolume(), 1e-9);
+    }
+
+    @Test
+    public void mergeRealtimeBaseCandleShouldRefreshFiveMinutePreviewFromMinuteBase() {
+        List<CandleEntry> base = Arrays.asList(
+                candle(BASE_TIME, 100d, 101d, 99d, 100.5d, 1d, 10d),
+                candle(BASE_TIME + MINUTE, 100.5d, 101.5d, 100d, 101d, 2d, 20d)
+        );
+        CandleEntry incoming = new CandleEntry(
+                "BTCUSDT",
+                BASE_TIME + MINUTE * 2L,
+                BASE_TIME + MINUTE * 3L - 1L,
+                101d,
+                103d,
+                100.5d,
+                102d,
+                3d,
+                30d
+        );
+
+        List<CandleEntry> updatedBase = CandleAggregationHelper.mergeRealtimeBaseCandle(
+                base,
+                incoming,
+                "BTCUSDT",
+                10
+        );
+        List<CandleEntry> aggregated = CandleAggregationHelper.aggregate(
+                updatedBase,
+                "BTCUSDT",
+                "5m",
+                10
+        );
+
+        assertEquals(1, aggregated.size());
+        CandleEntry merged = aggregated.get(0);
+        assertEquals(BASE_TIME, merged.getOpenTime());
+        assertEquals(BASE_TIME + MINUTE * 3L - 1L, merged.getCloseTime());
+        assertEquals(100d, merged.getOpen(), 1e-9);
+        assertEquals(103d, merged.getHigh(), 1e-9);
+        assertEquals(99d, merged.getLow(), 1e-9);
+        assertEquals(102d, merged.getClose(), 1e-9);
+        assertEquals(6d, merged.getVolume(), 1e-9);
+        assertEquals(60d, merged.getQuoteVolume(), 1e-9);
+    }
+
     private CandleEntry candle(long openTime,
                                double open,
                                double high,

@@ -100,6 +100,8 @@
     <string name="chart_info_template">%1$s | O:%2$s H:%3$s L:%4$s C:%5$s | VOL:%6$s | MACD:%7$s K:%8$s D:%9$s</string>
     <string name="chart_gesture_hint">手势支持：双指缩放、左右滑动、长按十字线。</string>
     <string name="chart_back_to_latest">回到最新</string>
+    <string name="chart_history_trades_on">历史成交 开</string>
+    <string name="chart_history_trades_off">历史成交 关</string>
     <string name="privacy_mask_switch">隐私隐藏</string>
     <string name="privacy_mask_title">隐私隐藏中</string>
     <string name="privacy_mask_hint">已隐藏账户号、价格、数量和盈亏等敏感数据</string>

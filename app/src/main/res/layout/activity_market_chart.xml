@@ -291,6 +291,22 @@
                         android:src="@drawable/ic_scroll_to_latest_arrow"
                         android:tint="@color/text_primary"
                         android:visibility="invisible" />
+
+                    <Button
+                        android:id="@+id/btnToggleHistoryTrades"
+                        android:layout_width="wrap_content"
+                        android:layout_height="25dp"
+                        android:layout_gravity="bottom|start"
+                        android:layout_marginStart="2dp"
+                        android:layout_marginBottom="2dp"
+                        android:background="@android:color/transparent"
+                        android:minWidth="0dp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:text="@string/chart_history_trades_on"
+                        android:textAllCaps="false"
+                        android:textColor="@color/text_primary"
+                        android:textSize="10sp" />
                 </FrameLayout>
 
                 <TextView

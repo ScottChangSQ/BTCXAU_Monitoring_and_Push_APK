@@ -104,6 +104,7 @@ public class MonitorService extends Service {
     private boolean abnormalBootstrapSynced;
     private boolean abnormalSyncAttempted;
     private boolean abnormalSyncHealthy;
+    private boolean abnormalEndpointUnsupported;
     private String lastAbnormalSyncError = "";
     private long lastAbnormalSyncErrorAt;
 
@@ -146,6 +147,7 @@ public class MonitorService extends Service {
                 break;
             case AppConstants.ACTION_REFRESH_CONFIG:
                 applyFloatingPreferences();
+                abnormalEndpointUnsupported = false;
                 syncAbnormalConfigAsync();
                 scheduleAbnormalSync(0L);
                 break;
@@ -228,9 +230,9 @@ public class MonitorService extends Service {
                 mainHandler.post(() -> {
                     long now = System.currentTimeMillis();
                     lastKlineTickAt.put(symbol, now);
+                    repository.updateClosedKline(data);
                     if (data.isClosed()) {
                         maybePublishPrice(symbol, data, now, true);
-                        repository.updateClosedKline(data);
                         handleClosedKline(data);
                     } else {
                         maybePublishPrice(symbol, data, now, false);
@@ -272,7 +274,10 @@ public class MonitorService extends Service {
 
     // 按固定节奏向网关拉取异常记录，首轮只落历史数据，不补发旧提醒。
     private void requestAbnormalSync() {
-        if (abnormalGatewayClient == null || executorService == null || abnormalSyncInFlight) {
+        if (abnormalEndpointUnsupported
+                || abnormalGatewayClient == null
+                || executorService == null
+                || abnormalSyncInFlight) {
             return;
         }
         abnormalSyncInFlight = true;
@@ -291,6 +296,14 @@ public class MonitorService extends Service {
         if (result == null || !result.isSuccess()) {
             abnormalSyncHealthy = false;
             String error = normalizeAbnormalSyncError(result == null ? "未知错误" : result.getError());
+            if (AbnormalSyncRuntimeHelper.isUnsupportedEndpointError(error)) {
+                abnormalEndpointUnsupported = true;
+                logManager.warn("异常同步接口不存在，已暂停后续轮询: " + error);
+                scheduleAbnormalSync(0L);
+                lastAbnormalSyncError = error;
+                lastAbnormalSyncErrorAt = now;
+                return;
+            }
             if (AbnormalSyncRuntimeHelper.shouldLogSyncError(
                     lastAbnormalSyncError,
                     lastAbnormalSyncErrorAt,
@@ -303,6 +316,7 @@ public class MonitorService extends Service {
             }
             return;
         }
+        abnormalEndpointUnsupported = false;
         abnormalSyncHealthy = true;
         lastAbnormalSyncError = "";
         lastAbnormalSyncErrorAt = 0L;
@@ -418,6 +432,9 @@ public class MonitorService extends Service {
             return;
         }
         mainHandler.removeCallbacks(abnormalSyncRunnable);
+        if (abnormalEndpointUnsupported) {
+            return;
+        }
         mainHandler.postDelayed(abnormalSyncRunnable, Math.max(0L, delayMs));
     }
 
