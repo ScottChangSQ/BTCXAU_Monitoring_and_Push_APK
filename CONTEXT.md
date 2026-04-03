@@ -1,6 +1,7 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已进入实施计划阶段，并新增正式计划文档 `docs/superpowers/plans/2026-04-03-binance-mt5-new-architecture.md`；计划按“服务端 v2 契约 -> Binance 行情真值 -> MT5 账户真值 -> 统一 sync -> APP 图表切换 -> APP 账户切换 -> 清旧架构”推进，适配用户“停服一次性切换”的要求。
 - 已按用户要求停止继续补旧链路，转为重新规划“Binance 行情真值 + MT5 账户真值”的新架构；当前已完成三部分方案确认，并整理正式设计文档 `docs/superpowers/specs/2026-04-03-binance-mt5-new-architecture-design.md`，等待用户审阅后再进入实施计划。
 - 本轮关键决定：`BTCUSDT` 与 `XAUUSDT` 的行情、K线、成交量、指标统一改为只认 Binance；MT5 只负责账户侧真值；同时用户已明确接受停服并一次性切换到新架构，不再维护旧架构兼容层。
 - 已为图表页加入“一次性缓存版本失效清理”：`MarketChartActivity` 启动时会先检查 `chart_cache_schema_version`，若本地缓存版本落后，就清掉 `ChartHistoryRepository` 历史、`KlineCacheStore` 落盘缓存和当前内存里的 K 线数据，避免旧版本错误 K 线继续污染新逻辑。
