@@ -73,6 +73,21 @@ public class AccountStatsLayoutResourceTest {
         assertTrue("还有分段按钮没有被校验到: " + remaining, remaining.isEmpty());
     }
 
+    // 日期选择面板不应再把标题和按钮颜色写死，否则主题切换后容易与背景贴色。
+    @Test
+    public void activityAccountStatsShouldNotHardcodePickerPanelTextColors() throws Exception {
+        Document document = parseXml(resolveProjectFile(
+                "app/src/main/res/layout/activity_account_stats.xml",
+                "src/main/res/layout/activity_account_stats.xml"
+        ));
+        assertPickerTextColorCleared(document, "tvManualDatePickerTitle");
+        assertPickerTextColorCleared(document, "btnManualDateCancel");
+        assertPickerTextColorCleared(document, "btnManualDateConfirm");
+        assertPickerTextColorCleared(document, "tvReturnPeriodPickerTitle");
+        assertPickerTextColorCleared(document, "btnReturnPeriodCancel");
+        assertPickerTextColorCleared(document, "btnReturnPeriodConfirm");
+    }
+
     // 按当前工作目录自动解析项目资源文件，兼容根目录和 app 模块目录两种执行入口。
     private static Path resolveProjectFile(String... candidates) {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
@@ -90,5 +105,28 @@ public class AccountStatsLayoutResourceTest {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(false);
         return factory.newDocumentBuilder().parse(path.toFile());
+    }
+
+    // 断言指定控件已移除 XML 级别的固定文字颜色，交给运行时主题统一控制。
+    private static void assertPickerTextColorCleared(Document document, String viewId) {
+        org.w3c.dom.Element element = findElementById(document, viewId);
+        assertEquals(viewId + " 不应继续写死文字颜色", "", element.getAttribute("android:textColor"));
+    }
+
+    // 在布局里按 android:id 精确找到对应元素。
+    private static org.w3c.dom.Element findElementById(Document document, String viewId) {
+        NodeList elements = document.getElementsByTagName("*");
+        for (int i = 0; i < elements.getLength(); i++) {
+            org.w3c.dom.Element element = (org.w3c.dom.Element) elements.item(i);
+            String rawId = element.getAttribute("android:id");
+            if (rawId == null || rawId.isEmpty()) {
+                continue;
+            }
+            String shortId = rawId.substring(rawId.indexOf('/') + 1);
+            if (viewId.equals(shortId)) {
+                return element;
+            }
+        }
+        throw new IllegalStateException("找不到控件: " + viewId);
     }
 }

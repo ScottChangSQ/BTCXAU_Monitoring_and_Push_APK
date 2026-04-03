@@ -3,9 +3,13 @@
  */
 package com.binance.monitor.ui.theme;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
+import org.junit.Before;
 import org.junit.Test;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -13,8 +17,19 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.regex.Pattern;
 
+import javax.xml.parsers.DocumentBuilderFactory;
+
 public class MarketChartLayoutThemeResourceTest {
     private static final Pattern HARD_CODED_HEX_COLOR = Pattern.compile("#[0-9A-Fa-f]{6,8}");
+    private Document document;
+
+    @Before
+    public void setUp() throws Exception {
+        document = parseXml(
+                "app/src/main/res/layout/activity_market_chart.xml",
+                "src/main/res/layout/activity_market_chart.xml"
+        );
+    }
 
     @Test
     public void marketChartLayoutShouldNotContainHardCodedHexColors() throws Exception {
@@ -26,6 +41,12 @@ public class MarketChartLayoutThemeResourceTest {
                 HARD_CODED_HEX_COLOR.matcher(xml).find());
     }
 
+    @Test
+    public void marketChartLayoutShouldUseSmallerCountdownTextSize() {
+        org.w3c.dom.Element countdown = findElementById("tvChartRefreshCountdown");
+        assertEquals("9sp", countdown.getAttribute("android:textSize"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {
@@ -35,5 +56,34 @@ public class MarketChartLayoutThemeResourceTest {
             }
         }
         throw new IllegalStateException("找不到布局文件");
+    }
+
+    private static Document parseXml(String... candidates) throws Exception {
+        Path workingDir = Paths.get(System.getProperty("user.dir"));
+        for (String candidate : candidates) {
+            Path path = workingDir.resolve(candidate).normalize();
+            if (Files.exists(path)) {
+                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+                factory.setNamespaceAware(false);
+                return factory.newDocumentBuilder().parse(path.toFile());
+            }
+        }
+        throw new IllegalStateException("找不到布局文件");
+    }
+
+    private org.w3c.dom.Element findElementById(String viewId) {
+        NodeList elements = document.getElementsByTagName("*");
+        for (int i = 0; i < elements.getLength(); i++) {
+            org.w3c.dom.Element element = (org.w3c.dom.Element) elements.item(i);
+            String rawId = element.getAttribute("android:id");
+            if (rawId == null || rawId.isEmpty()) {
+                continue;
+            }
+            String shortId = rawId.substring(rawId.indexOf('/') + 1);
+            if (viewId.equals(shortId)) {
+                return element;
+            }
+        }
+        throw new IllegalStateException("找不到控件: " + viewId);
     }
 }

@@ -53,6 +53,24 @@ public class AccountCurvePositionRatioHelperTest {
     }
 
     @Test
+    public void ensureVisibleRatiosShouldClearStaleHistoricalRatiosWhenNoLiveExposure() {
+        List<CurvePoint> points = Arrays.asList(
+                new CurvePoint(1_000L, 100d, 95d, 0.12d),
+                new CurvePoint(2_000L, 200d, 190d, 0.10d)
+        );
+
+        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(
+                points,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                10d
+        );
+
+        assertEquals(0d, resolved.get(0).getPositionRatio(), 1e-9);
+        assertEquals(0d, resolved.get(1).getPositionRatio(), 1e-9);
+    }
+
+    @Test
     public void ensureVisibleRatiosShouldReplayClosedTradesWhenLivePositionsMissing() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 100d, 0d),
