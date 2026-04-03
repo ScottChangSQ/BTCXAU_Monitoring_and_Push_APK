@@ -8,13 +8,18 @@ public final class ChartRefreshMetaFormatter {
     private ChartRefreshMetaFormatter() {
     }
 
+    // 推送优先链路下仅展示最近一次网络延迟。
+    public static String buildLatencyOnlyText(long latencyMs) {
+        return latencyMs >= 0L ? (latencyMs + "ms") : "--ms";
+    }
+
     // 生成“剩余秒数/周期秒数 延迟ms”文案，无有效结果时显示占位符。
     public static String buildCountdownText(long nextAutoRefreshAtMs,
                                             long nowMs,
                                             long periodMs,
                                             long latencyMs) {
         int periodSeconds = (int) Math.max(1L, periodMs / 1_000L);
-        String latencyText = latencyMs >= 0L ? (latencyMs + "ms") : "--ms";
+        String latencyText = buildLatencyOnlyText(latencyMs);
         if (nextAutoRefreshAtMs <= 0L) {
             return "--秒/" + periodSeconds + "秒 " + latencyText;
         }

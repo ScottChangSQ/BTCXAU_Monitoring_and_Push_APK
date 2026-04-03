@@ -41,13 +41,15 @@ final class MarketChartRefreshHelper {
                                 long latestRealtimeClosedTimeMs,
                                 long intervalMs,
                                 boolean yearAggregate) {
-        int requiredWindowSize = Math.max(1, Math.min(targetLimit, fullWindowLimit));
-        boolean hasEnoughLocal = localSeries != null && localSeries.size() >= requiredWindowSize;
+        boolean hasLocalSeries = localSeries != null && !localSeries.isEmpty();
         boolean realtimeFresh = isRealtimeFresh(nowMs, latestRealtimeClosedTimeMs);
-        if (hasEnoughLocal && realtimeFresh) {
+        boolean supportsMinuteDerivedSkip = !yearAggregate
+                && intervalMs > 0L
+                && intervalMs <= 24L * 60L * 60_000L;
+        if (hasLocalSeries && realtimeFresh && supportsMinuteDerivedSkip) {
             return new SyncPlan(SyncMode.SKIP, -1L);
         }
-        if (!hasEnoughLocal || localSeries == null || localSeries.isEmpty()) {
+        if (!hasLocalSeries) {
             return new SyncPlan(SyncMode.FULL, -1L);
         }
         if (yearAggregate || intervalMs <= 0L) {
@@ -58,9 +60,13 @@ final class MarketChartRefreshHelper {
         if (latestOpenTime <= 0L) {
             return new SyncPlan(SyncMode.FULL, -1L);
         }
+        int requiredWindowSize = Math.max(1, Math.min(targetLimit, fullWindowLimit));
         long maxCoveredDurationMs = intervalMs * Math.max(1L, fullWindowLimit - 1L);
         if (nowMs - latestOpenTime > maxCoveredDurationMs) {
             return new SyncPlan(SyncMode.FULL, -1L);
+        }
+        if (localSeries.size() >= requiredWindowSize && realtimeFresh) {
+            return new SyncPlan(SyncMode.SKIP, -1L);
         }
         return new SyncPlan(SyncMode.INCREMENTAL, latestOpenTime);
     }

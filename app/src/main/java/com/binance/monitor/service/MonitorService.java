@@ -17,7 +17,9 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
+import com.binance.monitor.data.local.db.repository.ChartHistoryRepository;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
+import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.AbnormalAlertItem;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.KlineData;
@@ -26,6 +28,7 @@ import com.binance.monitor.data.remote.AbnormalGatewayClient;
 import com.binance.monitor.data.remote.BinanceApiClient;
 import com.binance.monitor.data.remote.WebSocketManager;
 import com.binance.monitor.data.repository.MonitorRepository;
+import com.binance.monitor.ui.chart.MarketChartCacheKeyHelper;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.ui.floating.FloatingPositionAggregator;
 import com.binance.monitor.ui.floating.FloatingSymbolCardData;
@@ -88,6 +91,7 @@ public class MonitorService extends Service {
     private NotificationHelper notificationHelper;
     private FloatingWindowManager floatingWindowManager;
     private AccountStorageRepository accountStorageRepository;
+    private ChartHistoryRepository chartHistoryRepository;
     private BinanceApiClient apiClient;
     private AbnormalGatewayClient abnormalGatewayClient;
     private WebSocketManager webSocketManager;
@@ -118,6 +122,7 @@ public class MonitorService extends Service {
         notificationHelper = new NotificationHelper(this);
         floatingWindowManager = new FloatingWindowManager(this);
         accountStorageRepository = new AccountStorageRepository(this);
+        chartHistoryRepository = new ChartHistoryRepository(this);
         apiClient = new BinanceApiClient(this);
         abnormalGatewayClient = new AbnormalGatewayClient(this);
         webSocketManager = new WebSocketManager(this);
@@ -257,6 +262,23 @@ public class MonitorService extends Service {
         executorService.execute(() -> {
             for (String symbol : AppConstants.MONITOR_SYMBOLS) {
                 try {
+                    List<CandleEntry> minuteHistory = apiClient.fetchChartKlineFullWindow(
+                            symbol,
+                            "1m",
+                            AppConstants.CHART_BASE_MINUTE_HISTORY_LIMIT
+                    );
+                    if (minuteHistory != null && !minuteHistory.isEmpty()) {
+                        persistBootstrapMinuteHistory(symbol, minuteHistory);
+                        KlineData data = toLatestClosedKline(symbol, minuteHistory);
+                        if (data != null) {
+                            long now = System.currentTimeMillis();
+                            lastKlineTickAt.put(symbol, now);
+                            repository.updateClosedKline(data);
+                            maybePublishPrice(symbol, data, now, true);
+                            logManager.info(symbol + " 初始化成功，最近收盘时间(本地时区) " + FormatUtils.formatDateTime(data.getCloseTime()));
+                            continue;
+                        }
+                    }
                     KlineData data = apiClient.fetchLatestClosedKline(symbol);
                     if (data != null) {
                         long now = System.currentTimeMillis();
@@ -271,6 +293,43 @@ public class MonitorService extends Service {
             }
             mainHandler.post(() -> requestFloatingWindowRefresh(true));
         });
+    }
+
+    // 冷启动先把最近一段 1m 底稿落到本地，供图表页直接读取并本地派生更高周期。
+    private void persistBootstrapMinuteHistory(String symbol, List<CandleEntry> minuteHistory) {
+        if (chartHistoryRepository == null || minuteHistory == null || minuteHistory.isEmpty()) {
+            return;
+        }
+        String key = MarketChartCacheKeyHelper.build(symbol, "1m", "1m", false);
+        chartHistoryRepository.mergeAndSave(key, symbol, "1m", "1m", false, minuteHistory);
+    }
+
+    // 从冷启动拉到的 1m 历史里挑最后一根已收盘 K 线，继续喂给现有行情与悬浮窗链路。
+    @Nullable
+    private KlineData toLatestClosedKline(String symbol, List<CandleEntry> minuteHistory) {
+        if (minuteHistory == null || minuteHistory.isEmpty()) {
+            return null;
+        }
+        long now = System.currentTimeMillis();
+        for (int i = minuteHistory.size() - 1; i >= 0; i--) {
+            CandleEntry candle = minuteHistory.get(i);
+            if (candle == null || candle.getCloseTime() >= now) {
+                continue;
+            }
+            return new KlineData(
+                    symbol,
+                    candle.getOpen(),
+                    candle.getHigh(),
+                    candle.getLow(),
+                    candle.getClose(),
+                    candle.getVolume(),
+                    candle.getQuoteVolume(),
+                    candle.getOpenTime(),
+                    candle.getCloseTime(),
+                    true
+            );
+        }
+        return null;
     }
 
     // 按固定节奏向网关拉取异常记录，首轮只落历史数据，不补发旧提醒。

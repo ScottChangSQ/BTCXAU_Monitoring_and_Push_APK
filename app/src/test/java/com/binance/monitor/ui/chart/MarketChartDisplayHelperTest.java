@@ -54,6 +54,66 @@ public class MarketChartDisplayHelperTest {
     }
 
     @Test
+    public void mergeDisplaySeriesShouldDiscardIncompatiblePreviewForMonthlyInterval() {
+        List<CandleEntry> preview = Arrays.asList(
+                candle(60_000L, 100d),
+                candle(120_000L, 101d),
+                candle(180_000L, 102d)
+        );
+        List<CandleEntry> fetched = Arrays.asList(
+                candle(31L * 24L * 60L * 60_000L, 200d),
+                candle(62L * 24L * 60L * 60_000L, 210d)
+        );
+
+        List<CandleEntry> merged = MarketChartDisplayHelper.mergeDisplaySeries("1M", preview, fetched, 10);
+
+        assertEquals(2, merged.size());
+        assertEquals(200d, merged.get(0).getClose(), 0.0001d);
+        assertEquals(210d, merged.get(1).getClose(), 0.0001d);
+    }
+
+    @Test
+    public void isSeriesCompatibleForIntervalShouldRejectMinuteSeriesForWeeklyDisplay() {
+        List<CandleEntry> preview = Arrays.asList(
+                candle(60_000L, 100d),
+                candle(120_000L, 101d),
+                candle(180_000L, 102d)
+        );
+
+        assertFalse(MarketChartDisplayHelper.isSeriesCompatibleForInterval("1w", preview));
+        assertTrue(MarketChartDisplayHelper.isSeriesCompatibleForInterval("1m", preview));
+    }
+
+    @Test
+    public void isSeriesCompatibleForIntervalShouldRejectMinuteSeriesForMonthlyDisplay() {
+        List<CandleEntry> preview = Arrays.asList(
+                candle(60_000L, 100d),
+                candle(120_000L, 101d),
+                candle(180_000L, 102d)
+        );
+
+        assertFalse(MarketChartDisplayHelper.isSeriesCompatibleForInterval("1M", preview));
+    }
+
+    @Test
+    public void isSeriesCompatibleForIntervalShouldRejectSingleBarPreviewForWeeklyDisplay() {
+        List<CandleEntry> preview = Collections.singletonList(
+                candle(60_000L, 100d)
+        );
+
+        assertFalse(MarketChartDisplayHelper.isSeriesCompatibleForInterval("1w", preview));
+    }
+
+    @Test
+    public void isSeriesCompatibleForIntervalShouldRejectSingleBarPreviewForMonthlyDisplay() {
+        List<CandleEntry> preview = Collections.singletonList(
+                candle(31L * 24L * 60L * 60_000L, 200d)
+        );
+
+        assertFalse(MarketChartDisplayHelper.isSeriesCompatibleForInterval("1M", preview));
+    }
+
+    @Test
     public void shouldShowBlockingLoadingShouldOnlyBlockWhenNoVisibleCandles() {
         assertTrue(MarketChartDisplayHelper.shouldShowBlockingLoading(false, Collections.emptyList()));
         assertFalse(MarketChartDisplayHelper.shouldShowBlockingLoading(false, Collections.singletonList(candle(1_000L, 100d))));

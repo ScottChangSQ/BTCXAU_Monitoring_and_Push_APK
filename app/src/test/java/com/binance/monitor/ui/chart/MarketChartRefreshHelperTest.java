@@ -54,7 +54,7 @@ public class MarketChartRefreshHelperTest {
     }
 
     @Test
-    public void resolvePlanShouldFallbackToFullWhenOnlyWarmPreviewExists() {
+    public void resolvePlanShouldSkipWhenWarmPreviewExistsAndRealtimeClosedKlineIsFresh() {
         List<CandleEntry> local = createSeries(300, NOW - MINUTE * 30L, MINUTE);
 
         MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
@@ -62,12 +62,12 @@ public class MarketChartRefreshHelperTest {
                 1_500,
                 1_500,
                 NOW,
-                NOW - MINUTE * 3L,
+                NOW - 30_000L,
                 MINUTE,
                 false
         );
 
-        assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
+        assertEquals(MarketChartRefreshHelper.SyncMode.SKIP, plan.mode);
     }
 
     @Test

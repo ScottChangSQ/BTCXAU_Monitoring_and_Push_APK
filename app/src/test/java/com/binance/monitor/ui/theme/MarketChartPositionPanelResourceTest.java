@@ -21,6 +21,10 @@ public class MarketChartPositionPanelResourceTest {
                 "app/src/main/res/layout/activity_market_chart.xml",
                 "src/main/res/layout/activity_market_chart.xml"
         );
+        assertTrue("图表页缺少按产品汇总暂无持仓空态控件", xml.contains("android:id=\"@+id/tvChartPositionAggregateEmpty\""));
+        assertTrue("图表页按产品汇总缺少暂无持仓文案",
+                xml.contains("android:id=\"@+id/tvChartPositionAggregateEmpty\"")
+                        && xml.contains("android:text=\"暂无持仓\""));
         assertTrue("图表页缺少暂无持仓空态控件", xml.contains("android:id=\"@+id/tvChartPositionsEmpty\""));
         assertTrue("图表页缺少暂无持仓文案", xml.contains("android:text=\"暂无持仓\""));
         assertTrue("左上角信息应统一使用 Meta 文本样式",

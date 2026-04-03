@@ -132,4 +132,17 @@ public class AccountCurveHighlightHelperTest {
         assertEquals(120d, snapshot.getCurvePoint().getBalance(), 1e-9);
         assertEquals(0.70d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
     }
+
+    @Test
+    public void resolveTimestampRatioShouldFollowResolvedTimestamp() {
+        List<CurvePoint> curvePoints = Arrays.asList(
+                new CurvePoint(1_000L, 100d, 90d, 0.10d),
+                new CurvePoint(2_000L, 140d, 110d, 0.50d),
+                new CurvePoint(3_000L, 180d, 130d, 0.90d)
+        );
+
+        assertEquals(0.75f, AccountCurveHighlightHelper.resolveTimestampRatio(curvePoints, 2_500L), 1e-6f);
+        assertEquals(0f, AccountCurveHighlightHelper.resolveTimestampRatio(curvePoints, 500L), 1e-6f);
+        assertEquals(1f, AccountCurveHighlightHelper.resolveTimestampRatio(curvePoints, 4_000L), 1e-6f);
+    }
 }

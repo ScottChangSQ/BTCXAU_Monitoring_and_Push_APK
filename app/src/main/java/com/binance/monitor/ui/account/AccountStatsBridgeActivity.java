@@ -3581,15 +3581,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         extraLines.add("仓位 " + formatPercentValue(point.getPositionRatio(), false));
         extraLines.add("回撤 " + formatPercentValue(drawdownPoint == null ? null : drawdownPoint.getDrawdownRate(), false));
         extraLines.add("日收益 " + formatPercentValue(dailyReturnPoint == null ? null : dailyReturnPoint.getReturnRate(), true));
+        float syncedRatio = AccountCurveHighlightHelper.resolveTimestampRatio(displayedCurvePoints, snapshot.getTargetTimestamp());
         syncingCurveHighlight = true;
         binding.tvCurveMeta.setText(isPrivacyMasked()
                 ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
                 : buildHighlightCurveMeta(snapshot));
         binding.equityCurveView.setTooltipExtraLines(extraLines);
-        binding.equityCurveView.syncHighlightPoint(point, snapshot.getTargetTimestamp(), xRatio);
-        binding.positionRatioChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
-        binding.drawdownChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
-        binding.dailyReturnChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
+        binding.equityCurveView.syncHighlightPoint(point, snapshot.getTargetTimestamp(), syncedRatio >= 0f ? syncedRatio : xRatio);
+        binding.positionRatioChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), syncedRatio >= 0f ? syncedRatio : xRatio);
+        binding.drawdownChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), syncedRatio >= 0f ? syncedRatio : xRatio);
+        binding.dailyReturnChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), syncedRatio >= 0f ? syncedRatio : xRatio);
         syncingCurveHighlight = false;
     }
 

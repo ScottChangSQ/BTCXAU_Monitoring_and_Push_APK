@@ -10,19 +10,21 @@ import static org.junit.Assert.assertEquals;
 public class ChartRefreshMetaFormatterTest {
 
     @Test
-    public void buildCountdownText_showsPlaceholderLatency_whenNoSuccessfulRequestYet() {
-        String text = ChartRefreshMetaFormatter.buildCountdownText(
-                0L,
-                1_000L,
-                5_000L,
-                -1L
-        );
+    public void buildLatencyOnlyText_showsPlaceholder_whenNoSuccessfulRequestYet() {
+        String text = ChartRefreshMetaFormatter.buildLatencyOnlyText(-1L);
 
-        assertEquals("--秒/5秒 --ms", text);
+        assertEquals("--ms", text);
     }
 
     @Test
-    public void buildCountdownText_appendsLatency_whenRequestSucceeded() {
+    public void buildLatencyOnlyText_showsLatency_whenRequestSucceeded() {
+        String text = ChartRefreshMetaFormatter.buildLatencyOnlyText(128L);
+
+        assertEquals("128ms", text);
+    }
+
+    @Test
+    public void buildCountdownText_appendsLatency_whenCountdownIsEnabled() {
         String text = ChartRefreshMetaFormatter.buildCountdownText(
                 6_000L,
                 1_000L,

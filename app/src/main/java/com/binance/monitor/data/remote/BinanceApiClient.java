@@ -247,6 +247,9 @@ public class BinanceApiClient {
     public List<CandleEntry> fetchChartKlineFullWindow(String symbol, String interval, int limit) throws Exception {
         String normalizedInterval = normalizeInterval(interval);
         int safeLimit = clampLimit(limit);
+        if (ChartLongIntervalFetchPolicyHelper.shouldUseDirectRestFirst(normalizedInterval)) {
+            return loadChartLongIntervalWindow(symbol, normalizedInterval, safeLimit, null);
+        }
         if (isWeeklyOrMonthly(normalizedInterval)) {
             int dailyLimit = Math.min(1500, "1w".equals(normalizedInterval)
                     ? Math.max(200, safeLimit * 9)
@@ -264,6 +267,9 @@ public class BinanceApiClient {
                                                           long endTimeInclusive) throws Exception {
         String normalizedInterval = normalizeInterval(interval);
         int safeLimit = clampLimit(limit);
+        if (ChartLongIntervalFetchPolicyHelper.shouldUseDirectRestFirst(normalizedInterval)) {
+            return loadChartLongIntervalWindow(symbol, normalizedInterval, safeLimit, endTimeInclusive);
+        }
         if (isWeeklyOrMonthly(normalizedInterval)) {
             int dailyLimit = Math.min(1500, "1w".equals(normalizedInterval)
                     ? Math.max(260, safeLimit * 10)
@@ -305,11 +311,55 @@ public class BinanceApiClient {
                 candidates,
                 symbol,
                 endTimeInclusive,
-                this::requestJsonArray,
+                this::requestJsonArrayNoCache,
                 () -> endTimeInclusive == null
                         ? fetchKlineHistory(symbol, interval, limit)
                         : fetchKlineHistoryBefore(symbol, interval, limit, endTimeInclusive)
         );
+    }
+
+    // 周/月线先尝试官方原生周期接口，若返回异常偏短，再回退到日线聚合兜底。
+    private List<CandleEntry> loadChartLongIntervalWindow(String symbol,
+                                                          String interval,
+                                                          int limit,
+                                                          Long endTimeInclusive) throws Exception {
+        Exception directError = null;
+        try {
+            List<CandleEntry> direct = requestChartRestKlines(symbol, interval, limit, endTimeInclusive);
+            if (!ChartLongIntervalFetchPolicyHelper.shouldFallbackToDailyAggregation(interval, limit, direct.size())) {
+                return direct;
+            }
+        } catch (Exception exception) {
+            directError = exception;
+        }
+        try {
+            int dailyLimit = Math.min(1500, "1w".equals(interval)
+                    ? Math.max(260, limit * 10)
+                    : Math.max(360, limit * 38));
+            List<CandleEntry> daily = endTimeInclusive == null
+                    ? fetchChartKlineFullWindow(symbol, "1d", dailyLimit)
+                    : fetchChartKlineHistoryBefore(symbol, "1d", dailyLimit, endTimeInclusive);
+            List<CandleEntry> aggregated = aggregateDailyToInterval(
+                    daily,
+                    symbol,
+                    interval,
+                    limit,
+                    endTimeInclusive == null ? Long.MAX_VALUE : endTimeInclusive
+            );
+            if (!aggregated.isEmpty()) {
+                return aggregated;
+            }
+        } catch (Exception aggregationError) {
+            if (directError != null) {
+                throw new IOException("长周期直连与日线聚合都失败: " + directError.getMessage() + " ; " + aggregationError.getMessage(),
+                        aggregationError);
+            }
+            throw aggregationError;
+        }
+        if (directError != null) {
+            throw directError;
+        }
+        return new ArrayList<>();
     }
 
     private CandleEntry selectLatestClosed(List<CandleEntry> history, long now) {
@@ -333,6 +383,18 @@ public class BinanceApiClient {
         if (cached != null) {
             return cached;
         }
+        String content = executeJsonArrayRequest(url);
+        cacheJsonArray(url, content);
+        return new JSONArray(content);
+    }
+
+    // 图表页主动请求优先量真实网络耗时，不复用本地 8 秒 JSON 缓存。
+    private JSONArray requestJsonArrayNoCache(String url) throws Exception {
+        return new JSONArray(executeJsonArrayRequest(url));
+    }
+
+    // 执行一次真实的 JSON 数组请求，并返回原始响应体。
+    private String executeJsonArrayRequest(String url) throws Exception {
         Request request = new Request.Builder()
                 .url(url)
                 .get()
@@ -350,8 +412,7 @@ public class BinanceApiClient {
             if (content == null || content.trim().isEmpty()) {
                 throw new IOException("空响应体");
             }
-            cacheJsonArray(url, content);
-            return new JSONArray(content);
+            return content;
         }
     }
 

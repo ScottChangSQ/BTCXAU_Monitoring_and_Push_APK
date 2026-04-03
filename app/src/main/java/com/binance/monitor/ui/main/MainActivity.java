@@ -62,6 +62,16 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int REQUEST_CODE_NOTIFICATION = 100;
 
+    private static final class ConnectionDetailRowHolder {
+        private final View row;
+        private final TextView valueView;
+
+        private ConnectionDetailRowHolder(View row, TextView valueView) {
+            this.row = row;
+            this.valueView = valueView;
+        }
+    }
+
     private ActivityMainBinding binding;
     private MainViewModel viewModel;
     private AbnormalRecordAdapter recordAdapter;
@@ -698,6 +708,10 @@ public class MainActivity extends AppCompatActivity {
         content.addView(createConnectionDetailRow("Binance WS", binanceWs, palette));
         content.addView(createConnectionDetailRow("本机内网", resolveLocalIpv4Address(), palette));
         content.addView(createConnectionDetailRow("服务器主机", resolveHostLabel(gatewayRoot), palette));
+        ConnectionDetailRowHolder locationRow = createConnectionDetailRowHolder("服务器地理位置", "检测中...", palette);
+        ConnectionDetailRowHolder latencyRow = createConnectionDetailRowHolder("服务器延迟", "检测中...", palette);
+        content.addView(locationRow.row);
+        content.addView(latencyRow.row);
 
         androidx.appcompat.app.AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setView(content)
@@ -710,10 +724,18 @@ public class MainActivity extends AppCompatActivity {
         if (dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE) != null) {
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
         }
+        loadConnectionDiagnosticsAsync(gatewayRoot, dialog, locationRow.valueView, latencyRow.valueView);
     }
 
     // 统一渲染连接详情行，避免弹窗里信息长短不一时样式散掉。
     private View createConnectionDetailRow(String label, String value, UiPaletteManager.Palette palette) {
+        return createConnectionDetailRowHolder(label, value, palette).row;
+    }
+
+    // 创建可回填内容的详情行，供异步检测服务器信息时更新。
+    private ConnectionDetailRowHolder createConnectionDetailRowHolder(String label,
+                                                                      String value,
+                                                                      UiPaletteManager.Palette palette) {
         android.widget.LinearLayout row = new android.widget.LinearLayout(this);
         row.setOrientation(android.widget.LinearLayout.VERTICAL);
         row.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
@@ -743,7 +765,29 @@ public class MainActivity extends AppCompatActivity {
                 );
         valueParams.topMargin = dp(4);
         row.addView(valueView, valueParams);
-        return row;
+        return new ConnectionDetailRowHolder(row, valueView);
+    }
+
+    // 异步探测服务器地理位置和延迟，避免主线程卡顿。
+    private void loadConnectionDiagnosticsAsync(String gatewayRoot,
+                                                androidx.appcompat.app.AlertDialog dialog,
+                                                TextView locationView,
+                                                TextView latencyView) {
+        new Thread(() -> {
+            ConnectionDetailNetworkHelper.ServerDiagnostics diagnostics =
+                    ConnectionDetailNetworkHelper.load(gatewayRoot);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed() || dialog == null || !dialog.isShowing()) {
+                    return;
+                }
+                if (locationView != null) {
+                    locationView.setText(diagnostics.location);
+                }
+                if (latencyView != null) {
+                    latencyView.setText(diagnostics.latencyText);
+                }
+            });
+        }, "connection-diagnostics").start();
     }
 
     // 解析当前设备可用的 IPv4 内网地址。

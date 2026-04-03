@@ -1,6 +1,16 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已继续收口本轮 9 项问题中的图表链路残留：新增 `ChartWarmDisplayPolicyHelper`，把周线/月线/年线的本地预显示来源收紧为“周/月只接受日线底稿、年线只接受月线底稿”，不再允许 `1m` 底稿硬聚合出单根长周期假数据。
+- 已继续补强长周期显示判废：`MarketChartDisplayHelper` 现在会把周/月/年线的单根本地缓存直接判成不可信，避免旧的单根预显示继续污染图表；`KlineChartView` 也新增 `KlinePaneTextLayoutHelper`，提高附图标题与纵轴文字留白，减少主图/附图共享边界处的文字重叠。
+- 已继续补强账户曲线联动：`AccountCurveHighlightHelper` 新增“按最终联动时间反推共享 xRatio”能力，`AccountStatsBridgeActivity` 同步十字线时优先使用这个比例，减少子图已经算出新时间但主图仍沿用旧比例造成的卡值感。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartDisplayHelperTest" --tests "com.binance.monitor.ui.chart.ChartWarmDisplayPolicyHelperTest" --tests "com.binance.monitor.ui.chart.KlinePaneTextLayoutHelperTest" --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest" assembleDebug`，以及 `.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response bridge.mt5_gateway.tests.test_abnormal_gateway`。
+- 已完成本轮 4 项收口：K 线页右上角已确认不再走固定 5 秒倒计时，当前仅保留更小字号的 `ms` 延迟文案；结余曲线已固定为白色；行情持仓-当前持仓-按产品汇总已补“暂无持仓”空态；主界面“监控工作状态-连接状态”弹窗已新增服务器地理位置与服务器延迟，并通过异步探测回填。
+- 已新增 `ConnectionDetailNetworkHelper`，把连接状态弹窗里的主机识别、`/health` 延迟探测、公网 IP 地理位置查询从 `MainActivity` 中拆出，避免 UI 层继续堆积网络细节。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.ChartRefreshMetaFormatterTest" --tests "com.binance.monitor.ui.theme.MarketChartPositionPanelResourceTest" --tests "com.binance.monitor.ui.main.ConnectionDetailNetworkHelperTest" --tests "com.binance.monitor.ui.account.EquityCurveViewSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperTest" --tests "com.binance.monitor.ui.main.MainMarketRenderHelperTest" assembleDebug`。
+- 已把 K 线链路继续切到“推送优先 + 本地 1m 底稿 + 本地多周期聚合”主路径：`WebSocketManager` 已从 `@kline_1m` 改接 `@aggTrade`，并通过 `RealtimeMinuteKlineAssembler` 在本地组装当前未收盘/已收盘 `1m` K 线；`MonitorService` 冷启动会先拉最近 `1500` 根 `1m` 历史并写入统一 cache key；`MarketChartActivity` 与服务端现统一复用 `MarketChartCacheKeyHelper`。
+- 已调整图表刷新判定：`MarketChartRefreshHelper` 现在只要 `1d` 及以下周期本地已有序列且实时闭合分钟仍新鲜，就直接 `SKIP`，不再要求高周期必须先凑满整窗才允许本地切周期。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.main.MainMarketRenderHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartDisplayHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperAdditionalTest" --tests "com.binance.monitor.ui.chart.CandleAggregationHelperTest" --tests "com.binance.monitor.data.remote.RealtimeMinuteKlineAssemblerTest" --tests "com.binance.monitor.service.MonitorRuntimePolicyHelperTest" assembleDebug`。
 - 已继续收口“点击切换到行情持仓会卡顿”：`MainActivity` 新增 `MainMarketRenderHelper`，主界面现在会缓存最新价格/K 线快照并按签名去重，切页恢复时不再把同一份行情卡片重复渲染；最近异常记录的自动刷新也改成延后 30 秒再跑，避免刚切回主界面就立刻重复刷列表。
 - 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.main.MainMarketRenderHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartDisplayHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperTest"`、`.\gradlew.bat assembleDebug`。
 - 已继续收口用户最新 4 项里的图表链路问题：K 线切周期时新增 `MarketChartDisplayHelper`，本地预显示会与网络回填合并，避免较短网络窗口把当前图表“盖短”，并且只在完全没有可见 K 线时才显示阻塞式 loading。
@@ -103,6 +113,9 @@
 - 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.AbnormalGatewayClientTest" --tests "com.binance.monitor.data.local.AbnormalRecordIdentityTest" --tests "com.binance.monitor.service.AbnormalSyncRuntimeHelperTest"`。
 
 ## 上次停在哪个位置
+- 停在“周线/月线单根预显示、子图文字重叠、账户曲线联动比例”这组残留问题已完成代码与验证的状态；若继续真机复核，优先检查周线/月线切换后是否还会先闪单根假数据、右侧纵轴文字是否仍压到下方附图、以及账户曲线长按时主图/附图是否都随横轴实时变化。
+- 停在“连接状态弹窗已接入服务器地理位置/延迟 UI，但缺少 `ConnectionDetailNetworkHelper` 实现导致无法编译验证”的状态；本轮已补齐工具类并完成单测、构建。
+- 停在“`aggTrade` 实时流、本地 `1m` 底稿预热、`1d` 及以下本地非空即跳过网络”已经接通并验证通过的状态；若继续真机复核，优先检查冷启动首屏、切换 `5m/15m/30m/1h/4h/1d` 是否还会等待网络，以及实时更新是否只依赖本地分钟底稿扇出。
 - 停在“主界面异常记录已拆成最近 10 条摘要和最多 500 条详细查询；账户统计页新增周一到周日盈亏表；K 线下部 RSI/KDJ/StochRSI 已拆成独立附图窗，并重新编译通过”的状态。
 - 停在“时间滚轮已回退到原生 NumberPicker、月收益月份格已接入热力底色”的状态；若继续真机复核，优先看日收益时间滚轮是否恢复正常滚轮外观，以及月收益表每个月份底色是否已随收益率高低变化。
 - 停在“收益统计时间滚轮已切自定义控件、仓位回放已兼容双格式”的状态；若继续真机复核，优先看日收益月份滚轮未选中项是否仍发暗，以及当前区间仓位曲线是否已恢复为有值但不再在尾部残留假仓位。
@@ -141,6 +154,11 @@
 - 停在“本轮新增的 3 个 UI 调整已经完成并验证通过”的状态。
 
 ## 近期关键决定和原因
+- K 线页右上角不再显示固定刷新倒计时，只保留 `ms` 延迟文案；原因是当前主链路已经改为“推送优先 + 本地聚合”，不存在稳定的 5 秒轮询节奏，继续显示倒计时会误导用户。
+- 连接状态弹窗里的服务器地理位置与延迟改成异步探测；原因是点击弹窗时若同步请求 `/health` 和公网 IP 地理信息，会直接阻塞主线程。
+- 实时源正式改成 `aggTrade -> 本地 1m K 线组装 -> 本地聚合 5m/15m/30m/1h/4h/1d`；原因是用户明确要求切周期只切本地缓存，不再等待网络回包。
+- 冷启动改成“先拉最近一段 `1m` 历史并落本地 cache key”；原因是这样图表页首次进入即可直接读取 `1m` 底稿，不必再临时等 REST 首屏。
+- 高周期刷新判定改成“`1d` 及以下只要本地非空且实时健康就允许跳过网络”；原因是旧逻辑要求先凑满整窗，和本地底稿派生多周期的目标相冲突。
 - 主界面行情卡片改成“按签名去重渲染”；原因是切回“行情持仓”时，`onResume`、LiveData 重放和最近异常记录定时器会让主界面短时间内重复刷新同一份数据，直接放大切页卡顿。
 - 最近异常记录自动刷新改成“恢复页面后延后 30 秒再跑”；原因是记录列表在 LiveData 观察器里已经会先刷新一遍，恢复页面立刻再跑一次没有收益，只会占主线程。
 - K 线请求结果改成“本地预显示先上屏，网络结果只覆盖同时间桶，不再从空列表重画”；原因是用户反馈最新 1 分钟图会显示不完整，旧链路会让较短的 REST 回包把已显示的本地实时尾部覆盖掉。

@@ -2,6 +2,7 @@ package com.binance.monitor.ui.account;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -102,7 +103,7 @@ public class EquityCurveView extends View {
         equityPaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveEquityStrokeDp()));
         equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(5f), dp(4f)}, 0f));
 
-        balancePaint.setColor(palette.xau);
+        balancePaint.setColor(Color.WHITE);
         balancePaint.setStyle(Paint.Style.STROKE);
         balancePaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveBalanceStrokeDp()));
         balancePaint.setPathEffect(null);
@@ -161,7 +162,7 @@ public class EquityCurveView extends View {
         gridPaint.setColor(applyAlpha(palette.stroke, 170));
         equityPaint.setColor(palette.primary);
         equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(5f), dp(4f)}, 0f));
-        balancePaint.setColor(palette.xau);
+        balancePaint.setColor(Color.WHITE);
         balancePaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveBalanceStrokeDp()));
         balancePaint.setPathEffect(null);
         applyDrawdownPalette();

@@ -188,7 +188,9 @@ string BuildTrades()
       double swapFee = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
       double fee = MathAbs(commission + swapFee);
       double profit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
-      long timeMs = (long)HistoryDealGetInteger(dealTicket, DEAL_TIME) * 1000;
+      long timeMs = (long)HistoryDealGetInteger(dealTicket, DEAL_TIME_MSC);
+      if(timeMs <= 0)
+         timeMs = (long)HistoryDealGetInteger(dealTicket, DEAL_TIME) * 1000;
       double amount = MathAbs(volume * price * GetContractSize(symbol));
       string comment = HistoryDealGetString(dealTicket, DEAL_COMMENT);
 

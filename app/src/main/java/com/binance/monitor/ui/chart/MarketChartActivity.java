@@ -740,7 +740,12 @@ public class MarketChartActivity extends AppCompatActivity {
         chartPositionAggregateAdapter.setMasked(masked);
         chartPositionAdapter.setMasked(masked);
         chartPendingOrderAdapter.setMasked(masked);
-        chartPositionAggregateAdapter.submitList(buildPositionAggregatesForChart(filteredPositions));
+        List<PositionAggregateAdapter.AggregateItem> aggregateItems = buildPositionAggregatesForChart(filteredPositions);
+        chartPositionAggregateAdapter.submitList(aggregateItems);
+        binding.recyclerChartPositionByProduct.setVisibility(aggregateItems.isEmpty() ? View.GONE : View.VISIBLE);
+        if (binding.tvChartPositionAggregateEmpty != null) {
+            binding.tvChartPositionAggregateEmpty.setVisibility(aggregateItems.isEmpty() ? View.VISIBLE : View.GONE);
+        }
         chartPositionAdapter.submitList(filteredPositions);
         chartPendingOrderAdapter.submitList(filteredPendingOrders);
         binding.recyclerChartPositions.setVisibility(filteredPositions.isEmpty() ? View.GONE : View.VISIBLE);
@@ -1042,6 +1047,9 @@ public class MarketChartActivity extends AppCompatActivity {
         boolean shouldWarmDisplay = !autoRefresh || loadedCandles.isEmpty() || !key.equals(activeDataKey);
         if (shouldWarmDisplay) {
             List<CandleEntry> cached = getCachedOrPersisted(key);
+            if (!MarketChartDisplayHelper.isSeriesCompatibleForInterval(selectedInterval.key, cached)) {
+                cached = null;
+            }
             if (cached == null || cached.isEmpty()) {
                 cached = buildWarmDisplayCandles(selectedSymbol, selectedInterval);
             }
@@ -1059,6 +1067,9 @@ public class MarketChartActivity extends AppCompatActivity {
         List<CandleEntry> localForPlan = key.equals(activeDataKey)
                 ? new ArrayList<>(loadedCandles)
                 : getCachedOrPersisted(key);
+        if (!MarketChartDisplayHelper.isSeriesCompatibleForInterval(selectedInterval.key, localForPlan)) {
+            localForPlan = null;
+        }
         MarketChartRefreshHelper.SyncPlan refreshPlan = MarketChartRefreshHelper.resolvePlan(
                 localForPlan,
                 selectedInterval.limit,
@@ -1108,6 +1119,7 @@ public class MarketChartActivity extends AppCompatActivity {
                         return;
                     }
                     List<CandleEntry> toDisplay = MarketChartDisplayHelper.mergeDisplaySeries(
+                            selectedInterval.key,
                             refreshSeed,
                             finalProcessed,
                             selectedInterval.limit
@@ -1357,26 +1369,20 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private boolean canWarmDisplayFrom(@Nullable IntervalOption source, @Nullable IntervalOption target) {
-        if (source == null || target == null || source == target) {
-            return false;
-        }
-        long sourceDurationMs = intervalToMs(source.key);
-        long targetDurationMs = intervalToMs(target.key);
-        if (sourceDurationMs <= 0L || targetDurationMs <= 0L || sourceDurationMs > targetDurationMs) {
-            return false;
-        }
-        if (target.yearAggregate || "1w".equalsIgnoreCase(target.key) || "1M".equalsIgnoreCase(target.key)) {
-            return true;
-        }
-        return targetDurationMs % sourceDurationMs == 0L;
+        return source != null
+                && target != null
+                && source != target
+                && ChartWarmDisplayPolicyHelper.canWarmDisplayFrom(
+                source.key,
+                source.yearAggregate,
+                target.key,
+                target.yearAggregate
+        );
     }
 
     private boolean canRefreshFromMinuteTail(@Nullable IntervalOption target) {
-        if (target == null || target.yearAggregate) {
-            return false;
-        }
-        long targetDurationMs = intervalToMs(target.key);
-        return targetDurationMs > 0L && targetDurationMs <= 24L * 60L * 60_000L;
+        return target != null
+                && ChartWarmDisplayPolicyHelper.canRefreshFromMinuteTail(target.key, target.yearAggregate);
     }
 
     // 接入监控服务推送的 1 分钟实时 K 线；未收盘分钟也先进入本地分钟底稿，减少 1m 缺口和切周期卡顿。
@@ -1602,7 +1608,11 @@ public class MarketChartActivity extends AppCompatActivity {
     private void startAutoRefresh() {
         stopAutoRefresh();
         scheduleNextAutoRefresh();
-        mainHandler.post(refreshCountdownRunnable);
+        if (shouldShowRefreshCountdown()) {
+            mainHandler.post(refreshCountdownRunnable);
+        } else {
+            updateRefreshCountdownText();
+        }
     }
 
     private void stopAutoRefresh() {
@@ -1618,21 +1628,32 @@ public class MarketChartActivity extends AppCompatActivity {
         mainHandler.removeCallbacks(autoRefreshRunnable);
         mainHandler.postDelayed(autoRefreshRunnable, delayMs);
         mainHandler.removeCallbacks(refreshCountdownRunnable);
-        mainHandler.post(refreshCountdownRunnable);
+        if (shouldShowRefreshCountdown()) {
+            mainHandler.post(refreshCountdownRunnable);
+        } else {
+            updateRefreshCountdownText();
+        }
     }
 
     private void updateRefreshCountdownText() {
         if (binding == null || binding.tvChartRefreshCountdown == null) {
             return;
         }
-        binding.tvChartRefreshCountdown.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f);
-        binding.tvChartRefreshCountdown.setText(ChartRefreshMetaFormatter.buildCountdownText(
-                nextAutoRefreshAtMs,
-                System.currentTimeMillis(),
-                resolveAutoRefreshDelayMs(),
-                lastSuccessfulRequestLatencyMs
-        ));
+        binding.tvChartRefreshCountdown.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8f);
+        binding.tvChartRefreshCountdown.setText(shouldShowRefreshCountdown()
+                ? ChartRefreshMetaFormatter.buildCountdownText(
+                        nextAutoRefreshAtMs,
+                        System.currentTimeMillis(),
+                        resolveAutoRefreshDelayMs(),
+                        lastSuccessfulRequestLatencyMs
+                )
+                : ChartRefreshMetaFormatter.buildLatencyOnlyText(lastSuccessfulRequestLatencyMs));
         updateRefreshCountdownPosition();
+    }
+
+    // 当前图表已切到推送优先链路，不再展示固定秒级刷新倒计时。
+    private boolean shouldShowRefreshCountdown() {
+        return false;
     }
 
     private long resolveAutoRefreshDelayMs() {
@@ -1673,9 +1694,9 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private String buildCacheKey(String symbol, IntervalOption interval) {
         if (interval == null) {
-            return symbol + "|default";
+            return MarketChartCacheKeyHelper.build(symbol, "default", "default", false);
         }
-        return symbol + "|" + interval.key + "|" + interval.apiInterval + "|" + interval.yearAggregate;
+        return MarketChartCacheKeyHelper.build(symbol, interval.key, interval.apiInterval, interval.yearAggregate);
     }
 
     private List<String> getSupportedSymbols() {
@@ -2956,6 +2977,9 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.tvChartPositionAggregateTitle.setTextColor(palette.textPrimary);
         binding.tvChartPositionDetailTitle.setTextColor(palette.textPrimary);
         binding.tvChartPendingOrdersTitle.setTextColor(palette.textPrimary);
+        if (binding.tvChartPositionAggregateEmpty != null) {
+            binding.tvChartPositionAggregateEmpty.setTextColor(palette.textSecondary);
+        }
         if (binding.tvChartPositionsEmpty != null) {
             binding.tvChartPositionsEmpty.setTextColor(palette.textSecondary);
         }

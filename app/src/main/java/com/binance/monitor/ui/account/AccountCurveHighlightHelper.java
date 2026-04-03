@@ -116,6 +116,22 @@ final class AccountCurveHighlightHelper {
         return startTs;
     }
 
+    // 按共享时间轴把目标时间换算回比例，保证跨图同步时十字线位置跟最终时间一致。
+    static float resolveTimestampRatio(@Nullable List<CurvePoint> curvePoints, long targetTimestamp) {
+        if (curvePoints == null || curvePoints.isEmpty()) {
+            return -1f;
+        }
+        CurvePoint first = curvePoints.get(0);
+        CurvePoint last = curvePoints.get(curvePoints.size() - 1);
+        long startTs = first.getTimestamp();
+        long endTs = Math.max(startTs, last.getTimestamp());
+        if (endTs <= startTs) {
+            return 0f;
+        }
+        long clampedTimestamp = clampTimestamp(targetTimestamp, startTs, endTs);
+        return clampRatio((float) (clampedTimestamp - startTs) / (float) (endTs - startTs));
+    }
+
     // 按目标时间在线性区间内插值净值、结余和仓位比例，让主图弹窗随手指位置连续变化。
     @Nullable
     private static CurvePoint interpolateCurvePoint(@Nullable List<CurvePoint> points, long timestamp) {

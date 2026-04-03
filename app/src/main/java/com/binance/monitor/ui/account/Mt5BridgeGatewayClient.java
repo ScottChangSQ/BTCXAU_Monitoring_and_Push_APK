@@ -638,8 +638,11 @@ public class Mt5BridgeGatewayClient {
                 "openPrice", "open_price", "open", "priceOpen", "entryPrice", "entry_price");
         double closePrice = optDoubleAny(item, price,
                 "closePrice", "close_price", "close", "priceClose", "exitPrice", "exit_price");
+        long timestampMs = normalizeEpochMs(item.optLong("timestamp", 0L));
+        long openTimeMs = normalizeEpochMs(item.optLong("openTime", item.optLong("timestamp", 0L)));
+        long closeTimeMs = normalizeEpochMs(item.optLong("closeTime", item.optLong("timestamp", 0L)));
         return new TradeRecordItem(
-                item.optLong("timestamp", 0L),
+                timestampMs,
                 productName,
                 code,
                 side,
@@ -649,8 +652,8 @@ public class Mt5BridgeGatewayClient {
                 item.optDouble("fee", 0d),
                 item.optString("remark", ""),
                 item.optDouble("profit", 0d),
-                item.optLong("openTime", item.optLong("timestamp", 0L)),
-                item.optLong("closeTime", item.optLong("timestamp", 0L)),
+                openTimeMs,
+                closeTimeMs,
                 item.optDouble("storageFee", item.optDouble("fee", 0d)),
                 openPrice,
                 closePrice,
@@ -658,6 +661,14 @@ public class Mt5BridgeGatewayClient {
                 item.optLong("orderId", 0L),
                 item.optLong("positionId", 0L),
                 item.optInt("entryType", 0));
+    }
+
+    // 统一把秒级时间戳修正为毫秒，避免不同网关口径混用时历史成交时间漂移。
+    private long normalizeEpochMs(long value) {
+        if (value <= 0L) {
+            return 0L;
+        }
+        return value < 10_000_000_000L ? value * 1000L : value;
     }
 
     private void ensureRangeContextLocked(String rangeKey) {

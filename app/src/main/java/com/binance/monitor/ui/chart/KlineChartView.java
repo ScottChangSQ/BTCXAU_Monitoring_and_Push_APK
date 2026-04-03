@@ -1024,19 +1024,20 @@ public class KlineChartView extends View {
                 maxVolume = Math.max(maxVolume, avlLine[i]);
             }
         }
+        RectF plotRect = resolveIndicatorPlotRect(volRect);
         float halfBody = Math.max(dp(0.18f), candleWidth / 2f);
         int stride = Math.max(1, step);
         int saveCount = canvas.save();
-        canvas.clipRect(volRect);
+        canvas.clipRect(plotRect);
         for (int i = start; i <= end; i += stride) {
             CandleEntry candle = candles.get(i);
             float x = xFor(i, visibleEndFloat);
-            float top = (float) (volRect.bottom - (candle.getVolume() / maxVolume) * volRect.height());
+            float top = (float) (plotRect.bottom - (candle.getVolume() / maxVolume) * plotRect.height());
             Paint paint = candle.getClose() >= candle.getOpen() ? upPaint : downPaint;
-            canvas.drawRect(x - halfBody, top, x + halfBody, volRect.bottom, paint);
+            canvas.drawRect(x - halfBody, top, x + halfBody, plotRect.bottom, paint);
         }
         if (showAvl) {
-            drawSeries(canvas, avlLine, start, end, 0d, maxVolume, volRect, avlPaint, stride);
+            drawSeries(canvas, avlLine, start, end, 0d, maxVolume, plotRect, avlPaint, stride);
         }
         canvas.restoreToCount(saveCount);
         canvas.drawLine(volRect.left, volRect.top, volRect.right, volRect.top, axisPaint);
@@ -1045,80 +1046,83 @@ public class KlineChartView extends View {
         if (showAvl && infoIndex >= 0 && infoIndex < avlLine.length && !Double.isNaN(avlLine[infoIndex])) {
             volText += " AVL(" + avlPeriod + "):" + formatVolumeNumber(avlLine[infoIndex], false);
         }
-        canvas.drawText(volText, volRect.left + dp(2f), volRect.top + dp(10f), textPaint);
+        canvas.drawText(volText, volRect.left + dp(2f), resolvePaneTitleBaseline(volRect), textPaint);
         canvas.drawLine(volRect.right, volRect.top, volRect.right, volRect.bottom, axisPaint);
-        canvas.drawText(formatVolumeNumber(maxVolume, true), volRect.right + dp(4f), volRect.top + dp(3f), textPaint);
-        canvas.drawText("0", volRect.right + dp(4f), volRect.bottom + dp(3f), textPaint);
+        canvas.drawText(formatVolumeNumber(maxVolume, true), volRect.right + dp(4f), resolveAxisTopBaseline(volRect), textPaint);
+        canvas.drawText("0", volRect.right + dp(4f), resolveAxisBottomBaseline(volRect), textPaint);
         drawVolumeThreshold(canvas, maxVolume);
     }
 
     private void drawMacd(Canvas canvas, int start, int end, int infoIndex, int step) {
         double maxAbs = resolveMacdAbsMax(start, end);
-        float zeroY = yFor(0d, -maxAbs, maxAbs, macdRect);
+        RectF plotRect = resolveIndicatorPlotRect(macdRect);
+        float zeroY = yFor(0d, -maxAbs, maxAbs, plotRect);
         canvas.drawLine(macdRect.left, zeroY, macdRect.right, zeroY, axisPaint);
         float halfBody = Math.max(dp(0.18f), candleWidth / 2f);
         int stride = Math.max(1, step);
         int saveCount = canvas.save();
-        canvas.clipRect(macdRect);
+        canvas.clipRect(plotRect);
         for (int i = start; i <= end; i += stride) {
             if (i >= macdHist.length || Double.isNaN(macdHist[i])) {
                 continue;
             }
             float x = xFor(i, visibleEndFloat);
-            float y = yFor(macdHist[i], -maxAbs, maxAbs, macdRect);
+            float y = yFor(macdHist[i], -maxAbs, maxAbs, plotRect);
             Paint paint = macdHist[i] >= 0d ? upPaint : downPaint;
             canvas.drawRect(x - halfBody, Math.min(zeroY, y), x + halfBody, Math.max(zeroY, y), paint);
         }
-        drawSeries(canvas, macdDif, start, end, -maxAbs, maxAbs, macdRect, macdDifPaint, stride);
-        drawSeries(canvas, macdDea, start, end, -maxAbs, maxAbs, macdRect, macdDeaPaint, stride);
+        drawSeries(canvas, macdDif, start, end, -maxAbs, maxAbs, plotRect, macdDifPaint, stride);
+        drawSeries(canvas, macdDea, start, end, -maxAbs, maxAbs, plotRect, macdDeaPaint, stride);
         canvas.restoreToCount(saveCount);
         canvas.drawLine(macdRect.left, macdRect.top, macdRect.right, macdRect.top, gridPaint);
         canvas.drawLine(macdRect.left, macdRect.bottom, macdRect.right, macdRect.bottom, axisPaint);
         canvas.drawLine(macdRect.right, macdRect.top, macdRect.right, macdRect.bottom, axisPaint);
         textPaint.setColor(secondaryTextColor);
-        canvas.drawText(formatAxisInt(maxAbs), macdRect.right + dp(4f), macdRect.top + dp(3f), textPaint);
-        canvas.drawText("0", macdRect.right + dp(4f), zeroY + dp(3f), textPaint);
-        canvas.drawText(formatAxisInt(-maxAbs), macdRect.right + dp(4f), macdRect.bottom + dp(3f), textPaint);
+        canvas.drawText(formatAxisInt(maxAbs), macdRect.right + dp(4f), resolveAxisTopBaseline(macdRect), textPaint);
+        canvas.drawText("0", macdRect.right + dp(4f), clampAxisBaseline(macdRect, zeroY + dp(3f)), textPaint);
+        canvas.drawText(formatAxisInt(-maxAbs), macdRect.right + dp(4f), resolveAxisBottomBaseline(macdRect), textPaint);
         drawMacdInfo(canvas, infoIndex);
     }
 
     private void drawStochRsi(Canvas canvas, int start, int end, int infoIndex, int step) {
         int stride = Math.max(1, step);
-        drawSeries(canvas, stochK, start, end, 0d, 100d, stochRect, stochKPaint, stride);
-        drawSeries(canvas, stochD, start, end, 0d, 100d, stochRect, stochDPaint, stride);
-        canvas.drawLine(stochRect.left, yFor(20d, 0d, 100d, stochRect), stochRect.right, yFor(20d, 0d, 100d, stochRect), gridPaint);
-        canvas.drawLine(stochRect.left, yFor(80d, 0d, 100d, stochRect), stochRect.right, yFor(80d, 0d, 100d, stochRect), gridPaint);
+        RectF plotRect = resolveIndicatorPlotRect(stochRect);
+        drawSeries(canvas, stochK, start, end, 0d, 100d, plotRect, stochKPaint, stride);
+        drawSeries(canvas, stochD, start, end, 0d, 100d, plotRect, stochDPaint, stride);
+        canvas.drawLine(stochRect.left, yFor(20d, 0d, 100d, plotRect), stochRect.right, yFor(20d, 0d, 100d, plotRect), gridPaint);
+        canvas.drawLine(stochRect.left, yFor(80d, 0d, 100d, plotRect), stochRect.right, yFor(80d, 0d, 100d, plotRect), gridPaint);
         canvas.drawLine(stochRect.left, stochRect.top, stochRect.right, stochRect.top, gridPaint);
         canvas.drawLine(stochRect.left, stochRect.bottom, stochRect.right, stochRect.bottom, axisPaint);
         canvas.drawLine(stochRect.right, stochRect.top, stochRect.right, stochRect.bottom, axisPaint);
         textPaint.setColor(secondaryTextColor);
         canvas.drawText("STOCHRSI K:" + formatDecimal(stochK[infoIndex]) + " D:" + formatDecimal(stochD[infoIndex]),
                 stochRect.left + dp(2f),
-                stochRect.top + dp(10f),
+                resolvePaneTitleBaseline(stochRect),
                 textPaint);
-        canvas.drawText("100", stochRect.right + dp(4f), stochRect.top + dp(3f), textPaint);
-        canvas.drawText("50", stochRect.right + dp(4f), yFor(50d, 0d, 100d, stochRect) + dp(3f), textPaint);
-        canvas.drawText("0", stochRect.right + dp(4f), stochRect.bottom + dp(3f), textPaint);
+        canvas.drawText("100", stochRect.right + dp(4f), resolveAxisTopBaseline(stochRect), textPaint);
+        canvas.drawText("50", stochRect.right + dp(4f), clampAxisBaseline(stochRect, yFor(50d, 0d, 100d, plotRect) + dp(3f)), textPaint);
+        canvas.drawText("0", stochRect.right + dp(4f), resolveAxisBottomBaseline(stochRect), textPaint);
     }
 
     private void drawRsi(Canvas canvas, int start, int end, int infoIndex, int step) {
         double lower = 0d;
         double upper = 100d;
         int stride = Math.max(1, step);
-        drawSeries(canvas, rsiLine, start, end, lower, upper, rsiRect, rsiPaint, stride);
-        canvas.drawLine(rsiRect.left, yFor(30d, lower, upper, rsiRect), rsiRect.right, yFor(30d, lower, upper, rsiRect), gridPaint);
-        canvas.drawLine(rsiRect.left, yFor(70d, lower, upper, rsiRect), rsiRect.right, yFor(70d, lower, upper, rsiRect), gridPaint);
+        RectF plotRect = resolveIndicatorPlotRect(rsiRect);
+        drawSeries(canvas, rsiLine, start, end, lower, upper, plotRect, rsiPaint, stride);
+        canvas.drawLine(rsiRect.left, yFor(30d, lower, upper, plotRect), rsiRect.right, yFor(30d, lower, upper, plotRect), gridPaint);
+        canvas.drawLine(rsiRect.left, yFor(70d, lower, upper, plotRect), rsiRect.right, yFor(70d, lower, upper, plotRect), gridPaint);
         canvas.drawLine(rsiRect.left, rsiRect.top, rsiRect.right, rsiRect.top, gridPaint);
         canvas.drawLine(rsiRect.left, rsiRect.bottom, rsiRect.right, rsiRect.bottom, axisPaint);
         canvas.drawLine(rsiRect.right, rsiRect.top, rsiRect.right, rsiRect.bottom, axisPaint);
         textPaint.setColor(secondaryTextColor);
         canvas.drawText("RSI(" + rsiPeriod + "):" + formatDecimal(valueAt(rsiLine, infoIndex)),
                 rsiRect.left + dp(2f),
-                rsiRect.top + dp(10f),
+                resolvePaneTitleBaseline(rsiRect),
                 textPaint);
-        canvas.drawText("100", rsiRect.right + dp(4f), rsiRect.top + dp(3f), textPaint);
-        canvas.drawText("50", rsiRect.right + dp(4f), yFor(50d, lower, upper, rsiRect) + dp(3f), textPaint);
-        canvas.drawText("0", rsiRect.right + dp(4f), rsiRect.bottom + dp(3f), textPaint);
+        canvas.drawText("100", rsiRect.right + dp(4f), resolveAxisTopBaseline(rsiRect), textPaint);
+        canvas.drawText("50", rsiRect.right + dp(4f), clampAxisBaseline(rsiRect, yFor(50d, lower, upper, plotRect) + dp(3f)), textPaint);
+        canvas.drawText("0", rsiRect.right + dp(4f), resolveAxisBottomBaseline(rsiRect), textPaint);
     }
 
     private void drawKdj(Canvas canvas, int start, int end, int infoIndex, int step) {
@@ -1137,9 +1141,10 @@ public class KlineChartView extends View {
         double lower = min - pad;
         double upper = max + pad;
         int stride = Math.max(1, step);
-        drawSeries(canvas, kdjK, start, end, lower, upper, kdjRect, stochKPaint, stride);
-        drawSeries(canvas, kdjD, start, end, lower, upper, kdjRect, stochDPaint, stride);
-        drawSeries(canvas, kdjJ, start, end, lower, upper, kdjRect, kdjJPaint, stride);
+        RectF plotRect = resolveIndicatorPlotRect(kdjRect);
+        drawSeries(canvas, kdjK, start, end, lower, upper, plotRect, stochKPaint, stride);
+        drawSeries(canvas, kdjD, start, end, lower, upper, plotRect, stochDPaint, stride);
+        drawSeries(canvas, kdjJ, start, end, lower, upper, plotRect, kdjJPaint, stride);
         canvas.drawLine(kdjRect.left, kdjRect.top, kdjRect.right, kdjRect.top, gridPaint);
         canvas.drawLine(kdjRect.left, kdjRect.bottom, kdjRect.right, kdjRect.bottom, axisPaint);
         canvas.drawLine(kdjRect.right, kdjRect.top, kdjRect.right, kdjRect.bottom, axisPaint);
@@ -1148,13 +1153,13 @@ public class KlineChartView extends View {
                 + " K:" + formatDecimal(valueAt(kdjK, infoIndex))
                 + " D:" + formatDecimal(valueAt(kdjD, infoIndex))
                 + " J:" + formatDecimal(valueAt(kdjJ, infoIndex));
-        canvas.drawText(text, kdjRect.left + dp(2f), kdjRect.top + dp(10f), textPaint);
-        canvas.drawText(formatAxisInt(upper), kdjRect.right + dp(4f), kdjRect.top + dp(3f), textPaint);
+        canvas.drawText(text, kdjRect.left + dp(2f), resolvePaneTitleBaseline(kdjRect), textPaint);
+        canvas.drawText(formatAxisInt(upper), kdjRect.right + dp(4f), resolveAxisTopBaseline(kdjRect), textPaint);
         canvas.drawText(formatAxisInt((upper + lower) * 0.5d),
                 kdjRect.right + dp(4f),
-                yFor((upper + lower) * 0.5d, lower, upper, kdjRect) + dp(3f),
+                clampAxisBaseline(kdjRect, yFor((upper + lower) * 0.5d, lower, upper, plotRect) + dp(3f)),
                 textPaint);
-        canvas.drawText(formatAxisInt(lower), kdjRect.right + dp(4f), kdjRect.bottom + dp(3f), textPaint);
+        canvas.drawText(formatAxisInt(lower), kdjRect.right + dp(4f), resolveAxisBottomBaseline(kdjRect), textPaint);
     }
 
     private void drawGrid(Canvas canvas, RectF rect) {
@@ -1175,7 +1180,7 @@ public class KlineChartView extends View {
             double value = max - (max - min) * i / tick;
             float y = yFor(value, min, max, priceRect);
             String label = String.format(Locale.getDefault(), "%,.0f", value);
-            canvas.drawText(label, priceRect.right + dp(4f), y + dp(3f), textPaint);
+            canvas.drawText(label, priceRect.right + dp(4f), clampAxisBaseline(priceRect, y + dp(3f)), textPaint);
         }
         canvas.drawLine(priceRect.right, priceRect.top, priceRect.right, priceRect.bottom, axisPaint);
     }
@@ -1190,14 +1195,14 @@ public class KlineChartView extends View {
                 + "  H:" + FormatUtils.formatPrice(candle.getHigh())
                 + "  L:" + FormatUtils.formatPrice(candle.getLow())
                 + "  C:" + FormatUtils.formatPrice(candle.getClose());
-        canvas.drawText(info, priceRect.left + dp(2f), priceRect.top + dp(10f), textPaint);
+        canvas.drawText(info, priceRect.left + dp(2f), resolvePaneTitleBaseline(priceRect), textPaint);
     }
 
     private void drawBollInfo(Canvas canvas, int index) {
         if (index < 0 || index >= candles.size()) {
             return;
         }
-        float y = priceRect.top + dp(10f);
+        float y = resolvePaneTitleBaseline(priceRect);
         textPaint.setColor(secondaryTextColor);
         canvas.drawText("BOLL(" + bollPeriod + "," + bollStdMultiplier + ")", priceRect.left + dp(2f), y, textPaint);
         if (index < bollUp.length && !Double.isNaN(bollUp[index])) {
@@ -1218,7 +1223,7 @@ public class KlineChartView extends View {
         if (index < 0 || index >= macdHist.length) {
             return;
         }
-        float y = macdRect.top + dp(10f);
+        float y = resolvePaneTitleBaseline(macdRect);
         textPaint.setColor(secondaryTextColor);
         String text = "MACD(" + macdFastPeriod + "," + macdSlowPeriod + "," + macdSignalPeriod + ")"
                 + " DIF:" + formatDecimal(macdDif[index])
@@ -1740,7 +1745,7 @@ public class KlineChartView extends View {
 
     private void layoutAreas(float width, float height) {
         float left = dp(8f);
-        float right = width - dp(38f);
+        float right = width - dp(44f);
         float top = dp(8f);
         float bottom = height - dp(18f);
         KlinePaneLayoutHelper.PaneLayout layout = KlinePaneLayoutHelper.compute(
@@ -1779,6 +1784,36 @@ public class KlineChartView extends View {
         } else {
             kdjRect.setEmpty();
         }
+    }
+
+    // 为指标标题与边界标签预留独立的绘图区，避免折线/柱体压到文字上。
+    private RectF resolveIndicatorPlotRect(RectF paneRect) {
+        float topInset = dp(KlinePaneTextLayoutHelper.resolveIndicatorPlotTopInsetDp());
+        float bottomInset = dp(KlinePaneTextLayoutHelper.resolveIndicatorPlotBottomInsetDp());
+        float top = Math.min(paneRect.bottom, paneRect.top + topInset);
+        float bottom = Math.max(top + dp(8f), paneRect.bottom - bottomInset);
+        return new RectF(paneRect.left, top, paneRect.right, bottom);
+    }
+
+    // 统一主图和附图左上角标题基线。
+    private float resolvePaneTitleBaseline(RectF paneRect) {
+        return paneRect.top + dp(KlinePaneTextLayoutHelper.resolvePaneTitleBaselineOffsetDp());
+    }
+
+    // 统一右侧纵坐标顶部文字基线，避免贴到共享边界上。
+    private float resolveAxisTopBaseline(RectF paneRect) {
+        return paneRect.top + dp(KlinePaneTextLayoutHelper.resolveAxisTopBaselineOffsetDp());
+    }
+
+    // 统一右侧纵坐标底部文字基线，避免与下一张图顶部文字重叠。
+    private float resolveAxisBottomBaseline(RectF paneRect) {
+        return paneRect.bottom - dp(KlinePaneTextLayoutHelper.resolveAxisBottomInsetDp());
+    }
+
+    // 把中间标签基线限制在当前图内，避免多图共享边界时文字互相压住。
+    private float clampAxisBaseline(RectF paneRect, float preferredBaseline) {
+        return Math.max(resolveAxisTopBaseline(paneRect),
+                Math.min(resolveAxisBottomBaseline(paneRect), preferredBaseline));
     }
 
     private void computeIndicators() {

@@ -245,9 +245,9 @@
                         android:layout_marginEnd="4dp"
                         android:layout_marginTop="4dp"
                         android:includeFontPadding="false"
-                        android:text="--秒/--秒"
+                        android:text="--ms"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
-                        android:textSize="9sp" />
+                        android:textSize="8sp" />
 
                     <LinearLayout
                         android:layout_width="wrap_content"
@@ -520,6 +520,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:nestedScrollingEnabled="false" />
+
+                <TextView
+                    android:id="@+id/tvChartPositionAggregateEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="暂无持仓"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
+                    android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/tvChartPositionDetailTitle"

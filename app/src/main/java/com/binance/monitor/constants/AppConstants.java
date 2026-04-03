@@ -41,6 +41,7 @@ public final class AppConstants {
     public static final long ABNORMAL_SYNC_INTERVAL_MS = 8000L;
     public static final long ABNORMAL_SYNC_BACKGROUND_INTERVAL_MS = 20_000L;
     public static final long CHART_AUTO_REFRESH_INTERVAL_MS = 5_000L;
+    public static final int CHART_BASE_MINUTE_HISTORY_LIMIT = 1500;
 
     public static final String SERVICE_CHANNEL_ID = "monitor_service_channel";
     public static final String ALERT_CHANNEL_ID = "monitor_alert_channel";
@@ -121,6 +122,19 @@ public final class AppConstants {
 
     public static String buildWebSocketUrl(String baseWsUrl, String symbol) {
         String stream = symbol.toLowerCase() + "@kline_1m";
+        return buildStreamWebSocketUrl(baseWsUrl, stream);
+    }
+
+    public static String buildAggTradeWebSocketUrl(String symbol) {
+        return buildAggTradeWebSocketUrl(BASE_WS_URL, symbol);
+    }
+
+    public static String buildAggTradeWebSocketUrl(String baseWsUrl, String symbol) {
+        String stream = symbol.toLowerCase() + "@aggTrade";
+        return buildStreamWebSocketUrl(baseWsUrl, stream);
+    }
+
+    private static String buildStreamWebSocketUrl(String baseWsUrl, String stream) {
         String baseUrl = sanitizeBaseUrl(baseWsUrl, BASE_WS_URL);
         if (baseUrl.contains("{stream}")) {
             return baseUrl.replace("{stream}", stream);
@@ -134,10 +148,33 @@ public final class AppConstants {
     }
 
     public static String buildCombinedWebSocketUrl(String baseWsUrl, Collection<String> symbols) {
+        return buildCombinedStreamWebSocketUrl(baseWsUrl, symbols, "@kline_1m");
+    }
+
+    public static String buildCombinedAggTradeWebSocketUrl(Collection<String> symbols) {
+        return buildCombinedAggTradeWebSocketUrl(BASE_WS_URL, symbols);
+    }
+
+    public static String buildCombinedAggTradeWebSocketUrl(String baseWsUrl, Collection<String> symbols) {
+        return buildCombinedStreamWebSocketUrl(baseWsUrl, symbols, "@aggTrade");
+    }
+
+    private static String buildCombinedStreamWebSocketUrl(String baseWsUrl,
+                                                          Collection<String> symbols,
+                                                          String streamSuffix) {
         if (symbols == null || symbols.isEmpty()) {
+            String safeSuffix = streamSuffix == null || streamSuffix.trim().isEmpty()
+                    ? "@kline_1m"
+                    : streamSuffix.trim();
+            if ("@aggTrade".equalsIgnoreCase(safeSuffix)) {
+                return buildAggTradeWebSocketUrl(baseWsUrl, SYMBOL_BTC);
+            }
             return buildWebSocketUrl(baseWsUrl, SYMBOL_BTC);
         }
         StringBuilder streams = new StringBuilder();
+        String safeSuffix = streamSuffix == null || streamSuffix.trim().isEmpty()
+                ? "@kline_1m"
+                : streamSuffix.trim();
         for (String symbol : symbols) {
             if (symbol == null || symbol.trim().isEmpty()) {
                 continue;
@@ -145,9 +182,12 @@ public final class AppConstants {
             if (streams.length() > 0) {
                 streams.append("/");
             }
-            streams.append(symbol.trim().toLowerCase(Locale.ROOT)).append("@kline_1m");
+            streams.append(symbol.trim().toLowerCase(Locale.ROOT)).append(safeSuffix);
         }
         if (streams.length() == 0) {
+            if ("@aggTrade".equalsIgnoreCase(safeSuffix)) {
+                return buildAggTradeWebSocketUrl(baseWsUrl, SYMBOL_BTC);
+            }
             return buildWebSocketUrl(baseWsUrl, SYMBOL_BTC);
         }
         String baseUrl = sanitizeBaseUrl(baseWsUrl, BASE_WS_URL);

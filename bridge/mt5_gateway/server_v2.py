@@ -82,6 +82,13 @@ def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
+def _deal_time_ms(deal: Any) -> int:
+    value = int(getattr(deal, "time_msc", 0) or 0)
+    if value > 0:
+        return value
+    return int(getattr(deal, "time", 0) or 0) * 1000
+
+
 # 统一裁剪缓存条目，只保留最近访问的部分，避免快照缓存长期堆满内存。
 def _trim_cache_entries_locked(cache: Dict[str, Any], limit: int) -> None:
     while len(cache) > max(1, limit):
@@ -835,7 +842,7 @@ def _build_curve(range_key: str, current_positions: Optional[List[Dict]] = None)
         swap = float(getattr(deal, "swap", 0.0))
         realized += profit + commission + swap
         deal_history.append({
-            "timestamp": int(getattr(deal, "time", 0)) * 1000,
+            "timestamp": _deal_time_ms(deal),
             "price": float(getattr(deal, "price", 0.0)),
             "profit": profit,
             "commission": commission,
@@ -1407,7 +1414,7 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
         position_id = int(getattr(deal, "position_id", 0))
         key = lifecycle_key(position_id, order_id, ticket)
         entry_type = int(getattr(deal, "entry", 0))
-        ts = int(getattr(deal, "time", 0)) * 1000
+        ts = _deal_time_ms(deal)
         price = float(getattr(deal, "price", 0.0))
         profit = float(getattr(deal, "profit", 0.0))
         commission = float(getattr(deal, "commission", 0.0))

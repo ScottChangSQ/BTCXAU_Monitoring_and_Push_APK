@@ -7,11 +7,13 @@ import android.os.Looper;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.KlineData;
+import com.binance.monitor.data.model.TradeTickData;
 
 import org.json.JSONObject;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +41,7 @@ public class WebSocketManager {
     private volatile WebSocket socket;
     private volatile int reconnectAttempt;
     private volatile boolean reconnectScheduled;
+    private final RealtimeMinuteKlineAssembler minuteKlineAssembler = new RealtimeMinuteKlineAssembler();
 
     public WebSocketManager() {
         this(null);
@@ -65,6 +68,7 @@ public class WebSocketManager {
         }
         reconnectAttempt = 0;
         reconnectScheduled = false;
+        minuteKlineAssembler.clear();
         connectInternal(false);
     }
 
@@ -79,6 +83,7 @@ public class WebSocketManager {
         }
         managedSymbols.clear();
         reconnectAttempt = 0;
+        minuteKlineAssembler.clear();
     }
 
     public synchronized void forceReconnect(String reason) {
@@ -91,6 +96,7 @@ public class WebSocketManager {
         if (current != null) {
             current.cancel();
         }
+        minuteKlineAssembler.clear();
         scheduleReconnect(true);
     }
 
@@ -100,8 +106,9 @@ public class WebSocketManager {
         }
         int currentAttempt = reconnectAttempt;
         notifyStateAll(false, currentAttempt, reconnecting ? "重连中" : "连接中");
+        minuteKlineAssembler.clear();
         Request request = new Request.Builder()
-                .url(AppConstants.buildCombinedWebSocketUrl(getConfiguredWebSocketBaseUrl(), new HashSet<>(managedSymbols.keySet())))
+                .url(AppConstants.buildCombinedAggTradeWebSocketUrl(getConfiguredWebSocketBaseUrl(), new HashSet<>(managedSymbols.keySet())))
                 .build();
         socket = client.newWebSocket(request, new WebSocketListener() {
             @Override
@@ -119,18 +126,26 @@ public class WebSocketManager {
                 try {
                     JSONObject root = new JSONObject(text);
                     JSONObject payload = root.optJSONObject("data");
-                    JSONObject klineSource = payload == null ? root : payload;
-                    JSONObject kline = klineSource.optJSONObject("k");
-                    if (kline == null) {
-                        return;
-                    }
-                    String symbol = resolveSymbol(root, payload, kline);
+                    JSONObject tradePayload = payload == null ? root : payload;
+                    String symbol = resolveSymbol(root, tradePayload);
                     if (symbol.isEmpty() || !Boolean.TRUE.equals(managedSymbols.get(symbol))) {
                         return;
                     }
-                    KlineData data = KlineData.fromSocket(symbol, kline);
-                    if (listener != null) {
-                        listener.onKlineUpdate(symbol, data);
+                    TradeTickData parsed = TradeTickData.fromSocket(tradePayload);
+                    TradeTickData tick = new TradeTickData(
+                            symbol,
+                            parsed.getPrice(),
+                            parsed.getQuantity(),
+                            parsed.getTradeTime(),
+                            parsed.getEventTime()
+                    );
+                    List<KlineData> updates = minuteKlineAssembler.applyTick(tick);
+                    if (listener != null && updates != null) {
+                        for (KlineData data : updates) {
+                            if (data != null) {
+                                listener.onKlineUpdate(symbol, data);
+                            }
+                        }
                     }
                 } catch (Exception exception) {
                     notifyErrorAll("消息解析失败: " + exception.getMessage());
@@ -150,13 +165,10 @@ public class WebSocketManager {
         });
     }
 
-    private String resolveSymbol(JSONObject root, JSONObject payload, JSONObject kline) {
+    private String resolveSymbol(JSONObject root, JSONObject payload) {
         String symbol = "";
         if (payload != null) {
             symbol = payload.optString("s", "");
-        }
-        if (symbol == null || symbol.trim().isEmpty()) {
-            symbol = kline.optString("s", "");
         }
         if (symbol == null || symbol.trim().isEmpty()) {
             String stream = root.optString("stream", "");
