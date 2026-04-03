@@ -148,6 +148,10 @@ public class KlineChartView extends View {
         void onPricePaneLayoutChanged(int left, int top, int right, int bottom);
     }
 
+    public interface OnVolumePaneLayoutListener {
+        void onVolumePaneLayoutChanged(int left, int top, int right, int bottom);
+    }
+
     private final List<CandleEntry> candles = new ArrayList<>();
     private double[] bollMid = new double[0];
     private double[] bollUp = new double[0];
@@ -245,6 +249,8 @@ public class KlineChartView extends View {
     private final RectF volRect = new RectF();
     private final RectF macdRect = new RectF();
     private final RectF stochRect = new RectF();
+    private final RectF rsiRect = new RectF();
+    private final RectF kdjRect = new RectF();
 
     private final GestureDetector gestureDetector;
     private final ScaleGestureDetector scaleGestureDetector;
@@ -301,10 +307,15 @@ public class KlineChartView extends View {
     private OnRequestMoreListener onRequestMoreListener;
     private OnViewportStateListener onViewportStateListener;
     private OnPricePaneLayoutListener onPricePaneLayoutListener;
+    private OnVolumePaneLayoutListener onVolumePaneLayoutListener;
     private int lastPricePaneLeft = Integer.MIN_VALUE;
     private int lastPricePaneTop = Integer.MIN_VALUE;
     private int lastPricePaneRight = Integer.MIN_VALUE;
     private int lastPricePaneBottom = Integer.MIN_VALUE;
+    private int lastVolumePaneLeft = Integer.MIN_VALUE;
+    private int lastVolumePaneTop = Integer.MIN_VALUE;
+    private int lastVolumePaneRight = Integer.MIN_VALUE;
+    private int lastVolumePaneBottom = Integer.MIN_VALUE;
 
     public KlineChartView(Context context) {
         this(context, null);
@@ -510,6 +521,16 @@ public class KlineChartView extends View {
         }
         if (ensureLayoutForMath()) {
             dispatchPricePaneLayout(true);
+        }
+    }
+
+    public void setOnVolumePaneLayoutListener(@Nullable OnVolumePaneLayoutListener listener) {
+        onVolumePaneLayoutListener = listener;
+        if (listener == null) {
+            return;
+        }
+        if (ensureLayoutForMath()) {
+            dispatchVolumePaneLayout(true);
         }
     }
 
@@ -841,6 +862,7 @@ public class KlineChartView extends View {
         canvas.drawRect(0f, 0f, width, height, bgPaint);
         layoutAreas(width, height);
         dispatchPricePaneLayout(false);
+        dispatchVolumePaneLayout(false);
         if (candles.isEmpty()) {
             updateLatestCandleOutOfBounds(false, false);
             textPaint.setTextAlign(Paint.Align.CENTER);
@@ -951,8 +973,14 @@ public class KlineChartView extends View {
         if (showMacd && macdRect.height() > 0f) {
             drawMacd(canvas, start, end, infoIndex, drawStep);
         }
-        if ((showStochRsi || showRsi || showKdj) && stochRect.height() > 0f) {
-            drawOscillator(canvas, start, end, infoIndex, drawStep);
+        if (showStochRsi && stochRect.height() > 0f) {
+            drawStochRsi(canvas, start, end, infoIndex, drawStep);
+        }
+        if (showRsi && rsiRect.height() > 0f) {
+            drawRsi(canvas, start, end, infoIndex, drawStep);
+        }
+        if (showKdj && kdjRect.height() > 0f) {
+            drawKdj(canvas, start, end, infoIndex, drawStep);
         }
         if (longPressing) {
             drawCrosshair(canvas, highlightedIndex);
@@ -1073,24 +1101,34 @@ public class KlineChartView extends View {
         canvas.drawText("0", stochRect.right + dp(4f), stochRect.bottom + dp(3f), textPaint);
     }
 
-    private void drawOscillator(Canvas canvas, int start, int end, int infoIndex, int step) {
+    private void drawRsi(Canvas canvas, int start, int end, int infoIndex, int step) {
+        double lower = 0d;
+        double upper = 100d;
+        int stride = Math.max(1, step);
+        drawSeries(canvas, rsiLine, start, end, lower, upper, rsiRect, rsiPaint, stride);
+        canvas.drawLine(rsiRect.left, yFor(30d, lower, upper, rsiRect), rsiRect.right, yFor(30d, lower, upper, rsiRect), gridPaint);
+        canvas.drawLine(rsiRect.left, yFor(70d, lower, upper, rsiRect), rsiRect.right, yFor(70d, lower, upper, rsiRect), gridPaint);
+        canvas.drawLine(rsiRect.left, rsiRect.top, rsiRect.right, rsiRect.top, gridPaint);
+        canvas.drawLine(rsiRect.left, rsiRect.bottom, rsiRect.right, rsiRect.bottom, axisPaint);
+        canvas.drawLine(rsiRect.right, rsiRect.top, rsiRect.right, rsiRect.bottom, axisPaint);
+        textPaint.setColor(secondaryTextColor);
+        canvas.drawText("RSI(" + rsiPeriod + "):" + formatDecimal(valueAt(rsiLine, infoIndex)),
+                rsiRect.left + dp(2f),
+                rsiRect.top + dp(10f),
+                textPaint);
+        canvas.drawText("100", rsiRect.right + dp(4f), rsiRect.top + dp(3f), textPaint);
+        canvas.drawText("50", rsiRect.right + dp(4f), yFor(50d, lower, upper, rsiRect) + dp(3f), textPaint);
+        canvas.drawText("0", rsiRect.right + dp(4f), rsiRect.bottom + dp(3f), textPaint);
+    }
+
+    private void drawKdj(Canvas canvas, int start, int end, int infoIndex, int step) {
         double min = 0d;
         double max = 100d;
         for (int i = start; i <= end; i++) {
-            if (showStochRsi) {
-                min = Math.min(min, Math.min(valueOrFallback(stochK, i, 50d), valueOrFallback(stochD, i, 50d)));
-                max = Math.max(max, Math.max(valueOrFallback(stochK, i, 50d), valueOrFallback(stochD, i, 50d)));
-            }
-            if (showRsi) {
-                min = Math.min(min, valueOrFallback(rsiLine, i, 50d));
-                max = Math.max(max, valueOrFallback(rsiLine, i, 50d));
-            }
-            if (showKdj) {
-                min = Math.min(min, Math.min(valueOrFallback(kdjK, i, 50d),
-                        Math.min(valueOrFallback(kdjD, i, 50d), valueOrFallback(kdjJ, i, 50d))));
-                max = Math.max(max, Math.max(valueOrFallback(kdjK, i, 50d),
-                        Math.max(valueOrFallback(kdjD, i, 50d), valueOrFallback(kdjJ, i, 50d))));
-            }
+            min = Math.min(min, Math.min(valueOrFallback(kdjK, i, 50d),
+                    Math.min(valueOrFallback(kdjD, i, 50d), valueOrFallback(kdjJ, i, 50d))));
+            max = Math.max(max, Math.max(valueOrFallback(kdjK, i, 50d),
+                    Math.max(valueOrFallback(kdjD, i, 50d), valueOrFallback(kdjJ, i, 50d))));
         }
         if (max <= min) {
             max = min + 1d;
@@ -1098,62 +1136,25 @@ public class KlineChartView extends View {
         double pad = (max - min) * 0.08d;
         double lower = min - pad;
         double upper = max + pad;
-
         int stride = Math.max(1, step);
-        if (showStochRsi) {
-            drawSeries(canvas, stochK, start, end, lower, upper, stochRect, stochKPaint, stride);
-            drawSeries(canvas, stochD, start, end, lower, upper, stochRect, stochDPaint, stride);
-        }
-        if (showRsi) {
-            drawSeries(canvas, rsiLine, start, end, lower, upper, stochRect, rsiPaint, stride);
-        }
-        if (showKdj) {
-            drawSeries(canvas, kdjK, start, end, lower, upper, stochRect, stochKPaint, stride);
-            drawSeries(canvas, kdjD, start, end, lower, upper, stochRect, stochDPaint, stride);
-            drawSeries(canvas, kdjJ, start, end, lower, upper, stochRect, kdjJPaint, stride);
-        }
-
-        canvas.drawLine(stochRect.left, stochRect.top, stochRect.right, stochRect.top, gridPaint);
-        canvas.drawLine(stochRect.left, stochRect.bottom, stochRect.right, stochRect.bottom, axisPaint);
-        canvas.drawLine(stochRect.right, stochRect.top, stochRect.right, stochRect.bottom, axisPaint);
-
+        drawSeries(canvas, kdjK, start, end, lower, upper, kdjRect, stochKPaint, stride);
+        drawSeries(canvas, kdjD, start, end, lower, upper, kdjRect, stochDPaint, stride);
+        drawSeries(canvas, kdjJ, start, end, lower, upper, kdjRect, kdjJPaint, stride);
+        canvas.drawLine(kdjRect.left, kdjRect.top, kdjRect.right, kdjRect.top, gridPaint);
+        canvas.drawLine(kdjRect.left, kdjRect.bottom, kdjRect.right, kdjRect.bottom, axisPaint);
+        canvas.drawLine(kdjRect.right, kdjRect.top, kdjRect.right, kdjRect.bottom, axisPaint);
         textPaint.setColor(secondaryTextColor);
-        canvas.drawText(formatAxisInt(upper), stochRect.right + dp(4f), stochRect.top + dp(3f), textPaint);
+        String text = "KDJ(" + kdjPeriod + "," + kdjSmoothK + "," + kdjSmoothD + ")"
+                + " K:" + formatDecimal(valueAt(kdjK, infoIndex))
+                + " D:" + formatDecimal(valueAt(kdjD, infoIndex))
+                + " J:" + formatDecimal(valueAt(kdjJ, infoIndex));
+        canvas.drawText(text, kdjRect.left + dp(2f), kdjRect.top + dp(10f), textPaint);
+        canvas.drawText(formatAxisInt(upper), kdjRect.right + dp(4f), kdjRect.top + dp(3f), textPaint);
         canvas.drawText(formatAxisInt((upper + lower) * 0.5d),
-                stochRect.right + dp(4f),
-                yFor((upper + lower) * 0.5d, lower, upper, stochRect) + dp(3f),
+                kdjRect.right + dp(4f),
+                yFor((upper + lower) * 0.5d, lower, upper, kdjRect) + dp(3f),
                 textPaint);
-        canvas.drawText(formatAxisInt(lower), stochRect.right + dp(4f), stochRect.bottom + dp(3f), textPaint);
-        drawOscillatorInfo(canvas, infoIndex);
-    }
-
-    private void drawOscillatorInfo(Canvas canvas, int index) {
-        if (index < 0 || index >= candles.size()) {
-            return;
-        }
-        float y = stochRect.top + dp(10f);
-        float x = stochRect.left + dp(2f);
-        textPaint.setColor(secondaryTextColor);
-
-        if (showRsi) {
-            String text = "RSI(" + rsiPeriod + "):" + formatDecimal(valueAt(rsiLine, index));
-            canvas.drawText(text, x, y, textPaint);
-            x += textPaint.measureText(text) + dp(8f);
-        }
-        if (showKdj) {
-            String text = "KDJ(" + kdjPeriod + "," + kdjSmoothK + "," + kdjSmoothD + ")"
-                    + " K:" + formatDecimal(valueAt(kdjK, index))
-                    + " D:" + formatDecimal(valueAt(kdjD, index))
-                    + " J:" + formatDecimal(valueAt(kdjJ, index));
-            canvas.drawText(text, x, y, textPaint);
-            x += textPaint.measureText(text) + dp(8f);
-        }
-        if (showStochRsi) {
-            String text = "STOCHRSI(" + stochRsiLookback + "," + stochRsiSmoothK + "," + stochRsiSmoothD + ")"
-                    + " K:" + formatDecimal(valueAt(stochK, index))
-                    + " D:" + formatDecimal(valueAt(stochD, index));
-            canvas.drawText(text, x, y, textPaint);
-        }
+        canvas.drawText(formatAxisInt(lower), kdjRect.right + dp(4f), kdjRect.bottom + dp(3f), textPaint);
     }
 
     private void drawGrid(Canvas canvas, RectF rect) {
@@ -1742,13 +1743,14 @@ public class KlineChartView extends View {
         float right = width - dp(38f);
         float top = dp(8f);
         float bottom = height - dp(18f);
-        boolean oscillatorVisible = showStochRsi || showRsi || showKdj;
         KlinePaneLayoutHelper.PaneLayout layout = KlinePaneLayoutHelper.compute(
                 top,
                 bottom,
                 showVolume,
                 showMacd,
-                oscillatorVisible
+                showStochRsi,
+                showRsi,
+                showKdj
         );
 
         priceRect.set(left, layout.price.top, right, layout.price.bottom);
@@ -1762,10 +1764,20 @@ public class KlineChartView extends View {
         } else {
             macdRect.setEmpty();
         }
-        if (oscillatorVisible) {
-            stochRect.set(left, layout.oscillator.top, right, layout.oscillator.bottom);
+        if (showStochRsi) {
+            stochRect.set(left, layout.stoch.top, right, layout.stoch.bottom);
         } else {
             stochRect.setEmpty();
+        }
+        if (showRsi) {
+            rsiRect.set(left, layout.rsi.top, right, layout.rsi.bottom);
+        } else {
+            rsiRect.setEmpty();
+        }
+        if (showKdj) {
+            kdjRect.set(left, layout.kdj.top, right, layout.kdj.bottom);
+        } else {
+            kdjRect.setEmpty();
         }
     }
 
@@ -1985,6 +1997,8 @@ public class KlineChartView extends View {
     }
 
     private float resolveChartBottom() {
+        if (!kdjRect.isEmpty()) return kdjRect.bottom;
+        if (!rsiRect.isEmpty()) return rsiRect.bottom;
         if (!stochRect.isEmpty()) return stochRect.bottom;
         if (!macdRect.isEmpty()) return macdRect.bottom;
         if (!volRect.isEmpty()) return volRect.bottom;
@@ -2039,6 +2053,39 @@ public class KlineChartView extends View {
         lastPricePaneRight = right;
         lastPricePaneBottom = bottom;
         onPricePaneLayoutListener.onPricePaneLayoutChanged(left, top, right, bottom);
+    }
+
+    private void dispatchVolumePaneLayout(boolean force) {
+        if (onVolumePaneLayoutListener == null) {
+            return;
+        }
+        int left;
+        int top;
+        int right;
+        int bottom;
+        if (volRect.isEmpty()) {
+            left = 0;
+            top = 0;
+            right = 0;
+            bottom = 0;
+        } else {
+            left = Math.round(volRect.left);
+            top = Math.round(volRect.top);
+            right = Math.round(volRect.right);
+            bottom = Math.round(volRect.bottom);
+        }
+        if (!force
+                && left == lastVolumePaneLeft
+                && top == lastVolumePaneTop
+                && right == lastVolumePaneRight
+                && bottom == lastVolumePaneBottom) {
+            return;
+        }
+        lastVolumePaneLeft = left;
+        lastVolumePaneTop = top;
+        lastVolumePaneRight = right;
+        lastVolumePaneBottom = bottom;
+        onVolumePaneLayoutListener.onVolumePaneLayoutChanged(left, top, right, bottom);
     }
 
     private void updateLatestCandleOutOfBounds(boolean outOfBounds, boolean force) {

@@ -65,6 +65,32 @@ public class AbnormalAnnotationOverlayBuilderTest {
     }
 
     @Test
+    public void shouldNormalizeIntensityAgainstVisibleBucketsOfCurrentPeriod() {
+        List<CandleEntry> candles = Arrays.asList(
+                buildCandle(BASE_TIME, BASE_TIME + 300_000L),
+                buildCandle(BASE_TIME + 300_000L, BASE_TIME + 600_000L),
+                buildCandle(BASE_TIME + 600_000L, BASE_TIME + 900_000L)
+        );
+        List<AbnormalRecord> records = Arrays.asList(
+                buildRecord("r1", BASE_TIME + 10_000L, BASE_TIME + 11_000L, 100d, "单次"),
+                buildRecord("r2", BASE_TIME + 320_000L, BASE_TIME + 321_000L, 101d, "双次"),
+                buildRecord("r3", BASE_TIME + 340_000L, BASE_TIME + 341_000L, 101d, "双次"),
+                buildRecord("r4", BASE_TIME + 620_000L, BASE_TIME + 621_000L, 102d, "四次"),
+                buildRecord("r5", BASE_TIME + 640_000L, BASE_TIME + 641_000L, 102d, "四次"),
+                buildRecord("r6", BASE_TIME + 660_000L, BASE_TIME + 661_000L, 102d, "四次"),
+                buildRecord("r7", BASE_TIME + 680_000L, BASE_TIME + 681_000L, 102d, "四次")
+        );
+
+        List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> annotations =
+                AbnormalAnnotationOverlayBuilder.build(records, candles);
+
+        assertEquals(3, annotations.size());
+        assertEquals(0f, annotations.get(0).intensity, 1e-6f);
+        assertEquals(1f / 3f, annotations.get(1).intensity, 1e-6f);
+        assertEquals(1f, annotations.get(2).intensity, 1e-6f);
+    }
+
+    @Test
     public void shouldIgnoreRecordsOutsideVisibleCandles() {
         List<CandleEntry> candles = Collections.singletonList(buildCandle(BASE_TIME, BASE_TIME + 300_000L));
         List<AbnormalRecord> records = Arrays.asList(

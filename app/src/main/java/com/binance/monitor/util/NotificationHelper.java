@@ -103,4 +103,10 @@ public class NotificationHelper {
                 .build();
         NotificationManagerCompat.from(context).notify(notificationId, notification);
     }
+
+    public void cancelServiceNotification() {
+        if (manager != null) {
+            manager.cancel(AppConstants.SERVICE_NOTIFICATION_ID);
+        }
+    }
 }

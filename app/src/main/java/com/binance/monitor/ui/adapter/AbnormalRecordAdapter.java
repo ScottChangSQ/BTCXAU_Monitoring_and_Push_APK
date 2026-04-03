@@ -19,6 +19,15 @@ import java.util.List;
 public class AbnormalRecordAdapter extends RecyclerView.Adapter<AbnormalRecordAdapter.RecordViewHolder> {
 
     private final List<AbnormalRecord> items = new ArrayList<>();
+    private final boolean showDetails;
+
+    public AbnormalRecordAdapter() {
+        this(false);
+    }
+
+    public AbnormalRecordAdapter(boolean showDetails) {
+        this.showDetails = showDetails;
+    }
 
     public void submitList(List<AbnormalRecord> records) {
         items.clear();
@@ -37,7 +46,7 @@ public class AbnormalRecordAdapter extends RecyclerView.Adapter<AbnormalRecordAd
 
     @Override
     public void onBindViewHolder(@NonNull RecordViewHolder holder, int position) {
-        holder.bind(items.get(position));
+        holder.bind(items.get(position), showDetails);
     }
 
     @Override
@@ -54,7 +63,7 @@ public class AbnormalRecordAdapter extends RecyclerView.Adapter<AbnormalRecordAd
             this.binding = binding;
         }
 
-        void bind(AbnormalRecord record) {
+        void bind(AbnormalRecord record, boolean showDetails) {
             String symbol = record.getSymbol();
             if ("BOTH".equals(symbol)) {
                 binding.tvSymbol.setText("BTC+XAU");
@@ -68,7 +77,16 @@ public class AbnormalRecordAdapter extends RecyclerView.Adapter<AbnormalRecordAd
             }
             binding.tvTime.setText(FormatUtils.formatDateTime(record.getTimestamp()));
             binding.tvTrigger.setText(record.getTriggerSummary());
-            binding.tvDetails.setVisibility(android.view.View.GONE);
+            if (showDetails) {
+                String details = "开:" + FormatUtils.formatPrice(record.getOpenPrice())
+                        + "  收:" + FormatUtils.formatPrice(record.getClosePrice())
+                        + "  量:" + FormatUtils.formatVolume(record.getVolume())
+                        + "  额:" + FormatUtils.formatAmount(record.getAmount());
+                binding.tvDetails.setText(details);
+                binding.tvDetails.setVisibility(android.view.View.VISIBLE);
+            } else {
+                binding.tvDetails.setVisibility(android.view.View.GONE);
+            }
         }
     }
 }

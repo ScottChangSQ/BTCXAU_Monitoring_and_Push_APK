@@ -212,16 +212,20 @@ public class FloatingWindowManager {
         }
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
         binding.layoutExpanded.setBackground(UiPaletteManager.createFloatingBackground(context, palette));
-        binding.tvOverlayConnection.setText(snapshot.getConnectionStatus() == null || snapshot.getConnectionStatus().trim().isEmpty()
+        boolean offline = shouldRenderOfflineState(snapshot.getConnectionStatus());
+        binding.tvOverlayConnection.setText(offline
+                ? "网络未连接"
+                : (snapshot.getConnectionStatus() == null || snapshot.getConnectionStatus().trim().isEmpty()
                 ? context.getString(R.string.status_unknown)
-                : snapshot.getConnectionStatus());
+                : snapshot.getConnectionStatus()));
         binding.tvOverlayConnection.setTextColor(palette.textSecondary);
-        List<FloatingSymbolCardData> visibleCards = collectVisibleCards();
-        renderSummaryHeader(palette, visibleCards);
+        List<FloatingSymbolCardData> visibleCards = offline ? new ArrayList<>() : collectVisibleCards();
+        renderSummaryHeader(palette, visibleCards, offline);
         applyWindowAlpha();
         int renderedCount = renderSymbolCards(visibleCards, palette);
         boolean hasItems = renderedCount > 0;
         binding.tvOverlayEmpty.setVisibility(hasItems ? View.GONE : View.VISIBLE);
+        binding.tvOverlayEmpty.setText(offline ? "网络未连接" : context.getString(R.string.no_records));
         binding.tvOverlayEmpty.setTextColor(palette.textSecondary);
         refreshMinimizedState(false);
     }
@@ -243,7 +247,9 @@ public class FloatingWindowManager {
         return visible;
     }
 
-    private void renderSummaryHeader(UiPaletteManager.Palette palette, List<FloatingSymbolCardData> visibleCards) {
+    private void renderSummaryHeader(UiPaletteManager.Palette palette,
+                                     List<FloatingSymbolCardData> visibleCards,
+                                     boolean offline) {
         boolean masked = SensitiveDisplayMasker.isEnabled(context);
         double totalPnl = 0d;
         for (FloatingSymbolCardData card : visibleCards) {
@@ -252,9 +258,13 @@ public class FloatingWindowManager {
             }
         }
         boolean hasCard = !visibleCards.isEmpty();
-        String text = FloatingWindowTextFormatter.formatPnlAmount(hasCard ? totalPnl : 0d, masked);
+        String text = offline
+                ? "离线"
+                : FloatingWindowTextFormatter.formatPnlAmount(hasCard ? totalPnl : 0d, masked);
         binding.tvOverlayStatus.setText(text);
-        int pnlColor = masked ? palette.textPrimary : resolvePnlColor(totalPnl, hasCard);
+        int pnlColor = offline
+                ? palette.textSecondary
+                : (masked ? palette.textPrimary : resolvePnlColor(totalPnl, hasCard));
         binding.tvOverlayStatus.setTextColor(pnlColor);
         binding.tvOverlayStatus.setTextSize(hasCard ? 13f : 12f);
         binding.tvOverlayStatus.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -268,6 +278,17 @@ public class FloatingWindowManager {
                 applyAlpha(palette.card, 238),
                 applyAlpha(pnlColor, 168)
         ));
+    }
+
+    // 未连网时切到特殊悬浮窗状态，避免继续展示过期价格和持仓卡片。
+    private boolean shouldRenderOfflineState(String connectionStatus) {
+        String status = connectionStatus == null ? "" : connectionStatus.trim();
+        if (status.isEmpty()) {
+            return true;
+        }
+        return status.contains("连接中")
+                || status.contains("重连中")
+                || status.contains("等待数据");
     }
 
     private int renderSymbolCards(List<FloatingSymbolCardData> visibleCards, UiPaletteManager.Palette palette) {

@@ -12,6 +12,7 @@ import java.util.List;
 
 final class MarketChartRefreshHelper {
     private static final long REALTIME_FRESHNESS_MS = 95_000L;
+    private static final long HEALTHY_REALTIME_REFRESH_MS = 15_000L;
 
     enum SyncMode {
         SKIP,
@@ -67,5 +68,21 @@ final class MarketChartRefreshHelper {
     // 只要最近一根已收盘 1m 仍在合理时窗内，就认为实时推送链路健康，无需再主动打 REST。
     static boolean isRealtimeFresh(long nowMs, long latestRealtimeClosedTimeMs) {
         return latestRealtimeClosedTimeMs > 0L && nowMs - latestRealtimeClosedTimeMs <= REALTIME_FRESHNESS_MS;
+    }
+
+    // 推送健康时降低主动轮询频率，减少无意义的网络请求和切周期等待。
+    static long resolveAutoRefreshDelayMs(boolean realtimeFresh, long fallbackDelayMs) {
+        long safeFallbackDelayMs = Math.max(1_000L, fallbackDelayMs);
+        return realtimeFresh
+                ? Math.max(safeFallbackDelayMs, HEALTHY_REALTIME_REFRESH_MS)
+                : safeFallbackDelayMs;
+    }
+
+    // 当前轮直接跳过网络时，不再继续展示上一次 REST 请求耗时，避免 ms 文案误导。
+    static long resolveDisplayedLatencyMs(@Nullable SyncPlan plan, long lastLatencyMs) {
+        if (plan != null && plan.mode == SyncMode.SKIP) {
+            return -1L;
+        }
+        return lastLatencyMs;
     }
 }

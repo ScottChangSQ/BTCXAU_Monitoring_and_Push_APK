@@ -26,6 +26,16 @@ public class SettingsDetailThemeResourceTest {
                 xml.contains("@drawable/bg_overlay_mini"));
     }
 
+    @Test
+    public void settingsDetailLayoutShouldNotKeepDuplicatedLogEntryButton() throws Exception {
+        String xml = readUtf8(
+                "app/src/main/res/layout/activity_settings_detail.xml",
+                "src/main/res/layout/activity_settings_detail.xml"
+        );
+        assertFalse("设置详情页不应再保留重复的查看日志按钮",
+                xml.contains("android:id=\"@+id/btnViewLogs\""));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

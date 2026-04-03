@@ -46,13 +46,14 @@ public class AccountStorageRepository {
         this.accountSnapshotDao = accountSnapshotDao;
     }
 
-    // 保存最新账户快照，并增量保留历史交易与权益曲线。
+    // 保存最新账户快照；全量快照直接替换历史交易，避免旧错记录残留。
     public void persistSnapshot(StoredSnapshot snapshot) {
         if (snapshot == null) {
             return;
         }
         if (tradeHistoryDao != null) {
             List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades());
+            tradeHistoryDao.clearAll();
             if (!trades.isEmpty()) {
                 tradeHistoryDao.upsertAll(trades);
             }

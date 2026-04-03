@@ -135,6 +135,39 @@ public class AccountStorageRepositoryTest {
         assertEquals("deal|1", tradeDao.items.get(0).tradeKey);
     }
 
+    // 全量快照应覆盖旧交易历史，避免修正后的交易时间仍被本地旧错记录残留污染。
+    @Test
+    public void persistSnapshotShouldReplaceTradeHistoryWithLatestFullSnapshot() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        tradeDao.items.add(tradeEntity("deal|old", 1000L, -8d));
+        tradeDao.items.add(tradeEntity("deal|legacy", 2000L, -5d));
+
+        repository.persistSnapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "MT5网关",
+                "http://gateway",
+                3000L,
+                "",
+                3100L,
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(trade(4000L, 201L, 301L, 401L, 12d)),
+                new ArrayList<>()
+        ));
+
+        assertEquals(1, tradeDao.items.size());
+        assertEquals("deal|201", tradeDao.items.get(0).tradeKey);
+        assertEquals(4000L, tradeDao.items.get(0).closeTime);
+    }
+
     private TradeRecordItem trade(long closeTime,
                                   long dealTicket,
                                   long orderId,

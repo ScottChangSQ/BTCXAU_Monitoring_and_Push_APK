@@ -24,6 +24,23 @@ public class LogLayoutThemeResourceTest {
                 xml.contains("@drawable/bg_inline_button"));
     }
 
+    @Test
+    public void logLayoutButtonsShouldNotUseTransparentBackgrounds() throws Exception {
+        String xml = readUtf8(
+                "app/src/main/res/layout/activity_log.xml",
+                "src/main/res/layout/activity_log.xml"
+        );
+        assertFalse("日志页返回按钮仍是透明背景",
+                xml.contains("android:id=\"@+id/btnBack\"")
+                        && xml.contains("android:background=\"@android:color/transparent\""));
+        assertFalse("日志页全选按钮仍是透明背景",
+                xml.contains("android:id=\"@+id/btnSelectAll\"")
+                        && xml.contains("android:background=\"@android:color/transparent\""));
+        assertFalse("日志页删除按钮仍是透明背景",
+                xml.contains("android:id=\"@+id/btnDeleteSelected\"")
+                        && xml.contains("android:background=\"@android:color/transparent\""));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

@@ -19,7 +19,6 @@ import java.util.Map;
 final class AbnormalAnnotationOverlayBuilder {
     private static final int START_COLOR = 0xFFF2C94C;
     private static final int END_COLOR = 0xFFF6465D;
-    private static final int MAX_INTENSITY_COUNT = 6;
 
     private AbnormalAnnotationOverlayBuilder() {
     }
@@ -47,9 +46,13 @@ final class AbnormalAnnotationOverlayBuilder {
         }
         List<BucketState> ordered = new ArrayList<>(grouped.values());
         ordered.sort(Comparator.comparingLong(item -> item.anchorTimeMs));
+        int maxBucketCount = 1;
+        for (BucketState state : ordered) {
+            maxBucketCount = Math.max(maxBucketCount, state.count);
+        }
         List<BucketAnnotation> out = new ArrayList<>(ordered.size());
         for (BucketState state : ordered) {
-            float intensity = resolveIntensity(state.count);
+            float intensity = resolveIntensity(state.count, maxBucketCount);
             out.add(new BucketAnnotation(
                     state.anchorTimeMs,
                     state.displayPrice,
@@ -129,12 +132,11 @@ final class AbnormalAnnotationOverlayBuilder {
     }
 
     // 把异常次数映射到 0~1 的强度，次数越多越接近红色和更高位置。
-    private static float resolveIntensity(int count) {
-        if (count <= 1) {
+    private static float resolveIntensity(int count, int maxCount) {
+        if (count <= 1 || maxCount <= 1) {
             return 0f;
         }
-        int clamped = Math.min(count, MAX_INTENSITY_COUNT);
-        return (clamped - 1f) / (MAX_INTENSITY_COUNT - 1f);
+        return Math.max(0f, Math.min(1f, (count - 1f) / (maxCount - 1f)));
     }
 
     // 生成点按后的简要说明，单条异常显示摘要，多条异常显示次数。

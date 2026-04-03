@@ -1,6 +1,39 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已继续收口“点击切换到行情持仓会卡顿”：`MainActivity` 新增 `MainMarketRenderHelper`，主界面现在会缓存最新价格/K 线快照并按签名去重，切页恢复时不再把同一份行情卡片重复渲染；最近异常记录的自动刷新也改成延后 30 秒再跑，避免刚切回主界面就立刻重复刷列表。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.main.MainMarketRenderHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartDisplayHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperTest"`、`.\gradlew.bat assembleDebug`。
+- 已继续收口用户最新 4 项里的图表链路问题：K 线切周期时新增 `MarketChartDisplayHelper`，本地预显示会与网络回填合并，避免较短网络窗口把当前图表“盖短”，并且只在完全没有可见 K 线时才显示阻塞式 loading。
+- 已继续收口图表刷新节奏与延迟显示：`MarketChartRefreshHelper` 新增“推送健康时放慢主动轮询”和“跳过网络时隐藏旧 latency”的规则，减少 ms 文案高低交替的误导；`AccountStorageRepository.persistSnapshot(...)` 改为全量快照替换本地历史交易，避免旧错交易记录残留影响历史成交时间点。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartDisplayHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperAdditionalTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest"`、`.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response`、`.\gradlew.bat assembleDebug`。
+- 已继续收口 K 线图“历史成交 开/关”按钮位置：按钮不再贴到 VOL 图区域，已改成固定锚定在 K 线主视图左下角。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.KlineOverlayButtonLayoutHelperTest"` 与 `.\gradlew.bat assembleDebug`。
+- 已完成本轮 3 项界面修订：账户统计-交易统计里的“按星期盈亏统计”已从文本列表改成柱状图；主界面“详细记录”弹窗已改成卡片化对话框并统一到当前主题；K 线图“历史成交 开/关”按钮已改成跟随图表布局，优先贴到 VOL 图左下角，无 VOL 图时回退到主图左下角。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.TradeWeekdayStatsHelperTest" --tests "com.binance.monitor.ui.account.TradeWeekdayBarChartHelperTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.main.RecentAbnormalRecordHelperTest" --tests "com.binance.monitor.ui.main.AbnormalRecordsDialogLayoutResourceTest" --tests "com.binance.monitor.ui.chart.KlinePaneLayoutHelperTest" --tests "com.binance.monitor.ui.chart.KlineOverlayButtonLayoutHelperTest" --tests "com.binance.monitor.ui.theme.MarketChartLayoutThemeResourceTest" assembleDebug`。
+- 已完成本轮 7 项修订：账户统计-交易统计新增“按星期几盈亏统计”表，并支持按开仓时间/平仓时间切换；主界面最近异常记录卡片新增“详细记录”按钮，可弹窗查询异常记录并按关键词过滤，详细查询上限按 500 条收口。
+- 已完成本轮图表与实时链路修订：K 线下部的 `StochRSI / RSI / KDJ` 已拆成各自独立附图窗，不再叠加在同一窗口；账户统计页已接入 `AccountStatsPreloadManager` 缓存监听，新的平仓订单到达预加载缓存后会立即刷新交易记录和交易统计。
+- 已保留并继续验证 K 线左下角“历史成交 开/关”按钮链路；本轮已重新通过 `TradeWeekdayStatsHelperTest`、`RecentAbnormalRecordHelperTest`、`KlinePaneLayoutHelperTest`、`AccountStatsLayoutResourceTest`、`assembleDebug` 以及 `bridge.mt5_gateway` 相关单测。
+- 已纠正账户曲线主图线型：净值线改回更细虚线，结余线改回更细实线；账户曲线区继续共用 `CurvePaneLayoutHelper` 的统一左右绘图区边界。
+- 已确认用户提到的“交易终端 正在其他应用的上层内容显示”属于 Android 对 `SYSTEM_ALERT_WINDOW / TYPE_APPLICATION_OVERLAY` 的系统级提示，不是 APP 自己发的普通通知；当前已去掉前台服务通知，但这类系统提示不能由应用代码主动隐藏，只能在不使用系统悬浮窗权限时自然消失。
+- 已继续收口“长按十字星弹窗仍卡在旧时刻”的问题：`EquityCurveView` 新增一次性 `syncHighlightPoint(...)`，宿主现在会把插值后的净值/结余点和目标时间一次性同步给主图，减少先后两段更新造成的旧值残留。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.CurvePaneLayoutHelperTest" --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest" assembleDebug`。
+- 已完成本轮 9 项修复里的首批收口：主界面异常判断 3 个输入框单位列宽已统一；设置二级页里的重复“查看日志”入口已删除；日志页返回/全选/删除按钮已补默认背景并接回运行时主题。
+- 已完成本轮图表与账户曲线补强：全周期持仓时间分布柱状图改成盈利/亏损上下叠加；K 线异常小圆点强度改成按“当前周期已显示 K 线里最大的异常次数”相对归一化；账户曲线新增 `AccountCurveRebuildHelper`，开始按历史交易重建“结余只在平仓时变化”的兜底口径。
+- 已完成本轮运行态与交互修订：悬浮窗在“连接中/重连中/等待数据”时切到离线特殊显示并隐藏产品卡片；服务在非实时连接状态时会移除常驻状态栏通知；主界面“实时连接正常”现可点开弹窗查看网关、本机内网、Binance REST/WS 等网络信息。
+- 已完成并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.theme.SettingsDetailThemeResourceTest" --tests "com.binance.monitor.ui.theme.LogLayoutThemeResourceTest" --tests "com.binance.monitor.ui.chart.AbnormalAnnotationOverlayBuilderTest" --tests "com.binance.monitor.ui.account.AccountCurveRebuildHelperTest"` 与 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest" --tests "com.binance.monitor.ui.account.AccountCurveRebuildHelperTest" assembleDebug`。
+- 已修正收益统计时间滚轮的错误接入：账户统计页 5 个日期滚轮已从自定义 `ThemedNumberPicker` 回退为原生 `NumberPicker`，保留运行时文字/分隔线主题修正，但不再改写系统滚轮外形。
+- 已补完月收益统计表热力底色：月份格现在和日收益统计表统一按收益率走红绿、深浅变化，不再只有文字变色而底色几乎不变。
+- 已新增并通过本轮定点验证：`AccountStatsLayoutResourceTest` 改为校验原生 `NumberPicker` 契约，新增 `AccountReturnsHeatStyleHelperTest` 校验热力底色强弱，并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountDatePickerValueHelperTest" --tests "com.binance.monitor.ui.account.AccountReturnsHeatStyleHelperTest" --tests "com.binance.monitor.ui.account.AccountCurvePositionRatioHelperTest" assembleDebug`。
+- 已继续收口收益统计时间滚轮残留问题：账户统计页 5 个日期滚轮已切到自定义 `ThemedNumberPicker`，由控件每次绘制前强制覆盖未选中项文字颜色和 alpha，不再继续依赖系统 `NumberPicker` 的默认淡化逻辑。
+- 已继续收口当前区间仓位曲线：历史成交回放已改成同时兼容“开/平成交流”和“单条生命周期记录”两种格式；若平仓记录本身带完整 `openTime/closeTime` 但数据里没有对应开仓成交，会按生命周期处理；若已有开仓成交，则平仓只做减仓，不再重复加仓。
+- 已新增并通过本轮定点验证：`AccountStatsLayoutResourceTest` 新增日期滚轮控件契约校验，并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountCurvePositionRatioHelperTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountDatePickerValueHelperTest" assembleDebug`。
+- 已重新锁定并修正“当前区间仓位曲线图未修复”的真实根因：历史成交回放之前把开仓成交和平仓成交都当成整笔生命周期处理，平仓成交会重复把同一段仓位再加一次，导致尾部残留假仓位；现在已改成按成交 `entryType` 生成仓位增减事件，平仓/反手成交只做减仓，不再重复加仓。
+- 已继续补强收益统计时间滚轮显示：`NumberPicker` 现关闭垂直淡化边缘，并强制把选择轮文本画笔 alpha 设为 255，减少未选中年月数字被系统淡化到接近背景色的问题。
+- 已继续收口用户根据图1/图3反馈的 2 个残留问题：收益统计年月选择器改成稳定的“中文年月标签 + 真实索引映射”链路，月份列不再直接依赖原始数值范围；日期面板显示后会再执行一次主题样式刷新，降低 OEM `NumberPicker` 在首次展示时把颜色样式冲掉的概率。
+- 已继续修正仓位比例回放：当历史成交本身是平仓/反手成交但缺少 `closeTime` 时，客户端现在会回退到成交时间作为平仓时刻，避免仓位比例图把仓位一直错误延续到当前时点。
+- 已新增并通过本轮定点验证：`AccountDatePickerValueHelperTest`、`AccountCurvePositionRatioHelperTest`，并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountCurvePositionRatioHelperTest" --tests "com.binance.monitor.ui.account.AccountDatePickerValueHelperTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.theme.MarketChartLayoutThemeResourceTest" --tests "com.binance.monitor.ui.chart.ChartRefreshMetaFormatterTest" assembleDebug`。
+- 已完成本轮 3 个定点修复：账户统计里两组日期选择面板的标题/按钮/`NumberPicker` 文字与分隔线改成完全跟随当前主题，避免未选项文字在不同主题下与背景贴色；K 线图右上角 `ms` 倒计时已单独缩到 `9sp`，与图内左上角 OHLC 信息量级对齐；当前区间仓位图在“当前无持仓且尾部仍残留旧比率”时会清掉最新尾段残留，不再继续显示约 10% 的假仓位。
+- 已补并通过本轮定点验证：`AccountCurvePositionRatioHelperTest`、`AccountStatsLayoutResourceTest`、`MarketChartLayoutThemeResourceTest`、`ChartRefreshMetaFormatterTest`，并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountCurvePositionRatioHelperTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.theme.MarketChartLayoutThemeResourceTest" --tests "com.binance.monitor.ui.chart.ChartRefreshMetaFormatterTest" assembleDebug`。
 - 已完成本轮 9 项优化的代码收口：图表页“当前持仓”补上独立空态“暂无持仓”，持仓面板与顶部元信息改为统一文字样式；悬浮窗“成交量/成交额”已改成“1M量/1M额”，并给成交量补上 `BTC/XAU` 单位。
 - 已完成账户曲线仓位比例口径修正：客户端兜底与服务端历史曲线重放都从“持仓市值 / 净资产”改成“估算保证金 / 净资产”，当前实现按杠杆把持仓市值折算为保证金，避免仓位比例图继续偏大。
 - 已完成账户曲线附图坐标避让：仓位图、回撤图、日收益图的左右留白与纵轴标签绘制位置已调整，纵轴标题按图形中线绘制，减少几张合并图里纵轴标签互相挤压。
@@ -70,6 +103,12 @@
 - 已通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.AbnormalGatewayClientTest" --tests "com.binance.monitor.data.local.AbnormalRecordIdentityTest" --tests "com.binance.monitor.service.AbnormalSyncRuntimeHelperTest"`。
 
 ## 上次停在哪个位置
+- 停在“主界面异常记录已拆成最近 10 条摘要和最多 500 条详细查询；账户统计页新增周一到周日盈亏表；K 线下部 RSI/KDJ/StochRSI 已拆成独立附图窗，并重新编译通过”的状态。
+- 停在“时间滚轮已回退到原生 NumberPicker、月收益月份格已接入热力底色”的状态；若继续真机复核，优先看日收益时间滚轮是否恢复正常滚轮外观，以及月收益表每个月份底色是否已随收益率高低变化。
+- 停在“收益统计时间滚轮已切自定义控件、仓位回放已兼容双格式”的状态；若继续真机复核，优先看日收益月份滚轮未选中项是否仍发暗，以及当前区间仓位曲线是否已恢复为有值但不再在尾部残留假仓位。
+- 停在“收益统计时间滚轮与当前区间仓位曲线的真实根因已再定位一轮并继续修复”的状态；若继续真机复核，优先看日收益月份滚轮里未选中的年月数字是否仍发灰，以及当前无持仓时仓位曲线右侧尾段是否仍存在持续约 10% 的假仓位。
+- 停在“图1/图3里的 2 个残留问题已再补一轮根因修复并验证通过”的状态；若继续真机复核，优先看收益统计年月选择器是否已稳定显示月份列和中文标签，以及当前无持仓时仓位比例图右侧尾段是否已回到 0。
+- 停在“用户最新追加的 3 个问题已完成代码与验证”的状态；若继续真机复核，优先检查四套主题下日期选择器所有候选项的可读性、K 线右上角倒计时与左上角 OHLC 的视觉一致性、以及空仓账户的当前区间仓位图尾部是否已归零。
 - 停在“本轮 9 项优化已完成代码与验证”的状态；若继续真机复核，优先检查仓位比例图现在是否符合“保证金 / 净资产”口径，以及图表页当前持仓空态、日期选择器在四套主题下的可读性。
 - 停在“本轮 11 项优化已完成代码落地和验证”的状态；若下一步继续真机复核，优先检查 1 分钟图实时刷新、历史成交开平点是否与最新安装包和最新网关部署一致。
 - 停在“服务端需要同步部署本轮网关文件”的状态；若远端仍出现 `HTTP 404` 或历史交易时间仍旧不准，优先确认服务器已更新 `bridge/mt5_gateway/server_v2.py`，并按需补上 `SNAPSHOT_RANGE_ALL_DAYS` 配置后重启网关。
@@ -99,8 +138,34 @@
 - 若下一步继续复核无加粗/方角 UI，优先看 `styles.xml`、`themes.xml` 以及 `activity_account_stats.xml`、`activity_main.xml`、`activity_settings.xml`、`activity_settings_detail.xml`。
 - 若下一步继续做第二步骤剩余项，优先看 `MarketChartActivity`、`KlineChartView`、`FloatingWindowManager`、`MonitorService`，尤其是历史成交上图、长按联动、以及多周期数据刷新策略。
 - 若下一步继续压第二步骤的服务器侧资源与延迟问题，优先看 `bridge/mt5_gateway/server_v2.py`、`bridge/mt5_gateway/.env.example`、`bridge/mt5_gateway/tests/test_summary_response.py`。
+- 停在“本轮新增的 3 个 UI 调整已经完成并验证通过”的状态。
 
 ## 近期关键决定和原因
+- 主界面行情卡片改成“按签名去重渲染”；原因是切回“行情持仓”时，`onResume`、LiveData 重放和最近异常记录定时器会让主界面短时间内重复刷新同一份数据，直接放大切页卡顿。
+- 最近异常记录自动刷新改成“恢复页面后延后 30 秒再跑”；原因是记录列表在 LiveData 观察器里已经会先刷新一遍，恢复页面立刻再跑一次没有收益，只会占主线程。
+- K 线请求结果改成“本地预显示先上屏，网络结果只覆盖同时间桶，不再从空列表重画”；原因是用户反馈最新 1 分钟图会显示不完整，旧链路会让较短的 REST 回包把已显示的本地实时尾部覆盖掉。
+- 图表页 blocking loading 改成“仅首屏无数据时显示”；原因是用户反馈切换周期会等待刷新导致卡顿，本地已有聚合窗口时继续遮住图表只会放大卡顿体感。
+- 图表页自动刷新改成“推送健康时放慢主动轮询”；原因是当前架构已经走推送优先 + 本地聚合，继续固定 5 秒请求既浪费流量，也容易把慢请求 latency 和快请求 latency 交替暴露到右上角 `ms` 文案里。
+- 全量账户快照写库改成“先清空旧历史交易再写入当前快照”；原因是历史成交时间口径已经多轮修正，旧版本残留在本地库里的错交易若不清掉，会继续污染 K 线历史成交点位。
+- 星期统计展示改成单独柱状图视图，不再复用 `AccountMetricAdapter` 文本列表；原因是用户要求它和上方图表保持同类展示形式，继续走列表无法满足视觉一致性。
+- 异常详细记录弹窗改成“自带标题/副标题的卡片内容 + 透明窗口背景”；原因是仅靠系统默认 `AlertDialog` 标题栏会继续保留原生样式，和 APP 现有页面风格不统一。
+- K 线“历史成交 开/关”按钮定位改成“图表控件回传主图/VOL 图边界，页面按真实绘图区重新摆放”；原因是静态 XML 只能贴在整个容器左下角，无法稳定落到 VOL 图区域。
+- K 线“历史成交 开/关”按钮最终锚点改成“始终以主图左下角为准”；原因是用户明确指出目标位置是主视图左下角，不应再跟随 VOL 附图变化。
+- 异常记录数量按“主界面详细查询最多 500 条、图表内部本地缓存继续保留更长历史”分层处理；原因是用户要把异常记录查询上限收口到 500，但 K 线历史异常圆点仍需要更长本地缓存避免缺失。
+- 账户统计页实时刷新改成直接监听 `AccountStatsPreloadManager` 缓存更新；原因是仅靠页面自己的 5 秒轮询，新的平仓订单会晚一拍，不能满足“有新平仓单即刷新”的要求。
+- K 线下部震荡指标改成“每个指标一个独立附图窗”；原因是用户明确要求打开/关闭下部指标时应新增或隐去对应附图窗，而不是继续叠加到同一块窗口里。
+- 日期滚轮重新改回原生 `NumberPicker`；原因是自定义 `ThemedNumberPicker` 在真机上已经把系统滚轮渲染成异常样式，继续沿这条路只会破坏控件形态。
+- 收益统计热力底色抽成独立 `AccountReturnsHeatStyleHelper`；原因是月收益和日收益需要共用同一套红绿深浅规则，避免一个有热力、一个只有文字颜色。
+- 日期滚轮最终改成自定义 `ThemedNumberPicker`；原因是系统 `NumberPicker` 的未选中项淡化并不完全受普通文字颜色控制，继续只靠反射改一次画笔不稳定。
+- 仓位历史回放最终改成“先识别数据是 deal 流还是 lifecycle 汇总，再决定平仓记录是只减仓还是补一整段开平生命周期”；原因是当前真实数据可能同时存在两种格式，单一规则会导致一边残留假仓位，另一边整段清空。
+- 仓位比例历史回放改成“按 `entryType` 生成仓位增减事件，而不是把每条成交都按整笔生命周期重放”；原因是当前真实数据里同时存在开仓成交和平仓成交，旧逻辑会把平仓成交再次当作一笔完整持仓加上去，直接造成当前区间尾部残留假仓位。
+- 收益统计的 `NumberPicker` 继续补上“禁用垂直淡化 + 强制文本 alpha 255”；原因是仅改文字颜色不够，系统滚轮对未选中项仍会再叠一层淡化，深色主题下会看起来像颜色贴背景。
+- 收益统计年月选择器改成“年份/月份都走显示标签和真实值分离的映射”；原因是直接让 `NumberPicker` 吃原始月份数值在部分机型上会出现月份列不稳定或显示空白，分离后能稳定显示中文年月。
+- 日期面板的 `NumberPicker` 样式改成“面板显示后再二次刷新”；原因是部分系统会在 `GONE -> VISIBLE` 的首次布局后重建内部文本样式，之前只在显示前设置一次容易被覆盖。
+- 仓位比例回放对平仓成交新增“缺 `closeTime` 时回退到成交时间”规则；原因是部分历史成交虽然是平仓单，但字段只带 `timestamp` 不带 `closeTime`，旧逻辑会把它误判成仍在持仓。
+- 日期选择面板改成“XML 不再写死标题/按钮颜色，运行时统一按当前主题设置容器、按钮、`NumberPicker` 文字和分隔线”；原因是仅改中间选中值不够，未选候选项和面板按钮仍可能在不同主题下与背景贴色。
+- K 线右上角倒计时单独改成 `9sp`；原因是左上角 OHLC 信息实际由图内画布按约 `9dp` 绘制，继续沿用 `11sp` 的 Meta 样式会明显偏大。
+- 当前区间仓位图新增“空仓尾段清零”规则；原因是部分旧历史快照会保留过时的 `positionRatio` 尾值，当前无持仓时若继续直接展示，会让图尾错误地残留 10% 左右仓位。
 - 仓位比例曲线口径改成“估算保证金 / 净资产”，并统一落到客户端兜底和服务端历史曲线重放两侧；原因是用户明确指出当前区间仓位图不应再按持仓市值计算，否则仓位比例会系统性偏大。
 - 历史保证金在网关侧暂无逐笔原始字段时，先按“持仓市值 / 杠杆”估算；原因是 MT5 当前快照稳定提供杠杆和持仓市值，这条路径能先把口径修正到保证金维度，同时避免继续展示明显错误的市值口径。
 - 图表页“当前持仓”改成和挂单区一样保留独立空态文案，而不是把“暂无持仓”塞在摘要里；原因是用户要求空态展示方式与挂单明细一致。

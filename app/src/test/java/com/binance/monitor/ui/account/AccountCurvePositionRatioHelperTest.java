@@ -43,13 +43,13 @@ public class AccountCurvePositionRatioHelperTest {
     public void ensureVisibleRatiosShouldKeepExistingHistoricalRatios() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 95d, 0.15d),
-                new CurvePoint(2_000L, 200d, 190d, 0.30d)
+                new CurvePoint(2_000L, 200d, 190d, 0d)
         );
 
         List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, null, null, 0d);
 
         assertEquals(0.15d, resolved.get(0).getPositionRatio(), 1e-9);
-        assertEquals(0.30d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(0d, resolved.get(1).getPositionRatio(), 1e-9);
     }
 
     @Test
@@ -71,33 +71,56 @@ public class AccountCurvePositionRatioHelperTest {
     }
 
     @Test
-    public void ensureVisibleRatiosShouldReplayClosedTradesWhenLivePositionsMissing() {
+    public void ensureVisibleRatiosShouldReplayExposureFromOpenAndCloseDeals() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 100d, 0d),
                 new CurvePoint(2_000L, 100d, 100d, 0d),
                 new CurvePoint(3_000L, 100d, 100d, 0d)
         );
-        List<TradeRecordItem> trades = Collections.singletonList(new TradeRecordItem(
-                2_500L,
-                "BTC",
-                "BTCUSDT",
-                "BUY",
-                40d,
-                1d,
-                40d,
-                0d,
-                "",
-                0d,
-                1_500L,
-                2_500L,
-                0d,
-                40d,
-                42d,
-                1L,
-                1L,
-                1L,
-                1
-        ));
+        List<TradeRecordItem> trades = Arrays.asList(
+                new TradeRecordItem(
+                        1_500L,
+                        "BTC",
+                        "BTCUSDT",
+                        "BUY",
+                        40d,
+                        1d,
+                        40d,
+                        0d,
+                        "",
+                        0d,
+                        1_500L,
+                        1_500L,
+                        0d,
+                        40d,
+                        40d,
+                        1L,
+                        1L,
+                        1L,
+                        0
+                ),
+                new TradeRecordItem(
+                        2_500L,
+                        "BTC",
+                        "BTCUSDT",
+                        "BUY",
+                        42d,
+                        1d,
+                        40d,
+                        0d,
+                        "",
+                        0d,
+                        1_500L,
+                        2_500L,
+                        0d,
+                        40d,
+                        42d,
+                        2L,
+                        1L,
+                        1L,
+                        1
+                )
+        );
 
         List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, null, trades, 10d);
 
@@ -105,5 +128,66 @@ public class AccountCurvePositionRatioHelperTest {
         assertEquals(0d, resolved.get(0).getPositionRatio(), 1e-9);
         assertEquals(0.04d, resolved.get(1).getPositionRatio(), 1e-9);
         assertEquals(0d, resolved.get(2).getPositionRatio(), 1e-9);
+    }
+
+    @Test
+    public void ensureVisibleRatiosShouldUseDealTimestampWhenClosingTradeMissesCloseTime() {
+        List<CurvePoint> points = Arrays.asList(
+                new CurvePoint(1_000L, 100d, 100d, 0d),
+                new CurvePoint(2_000L, 100d, 100d, 0d),
+                new CurvePoint(3_000L, 100d, 100d, 0d),
+                new CurvePoint(4_000L, 100d, 100d, 0d)
+        );
+        List<TradeRecordItem> trades = Arrays.asList(
+                new TradeRecordItem(
+                        1_500L,
+                        "BTC",
+                        "BTCUSDT",
+                        "BUY",
+                        40d,
+                        1d,
+                        40d,
+                        0d,
+                        "",
+                        0d,
+                        1_500L,
+                        1_500L,
+                        0d,
+                        40d,
+                        40d,
+                        1L,
+                        1L,
+                        1L,
+                        0
+                ),
+                new TradeRecordItem(
+                        3_000L,
+                        "BTC",
+                        "BTCUSDT",
+                        "BUY",
+                        42d,
+                        1d,
+                        40d,
+                        0d,
+                        "",
+                        0d,
+                        1_500L,
+                        1_500L,
+                        0d,
+                        40d,
+                        42d,
+                        2L,
+                        1L,
+                        1L,
+                        1
+                )
+        );
+
+        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, null, trades, 10d);
+
+        assertEquals(0d, resolved.get(0).getPositionRatio(), 1e-9);
+        assertEquals(0.04d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(0d, resolved.get(2).getPositionRatio(), 1e-9);
+        assertEquals(0d, resolved.get(3).getPositionRatio(), 1e-9);
     }
 }

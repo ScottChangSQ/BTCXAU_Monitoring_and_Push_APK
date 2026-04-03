@@ -122,8 +122,8 @@ public class HoldingDurationDistributionView extends View {
             float centerX = left + slotWidth * i + slotWidth / 2f;
             float usableHeight = bottom - top - dp(14f);
             float totalTop = bottom - usableHeight * (bucket.getCount() / (float) maxCount);
-            float winTop = bottom - usableHeight * (bucket.getWinCount() / (float) maxCount);
             float lossTop = bottom - usableHeight * (bucket.getLossCount() / (float) maxCount);
+            float winTop = bottom - usableHeight * ((bucket.getLossCount() + bucket.getWinCount()) / (float) maxCount);
             if (bucket.getLossCount() > 0) {
                 RectF lossRect = new RectF(centerX - barWidth / 2f, lossTop, centerX + barWidth / 2f, bottom);
                 canvas.drawRect(lossRect, lossBarPaint);

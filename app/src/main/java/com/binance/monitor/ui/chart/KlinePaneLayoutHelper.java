@@ -8,7 +8,9 @@ final class KlinePaneLayoutHelper {
     private static final float PRICE_WEIGHT = 9.36f;
     private static final float VOLUME_WEIGHT = 2.4f;
     private static final float MACD_WEIGHT = 2f;
-    private static final float OSCILLATOR_WEIGHT = 2f;
+    private static final float STOCH_WEIGHT = 2f;
+    private static final float RSI_WEIGHT = 2f;
+    private static final float KDJ_WEIGHT = 2f;
 
     private KlinePaneLayoutHelper() {
     }
@@ -18,11 +20,15 @@ final class KlinePaneLayoutHelper {
                               float bottom,
                               boolean showVolume,
                               boolean showMacd,
-                              boolean showOscillator) {
+                              boolean showStochRsi,
+                              boolean showRsi,
+                              boolean showKdj) {
         float totalWeight = PRICE_WEIGHT
                 + (showVolume ? VOLUME_WEIGHT : 0f)
                 + (showMacd ? MACD_WEIGHT : 0f)
-                + (showOscillator ? OSCILLATOR_WEIGHT : 0f);
+                + (showStochRsi ? STOCH_WEIGHT : 0f)
+                + (showRsi ? RSI_WEIGHT : 0f)
+                + (showKdj ? KDJ_WEIGHT : 0f);
         float height = Math.max(0f, bottom - top);
         float unit = totalWeight <= 0f ? 0f : height / totalWeight;
 
@@ -40,24 +46,43 @@ final class KlinePaneLayoutHelper {
                 : PaneBounds.empty(cursor);
         cursor = macd.bottom;
 
-        PaneBounds oscillator = showOscillator
+        PaneBounds stoch = showStochRsi
+                ? new PaneBounds(cursor, cursor + STOCH_WEIGHT * unit)
+                : PaneBounds.empty(cursor);
+        cursor = stoch.bottom;
+
+        PaneBounds rsi = showRsi
+                ? new PaneBounds(cursor, cursor + RSI_WEIGHT * unit)
+                : PaneBounds.empty(cursor);
+        cursor = rsi.bottom;
+
+        PaneBounds kdj = showKdj
                 ? new PaneBounds(cursor, bottom)
                 : PaneBounds.empty(cursor);
 
-        return new PaneLayout(price, volume, macd, oscillator);
+        return new PaneLayout(price, volume, macd, stoch, rsi, kdj);
     }
 
     static final class PaneLayout {
         final PaneBounds price;
         final PaneBounds volume;
         final PaneBounds macd;
-        final PaneBounds oscillator;
+        final PaneBounds stoch;
+        final PaneBounds rsi;
+        final PaneBounds kdj;
 
-        private PaneLayout(PaneBounds price, PaneBounds volume, PaneBounds macd, PaneBounds oscillator) {
+        private PaneLayout(PaneBounds price,
+                           PaneBounds volume,
+                           PaneBounds macd,
+                           PaneBounds stoch,
+                           PaneBounds rsi,
+                           PaneBounds kdj) {
             this.price = price;
             this.volume = volume;
             this.macd = macd;
-            this.oscillator = oscillator;
+            this.stoch = stoch;
+            this.rsi = rsi;
+            this.kdj = kdj;
         }
     }
 

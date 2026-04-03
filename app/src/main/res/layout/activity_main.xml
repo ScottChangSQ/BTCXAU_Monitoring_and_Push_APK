@@ -269,11 +269,28 @@
                 android:orientation="vertical"
                 android:padding="@dimen/card_content_padding">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/recent_records"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/recent_records"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+                    <Button
+                        android:id="@+id/btnViewAllRecords"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minWidth="0dp"
+                        android:text="详细记录"
+                        android:textAllCaps="false"
+                        android:textSize="11sp" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/tvRecordsHint"
@@ -348,9 +365,10 @@
 
                     <TextView
                         android:id="@+id/tvVolumeUnit"
-                        android:layout_width="wrap_content"
+                        android:layout_width="44dp"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
+                        android:gravity="start|center_vertical"
                         android:text="@string/unit_btc"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
@@ -392,9 +410,10 @@
 
                     <TextView
                         android:id="@+id/tvAmountUnit"
-                        android:layout_width="wrap_content"
+                        android:layout_width="44dp"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
+                        android:gravity="start|center_vertical"
                         android:text="@string/unit_musd"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
@@ -436,9 +455,10 @@
 
                     <TextView
                         android:id="@+id/tvPriceUnit"
-                        android:layout_width="wrap_content"
+                        android:layout_width="44dp"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
+                        android:gravity="start|center_vertical"
                         android:text="@string/unit_usd"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />

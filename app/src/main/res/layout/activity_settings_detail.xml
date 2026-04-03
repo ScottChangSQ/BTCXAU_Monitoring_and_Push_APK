@@ -549,20 +549,6 @@
                     android:textSize="14sp" />
             </LinearLayout>
 
-            <Button
-                android:id="@+id/btnViewLogs"
-                android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_md"
-                android:layout_marginTop="@dimen/page_section_gap"
-                android:layout_marginBottom="@dimen/space_20"
-                android:background="@android:color/transparent"
-                android:gravity="center"
-                android:maxLines="1"
-                android:minHeight="0dp"
-                android:text="@string/view_logs"
-                android:textAllCaps="false"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 

@@ -72,6 +72,12 @@ public class LogActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(this, palette);
+        binding.btnBack.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        binding.btnBack.setTextColor(palette.textPrimary);
+        binding.btnSelectAll.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        binding.btnSelectAll.setTextColor(palette.textPrimary);
+        binding.btnDeleteSelected.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        binding.btnDeleteSelected.setTextColor(palette.textPrimary);
         binding.recyclerLogs.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.tvLogTitle.setTextColor(palette.textPrimary);
         binding.tvLogSubtitle.setTextColor(palette.textSecondary);

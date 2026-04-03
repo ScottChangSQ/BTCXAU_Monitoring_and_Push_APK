@@ -135,6 +135,7 @@ public class MonitorService extends Service {
             action = AppConstants.ACTION_BOOTSTRAP;
         }
         ensureForeground();
+        suppressForegroundNotification();
         startPipelineIfNeeded();
         switch (action) {
             case AppConstants.ACTION_START_MONITORING:
@@ -155,7 +156,6 @@ public class MonitorService extends Service {
             default:
                 break;
         }
-        refreshForegroundState();
         requestFloatingWindowRefresh(true);
         return START_STICKY;
     }
@@ -194,14 +194,15 @@ public class MonitorService extends Service {
         foregroundStarted = true;
     }
 
-    private void refreshForegroundState() {
+    // 启动前台服务后立即撤掉通知，避免状态栏和顶部内容提醒继续常驻。
+    private void suppressForegroundNotification() {
         if (!foregroundStarted) {
+            notificationHelper.cancelServiceNotification();
             return;
         }
-        startForeground(AppConstants.SERVICE_NOTIFICATION_ID,
-                notificationHelper.buildServiceNotification(
-                        repository.getConnectionStatus().getValue(),
-                        Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())));
+        stopForeground(true);
+        notificationHelper.cancelServiceNotification();
+        foregroundStarted = false;
     }
 
     private synchronized void startPipelineIfNeeded() {
@@ -616,7 +617,7 @@ public class MonitorService extends Service {
                 getString(R.string.connection_connecting)
         );
         repository.setConnectionStatus(status);
-        refreshForegroundState();
+        suppressForegroundNotification();
         requestFloatingWindowRefresh(true);
     }
 

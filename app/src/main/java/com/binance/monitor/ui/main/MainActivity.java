@@ -5,8 +5,10 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
 import android.text.TextUtils;
 import android.graphics.Typeface;
+import android.text.TextWatcher;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -33,6 +35,7 @@ import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.databinding.ActivityMainBinding;
 import com.binance.monitor.databinding.ItemMetricBinding;
+import com.binance.monitor.databinding.DialogAbnormalRecordsBinding;
 import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.adapter.AbnormalRecordAdapter;
 import com.binance.monitor.ui.chart.MarketChartActivity;
@@ -40,9 +43,14 @@ import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.AppLaunchHelper;
 import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.util.GatewayUrlResolver;
 import com.binance.monitor.util.PermissionHelper;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -66,8 +74,11 @@ public class MainActivity extends AppCompatActivity {
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private boolean applyingConfig;
     private long lastMarketUpdateMs;
+    private String lastMarketRenderSignature = "";
     private ArrayAdapter<String> symbolAdapter;
     private List<AbnormalRecord> recentRecordsSource = Collections.emptyList();
+    private Map<String, Double> latestPricesSnapshot = Collections.emptyMap();
+    private Map<String, KlineData> latestKlinesSnapshot = Collections.emptyMap();
     private final Handler recentRecordsHandler = new Handler(Looper.getMainLooper());
     private final Runnable recentRecordsRefreshRunnable = new Runnable() {
         @Override
@@ -117,7 +128,9 @@ public class MainActivity extends AppCompatActivity {
         applyPaletteStyles();
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
-        renderMarket(viewModel.getLatestPrices().getValue(), viewModel.getLatestClosedKlines().getValue());
+        latestPricesSnapshot = safePriceSnapshot(viewModel.getLatestPrices().getValue());
+        latestKlinesSnapshot = safeKlineSnapshot(viewModel.getLatestClosedKlines().getValue());
+        renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
         startRecentRecordsAutoRefresh();
         startUpdateTimeTicker();
     }
@@ -223,6 +236,8 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, R.string.open_app_failed, Toast.LENGTH_SHORT).show();
             }
         });
+        binding.tvConnectionStatus.setOnClickListener(v -> showConnectionDetailsDialog());
+        binding.btnViewAllRecords.setOnClickListener(v -> showAllAbnormalRecordsDialog());
         binding.radioLogicGroup.setOnCheckedChangeListener((group, checkedId) -> {
             if (applyingConfig) {
                 return;
@@ -377,10 +392,14 @@ public class MainActivity extends AppCompatActivity {
             lastMarketUpdateMs = time == null ? 0L : time;
             binding.tvLastUpdate.setText(formatMarketUpdateText(lastMarketUpdateMs));
         });
-        viewModel.getLatestPrices().observe(this,
-                prices -> renderMarket(prices, viewModel.getLatestClosedKlines().getValue()));
-        viewModel.getLatestClosedKlines().observe(this,
-                klines -> renderMarket(viewModel.getLatestPrices().getValue(), klines));
+        viewModel.getLatestPrices().observe(this, prices -> {
+            latestPricesSnapshot = safePriceSnapshot(prices);
+            renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
+        });
+        viewModel.getLatestClosedKlines().observe(this, klines -> {
+            latestKlinesSnapshot = safeKlineSnapshot(klines);
+            renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
+        });
         viewModel.getRecords().observe(this, records -> {
             recentRecordsSource = records == null ? Collections.emptyList() : records;
             renderRecentRecords();
@@ -388,14 +407,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void renderRecentRecords() {
-        List<AbnormalRecord> display = mergeDisplayRecords(recentRecordsSource);
+        List<AbnormalRecord> display = RecentAbnormalRecordHelper.buildRecentDisplay(
+                recentRecordsSource,
+                System.currentTimeMillis(),
+                10
+        );
         recordAdapter.submitList(display);
         binding.tvRecordsEmpty.setVisibility(display.isEmpty() ? View.VISIBLE : View.GONE);
     }
 
     private void startRecentRecordsAutoRefresh() {
         recentRecordsHandler.removeCallbacks(recentRecordsRefreshRunnable);
-        recentRecordsHandler.post(recentRecordsRefreshRunnable);
+        recentRecordsHandler.postDelayed(recentRecordsRefreshRunnable, 30_000L);
     }
 
     private void stopRecentRecordsAutoRefresh() {
@@ -411,79 +434,77 @@ public class MainActivity extends AppCompatActivity {
         recentRecordsHandler.removeCallbacks(updateTimeTickerRunnable);
     }
 
-    private List<AbnormalRecord> mergeDisplayRecords(List<AbnormalRecord> source) {
-        List<AbnormalRecord> output = new ArrayList<>();
-        if (source == null || source.isEmpty()) {
-            return output;
+    private void showAllAbnormalRecordsDialog() {
+        DialogAbnormalRecordsBinding dialogBinding = DialogAbnormalRecordsBinding.inflate(getLayoutInflater());
+        AbnormalRecordAdapter dialogAdapter = new AbnormalRecordAdapter(true);
+        dialogBinding.recyclerAbnormalRecords.setLayoutManager(new LinearLayoutManager(this));
+        dialogBinding.recyclerAbnormalRecords.setAdapter(dialogAdapter);
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this)
+                .setView(dialogBinding.getRoot())
+                .setPositiveButton("关闭", null);
+        androidx.appcompat.app.AlertDialog dialog = builder.create();
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        UiPaletteManager.applyPageTheme(dialogBinding.getRoot(), palette);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         }
-        long oneHourAgo = System.currentTimeMillis() - 60L * 60L * 1000L;
-        Map<Long, Map<String, AbnormalRecord>> grouped = new LinkedHashMap<>();
+        bindAllAbnormalRecords(dialogBinding, dialogAdapter, "");
+        dialogBinding.etAbnormalSearch.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                bindAllAbnormalRecords(dialogBinding, dialogAdapter, s == null ? "" : s.toString());
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
+        dialog.show();
+        if (dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE) != null) {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
+        }
+    }
+
+    private void bindAllAbnormalRecords(DialogAbnormalRecordsBinding dialogBinding,
+                                        AbnormalRecordAdapter adapter,
+                                        String keyword) {
+        List<AbnormalRecord> filtered = filterAllAbnormalRecords(recentRecordsSource, keyword);
+        adapter.submitList(filtered);
+        dialogBinding.tvAbnormalRecordsEmpty.setVisibility(filtered.isEmpty() ? View.VISIBLE : View.GONE);
+    }
+
+    private List<AbnormalRecord> filterAllAbnormalRecords(List<AbnormalRecord> source, String keyword) {
+        List<AbnormalRecord> result = new ArrayList<>();
+        if (source == null || source.isEmpty()) {
+            return result;
+        }
+        String query = keyword == null ? "" : keyword.trim().toUpperCase();
         for (AbnormalRecord item : source) {
-            if (item.getCloseTime() < oneHourAgo) {
+            if (item == null) {
                 continue;
             }
-            Map<String, AbnormalRecord> map = grouped.get(item.getCloseTime());
-            if (map == null) {
-                map = new LinkedHashMap<>();
-                grouped.put(item.getCloseTime(), map);
+            if (query.isEmpty()) {
+                result.add(item);
+                if (result.size() >= 500) {
+                    break;
+                }
+                continue;
             }
-            map.put(item.getSymbol(), item);
-        }
-        for (Map<String, AbnormalRecord> bySymbol : grouped.values()) {
-            AbnormalRecord btc = bySymbol.get(AppConstants.SYMBOL_BTC);
-            AbnormalRecord xau = bySymbol.get(AppConstants.SYMBOL_XAU);
-            if (btc != null && xau != null) {
-                String summary = getString(R.string.record_line_both, "BTC", btc.getTriggerSummary(), "XAU", xau.getTriggerSummary());
-                AbnormalRecord merged = new AbnormalRecord(
-                        UUID.randomUUID().toString(),
-                        "BOTH",
-                        Math.max(btc.getCloseTime(), xau.getCloseTime()),
-                        btc.getCloseTime(),
-                        btc.getOpenPrice(),
-                        btc.getClosePrice(),
-                        btc.getVolume(),
-                        btc.getAmount(),
-                        btc.getPriceChange(),
-                        btc.getPercentChange(),
-                        summary
-                );
-                output.add(merged);
-            } else if (btc != null) {
-                String summary = getString(R.string.record_line_single, "BTC", btc.getTriggerSummary());
-                output.add(new AbnormalRecord(
-                        btc.getId(),
-                        "BTC",
-                        btc.getCloseTime(),
-                        btc.getCloseTime(),
-                        btc.getOpenPrice(),
-                        btc.getClosePrice(),
-                        btc.getVolume(),
-                        btc.getAmount(),
-                        btc.getPriceChange(),
-                        btc.getPercentChange(),
-                        summary
-                ));
-            } else if (xau != null) {
-                String summary = getString(R.string.record_line_single, "XAU", xau.getTriggerSummary());
-                output.add(new AbnormalRecord(
-                        xau.getId(),
-                        "XAU",
-                        xau.getCloseTime(),
-                        xau.getCloseTime(),
-                        xau.getOpenPrice(),
-                        xau.getClosePrice(),
-                        xau.getVolume(),
-                        xau.getAmount(),
-                        xau.getPriceChange(),
-                        xau.getPercentChange(),
-                        summary
-                ));
+            String haystack = (item.getSymbol() + " "
+                    + FormatUtils.formatDateTime(item.getTimestamp()) + " "
+                    + item.getTriggerSummary()).toUpperCase();
+            if (haystack.contains(query)) {
+                result.add(item);
             }
-            if (output.size() >= 10) {
+            if (result.size() >= 500) {
                 break;
             }
         }
-        return output;
+        return result;
     }
 
     private void renderMarket(Map<String, Double> prices, Map<String, KlineData> klines) {
@@ -511,6 +532,23 @@ public class MainActivity extends AppCompatActivity {
         int changeColor = data.getPriceChange() >= 0 ? palette.rise : palette.fall;
         metricChangeBinding.tvMetricValue.setTextColor(changeColor);
         metricPercentBinding.tvMetricValue.setTextColor(changeColor);
+    }
+
+    // 仅在当前产品行情真正变化时重绘，减少切页恢复时的重复渲染。
+    private void renderMarketIfNeeded(@Nullable Map<String, Double> prices,
+                                      @Nullable Map<String, KlineData> klines) {
+        Double latestPrice = prices == null ? null : prices.get(selectedSymbol);
+        KlineData latestKline = klines == null ? null : klines.get(selectedSymbol);
+        String nextSignature = MainMarketRenderHelper.buildRenderSignature(
+                selectedSymbol,
+                latestPrice,
+                latestKline
+        );
+        if (!MainMarketRenderHelper.shouldRender(lastMarketRenderSignature, nextSignature)) {
+            return;
+        }
+        lastMarketRenderSignature = nextSignature;
+        renderMarket(prices, klines);
     }
 
     private void setMetric(ItemMetricBinding bindingItem, String value) {
@@ -559,9 +597,20 @@ public class MainActivity extends AppCompatActivity {
         }
         persistCurrentSymbolConfig();
         selectedSymbol = normalized;
+        lastMarketRenderSignature = "";
         syncSymbolSelector();
         loadSymbolConfig(normalized);
-        renderMarket(viewModel.getLatestPrices().getValue(), viewModel.getLatestClosedKlines().getValue());
+        renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
+    }
+
+    // 把最新价格快照转成不可空 map，避免恢复页面时重复判空分支。
+    private Map<String, Double> safePriceSnapshot(@Nullable Map<String, Double> prices) {
+        return prices == null ? Collections.emptyMap() : prices;
+    }
+
+    // 把最新 K 线快照转成不可空 map，供恢复页面时直接复用。
+    private Map<String, KlineData> safeKlineSnapshot(@Nullable Map<String, KlineData> klines) {
+        return klines == null ? Collections.emptyMap() : klines;
     }
 
     private void loadSymbolConfig(String symbol) {
@@ -599,6 +648,7 @@ public class MainActivity extends AppCompatActivity {
         UiPaletteManager.applySystemBars(this, palette);
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.tvMainSymbolPickerLabel.setTextColor(palette.textPrimary);
+        UiPaletteManager.styleInlineTextButton(binding.btnViewAllRecords, false, palette, 11f);
         applyMainSymbolPickerIndicator();
         applyLogicModeStyles();
         if (binding.spinnerSymbolPicker.getAdapter() instanceof BaseAdapter) {
@@ -607,6 +657,127 @@ public class MainActivity extends AppCompatActivity {
         updateBottomTabs(true, false, false, false);
         applyConnectionChipStyle();
         syncSymbolSelector();
+    }
+
+    // 点击主界面连接状态时展示当前网络与网关入口信息。
+    private void showConnectionDetailsDialog() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        String configuredBase = viewModel.getMt5GatewayBaseUrl();
+        String gatewayBase = GatewayUrlResolver.normalizeBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
+        String gatewayRoot = GatewayUrlResolver.resolveGatewayRootBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
+        String binanceRest = GatewayUrlResolver.buildBinanceRestBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
+        String binanceWs = GatewayUrlResolver.buildBinanceWebSocketBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
+
+        android.widget.LinearLayout content = new android.widget.LinearLayout(this);
+        content.setOrientation(android.widget.LinearLayout.VERTICAL);
+        content.setBackground(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+        content.setPadding(dp(18), dp(14), dp(18), dp(6));
+
+        android.widget.TextView titleView = new android.widget.TextView(this);
+        titleView.setText("网络连接详情");
+        titleView.setTextColor(palette.textPrimary);
+        titleView.setTextSize(18f);
+        content.addView(titleView);
+
+        android.widget.TextView subtitleView = new android.widget.TextView(this);
+        subtitleView.setText("监控工作状态与访问入口");
+        subtitleView.setTextColor(palette.textSecondary);
+        subtitleView.setTextSize(12f);
+        android.widget.LinearLayout.LayoutParams subtitleParams =
+                new android.widget.LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                );
+        subtitleParams.topMargin = dp(4);
+        content.addView(subtitleView, subtitleParams);
+
+        content.addView(createConnectionDetailRow("连接状态", binding.tvConnectionStatus.getText().toString(), palette));
+        content.addView(createConnectionDetailRow("MT5 网关", gatewayBase, palette));
+        content.addView(createConnectionDetailRow("服务器入口", gatewayRoot, palette));
+        content.addView(createConnectionDetailRow("Binance REST", binanceRest, palette));
+        content.addView(createConnectionDetailRow("Binance WS", binanceWs, palette));
+        content.addView(createConnectionDetailRow("本机内网", resolveLocalIpv4Address(), palette));
+        content.addView(createConnectionDetailRow("服务器主机", resolveHostLabel(gatewayRoot), palette));
+
+        androidx.appcompat.app.AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+                .setView(content)
+                .setPositiveButton("确定", null)
+                .create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+        }
+        dialog.show();
+        if (dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE) != null) {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
+        }
+    }
+
+    // 统一渲染连接详情行，避免弹窗里信息长短不一时样式散掉。
+    private View createConnectionDetailRow(String label, String value, UiPaletteManager.Palette palette) {
+        android.widget.LinearLayout row = new android.widget.LinearLayout(this);
+        row.setOrientation(android.widget.LinearLayout.VERTICAL);
+        row.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        android.widget.LinearLayout.LayoutParams params =
+                new android.widget.LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                );
+        params.topMargin = dp(10);
+        row.setLayoutParams(params);
+
+        android.widget.TextView labelView = new android.widget.TextView(this);
+        labelView.setText(label);
+        labelView.setTextColor(palette.textSecondary);
+        labelView.setTextSize(12f);
+        row.addView(labelView);
+
+        android.widget.TextView valueView = new android.widget.TextView(this);
+        valueView.setText((value == null || value.trim().isEmpty()) ? "--" : value.trim());
+        valueView.setTextColor(palette.textPrimary);
+        valueView.setTextSize(13f);
+        android.widget.LinearLayout.LayoutParams valueParams =
+                new android.widget.LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                );
+        valueParams.topMargin = dp(4);
+        row.addView(valueView, valueParams);
+        return row;
+    }
+
+    // 解析当前设备可用的 IPv4 内网地址。
+    private String resolveLocalIpv4Address() {
+        try {
+            for (NetworkInterface networkInterface : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (networkInterface == null || !networkInterface.isUp() || networkInterface.isLoopback()) {
+                    continue;
+                }
+                for (InetAddress address : Collections.list(networkInterface.getInetAddresses())) {
+                    if (address instanceof Inet4Address
+                            && !address.isLoopbackAddress()
+                            && !address.getHostAddress().startsWith("169.254.")) {
+                        return address.getHostAddress();
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "--";
+    }
+
+    // 从地址里提取主机名，方便快速确认当前连接的是哪台服务器。
+    private String resolveHostLabel(String url) {
+        try {
+            URI uri = new URI(url);
+            return uri.getHost() == null ? "--" : uri.getHost();
+        } catch (Exception ignored) {
+            return "--";
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private String formatMarketUpdateText(long timestampMs) {

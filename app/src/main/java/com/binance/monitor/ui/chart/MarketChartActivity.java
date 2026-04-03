@@ -18,6 +18,7 @@ import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -191,6 +192,10 @@ public class MarketChartActivity extends AppCompatActivity {
     private int pricePaneTopPx;
     private int pricePaneRightPx;
     private int pricePaneBottomPx;
+    private int volumePaneLeftPx;
+    private int volumePaneTopPx;
+    private int volumePaneRightPx;
+    private int volumePaneBottomPx;
     private long nextAutoRefreshAtMs;
     private volatile boolean loadingMore;
     private long lastSuccessUpdateMs;
@@ -333,9 +338,17 @@ public class MarketChartActivity extends AppCompatActivity {
             pricePaneBottomPx = bottom;
             updateRefreshCountdownPosition();
             boolean positioned = updateScrollToLatestButtonPosition();
+            updateHistoryTradeButtonPosition();
             if (positioned && binding.klineChartView.isLatestCandleOutOfBounds()) {
                 binding.btnScrollToLatest.setVisibility(android.view.View.VISIBLE);
             }
+        });
+        binding.klineChartView.setOnVolumePaneLayoutListener((left, top, right, bottom) -> {
+            volumePaneLeftPx = left;
+            volumePaneTopPx = top;
+            volumePaneRightPx = right;
+            volumePaneBottomPx = bottom;
+            updateHistoryTradeButtonPosition();
         });
         binding.klineChartView.setOnViewportStateListener(outOfBounds ->
         {
@@ -364,13 +377,17 @@ public class MarketChartActivity extends AppCompatActivity {
                 updateScrollToLatestButtonPosition());
         binding.tvChartRefreshCountdown.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updateRefreshCountdownPosition());
+        binding.btnToggleHistoryTrades.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                updateHistoryTradeButtonPosition());
         binding.klineChartView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
         {
             updateRefreshCountdownPosition();
             updateScrollToLatestButtonPosition();
+            updateHistoryTradeButtonPosition();
         });
         binding.btnScrollToLatest.setVisibility(android.view.View.INVISIBLE);
         updateHistoryTradeToggleButton();
+        updateHistoryTradeButtonPosition();
         refreshChartOverlays();
     }
 
@@ -1052,9 +1069,12 @@ public class MarketChartActivity extends AppCompatActivity {
                 selectedInterval.yearAggregate
         );
         if (refreshPlan.mode == MarketChartRefreshHelper.SyncMode.SKIP) {
+            lastSuccessfulRequestLatencyMs =
+                    MarketChartRefreshHelper.resolveDisplayedLatencyMs(refreshPlan, lastSuccessfulRequestLatencyMs);
             binding.tvError.setVisibility(android.view.View.GONE);
             binding.btnRetryLoad.setVisibility(android.view.View.GONE);
             showLoading(false);
+            updateRefreshCountdownText();
             return;
         }
 
@@ -1063,7 +1083,7 @@ public class MarketChartActivity extends AppCompatActivity {
                 ? -1L
                 : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
         final long requestStartedAtMs = SystemClock.elapsedRealtime();
-        showLoading(true);
+        showLoading(MarketChartDisplayHelper.shouldShowBlockingLoading(autoRefresh, loadedCandles));
         binding.tvError.setVisibility(android.view.View.GONE);
         binding.btnRetryLoad.setVisibility(android.view.View.GONE);
         runningTaskStartMs = System.currentTimeMillis();
@@ -1087,7 +1107,11 @@ public class MarketChartActivity extends AppCompatActivity {
                     if (current != requestVersion || isFinishing() || isDestroyed()) {
                         return;
                     }
-                    List<CandleEntry> toDisplay = mergeLatestData(new ArrayList<>(), finalProcessed);
+                    List<CandleEntry> toDisplay = MarketChartDisplayHelper.mergeDisplaySeries(
+                            refreshSeed,
+                            finalProcessed,
+                            selectedInterval.limit
+                    );
                     activeDataKey = key;
                     boolean candlesChanged = !isSameCandleSeries(loadedCandles, toDisplay);
                     boolean shouldFollowLatest = autoRefresh
@@ -1601,6 +1625,7 @@ public class MarketChartActivity extends AppCompatActivity {
         if (binding == null || binding.tvChartRefreshCountdown == null) {
             return;
         }
+        binding.tvChartRefreshCountdown.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f);
         binding.tvChartRefreshCountdown.setText(ChartRefreshMetaFormatter.buildCountdownText(
                 nextAutoRefreshAtMs,
                 System.currentTimeMillis(),
@@ -1611,7 +1636,14 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private long resolveAutoRefreshDelayMs() {
-        return AppConstants.CHART_AUTO_REFRESH_INTERVAL_MS;
+        boolean realtimeFresh = MarketChartRefreshHelper.isRealtimeFresh(
+                System.currentTimeMillis(),
+                resolveLatestRealtimeClosedTime(selectedSymbol)
+        );
+        return MarketChartRefreshHelper.resolveAutoRefreshDelayMs(
+                realtimeFresh,
+                AppConstants.CHART_AUTO_REFRESH_INTERVAL_MS
+        );
     }
 
     // 给周期/指标横向按钮条同步主题背景。
@@ -2770,6 +2802,67 @@ public class MarketChartActivity extends AppCompatActivity {
                 UiPaletteManager.resolve(this),
                 10f
         );
+        updateHistoryTradeButtonPosition();
+    }
+
+    private boolean updateHistoryTradeButtonPosition() {
+        if (binding == null || binding.btnToggleHistoryTrades == null) {
+            return false;
+        }
+        int buttonWidth = binding.btnToggleHistoryTrades.getWidth();
+        int buttonHeight = binding.btnToggleHistoryTrades.getHeight();
+        if (buttonWidth <= 0 || buttonHeight <= 0) {
+            ViewGroup.LayoutParams rawParams = binding.btnToggleHistoryTrades.getLayoutParams();
+            if (rawParams != null) {
+                if (buttonWidth <= 0 && rawParams.width > 0) {
+                    buttonWidth = rawParams.width;
+                }
+                if (buttonHeight <= 0 && rawParams.height > 0) {
+                    buttonHeight = rawParams.height;
+                }
+            }
+            if (buttonWidth <= 0 || buttonHeight <= 0) {
+                binding.btnToggleHistoryTrades.post(this::updateHistoryTradeButtonPosition);
+                return false;
+            }
+        }
+        KlineOverlayButtonLayoutHelper.Bounds priceBounds = new KlineOverlayButtonLayoutHelper.Bounds(
+                pricePaneLeftPx,
+                pricePaneTopPx,
+                pricePaneRightPx,
+                pricePaneBottomPx
+        );
+        KlineOverlayButtonLayoutHelper.Bounds volumeBounds = new KlineOverlayButtonLayoutHelper.Bounds(
+                volumePaneLeftPx,
+                volumePaneTopPx,
+                volumePaneRightPx,
+                volumePaneBottomPx
+        );
+        KlineOverlayButtonLayoutHelper.Position position =
+                KlineOverlayButtonLayoutHelper.resolveHistoryTradeButtonPosition(
+                        priceBounds,
+                        volumeBounds,
+                        buttonWidth,
+                        buttonHeight,
+                        dpToPx(2f)
+                );
+        android.widget.FrameLayout.LayoutParams params =
+                (android.widget.FrameLayout.LayoutParams) binding.btnToggleHistoryTrades.getLayoutParams();
+        int targetGravity = Gravity.TOP | Gravity.START;
+        if (params.gravity == targetGravity
+                && params.leftMargin == position.left
+                && params.topMargin == position.top
+                && params.rightMargin == 0
+                && params.bottomMargin == 0) {
+            return true;
+        }
+        params.gravity = targetGravity;
+        params.leftMargin = position.left;
+        params.topMargin = position.top;
+        params.rightMargin = 0;
+        params.bottomMargin = 0;
+        binding.btnToggleHistoryTrades.setLayoutParams(params);
+        return true;
     }
 
     // 输出当前页面支持的全部周期键，供运行态恢复时校验。

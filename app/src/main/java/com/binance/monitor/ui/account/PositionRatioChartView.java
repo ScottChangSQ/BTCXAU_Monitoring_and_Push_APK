@@ -222,9 +222,9 @@ public class PositionRatioChartView extends View {
             return;
         }
 
-        chartLeft = dp(42f);
+        chartLeft = dp(CurvePaneLayoutHelper.resolveChartLeftDp());
         chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
-        chartRight = width - dp(34f);
+        chartRight = width - dp(CurvePaneLayoutHelper.resolveChartRightInsetDp());
         chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,
                 false,

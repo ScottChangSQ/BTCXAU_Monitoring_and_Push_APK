@@ -31,6 +31,7 @@ import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.NumberPicker;
@@ -161,6 +162,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         SELL
     }
 
+    private enum TradeWeekdayBasis {
+        CLOSE_TIME,
+        OPEN_TIME
+    }
+
     private final SimpleDateFormat dateOnlyFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
     private final SimpleDateFormat monthTitleFormat = new SimpleDateFormat("yyyy年M月", Locale.getDefault());
 
@@ -189,6 +195,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private ReturnStatsMode returnStatsMode = ReturnStatsMode.MONTH;
     private ReturnValueMode returnValueMode = ReturnValueMode.RATE;
     private TradePnlSideMode tradePnlSideMode = TradePnlSideMode.ALL;
+    private TradeWeekdayBasis tradeWeekdayBasis = TradeWeekdayBasis.CLOSE_TIME;
     private long returnStatsAnchorDateMs;
     private String selectedTradeProductFilter = FILTER_PRODUCT;
     private String selectedTradeSideFilter = FILTER_SIDE;
@@ -202,6 +209,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private long manualCurveRangeEndMs;
     private int manualDateTarget = DATE_TARGET_START;
     private final List<Integer> returnPickerYears = new ArrayList<>();
+    private final List<Integer> returnPickerVisibleMonths = new ArrayList<>();
     private final Map<Integer, boolean[]> returnPickerYearMonthMap = new TreeMap<>();
 
     private List<PositionItem> basePositions = new ArrayList<>();
@@ -252,6 +260,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private int unchangedRefreshStreak = 0;
     private boolean draggingTradeScrollBar;
     private final Runnable hideLoginSuccessBannerRunnable = this::hideLoginSuccessBannerNow;
+    private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {
+        if (cache == null || isFinishing() || isDestroyed()) {
+            return;
+        }
+        applyPreloadedCacheIfAvailable();
+    };
 
     private final Runnable refreshRunnable = new Runnable() {
         @Override
@@ -299,6 +313,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setupReturnStatsModeToggle();
         setupReturnStatsValueToggle();
         setupTradePnlSideToggle();
+        setupTradeWeekdayBasisToggle();
         setupDatePickers();
         setupCurveInteraction();
         setupOverviewHeader();
@@ -322,6 +337,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         applyPaletteStyles();
         applyPrivacyMaskState();
         if (preloadManager != null) {
+            preloadManager.addCacheListener(preloadCacheListener);
             preloadManager.setLiveScreenActive(true);
         }
         snapshotLoopEnabled = true;
@@ -343,6 +359,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
         hideLoginSuccessBannerNow();
         if (preloadManager != null) {
+            preloadManager.removeCacheListener(preloadCacheListener);
             preloadManager.setLiveScreenActive(false);
         }
         persistUiState();
@@ -358,6 +375,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
         }
         if (preloadManager != null) {
+            preloadManager.removeCacheListener(preloadCacheListener);
             preloadManager.setLiveScreenActive(false);
         }
         if (ioExecutor != null) {
@@ -873,6 +891,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         binding.recyclerStats.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerStats.setAdapter(statsAdapter);
+
     }
 
     // 账户统计页不再用整页遮罩，而是统一切到局部打码 + 图表占位态。
@@ -888,6 +907,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         pendingOrderAdapter.setMasked(masked);
         tradeAdapter.setMasked(masked);
         statsAdapter.setMasked(masked);
+        binding.tradeWeekdayBarChart.setMasked(masked);
         binding.equityCurveView.setMasked(masked);
         binding.positionRatioChartView.setMasked(masked);
         binding.drawdownChartView.setMasked(masked);
@@ -1138,6 +1158,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         styleSegmentButton(binding.btnTradePnlAll, "\u5168\u90e8", 11f);
         styleSegmentButton(binding.btnTradePnlBuy, "\u4e70\u5165", 11f);
         styleSegmentButton(binding.btnTradePnlSell, "\u5356\u51fa", 11f);
+        styleSegmentButton(binding.btnTradeWeekdayCloseTime, "\u6309\u5e73\u4ed3\u65f6\u95f4", 11f);
+        styleSegmentButton(binding.btnTradeWeekdayOpenTime, "\u6309\u5f00\u4ed3\u65f6\u95f4", 11f);
 
         binding.toggleTimeRange.post(() -> autoFitSegmentButtons(
                 binding.toggleTimeRange,
@@ -1165,6 +1187,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 binding.toggleTradePnlSide,
                 new MaterialButton[]{
                         binding.btnTradePnlAll, binding.btnTradePnlBuy, binding.btnTradePnlSell
+                },
+                11f,
+                9f));
+        binding.toggleTradeWeekdayBasis.post(() -> autoFitSegmentButtons(
+                binding.toggleTradeWeekdayBasis,
+                new MaterialButton[]{
+                        binding.btnTradeWeekdayCloseTime, binding.btnTradeWeekdayOpenTime
                 },
                 11f,
                 9f));
@@ -1426,9 +1455,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.npManualMonth.setValue(chosen.get(Calendar.MONTH) + 1);
         updateManualPickerDayRange();
         binding.npManualDay.setValue(chosen.get(Calendar.DAY_OF_MONTH));
-        applyPickerPanelStyle(binding.npManualYear, binding.npManualMonth, binding.npManualDay);
-
         binding.layoutManualDatePickerPanel.setVisibility(View.VISIBLE);
+        binding.layoutManualDatePickerPanel.post(() ->
+                applyPickerPanelStyle(binding.npManualYear, binding.npManualMonth, binding.npManualDay));
     }
 
     private void updateManualPickerDayRange() {
@@ -1454,7 +1483,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 return;
             }
             int selectedYear = returnPickerYears.get(binding.npReturnYear.getValue());
-            int selectedMonth = binding.npReturnMonth.getValue();
+            int monthIndex = binding.npReturnMonth.getValue();
+            int selectedMonth = monthIndex >= 0 && monthIndex < returnPickerVisibleMonths.size()
+                    ? returnPickerVisibleMonths.get(monthIndex)
+                    : 1;
             Calendar selected = Calendar.getInstance();
             selected.set(selectedYear, selectedMonth - 1, 1, 0, 0, 0);
             selected.set(Calendar.MILLISECOND, 0);
@@ -1483,10 +1515,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         returnPickerYears.addAll(returnPickerYearMonthMap.keySet());
         returnPickerYears.sort(Integer::compareTo);
 
-        String[] yearLabels = new String[returnPickerYears.size()];
-        for (int i = 0; i < returnPickerYears.size(); i++) {
-            yearLabels[i] = returnPickerYears.get(i) + "年";
-        }
+        String[] yearLabels = AccountDatePickerValueHelper.buildYearLabels(returnPickerYears);
 
         Calendar anchor = Calendar.getInstance();
         anchor.setTimeInMillis(returnStatsAnchorDateMs > 0L ? returnStatsAnchorDateMs : System.currentTimeMillis());
@@ -1507,8 +1536,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         binding.npReturnMonth.setWrapSelectorWheel(false);
         applyMonthPickerRange(binding.npReturnMonth, returnPickerYearMonthMap.get(year), month);
-        applyPickerPanelStyle(binding.npReturnYear, binding.npReturnMonth);
         binding.layoutReturnPeriodPickerPanel.setVisibility(View.VISIBLE);
+        binding.layoutReturnPeriodPickerPanel.post(() ->
+                applyPickerPanelStyle(binding.npReturnYear, binding.npReturnMonth));
     }
 
     private void syncReturnPickerMonthForYearIndex(int yearIndex) {
@@ -1518,8 +1548,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         int selectedYear = returnPickerYears.get(yearIndex);
         applyMonthPickerRange(binding.npReturnMonth,
                 returnPickerYearMonthMap.get(selectedYear),
-                binding.npReturnMonth.getValue());
-        applyPickerPanelStyle(binding.npReturnYear, binding.npReturnMonth);
+                resolveSelectedReturnMonth());
+        binding.layoutReturnPeriodPickerPanel.post(() ->
+                applyPickerPanelStyle(binding.npReturnYear, binding.npReturnMonth));
     }
 
     // 统一提升日期选择器的文字和分隔线可见性。
@@ -1527,9 +1558,27 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         int textColor = palette.textPrimary;
         int dividerColor = palette.stroke;
+        applyPickerPanelTheme(palette);
         for (NumberPicker picker : pickers) {
             applyNumberPickerStyle(picker, textColor, dividerColor);
         }
+    }
+
+    // 把日期选择面板的容器、标题和按钮统一切到当前主题。
+    private void applyPickerPanelTheme(UiPaletteManager.Palette palette) {
+        if (binding == null || palette == null) {
+            return;
+        }
+        binding.layoutManualDatePickerPanel.setBackground(
+                UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        binding.layoutReturnPeriodPickerPanel.setBackground(
+                UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        binding.tvManualDatePickerTitle.setTextColor(palette.textPrimary);
+        binding.tvReturnPeriodPickerTitle.setTextColor(palette.textPrimary);
+        stylePickerPanelButton(binding.btnManualDateCancel, false, palette);
+        stylePickerPanelButton(binding.btnReturnPeriodCancel, false, palette);
+        stylePickerPanelButton(binding.btnManualDateConfirm, true, palette);
+        stylePickerPanelButton(binding.btnReturnPeriodConfirm, true, palette);
     }
 
     // 通过子控件和反射同步 NumberPicker 颜色，解决深色界面数字发灰的问题。
@@ -1538,11 +1587,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         picker.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
+        picker.setVerticalFadingEdgeEnabled(false);
+        picker.setFadingEdgeLength(0);
+        picker.setAlpha(1f);
         for (int i = 0; i < picker.getChildCount(); i++) {
             View child = picker.getChildAt(i);
             if (child instanceof EditText) {
                 EditText editText = (EditText) child;
                 editText.setTextColor(textColor);
+                editText.setHintTextColor(textColor);
+                editText.setHighlightColor(dividerColor);
+                editText.setAlpha(1f);
                 editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
             }
         }
@@ -1553,6 +1608,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             Paint paint = (Paint) selectorWheelPaintField.get(picker);
             if (paint != null) {
                 paint.setColor(textColor);
+                paint.setAlpha(255);
                 paint.setTextSize(dpToPx(18));
             }
         } catch (Exception ignored) {
@@ -1564,7 +1620,26 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             selectionDividerField.set(picker, new android.graphics.drawable.ColorDrawable(dividerColor));
         } catch (Exception ignored) {
         }
+        picker.setWillNotDraw(false);
         picker.invalidate();
+        picker.postInvalidate();
+        picker.requestLayout();
+    }
+
+    // 统一日期选择面板按钮风格，避免 XML 固定颜色压过主题。
+    private void stylePickerPanelButton(@Nullable Button button,
+                                        boolean primary,
+                                        UiPaletteManager.Palette palette) {
+        if (button == null || palette == null) {
+            return;
+        }
+        if (primary) {
+            button.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
+            button.setTextColor(palette.surfaceStart);
+        } else {
+            button.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+            button.setTextColor(palette.textPrimary);
+        }
     }
 
     private void hideReturnPeriodPickerPanel() {
@@ -1592,38 +1667,24 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void applyMonthPickerRange(NumberPicker picker, @Nullable boolean[] months, int preferredMonth) {
-        int minMonth = 1;
-        int maxMonth = 12;
-        if (months != null) {
-            minMonth = 13;
-            maxMonth = 0;
-            for (int m = 1; m <= 12; m++) {
-                if (months[m]) {
-                    minMonth = Math.min(minMonth, m);
-                    maxMonth = Math.max(maxMonth, m);
-                }
-            }
-            if (minMonth > maxMonth) {
-                minMonth = 1;
-                maxMonth = 12;
-            }
+        AccountDatePickerValueHelper.MonthState state =
+                AccountDatePickerValueHelper.buildMonthState(months, preferredMonth);
+        returnPickerVisibleMonths.clear();
+        returnPickerVisibleMonths.addAll(state.getMonths());
+        picker.setDisplayedValues(null);
+        picker.setMinValue(0);
+        picker.setMaxValue(Math.max(0, state.getLabels().length - 1));
+        picker.setDisplayedValues(state.getLabels());
+        picker.setValue(state.getSelectedIndex());
+    }
+
+    // 把月份选择器当前索引还原成真实月份。
+    private int resolveSelectedReturnMonth() {
+        int monthIndex = binding.npReturnMonth.getValue();
+        if (monthIndex >= 0 && monthIndex < returnPickerVisibleMonths.size()) {
+            return returnPickerVisibleMonths.get(monthIndex);
         }
-        picker.setMinValue(minMonth);
-        picker.setMaxValue(maxMonth);
-        int month = preferredMonth;
-        if (month < minMonth || month > maxMonth) {
-            month = minMonth;
-        }
-        if (months != null && !months[month]) {
-            month = minMonth;
-            for (int m = minMonth; m <= maxMonth; m++) {
-                if (months[m]) {
-                    month = m;
-                    break;
-                }
-            }
-        }
-        picker.setValue(month);
+        return 1;
     }
 
     private void setupRangeToggle() {
@@ -1708,6 +1769,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         });
     }
 
+    private void setupTradeWeekdayBasisToggle() {
+        binding.toggleTradeWeekdayBasis.check(mapTradeWeekdayBasisButtonId(tradeWeekdayBasis));
+        binding.toggleTradeWeekdayBasis.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
+            if (!isChecked) {
+                return;
+            }
+            tradeWeekdayBasis = checkedId == R.id.btnTradeWeekdayOpenTime
+                    ? TradeWeekdayBasis.OPEN_TIME
+                    : TradeWeekdayBasis.CLOSE_TIME;
+            refreshTradeStats();
+        });
+    }
+
     private int mapRangeButtonId(AccountTimeRange range) {
         if (range == null) {
             return R.id.btnRange7d;
@@ -1740,6 +1814,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return R.id.btnReturnStage;
         }
         return R.id.btnReturnMonth;
+    }
+
+    private int mapTradeWeekdayBasisButtonId(TradeWeekdayBasis basis) {
+        return basis == TradeWeekdayBasis.OPEN_TIME
+                ? R.id.btnTradeWeekdayOpenTime
+                : R.id.btnTradeWeekdayCloseTime;
     }
 
     private int mapTradePnlSideButtonId(TradePnlSideMode mode) {
@@ -2567,7 +2647,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         baseTrades = new ArrayList<>(effectiveTrades);
         baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
-        allCurvePoints = normalizeCurvePoints(effectiveCurves);
+        allCurvePoints = normalizeCurvePoints(effectiveCurves, baseTrades);
         logAccountSnapshotEvents(basePositions, basePendingOrders, baseTrades, remoteConnected);
         ensureReturnStatsAnchor();
         if (!remoteConnected && !connectedOverviewCache.isEmpty()) {
@@ -2694,8 +2774,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 + "条, 持仓缺止损" + missingSl + "条" + capHint;
     }
 
-    private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source) {
-        return AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);
+    private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source, List<TradeRecordItem> trades) {
+        return AccountCurveRebuildHelper.rebuild(source, trades, ACCOUNT_INITIAL_BALANCE);
     }
 
     private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview,
@@ -2999,6 +3079,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 CurveAnalyticsHelper.buildTradeScatterPoints(scopedTrades, allCurvePoints));
         binding.holdingDurationDistributionView.setBuckets(
                 CurveAnalyticsHelper.buildHoldingDurationDistribution(scopedTrades));
+        refreshTradeWeekdayStats(scopedTrades);
 
         double totalPnl = 0d;
         for (TradePnlBarChartView.Entry entry : entries) {
@@ -3038,6 +3119,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         binding.tvTradePnlSummary.setText(summarySpan);
         binding.tvTradePnlLegend.setVisibility(View.GONE);
+    }
+
+    private void refreshTradeWeekdayStats(List<TradeRecordItem> trades) {
+        List<TradeWeekdayStatsHelper.Row> rows = TradeWeekdayStatsHelper.buildRows(
+                trades,
+                tradeWeekdayBasis == TradeWeekdayBasis.OPEN_TIME
+                        ? TradeWeekdayStatsHelper.TimeBasis.OPEN_TIME
+                        : TradeWeekdayStatsHelper.TimeBasis.CLOSE_TIME
+        );
+        binding.tradeWeekdayBarChart.setEntries(TradeWeekdayBarChartHelper.buildEntries(rows));
     }
 
     private List<AccountMetric> buildTradeStatsMetrics(List<TradeRecordItem> trades, List<CurvePoint> curvePoints) {
@@ -3495,8 +3586,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
                 : buildHighlightCurveMeta(snapshot));
         binding.equityCurveView.setTooltipExtraLines(extraLines);
-        binding.equityCurveView.setTooltipPointOverride(point);
-        binding.equityCurveView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
+        binding.equityCurveView.syncHighlightPoint(point, snapshot.getTargetTimestamp(), xRatio);
         binding.positionRatioChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
         binding.drawdownChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
         binding.dailyReturnChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), xRatio);
@@ -4493,6 +4583,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 resolveMonthlyHeatCellClickListener(info));
         cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.2f);
         cell.setPadding(dpToPx(3), dpToPx(3), dpToPx(3), dpToPx(3));
+        cell.setBackground(buildReturnsCellBackground(resolveMonthlyHeatCellRate(info), false));
         return cell;
     }
 
@@ -4848,8 +4939,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? blendColor(palette.surfaceEnd, palette.textPrimary, 0.10f)
                 : palette.surfaceEnd;
         if (!header && rate != null && !isPrivacyMasked()) {
-            float intensity = Math.min(1f, 0.18f + (float) Math.abs(rate) * 4.2f);
-            fill = blendColor(palette.surfaceEnd, rate >= 0d ? palette.rise : palette.fall, intensity * 0.42f);
+            fill = AccountReturnsHeatStyleHelper.resolveFillColor(
+                    palette.surfaceEnd,
+                    palette.rise,
+                    palette.fall,
+                    rate);
         }
         drawable.setColor(fill);
         return drawable;

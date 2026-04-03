@@ -229,8 +229,8 @@ public class DailyReturnChartView extends View {
             return;
         }
 
-        chartLeft = dp(42f);
-        chartRight = width - dp(34f);
+        chartLeft = dp(CurvePaneLayoutHelper.resolveChartLeftDp());
+        chartRight = width - dp(CurvePaneLayoutHelper.resolveChartRightInsetDp());
         chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
         chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,

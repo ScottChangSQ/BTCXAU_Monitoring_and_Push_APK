@@ -36,7 +36,9 @@ public class AccountStatsLayoutResourceTest {
             "btnReturnsAmount",
             "btnTradePnlAll",
             "btnTradePnlBuy",
-            "btnTradePnlSell"
+            "btnTradePnlSell",
+            "btnTradeWeekdayCloseTime",
+            "btnTradeWeekdayOpenTime"
     ));
 
     // 读取账户统计布局，并确认关键分段按钮的初始方角配置没有回退。
@@ -86,6 +88,19 @@ public class AccountStatsLayoutResourceTest {
         assertPickerTextColorCleared(document, "tvReturnPeriodPickerTitle");
         assertPickerTextColorCleared(document, "btnReturnPeriodCancel");
         assertPickerTextColorCleared(document, "btnReturnPeriodConfirm");
+    }
+
+    // 日期滚轮必须保留原生 NumberPicker，避免自定义控件破坏系统滚轮外观。
+    @Test
+    public void activityAccountStatsShouldUsePlatformNumberPicker() throws Exception {
+        Document document = parseXml(resolveProjectFile(
+                "app/src/main/res/layout/activity_account_stats.xml",
+                "src/main/res/layout/activity_account_stats.xml"
+        ));
+        NodeList platformPickers = document.getElementsByTagName("NumberPicker");
+        NodeList themedPickers = document.getElementsByTagName("com.binance.monitor.ui.widget.ThemedNumberPicker");
+        assertEquals("5", String.valueOf(platformPickers.getLength()));
+        assertEquals("0", String.valueOf(themedPickers.getLength()));
     }
 
     // 按当前工作目录自动解析项目资源文件，兼容根目录和 app 模块目录两种执行入口。

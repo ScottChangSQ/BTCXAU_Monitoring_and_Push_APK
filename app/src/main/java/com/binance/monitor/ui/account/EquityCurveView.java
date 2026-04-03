@@ -99,12 +99,13 @@ public class EquityCurveView extends View {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
         equityPaint.setColor(palette.primary);
         equityPaint.setStyle(Paint.Style.STROKE);
-        equityPaint.setStrokeWidth(dp(2.2f));
+        equityPaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveEquityStrokeDp()));
+        equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(5f), dp(4f)}, 0f));
 
         balancePaint.setColor(palette.xau);
         balancePaint.setStyle(Paint.Style.STROKE);
-        balancePaint.setStrokeWidth(dp(1.7f));
-        balancePaint.setPathEffect(new DashPathEffect(new float[]{dp(6f), dp(4f)}, 0f));
+        balancePaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveBalanceStrokeDp()));
+        balancePaint.setPathEffect(null);
 
         markerPaint.setStyle(Paint.Style.FILL);
 
@@ -159,8 +160,10 @@ public class EquityCurveView extends View {
         axisPaint.setColor(applyAlpha(palette.textSecondary, 210));
         gridPaint.setColor(applyAlpha(palette.stroke, 170));
         equityPaint.setColor(palette.primary);
+        equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(5f), dp(4f)}, 0f));
         balancePaint.setColor(palette.xau);
-        balancePaint.setPathEffect(new DashPathEffect(new float[]{dp(6f), dp(4f)}, 0f));
+        balancePaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveBalanceStrokeDp()));
+        balancePaint.setPathEffect(null);
         applyDrawdownPalette();
         crosshairPaint.setColor(applyAlpha(palette.textSecondary, 220));
         tooltipBgPaint.setColor(applyAlpha(palette.card, 240));
@@ -254,6 +257,12 @@ public class EquityCurveView extends View {
         invalidate();
     }
 
+    // 由宿主一次性同步主图高亮点与弹窗插值数据，避免先后两次更新时回到旧值。
+    public void syncHighlightPoint(@Nullable CurvePoint point, long timestamp, float xRatio) {
+        tooltipPointOverride = point;
+        syncHighlightTimestamp(timestamp, xRatio);
+    }
+
     // 由宿主把共享时间戳同步到主图，不触发反向回调。
     public void syncHighlightTimestamp(long timestamp, float xRatio) {
         if (timestamp <= 0L || points.isEmpty()) {
@@ -305,9 +314,9 @@ public class EquityCurveView extends View {
             return;
         }
 
-        chartLeft = dp(34f);
+        chartLeft = dp(CurvePaneLayoutHelper.resolveChartLeftDp());
         chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(12f));
-        chartRight = width - dp(28f);
+        chartRight = width - dp(CurvePaneLayoutHelper.resolveChartRightInsetDp());
         chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,
                 showBottomTimeLabels,

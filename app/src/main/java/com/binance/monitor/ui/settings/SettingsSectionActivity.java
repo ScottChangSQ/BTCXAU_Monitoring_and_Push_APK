@@ -27,7 +27,6 @@ import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.ui.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.chart.MarketChartActivity;
-import com.binance.monitor.ui.log.LogActivity;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.main.MainViewModel;
@@ -114,7 +113,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
 
     // 绑定各个设置控件行为。
     private void setupActions() {
-        binding.btnViewLogs.setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
         binding.btnClearCache.setOnClickListener(v -> confirmAndClearCache());
         binding.btnSaveMt5GatewayUrl.setOnClickListener(v -> saveMt5GatewayAddress());
         binding.switchFloatingEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -326,8 +324,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.btnBack.setTextColor(palette.textPrimary);
         binding.tvSettingsDetailTitle.setText(sectionTitle);
         binding.tvSettingsDetailTitle.setTextColor(palette.textPrimary);
-        binding.btnViewLogs.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-        binding.btnViewLogs.setTextColor(palette.textPrimary);
         binding.btnClearCache.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
         binding.btnClearCache.setTextColor(palette.textPrimary);
         binding.btnSaveMt5GatewayUrl.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
@@ -427,7 +423,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.cardThemeSection.setVisibility(SettingsActivity.SECTION_THEME.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardTabSection.setVisibility(SettingsActivity.SECTION_TAB.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardCacheSection.setVisibility(SettingsActivity.SECTION_CACHE.equals(sectionKey) ? View.VISIBLE : View.GONE);
-        binding.btnViewLogs.setVisibility(SettingsActivity.SECTION_CACHE.equals(sectionKey) ? View.VISIBLE : View.GONE);
     }
 
     private void openMarketMonitor() {
