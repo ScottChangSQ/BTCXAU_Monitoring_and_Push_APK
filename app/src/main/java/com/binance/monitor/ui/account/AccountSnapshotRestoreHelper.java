@@ -6,25 +6,33 @@ package com.binance.monitor.ui.account;
 
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
+import com.binance.monitor.ui.account.model.TradeRecordItem;
 
 import java.util.ArrayList;
+import java.util.List;
 
 final class AccountSnapshotRestoreHelper {
 
     private AccountSnapshotRestoreHelper() {
     }
 
-    // 当预加载快照未携带历史交易时，优先回填本地已留存交易，避免列表先空白再重新加载。
+    // 当预加载快照的历史交易不完整时，把本地已留存交易补回页面，避免首屏漏单。
     static AccountSnapshot mergeMissingTrades(AccountSnapshot preloadSnapshot,
                                              AccountStorageRepository.StoredSnapshot storedSnapshot) {
         if (preloadSnapshot == null) {
             return null;
         }
-        boolean shouldUseStoredTrades = (preloadSnapshot.getTrades() == null || preloadSnapshot.getTrades().isEmpty())
-                && storedSnapshot != null
-                && storedSnapshot.getTrades() != null
-                && !storedSnapshot.getTrades().isEmpty();
-        if (!shouldUseStoredTrades) {
+        if (storedSnapshot == null || storedSnapshot.getTrades() == null || storedSnapshot.getTrades().isEmpty()) {
+            return preloadSnapshot;
+        }
+        List<TradeRecordItem> preloadTrades = preloadSnapshot.getTrades() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(preloadSnapshot.getTrades());
+        List<TradeRecordItem> mergedTrades = AccountStorageRepository.mergeTrades(
+                preloadTrades,
+                storedSnapshot.getTrades()
+        );
+        if (mergedTrades.size() == preloadTrades.size()) {
             return preloadSnapshot;
         }
         return new AccountSnapshot(
@@ -33,7 +41,7 @@ final class AccountSnapshotRestoreHelper {
                 preloadSnapshot.getCurveIndicators() == null ? new ArrayList<>() : preloadSnapshot.getCurveIndicators(),
                 preloadSnapshot.getPositions() == null ? new ArrayList<>() : preloadSnapshot.getPositions(),
                 preloadSnapshot.getPendingOrders() == null ? new ArrayList<>() : preloadSnapshot.getPendingOrders(),
-                storedSnapshot.getTrades(),
+                mergedTrades,
                 preloadSnapshot.getStatsMetrics() == null ? new ArrayList<>() : preloadSnapshot.getStatsMetrics()
         );
     }

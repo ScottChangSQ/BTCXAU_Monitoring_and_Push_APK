@@ -107,6 +107,7 @@ MT5 网关 Python 侧常用验证：
   - `Binance WebSocket /binance-ws/*`
 - 如果服务器地址变化，可直接在 App 设置页修改“MT5 网关地址”
 - 本轮网关新增 `SNAPSHOT_RANGE_ALL_DAYS` 配置；若服务器内存偏高，可在 `bridge/mt5_gateway/.env` 里调低 `all` 区间历史回看天数后重启网关
+- 如果 MT5 返回的成交时间比北京时间固定慢若干分钟，可在 `bridge/mt5_gateway/.env` 里设置 `MT5_TIME_OFFSET_MINUTES`；例如慢 8 小时就填 `480`，这样交易记录、历史成交点和账户曲线会一起按同一口径修正
 
 ## 目录说明
 

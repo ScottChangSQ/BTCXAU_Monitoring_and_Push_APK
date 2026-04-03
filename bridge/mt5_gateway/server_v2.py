@@ -34,6 +34,10 @@ try:
     MT5_INIT_TIMEOUT_MS = int(os.getenv("MT5_INIT_TIMEOUT_MS", "60000"))
 except Exception:
     MT5_INIT_TIMEOUT_MS = 60000
+try:
+    MT5_TIME_OFFSET_MINUTES = int(os.getenv("MT5_TIME_OFFSET_MINUTES", "0"))
+except Exception:
+    MT5_TIME_OFFSET_MINUTES = 0
 HOST = os.getenv("GATEWAY_HOST", "0.0.0.0")
 PORT = int(os.getenv("GATEWAY_PORT", "8787"))
 GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull | ea
@@ -82,11 +86,18 @@ def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
+def _apply_mt5_time_offset_ms(value: int) -> int:
+    """按配置补偿 MT5 返回时间与本地展示口径之间的固定偏移。"""
+    if value <= 0:
+        return 0
+    return int(value + MT5_TIME_OFFSET_MINUTES * 60 * 1000)
+
+
 def _deal_time_ms(deal: Any) -> int:
     value = int(getattr(deal, "time_msc", 0) or 0)
     if value > 0:
-        return value
-    return int(getattr(deal, "time", 0) or 0) * 1000
+        return _apply_mt5_time_offset_ms(value)
+    return _apply_mt5_time_offset_ms(int(getattr(deal, "time", 0) or 0) * 1000)
 
 
 # 统一裁剪缓存条目，只保留最近访问的部分，避免快照缓存长期堆满内存。
@@ -2309,6 +2320,7 @@ def health():
             "mt5ConfiguredLogin": str(LOGIN),
             "mt5ConfiguredServer": SERVER,
             "mt5PathEnv": PATH or "",
+            "mt5TimeOffsetMinutes": MT5_TIME_OFFSET_MINUTES,
             "mt5LastConnectedPath": mt5_last_connected_path,
             "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
             "eaSnapshotFresh": _is_ea_snapshot_fresh(),
@@ -2354,6 +2366,7 @@ def source_status():
         "mt5ConfiguredLogin": str(LOGIN),
         "mt5ConfiguredServer": SERVER,
         "mt5PathEnv": PATH or "",
+        "mt5TimeOffsetMinutes": MT5_TIME_OFFSET_MINUTES,
         "mt5LastConnectedPath": mt5_last_connected_path,
         "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
         "eaSnapshotFresh": _is_ea_snapshot_fresh(),

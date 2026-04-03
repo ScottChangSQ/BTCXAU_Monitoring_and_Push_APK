@@ -673,7 +673,6 @@ public class MainActivity extends AppCompatActivity {
     private void showConnectionDetailsDialog() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         String configuredBase = viewModel.getMt5GatewayBaseUrl();
-        String gatewayBase = GatewayUrlResolver.normalizeBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
         String gatewayRoot = GatewayUrlResolver.resolveGatewayRootBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
         String binanceRest = GatewayUrlResolver.buildBinanceRestBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
         String binanceWs = GatewayUrlResolver.buildBinanceWebSocketBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
@@ -702,7 +701,6 @@ public class MainActivity extends AppCompatActivity {
         content.addView(subtitleView, subtitleParams);
 
         content.addView(createConnectionDetailRow("连接状态", binding.tvConnectionStatus.getText().toString(), palette));
-        content.addView(createConnectionDetailRow("MT5 网关", gatewayBase, palette));
         content.addView(createConnectionDetailRow("服务器入口", gatewayRoot, palette));
         content.addView(createConnectionDetailRow("Binance REST", binanceRest, palette));
         content.addView(createConnectionDetailRow("Binance WS", binanceWs, palette));

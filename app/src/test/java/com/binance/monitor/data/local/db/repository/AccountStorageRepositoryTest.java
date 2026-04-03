@@ -135,6 +135,68 @@ public class AccountStorageRepositoryTest {
         assertEquals("deal|1", tradeDao.items.get(0).tradeKey);
     }
 
+    // 轻量复合快照应把新增交易写入本地，同时保留既有历史记录。
+    @Test
+    public void persistIncrementalSnapshotShouldAppendAndRefreshTradeHistory() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        snapshotDao.meta = metaEntity();
+        tradeDao.items.add(tradeEntity("deal|1", 1000L, 11d));
+
+        repository.persistIncrementalSnapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "MT5网关",
+                "http://gateway",
+                3000L,
+                "",
+                3100L,
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(position("BTCUSD", 0.05d, 22d)),
+                Arrays.asList(new PositionItem(
+                        "XAUUSD",
+                        "XAUUSD",
+                        "Sell",
+                        0L,
+                        2001L,
+                        0d,
+                        0d,
+                        0d,
+                        2300d,
+                        0d,
+                        0d,
+                        0d,
+                        0d,
+                        0d,
+                        0.02d,
+                        1,
+                        2310d,
+                        0d,
+                        0d,
+                        0d
+                )),
+                Arrays.asList(
+                        trade(1000L, 1L, 11L, 21L, 15d),
+                        trade(4000L, 2L, 12L, 22L, -5d)
+                ),
+                Arrays.asList(new AccountMetric("Cumulative Profit", "+$10.00"))
+        ));
+
+        assertEquals(2, tradeDao.items.size());
+        assertEquals(15d, tradeDao.items.stream()
+                .filter(item -> "deal|1".equals(item.tradeKey))
+                .findFirst()
+                .orElseThrow(IllegalStateException::new)
+                .profit, 0.0001d);
+        assertEquals(1, snapshotDao.positions.size());
+        assertEquals(1, snapshotDao.pendingOrders.size());
+    }
+
     // 全量快照应覆盖旧交易历史，避免修正后的交易时间仍被本地旧错记录残留污染。
     @Test
     public void persistSnapshotShouldReplaceTradeHistoryWithLatestFullSnapshot() {

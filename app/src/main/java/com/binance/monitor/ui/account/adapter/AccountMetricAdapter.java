@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemAccountKvBinding;
+import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.ui.account.MetricNameTranslator;
 import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.util.SensitiveDisplayMasker;
@@ -78,39 +79,18 @@ public class AccountMetricAdapter extends RecyclerView.Adapter<AccountMetricAdap
 
         private void applyProfitColor(TextView textView, String label, String value) {
             int defaultColor = ContextCompat.getColor(textView.getContext(), R.color.text_primary);
-            int color = resolveProfitColor(label, value, defaultColor,
-                    ContextCompat.getColor(textView.getContext(), R.color.accent_green),
-                    ContextCompat.getColor(textView.getContext(), R.color.accent_red));
+            int color = resolveProfitColor(label, value, defaultColor);
             textView.setTextColor(color);
         }
 
-        private int resolveProfitColor(String label,
-                                       String value,
-                                       int defaultColor,
-                                       int positiveColor,
-                                       int negativeColor) {
-            if (label == null || value == null) {
-                return defaultColor;
+        private int resolveProfitColor(String label, String value, int defaultColor) {
+            AccountValueStyleHelper.Direction direction =
+                    AccountValueStyleHelper.resolveMetricDirection(label, value);
+            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
+                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_green);
             }
-            String normalizedLabel = label.replace(" ", "");
-            boolean profitField = normalizedLabel.contains("盈亏")
-                    || normalizedLabel.contains("收益")
-                    || normalizedLabel.contains("利润")
-                    || normalizedLabel.contains("回撤")
-                    || normalizedLabel.contains("净值")
-                    || normalizedLabel.contains("结余");
-            if (!profitField) {
-                return defaultColor;
-            }
-
-            if (value.contains("+")) {
-                return positiveColor;
-            }
-            if (value.contains("-")) {
-                return negativeColor;
-            }
-            if (normalizedLabel.contains("亏") || normalizedLabel.contains("损") || normalizedLabel.contains("回撤")) {
-                return negativeColor;
+            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
+                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_red);
             }
             return defaultColor;
         }

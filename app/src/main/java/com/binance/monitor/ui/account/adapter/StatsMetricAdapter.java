@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemStatsMetricBinding;
+import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.ui.account.MetricNameTranslator;
 import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.util.SensitiveDisplayMasker;
@@ -20,8 +21,6 @@ import android.text.style.ForegroundColorSpan;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-
 public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.Holder> {
 
     private final List<AccountMetric> items = new ArrayList<>();
@@ -79,7 +78,7 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
                 return;
             }
             if (isStreakMetric(nameCn)) {
-                binding.tvValue.setText(buildStreakSpan(value));
+                binding.tvValue.setText(buildStreakSpan(nameCn, value));
                 binding.tvValue.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
                 return;
             }
@@ -120,7 +119,7 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
             return label.replace(" ", "").contains("毛利/毛损");
         }
 
-        private CharSequence buildStreakSpan(String raw) {
+        private CharSequence buildStreakSpan(String label, String raw) {
             if (raw == null || raw.trim().isEmpty()) {
                 return "--";
             }
@@ -132,8 +131,7 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
             if (signPos < 0) {
                 return span;
             }
-            int color = ContextCompat.getColor(binding.getRoot().getContext(),
-                    raw.charAt(signPos) == '+' ? R.color.accent_green : R.color.accent_red);
+            int color = resolveMetricColor(label, raw, R.color.text_primary);
             span.setSpan(new ForegroundColorSpan(color),
                     signPos,
                     raw.length(),
@@ -185,52 +183,32 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
 
         private void applyProfitColor(TextView textView, String label, String value) {
             int defaultColor = ContextCompat.getColor(textView.getContext(), R.color.text_primary);
-            int color = resolveProfitColor(label, value, defaultColor,
-                    ContextCompat.getColor(textView.getContext(), R.color.accent_green),
-                    ContextCompat.getColor(textView.getContext(), R.color.accent_red));
+            int color = resolveProfitColor(label, value, defaultColor);
             textView.setTextColor(color);
         }
 
-        private int resolveProfitColor(String label,
-                                       String value,
-                                       int defaultColor,
-                                       int positiveColor,
-                                       int negativeColor) {
-            if (label == null || value == null) {
-                return defaultColor;
+        private int resolveProfitColor(String label, String value, int defaultColor) {
+            AccountValueStyleHelper.Direction direction =
+                    AccountValueStyleHelper.resolveMetricDirection(label, value);
+            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
+                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_green);
             }
-            String normalizedLabel = label.replace(" ", "");
-            boolean profitField = normalizedLabel.contains("盈亏")
-                    || normalizedLabel.contains("收益")
-                    || normalizedLabel.contains("利润")
-                    || normalizedLabel.contains("回撤")
-                    || normalizedLabel.contains("净值")
-                    || normalizedLabel.contains("结余")
-                    || normalizedLabel.contains("毛利")
-                    || normalizedLabel.contains("毛损")
-                    || normalizedLabel.contains("最好交易")
-                    || normalizedLabel.contains("最差交易");
-            if (!profitField) {
-                String normalizedLower = normalizedLabel.toLowerCase(Locale.ROOT);
-                profitField = normalizedLower.contains("consecutive")
-                        || normalizedLower.contains("streak")
-                        || normalizedLabel.contains("最大连续盈利")
-                        || normalizedLabel.contains("最大连续亏损");
-            }
-            if (!profitField) {
-                return defaultColor;
-            }
-
-            if (value.contains("+")) {
-                return positiveColor;
-            }
-            if (value.contains("-")) {
-                return negativeColor;
-            }
-            if (normalizedLabel.contains("亏") || normalizedLabel.contains("损") || normalizedLabel.contains("回撤")) {
-                return negativeColor;
+            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
+                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_red);
             }
             return defaultColor;
+        }
+
+        private int resolveMetricColor(String label, String value, int neutralColorRes) {
+            AccountValueStyleHelper.Direction direction =
+                    AccountValueStyleHelper.resolveMetricDirection(label, value);
+            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
+                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_green);
+            }
+            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
+                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_red);
+            }
+            return ContextCompat.getColor(binding.getRoot().getContext(), neutralColorRes);
         }
     }
 }

@@ -2612,9 +2612,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? new ArrayList<>()
                 : new ArrayList<>(snapshot.getCurvePoints());
 
+        mergeTradeHistory(snapshotTrades);
         if (remoteConnected) {
             mergeCurveHistory(snapshotCurves);
-            mergeTradeHistory(snapshotTrades);
             connectedPositionCache = new ArrayList<>(snapshotPositions);
             connectedPendingCache = new ArrayList<>(snapshotPending);
             connectedOverviewCache = snapshot.getOverviewMetrics() == null
@@ -3112,8 +3112,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         SpannableString summarySpan = new SpannableString(summaryText);
         int pnlStart = summaryText.lastIndexOf(pnlText);
         if (pnlStart >= 0) {
-            int pnlColor = ContextCompat.getColor(this,
-                    totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
+            int pnlColor = resolveSignedValueColor(totalPnl);
             summarySpan.setSpan(new ForegroundColorSpan(pnlColor),
                     pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
@@ -4067,7 +4066,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     }
                     double dayAmount = bucket.closeEquity - prevClose;
                     double dayReturn = safeDivide(bucket.closeEquity - prevClose, prevClose);
-                    int color = ContextCompat.getColor(this, dayReturn >= 0d ? R.color.accent_green : R.color.accent_red);
+                    int color = resolveReturnDisplayColor(dayReturn, dayAmount, R.color.text_primary);
                     String valueText = formatReturnValue(dayReturn, dayAmount, true);
                     long startMs = bucket.startMs;
                     long endMs = bucket.endMs;
@@ -4096,7 +4095,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
 
             TableRow firstRow = new TableRow(this);
-            int yearColor = ContextCompat.getColor(this, row.yearReturnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+            int yearColor = resolveReturnDisplayColor(row.yearReturnRate, row.yearReturnAmount, R.color.text_primary);
             String yearValueText = formatReturnValue(row.yearReturnRate, row.yearReturnAmount);
             TextView yearCell = createReturnsCell(
                     buildLabelValueText(row.year + "年", yearValueText, yearColor),
@@ -4129,7 +4128,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (info == null || !info.hasData) {
             return createReturnsCell(buildLabelValueText(month + "月", "--", null), widthDp, false, null, null);
         }
-        int textColor = ContextCompat.getColor(this, info.returnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+        int textColor = resolveReturnDisplayColor(info.returnRate, info.returnAmount, R.color.text_primary);
         String text = formatReturnValue(info.returnRate, info.returnAmount);
         long startMs = info.startMs;
         long endMs = info.endMs;
@@ -4182,7 +4181,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             double yearReturn = safeDivide(yearAmount, previousClose);
             previousClose = bucket.closeEquity;
 
-            int color = ContextCompat.getColor(this, yearReturn >= 0d ? R.color.accent_green : R.color.accent_red);
+            int color = resolveReturnDisplayColor(yearReturn, yearAmount, R.color.text_secondary);
             String valueText = formatReturnValue(yearReturn, yearAmount);
             long startMs = bucket.startMs;
             long endMs = bucket.endMs;
@@ -4230,7 +4229,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             double endEquity = range.get(range.size() - 1).getBalance();
             double profit = endEquity - startEquity;
             double rate = safeDivide(profit, startEquity);
-            int color = ContextCompat.getColor(this, rate >= 0d ? R.color.accent_green : R.color.accent_red);
+            int color = resolveReturnDisplayColor(rate, profit, R.color.text_secondary);
             String valueText = formatReturnValue(rate, profit);
 
             table.addView(createAlignedReturnsRow(
@@ -4291,7 +4290,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     }
                     double dayAmount = bucket.closeEquity - prevClose;
                     double dayReturn = safeDivide(dayAmount, prevClose);
-                    int color = ContextCompat.getColor(this, dayReturn >= 0d ? R.color.accent_green : R.color.accent_red);
+                    int color = resolveReturnDisplayColor(dayReturn, dayAmount, R.color.text_primary);
                     String valueText = formatReturnValue(dayReturn, dayAmount, true);
                     long startMs = bucket.startMs;
                     long endMs = bucket.endMs;
@@ -4318,7 +4317,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 yearClick = v -> applyCurveRangeFromTableSelection(startMs, endMs);
             }
 
-            int yearColor = ContextCompat.getColor(this, row.yearReturnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+            int yearColor = resolveReturnDisplayColor(row.yearReturnRate, row.yearReturnAmount, R.color.text_primary);
             String yearValueText = formatReturnValue(row.yearReturnRate, row.yearReturnAmount);
 
             TableRow firstRow = new TableRow(this);
@@ -4353,7 +4352,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (info == null || !info.hasData) {
             return createReturnsCell(buildLabelValueText(month + "月", "--", null), widthDp, false, null, null);
         }
-        int textColor = ContextCompat.getColor(this, info.returnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+        int textColor = resolveReturnDisplayColor(info.returnRate, info.returnAmount, R.color.text_primary);
         String text = formatReturnValue(info.returnRate, info.returnAmount);
         long startMs = info.startMs;
         long endMs = info.endMs;
@@ -4429,11 +4428,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 if (bucket == null) {
                     View dayCell = createDailyReturnsCell(
                             String.valueOf(day),
-                            null,
+                            formatReturnValue(0d, 0d, true),
                             ContextCompat.getColor(this, R.color.text_primary),
+                            resolveReturnDisplayColor(0d, 0d, R.color.text_secondary),
                             null,
-                            null,
-                            null);
+                            0d);
                     applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
                     tableRow.addView(dayCell);
@@ -4450,7 +4449,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     }
                     double dayAmount = bucket.closeEquity - prevClose;
                     double dayReturn = safeDivide(dayAmount, prevClose);
-                    int color = ContextCompat.getColor(this, dayReturn >= 0d ? R.color.accent_green : R.color.accent_red);
+                    int color = resolveReturnDisplayColor(dayReturn, dayAmount, R.color.text_secondary);
                     String valueText = formatReturnValue(dayReturn, dayAmount, true);
                     long startMs = bucket.startMs;
                     long endMs = bucket.endMs;
@@ -4556,7 +4555,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             long endMs = rowData.endMs;
             yearClick = v -> applyCurveRangeFromTableSelection(startMs, endMs);
         }
-        int valueColor = ContextCompat.getColor(this, rowData.yearReturnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+        int valueColor = resolveReturnDisplayColor(rowData.yearReturnRate, rowData.yearReturnAmount, R.color.text_primary);
         TextView cell = createReturnsCell(
                 buildLabelValueText(rowData.year + "年",
                         formatReturnValue(rowData.yearReturnRate, rowData.yearReturnAmount),
@@ -4574,7 +4573,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private TextView createMonthlyGroupedCell(int month, @Nullable MonthReturnInfo info) {
         Integer valueColor = info != null && info.hasData
-                ? ContextCompat.getColor(this, info.returnRate >= 0d ? R.color.accent_green : R.color.accent_red)
+                ? resolveReturnDisplayColor(info.returnRate, info.returnAmount, R.color.text_primary)
                 : null;
         TextView cell = createReturnsCell(
                 buildLabelValueText(month + "月", formatMonthlyGroupedValue(info), valueColor),
@@ -4654,7 +4653,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (info == null || !info.hasData) {
             return null;
         }
-        return ContextCompat.getColor(this, info.returnRate >= 0d ? R.color.accent_green : R.color.accent_red);
+        return resolveReturnDisplayColor(info.returnRate, info.returnAmount, R.color.text_primary);
     }
 
     @Nullable
@@ -5269,8 +5268,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ratioText);
         SpannableStringBuilder spannable = new SpannableStringBuilder(summary);
 
-        int pnlColor = ContextCompat.getColor(this, totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
-        int ratioColor = ContextCompat.getColor(this, ratio >= 0d ? R.color.accent_green : R.color.accent_red);
+        int pnlColor = resolveSignedValueColor(totalPnl);
+        int ratioColor = resolveSignedValueColor(ratio);
         int pnlStart = summary.indexOf(pnlText);
         if (pnlStart >= 0) {
             spannable.setSpan(new ForegroundColorSpan(pnlColor),
@@ -5761,13 +5760,25 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 统一给盈亏数字着色，0 值保持主文字色。
     private int resolveSignedValueColor(double value) {
-        if (value > 0d) {
+        return resolveSignedValueColor(value, R.color.text_primary);
+    }
+
+    // 允许调用方按场景传入中性色，避免列表明细的 0 值比正文更醒目。
+    private int resolveSignedValueColor(double value, int neutralColorRes) {
+        AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
+        if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
             return ContextCompat.getColor(this, R.color.accent_green);
         }
-        if (value < 0d) {
+        if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
             return ContextCompat.getColor(this, R.color.accent_red);
         }
-        return ContextCompat.getColor(this, R.color.text_primary);
+        return ContextCompat.getColor(this, neutralColorRes);
+    }
+
+    // 收益统计根据当前显示模式切换颜色口径，收益率或收益额为 0 时统一回到中性色。
+    private int resolveReturnDisplayColor(double rate, double amount, int neutralColorRes) {
+        double referenceValue = returnValueMode == ReturnValueMode.AMOUNT ? amount : rate;
+        return resolveSignedValueColor(referenceValue, neutralColorRes);
     }
 
     private boolean isDefaultTradeFilters(String productFilter,

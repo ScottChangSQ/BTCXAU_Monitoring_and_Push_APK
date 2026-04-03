@@ -18,7 +18,6 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
-import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.KlineCacheStore;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.local.db.repository.ChartHistoryRepository;
@@ -254,7 +253,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         }
         if (selection.shouldClearRuntime()) {
             new AccountStorageRepository(this).clearRuntimeSnapshot();
-            AbnormalRecordManager.getInstance(getApplicationContext()).clearAll();
             AccountStatsPreloadManager.getInstance(getApplicationContext()).clearLatestCache();
             getSharedPreferences(MarketChartActivity.PREF_RUNTIME_NAME, MODE_PRIVATE).edit().clear().apply();
             cacheDeleted = deleteDirectoryChildren(getCacheDir());

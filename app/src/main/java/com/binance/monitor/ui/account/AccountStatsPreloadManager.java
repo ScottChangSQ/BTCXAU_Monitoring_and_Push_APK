@@ -234,9 +234,7 @@ public class AccountStatsPreloadManager {
                 nextDelayMs = MAX_REFRESH_MS;
                 return;
             }
-            Mt5BridgeGatewayClient.SnapshotResult result = fullSnapshotActive
-                    ? gatewayClient.fetch(AccountTimeRange.ALL)
-                    : gatewayClient.fetchLive(AccountTimeRange.ALL);
+            Mt5BridgeGatewayClient.SnapshotResult result = gatewayClient.fetch(AccountTimeRange.ALL);
             if (!result.isSuccess()) {
                 nextDelayMs = resolveRefreshDelayMs();
                 Cache previous = latestCache;
@@ -332,7 +330,7 @@ public class AccountStatsPreloadManager {
         if (fullSnapshot) {
             accountStorageRepository.persistSnapshot(storedSnapshot);
         } else {
-            accountStorageRepository.persistLiveSnapshot(storedSnapshot);
+            accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
         }
     }
 

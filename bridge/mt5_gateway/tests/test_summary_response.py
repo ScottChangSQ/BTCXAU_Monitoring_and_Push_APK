@@ -91,6 +91,76 @@ import server_v2  # noqa: E402
 class SummaryResponseTests(unittest.TestCase):
     """验证后台摘要响应会去掉大体积列表字段。"""
 
+    def test_deal_time_ms_applies_configured_offset_minutes(self):
+        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+        try:
+            server_v2.MT5_TIME_OFFSET_MINUTES = 480
+            deal = types.SimpleNamespace(time_msc=1775151432000, time=0)
+
+            value = server_v2._deal_time_ms(deal)
+
+            self.assertEqual(1775180232000, value)
+        finally:
+            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+
+    def test_map_trades_applies_configured_offset_to_open_and_close_times(self):
+        original_mt5 = server_v2.mt5
+        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+
+        class _FakeMt5:
+            @staticmethod
+            def history_deals_get(from_time, to_time):
+                return [
+                    types.SimpleNamespace(
+                        symbol="BTCUSDT",
+                        type=0,
+                        volume=1.0,
+                        ticket=101,
+                        order=201,
+                        position_id=301,
+                        entry=0,
+                        time=1775145828,
+                        time_msc=1775145828613,
+                        price=66020.6,
+                        profit=0.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="open",
+                    ),
+                    types.SimpleNamespace(
+                        symbol="BTCUSDT",
+                        type=1,
+                        volume=1.0,
+                        ticket=102,
+                        order=202,
+                        position_id=301,
+                        entry=1,
+                        time=1775149621,
+                        time_msc=1775149621284,
+                        price=66392.56,
+                        profit=18.6,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="close",
+                    ),
+                ]
+
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        server_v2.mt5 = _FakeMt5()
+        server_v2.MT5_TIME_OFFSET_MINUTES = 480
+        try:
+            trades = server_v2._map_trades("1d")
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+
+        self.assertEqual(1, len(trades))
+        self.assertEqual(1775174628613, trades[0]["openTime"])
+        self.assertEqual(1775178421284, trades[0]["closeTime"])
+
     def test_map_trades_pairs_partial_close_with_fifo_open_batches(self):
         original_mt5 = server_v2.mt5
 
@@ -167,6 +237,70 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertAlmostEqual(0.5, ordered[1]["quantity"])
         self.assertAlmostEqual(20.0, ordered[0]["profit"])
         self.assertAlmostEqual(10.0, ordered[1]["profit"])
+
+    def test_map_trades_maps_mt5_sell_lifecycle_into_single_trade_record(self):
+        original_mt5 = server_v2.mt5
+
+        class _FakeMt5:
+            @staticmethod
+            def history_deals_get(from_time, to_time):
+                return [
+                    types.SimpleNamespace(
+                        symbol="BTCUSD",
+                        type=1,
+                        volume=0.01,
+                        ticket=1779629211,
+                        order=1786015308,
+                        position_id=1786015308,
+                        entry=0,
+                        time=1774794820,
+                        time_msc=1774794820000,
+                        price=66636.06,
+                        profit=0.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="open",
+                    ),
+                    types.SimpleNamespace(
+                        symbol="BTCUSD",
+                        type=0,
+                        volume=0.01,
+                        ticket=1779633102,
+                        order=1786019259,
+                        position_id=1786015308,
+                        entry=1,
+                        time=1774813268,
+                        time_msc=1774813268000,
+                        price=66451.66,
+                        profit=1.84,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="close",
+                    ),
+                ]
+
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        server_v2.mt5 = _FakeMt5()
+        try:
+            trades = server_v2._map_trades("7d")
+        finally:
+            server_v2.mt5 = original_mt5
+
+        self.assertEqual(1, len(trades))
+        trade = trades[0]
+        self.assertEqual(1779633102, trade["dealTicket"])
+        self.assertEqual(1786019259, trade["orderId"])
+        self.assertEqual(1786015308, trade["positionId"])
+        self.assertEqual("Sell", trade["side"])
+        self.assertAlmostEqual(0.01, trade["quantity"])
+        self.assertAlmostEqual(66636.06, trade["openPrice"])
+        self.assertAlmostEqual(66451.66, trade["closePrice"])
+        self.assertAlmostEqual(1.84, trade["profit"])
+        self.assertEqual(1774794820000, trade["openTime"])
+        self.assertEqual(1774813268000, trade["closeTime"])
 
     def test_trim_cache_entries_locked_keeps_newest_entries_only(self):
         helper = getattr(server_v2, "_trim_cache_entries_locked", None)

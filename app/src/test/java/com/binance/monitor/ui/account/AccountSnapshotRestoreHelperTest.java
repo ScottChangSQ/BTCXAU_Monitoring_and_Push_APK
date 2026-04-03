@@ -15,9 +15,12 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class AccountSnapshotRestoreHelperTest {
 
@@ -46,7 +49,7 @@ public class AccountSnapshotRestoreHelperTest {
     }
 
     @Test
-    public void shouldKeepPreloadTradesWhenTheyAlreadyExist() {
+    public void shouldMergeStoredTradesIntoExistingPreloadTrades() {
         TradeRecordItem preloadTrade = new TradeRecordItem(
                 3L, "XAU", "XAUUSD", "Sell", 2d, 1d, 2d, 0d, "",
                 -5d, 3L, 4L, 0d
@@ -69,8 +72,34 @@ public class AccountSnapshotRestoreHelperTest {
 
         AccountSnapshot merged = AccountSnapshotRestoreHelper.mergeMissingTrades(preloadSnapshot, storedSnapshot);
 
-        assertEquals(1, merged.getTrades().size());
-        assertEquals("XAUUSD", merged.getTrades().get(0).getCode());
+        assertTradeCodes(merged.getTrades(), "XAUUSD", "BTCUSD");
+    }
+
+    @Test
+    public void shouldMergeStoredTradesWhenPreloadSnapshotIsIncomplete() {
+        TradeRecordItem preloadTrade = new TradeRecordItem(
+                3L, "XAU", "XAUUSD", "Sell", 2d, 1d, 2d, 0d, "",
+                -5d, 3L, 4L, 0d, 20d, 21d, 9001L, 9101L, 9201L, 1
+        );
+        TradeRecordItem storedTrade = new TradeRecordItem(
+                4L, "BTC", "BTCUSD", "Buy", 1d, 1d, 1d, 0d, "",
+                10d, 10L, 11L, 0d, 1d, 1.1d, 9002L, 9102L, 9202L, 1
+        );
+        AccountSnapshot preloadSnapshot = new AccountSnapshot(
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(preloadTrade),
+                new ArrayList<>()
+        );
+        AccountStorageRepository.StoredSnapshot storedSnapshot = buildStoredSnapshot(
+                Arrays.asList(preloadTrade, storedTrade)
+        );
+
+        AccountSnapshot merged = AccountSnapshotRestoreHelper.mergeMissingTrades(preloadSnapshot, storedSnapshot);
+
+        assertTradeCodes(merged.getTrades(), "XAUUSD", "BTCUSD");
     }
 
     private AccountStorageRepository.StoredSnapshot buildStoredSnapshot(List<TradeRecordItem> trades) {
@@ -91,5 +120,16 @@ public class AccountSnapshotRestoreHelperTest {
                 trades,
                 new ArrayList<AccountMetric>()
         );
+    }
+
+    private void assertTradeCodes(List<TradeRecordItem> trades, String... expectedCodes) {
+        assertEquals(expectedCodes.length, trades.size());
+        Set<String> actualCodes = new HashSet<>();
+        for (TradeRecordItem item : trades) {
+            actualCodes.add(item.getCode());
+        }
+        for (String code : expectedCodes) {
+            assertTrue(actualCodes.contains(code));
+        }
     }
 }

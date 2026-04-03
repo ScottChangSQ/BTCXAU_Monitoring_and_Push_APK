@@ -16,7 +16,7 @@ public final class AccountReturnsHeatStyleHelper {
                                        int riseColor,
                                        int fallColor,
                                        @Nullable Double rate) {
-        if (rate == null) {
+        if (rate == null || AccountValueStyleHelper.isZero(rate)) {
             return baseColor;
         }
         float magnitude = (float) Math.abs(rate);

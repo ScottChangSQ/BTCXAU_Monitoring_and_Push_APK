@@ -35,6 +35,7 @@
    - `MT5_SERVER=ICMarketsSC-MT5-6`
 3. 建议同时确认：
    - `MT5_PATH=C:\Program Files\MetaTrader 5\terminal64.exe`
+   - `MT5_TIME_OFFSET_MINUTES=0`
    - `MT5_SERVER_ALIASES=ICMarketsSC-MT5-6,ICMarketsSC-MT5-5,ICMarketsSC-MT5`
    - `GATEWAY_HOST=127.0.0.1`
    - `GATEWAY_PORT=8787`
@@ -46,6 +47,7 @@
 
 说明：
 - 如果网关前面还有 Caddy / Nginx，建议 `GATEWAY_HOST` 固定为 `127.0.0.1`，不要直接对公网暴露 `8787`。
+- 如果 MT5 返回的成交时间比你实际本地时间固定慢 8 小时，可把 `MT5_TIME_OFFSET_MINUTES` 改成 `480`；改完后 `/v1/trades`、历史成交点和账户曲线会一起按同一口径修正。
 - 这个网关现在也可直接转发 Binance REST / WebSocket，方便 App 统一只连韩国服务器。
 - EA 推送活跃时，网关会在短时间内平滑续用最近一次快照缓存，减少固定轮询下“一快一慢”交替；同时快照缓存会按最近使用裁剪，避免历史范围缓存长期堆积占内存。
 

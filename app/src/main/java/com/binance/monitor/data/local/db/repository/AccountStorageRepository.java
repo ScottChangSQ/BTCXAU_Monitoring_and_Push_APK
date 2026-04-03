@@ -133,6 +133,42 @@ public class AccountStorageRepository {
         accountSnapshotDao.upsertMeta(metaEntity);
     }
 
+    // 轻量复合快照需要同步持仓、挂单、交易和摘要，但不清空整张历史交易表。
+    public void persistIncrementalSnapshot(StoredSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        if (tradeHistoryDao != null) {
+            List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades());
+            if (!trades.isEmpty()) {
+                tradeHistoryDao.upsertAll(trades);
+            }
+        }
+        if (accountSnapshotDao == null) {
+            return;
+        }
+        accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
+        accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
+
+        StoredSnapshot existing = loadStoredSnapshot();
+        List<CurvePoint> mergedCurvePoints = mergeCurvePoints(existing.getCurvePoints(), snapshot.getCurvePoints());
+        AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
+        metaEntity.id = 1;
+        metaEntity.connected = snapshot.isConnected();
+        metaEntity.updatedAt = snapshot.getUpdatedAt();
+        metaEntity.fetchedAt = snapshot.getFetchedAt();
+        metaEntity.account = safe(snapshot.getAccount());
+        metaEntity.server = safe(snapshot.getServer());
+        metaEntity.source = safe(snapshot.getSource());
+        metaEntity.gateway = safe(snapshot.getGateway());
+        metaEntity.error = safe(snapshot.getError());
+        metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
+        metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
+        metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
+        metaEntity.curvePointsJson = curvePointsToJsonString(mergedCurvePoints);
+        accountSnapshotDao.upsertMeta(metaEntity);
+    }
+
     // 读取当前数据库中保存的账户快照。
     public StoredSnapshot loadStoredSnapshot() {
         List<TradeRecordItem> trades = loadTrades();

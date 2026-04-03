@@ -23,6 +23,18 @@ public class AccountReturnsHeatStyleHelperTest {
         assertEquals(baseColor, actual);
     }
 
+    // 收益率为 0 时也应保持基础底色，不应误染成绿色。
+    @Test
+    public void resolveFillColor_returnsBaseColor_whenRateIsZero() {
+        int baseColor = 0xFF101820;
+        int positiveColor = 0xFF1DB954;
+        int negativeColor = 0xFFE64B4B;
+
+        int actual = AccountReturnsHeatStyleHelper.resolveFillColor(baseColor, positiveColor, negativeColor, 0d);
+
+        assertEquals(baseColor, actual);
+    }
+
     // 正负收益应分别走不同色系，避免月收益表仍然一片同色。
     @Test
     public void resolveFillColor_usesDifferentHue_forPositiveAndNegativeRate() {

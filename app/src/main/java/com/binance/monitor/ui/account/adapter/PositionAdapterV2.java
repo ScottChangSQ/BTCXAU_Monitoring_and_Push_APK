@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
+import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
@@ -247,8 +248,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
             double summaryPnl = item.getTotalPnL() + item.getStorageFee();
-            int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
-                    summaryPnl >= 0d ? R.color.accent_green : R.color.accent_red);
+            int pnlColor = resolveAmountColor(binding.getRoot(), summaryPnl, R.color.text_primary);
             String pnlText = signedMoney(summaryPnl);
             double displayQty = Math.abs(item.getQuantity());
             String qtyText = String.format(Locale.getDefault(), "%.2f 手", displayQty);
@@ -288,7 +288,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             SpannableStringBuilder metricsSpan = new SpannableStringBuilder(metricsRaw);
             int storageStart = metricsRaw.lastIndexOf(storageFeeText);
             if (storageStart >= 0) {
-                metricsSpan.setSpan(new ForegroundColorSpan(resolveValueColor(binding.getRoot(), item.getStorageFee())),
+                metricsSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(binding.getRoot(), item.getStorageFee(), R.color.text_secondary)),
                         storageStart,
                         storageStart + storageFeeText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -304,14 +304,14 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             SpannableStringBuilder pnlSpan = new SpannableStringBuilder(pnlRaw);
             int totalPnlStart = pnlRaw.indexOf(totalPnlText);
             if (totalPnlStart >= 0) {
-                pnlSpan.setSpan(new ForegroundColorSpan(resolveValueColor(binding.getRoot(), item.getTotalPnL())),
+                pnlSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(binding.getRoot(), item.getTotalPnL(), R.color.text_secondary)),
                         totalPnlStart,
                         totalPnlStart + totalPnlText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             int returnRateStart = pnlRaw.lastIndexOf(returnRateText);
             if (returnRateStart >= 0) {
-                pnlSpan.setSpan(new ForegroundColorSpan(resolveRatioColor(binding.getRoot(), displayReturnRate)),
+                pnlSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(binding.getRoot(), displayReturnRate, R.color.text_secondary)),
                         returnRateStart,
                         returnRateStart + returnRateText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -399,18 +399,15 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                     "buy".equalsIgnoreCase(side) ? R.color.accent_green : R.color.accent_red);
         }
 
-        private static int resolveValueColor(View root, double value) {
-            int colorRes = value > 0d
-                    ? R.color.accent_green
-                    : (value < 0d ? R.color.accent_red : R.color.text_secondary);
-            return ContextCompat.getColor(root.getContext(), colorRes);
-        }
-
-        private static int resolveRatioColor(View root, double value) {
-            int colorRes = value > 0d
-                    ? R.color.accent_green
-                    : (value < 0d ? R.color.accent_red : R.color.text_secondary);
-            return ContextCompat.getColor(root.getContext(), colorRes);
+        private static int resolveAmountColor(View root, double value, int neutralColorRes) {
+            AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
+            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
+                return ContextCompat.getColor(root.getContext(), R.color.accent_green);
+            }
+            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
+                return ContextCompat.getColor(root.getContext(), R.color.accent_red);
+            }
+            return ContextCompat.getColor(root.getContext(), neutralColorRes);
         }
     }
 }

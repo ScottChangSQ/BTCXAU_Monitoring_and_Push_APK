@@ -71,6 +71,7 @@ public class EquityCurveView extends View {
 
     private int highlightedIndex = -1;
     private float highlightedXRatio = -1f;
+    private long highlightedTimestamp = -1L;
     private boolean longPressing;
     private boolean masked;
     private boolean showBottomTimeLabels = true;
@@ -271,6 +272,7 @@ public class EquityCurveView extends View {
             return;
         }
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(timestamp)));
+        highlightedTimestamp = timestamp;
         highlightedXRatio = clampRatio(xRatio);
         invalidate();
     }
@@ -279,6 +281,7 @@ public class EquityCurveView extends View {
     public void clearSyncedHighlight() {
         highlightedIndex = -1;
         highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
         invalidate();
     }
 
@@ -482,9 +485,11 @@ public class EquityCurveView extends View {
         highlightedXRatio = clampRatio((clamped - chartLeft) / range);
         double ratio = (clamped - chartLeft) / range;
         long targetTs = chartStartTs + Math.round(ratio * (chartEndTs - chartStartTs));
+        highlightedTimestamp = targetTs;
         int index = findNearestIndexByTimestamp(targetTs);
         index = Math.max(0, Math.min(points.size() - 1, index));
         highlightedIndex = index;
+        tooltipPointOverride = CurveSeriesInterpolationHelper.interpolateCurvePoint(points, targetTs);
         dispatchHighlightedPoint();
         invalidate();
     }
@@ -522,6 +527,7 @@ public class EquityCurveView extends View {
         longPressing = false;
         requestParentDisallowIntercept(false);
         highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
         tooltipPointOverride = null;
         if (highlightedIndex != -1) {
             highlightedIndex = -1;
@@ -535,7 +541,9 @@ public class EquityCurveView extends View {
             return;
         }
         onPointHighlightListener.onPointHighlight(
-                highlightedIndex >= 0 && highlightedIndex < points.size() ? points.get(highlightedIndex) : null,
+                tooltipPointOverride != null
+                        ? tooltipPointOverride
+                        : (highlightedIndex >= 0 && highlightedIndex < points.size() ? points.get(highlightedIndex) : null),
                 highlightedXRatio);
     }
 

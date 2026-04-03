@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
+import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 import com.binance.monitor.util.FormatUtils;
 
@@ -73,8 +74,7 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
                 binding.layoutDetail.setVisibility(View.GONE);
                 return;
             }
-            int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
-                    item.totalPnl >= 0d ? R.color.accent_green : R.color.accent_red);
+            int pnlColor = resolveAmountColor(item.totalPnl);
             String pnlText = signedMoney(item.totalPnl);
             String qtyText = String.format(Locale.getDefault(), "%.2f 手", item.quantity);
             String costText = "$" + String.format(Locale.getDefault(), "%,.0f", item.avgCostPrice);
@@ -97,6 +97,17 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
 
         private static String signedMoney(double value) {
             return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
+        }
+
+        private int resolveAmountColor(double value) {
+            AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
+            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
+                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_green);
+            }
+            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
+                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_red);
+            }
+            return ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary);
         }
     }
 

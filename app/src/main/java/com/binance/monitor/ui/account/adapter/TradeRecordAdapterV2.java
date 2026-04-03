@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemTradeRecordBinding;
+import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
@@ -257,8 +258,7 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
             double summaryProfit = item.getProfit() + item.getStorageFee();
-            int pnlColor = ContextCompat.getColor(binding.getRoot().getContext(),
-                    summaryProfit >= 0d ? R.color.accent_green : R.color.accent_red);
+            int pnlColor = resolveAmountColor(binding.getRoot(), summaryProfit, R.color.text_primary);
             String amount = signedMoney(summaryProfit);
             String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
                     item.getProductName(), sideText, item.getQuantity(), amount);
@@ -295,14 +295,14 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             SpannableStringBuilder detailSpan = new SpannableStringBuilder(detailRaw);
             int profitStart = detailRaw.indexOf(profitText);
             if (profitStart >= 0) {
-                detailSpan.setSpan(new ForegroundColorSpan(resolveValueColor(binding.getRoot(), item.getProfit())),
+                detailSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(binding.getRoot(), item.getProfit(), R.color.text_secondary)),
                         profitStart,
                         profitStart + profitText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             int storageStart = detailRaw.lastIndexOf(storageFeeText);
             if (storageStart >= 0) {
-                detailSpan.setSpan(new ForegroundColorSpan(resolveValueColor(binding.getRoot(), item.getStorageFee())),
+                detailSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(binding.getRoot(), item.getStorageFee(), R.color.text_secondary)),
                         storageStart,
                         storageStart + storageFeeText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -365,11 +365,15 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
                     "buy".equalsIgnoreCase(side) ? R.color.accent_green : R.color.accent_red);
         }
 
-        private static int resolveValueColor(View root, double value) {
-            int colorRes = value > 0d
-                    ? R.color.accent_green
-                    : (value < 0d ? R.color.accent_red : R.color.text_secondary);
-            return ContextCompat.getColor(root.getContext(), colorRes);
+        private static int resolveAmountColor(View root, double value, int neutralColorRes) {
+            AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
+            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
+                return ContextCompat.getColor(root.getContext(), R.color.accent_green);
+            }
+            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
+                return ContextCompat.getColor(root.getContext(), R.color.accent_red);
+            }
+            return ContextCompat.getColor(root.getContext(), neutralColorRes);
         }
     }
 }

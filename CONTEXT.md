@@ -1,6 +1,25 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已继续处理“APP 历史里缺少某笔 BTCUSD 0.01 交易”并完成一轮代码修复：服务端测试已确认这类 `0.01` 开平成交按现有 `_map_trades()` 会正确映射成单条生命周期交易，当前更可疑的根因在 APP 历史页对本地/预加载历史的使用策略。
+- 已修正两个客户端漏单入口：`AccountSnapshotRestoreHelper.mergeMissingTrades(...)` 不再只在“预加载交易为空”时才回填本地交易，而是会把本地缺失但预加载快照未带上的历史交易一并合入；`AccountStatsBridgeActivity.applySnapshot(...)` 也改成无论当前是否远端直连，都先合并 `snapshotTrades`，避免旧内存历史挡住本地库/预加载里已经更新的新交易。
+- 已新增并通过本轮定点验证：`AccountSnapshotRestoreHelperTest`、`AccountStatsBridgeActivityTradeHistorySourceTest`、`bridge.mt5_gateway.tests.test_summary_response` 中新增的 `0.01` 生命周期映射测试；并已重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountSnapshotRestoreHelperTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest"`、`.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response` 与 `.\gradlew.bat assembleDebug`。
+- 当前停点：代码层已经把“本地已有但页面没显示”的主要链路收口完，下一步应让用户安装这版 APK 后复测该笔 `BTCUSD 0.01` 是否已出现在 APP 历史里；若仍缺失，就要直接抓 APP 运行时看到的 `/v1/trades` 实际返回，继续排查是否是真机连接到的不是当前这台网关或服务端返回被别的链路截断。
+- 已进一步确认“APP 历史里缺少某笔 BTCUSD 0.01”当前不是客户端刷新链路问题：用户在服务器端查询 `/v1/trades?range=all` 的最近记录后，该笔单并未出现在网关返回里。
+- 已用 MT5 原始 `history_deals_get()` 按截图编号 `1787257844` 分别匹配 `ticket / order / position_id`，结果为 `NO_MATCH`；说明该编号不是当前成交历史里的直接主键，下一步需要同时排查 `history_orders_get()` 与可能仍在持仓中的对象。
+- 当前停点：先收集这笔单在 MT5 原始层的真实对象类型，再决定是否修改 `server_v2.py` 的 `_map_trades()`，避免在未拿到原始证据前盲改交易映射。
+- 已继续修复“历史交易记录没有及时更新”：根因确认不是服务器没返回，而是 APP 后台预加载默认只拉 `/v1/live`，且轻量落库不写 `trades`，导致服务器已有新平仓单时，交易记录列表仍可能停留在旧数据。
+- 已把账户预加载改成统一走 `gatewayClient.fetch(AccountTimeRange.ALL)` 的复合轻量同步，并新增 `AccountStorageRepository.persistIncrementalSnapshot(...)`，让后台也会把交易增量、持仓、挂单和曲线一起写回本地库，不再只更新持仓摘要。
+- 已新增并通过定点验证：`AccountStatsPreloadManagerSourceTest`、`AccountStorageRepositoryTest`，并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest"` 与 `.\gradlew.bat assembleDebug`。
+- 已根据用户提供的服务器实测数据改判“历史成交点偏移”的根因：问题不在图表桶内映射，而是 MT5 Python 返回时间与用户本地北京时间存在固定偏差；网关侧现已新增 `MT5_TIME_OFFSET_MINUTES` 配置，统一修正 `/v1/trades`、历史成交点和账户曲线回放的时间口径。
+- 已为网关时间偏移补上失败先行测试：新增 `_deal_time_ms` 偏移测试和 `_map_trades` 开平时间联动测试；随后已通过 `.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response` 与 `.\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py`。
+- 已同步更新网关配置文档：`bridge/mt5_gateway/.env.example`、`bridge/mt5_gateway/README.md`、根目录 `README.md`、`ARCHITECTURE.md` 已补充 `MT5_TIME_OFFSET_MINUTES` 的用途和部署说明，方便服务器端直接落地。
+- 已根据用户提供的服务器实测数据继续定位“历史成交点整体偏 3-4 小时”：现已确认 MT5 原始成交时间与 `/v1/trades` 网关返回时间一致，问题不在服务器端，而在 APP 图表侧历史成交点落位规则。
+- 已修正 `HistoricalTradeAnnotationBuilder` 的时间映射口径：历史成交点不再先压到当前周期 K 线开盘时间，而是只做窗口合法性校验、保留真实 `openTime/closeTime`；这样在 `1h/4h` 等长周期图上，买入点/卖出点、平仓点会落在该周期内部的真实相对位置，不再天然偏出 1-4 小时。
+- 已同步更新历史成交点测试断言，并新增“高周期内仍保留真实分时位置”覆盖；已通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeViewportHelperTest"` 与 `.\gradlew.bat assembleDebug`。
+- 已继续收口用户最新 7 条里的首批 5 个可直接落地问题：清理“运行时缓存”时不再误删近期异常记录；主界面“连接状态”弹窗已删除“MT5 网关”字段，继续保留服务器延迟探测；日收益表在“当日无交易”时改为显式显示 `0`，不再留空白。
+- 已把“盈亏/收益为 0 时显示中性色”开始统一收口到公共辅助：新增 `AccountValueStyleHelper`，并接入账户概览/统计指标、持仓列表、持仓汇总、交易记录等主要适配器，避免 `0` 仍被误染成红绿。
+- 已补齐并通过本轮定点验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.settings.SettingsSectionActivitySourceTest" --tests "com.binance.monitor.ui.main.MainActivityConnectionDialogSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsDailyReturnsSourceTest" --tests "com.binance.monitor.ui.account.AccountValueStyleHelperTest" --tests "com.binance.monitor.ui.account.CurveSeriesInterpolationHelperTest" --tests "com.binance.monitor.ui.account.AccountReturnsHeatStyleHelperTest" --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest"` 与 `.\gradlew.bat assembleDebug`。
 - 已继续收口本轮 9 项问题中的图表链路残留：新增 `ChartWarmDisplayPolicyHelper`，把周线/月线/年线的本地预显示来源收紧为“周/月只接受日线底稿、年线只接受月线底稿”，不再允许 `1m` 底稿硬聚合出单根长周期假数据。
 - 已继续补强长周期显示判废：`MarketChartDisplayHelper` 现在会把周/月/年线的单根本地缓存直接判成不可信，避免旧的单根预显示继续污染图表；`KlineChartView` 也新增 `KlinePaneTextLayoutHelper`，提高附图标题与纵轴文字留白，减少主图/附图共享边界处的文字重叠。
 - 已继续补强账户曲线联动：`AccountCurveHighlightHelper` 新增“按最终联动时间反推共享 xRatio”能力，`AccountStatsBridgeActivity` 同步十字线时优先使用这个比例，减少子图已经算出新时间但主图仍沿用旧比例造成的卡值感。

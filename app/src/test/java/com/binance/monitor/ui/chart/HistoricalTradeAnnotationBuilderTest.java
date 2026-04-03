@@ -36,7 +36,7 @@ public class HistoricalTradeAnnotationBuilderTest {
 
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME, annotations.get(0).entryAnchorTimeMs);
-        assertEquals(BASE_TIME, annotations.get(0).exitAnchorTimeMs);
+        assertEquals(BASE_TIME + 20_000L, annotations.get(0).exitAnchorTimeMs);
         assertEquals(100d, annotations.get(0).entryPrice, 1e-9);
         assertEquals(101d, annotations.get(0).exitPrice, 1e-9);
     }
@@ -65,7 +65,7 @@ public class HistoricalTradeAnnotationBuilderTest {
 
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME, annotations.get(0).entryAnchorTimeMs);
-        assertEquals(BASE_TIME + 60_000L, annotations.get(0).exitAnchorTimeMs);
+        assertEquals(BASE_TIME + 95_000L, annotations.get(0).exitAnchorTimeMs);
         assertEquals(101d, annotations.get(0).entryPrice, 1e-9);
         assertEquals(99d, annotations.get(0).exitPrice, 1e-9);
     }
@@ -140,7 +140,7 @@ public class HistoricalTradeAnnotationBuilderTest {
 
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME - 120_000L, annotations.get(0).entryAnchorTimeMs);
-        assertEquals(BASE_TIME, annotations.get(0).exitAnchorTimeMs);
+        assertEquals(BASE_TIME + 30_000L, annotations.get(0).exitAnchorTimeMs);
     }
 
     @Test
@@ -168,6 +168,35 @@ public class HistoricalTradeAnnotationBuilderTest {
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME + 60_000L, annotations.get(0).entryAnchorTimeMs);
         assertEquals(BASE_TIME + 120_000L, annotations.get(0).exitAnchorTimeMs);
+    }
+
+    @Test
+    public void shouldKeepRealIntraCandleTimeForHigherIntervalCharts() {
+        long fourHoursMs = 4L * 60L * 60L * 1000L;
+        List<CandleEntry> candles = Arrays.asList(
+                buildCandle(BASE_TIME, BASE_TIME + fourHoursMs),
+                buildCandle(BASE_TIME + fourHoursMs, BASE_TIME + fourHoursMs * 2L)
+        );
+        long openTime = BASE_TIME + 3L * 60L * 60L * 1000L + 51L * 60L * 1000L + 30_000L;
+        long closeTime = BASE_TIME + 5L * 60L * 60L * 1000L + 7L * 60L * 1000L + 42_000L;
+        TradeRecordItem trade = buildTrade(
+                "BTCUSD",
+                "sell",
+                openTime,
+                closeTime,
+                68183.55d,
+                67329.9d,
+                42.68d,
+                0d,
+                1780546996L
+        );
+
+        List<HistoricalTradeAnnotationBuilder.TradeAnnotation> annotations =
+                HistoricalTradeAnnotationBuilder.build("BTCUSDT", Collections.singletonList(trade), candles);
+
+        assertEquals(1, annotations.size());
+        assertEquals(openTime, annotations.get(0).entryAnchorTimeMs);
+        assertEquals(closeTime, annotations.get(0).exitAnchorTimeMs);
     }
 
     private CandleEntry buildCandle(long openTime, long closeTime) {

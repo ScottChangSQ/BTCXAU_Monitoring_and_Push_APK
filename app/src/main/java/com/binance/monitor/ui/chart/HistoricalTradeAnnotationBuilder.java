@@ -90,7 +90,8 @@ final class HistoricalTradeAnnotationBuilder {
         return closeTime >= openTime;
     }
 
-    // 将平仓时间映射到当前图表窗口内对应的 K 线时间桶，窗口外的历史成交直接忽略。
+    // 只校验成交时间是否落在当前图表窗口允许的时间范围内；一旦可见，就保留真实时间。
+    // 这样长周期图上的成交点会落在该周期内部的真实相对位置，而不是被压到整根 K 线开头。
     private static long resolveAnchorTime(List<CandleEntry> candles, long targetTime, boolean clampToWindowStart) {
         if (candles == null || candles.isEmpty() || targetTime <= 0L) {
             return 0L;
@@ -98,10 +99,11 @@ final class HistoricalTradeAnnotationBuilder {
         long firstOpen = candles.get(0).getOpenTime();
         long lastOpen = candles.get(candles.size() - 1).getOpenTime();
         long intervalMs = estimateIntervalMs(candles);
+        long lastVisibleTime = resolveLastVisibleTime(candles, lastOpen, intervalMs);
         if (targetTime < firstOpen) {
             return clampToWindowStart ? firstOpen : targetTime;
         }
-        if (targetTime > lastOpen + intervalMs) {
+        if (targetTime > lastVisibleTime) {
             return 0L;
         }
         for (int i = 0; i < candles.size(); i++) {
@@ -115,24 +117,20 @@ final class HistoricalTradeAnnotationBuilder {
             boolean inBucket = targetTime >= openTime
                     && (targetTime < candleClose || (isLast && targetTime <= candleClose));
             if (inBucket) {
-                return openTime;
+                return targetTime;
             }
         }
-        return floorAnchorTime(candles, targetTime);
+        return targetTime;
     }
 
-    private static long floorAnchorTime(List<CandleEntry> candles, long closeTime) {
-        long candidate = 0L;
-        for (CandleEntry candle : candles) {
-            if (candle == null) {
-                continue;
-            }
-            long openTime = candle.getOpenTime();
-            if (openTime <= closeTime && openTime >= candidate) {
-                candidate = openTime;
-            }
+    private static long resolveLastVisibleTime(List<CandleEntry> candles, long lastOpen, long intervalMs) {
+        if (candles == null || candles.isEmpty()) {
+            return Math.max(0L, lastOpen + intervalMs);
         }
-        return candidate;
+        CandleEntry lastCandle = candles.get(candles.size() - 1);
+        long lastClose = lastCandle == null ? 0L : lastCandle.getCloseTime();
+        long fallbackClose = lastOpen + intervalMs;
+        return Math.max(fallbackClose, lastClose);
     }
 
     private static long estimateIntervalMs(List<CandleEntry> candles) {
