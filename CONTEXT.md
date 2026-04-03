@@ -1,6 +1,35 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已按用户要求停止继续补旧链路，转为重新规划“Binance 行情真值 + MT5 账户真值”的新架构；当前已完成三部分方案确认，并整理正式设计文档 `docs/superpowers/specs/2026-04-03-binance-mt5-new-architecture-design.md`，等待用户审阅后再进入实施计划。
+- 本轮关键决定：`BTCUSDT` 与 `XAUUSDT` 的行情、K线、成交量、指标统一改为只认 Binance；MT5 只负责账户侧真值；同时用户已明确接受停服并一次性切换到新架构，不再维护旧架构兼容层。
+- 已为图表页加入“一次性缓存版本失效清理”：`MarketChartActivity` 启动时会先检查 `chart_cache_schema_version`，若本地缓存版本落后，就清掉 `ChartHistoryRepository` 历史、`KlineCacheStore` 落盘缓存和当前内存里的 K 线数据，避免旧版本错误 K 线继续污染新逻辑。
+- 已新增并通过定点验证：`ChartCacheInvalidationHelperTest`、`MarketChartActivityCacheSourceTest`，并重新通过图表相关回归测试与 `.\gradlew.bat assembleDebug`。
+- 当前停点：请用户安装新 APK 后直接重新对比币安同一时刻同一周期的 K 线和成交量；这版会自动清掉旧图表缓存，不需要先手动卸载重装。若仍明显不一致，下一步改为补“本地恢复缓存 / 官方 REST / 当前绘制结果”三组诊断日志，不再继续盲改。
+- 已进一步锁定“K线和成交量仍与币安明显不同”的更深层根因：`MarketChartActivity.mergeRealtimeTailIntoSeries(...)` 之前会把本地 1m 聚合出的整段高周期尾部直接覆盖官方 REST 返回的历史窗口，只要本地分钟缓存有口径偏差，就会把最近一批高周期 K 线和成交量整段改坏。
+- 已新增 `MarketChartDisplayHelper.mergeRealtimeTail(...)`，改为“本地实时聚合只允许覆盖最新可见桶及其后续新桶”，不再回写更早的官方历史桶，避免官方数据被二次污染。
+- 已补上失败先行测试 `mergeRealtimeTailShouldOnlyOverrideLatestBucket`，并连同图表相关测试一起通过：`MarketChartDisplayHelperTest`、`MarketChartRefreshHelperTest`、`MarketChartRefreshHelperAdditionalTest`、`KlineChartViewMacdSourceTest`；随后已重新通过 `.\gradlew.bat assembleDebug`。
+- 当前停点：等待用户安装这版 APK 再看 K 线和成交量是否与币安收敛；若仍有明显差异，下一步将直接输出“官方 REST 最新几根 vs 当前绘制最新几根”的诊断日志，继续定位是否还有上游代理或缓存污染。
+- 已根据用户“仍与币安不一致”继续收口图表口径，确认两处关键偏差：
+- `KlineChartView` 的 MACD 柱值之前按 `2 * (DIF-DEA)` 绘制，和币安图表显示口径不一致（币安显示 `DIF-DEA`）。
+- `MarketChartRefreshHelper` 之前允许高周期（如 1h/4h/1d）在实时链路新鲜时长期跳过 REST 校准，导致本地分钟聚合误差可能持续停留。
+- 已完成修复：
+- `KlineChartView` 改为 `macdHist = DIF - DEA`。
+- `MarketChartRefreshHelper` 改为仅 `1m` 允许完全跳过 REST；更高周期即使实时新鲜也走增量/全量校准。
+- 已新增并通过定点验证：`KlineChartViewMacdSourceTest`、`MarketChartRefreshHelperTest`、`MarketChartRefreshHelperAdditionalTest`，并已重新通过 `.\gradlew.bat assembleDebug`。
+- 当前停点：等待用户安装新 APK 再对齐验证；若仍有差异，下一步将补“官方 REST 最新一根与当前绘制最新一根”的诊断日志，直接定位是“源数据不一致”还是“指标参数不一致”。
+- 已定位用户新反馈的“K线/成交量/指标与币安不一致”根因：`WebSocketManager` 之前订阅的是 `@aggTrade` 并在客户端本地组装 1m K 线（`RealtimeMinuteKlineAssembler`），这条路径在重连与实时流缺口场景下会和币安官方 `@kline_1m` 口径产生偏差，进而带来成交量与指标偏差。
+- 已完成修复：新增 `KlineStreamMessageParser`，并把 `WebSocketManager` 改为直接订阅和消费币安官方 `@kline_1m` 流，实时数据不再走本地成交拼 K，保证和币安图表同口径。
+- 已新增并通过单测 `KlineStreamMessageParserTest`，并通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.KlineStreamMessageParserTest" --tests "com.binance.monitor.data.remote.RealtimeMinuteKlineAssemblerTest"` 与 `.\gradlew.bat assembleDebug`。
+- 当前停点：等待用户安装新 APK 对比同一时刻同一周期（建议 1m/5m/1h）下的 OHLC、VOL、BOLL/MACD/STOCHRSI；若仍有偏差，再定位是否是“币安端图表使用标记价格/指数价格模式”导致的口径差。
+- 已定位用户新反馈的图表“延迟 ms 一高一低交替”问题：当前右上角展示值取的是单次请求总耗时（含网络 + 合并 + 重绘），切周期/切回图表会出现快慢请求混杂，视觉上像网络抖动。
+- 已在 `MarketChartRefreshHelper` 新增延迟平滑计算，并在 `MarketChartActivity` 使用平滑后的展示值，减少 `80ms -> 900ms -> 80ms` 这类交替跳变误导。
+- 已在 `MarketChartActivity.onResume()` 增加“数据新鲜则不立即重拉 K 线”的判断，减少从其他 TAB 切回图表时的等待；相关测试 `MarketChartRefreshHelperTest`、`MarketChartRefreshHelperAdditionalTest`、`ChartRefreshMetaFormatterTest` 已通过。
+- 当前停点：等待用户安装新包验证两点体感（右上角 ms 稳定性、切 TAB/切周期等待时长）；若仍有明显卡顿，再补充埋点拆分“纯网络耗时”和“UI 渲染耗时”做二次收口。
+- 已定位并修复用户最新反馈的“净值/结余曲线中净值出现超级大/超级小尖刺”问题。根因不在绘图控件，而在客户端 [app/src/main/java/com/binance/monitor/ui/account/AccountCurveRebuildHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountCurveRebuildHelper.java)：上一轮改动把原始曲线里的 `equity - balance` 浮动差值直接当成可信来源复用，只要处于持仓期间就会沿用；一旦上游曲线某些点本身带有异常浮动值，兜底重建会把这些脏尖刺原样保留下来，于是净值在长周期图上出现远大于真实账户规模的异常跳变。
+- 已在 `AccountCurveRebuildHelper` 增加“原始浮动值可信度检查”：仅当原始浮动值与交易生命周期估算方向一致、且数量级在合理范围内时才复用；否则回退到按成交生命周期估算的安全浮动值，避免单个异常点把整段净值曲线拉飞。
+- 已补上失败先行测试 `rebuildShouldIgnoreOutlierSourceFloatingSpread`，并重新通过 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountCurveRebuildHelperTest" --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest"` 与 `.\gradlew.bat assembleDebug`。
+- 当前停点：仓库代码已修复，需要用户安装这版新 APK 再核对 `ALL/1Y/3M` 下净值线是否回到与结余同量级；若仍有异常，则下一步应抓服务器 `curvePoints` 原始数据，判断是否还有服务端曲线回放残留问题。
 - 已继续定位“MT5 原始层能查到新平仓单 `1787265273`，但网关 `/v1/trades?range=all` 查不到，APP 也看不到”这一类漏单问题。根据用户最新回传，`history_orders_get/history_deals_get` 已确认这笔单在 MT5 原始层存在；同时原始时间戳换算后显示为北京时间 `2026-04-03 22:04:46 / 22:05:42`，说明当前网关漏单与时间口径偏移仍然相关。
 - 已定位并修复新的服务端根因：`bridge/mt5_gateway/server_v2.py` 的 `_mt5_history_window()` 之前把 MT5 历史查询上限固定为 `datetime.now()`，当 MT5 返回时间整体相对本地时钟偏到“未来几小时”时，最新成交会被查询窗口上界直接截掉，导致 MT5 脚本能查到、网关 `/v1/trades` 查不到、APP 历史也看不到。
 - 已在服务端新增 `MT5_HISTORY_LOOKAHEAD_HOURS`（默认 `24` 小时）并让 `_mt5_history_window()` 改为“起点仍按当前时间向过去回看，终点额外向未来预留一段缓冲”，避免最新平仓单因时间口径偏移落到查询窗口之外。
