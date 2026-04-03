@@ -27,10 +27,10 @@ public class MonitorRepository {
     private final MutableLiveData<String> connectionStatus = new MutableLiveData<>("连接中");
     private final MutableLiveData<Boolean> monitoringEnabled = new MutableLiveData<>(true);
     private final MutableLiveData<Long> lastUpdateTime = new MutableLiveData<>(0L);
-    private final MutableLiveData<Map<String, Double>> latestPrices = new MutableLiveData<>(Collections.emptyMap());
-    private final MutableLiveData<Map<String, KlineData>> latestClosedKlines = new MutableLiveData<>(Collections.emptyMap());
-    private final Map<String, Double> pricesCache = new HashMap<>();
-    private final Map<String, KlineData> closedKlineCache = new HashMap<>();
+    private final MutableLiveData<Map<String, Double>> displayPrices = new MutableLiveData<>(Collections.emptyMap());
+    private final MutableLiveData<Map<String, KlineData>> displayKlines = new MutableLiveData<>(Collections.emptyMap());
+    private final Map<String, Double> displayPriceCache = new HashMap<>();
+    private final Map<String, KlineData> displayKlineCache = new HashMap<>();
 
     private MonitorRepository(Context context) {
         Context appContext = context.getApplicationContext();
@@ -74,12 +74,14 @@ public class MonitorRepository {
         return lastUpdateTime;
     }
 
-    public LiveData<Map<String, Double>> getLatestPrices() {
-        return latestPrices;
+    // 返回监控页和悬浮窗共用的最新价格展示快照。
+    public LiveData<Map<String, Double>> getDisplayPrices() {
+        return displayPrices;
     }
 
-    public LiveData<Map<String, KlineData>> getLatestClosedKlines() {
-        return latestClosedKlines;
+    // 返回监控页和悬浮窗共用的最新 K 线展示快照。
+    public LiveData<Map<String, KlineData>> getDisplayKlines() {
+        return displayKlines;
     }
 
     public LiveData<List<AppLogEntry>> getLogs() {
@@ -90,15 +92,17 @@ public class MonitorRepository {
         return recordManager.getRecordsLiveData();
     }
 
-    public synchronized void updatePrice(String symbol, double price) {
-        pricesCache.put(symbol, price);
-        latestPrices.postValue(Collections.unmodifiableMap(new HashMap<>(pricesCache)));
+    // 更新某个产品的最新价格展示快照。
+    public synchronized void updateDisplayPrice(String symbol, double price) {
+        displayPriceCache.put(symbol, price);
+        displayPrices.postValue(Collections.unmodifiableMap(new HashMap<>(displayPriceCache)));
         lastUpdateTime.postValue(System.currentTimeMillis());
     }
 
-    public synchronized void updateClosedKline(KlineData data) {
-        closedKlineCache.put(data.getSymbol(), data);
-        latestClosedKlines.postValue(Collections.unmodifiableMap(new HashMap<>(closedKlineCache)));
+    // 更新某个产品的最新 K 线展示快照。
+    public synchronized void updateDisplayKline(KlineData data) {
+        displayKlineCache.put(data.getSymbol(), data);
+        displayKlines.postValue(Collections.unmodifiableMap(new HashMap<>(displayKlineCache)));
         lastUpdateTime.postValue(System.currentTimeMillis());
     }
 
@@ -110,12 +114,14 @@ public class MonitorRepository {
         monitoringEnabled.postValue(enabled);
     }
 
-    public synchronized Map<String, Double> getLatestPriceSnapshot() {
-        return new HashMap<>(pricesCache);
+    // 读取当前价格展示快照。
+    public synchronized Map<String, Double> getDisplayPriceSnapshot() {
+        return new HashMap<>(displayPriceCache);
     }
 
-    public synchronized Map<String, KlineData> getLatestClosedKlineSnapshot() {
-        return new HashMap<>(closedKlineCache);
+    // 读取当前 K 线展示快照。
+    public synchronized Map<String, KlineData> getDisplayKlineSnapshot() {
+        return new HashMap<>(displayKlineCache);
     }
 
     public void addRecord(AbnormalRecord record) {

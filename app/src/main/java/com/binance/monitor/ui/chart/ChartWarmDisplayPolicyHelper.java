@@ -47,6 +47,11 @@ final class ChartWarmDisplayPolicyHelper {
         return targetDurationMs > 0L && targetDurationMs <= 24L * 60L * 60_000L;
     }
 
+    // 仅当当前窗口为空，或用户切换到了新的交易对/周期时，才需要重新做本地预显示。
+    static boolean shouldWarmDisplay(boolean noVisibleWindow, boolean dataKeyChanged) {
+        return noVisibleWindow || dataKeyChanged;
+    }
+
     private static long resolveIntervalDurationMs(@Nullable String intervalKey) {
         String normalized = normalizeKey(intervalKey);
         if ("1M".equals(normalized)) {

@@ -15,16 +15,21 @@ public class MarketChartRefreshHelperAdditionalTest {
 
     @Test
     public void resolveAutoRefreshDelayMsShouldSlowDownWhenRealtimeIsFresh() {
-        assertEquals(15_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(true, 5_000L));
-        assertEquals(5_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(false, 5_000L));
+        assertEquals(15_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(true, 5_000L, true));
+        assertEquals(5_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(false, 5_000L, true));
+    }
+
+    @Test
+    public void resolveAutoRefreshDelayMsShouldKeepFallbackWhenRealtimeTailSourceIsUnavailable() {
+        assertEquals(5_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(true, 5_000L, false));
     }
 
     @Test
     public void resolveDisplayedLatencyMsShouldHideLatencyWhenRequestWasSkipped() {
         CandleEntry candle = new CandleEntry(
                 "BTCUSDT",
-                1_000L,
-                1_999L,
+                60_000L,
+                119_999L,
                 100d,
                 101d,
                 99d,
@@ -36,10 +41,11 @@ public class MarketChartRefreshHelperAdditionalTest {
                 Collections.singletonList(candle),
                 1,
                 1,
-                20_000L,
-                19_500L,
-                1_000L,
-                false
+                120_000L,
+                119_500L,
+                60_000L,
+                false,
+                true
         );
         MarketChartRefreshHelper.SyncPlan fullPlan = MarketChartRefreshHelper.resolvePlan(
                 Collections.emptyList(),
@@ -48,10 +54,29 @@ public class MarketChartRefreshHelperAdditionalTest {
                 20_000L,
                 0L,
                 1_000L,
+                false,
                 false
         );
 
         assertEquals(-1L, MarketChartRefreshHelper.resolveDisplayedLatencyMs(skipPlan, 820L));
         assertEquals(820L, MarketChartRefreshHelper.resolveDisplayedLatencyMs(fullPlan, 820L));
+    }
+
+    @Test
+    public void smoothDisplayedLatencyMsShouldReduceHighLowAlternation() {
+        long first = MarketChartRefreshHelper.smoothDisplayedLatencyMs(-1L, 80L);
+        long second = MarketChartRefreshHelper.smoothDisplayedLatencyMs(first, 980L);
+        long third = MarketChartRefreshHelper.smoothDisplayedLatencyMs(second, 90L);
+
+        assertEquals(80L, first);
+        assertEquals(305L, second);
+        assertEquals(251L, third);
+    }
+
+    @Test
+    public void shouldSkipRequestOnResumeShouldRequireRealtimeTailSource() {
+        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, true, false));
+        assertEquals(true, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, true, true));
+        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(false, true, true));
     }
 }

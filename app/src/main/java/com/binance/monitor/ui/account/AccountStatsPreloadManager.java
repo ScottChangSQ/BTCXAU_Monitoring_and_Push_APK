@@ -10,10 +10,24 @@ import android.os.Looper;
 
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
+import com.binance.monitor.data.local.V2SnapshotStore;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
+import com.binance.monitor.data.model.v2.AccountHistoryPayload;
+import com.binance.monitor.data.remote.v2.GatewayV2Client;
+import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.runtime.AppForegroundTracker;
+import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
+import com.binance.monitor.ui.account.model.CurvePoint;
+import com.binance.monitor.ui.account.model.PositionItem;
+import com.binance.monitor.ui.account.model.TradeRecordItem;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executors;
@@ -25,7 +39,9 @@ public class AccountStatsPreloadManager {
     private static volatile AccountStatsPreloadManager instance;
 
     private final Mt5BridgeGatewayClient gatewayClient;
+    private final GatewayV2Client gatewayV2Client;
     private final AccountStorageRepository accountStorageRepository;
+    private final V2SnapshotStore v2SnapshotStore;
     private final ConfigManager configManager;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -47,7 +63,9 @@ public class AccountStatsPreloadManager {
 
     private AccountStatsPreloadManager(Context context) {
         gatewayClient = new Mt5BridgeGatewayClient(context.getApplicationContext());
+        gatewayV2Client = new GatewayV2Client(context.getApplicationContext());
         accountStorageRepository = new AccountStorageRepository(context.getApplicationContext());
+        v2SnapshotStore = new V2SnapshotStore(context.getApplicationContext());
         configManager = ConfigManager.getInstance(context.getApplicationContext());
     }
 
@@ -234,6 +252,37 @@ public class AccountStatsPreloadManager {
                 nextDelayMs = MAX_REFRESH_MS;
                 return;
             }
+            // 账户新架构下优先请求 v2 账户快照与历史，再失败时回退旧网关。
+            try {
+                AccountSnapshotPayload v2Payload = gatewayV2Client.fetchAccountSnapshot();
+                AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, "");
+                v2SnapshotStore.writeAccountSnapshot(v2Payload.getRawJson());
+                AccountStorageRepository.StoredSnapshot storedSnapshot =
+                        buildStoredSnapshotFromV2(v2Payload, historyPayload);
+                accountStorageRepository.persistV2Snapshot(storedSnapshot);
+                AccountSnapshot snapshot = new AccountSnapshot(
+                        storedSnapshot.getOverviewMetrics(),
+                        storedSnapshot.getCurvePoints(),
+                        storedSnapshot.getCurveIndicators(),
+                        storedSnapshot.getPositions(),
+                        storedSnapshot.getPendingOrders(),
+                        storedSnapshot.getTrades(),
+                        storedSnapshot.getStatsMetrics()
+                );
+                nextDelayMs = resolveRefreshDelayMs();
+                updateLatestCache(new Cache(
+                        true,
+                        snapshot,
+                        storedSnapshot.getAccount(),
+                        storedSnapshot.getServer(),
+                        storedSnapshot.getSource(),
+                        storedSnapshot.getGateway(),
+                        storedSnapshot.getUpdatedAt(),
+                        "",
+                        System.currentTimeMillis()));
+                return;
+            } catch (Exception ignored) {
+            }
             Mt5BridgeGatewayClient.SnapshotResult result = gatewayClient.fetch(AccountTimeRange.ALL);
             if (!result.isSuccess()) {
                 nextDelayMs = resolveRefreshDelayMs();
@@ -285,6 +334,129 @@ public class AccountStatsPreloadManager {
         }
     }
 
+    // 供账户页主动触发一次前台刷新，统一复用 v2 优先、旧网关回退的抓取逻辑。
+    public Cache fetchForUi(AccountTimeRange range) {
+        if (!isAccountSessionActive()) {
+            accountStorageRepository.clearRuntimeSnapshot();
+            accountStorageRepository.clearTradeHistory();
+            clearLatestCache();
+            nextDelayMs = MAX_REFRESH_MS;
+            return null;
+        }
+        AccountTimeRange safeRange = range == null ? AccountTimeRange.ALL : range;
+        try {
+            AccountSnapshotPayload v2Payload = gatewayV2Client.fetchAccountSnapshot();
+            AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(safeRange, "");
+            v2SnapshotStore.writeAccountSnapshot(v2Payload.getRawJson());
+            AccountStorageRepository.StoredSnapshot storedSnapshot =
+                    buildStoredSnapshotFromV2(v2Payload, historyPayload);
+            accountStorageRepository.persistV2Snapshot(storedSnapshot);
+            AccountSnapshot snapshot = new AccountSnapshot(
+                    storedSnapshot.getOverviewMetrics(),
+                    storedSnapshot.getCurvePoints(),
+                    storedSnapshot.getCurveIndicators(),
+                    storedSnapshot.getPositions(),
+                    storedSnapshot.getPendingOrders(),
+                    storedSnapshot.getTrades(),
+                    storedSnapshot.getStatsMetrics()
+            );
+            Cache cache = new Cache(
+                    true,
+                    snapshot,
+                    storedSnapshot.getAccount(),
+                    storedSnapshot.getServer(),
+                    storedSnapshot.getSource(),
+                    storedSnapshot.getGateway(),
+                    storedSnapshot.getUpdatedAt(),
+                    "",
+                    System.currentTimeMillis()
+            );
+            nextDelayMs = resolveRefreshDelayMs();
+            updateLatestCache(cache);
+            return cache;
+        } catch (Exception ignored) {
+        }
+
+        try {
+            Mt5BridgeGatewayClient.SnapshotResult result = gatewayClient.fetch(safeRange);
+            if (!result.isSuccess()) {
+                nextDelayMs = resolveRefreshDelayMs();
+                Cache previous = latestCache;
+                if (previous != null) {
+                    Cache cache = new Cache(
+                            false,
+                            previous.snapshot,
+                            previous.account,
+                            previous.server,
+                            previous.source,
+                            previous.gateway,
+                            previous.updatedAt,
+                            result.getError(),
+                            System.currentTimeMillis()
+                    );
+                    updateLatestCache(cache);
+                    return cache;
+                }
+                return new Cache(
+                        false,
+                        null,
+                        "",
+                        "",
+                        "历史数据（网关离线）",
+                        "Gateway offline",
+                        System.currentTimeMillis(),
+                        result.getError(),
+                        System.currentTimeMillis()
+                );
+            }
+            AccountSnapshot snapshot = result.getSnapshot();
+            Cache cache = new Cache(
+                    true,
+                    snapshot,
+                    result.getAccount(""),
+                    result.getServer(""),
+                    result.getLocalizedSource(),
+                    result.getGatewayEndpoint(),
+                    result.getUpdatedAt(),
+                    "",
+                    System.currentTimeMillis()
+            );
+            nextDelayMs = resolveRefreshDelayMs();
+            updateLatestCache(cache);
+            persistPreloadSnapshot(snapshot, result, true);
+            return cache;
+        } catch (Exception exception) {
+            nextDelayMs = resolveRefreshDelayMs();
+            Cache previous = latestCache;
+            if (previous != null) {
+                Cache cache = new Cache(
+                        false,
+                        previous.snapshot,
+                        previous.account,
+                        previous.server,
+                        previous.source,
+                        previous.gateway,
+                        previous.updatedAt,
+                        exception.getMessage(),
+                        System.currentTimeMillis()
+                );
+                updateLatestCache(cache);
+                return cache;
+            }
+            return new Cache(
+                    false,
+                    null,
+                    "",
+                    "",
+                    "历史数据（网关离线）",
+                    "Gateway offline",
+                    System.currentTimeMillis(),
+                    exception.getMessage(),
+                    System.currentTimeMillis()
+            );
+        }
+    }
+
     // 更新最新缓存并把刷新结果派发给前台页面。
     private void updateLatestCache(Cache cache) {
         latestCache = cache;
@@ -332,6 +504,248 @@ public class AccountStatsPreloadManager {
         } else {
             accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
         }
+    }
+
+    // 将 v2 快照与历史载荷转换为本地统一存储结构。
+    private AccountStorageRepository.StoredSnapshot buildStoredSnapshotFromV2(AccountSnapshotPayload snapshotPayload,
+                                                                              AccountHistoryPayload historyPayload) {
+        JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
+        JSONObject account = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccount();
+        JSONArray positions = snapshotPayload == null ? new JSONArray() : snapshotPayload.getPositions();
+        JSONArray orders = snapshotPayload == null ? new JSONArray() : snapshotPayload.getOrders();
+        JSONArray trades = historyPayload == null ? new JSONArray() : historyPayload.getTrades();
+        JSONArray curvePoints = historyPayload == null ? new JSONArray() : historyPayload.getCurvePoints();
+
+        List<TradeRecordItem> tradeItems = parseTradeItems(trades);
+        return new AccountStorageRepository.StoredSnapshot(
+                true,
+                accountMeta.optString("login", ""),
+                accountMeta.optString("server", ""),
+                resolveV2Source(accountMeta),
+                resolveGatewayEndpoint(),
+                resolveUpdatedAt(snapshotPayload, historyPayload),
+                "",
+                System.currentTimeMillis(),
+                buildOverviewMetrics(account),
+                parseCurvePoints(curvePoints),
+                new ArrayList<>(),
+                parsePositionItems(positions, false),
+                parsePositionItems(orders, true),
+                tradeItems,
+                buildStatsMetrics(account, tradeItems)
+        );
+    }
+
+    // 生成账户页概要指标，保证 v2 成功时页面也有可展示的基础数字。
+    private List<AccountMetric> buildOverviewMetrics(JSONObject account) {
+        List<AccountMetric> metrics = new ArrayList<>();
+        metrics.add(new AccountMetric("总资产", formatMoney(optDouble(account, "equity"))));
+        metrics.add(new AccountMetric("结余", formatMoney(optDouble(account, "balance"))));
+        metrics.add(new AccountMetric("浮动盈亏", formatSignedMoney(optDouble(account, "profit"))));
+        metrics.add(new AccountMetric("保证金", formatMoney(optDouble(account, "margin"))));
+        metrics.add(new AccountMetric("可用保证金", formatMoney(optDouble(account, "freeMargin"))));
+        metrics.add(new AccountMetric("保证金率", formatPercent(optDouble(account, "marginLevel"))));
+        return metrics;
+    }
+
+    // 生成统计区最小指标，避免 v2 预加载时页面完全空白。
+    private List<AccountMetric> buildStatsMetrics(JSONObject account, List<TradeRecordItem> trades) {
+        List<AccountMetric> metrics = new ArrayList<>();
+        double totalProfit = 0d;
+        for (TradeRecordItem item : trades) {
+            if (item != null) {
+                totalProfit += item.getProfit();
+            }
+        }
+        metrics.add(new AccountMetric("累计盈亏", formatSignedMoney(totalProfit)));
+        metrics.add(new AccountMetric("交易笔数", String.valueOf(trades.size())));
+        metrics.add(new AccountMetric("当前浮盈亏", formatSignedMoney(optDouble(account, "profit"))));
+        return metrics;
+    }
+
+    // 解析 v2 持仓与挂单数组，统一转为页面复用的 PositionItem。
+    private List<PositionItem> parsePositionItems(JSONArray array, boolean pending) {
+        List<PositionItem> items = new ArrayList<>();
+        if (array == null) {
+            return items;
+        }
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            items.add(new PositionItem(
+                    optString(item, "productName", optString(item, "code", "--")),
+                    optString(item, "code", optString(item, "productName", "--")),
+                    optString(item, "side", "Buy"),
+                    item.optLong(pending ? "positionTicket" : "positionTicket", item.optLong("positionId", 0L)),
+                    item.optLong("orderId", 0L),
+                    optDouble(item, "quantity"),
+                    optDouble(item, "sellableQuantity", optDouble(item, "quantity")),
+                    optDouble(item, "costPrice"),
+                    optDouble(item, "latestPrice", optDouble(item, "pendingPrice")),
+                    optDouble(item, "marketValue"),
+                    optDouble(item, "positionRatio"),
+                    optDouble(item, "dayPnL"),
+                    optDouble(item, "totalPnL"),
+                    optDouble(item, "returnRate"),
+                    optDouble(item, pending ? "pendingLots" : "pendingLots"),
+                    item.optInt("pendingCount", pending ? 1 : 0),
+                    optDouble(item, "pendingPrice"),
+                    optDouble(item, "takeProfit"),
+                    optDouble(item, "stopLoss"),
+                    optDouble(item, "storageFee")
+            ));
+        }
+        return items;
+    }
+
+    // 解析 v2 历史成交数组，转换为账户页当前使用的成交模型。
+    private List<TradeRecordItem> parseTradeItems(JSONArray array) {
+        List<TradeRecordItem> items = new ArrayList<>();
+        if (array == null) {
+            return items;
+        }
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            long timestamp = normalizeEpochMs(item.optLong("timestamp", 0L));
+            long openTime = normalizeEpochMs(item.optLong("openTime", timestamp));
+            long closeTime = normalizeEpochMs(item.optLong("closeTime", timestamp));
+            double price = optDouble(item, "price");
+            items.add(new TradeRecordItem(
+                    timestamp,
+                    optString(item, "productName", optString(item, "code", "--")),
+                    optString(item, "code", optString(item, "productName", "--")),
+                    optString(item, "side", "Buy"),
+                    price,
+                    optDouble(item, "quantity"),
+                    optDouble(item, "amount"),
+                    optDouble(item, "fee"),
+                    optString(item, "remark", ""),
+                    optDouble(item, "profit"),
+                    openTime,
+                    closeTime,
+                    optDouble(item, "storageFee"),
+                    optDouble(item, "openPrice", price),
+                    optDouble(item, "closePrice", price),
+                    item.optLong("dealTicket", 0L),
+                    item.optLong("orderId", 0L),
+                    item.optLong("positionId", 0L),
+                    item.optInt("entryType", 0)
+            ));
+        }
+        return items;
+    }
+
+    // 解析 v2 净值曲线数组。
+    private List<CurvePoint> parseCurvePoints(JSONArray array) {
+        List<CurvePoint> items = new ArrayList<>();
+        if (array == null) {
+            return items;
+        }
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            items.add(new CurvePoint(
+                    normalizeEpochMs(item.optLong("timestamp", 0L)),
+                    optDouble(item, "equity"),
+                    optDouble(item, "balance"),
+                    optDouble(item, "positionRatio")
+            ));
+        }
+        return items;
+    }
+
+    // 统一读取 v2 响应里的更新时间，优先取账户快照时间。
+    private long resolveUpdatedAt(AccountSnapshotPayload snapshotPayload, AccountHistoryPayload historyPayload) {
+        long snapshotTime = snapshotPayload == null ? 0L : snapshotPayload.getServerTime();
+        if (snapshotTime > 0L) {
+            return snapshotTime;
+        }
+        return historyPayload == null ? 0L : historyPayload.getServerTime();
+    }
+
+    // 统一读取当前网关地址，用于页面元信息展示。
+    private String resolveGatewayEndpoint() {
+        if (configManager == null) {
+            return "--";
+        }
+        String baseUrl = configManager.getMt5GatewayBaseUrl();
+        return baseUrl == null || baseUrl.trim().isEmpty() ? "--" : baseUrl.trim();
+    }
+
+    // 对 v2 数据源名称做最小本地化，避免页面直接露出底层英文实现名。
+    private String resolveV2Source(JSONObject accountMeta) {
+        String raw = accountMeta == null ? "" : accountMeta.optString("source", "");
+        String normalized = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        if (normalized.contains("gateway")) {
+            return "V2网关";
+        }
+        if (normalized.contains("pull")) {
+            return "MT5拉取";
+        }
+        return raw == null || raw.trim().isEmpty() ? "V2网关" : raw.trim();
+    }
+
+    // 统一兼容秒/毫秒时间戳。
+    private long normalizeEpochMs(long value) {
+        if (value <= 0L) {
+            return 0L;
+        }
+        return value < 10_000_000_000L ? value * 1000L : value;
+    }
+
+    // 读取字符串字段，空值时回退到默认值。
+    private String optString(JSONObject item, String key, String fallback) {
+        if (item == null || key == null || key.trim().isEmpty() || !item.has(key)) {
+            return fallback;
+        }
+        String value = item.optString(key, "").trim();
+        return value.isEmpty() ? fallback : value;
+    }
+
+    // 读取浮点字段，缺失或非法时返回 0。
+    private double optDouble(JSONObject item, String key) {
+        return optDouble(item, key, 0d);
+    }
+
+    // 读取浮点字段，允许指定默认值。
+    private double optDouble(JSONObject item, String key, double fallback) {
+        if (item == null || key == null || key.trim().isEmpty() || !item.has(key)) {
+            return fallback;
+        }
+        Object value = item.opt(key);
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Double.parseDouble(((String) value).trim());
+            } catch (Exception ignored) {
+                return fallback;
+            }
+        }
+        return fallback;
+    }
+
+    // 统一格式化金额展示。
+    private String formatMoney(double value) {
+        return String.format(Locale.US, "$%,.2f", value);
+    }
+
+    // 统一格式化带符号金额展示。
+    private String formatSignedMoney(double value) {
+        return String.format(Locale.US, "%s$%,.2f", value >= 0d ? "+" : "-", Math.abs(value));
+    }
+
+    // 统一格式化百分比展示。
+    private String formatPercent(double value) {
+        return String.format(Locale.US, "%.2f%%", value);
     }
 
     public static class Cache {

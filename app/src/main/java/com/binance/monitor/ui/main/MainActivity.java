@@ -138,8 +138,8 @@ public class MainActivity extends AppCompatActivity {
         applyPaletteStyles();
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
-        latestPricesSnapshot = safePriceSnapshot(viewModel.getLatestPrices().getValue());
-        latestKlinesSnapshot = safeKlineSnapshot(viewModel.getLatestClosedKlines().getValue());
+        latestPricesSnapshot = safePriceSnapshot(viewModel.getDisplayPrices().getValue());
+        latestKlinesSnapshot = safeKlineSnapshot(viewModel.getDisplayKlines().getValue());
         renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
         startRecentRecordsAutoRefresh();
         startUpdateTimeTicker();
@@ -402,11 +402,11 @@ public class MainActivity extends AppCompatActivity {
             lastMarketUpdateMs = time == null ? 0L : time;
             binding.tvLastUpdate.setText(formatMarketUpdateText(lastMarketUpdateMs));
         });
-        viewModel.getLatestPrices().observe(this, prices -> {
+        viewModel.getDisplayPrices().observe(this, prices -> {
             latestPricesSnapshot = safePriceSnapshot(prices);
             renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
         });
-        viewModel.getLatestClosedKlines().observe(this, klines -> {
+        viewModel.getDisplayKlines().observe(this, klines -> {
             latestKlinesSnapshot = safeKlineSnapshot(klines);
             renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
         });

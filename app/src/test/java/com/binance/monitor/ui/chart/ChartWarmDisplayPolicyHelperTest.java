@@ -36,4 +36,11 @@ public class ChartWarmDisplayPolicyHelperTest {
         assertFalse(ChartWarmDisplayPolicyHelper.canRefreshFromMinuteTail("1y", true));
         assertTrue(ChartWarmDisplayPolicyHelper.canRefreshFromMinuteTail("1d", false));
     }
+
+    @Test
+    public void shouldWarmDisplayShouldOnlyRunWhenCurrentWindowMissingOrSwitched() {
+        assertTrue(ChartWarmDisplayPolicyHelper.shouldWarmDisplay(true, false));
+        assertTrue(ChartWarmDisplayPolicyHelper.shouldWarmDisplay(false, true));
+        assertFalse(ChartWarmDisplayPolicyHelper.shouldWarmDisplay(false, false));
+    }
 }

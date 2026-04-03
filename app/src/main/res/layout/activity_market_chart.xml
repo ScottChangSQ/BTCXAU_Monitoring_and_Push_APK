@@ -247,7 +247,7 @@
                         android:includeFontPadding="false"
                         android:text="--ms"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
-                        android:textSize="8sp" />
+                        android:textSize="9sp" />
 
                     <LinearLayout
                         android:layout_width="wrap_content"

@@ -172,7 +172,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private ActivityAccountStatsBinding binding;
     private AccountStatsPreloadManager preloadManager;
-    private Mt5BridgeGatewayClient gatewayClient;
     private AccountStorageRepository accountStorageRepository;
     private AccountMetricAdapter overviewAdapter;
     private AccountMetricAdapter indicatorAdapter;
@@ -292,7 +291,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
 
         preloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
-        gatewayClient = new Mt5BridgeGatewayClient(getApplicationContext());
         accountStorageRepository = new AccountStorageRepository(getApplicationContext());
         logManager = LogManager.getInstance(getApplicationContext());
         ioExecutor = Executors.newSingleThreadExecutor();
@@ -2032,7 +2030,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         AccountTimeRange fetchRange = AccountTimeRange.ALL;
 
         ioExecutor.execute(() -> {
-            Mt5BridgeGatewayClient.SnapshotResult remote = gatewayClient.fetch(fetchRange);
+            AccountStatsPreloadManager.Cache remote = preloadManager == null
+                    ? null
+                    : preloadManager.fetchForUi(fetchRange);
             AccountSnapshot snapshot;
             boolean connected;
             String account;
@@ -2043,16 +2043,20 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             long updatedAt;
             String error;
 
-            if (remote.isSuccess()) {
-                boolean loginMatched = isLoginCredentialMatched(remote);
+            if (remote != null && remote.isConnected()) {
+                boolean loginMatched = isLoginCredentialMatched(remote.getAccount(), remote.getServer());
                 if (loginMatched) {
                     snapshot = remote.getSnapshot();
                     connected = true;
-                    account = remote.getAccount(trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput);
-                    accountName = remote.getAccountName(account);
-                    server = remote.getServer(trim(loginServerInput).isEmpty() ? SERVER : loginServerInput);
-                    source = normalizeSource(remote.getLocalizedSource());
-                    gateway = remote.getGatewayEndpoint();
+                    account = remote.getAccount().isEmpty()
+                            ? (trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput)
+                            : remote.getAccount();
+                    accountName = account;
+                    server = remote.getServer().isEmpty()
+                            ? (trim(loginServerInput).isEmpty() ? SERVER : loginServerInput)
+                            : remote.getServer();
+                    source = normalizeSource(remote.getSource());
+                    gateway = remote.getGateway().isEmpty() ? "--" : remote.getGateway();
                     updatedAt = remote.getUpdatedAt() > 0L ? remote.getUpdatedAt() : System.currentTimeMillis();
                     error = "";
                 } else {
@@ -2062,7 +2066,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     accountName = account;
                     server = trim(loginServerInput).isEmpty() ? SERVER : loginServerInput;
                     source = "登录校验失败";
-                    gateway = remote.getGatewayEndpoint();
+                    gateway = remote.getGateway().isEmpty() ? "--" : remote.getGateway();
                     updatedAt = System.currentTimeMillis();
                     error = "登录账户或服务器与网关返回不一致";
                 }
@@ -2073,10 +2077,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
                 accountName = account;
                 server = trim(loginServerInput).isEmpty() ? SERVER : loginServerInput;
-                source = "历史数据（网关离线）";
-                gateway = "Gateway offline";
-                updatedAt = System.currentTimeMillis();
-                error = remote.getError();
+                source = remote == null || remote.getSource().trim().isEmpty()
+                        ? "历史数据（网关离线）"
+                        : normalizeSource(remote.getSource());
+                gateway = remote == null || remote.getGateway().trim().isEmpty()
+                        ? "Gateway offline"
+                        : remote.getGateway();
+                updatedAt = remote == null || remote.getUpdatedAt() <= 0L
+                        ? System.currentTimeMillis()
+                        : remote.getUpdatedAt();
+                error = remote == null ? "网关离线" : remote.getError();
             }
 
             final AccountSnapshot finalSnapshot = snapshot;
@@ -2088,7 +2098,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             final String finalGateway = gateway;
             final long finalUpdatedAt = updatedAt;
             final String finalError = error;
-            final boolean finalUnchanged = remote.isUnchanged();
+            final boolean finalUnchanged = false;
 
             runOnUiThread(() -> {
                 if (!snapshotRequestGuard.shouldApply(requestToken)) {
@@ -2112,17 +2122,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 logConnectionEvent(finalConnected);
                 if (finalSnapshot != null) {
                     applySnapshot(finalSnapshot, finalConnected);
-                    persistSnapshotToStorage(
-                            finalSnapshot,
-                            finalConnected,
-                            finalAccount,
-                            finalServer,
-                            finalSource,
-                            finalGateway,
-                            finalUpdatedAt,
-                            finalError,
-                            System.currentTimeMillis()
-                    );
                 }
                 adjustRefreshCadence(finalConnected, finalUnchanged);
                 loading = false;
@@ -2167,13 +2166,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         ));
     }
 
-    private boolean isLoginCredentialMatched(Mt5BridgeGatewayClient.SnapshotResult remote) {
+    private boolean isLoginCredentialMatched(String remoteAccount, String remoteServer) {
         String expectedAccount = trim(loginAccountInput);
         String expectedServer = trim(loginServerInput);
-        String remoteAccount = trim(remote.getAccount(""));
-        String remoteServer = trim(remote.getServer(""));
-        boolean accountMatched = expectedAccount.isEmpty() || remoteAccount.equalsIgnoreCase(expectedAccount);
-        boolean serverMatched = expectedServer.isEmpty() || remoteServer.equalsIgnoreCase(expectedServer);
+        String normalizedRemoteAccount = trim(remoteAccount);
+        String normalizedRemoteServer = trim(remoteServer);
+        boolean accountMatched = expectedAccount.isEmpty() || normalizedRemoteAccount.equalsIgnoreCase(expectedAccount);
+        boolean serverMatched = expectedServer.isEmpty() || normalizedRemoteServer.equalsIgnoreCase(expectedServer);
         return accountMatched && serverMatched;
     }
 

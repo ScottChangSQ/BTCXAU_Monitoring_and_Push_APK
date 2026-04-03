@@ -17,6 +17,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.gzip import GZipMiddleware
 import websockets
+import v2_account
+import v2_market
 
 try:
     import MetaTrader5 as mt5
@@ -74,6 +76,7 @@ ea_snapshot_change_digest = ""
 mt5_last_connected_path = ""
 snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
 snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
+v2_sync_state: Dict[str, Any] = {}
 abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
 abnormal_record_store: List[Dict[str, Any]] = []
 abnormal_alert_store: List[Dict[str, Any]] = []
@@ -85,6 +88,361 @@ abnormal_sync_state: Dict[str, Any] = {}
 
 def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+# 统一生成 v2 同步 token，供快照、增量和 WS 消息复用。
+def _build_sync_token(server_time_ms: int, revision: str) -> str:
+    payload = f"{int(server_time_ms)}:{revision}".encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+# 构建 v2 行情总快照返回体，统一保留市场区和账户区。
+def _build_v2_market_snapshot_payload(market: Dict[str, Any],
+                                      account: Dict[str, Any],
+                                      server_time: int) -> Dict[str, Any]:
+    return {
+        "serverTime": int(server_time),
+        "syncToken": _build_sync_token(server_time, "market-snapshot"),
+        "market": dict(market or {}),
+        "account": dict(account or {}),
+    }
+
+
+# 构建 v2 K 线返回体，强制把闭合历史和当前 patch 分层。
+def _build_v2_market_candles_payload(symbol: str,
+                                     interval: str,
+                                     server_time: int,
+                                     candles: List[Dict[str, Any]],
+                                     latest_patch: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    safe_candles = [dict(item) for item in (candles or [])]
+    safe_patch = None if latest_patch is None else dict(latest_patch)
+    return {
+        "symbol": str(symbol or ""),
+        "interval": str(interval or ""),
+        "serverTime": int(server_time),
+        "candles": safe_candles,
+        "latestPatch": safe_patch,
+        "nextSyncToken": _build_sync_token(server_time, f"market:{symbol}:{interval}:{len(safe_candles)}"),
+    }
+
+
+# 构建 v2 账户快照返回体，统一输出当前账户、持仓和挂单。
+def _build_v2_account_snapshot_payload(account: Dict[str, Any],
+                                       positions: List[Dict[str, Any]],
+                                       orders: List[Dict[str, Any]],
+                                       server_time: int) -> Dict[str, Any]:
+    return {
+        "serverTime": int(server_time),
+        "syncToken": _build_sync_token(server_time, "account-snapshot"),
+        "account": dict(account or {}),
+        "positions": [dict(item) for item in (positions or [])],
+        "orders": [dict(item) for item in (orders or [])],
+    }
+
+
+# 构建 v2 增量返回体，供 HTTP delta 同步入口统一复用。
+def _build_v2_delta_payload(market_delta: List[Dict[str, Any]],
+                             account_delta: List[Dict[str, Any]],
+                             server_time: int,
+                             next_sync_token: Optional[str] = None,
+                             unchanged: bool = False,
+                             full_refresh: Optional[Dict[str, Any]] = None,
+                             summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    safe_market_delta = [dict(item) for item in (market_delta or [])]
+    safe_account_delta = [dict(item) for item in (account_delta or [])]
+    refresh_payload = full_refresh or {
+        "required": False,
+        "reason": "",
+        "snapshot": None,
+    }
+    return {
+        "serverTime": int(server_time),
+        "marketDelta": safe_market_delta,
+        "accountDelta": safe_account_delta,
+        "unchanged": bool(unchanged),
+        "fullRefresh": {
+            "required": bool(refresh_payload.get("required", False)),
+            "reason": str(refresh_payload.get("reason", "")),
+            "snapshot": refresh_payload.get("snapshot"),
+        },
+        "summary": dict(summary or {}),
+        "nextSyncToken": str(next_sync_token or _build_sync_token(
+            server_time,
+            f"delta:{len(safe_market_delta)}:{len(safe_account_delta)}"
+        )),
+    }
+
+
+# 构建 v2 WS 消息体，统一保留类型、载荷和同步 token。
+def _build_v2_ws_message(message_type: str,
+                         payload: Dict[str, Any],
+                         sync_token: str,
+                         server_time: int) -> Dict[str, Any]:
+    return {
+        "type": str(message_type or ""),
+        "payload": dict(payload or {}),
+        "serverTime": int(server_time),
+        "syncToken": str(sync_token or ""),
+    }
+
+
+# 统一生成稳定 JSON 摘要，供 v2 同步态判断是否变化。
+def _stable_payload_digest(value: Any) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+# 为 v2 同步层生成“状态不变则 token 不变”的稳定 token。
+def _build_v2_state_token(sync_seq: int, state_digest: str) -> str:
+    payload = f"v2-sync:{int(sync_seq)}:{state_digest}".encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+# 清理账户元数据里的易抖动字段，避免无效增量。
+def _normalize_v2_account_meta(account_meta: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "login": str(account_meta.get("login", "")),
+        "server": str(account_meta.get("server", "")),
+        "source": str(account_meta.get("source", "")),
+        "currency": str(account_meta.get("currency", "")),
+        "leverage": int(account_meta.get("leverage", 0) or 0),
+        "name": str(account_meta.get("name", "")),
+        "company": str(account_meta.get("company", "")),
+    }
+
+
+# 清理 diff 里的内部字段，避免把内部实现细节暴露给客户端。
+def _sanitize_diff_payload(diff_payload: Dict[str, Any]) -> Dict[str, Any]:
+    upsert_items: List[Dict[str, Any]] = []
+    for item in (diff_payload.get("upsert") or []):
+        safe_item = dict(item)
+        safe_item.pop("_key", None)
+        upsert_items.append(safe_item)
+    return {
+        "upsert": upsert_items,
+        "remove": [str(value) for value in (diff_payload.get("remove") or [])],
+    }
+
+
+# 构建 v2 同步层运行态快照，统一 market/account 的摘要和计数。
+def _build_v2_sync_runtime_snapshot(server_time: int) -> Dict[str, Any]:
+    snapshot = _build_snapshot_with_cache("all")
+    market_section = _build_v2_market_section()
+    account_section = _build_v2_account_section_from_snapshot(snapshot)
+    normalized_account = {
+        "accountMeta": _normalize_v2_account_meta(account_section.get("accountMeta") or {}),
+        "positions": [dict(item) for item in (account_section.get("positions") or [])],
+        "orders": [dict(item) for item in (account_section.get("orders") or [])],
+    }
+    market_digest = _stable_payload_digest(market_section)
+    account_digest = _stable_payload_digest(normalized_account)
+    account_revision = _snapshot_digest(snapshot)
+    state_digest = _stable_payload_digest({
+        "marketDigest": market_digest,
+        "accountDigest": account_digest,
+        "accountRevision": account_revision,
+    })
+    return {
+        "serverTime": int(server_time),
+        "market": dict(market_section),
+        "account": normalized_account,
+        "marketDigest": market_digest,
+        "accountDigest": account_digest,
+        "accountRevision": account_revision,
+        "digest": state_digest,
+        "tradeCount": len(snapshot.get("trades") or []),
+        "curvePointCount": len(snapshot.get("curvePoints") or []),
+    }
+
+
+# 根据运行态快照构建稳定 summary，供 HTTP 和 WS 统一输出。
+def _build_v2_sync_summary(runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    account_meta = (runtime_snapshot.get("account") or {}).get("accountMeta") or {}
+    market_symbols = (runtime_snapshot.get("market") or {}).get("symbols") or []
+    return {
+        "marketDigest": str(runtime_snapshot.get("marketDigest", "")),
+        "accountDigest": str(runtime_snapshot.get("accountDigest", "")),
+        "accountRevision": str(runtime_snapshot.get("accountRevision", "")),
+        "marketSymbolCount": len(market_symbols),
+        "positionCount": len(((runtime_snapshot.get("account") or {}).get("positions") or [])),
+        "orderCount": len(((runtime_snapshot.get("account") or {}).get("orders") or [])),
+        "tradeCount": int(runtime_snapshot.get("tradeCount", 0) or 0),
+        "curvePointCount": int(runtime_snapshot.get("curvePointCount", 0) or 0),
+        "login": str(account_meta.get("login", "")),
+        "server": str(account_meta.get("server", "")),
+        "source": str(account_meta.get("source", "")),
+    }
+
+
+# 计算 v2 market/account 的最小增量事件，供 delta 与 stream 复用。
+def _build_v2_sync_delta_events(previous_snapshot: Dict[str, Any], current_snapshot: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    market_delta: List[Dict[str, Any]] = []
+    account_delta: List[Dict[str, Any]] = []
+
+    previous_market = previous_snapshot.get("market") or {}
+    current_market = current_snapshot.get("market") or {}
+    market_changed_keys = sorted({
+        key
+        for key in set(previous_market.keys()) | set(current_market.keys())
+        if previous_market.get(key) != current_market.get(key)
+    })
+    if market_changed_keys:
+        market_delta.append({
+            "type": "marketSnapshotChanged",
+            "digest": str(current_snapshot.get("marketDigest", "")),
+            "changedKeys": market_changed_keys,
+            "snapshot": dict(current_market),
+        })
+
+    previous_account = previous_snapshot.get("account") or {}
+    current_account = current_snapshot.get("account") or {}
+    previous_meta = previous_account.get("accountMeta") or {}
+    current_meta = current_account.get("accountMeta") or {}
+    meta_changed = previous_meta != current_meta
+    positions_diff = _sanitize_diff_payload(_diff_entities(
+        previous_account.get("positions") or [],
+        current_account.get("positions") or [],
+        _position_key,
+    ))
+    orders_diff = _sanitize_diff_payload(_diff_entities(
+        previous_account.get("orders") or [],
+        current_account.get("orders") or [],
+        _pending_key,
+    ))
+    has_positions_delta = bool(positions_diff["upsert"] or positions_diff["remove"])
+    has_orders_delta = bool(orders_diff["upsert"] or orders_diff["remove"])
+    account_revision_changed = str(previous_snapshot.get("accountRevision", "")) != str(current_snapshot.get("accountRevision", ""))
+    if meta_changed or has_positions_delta or has_orders_delta or account_revision_changed:
+        account_event: Dict[str, Any] = {
+            "type": "accountSnapshotChanged",
+            "digest": str(current_snapshot.get("accountDigest", "")),
+            "revision": str(current_snapshot.get("accountRevision", "")),
+            "accountMetaChanged": meta_changed,
+            "positions": positions_diff,
+            "orders": orders_diff,
+        }
+        if meta_changed:
+            account_event["accountMeta"] = dict(current_meta)
+        if account_revision_changed and not (meta_changed or has_positions_delta or has_orders_delta):
+            account_event["refreshHint"] = "accountHistoryChanged"
+        account_delta.append(account_event)
+
+    return market_delta, account_delta
+
+
+# 提交 v2 同步状态，保留“当前 + 上一版本”用于单步增量计算。
+def _commit_v2_sync_state(runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    with snapshot_cache_lock:
+        if not v2_sync_state:
+            seq = 1
+            token = _build_v2_state_token(seq, str(runtime_snapshot.get("digest", "")))
+            v2_sync_state.update({
+                "seq": seq,
+                "token": token,
+                "digest": runtime_snapshot.get("digest"),
+                "snapshot": runtime_snapshot,
+                "previousSeq": 0,
+                "previousToken": "",
+                "previousSnapshot": None,
+            })
+        elif str(v2_sync_state.get("digest", "")) == str(runtime_snapshot.get("digest", "")):
+            v2_sync_state["snapshot"] = runtime_snapshot
+        else:
+            previous_seq = int(v2_sync_state.get("seq", 0) or 0)
+            previous_token = str(v2_sync_state.get("token", ""))
+            previous_snapshot = v2_sync_state.get("snapshot")
+            seq = previous_seq + 1
+            token = _build_v2_state_token(seq, str(runtime_snapshot.get("digest", "")))
+            v2_sync_state.update({
+                "seq": seq,
+                "token": token,
+                "digest": runtime_snapshot.get("digest"),
+                "snapshot": runtime_snapshot,
+                "previousSeq": previous_seq,
+                "previousToken": previous_token,
+                "previousSnapshot": previous_snapshot,
+            })
+
+        return {
+            "seq": int(v2_sync_state.get("seq", 1) or 1),
+            "token": str(v2_sync_state.get("token", "")),
+            "snapshot": v2_sync_state.get("snapshot") or runtime_snapshot,
+            "previousSeq": int(v2_sync_state.get("previousSeq", 0) or 0),
+            "previousToken": str(v2_sync_state.get("previousToken", "")),
+            "previousSnapshot": v2_sync_state.get("previousSnapshot"),
+        }
+
+
+# 生成 v2 同步 delta/full-refresh 响应，供 HTTP 与 WS 复用。
+def _build_v2_sync_delta_response(sync_token: str, server_time: int) -> Dict[str, Any]:
+    runtime_snapshot = _build_v2_sync_runtime_snapshot(server_time)
+    state = _commit_v2_sync_state(runtime_snapshot)
+    current_token = str(state.get("token", ""))
+    previous_token = str(state.get("previousToken", ""))
+    current_snapshot = state.get("snapshot") or runtime_snapshot
+    previous_snapshot = state.get("previousSnapshot")
+    client_token = str(sync_token or "")
+
+    market_delta: List[Dict[str, Any]] = []
+    account_delta: List[Dict[str, Any]] = []
+    unchanged = False
+    full_refresh = {
+        "required": False,
+        "reason": "",
+        "snapshot": None,
+    }
+
+    if not client_token:
+        full_refresh = {
+            "required": True,
+            "reason": "bootstrap",
+            "snapshot": {
+                "market": dict(current_snapshot.get("market") or {}),
+                "account": dict(current_snapshot.get("account") or {}),
+            },
+        }
+    elif client_token == current_token:
+        unchanged = True
+    elif previous_token and client_token == previous_token and previous_snapshot is not None:
+        market_delta, account_delta = _build_v2_sync_delta_events(previous_snapshot, current_snapshot)
+        if not market_delta and not account_delta:
+            full_refresh = {
+                "required": True,
+                "reason": "stateChanged",
+                "snapshot": {
+                    "market": dict(current_snapshot.get("market") or {}),
+                    "account": dict(current_snapshot.get("account") or {}),
+                },
+            }
+    else:
+        full_refresh = {
+            "required": True,
+            "reason": "tokenMismatch",
+            "snapshot": {
+                "market": dict(current_snapshot.get("market") or {}),
+                "account": dict(current_snapshot.get("account") or {}),
+            },
+        }
+
+    return _build_v2_delta_payload(
+        market_delta=market_delta,
+        account_delta=account_delta,
+        server_time=server_time,
+        next_sync_token=current_token,
+        unchanged=unchanged,
+        full_refresh=full_refresh,
+        summary=_build_v2_sync_summary(current_snapshot),
+    )
+
+
+# 把 delta 结果映射成 WS 事件类型，保证首包和后续消息都有业务含义。
+def _resolve_v2_stream_message_type(sync_token: str, delta_payload: Dict[str, Any]) -> str:
+    full_refresh = (delta_payload.get("fullRefresh") or {}).get("required", False)
+    if full_refresh:
+        return "syncBootstrap" if not str(sync_token or "") else "syncRefresh"
+    if bool(delta_payload.get("unchanged", False)):
+        return "syncSummary"
+    return "syncDelta"
 
 
 def _apply_mt5_time_offset_ms(value: int) -> int:
@@ -2273,6 +2631,63 @@ def _proxy_binance_rest(path_value: str, request: Request) -> Response:
         raise HTTPException(status_code=502, detail=f"Binance REST proxy failed: {exc}")
 
 
+# 基于现有快照构建 v2 账户区最小返回体，后续会替换为独立账户真值模块。
+def _build_v2_account_section_from_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    meta = dict(snapshot.get("accountMeta") or {})
+    return {
+        "accountMeta": meta,
+        "positions": [dict(item) for item in (snapshot.get("positions") or [])],
+        "orders": [dict(item) for item in (snapshot.get("pendingOrders") or [])],
+    }
+
+
+# 基于现有配置构建 v2 行情区最小返回体，后续会替换为 Binance 真值聚合结果。
+def _build_v2_market_section() -> Dict[str, Any]:
+    return {
+        "source": "binance",
+        "symbols": ["BTCUSDT", "XAUUSDT"],
+        "restUpstream": BINANCE_REST_UPSTREAM,
+        "wsUpstream": BINANCE_WS_UPSTREAM,
+    }
+
+
+# 从 Binance REST 拉指定周期 K 线原始行，供 v2 行情真值接口使用。
+def _fetch_binance_kline_rows(symbol: str,
+                             interval: str,
+                             limit: int,
+                             *,
+                             start_time_ms: int = 0,
+                             end_time_ms: int = 0) -> List[Any]:
+    safe_symbol = str(symbol or "").strip().upper()
+    safe_interval = str(interval or "").strip()
+    safe_limit = max(1, min(int(limit), 1500))
+    query_payload = {
+        "symbol": safe_symbol,
+        "interval": safe_interval,
+        "limit": safe_limit,
+    }
+    if int(start_time_ms or 0) > 0:
+        query_payload["startTime"] = int(start_time_ms)
+    if int(end_time_ms or 0) > 0:
+        query_payload["endTime"] = int(end_time_ms)
+    query = urllib.parse.urlencode(query_payload)
+    upstream_url = f"{BINANCE_REST_UPSTREAM}/fapi/v1/klines?{query}"
+    request = urllib.request.Request(
+        upstream_url,
+        headers={
+            "User-Agent": "mt5-gateway-v2-market/1.0",
+            "Accept-Encoding": "identity",
+        },
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        body = response.read().decode("utf-8")
+    payload = json.loads(body or "[]")
+    if not isinstance(payload, list):
+        raise ValueError("Binance kline payload is not a list")
+    return payload
+
+
 async def _pipe_websocket_client_to_upstream(client: WebSocket, upstream) -> None:
     while True:
         message = await client.receive()
@@ -2385,6 +2800,116 @@ def source_status():
         "snapshotDeltaEnabled": SNAPSHOT_DELTA_ENABLED,
         "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
     }
+
+
+@app.get("/v2/market/snapshot")
+def v2_market_snapshot():
+    try:
+        now_ms = _now_ms()
+        snapshot = _build_snapshot_with_cache("all")
+        return _build_v2_market_snapshot_payload(
+            market=_build_v2_market_section(),
+            account=_build_v2_account_section_from_snapshot(snapshot),
+            server_time=now_ms,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v2/market/candles")
+def v2_market_candles(symbol: str,
+                      interval: str,
+                      limit: int = Query(default=300, ge=1, le=1500),
+                      startTime: int = Query(default=0, ge=0),
+                      endTime: int = Query(default=0, ge=0)):
+    try:
+        now_ms = _now_ms()
+        rest_rows = _fetch_binance_kline_rows(
+            symbol,
+            interval,
+            limit,
+            start_time_ms=startTime,
+            end_time_ms=endTime,
+        )
+        return v2_market.build_market_candles_response(
+            symbol=symbol,
+            interval=interval,
+            server_time=now_ms,
+            rest_rows=rest_rows,
+            latest_patch=None,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v2/account/snapshot")
+def v2_account_snapshot():
+    try:
+        now_ms = _now_ms()
+        snapshot = _build_snapshot_with_cache("all")
+        account_section = _build_v2_account_section_from_snapshot(snapshot)
+        snapshot_model = v2_account.build_account_snapshot_model(
+            {
+                "metrics": {
+                    "balance": (snapshot.get("accountMeta") or {}).get("balance"),
+                    "equity": (snapshot.get("accountMeta") or {}).get("equity"),
+                    "margin": (snapshot.get("accountMeta") or {}).get("margin"),
+                    "freeMargin": (snapshot.get("accountMeta") or {}).get("freeMargin"),
+                    "marginLevel": (snapshot.get("accountMeta") or {}).get("marginLevel"),
+                    "profit": (snapshot.get("accountMeta") or {}).get("profit"),
+                },
+                "positions": account_section.get("positions") or [],
+                "orders": account_section.get("orders") or [],
+            }
+        )
+        return v2_account.build_account_snapshot_response(
+            snapshot_model,
+            account_meta={
+                **(account_section.get("accountMeta") or {}),
+                "serverTime": now_ms,
+                "syncToken": _build_sync_token(now_ms, "account-snapshot"),
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v2/account/history")
+def v2_account_history(
+    range: str = Query(default="all", pattern="^(1d|7d|1m|3m|1y|all)$"),
+    cursor: str = Query(default=""),
+):
+    try:
+        now_ms = _now_ms()
+        snapshot = _build_snapshot_with_cache(range.lower())
+        history_model = v2_account.build_account_history_model(
+            {
+                "trades": snapshot.get("trades") or [],
+                "orders": snapshot.get("pendingOrders") or [],
+                "curvePoints": snapshot.get("curvePoints") or [],
+            }
+        )
+        payload = v2_account.build_account_history_response(
+            history_model,
+            account_meta={
+                **(snapshot.get("accountMeta") or {}),
+                "serverTime": now_ms,
+                "syncToken": _build_sync_token(now_ms, f"account-history:{range.lower()}:{cursor}"),
+            },
+        )
+        payload["nextCursor"] = ""
+        return payload
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v2/sync/delta")
+def v2_sync_delta(syncToken: str = Query(default="")):
+    try:
+        now_ms = _now_ms()
+        return _build_v2_sync_delta_response(sync_token=syncToken, server_time=now_ms)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/v1/ea/snapshot")
@@ -2510,6 +3035,31 @@ def abnormal_config(payload: Dict[str, Any]):
 @app.websocket("/binance-ws/{path_value:path}")
 async def binance_ws_proxy(client: WebSocket, path_value: str):
     await _proxy_binance_websocket(client, path_value)
+
+
+@app.websocket("/v2/stream")
+async def v2_stream(client: WebSocket):
+    await client.accept()
+    current_sync_token = ""
+    try:
+        while True:
+            now_ms = _now_ms()
+            previous_sync_token = current_sync_token
+            delta_payload = _build_v2_sync_delta_response(sync_token=previous_sync_token, server_time=now_ms)
+            current_sync_token = str(delta_payload.get("nextSyncToken", ""))
+            await client.send_json(
+                _build_v2_ws_message(
+                    message_type=_resolve_v2_stream_message_type(sync_token=previous_sync_token, delta_payload=delta_payload),
+                    payload=delta_payload,
+                    sync_token=current_sync_token,
+                    server_time=now_ms,
+                )
+            )
+            await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        await client.close(code=1011, reason=f"v2 stream failed: {exc}")
 
 
 if __name__ == "__main__":

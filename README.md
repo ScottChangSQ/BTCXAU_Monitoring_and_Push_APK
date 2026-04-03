@@ -4,6 +4,12 @@
 
 ## 项目功能简介
 
+- 新架构切换中：`BTCUSDT / XAUUSDT` 的行情、K 线、成交量和指标逐步统一改为只认服务端 `v2` 输出的 Binance 真值，APP 主要负责展示和本地快照
+- 新架构切换中：账户页后台预加载已优先改走 `v2/account/snapshot + v2/account/history`，成功时直接原子替换本地交易、曲线、持仓和挂单
+- 新架构切换中：账户统计页主动刷新也已收口到 `v2` 优先链路，不再由页面自己直接请求旧 `/v1/*` 快照
+- 新架构切换中：监控服务已接入 `v2/stream` 作为统一同步信号入口，旧 Binance `kline` WebSocket 暂时只保留为行情 tick 回退
+- 新架构切换中：`MonitorService` 收到 `v2 stream` 的 `market/account` 变化后，已经会主动补拉最新市场/账户数据，不再只做被动提示
+- 新架构切换中：图表页本地缓存已收口为 `ChartHistoryRepository + 内存窗口`，不再保留旧文件 K 线缓存，也不再把图表序列混写进 `V2SnapshotStore`
 - 主监控页与图表页的 Binance 行情统一走韩国服务器转发，手机不再直接访问 Binance 官方地址
 - MT5 账户支持轻量摘要、轻实时持仓、挂单增量、交易增量和权益曲线追加
 - 悬浮窗支持显示连接状态、合并盈亏、分产品盈亏、最新价格、成交量、成交额
@@ -20,12 +26,21 @@
 - 架构：MVVM + Repository
 - 本地存储：Room + SharedPreferences
 - 网络：OkHttp + WebSocket
-- 图表与账户：自定义 View + MT5 网关接口 + 服务端净值曲线重放
+- 图表与账户：自定义 View + `GatewayV2Client` / `GatewayV2StreamClient` + MT5 网关接口 + 服务端净值曲线重放
 - 构建：Gradle Kotlin DSL，`compileSdk / targetSdk 34`，`minSdk 24`
 
 ## 已完成功能列表
 
-- Binance Futures REST 初始化最近已收盘 1m K 线
+- 服务端已新增 `v2/market/snapshot`、`v2/market/candles`、`v2/account/snapshot`、`v2/account/history`、`v2/sync/delta`、`v2/stream` 的最小可用链路
+- APP 已新增 `GatewayV2Client`、`V2SnapshotStore` 和 `v2` 载荷模型，图表页已切到服务端 `candles + latestPatch` 口径
+- 图表页左滑历史分页和增量补尾也已切到 `v2/market/candles?startTime/endTime`，不再走旧 `BinanceApiClient` 图表历史接口
+- 图表页已删除本地分钟底稿对最终真值的旧覆盖链路，旧缓存版本升级为 `2` 并会在启动时一次性清旧
+- 图表页已删除 `KlineCacheStore` 这层废弃文件缓存，`V2SnapshotStore` 也已收口到只保存 `market/account` 快照，避免图表清缓存误删账户恢复数据
+- 账户预加载已改成 v2 优先，成功时走 `persistV2Snapshot(...)` 原子替换本地账户数据
+- 账户统计页主动刷新已统一改走 `AccountStatsPreloadManager.fetchForUi(...)`，与后台预加载共用同一套 `v2` 优先抓取逻辑
+- 监控服务已新增 `GatewayV2StreamClient`，开始消费 `/v2/stream` 的统一同步消息
+- 监控服务已新增 `V2StreamRefreshPlanner`，并会在 `v2 stream` 出现 `marketDelta/accountDelta/fullRefresh` 时补拉最新真值
+- 监控服务冷启动与实时回退已统一改成读取 `v2/market/candles` 最近序列，不再在服务层写旧图表 1m 底稿
 - WebSocket 实时接收 `BTCUSDT` 与 `XAUUSDT` 的 1m K 线更新
 - 主监控页与图表页的 Binance REST / WebSocket 已统一切到韩国服务器转发
 - OR / AND 异常判断

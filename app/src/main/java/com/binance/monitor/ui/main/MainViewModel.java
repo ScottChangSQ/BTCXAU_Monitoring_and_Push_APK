@@ -35,12 +35,12 @@ public class MainViewModel extends AndroidViewModel {
         return repository.getLastUpdateTime();
     }
 
-    public LiveData<Map<String, Double>> getLatestPrices() {
-        return repository.getLatestPrices();
+    public LiveData<Map<String, Double>> getDisplayPrices() {
+        return repository.getDisplayPrices();
     }
 
-    public LiveData<Map<String, KlineData>> getLatestClosedKlines() {
-        return repository.getLatestClosedKlines();
+    public LiveData<Map<String, KlineData>> getDisplayKlines() {
+        return repository.getDisplayKlines();
     }
 
     public LiveData<List<AbnormalRecord>> getRecords() {

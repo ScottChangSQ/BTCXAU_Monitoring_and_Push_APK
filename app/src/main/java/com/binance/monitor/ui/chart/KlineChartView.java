@@ -27,10 +27,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 public class KlineChartView extends View {
     public static final int ANNOTATION_KIND_DEFAULT = 0;
@@ -760,25 +758,8 @@ public class KlineChartView extends View {
             setCandles(olderCandles);
             return;
         }
-        List<CandleEntry> sorted = new ArrayList<>(olderCandles);
-        Collections.sort(sorted, (left, right) -> Long.compare(left.getOpenTime(), right.getOpenTime()));
-        Set<Long> exists = new HashSet<>();
-        for (CandleEntry item : candles) {
-            exists.add(item.getOpenTime());
-        }
-        List<CandleEntry> toAdd = new ArrayList<>();
-        long oldest = candles.get(0).getOpenTime();
-        for (CandleEntry item : sorted) {
-            if (item.getOpenTime() < oldest && !exists.contains(item.getOpenTime())) {
-                toAdd.add(item);
-                exists.add(item.getOpenTime());
-            }
-        }
-        if (toAdd.isEmpty()) {
-            return;
-        }
-        candles.addAll(0, toAdd);
-        offsetCandles += toAdd.size();
+        candles.addAll(0, olderCandles);
+        offsetCandles += olderCandles.size();
         computeIndicators();
         clampOffset();
         if (longPressing && !Float.isNaN(crosshairX) && !Float.isNaN(crosshairY)) {
@@ -1901,7 +1882,8 @@ public class KlineChartView extends View {
             dea = dea + alphaSignal * (dif - dea);
             macdDif[i] = dif;
             macdDea[i] = dea;
-            macdHist[i] = (dif - dea) * 2d;
+            // 币安图表口径：MACD 柱值直接使用 DIF-DEA，不再乘 2。
+            macdHist[i] = (dif - dea);
         }
 
         if (size > rsiPeriod) {

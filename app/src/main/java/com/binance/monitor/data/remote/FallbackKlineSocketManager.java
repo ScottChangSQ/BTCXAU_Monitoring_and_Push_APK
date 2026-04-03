@@ -7,13 +7,9 @@ import android.os.Looper;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.KlineData;
-import com.binance.monitor.data.model.TradeTickData;
-
-import org.json.JSONObject;
 
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -24,12 +20,16 @@ import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
-public class WebSocketManager {
+/*
+ * Binance 1m K 线回退流管理器，只在 v2 stream 不健康时承担行情回退输入。
+ * 它不再承担统一同步主链职责，主要给监控页和悬浮窗补最新展示快照。
+ */
+public class FallbackKlineSocketManager {
 
     public interface Listener {
-        void onSocketStateChanged(String symbol, boolean connected, int reconnectAttempt, String message);
-        void onKlineUpdate(String symbol, KlineData data);
-        void onSocketError(String symbol, String message);
+        void onFallbackStreamStateChanged(String symbol, boolean connected, int reconnectAttempt, String message);
+        void onFallbackKlineUpdate(String symbol, KlineData data);
+        void onFallbackStreamError(String symbol, String message);
     }
 
     private final OkHttpClient client;
@@ -41,13 +41,12 @@ public class WebSocketManager {
     private volatile WebSocket socket;
     private volatile int reconnectAttempt;
     private volatile boolean reconnectScheduled;
-    private final RealtimeMinuteKlineAssembler minuteKlineAssembler = new RealtimeMinuteKlineAssembler();
 
-    public WebSocketManager() {
+    public FallbackKlineSocketManager() {
         this(null);
     }
 
-    public WebSocketManager(Context context) {
+    public FallbackKlineSocketManager(Context context) {
         configManager = context == null ? null : ConfigManager.getInstance(context.getApplicationContext());
         client = new OkHttpClient.Builder()
                 .pingInterval(AppConstants.WS_PING_INTERVAL_SECONDS, TimeUnit.SECONDS)
@@ -68,7 +67,6 @@ public class WebSocketManager {
         }
         reconnectAttempt = 0;
         reconnectScheduled = false;
-        minuteKlineAssembler.clear();
         connectInternal(false);
     }
 
@@ -83,7 +81,6 @@ public class WebSocketManager {
         }
         managedSymbols.clear();
         reconnectAttempt = 0;
-        minuteKlineAssembler.clear();
     }
 
     public synchronized void forceReconnect(String reason) {
@@ -96,7 +93,6 @@ public class WebSocketManager {
         if (current != null) {
             current.cancel();
         }
-        minuteKlineAssembler.clear();
         scheduleReconnect(true);
     }
 
@@ -106,14 +102,13 @@ public class WebSocketManager {
         }
         int currentAttempt = reconnectAttempt;
         notifyStateAll(false, currentAttempt, reconnecting ? "重连中" : "连接中");
-        minuteKlineAssembler.clear();
         Request request = new Request.Builder()
-                .url(AppConstants.buildCombinedAggTradeWebSocketUrl(getConfiguredWebSocketBaseUrl(), new HashSet<>(managedSymbols.keySet())))
+                .url(AppConstants.buildCombinedWebSocketUrl(getConfiguredWebSocketBaseUrl(), new HashSet<>(managedSymbols.keySet())))
                 .build();
         socket = client.newWebSocket(request, new WebSocketListener() {
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
-                synchronized (WebSocketManager.this) {
+                synchronized (FallbackKlineSocketManager.this) {
                     socket = webSocket;
                     reconnectAttempt = 0;
                     reconnectScheduled = false;
@@ -124,28 +119,15 @@ public class WebSocketManager {
             @Override
             public void onMessage(WebSocket webSocket, String text) {
                 try {
-                    JSONObject root = new JSONObject(text);
-                    JSONObject payload = root.optJSONObject("data");
-                    JSONObject tradePayload = payload == null ? root : payload;
-                    String symbol = resolveSymbol(root, tradePayload);
-                    if (symbol.isEmpty() || !Boolean.TRUE.equals(managedSymbols.get(symbol))) {
+                    KlineStreamMessageParser.ParsedKline parsed = KlineStreamMessageParser.parse(text);
+                    if (parsed == null || parsed.data == null || parsed.symbol == null || parsed.symbol.trim().isEmpty()) {
                         return;
                     }
-                    TradeTickData parsed = TradeTickData.fromSocket(tradePayload);
-                    TradeTickData tick = new TradeTickData(
-                            symbol,
-                            parsed.getPrice(),
-                            parsed.getQuantity(),
-                            parsed.getTradeTime(),
-                            parsed.getEventTime()
-                    );
-                    List<KlineData> updates = minuteKlineAssembler.applyTick(tick);
-                    if (listener != null && updates != null) {
-                        for (KlineData data : updates) {
-                            if (data != null) {
-                                listener.onKlineUpdate(symbol, data);
-                            }
-                        }
+                    if (!Boolean.TRUE.equals(managedSymbols.get(parsed.symbol))) {
+                        return;
+                    }
+                    if (listener != null) {
+                        listener.onFallbackKlineUpdate(parsed.symbol, parsed.data);
                     }
                 } catch (Exception exception) {
                     notifyErrorAll("消息解析失败: " + exception.getMessage());
@@ -163,22 +145,6 @@ public class WebSocketManager {
                 handleSocketTermination(webSocket, "连接失败: " + message);
             }
         });
-    }
-
-    private String resolveSymbol(JSONObject root, JSONObject payload) {
-        String symbol = "";
-        if (payload != null) {
-            symbol = payload.optString("s", "");
-        }
-        if (symbol == null || symbol.trim().isEmpty()) {
-            String stream = root.optString("stream", "");
-            int atIndex = stream.indexOf('@');
-            symbol = atIndex > 0 ? stream.substring(0, atIndex) : stream;
-        }
-        if (symbol == null) {
-            return "";
-        }
-        return symbol.trim().toUpperCase();
     }
 
     private void handleSocketTermination(WebSocket terminatedSocket, String reason) {
@@ -208,7 +174,7 @@ public class WebSocketManager {
         long delay = immediate ? 300L : Math.min(30_000L, 1_500L * attempt);
         reconnectScheduled = true;
         handler.postDelayed(() -> {
-            synchronized (WebSocketManager.this) {
+            synchronized (FallbackKlineSocketManager.this) {
                 reconnectScheduled = false;
                 if (!running || managedSymbols.isEmpty() || socket != null) {
                     return;
@@ -224,7 +190,7 @@ public class WebSocketManager {
             return;
         }
         for (String symbol : managedSymbols.keySet()) {
-            currentListener.onSocketStateChanged(symbol, connected, reconnectAttempt, message);
+            currentListener.onFallbackStreamStateChanged(symbol, connected, reconnectAttempt, message);
         }
     }
 
@@ -234,7 +200,7 @@ public class WebSocketManager {
             return;
         }
         for (String symbol : managedSymbols.keySet()) {
-            currentListener.onSocketError(symbol, message);
+            currentListener.onFallbackStreamError(symbol, message);
         }
     }
 

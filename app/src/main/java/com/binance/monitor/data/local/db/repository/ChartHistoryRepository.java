@@ -12,10 +12,7 @@ import com.binance.monitor.data.local.db.entity.KlineHistoryEntity;
 import com.binance.monitor.data.model.CandleEntry;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 public class ChartHistoryRepository {
 
@@ -45,21 +42,6 @@ public class ChartHistoryRepository {
         return result;
     }
 
-    // 合并并写入指定分组的 K 线历史，返回最终完整结果。
-    public List<CandleEntry> mergeAndSave(String seriesKey,
-                                          String symbol,
-                                          String intervalKey,
-                                          String apiInterval,
-                                          boolean yearAggregate,
-                                          List<CandleEntry> incoming) {
-        List<CandleEntry> existing = loadCandles(seriesKey);
-        List<CandleEntry> merged = mergeCandles(existing, incoming);
-        if (!merged.isEmpty() && klineHistoryDao != null) {
-            klineHistoryDao.upsertAll(toEntities(seriesKey, symbol, intervalKey, apiInterval, yearAggregate, merged));
-        }
-        return merged;
-    }
-
     // 清空全部历史行情数据。
     public int clearAllHistory() {
         if (klineHistoryDao == null) {
@@ -68,28 +50,17 @@ public class ChartHistoryRepository {
         return klineHistoryDao.clearAll();
     }
 
-    // 合并旧历史和新历史，并按 openTime 去重，后到的数据覆盖先到的数据。
-    public static List<CandleEntry> mergeCandles(List<CandleEntry> existing, List<CandleEntry> incoming) {
-        Map<Long, CandleEntry> merged = new LinkedHashMap<>();
-        if (existing != null) {
-            for (CandleEntry item : existing) {
-                if (item == null) {
-                    continue;
-                }
-                merged.put(item.getOpenTime(), item);
-            }
+    // 直接把上层已经整理好的 K 线窗口写入 Room，不再重复回读整段旧历史。
+    public void saveCandles(String seriesKey,
+                            String symbol,
+                            String intervalKey,
+                            String apiInterval,
+                            boolean yearAggregate,
+                            List<CandleEntry> candles) {
+        if (klineHistoryDao == null || candles == null || candles.isEmpty()) {
+            return;
         }
-        if (incoming != null) {
-            for (CandleEntry item : incoming) {
-                if (item == null) {
-                    continue;
-                }
-                merged.put(item.getOpenTime(), item);
-            }
-        }
-        List<CandleEntry> result = new ArrayList<>(merged.values());
-        Collections.sort(result, (left, right) -> Long.compare(left.getOpenTime(), right.getOpenTime()));
-        return result;
+        klineHistoryDao.upsertAll(toEntities(seriesKey, symbol, intervalKey, apiInterval, yearAggregate, candles));
     }
 
     // 把 K 线模型转换为 Room 实体。

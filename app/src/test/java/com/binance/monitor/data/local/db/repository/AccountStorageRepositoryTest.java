@@ -230,6 +230,63 @@ public class AccountStorageRepositoryTest {
         assertEquals(4000L, tradeDao.items.get(0).closeTime);
     }
 
+    // v2 全量替换应原子覆盖交易和曲线，不再和本地旧曲线做增量拼接。
+    @Test
+    public void persistV2SnapshotShouldAtomicallyReplaceTradesAndCurvePoints() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        snapshotDao.meta = metaEntity();
+        snapshotDao.meta.curvePointsJson = "[{\"timestamp\":1000,\"equity\":100,\"balance\":90,\"positionRatio\":0.1}]";
+        tradeDao.items.add(tradeEntity("deal|legacy", 1000L, -8d));
+
+        repository.persistV2Snapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "V2网关",
+                "http://gateway",
+                5000L,
+                "",
+                5100L,
+                Arrays.asList(new AccountMetric("总资产", "$1000.00")),
+                Arrays.asList(new CurvePoint(4000L, 120d, 110d, 0.2d)),
+                new ArrayList<>(),
+                Arrays.asList(position("BTCUSD", 0.05d, 10d)),
+                Arrays.asList(new PositionItem(
+                        "XAUUSD",
+                        "XAUUSD",
+                        "Sell",
+                        0L,
+                        2001L,
+                        0d,
+                        0d,
+                        0d,
+                        2300d,
+                        0d,
+                        0d,
+                        0d,
+                        0d,
+                        0d,
+                        0.02d,
+                        1,
+                        2310d,
+                        0d,
+                        0d,
+                        0d
+                )),
+                Arrays.asList(trade(4500L, 300L, 301L, 302L, 6d)),
+                Arrays.asList(new AccountMetric("累计盈亏", "+$6.00"))
+        ));
+
+        AccountStorageRepository.StoredSnapshot restored = repository.loadStoredSnapshot();
+        assertEquals(1, restored.getTrades().size());
+        assertEquals("deal|300", tradeDao.items.get(0).tradeKey);
+        assertEquals(1, restored.getCurvePoints().size());
+        assertEquals(4000L, restored.getCurvePoints().get(0).getTimestamp());
+    }
+
     private TradeRecordItem trade(long closeTime,
                                   long dealTicket,
                                   long orderId,

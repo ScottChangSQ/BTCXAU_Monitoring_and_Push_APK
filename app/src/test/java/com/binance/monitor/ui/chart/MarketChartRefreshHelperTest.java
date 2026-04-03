@@ -27,7 +27,8 @@ public class MarketChartRefreshHelperTest {
                 NOW,
                 NOW - 30_000L,
                 MINUTE,
-                false
+                false,
+                true
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.SKIP, plan.mode);
@@ -46,7 +47,8 @@ public class MarketChartRefreshHelperTest {
                 NOW,
                 NOW - MINUTE * 3L,
                 MINUTE,
-                false
+                false,
+                true
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
@@ -64,10 +66,31 @@ public class MarketChartRefreshHelperTest {
                 NOW,
                 NOW - 30_000L,
                 MINUTE,
-                false
+                false,
+                true
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.SKIP, plan.mode);
+    }
+
+    @Test
+    public void resolvePlanShouldNotSkipForHigherIntervalsEvenWhenRealtimeIsFresh() {
+        List<CandleEntry> local = createSeries(1_500, NOW - MINUTE * 10L, MINUTE * 60L);
+        long latestOpenTime = local.get(local.size() - 1).getOpenTime();
+
+        MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
+                local,
+                1_500,
+                1_500,
+                NOW,
+                NOW - 30_000L,
+                MINUTE * 60L,
+                false,
+                true
+        );
+
+        assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
+        assertEquals(latestOpenTime, plan.startTimeInclusive);
     }
 
     @Test
@@ -81,7 +104,8 @@ public class MarketChartRefreshHelperTest {
                 NOW,
                 NOW - MINUTE * 3L,
                 MINUTE,
-                false
+                false,
+                true
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
@@ -98,10 +122,49 @@ public class MarketChartRefreshHelperTest {
                 NOW,
                 NOW - MINUTE * 5L,
                 365L * 24L * 60L * MINUTE,
+                true,
+                false
+        );
+
+        assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
+    }
+
+    @Test
+    public void resolvePlanShouldFallbackToFullWhenHigherIntervalWindowIsSparse() {
+        List<CandleEntry> local = createSeries(5, NOW - 24L * 60L * MINUTE, 24L * 60L * MINUTE);
+
+        MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
+                local,
+                1_500,
+                1_500,
+                NOW,
+                NOW - 30_000L,
+                24L * 60L * MINUTE,
+                false,
                 true
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
+    }
+
+    @Test
+    public void resolvePlanShouldNotSkipMinuteWhenRealtimeTailSourceIsUnavailable() {
+        List<CandleEntry> local = createSeries(1_500, NOW - MINUTE, MINUTE);
+        long latestOpenTime = local.get(local.size() - 1).getOpenTime();
+
+        MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
+                local,
+                1_500,
+                1_500,
+                NOW,
+                NOW - 30_000L,
+                MINUTE,
+                false,
+                false
+        );
+
+        assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
+        assertEquals(latestOpenTime, plan.startTimeInclusive);
     }
 
     private List<CandleEntry> createSeries(int count, long lastOpenTime, long intervalMs) {

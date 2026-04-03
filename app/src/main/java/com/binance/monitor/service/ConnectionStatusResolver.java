@@ -21,7 +21,9 @@ public final class ConnectionStatusResolver {
     }
 
     // 根据当前连接标记与最近行情时间，生成用户可见的连接状态文案。
-    public static String resolveStatus(List<String> symbols,
+    public static String resolveStatus(boolean v2StreamConnected,
+                                       long lastV2StreamMessageAt,
+                                       List<String> symbols,
                                        Map<String, Boolean> socketStates,
                                        Map<String, Integer> reconnectCounts,
                                        Map<String, Long> lastKlineTickAt,
@@ -31,6 +33,9 @@ public final class ConnectionStatusResolver {
                                        String connectedText,
                                        String partialPrefix,
                                        String connectingText) {
+        if (isV2StreamHealthy(v2StreamConnected, lastV2StreamMessageAt, nowMs, freshnessTimeoutMs)) {
+            return connectedText;
+        }
         if (symbols == null || symbols.isEmpty()) {
             return connectingText;
         }
@@ -53,6 +58,17 @@ public final class ConnectionStatusResolver {
             return "重连中(" + maxReconnect + "/" + maxReconnectAttempts + ")";
         }
         return connectingText;
+    }
+
+    // 统一判断 v2 stream 是否仍处于可视为健康的状态。
+    public static boolean isV2StreamHealthy(boolean connected,
+                                            long lastMessageAt,
+                                            long nowMs,
+                                            long freshnessTimeoutMs) {
+        if (connected) {
+            return true;
+        }
+        return lastMessageAt > 0L && nowMs - lastMessageAt <= freshnessTimeoutMs;
     }
 
     // 判断某个产品是否处于“可视为已连通”的状态。

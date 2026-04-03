@@ -3,15 +3,25 @@
 ## 每个文件/模块的职责
 
 - [app/src/main/java/com/binance/monitor/service/MonitorService.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorService.java)
-  前台服务入口，负责行情轮询、异常判断、通知调度，以及生成悬浮窗统一快照。
+  前台服务入口，负责展示快照刷新、异常判断、通知调度，以及生成悬浮窗统一快照；当前冷启动和 fallback 补拉都已改成直接读取 `v2 market series`，不再给图表历史库写底稿。
 - [app/src/main/java/com/binance/monitor/service/MonitorRuntimePolicyHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorRuntimePolicyHelper.java)
   运行策略辅助工具，负责把前后台状态转换成心跳、异常同步和悬浮窗刷新的统一节奏。
+- [app/src/main/java/com/binance/monitor/service/V2StreamRefreshPlanner.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/V2StreamRefreshPlanner.java)
+  v2 同步流刷新决策器，负责把 `syncBootstrap / syncRefresh / syncSummary / syncDelta` 映射成最小补拉动作。
+- [app/src/main/java/com/binance/monitor/data/repository/MonitorRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/repository/MonitorRepository.java)
+  监控展示仓库，负责保存主监控页与悬浮窗共用的最新价格/K 线展示快照、连接状态、监控开关和异常记录入口。
 - [app/src/main/java/com/binance/monitor/data/remote/BinanceApiClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/BinanceApiClient.java)
   Binance REST 数据访问层，负责通过韩国服务器的 `/binance-rest` 拉取行情。
-- [app/src/main/java/com/binance/monitor/data/remote/WebSocketManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/WebSocketManager.java)
-  Binance WebSocket 管理器，负责通过韩国服务器的 `/binance-ws` 订阅实时行情。
+- [app/src/main/java/com/binance/monitor/data/remote/FallbackKlineSocketManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/FallbackKlineSocketManager.java)
+  Binance 回退 K 线流管理器，负责通过韩国服务器的 `/binance-ws` 订阅 `@kline_1m`，仅在 `v2 stream` 不健康时补最新展示快照。
+- [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java)
+  v2 网关客户端，负责请求 `market/account/sync` 新接口，并把响应解析成 APP 侧统一载荷；当前也承接图表页按 `startTime/endTime` 的分页与增量补尾。
+- [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java)
+  v2 同步流客户端，负责连接 `/v2/stream` 并把统一同步消息解析成 APP 可消费的结构。
+- [app/src/main/java/com/binance/monitor/data/local/V2SnapshotStore.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/V2SnapshotStore.java)
+  v2 快照本地存储，负责保存市场快照和账户快照原始 JSON，用于页面快速恢复，不再混存图表各周期序列。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
-  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏和右上角刷新/延迟信息。
+  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏和右上角刷新/延迟信息；当前最终真值只认服务端 `candles + latestPatch`，本地只保留 `ChartHistoryRepository + 内存窗口` 这一层图表缓存。
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java)
   K 线绘制控件，负责主图、副图、指标、右侧留白、异常点胶囊、成本线和缩放交互。
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java)
@@ -21,7 +31,7 @@
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java)
   缩放方向判定工具，负责把双指手势分成横向、纵向和斜向整体缩放。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
-  账户统计页入口，负责账户概览、收益统计、净值/结余主图、附图、交易分布、交易记录、隐私小眼睛和登录成功提示动画。
+  账户统计页入口，负责账户概览、收益统计、净值/结余主图、附图、交易分布、交易记录、隐私小眼睛和登录成功提示动画；当前主动刷新已统一改走 `AccountStatsPreloadManager.fetchForUi(...)`。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountCurvePointNormalizer.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountCurvePointNormalizer.java)
   账户曲线归一化工具，负责修正空净值/结余、补齐最少两点，并保留历史仓位比例。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountCurveHighlightHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountCurveHighlightHelper.java)
@@ -41,11 +51,11 @@
 - [app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java)
   持仓时间分布图控件，负责绘制不同持仓时长桶的交易数量。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java)
-  账户预加载管理器，负责后台轻量同步和前台页面进入时的全量补齐。
+  账户预加载管理器，负责后台轻量同步和前台页面进入时的全量补齐；当前已优先走 `v2/account/snapshot + v2/account/history`，失败时才回退旧网关。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountPreloadPolicyHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPreloadPolicyHelper.java)
   账户预加载节奏辅助工具，负责把前后台状态和全量/轻量模式转换成统一刷新间隔。
 - [app/src/main/java/com/binance/monitor/ui/account/Mt5BridgeGatewayClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/Mt5BridgeGatewayClient.java)
-  MT5 网关客户端，负责请求 `/v1/summary`、`/v1/live`、`/v1/pending`、`/v1/trades`、`/v1/curve` 等接口，并把结果合并回统一账户模型。
+  MT5 网关客户端，负责请求 `/v1/summary`、`/v1/live`、`/v1/pending`、`/v1/trades`、`/v1/curve` 等接口，并把结果合并回统一账户模型；当前主要保留为 `v2` 失败时的临时回退。
 - [app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java)
   悬浮窗管理器，负责渲染顶部合并盈亏、连接状态、分产品卡片，并处理长按拖动、最小化、点击还原。
 - [app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowLayoutHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowLayoutHelper.java)
@@ -74,17 +84,31 @@
   通知帮助类，负责前台服务通知和异常交易通知，本轮已升级为更强系统通知样式。
 - [app/src/main/java/com/binance/monitor/data/local/db/](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db)
   Room 数据库层，负责历史 K 线、历史交易、账户摘要、持仓快照、挂单快照。
+- [app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java)
+  图表历史仓库，负责把上层已经整理好的 K 线窗口直接写入 Room，不再重复回读整段旧历史再合并。
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
-  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发。
+  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出。
+- [bridge/mt5_gateway/v2_market.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_market.py)
+  v2 行情模型工具，负责把 Binance K 线原始数据整理成闭合 candles 与 latestPatch。
+- [bridge/mt5_gateway/v2_account.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_account.py)
+  v2 账户模型工具，负责把账户快照、历史成交、曲线转换成 APP 侧展示模型。
 - [bridge/mt5_gateway/start_gateway.ps1](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/start_gateway.ps1)
   网关启动脚本，负责加载 `.env` 并使用本地虚拟环境启动服务。
 
 ## 模块之间的调用关系
 
-- `MainActivity` / `MarketChartActivity` / `MonitorService` -> `BinanceApiClient` / `WebSocketManager`
-  统一从韩国服务器转发入口读取行情。
+- `MainActivity` -> `BinanceApiClient`
+  主监控页按需从韩国服务器转发入口读取公共行情补充数据。
+- `MonitorService` -> `FallbackKlineSocketManager`
+  只在 `v2 stream` 不健康时接收官方 `@kline_1m` 回退流，用来维持主监控页和悬浮窗展示快照。
+- `MonitorService` -> `GatewayV2StreamClient` -> `server_v2.py /v2/stream`
+  消费统一同步消息，先把 APP 的同步入口收口到 `v2 stream`。
+- `MonitorService` -> `V2StreamRefreshPlanner`
+  根据 `v2 stream` 消息内容决定当前是补市场、补账户，还是只刷新悬浮窗。
+- `MonitorService` -> `GatewayV2Client`
+  当 `v2 stream` 带市场变化，或 fallback 流 stale 时，补拉最新 `1m` 市场序列，修正最新价和最近收盘。
 - `MonitorService` -> `MonitorRepository`
-  读取最新 BTC / XAU 行情数据。
+  写入主监控页与悬浮窗共用的最新展示快照。
 - `AppForegroundTracker` -> `MonitorService` / `MonitorRuntimePolicyHelper`
   统一把应用前后台状态传给服务调度层，决定当前应使用哪一档刷新节奏。
 - `MonitorService` -> `AccountStorageRepository`
@@ -92,17 +116,23 @@
 - `MonitorService` -> `FloatingPositionAggregator` + `FloatingWindowSnapshot` + `FloatingWindowManager`
   把行情和持仓聚合成统一快照，再一次性刷新悬浮窗。
 - `MarketChartActivity` -> `ChartHistoryRepository` -> Room
-  先读本地历史，再按需补网络数据。
+  先读本地历史，再按需补网络数据；落库时直接 upsert 当前整理好的窗口，不再回读整段旧历史。
+- `MarketChartActivity` -> `GatewayV2Client` -> `server_v2.py /v2/market/candles`
+  图表页最终真值、左滑历史分页、以及增量补尾都从服务端读取闭合 candles 与 latestPatch，本地只负责快照与展示。
 - `MarketChartActivity` -> `ChartRefreshMetaFormatter`
   把自动刷新倒计时和最近一次成功请求延迟整理成统一文案。
 - `KlineChartView` -> `ChartScaleGestureResolver`
   根据双指跨度变化决定走横向、纵向还是整体缩放。
-- `AccountStatsPreloadManager` -> `Mt5BridgeGatewayClient` -> `server_v2.py`
-  后台轻量同步账户数据，前台页面打开时补完整数据。
+- `AccountStatsPreloadManager` -> `GatewayV2Client` -> `server_v2.py /v2/account/*`
+  后台优先同步账户快照、历史成交和净值曲线，并原子替换本地账户缓存。
+- `AccountStatsPreloadManager` -> `Mt5BridgeGatewayClient` -> `server_v2.py /v1/*`
+  作为 v2 失败时的回退链路，暂时保留旧账户接口。
 - `AppForegroundTracker` -> `AccountPreloadPolicyHelper` -> `AccountStatsPreloadManager`
   统一把应用前后台状态转换成账户预加载节奏，避免旧常量分散在多个入口里。
-- `AccountStatsBridgeActivity` -> `Mt5BridgeGatewayClient`
-  获取账户概览、持仓、挂单、交易记录、权益曲线并更新界面。
+- `AccountStatsBridgeActivity` -> `AccountStatsPreloadManager`
+  主动刷新时统一复用 `v2` 优先抓取逻辑，不再由页面自己直连旧网关。
+- `MonitorService` -> `AccountStatsPreloadManager`
+  当 `v2 stream` 带账户变化时，统一走 `fetchForUi(...)` 刷新本地账户真值，避免服务层再单独拼账户接口。
 - `AccountStatsBridgeActivity` -> `AccountCurvePointNormalizer` -> `CurvePoint`
   先把账户曲线修正成可展示的连续序列，再驱动主图和仓位比例附图。
 - `AccountStatsBridgeActivity` -> `AccountCurveHighlightHelper` -> `EquityCurveView` / `PositionRatioChartView` / `DrawdownChartView` / `DailyReturnChartView`
@@ -121,10 +151,18 @@
   统一派生 Binance 与 MT5 请求地址。
 - `NotificationHelper` <- `MonitorService`
   异常交易触发后统一发系统通知。
+- `MainViewModel` / `MainActivity` -> `MonitorRepository`
+  读取主监控页当前展示所需的最新价格/K 线快照，而不是参与图表真值计算。
 
 ## 关键的设计决定和原因
 
 - Binance 行情链路统一走韩国服务器转发，避免手机继续直连 Binance 官方地址。
+- 新架构下把“Binance 行情真值”和“MT5 账户真值”明确拆开：行情、K 线、成交量、指标只认 Binance，MT5 只负责账户侧事实；原因是这样才能消除 APP 本地拼 K 和多份缓存互相覆盖造成的口径漂移。
+- 图表页当前不再让本地分钟底稿参与最终真值计算，只保留服务端 `candles + latestPatch` 和本地展示缓存；原因是之前本地聚合尾部会反向污染官方历史窗口。
+- 图表本地缓存当前只保留 `ChartHistoryRepository` 这一层，已删除旧 `KlineCacheStore` 文件缓存，并禁止把图表序列写进 `V2SnapshotStore`；原因是旧设计会形成“图表缓存清理误伤账户快照”和“同一份 K 线被多处重复存储”的结构性问题。
+- 图表历史仓库当前不再负责“读旧历史再合并”，而只负责写入上层已整理好的窗口；原因是图表页内存窗口已经是本轮展示真值，仓库层重复再读一次只会增加 IO 和复杂度。
+- `MonitorService` 不再承担“预热图表 1m 底稿”的职责，冷启动和 stale 回退都统一改成 `GatewayV2Client.fetchMarketSeries(...)`；原因是服务层现在只负责展示快照和悬浮窗，不应再反向参与图表历史真值。
+- 账户预加载改成“v2 成功就原子替换，失败才回退旧网关”；原因是继续走旧增量拼装，会把新架构下的历史成交和净值曲线再次拆散。
 - MT5 数据链路拆成摘要、轻实时持仓、挂单增量、成交增量、曲线追加，减少日常流量和重复全量请求。
 - 网关快照缓存改成“按最近使用裁剪 + EA 新鲜时短时平滑续用”；原因是这样能同时压住 `snapshot/sync` 缓存的内存占用，并减少固定轮询下缓存命中与重建交替造成的延迟抖动。
 - `server_v2.py` 的历史成交映射改成“按成交顺序 + FIFO 开仓库存”配对；原因是多次加仓、部分平仓、反手时，不能再用单个生命周期均价去覆盖全部平仓记录。
@@ -146,4 +184,6 @@
 - 月收益表改为“左侧年份整块 + 右侧三行月份 + 横向滚动”，解决年份不对齐和百分比显示不全的问题。
 - MT5 网关曲线改为“成交 + 持仓 + 价格”重放，解决净值与结余长期重合的问题。
 - 账户统计页把最大回撤、回撤附图、日收益率和交易分布统一建立在同一套净值口径上，避免不同模块口径不一致。
+- `MonitorRepository` 收口成“展示快照仓库”而不是“实时主链仓库”；原因是当前图表与账户真值已经分别切到服务端 `v2`，继续让旧名字留着，只会误导后续维护时把它当成主数据源。
+- 旧 Binance WebSocket 管理器改名为 `FallbackKlineSocketManager`，回调也统一改成 fallback 语义；原因是它现在只承担 `v2 stream` 失效时的回退输入，继续保留主链式命名会误导后续维护。
 - 异常交易提醒先在 App 端提升为更强系统通知；服务器端异常判断迁移后续再评估，不在本轮硬塞进去。

@@ -17,7 +17,6 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
-import com.binance.monitor.data.local.db.repository.ChartHistoryRepository;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.AbnormalAlertItem;
@@ -25,10 +24,13 @@ import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.remote.AbnormalGatewayClient;
-import com.binance.monitor.data.remote.BinanceApiClient;
-import com.binance.monitor.data.remote.WebSocketManager;
+import com.binance.monitor.data.remote.FallbackKlineSocketManager;
+import com.binance.monitor.data.model.v2.MarketSeriesPayload;
+import com.binance.monitor.data.remote.v2.GatewayV2Client;
+import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
 import com.binance.monitor.data.repository.MonitorRepository;
-import com.binance.monitor.ui.chart.MarketChartCacheKeyHelper;
+import com.binance.monitor.ui.account.AccountStatsPreloadManager;
+import com.binance.monitor.ui.account.AccountTimeRange;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.ui.floating.FloatingPositionAggregator;
 import com.binance.monitor.ui.floating.FloatingSymbolCardData;
@@ -46,6 +48,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class MonitorService extends Service {
     private static final long ABNORMAL_SYNC_ERROR_LOG_COOLDOWN_MS = 60_000L;
@@ -91,10 +96,11 @@ public class MonitorService extends Service {
     private NotificationHelper notificationHelper;
     private FloatingWindowManager floatingWindowManager;
     private AccountStorageRepository accountStorageRepository;
-    private ChartHistoryRepository chartHistoryRepository;
-    private BinanceApiClient apiClient;
     private AbnormalGatewayClient abnormalGatewayClient;
-    private WebSocketManager webSocketManager;
+    private FallbackKlineSocketManager fallbackKlineSocketManager;
+    private GatewayV2Client gatewayV2Client;
+    private GatewayV2StreamClient v2StreamClient;
+    private AccountStatsPreloadManager accountStatsPreloadManager;
     private ExecutorService executorService;
     private boolean pipelineStarted;
     private boolean foregroundStarted;
@@ -111,6 +117,10 @@ public class MonitorService extends Service {
     private boolean abnormalEndpointUnsupported;
     private String lastAbnormalSyncError = "";
     private long lastAbnormalSyncErrorAt;
+    private volatile boolean v2MarketRefreshInFlight;
+    private volatile boolean v2AccountRefreshInFlight;
+    private volatile boolean v2StreamConnected;
+    private volatile long lastV2StreamMessageAt;
 
     @Override
     public void onCreate() {
@@ -122,10 +132,11 @@ public class MonitorService extends Service {
         notificationHelper = new NotificationHelper(this);
         floatingWindowManager = new FloatingWindowManager(this);
         accountStorageRepository = new AccountStorageRepository(this);
-        chartHistoryRepository = new ChartHistoryRepository(this);
-        apiClient = new BinanceApiClient(this);
         abnormalGatewayClient = new AbnormalGatewayClient(this);
-        webSocketManager = new WebSocketManager(this);
+        fallbackKlineSocketManager = new FallbackKlineSocketManager(this);
+        gatewayV2Client = new GatewayV2Client(this);
+        v2StreamClient = new GatewayV2StreamClient(this);
+        accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(this);
         executorService = Executors.newSingleThreadExecutor();
         AppForegroundTracker.getInstance().addListener(appForegroundListener);
         repository.setMonitoringEnabled(true);
@@ -174,8 +185,11 @@ public class MonitorService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        if (webSocketManager != null) {
-            webSocketManager.disconnectAll();
+        if (fallbackKlineSocketManager != null) {
+            fallbackKlineSocketManager.disconnectAll();
+        }
+        if (v2StreamClient != null) {
+            v2StreamClient.disconnect();
         }
         if (executorService != null) {
             executorService.shutdownNow();
@@ -220,9 +234,42 @@ public class MonitorService extends Service {
         scheduleConnectionWatchdog(resolveHeartbeatDelayMs());
         syncAbnormalConfigAsync();
         scheduleAbnormalSync(800L);
-        webSocketManager.connect(AppConstants.MONITOR_SYMBOLS, new WebSocketManager.Listener() {
+        v2StreamClient.connect(new GatewayV2StreamClient.Listener() {
             @Override
-            public void onSocketStateChanged(String symbol, boolean connected, int reconnectAttempt, String message) {
+            public void onStateChanged(boolean connected, String message) {
+                mainHandler.post(() -> {
+                    v2StreamConnected = connected;
+                    if (connected) {
+                        lastV2StreamMessageAt = System.currentTimeMillis();
+                    }
+                    if (!connected && message != null && !message.trim().isEmpty()) {
+                        logManager.warn("v2 stream: " + message);
+                    }
+                    updateConnectionStatus();
+                });
+            }
+
+            @Override
+            public void onMessage(GatewayV2StreamClient.StreamMessage message) {
+                mainHandler.post(() -> {
+                    lastV2StreamMessageAt = System.currentTimeMillis();
+                    handleV2StreamMessage(message);
+                    updateConnectionStatus();
+                });
+            }
+
+            @Override
+            public void onError(String message) {
+                mainHandler.post(() -> {
+                    if (message != null && !message.trim().isEmpty()) {
+                        logManager.warn("v2 stream: " + message);
+                    }
+                });
+            }
+        });
+        fallbackKlineSocketManager.connect(AppConstants.MONITOR_SYMBOLS, new FallbackKlineSocketManager.Listener() {
+            @Override
+            public void onFallbackStreamStateChanged(String symbol, boolean connected, int reconnectAttempt, String message) {
                 mainHandler.post(() -> {
                     socketStates.put(symbol, connected);
                     reconnectCounts.put(symbol,
@@ -232,11 +279,11 @@ public class MonitorService extends Service {
             }
 
             @Override
-            public void onKlineUpdate(String symbol, KlineData data) {
+            public void onFallbackKlineUpdate(String symbol, KlineData data) {
                 mainHandler.post(() -> {
                     long now = System.currentTimeMillis();
                     lastKlineTickAt.put(symbol, now);
-                    repository.updateClosedKline(data);
+                    repository.updateDisplayKline(data);
                     if (data.isClosed()) {
                         maybePublishPrice(symbol, data, now, true);
                         handleClosedKline(data);
@@ -248,7 +295,7 @@ public class MonitorService extends Service {
             }
 
             @Override
-            public void onSocketError(String symbol, String message) {
+            public void onFallbackStreamError(String symbol, String message) {
                 mainHandler.post(() -> {
                     logManager.warn(symbol + " WebSocket: " + message);
                     updateConnectionStatus();
@@ -258,33 +305,120 @@ public class MonitorService extends Service {
         logManager.info("行情流已启动");
     }
 
+    // 消费统一 v2 stream 消息，用它驱动账户与悬浮窗的同步提示。
+    private void handleV2StreamMessage(@Nullable GatewayV2StreamClient.StreamMessage message) {
+        if (message == null) {
+            return;
+        }
+        V2StreamRefreshPlanner.RefreshPlan plan = V2StreamRefreshPlanner.plan(
+                message.getType(),
+                message.getPayload()
+        );
+        if (plan.shouldRefreshAccount()) {
+            requestAccountRefreshFromV2();
+        }
+        if (plan.shouldRefreshMarket()) {
+            requestMarketRefreshFromV2();
+        }
+        if (plan.shouldRefreshFloating()) {
+            requestFloatingWindowRefresh(true);
+        }
+    }
+
+    // 收到账户侧 delta 或 full refresh 时，统一补拉最新账户真值并刷新本地库。
+    private void requestAccountRefreshFromV2() {
+        if (executorService == null || accountStatsPreloadManager == null || v2AccountRefreshInFlight) {
+            return;
+        }
+        v2AccountRefreshInFlight = true;
+        executorService.execute(() -> {
+            try {
+                accountStatsPreloadManager.fetchForUi(AccountTimeRange.ALL);
+            } catch (Exception exception) {
+                logManager.warn("v2 stream 账户补拉失败: " + exception.getMessage());
+            } finally {
+                v2AccountRefreshInFlight = false;
+                mainHandler.post(() -> requestFloatingWindowRefresh(true));
+            }
+        });
+    }
+
+    // 收到市场侧 delta 或 full refresh 时，补拉最新 1m 序列，修正最新价与最近收盘。
+    private void requestMarketRefreshFromV2() {
+        if (executorService == null || gatewayV2Client == null || v2MarketRefreshInFlight) {
+            return;
+        }
+        v2MarketRefreshInFlight = true;
+        executorService.execute(() -> {
+            try {
+                for (String symbol : AppConstants.MONITOR_SYMBOLS) {
+                    try {
+                        MarketSeriesPayload payload = gatewayV2Client.fetchMarketSeries(symbol, "1m", 2);
+                        applyMarketSeriesPayload(symbol, payload);
+                    } catch (Exception exception) {
+                        logManager.warn(symbol + " v2 市场补拉失败: " + exception.getMessage());
+                    }
+                }
+            } finally {
+                v2MarketRefreshInFlight = false;
+                mainHandler.post(() -> requestFloatingWindowRefresh(true));
+            }
+        });
+    }
+
+    // 把 v2 市场补拉结果回写到最新价格与最近收盘快照，供悬浮窗和监控页复用。
+    @Nullable
+    private KlineData applyMarketSeriesPayload(String symbol, @Nullable MarketSeriesPayload payload) {
+        if (payload == null) {
+            return null;
+        }
+        long now = System.currentTimeMillis();
+        CandleEntry latestClosed = null;
+        List<CandleEntry> candles = payload.getCandles();
+        if (candles != null && !candles.isEmpty()) {
+            latestClosed = candles.get(candles.size() - 1);
+        }
+        if (latestClosed != null) {
+            KlineData closedData = toKlineData(symbol, latestClosed, true);
+            lastKlineTickAt.put(symbol, now);
+            repository.updateDisplayKline(closedData);
+            maybePublishPrice(symbol, closedData, now, true);
+            return closedData;
+        }
+        CandleEntry latestPatch = payload.getLatestPatch();
+        if (latestPatch != null) {
+            KlineData patchData = toKlineData(symbol, latestPatch, false);
+            lastKlineTickAt.put(symbol, now);
+            repository.updateDisplayKline(patchData);
+            maybePublishPrice(symbol, patchData, now, true);
+            return patchData;
+        }
+        return null;
+    }
+
+    // 把 v2 返回的 candle 统一转成当前服务层使用的 KlineData。
+    private KlineData toKlineData(String symbol, CandleEntry candle, boolean closed) {
+        return new KlineData(
+                symbol,
+                candle.getOpen(),
+                candle.getHigh(),
+                candle.getLow(),
+                candle.getClose(),
+                candle.getVolume(),
+                candle.getQuoteVolume(),
+                candle.getOpenTime(),
+                candle.getCloseTime(),
+                closed
+        );
+    }
+
     private void fetchBootstrapData() {
         executorService.execute(() -> {
             for (String symbol : AppConstants.MONITOR_SYMBOLS) {
                 try {
-                    List<CandleEntry> minuteHistory = apiClient.fetchChartKlineFullWindow(
-                            symbol,
-                            "1m",
-                            AppConstants.CHART_BASE_MINUTE_HISTORY_LIMIT
-                    );
-                    if (minuteHistory != null && !minuteHistory.isEmpty()) {
-                        persistBootstrapMinuteHistory(symbol, minuteHistory);
-                        KlineData data = toLatestClosedKline(symbol, minuteHistory);
-                        if (data != null) {
-                            long now = System.currentTimeMillis();
-                            lastKlineTickAt.put(symbol, now);
-                            repository.updateClosedKline(data);
-                            maybePublishPrice(symbol, data, now, true);
-                            logManager.info(symbol + " 初始化成功，最近收盘时间(本地时区) " + FormatUtils.formatDateTime(data.getCloseTime()));
-                            continue;
-                        }
-                    }
-                    KlineData data = apiClient.fetchLatestClosedKline(symbol);
+                    MarketSeriesPayload payload = gatewayV2Client.fetchMarketSeries(symbol, "1m", 2);
+                    KlineData data = applyMarketSeriesPayload(symbol, payload);
                     if (data != null) {
-                        long now = System.currentTimeMillis();
-                        lastKlineTickAt.put(symbol, now);
-                        repository.updateClosedKline(data);
-                        maybePublishPrice(symbol, data, now, true);
                         logManager.info(symbol + " 初始化成功，最近收盘时间(本地时区) " + FormatUtils.formatDateTime(data.getCloseTime()));
                     }
                 } catch (Exception exception) {
@@ -293,43 +427,6 @@ public class MonitorService extends Service {
             }
             mainHandler.post(() -> requestFloatingWindowRefresh(true));
         });
-    }
-
-    // 冷启动先把最近一段 1m 底稿落到本地，供图表页直接读取并本地派生更高周期。
-    private void persistBootstrapMinuteHistory(String symbol, List<CandleEntry> minuteHistory) {
-        if (chartHistoryRepository == null || minuteHistory == null || minuteHistory.isEmpty()) {
-            return;
-        }
-        String key = MarketChartCacheKeyHelper.build(symbol, "1m", "1m", false);
-        chartHistoryRepository.mergeAndSave(key, symbol, "1m", "1m", false, minuteHistory);
-    }
-
-    // 从冷启动拉到的 1m 历史里挑最后一根已收盘 K 线，继续喂给现有行情与悬浮窗链路。
-    @Nullable
-    private KlineData toLatestClosedKline(String symbol, List<CandleEntry> minuteHistory) {
-        if (minuteHistory == null || minuteHistory.isEmpty()) {
-            return null;
-        }
-        long now = System.currentTimeMillis();
-        for (int i = minuteHistory.size() - 1; i >= 0; i--) {
-            CandleEntry candle = minuteHistory.get(i);
-            if (candle == null || candle.getCloseTime() >= now) {
-                continue;
-            }
-            return new KlineData(
-                    symbol,
-                    candle.getOpen(),
-                    candle.getHigh(),
-                    candle.getLow(),
-                    candle.getClose(),
-                    candle.getVolume(),
-                    candle.getQuoteVolume(),
-                    candle.getOpenTime(),
-                    candle.getCloseTime(),
-                    true
-            );
-        }
-        return null;
     }
 
     // 按固定节奏向网关拉取异常记录，首轮只落历史数据，不补发旧提醒。
@@ -664,6 +761,8 @@ public class MonitorService extends Service {
 
     private void updateConnectionStatus() {
         String status = ConnectionStatusResolver.resolveStatus(
+                v2StreamConnected,
+                lastV2StreamMessageAt,
                 AppConstants.MONITOR_SYMBOLS,
                 socketStates,
                 reconnectCounts,
@@ -706,7 +805,7 @@ public class MonitorService extends Service {
         if (!force && !priceChanged && !intervalReached) {
             return;
         }
-        repository.updatePrice(symbol, price);
+        repository.updateDisplayPrice(symbol, price);
         lastPricePublishAt.put(symbol, now);
         lastPublishedPrice.put(symbol, price);
     }
@@ -757,6 +856,9 @@ public class MonitorService extends Service {
             return;
         }
         long now = System.currentTimeMillis();
+        if (isV2StreamHealthy(now)) {
+            return;
+        }
         List<String> staleSymbols = new ArrayList<>();
         for (String symbol : AppConstants.MONITOR_SYMBOLS) {
             long last = lastKlineTickAt.getOrDefault(symbol, 0L);
@@ -767,7 +869,7 @@ public class MonitorService extends Service {
         if (staleSymbols.isEmpty()) {
             return;
         }
-        refreshStaleSymbolsWithRest(staleSymbols, now);
+        refreshStaleSymbolsFromV2(staleSymbols, now);
         if (now - lastForcedReconnectAt < AppConstants.STALE_RECONNECT_COOLDOWN_MS) {
             return;
         }
@@ -776,11 +878,21 @@ public class MonitorService extends Service {
             socketStates.put(symbol, false);
         }
         logManager.warn("行情心跳超时，触发重连: " + String.join(", ", staleSymbols));
-        webSocketManager.forceReconnect("行情心跳超时");
+        fallbackKlineSocketManager.forceReconnect("行情心跳超时");
         updateConnectionStatus();
     }
 
-    private void refreshStaleSymbolsWithRest(List<String> staleSymbols, long now) {
+    // 当 v2 stream 仍健康时，旧 WebSocket 只保留为回退层，不再主导状态和重连。
+    private boolean isV2StreamHealthy(long now) {
+        return ConnectionStatusResolver.isV2StreamHealthy(
+                v2StreamConnected,
+                lastV2StreamMessageAt,
+                now,
+                AppConstants.SOCKET_STALE_TIMEOUT_MS
+        );
+    }
+
+    private void refreshStaleSymbolsFromV2(List<String> staleSymbols, long now) {
         if (staleSymbols == null || staleSymbols.isEmpty() || executorService == null) {
             return;
         }
@@ -796,19 +908,16 @@ public class MonitorService extends Service {
             try {
                 for (String symbol : staleSymbols) {
                     try {
-                        KlineData data = apiClient.fetchLatestClosedKline(symbol);
+                        MarketSeriesPayload payload = gatewayV2Client.fetchMarketSeries(symbol, "1m", 2);
+                        KlineData data = applyMarketSeriesPayload(symbol, payload);
                         if (data == null) {
                             continue;
                         }
-                        long fetchedAt = System.currentTimeMillis();
-                        lastKlineTickAt.put(symbol, fetchedAt);
-                        repository.updateClosedKline(data);
-                        maybePublishPrice(symbol, data, fetchedAt, true);
                         handleClosedKline(data);
-                        logManager.warn(symbol + " 实时流超时，已回退REST刷新，最近收盘(本地时区) "
+                        logManager.warn(symbol + " 实时流超时，已回退v2市场补拉，最近收盘(本地时区) "
                                 + FormatUtils.formatDateTime(data.getCloseTime()));
                     } catch (Exception exception) {
-                        logManager.warn(symbol + " 回退REST刷新失败: " + exception.getMessage());
+                        logManager.warn(symbol + " 回退v2市场补拉失败: " + exception.getMessage());
                     }
                 }
                 mainHandler.post(() -> requestFloatingWindowRefresh(true));
@@ -830,8 +939,8 @@ public class MonitorService extends Service {
     private FloatingWindowSnapshot buildFloatingSnapshot() {
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 accountStorageRepository == null ? new ArrayList<>() : accountStorageRepository.loadPositions(),
-                repository.getLatestClosedKlineSnapshot(),
-                repository.getLatestPriceSnapshot(),
+                repository.getDisplayKlineSnapshot(),
+                repository.getDisplayPriceSnapshot(),
                 configManager.isShowBtc(),
                 configManager.isShowXau()
         );

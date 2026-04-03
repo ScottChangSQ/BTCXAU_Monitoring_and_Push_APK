@@ -83,6 +83,41 @@ public class AccountStorageRepository {
         accountSnapshotDao.upsertMeta(metaEntity);
     }
 
+    // v2 快照原子替换入口：交易、持仓、挂单和曲线都按最新全量覆盖，不走旧增量拼装。
+    public void persistV2Snapshot(StoredSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        if (tradeHistoryDao != null) {
+            List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades());
+            tradeHistoryDao.clearAll();
+            if (!trades.isEmpty()) {
+                tradeHistoryDao.upsertAll(trades);
+            }
+        }
+        if (accountSnapshotDao == null) {
+            return;
+        }
+        accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
+        accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
+
+        AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
+        metaEntity.id = 1;
+        metaEntity.connected = snapshot.isConnected();
+        metaEntity.updatedAt = snapshot.getUpdatedAt();
+        metaEntity.fetchedAt = snapshot.getFetchedAt();
+        metaEntity.account = safe(snapshot.getAccount());
+        metaEntity.server = safe(snapshot.getServer());
+        metaEntity.source = safe(snapshot.getSource());
+        metaEntity.gateway = safe(snapshot.getGateway());
+        metaEntity.error = safe(snapshot.getError());
+        metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
+        metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
+        metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
+        metaEntity.curvePointsJson = curvePointsToJsonString(snapshot.getCurvePoints());
+        accountSnapshotDao.upsertMeta(metaEntity);
+    }
+
     // 仅更新账户摘要，不覆盖当前持仓和历史交易。
     public void persistMetaSnapshot(StoredSnapshot snapshot) {
         if (snapshot == null || accountSnapshotDao == null) {

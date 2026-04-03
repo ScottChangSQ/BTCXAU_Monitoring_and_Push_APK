@@ -29,6 +29,8 @@ public class ConnectionStatusResolverTest {
         lastTicks.put("XAUUSDT", 10_500L);
 
         String status = ConnectionStatusResolver.resolveStatus(
+                false,
+                0L,
                 symbols,
                 socketStates,
                 reconnectCounts,
@@ -56,6 +58,8 @@ public class ConnectionStatusResolverTest {
         Map<String, Long> lastTicks = new HashMap<>();
 
         String status = ConnectionStatusResolver.resolveStatus(
+                false,
+                0L,
                 symbols,
                 socketStates,
                 reconnectCounts,
@@ -69,6 +73,31 @@ public class ConnectionStatusResolverTest {
         );
 
         assertEquals("部分连接 1/2", status);
+    }
+
+    @Test
+    public void shouldPreferV2StreamWhenItIsFresh() {
+        List<String> symbols = Arrays.asList("BTCUSDT", "XAUUSDT");
+        Map<String, Boolean> socketStates = new HashMap<>();
+        Map<String, Integer> reconnectCounts = new HashMap<>();
+        Map<String, Long> lastTicks = new HashMap<>();
+
+        String status = ConnectionStatusResolver.resolveStatus(
+                true,
+                11_000L,
+                symbols,
+                socketStates,
+                reconnectCounts,
+                lastTicks,
+                12_000L,
+                5_000L,
+                30,
+                "已连接",
+                "部分连接",
+                "连接中"
+        );
+
+        assertEquals("已连接", status);
     }
 
     @Test

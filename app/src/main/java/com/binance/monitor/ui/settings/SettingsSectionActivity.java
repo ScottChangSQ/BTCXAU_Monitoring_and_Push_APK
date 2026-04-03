@@ -18,7 +18,6 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
-import com.binance.monitor.data.local.KlineCacheStore;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.local.db.repository.ChartHistoryRepository;
 import com.binance.monitor.databinding.ActivitySettingsDetailBinding;
@@ -245,7 +244,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         int tradeDeleted = 0;
         int cacheDeleted = 0;
         if (selection.shouldClearHistoryMarket()) {
-            marketDeleted += new KlineCacheStore(this).clearAll();
             marketDeleted += new ChartHistoryRepository(this).clearAllHistory();
         }
         if (selection.shouldClearHistoryTrade()) {

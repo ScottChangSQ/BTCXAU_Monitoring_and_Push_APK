@@ -16,15 +16,19 @@ import java.nio.file.Paths;
 public class AccountStatsPreloadManagerSourceTest {
 
     @Test
-    public void preloadManagerShouldUseCompositeFetchAndPersistIncrementalTrades() throws Exception {
+    public void preloadManagerShouldPreferV2AndFallbackToMt5Gateway() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java",
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java"
         );
-        assertTrue("后台预加载应走复合快照，确保交易记录也会同步刷新",
+        assertTrue("后台预加载应先请求 v2 账户快照",
+                source.contains("gatewayV2Client.fetchAccountSnapshot()"));
+        assertTrue("后台预加载应继续请求 v2 历史成交与曲线",
+                source.contains("gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL"));
+        assertTrue("v2 成功后应走原子替换入口写库，避免继续增量拼装",
+                source.contains("accountStorageRepository.persistV2Snapshot"));
+        assertTrue("只有 v2 失败时才回退旧 MT5 网关",
                 source.contains("gatewayClient.fetch(AccountTimeRange.ALL)"));
-        assertTrue("轻量预加载结果应写入交易历史，而不是只更新持仓",
-                source.contains("accountStorageRepository.persistIncrementalSnapshot(storedSnapshot)"));
         assertFalse("后台预加载不应继续只走 live 接口，否则交易记录不会更新",
                 source.contains("gatewayClient.fetchLive(AccountTimeRange.ALL)"));
     }
