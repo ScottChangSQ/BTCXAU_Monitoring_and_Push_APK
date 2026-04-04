@@ -844,13 +844,17 @@ public class Mt5BridgeGatewayClient {
         if (array == null) {
             return;
         }
+        LinkedHashMap<String, Integer> keyOccurrences = new LinkedHashMap<>();
         for (int i = 0; i < array.length(); i++) {
             JSONObject item = array.optJSONObject(i);
             if (item == null) {
                 continue;
             }
             PositionItem parsed = target == cachedPendingOrders ? parsePendingOrderItem(item) : parsePositionItem(item);
-            String key = target == cachedPendingOrders ? pendingKeyFromJson(item, parsed) : positionKeyFromJson(item, parsed);
+            String baseKey = target == cachedPendingOrders
+                    ? pendingKeyFromJson(item, parsed)
+                    : positionKeyFromJson(item, parsed);
+            String key = buildUniqueCacheKey(baseKey, keyOccurrences);
             target.put(key, parsed);
         }
     }
@@ -907,6 +911,9 @@ public class Mt5BridgeGatewayClient {
             }
             PositionItem parsed = pending ? parsePendingOrderItem(item) : parsePositionItem(item);
             String key = pending ? pendingKeyFromJson(item, parsed) : positionKeyFromJson(item, parsed);
+            if (shouldAppendDuplicateSuffix(item, pending) && target.containsKey(key)) {
+                key = buildNextCacheKeyFromTarget(target, key);
+            }
             target.put(key, parsed);
         }
     }
@@ -969,8 +976,15 @@ public class Mt5BridgeGatewayClient {
             return key;
         }
         long ticket = raw.optLong("positionTicket", raw.optLong("ticket", 0L));
+        long orderId = raw.optLong("orderId", raw.optLong("order", raw.optLong("ticket", 0L)));
         if (ticket > 0L) {
+            if (orderId > 0L) {
+                return "position:" + ticket + ":" + orderId;
+            }
             return "position:" + ticket;
+        }
+        if (orderId > 0L) {
+            return "position:order:" + orderId;
         }
         return "position:" + item.getCode() + "|" + item.getSide() + "|"
                 + Math.round(Math.abs(item.getQuantity()) * 10_000d) + "|"
@@ -989,6 +1003,42 @@ public class Mt5BridgeGatewayClient {
         return "pending:" + item.getCode() + "|" + item.getSide() + "|"
                 + Math.round(item.getPendingLots() * 10_000d) + "|"
                 + Math.round(item.getPendingPrice() * 10_000d);
+    }
+
+    private String buildUniqueCacheKey(String baseKey, LinkedHashMap<String, Integer> occurrences) {
+        String safeBaseKey = (baseKey == null || baseKey.trim().isEmpty()) ? "position" : baseKey;
+        int index = occurrences.containsKey(safeBaseKey) ? occurrences.get(safeBaseKey) : 0;
+        occurrences.put(safeBaseKey, index + 1);
+        if (index <= 0) {
+            return safeBaseKey;
+        }
+        return safeBaseKey + "#" + index;
+    }
+
+    private String buildNextCacheKeyFromTarget(LinkedHashMap<String, PositionItem> target, String baseKey) {
+        String safeBaseKey = (baseKey == null || baseKey.trim().isEmpty()) ? "position" : baseKey;
+        int index = 1;
+        String candidate = safeBaseKey + "#" + index;
+        while (target.containsKey(candidate)) {
+            index++;
+            candidate = safeBaseKey + "#" + index;
+        }
+        return candidate;
+    }
+
+    private boolean shouldAppendDuplicateSuffix(JSONObject raw, boolean pending) {
+        if (raw == null) {
+            return false;
+        }
+        if (!raw.optString("_key", "").isEmpty()) {
+            return false;
+        }
+        if (pending) {
+            return raw.optLong("orderId", raw.optLong("ticket", 0L)) <= 0L;
+        }
+        long ticket = raw.optLong("positionTicket", raw.optLong("ticket", 0L));
+        long orderId = raw.optLong("orderId", raw.optLong("order", raw.optLong("ticket", 0L)));
+        return ticket <= 0L && orderId <= 0L;
     }
 
     private String tradeKeyFromJson(JSONObject raw, TradeRecordItem item) {

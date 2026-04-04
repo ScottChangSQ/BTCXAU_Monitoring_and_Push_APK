@@ -2686,12 +2686,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 : new ArrayList<>(curveHistory.values());
         dataQualitySummary = buildDataQualitySummary(effectiveTrades, effectiveCurves, basePositions);
 
-        baseTrades = TradeLifecycleMergeHelper.merge(effectiveTrades, TRADE_PNL_ZERO_THRESHOLD);
-        baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
-        allCurvePoints = normalizeCurvePoints(effectiveCurves, baseTrades);
-        logTradeVisibilitySnapshot(snapshotTrades, effectiveTrades, baseTrades);
-        logAccountSnapshotEvents(basePositions, basePendingOrders, baseTrades, remoteConnected);
-        ensureReturnStatsAnchor();
         if (!remoteConnected && !connectedOverviewCache.isEmpty()) {
             latestOverviewMetrics = new ArrayList<>(connectedOverviewCache);
         } else {
@@ -2699,6 +2693,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     ? new ArrayList<>()
                     : new ArrayList<>(snapshot.getOverviewMetrics());
         }
+        baseTrades = TradeLifecycleMergeHelper.merge(effectiveTrades, TRADE_PNL_ZERO_THRESHOLD);
+        baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
+        allCurvePoints = normalizeCurvePoints(effectiveCurves, baseTrades, basePositions, latestOverviewMetrics);
+        logTradeVisibilitySnapshot(snapshotTrades, effectiveTrades, baseTrades);
+        logAccountSnapshotEvents(basePositions, basePendingOrders, baseTrades, remoteConnected);
+        ensureReturnStatsAnchor();
         connectedLeverageText = extractLeverageText(latestOverviewMetrics);
         updateOverviewHeader();
 
@@ -2826,8 +2826,22 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 + "条, 持仓缺止损" + missingSl + "条" + capHint;
     }
 
-    private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source, List<TradeRecordItem> trades) {
-        return AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);
+    private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source,
+                                                  List<TradeRecordItem> trades,
+                                                  List<PositionItem> positions,
+                                                  List<AccountMetric> overviewMetrics) {
+        List<CurvePoint> normalized = AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);
+        List<CurvePoint> rebuilt = AccountCurveRebuildHelper.rebuild(
+                normalized,
+                trades,
+                ACCOUNT_INITIAL_BALANCE
+        );
+        return AccountCurvePositionRatioHelper.ensureVisibleRatios(
+                rebuilt,
+                positions,
+                trades,
+                resolveCurveLeverage(overviewMetrics)
+        );
     }
 
     private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview,
@@ -3005,61 +3019,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private String extractLeverageText(List<AccountMetric> metrics) {
-        if (metrics == null || metrics.isEmpty()) {
-            return "";
-        }
-        double best = 0d;
-        for (AccountMetric metric : metrics) {
-            if (metric == null) {
-                continue;
-            }
-            String rawName = trim(metric.getName());
-            String name = trim(MetricNameTranslator.toChinese(rawName));
-            String normalizedName = (name + " " + rawName).toLowerCase(Locale.ROOT);
-            boolean leverageField = normalizedName.contains("杠杆")
-                    || normalizedName.contains("lever");
-            if (!leverageField) {
-                continue;
-            }
-            double parsed = parseLeverageNumber(metric.getValue());
-            if (parsed > best) {
-                best = parsed;
-            }
-        }
-        if (best <= 0d) {
-            return "";
-        }
-        return String.format(Locale.getDefault(), "%.0fx", best);
+        return AccountLeverageResolver.formatDisplayLeverage(metrics);
     }
 
-    private double parseLeverageNumber(String raw) {
-        if (raw == null || raw.trim().isEmpty()) {
-            return 0d;
-        }
-        String value = raw.replace(",", "");
-        double max = 0d;
-        StringBuilder token = new StringBuilder();
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (Character.isDigit(c) || c == '.') {
-                token.append(c);
-            } else if (token.length() > 0) {
-                try {
-                    max = Math.max(max, Double.parseDouble(token.toString()));
-                } catch (Exception ignored) {
-                    // ignore parse failure for noisy fragments
-                }
-                token.setLength(0);
-            }
-        }
-        if (token.length() > 0) {
-            try {
-                max = Math.max(max, Double.parseDouble(token.toString()));
-            } catch (Exception ignored) {
-                // ignore parse failure for tail fragment
-            }
-        }
-        return max;
+    // 从账户概览里提取曲线重算需要的杠杆值，缺失时回退到 1。
+    private double resolveCurveLeverage(List<AccountMetric> metrics) {
+        return AccountLeverageResolver.resolveCurveLeverage(metrics);
     }
 
     private double parseNumber(String raw) {

@@ -231,7 +231,7 @@ public class GatewayV2Client {
         if (json == null) {
             return account;
         }
-        String[] keys = {"balance", "equity", "margin", "freeMargin", "marginLevel", "profit"};
+        String[] keys = {"balance", "equity", "margin", "freeMargin", "marginLevel", "profit", "leverage", "lever"};
         for (String key : keys) {
             if (!json.has(key)) {
                 continue;

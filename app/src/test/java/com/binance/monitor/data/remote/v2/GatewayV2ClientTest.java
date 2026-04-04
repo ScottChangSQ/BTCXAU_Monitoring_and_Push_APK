@@ -27,6 +27,7 @@ public class GatewayV2ClientTest {
                 + "\"accountMeta\":{\"serverTime\":123456789,\"syncToken\":\"snap-sync\"},"
                 + "\"balance\":1000.5,"
                 + "\"equity\":1001.5,"
+                + "\"leverage\":400,"
                 + "\"margin\":12.3,"
                 + "\"freeMargin\":989.2,"
                 + "\"marginLevel\":8130.1,"
@@ -41,6 +42,7 @@ public class GatewayV2ClientTest {
         assertEquals("snap-sync", payload.getSyncToken());
         assertEquals(1000.5d, payload.getAccount().optDouble("balance"), 0.0001d);
         assertEquals(1001.5d, payload.getAccount().optDouble("equity"), 0.0001d);
+        assertEquals(400d, payload.getAccount().optDouble("leverage"), 0.0001d);
         assertEquals(1, payload.getPositions().length());
         assertEquals(1, payload.getOrders().length());
     }

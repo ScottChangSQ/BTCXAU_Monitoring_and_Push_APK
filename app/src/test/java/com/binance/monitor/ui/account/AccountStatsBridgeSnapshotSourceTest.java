@@ -66,18 +66,21 @@ public class AccountStatsBridgeSnapshotSourceTest {
     }
 
     @Test
-    public void curveNormalizationShouldUseServerCurveWithoutLocalRebuild() throws Exception {
+    public void curveNormalizationShouldRecalculatePositionRatiosFromAppSide() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("return AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);"));
+        assertTrue(source.contains("List<CurvePoint> normalized = AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);"));
+        assertTrue(source.contains("List<CurvePoint> rebuilt = AccountCurveRebuildHelper.rebuild("));
+        assertTrue(source.contains("return AccountCurvePositionRatioHelper.ensureVisibleRatios("));
     }
 
     @Test
-    public void renderCurveShouldNotRecalculatePositionRatioFromAppSide() throws Exception {
+    public void renderCurveShouldUsePrecalculatedPositionRatiosOnly() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
         assertTrue(source.contains("List<CurvePoint> effectivePoints = points == null"));
+        assertTrue(source.contains("binding.positionRatioChartView.setPoints(effectivePoints);"));
     }
 }

@@ -16,7 +16,6 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
-import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -61,6 +60,7 @@ import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
 import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
 import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
+import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
@@ -779,14 +779,35 @@ public class MarketChartActivity extends AppCompatActivity {
 
     // 图表页当前持仓收益率统一按“持仓盈亏 / 当前总资产（总结余）”计算。
     private double resolveChartTotalAsset(@Nullable AccountSnapshot snapshot) {
-        if (snapshot == null || snapshot.getOverviewMetrics() == null || snapshot.getOverviewMetrics().isEmpty()) {
+        if (snapshot == null) {
             return 0d;
         }
-        double balance = resolveMetricNumber(snapshot.getOverviewMetrics(), "结余", "Balance");
+        double balance = resolveMetricNumber(snapshot.getOverviewMetrics(), "总结余", "结余", "Balance", "Current Balance");
         if (balance > 1e-9) {
             return balance;
         }
-        return Math.max(0d, resolveMetricNumber(snapshot.getOverviewMetrics(), "总资产", "Total Asset", "Equity"));
+        double curveBalance = resolveLatestCurveBalance(snapshot);
+        if (curveBalance > 1e-9) {
+            return curveBalance;
+        }
+        return Math.max(0d, resolveMetricNumber(snapshot.getOverviewMetrics(), "总资产", "Total Asset", "Equity", "Net Asset"));
+    }
+
+    private double resolveLatestCurveBalance(@Nullable AccountSnapshot snapshot) {
+        if (snapshot == null || snapshot.getCurvePoints() == null || snapshot.getCurvePoints().isEmpty()) {
+            return 0d;
+        }
+        for (int i = snapshot.getCurvePoints().size() - 1; i >= 0; i--) {
+            CurvePoint point = snapshot.getCurvePoints().get(i);
+            if (point == null) {
+                continue;
+            }
+            double balance = Math.max(0d, point.getBalance());
+            if (balance > 1e-9) {
+                return balance;
+            }
+        }
+        return 0d;
     }
 
     private double resolveMetricNumber(List<AccountMetric> metrics, String... names) {
@@ -911,18 +932,10 @@ public class MarketChartActivity extends AppCompatActivity {
                     pnlStart,
                     pnlStart + pnlText.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new AbsoluteSizeSpan(16, true),
-                    pnlStart,
-                    pnlStart + pnlText.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         int ratioStart = summary.lastIndexOf(ratioText);
         if (ratioStart >= 0) {
             spannable.setSpan(new ForegroundColorSpan(ratioColor),
-                    ratioStart,
-                    ratioStart + ratioText.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new AbsoluteSizeSpan(16, true),
                     ratioStart,
                     ratioStart + ratioText.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);

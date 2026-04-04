@@ -24,8 +24,6 @@ public final class AccountOverviewMetricsCalculator {
                                            double netAsset,
                                            @Nullable List<AccountMetric> snapshotOverview,
                                            @Nullable List<PositionItem> currentPositions) {
-        double prepayment = metricValue(snapshotOverview,
-                "预付款", "占用预付款", "已用预付款", "保证金", "保证金金额", "Margin", "Margin Amount");
         double leverage = metricValue(snapshotOverview, "杠杆", "Leverage", "lever");
         if (leverage <= 0d) {
             leverage = 1d;
@@ -33,17 +31,22 @@ public final class AccountOverviewMetricsCalculator {
 
         double marketValue = 0d;
         double positionPnl = 0d;
+        double estimatedPrepayment = 0d;
         if (currentPositions != null) {
             for (PositionItem item : currentPositions) {
                 if (item == null) {
                     continue;
                 }
-                marketValue += Math.abs(item.getQuantity()) * Math.max(0d, item.getLatestPrice());
+                double itemMarketValue = Math.abs(item.getQuantity()) * Math.max(0d, item.getLatestPrice());
+                marketValue += itemMarketValue;
                 positionPnl += item.getTotalPnL() + item.getStorageFee();
+                estimatedPrepayment += safeDivide(itemMarketValue, leverage);
             }
         }
 
-        double freePrepayment = Math.max(0d, netAsset - prepayment);
+        double prepayment = resolvePrepayment(snapshotOverview, netAsset, estimatedPrepayment);
+        double freePrepayment = resolveFreePrepayment(snapshotOverview, netAsset, prepayment);
+
         double positionRatio = safeDivide(marketValue * leverage, Math.max(1d, netAsset));
         double positionPnlRate = safeDivide(positionPnl, Math.max(1d, totalAsset));
         return new OverviewValues(
@@ -67,17 +70,72 @@ public final class AccountOverviewMetricsCalculator {
             }
             String rawName = trim(metric.getName());
             String normalizedName = rawName.toLowerCase(Locale.ROOT);
+            String translatedName = trim(MetricNameTranslator.toChinese(rawName)).toLowerCase(Locale.ROOT);
             for (String candidate : names) {
                 String normalizedCandidate = trim(candidate).toLowerCase(Locale.ROOT);
                 if (normalizedCandidate.isEmpty()) {
                     continue;
                 }
-                if (normalizedName.contains(normalizedCandidate)) {
+                if (normalizedName.contains(normalizedCandidate)
+                        || translatedName.contains(normalizedCandidate)) {
                     return parseNumber(metric.getValue());
                 }
             }
         }
         return 0d;
+    }
+
+    // 对“保证金/可用保证金”这类容易互相包含的字段，优先走精确匹配，避免串值。
+    private static double exactMetricValue(@Nullable List<AccountMetric> metrics, String... names) {
+        if (metrics == null || metrics.isEmpty() || names == null || names.length == 0) {
+            return 0d;
+        }
+        for (AccountMetric metric : metrics) {
+            if (metric == null) {
+                continue;
+            }
+            String rawName = trim(metric.getName()).toLowerCase(Locale.ROOT);
+            String translatedName = trim(MetricNameTranslator.toChinese(metric.getName())).toLowerCase(Locale.ROOT);
+            for (String candidate : names) {
+                String normalizedCandidate = trim(candidate).toLowerCase(Locale.ROOT);
+                if (normalizedCandidate.isEmpty()) {
+                    continue;
+                }
+                if (rawName.equals(normalizedCandidate) || translatedName.equals(normalizedCandidate)) {
+                    return parseNumber(metric.getValue());
+                }
+            }
+        }
+        return 0d;
+    }
+
+    // 预付款优先取快照里的保证金；若服务端没给这个字段，则回退用“净资产 - 可用保证金”反推。
+    private static double resolvePrepayment(@Nullable List<AccountMetric> metrics,
+                                            double netAsset,
+                                            double estimatedPrepayment) {
+        double direct = exactMetricValue(metrics,
+                "预付款", "占用预付款", "已用预付款", "保证金", "保证金金额", "Margin", "Margin Amount");
+        if (direct > 0d) {
+            return direct;
+        }
+        double freePrepayment = exactMetricValue(metrics,
+                "可用预付款", "可用保证金", "Free Margin", "Free Fund", "Available Funds", "Available");
+        if (freePrepayment > 0d) {
+            return Math.max(0d, netAsset - freePrepayment);
+        }
+        return Math.max(0d, estimatedPrepayment);
+    }
+
+    // 可用预付款优先取服务端现成值；若缺失，再用“净资产 - 预付款”补齐。
+    private static double resolveFreePrepayment(@Nullable List<AccountMetric> metrics,
+                                                double netAsset,
+                                                double prepayment) {
+        double direct = exactMetricValue(metrics,
+                "可用预付款", "可用保证金", "Free Margin", "Free Fund", "Available Funds", "Available");
+        if (direct > 0d) {
+            return direct;
+        }
+        return Math.max(0d, netAsset - prepayment);
     }
 
     // 统一从文本里提取数字，兼容货币和百分号。

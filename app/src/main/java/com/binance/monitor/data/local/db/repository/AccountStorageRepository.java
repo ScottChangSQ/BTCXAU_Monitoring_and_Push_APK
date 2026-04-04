@@ -427,12 +427,16 @@ public class AccountStorageRepository {
         if (positions == null) {
             return result;
         }
+        Map<String, Integer> keyOccurrences = new LinkedHashMap<>();
         for (PositionItem item : positions) {
             if (item == null) {
                 continue;
             }
             PositionSnapshotEntity entity = new PositionSnapshotEntity();
-            fillPositionEntity(entity, item, buildPositionKey(item));
+            fillPositionEntity(entity, item, buildUniqueSnapshotKey(
+                    buildPositionKey(item),
+                    keyOccurrences
+            ));
             result.add(entity);
         }
         return result;
@@ -443,12 +447,16 @@ public class AccountStorageRepository {
         if (pendingOrders == null) {
             return result;
         }
+        Map<String, Integer> keyOccurrences = new LinkedHashMap<>();
         for (PositionItem item : pendingOrders) {
             if (item == null) {
                 continue;
             }
             PendingOrderSnapshotEntity entity = new PendingOrderSnapshotEntity();
-            fillPendingEntity(entity, item, buildPendingKey(item));
+            fillPendingEntity(entity, item, buildUniqueSnapshotKey(
+                    buildPendingKey(item),
+                    keyOccurrences
+            ));
             result.add(entity);
         }
         return result;
@@ -674,7 +682,13 @@ public class AccountStorageRepository {
             return "";
         }
         if (item.getPositionTicket() > 0L) {
+            if (item.getOrderId() > 0L) {
+                return "position|" + item.getPositionTicket() + "|" + item.getOrderId();
+            }
             return "position|" + item.getPositionTicket();
+        }
+        if (item.getOrderId() > 0L) {
+            return "position|order|" + item.getOrderId();
         }
         return "position|" + safe(item.getCode()) + "|" + safe(item.getSide()) + "|"
                 + Math.round(Math.abs(item.getQuantity()) * 10_000d) + "|" + Math.round(item.getCostPrice() * 100d);
@@ -689,6 +703,16 @@ public class AccountStorageRepository {
         }
         return "pending|" + safe(item.getCode()) + "|" + safe(item.getSide()) + "|"
                 + Math.round(Math.abs(item.getPendingLots()) * 10_000d) + "|" + Math.round(item.getPendingPrice() * 100d);
+    }
+
+    private String buildUniqueSnapshotKey(String baseKey, Map<String, Integer> occurrences) {
+        String safeBaseKey = isBlank(baseKey) ? "snapshot" : baseKey;
+        int index = occurrences.containsKey(safeBaseKey) ? occurrences.get(safeBaseKey) : 0;
+        occurrences.put(safeBaseKey, index + 1);
+        if (index <= 0) {
+            return safeBaseKey;
+        }
+        return safeBaseKey + "#" + index;
     }
 
     private static boolean isBlank(String value) {

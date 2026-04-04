@@ -335,7 +335,11 @@ public class AccountStatsPreloadManager {
             AccountStorageRepository.StoredSnapshot storedSnapshot =
                     buildStoredSnapshotFromSnapshotOnly(snapshotPayload);
             accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
-            Cache cache = buildCache(storedSnapshot, remoteTradeCount);
+            // 轻量快照写库后要回读已合并的本地快照，再发布给页面，
+            // 避免 latestCache 在“轻量快照”和“全量快照”之间来回切换导致页面闪烁。
+            AccountStorageRepository.StoredSnapshot latestStoredSnapshot =
+                    accountStorageRepository.loadStoredSnapshot();
+            Cache cache = buildCache(latestStoredSnapshot, remoteTradeCount);
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
             return cache;
@@ -590,7 +594,7 @@ public class AccountStatsPreloadManager {
                 resolveUpdatedAt(snapshotPayload, historyPayload),
                 "",
                 System.currentTimeMillis(),
-                buildOverviewMetrics(account),
+                buildOverviewMetrics(account, accountMeta),
                 parseCurvePoints(curvePoints),
                 new ArrayList<>(),
                 parsePositionItems(positions, false),
@@ -615,7 +619,7 @@ public class AccountStatsPreloadManager {
                 resolveUpdatedAt(snapshotPayload, null),
                 "",
                 System.currentTimeMillis(),
-                buildOverviewMetrics(account),
+                buildOverviewMetrics(account, accountMeta),
                 new ArrayList<>(),
                 new ArrayList<>(),
                 parsePositionItems(positions, false),
@@ -673,7 +677,7 @@ public class AccountStatsPreloadManager {
     }
 
     // 生成账户页概要指标，保证 v2 成功时页面也有可展示的基础数字。
-    private List<AccountMetric> buildOverviewMetrics(JSONObject account) {
+    private List<AccountMetric> buildOverviewMetrics(JSONObject account, JSONObject accountMeta) {
         List<AccountMetric> metrics = new ArrayList<>();
         metrics.add(new AccountMetric("总资产", formatMoney(optDouble(account, "equity"))));
         metrics.add(new AccountMetric("结余", formatMoney(optDouble(account, "balance"))));
@@ -681,6 +685,10 @@ public class AccountStatsPreloadManager {
         metrics.add(new AccountMetric("保证金", formatMoney(optDouble(account, "margin"))));
         metrics.add(new AccountMetric("可用保证金", formatMoney(optDouble(account, "freeMargin"))));
         metrics.add(new AccountMetric("保证金率", formatPercent(optDouble(account, "marginLevel"))));
+        double leverage = AccountLeverageResolver.resolveSnapshotLeverage(account, accountMeta);
+        if (leverage > 0d) {
+            metrics.add(new AccountMetric("杠杆", AccountLeverageResolver.formatLeverage(leverage)));
+        }
         return metrics;
     }
 
@@ -710,14 +718,17 @@ public class AccountStatsPreloadManager {
             if (item == null) {
                 continue;
             }
+            double quantity = optDoubleAny(item, 0d, "quantity", "lots", "volume", "qty");
+            double sellableQuantity = optDoubleAny(item, quantity,
+                    "sellableQuantity", "availableQuantity", "freeQuantity");
             items.add(new PositionItem(
                     optString(item, "productName", optString(item, "code", "--")),
                     optString(item, "code", optString(item, "productName", "--")),
                     optString(item, "side", "Buy"),
-                    item.optLong(pending ? "positionTicket" : "positionTicket", item.optLong("positionId", 0L)),
-                    item.optLong("orderId", 0L),
-                    optDouble(item, "quantity"),
-                    optDouble(item, "sellableQuantity", optDouble(item, "quantity")),
+                    optLongAny(item, 0L, "positionTicket", "positionId", "position_id", "ticket"),
+                    optLongAny(item, 0L, "orderId", "order_id", "order", "ticket"),
+                    quantity,
+                    sellableQuantity,
                     optDouble(item, "costPrice"),
                     optDouble(item, "latestPrice", optDouble(item, "pendingPrice")),
                     optDouble(item, "marketValue"),
@@ -725,7 +736,7 @@ public class AccountStatsPreloadManager {
                     optDouble(item, "dayPnL"),
                     optDouble(item, "totalPnL"),
                     optDouble(item, "returnRate"),
-                    optDouble(item, pending ? "pendingLots" : "pendingLots"),
+                    optDoubleAny(item, quantity, "pendingLots", "pendingQuantity", "pendingVolume"),
                     item.optInt("pendingCount", pending ? 1 : 0),
                     optDouble(item, "pendingPrice"),
                     optDouble(item, "takeProfit"),

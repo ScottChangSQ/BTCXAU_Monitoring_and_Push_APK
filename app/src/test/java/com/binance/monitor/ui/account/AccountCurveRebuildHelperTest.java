@@ -93,7 +93,7 @@ public class AccountCurveRebuildHelperTest {
         assertEquals(100d, rebuilt.get(1).getBalance(), 1e-9);
         assertEquals(120d, rebuilt.get(2).getBalance(), 1e-9);
         assertEquals(100d, rebuilt.get(0).getEquity(), 1e-9);
-        assertEquals(118d, rebuilt.get(1).getEquity(), 1e-9);
+        assertEquals(110d, rebuilt.get(1).getEquity(), 1e-9);
         assertEquals(120d, rebuilt.get(2).getEquity(), 1e-9);
     }
 
@@ -133,8 +133,8 @@ public class AccountCurveRebuildHelperTest {
 
         assertEquals(100d, rebuilt.get(1).getBalance(), 1e-9);
         assertEquals(100d, rebuilt.get(2).getBalance(), 1e-9);
-        assertEquals(118d, rebuilt.get(1).getEquity(), 1e-9);
-        assertEquals(119d, rebuilt.get(2).getEquity(), 1e-9);
+        assertEquals(110d, rebuilt.get(1).getEquity(), 1e-9);
+        assertEquals(115d, rebuilt.get(2).getEquity(), 1e-9);
         assertEquals(120d, rebuilt.get(3).getBalance(), 1e-9);
     }
 
@@ -267,13 +267,75 @@ public class AccountCurveRebuildHelperTest {
 
         List<CurvePoint> rebuilt = AccountCurveRebuildHelper.rebuild(source, trades, 100d);
 
-        assertEquals(106d, rebuilt.get(1).getEquity(), 1e-9);
+        assertEquals(105d, rebuilt.get(1).getEquity(), 1e-9);
         assertEquals(100d, rebuilt.get(1).getBalance(), 1e-9);
-        assertEquals(110d, rebuilt.get(2).getEquity(), 1e-9);
+        assertEquals(116.6666666667d, rebuilt.get(2).getEquity(), 1e-9);
         assertEquals(110d, rebuilt.get(2).getBalance(), 1e-9);
-        assertEquals(123d, rebuilt.get(3).getEquity(), 1e-9);
+        assertEquals(123.3333333333d, rebuilt.get(3).getEquity(), 1e-9);
         assertEquals(110d, rebuilt.get(3).getBalance(), 1e-9);
         assertEquals(130d, rebuilt.get(4).getEquity(), 1e-9);
         assertEquals(130d, rebuilt.get(4).getBalance(), 1e-9);
+    }
+
+    @Test
+    public void rebuildShouldEstimateHistoricalEquityFromDirectionalPnlAndMultiplier() {
+        List<CurvePoint> source = Arrays.asList(
+                new CurvePoint(1_000L, 100d, 100d, 0.10d),
+                new CurvePoint(2_000L, 100d, 100d, 0.20d),
+                new CurvePoint(3_000L, 100d, 100d, 0.00d)
+        );
+        List<TradeRecordItem> trades = Arrays.asList(
+                new TradeRecordItem(
+                        3_000L,
+                        "BTCUSDT",
+                        "BTCUSDT",
+                        "买入",
+                        100d,
+                        0.5d,
+                        50d,
+                        0d,
+                        "",
+                        20d,
+                        1_000L,
+                        3_000L,
+                        0d,
+                        100d,
+                        120d,
+                        1L,
+                        1L,
+                        1L,
+                        1
+                ),
+                new TradeRecordItem(
+                        3_000L,
+                        "XAUUSDT",
+                        "XAUUSDT",
+                        "卖出",
+                        10d,
+                        0.1d,
+                        1d,
+                        0d,
+                        "",
+                        5d,
+                        1_000L,
+                        3_000L,
+                        0d,
+                        10d,
+                        12d,
+                        2L,
+                        2L,
+                        2L,
+                        1
+                )
+        );
+
+        List<CurvePoint> rebuilt = AccountCurveRebuildHelper.rebuild(source, trades, 100d);
+
+        assertEquals(100d, rebuilt.get(0).getBalance(), 1e-9);
+        assertEquals(100d, rebuilt.get(1).getBalance(), 1e-9);
+        assertEquals(125d, rebuilt.get(2).getBalance(), 1e-9);
+        assertEquals(100d, rebuilt.get(0).getEquity(), 1e-9);
+        assertEquals(95d, rebuilt.get(1).getEquity(), 1e-9);
+        assertEquals(125d, rebuilt.get(2).getEquity(), 1e-9);
     }
 }

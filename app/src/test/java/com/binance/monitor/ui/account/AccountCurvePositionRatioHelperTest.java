@@ -35,25 +35,30 @@ public class AccountCurvePositionRatioHelperTest {
         assertEquals(2, resolved.size());
         assertTrue(resolved.get(0).getPositionRatio() > 0d);
         assertTrue(resolved.get(1).getPositionRatio() > 0d);
-        assertEquals(0.05d, resolved.get(0).getPositionRatio(), 1e-9);
-        assertEquals(0.025d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(5d / 95d, resolved.get(0).getPositionRatio(), 1e-9);
+        assertEquals(5d / 190d, resolved.get(1).getPositionRatio(), 1e-9);
     }
 
     @Test
     public void ensureVisibleRatiosShouldKeepExistingHistoricalRatios() {
         List<CurvePoint> points = Arrays.asList(
-                new CurvePoint(1_000L, 100d, 95d, 0.15d),
-                new CurvePoint(2_000L, 200d, 190d, 0d)
+                new CurvePoint(1_000L, 100d, 95d, 0.80d),
+                new CurvePoint(2_000L, 200d, 190d, 0.70d)
+        );
+        List<PositionItem> positions = Arrays.asList(
+                new PositionItem("BTC", "BTC", "BUY", 1L, 1L,
+                        1d, 1d, 100d, 120d, 50d, 0.2d,
+                        0d, 0d, 0d, 0d, 0, 0d, 0d, 0d, 0d)
         );
 
-        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, null, null, 0d);
+        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, positions, null, 10d);
 
-        assertEquals(0.15d, resolved.get(0).getPositionRatio(), 1e-9);
-        assertEquals(0d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(5d / 95d, resolved.get(0).getPositionRatio(), 1e-9);
+        assertEquals(5d / 190d, resolved.get(1).getPositionRatio(), 1e-9);
     }
 
     @Test
-    public void ensureVisibleRatiosShouldClearStaleHistoricalRatiosWhenNoLiveExposure() {
+    public void ensureVisibleRatiosShouldReplayLifecycleTradesInsteadOfKeepingServerRatios() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 95d, 0.12d),
                 new CurvePoint(2_000L, 200d, 190d, 0.10d),
@@ -90,13 +95,13 @@ public class AccountCurvePositionRatioHelperTest {
                 10d
         );
 
-        assertEquals(0.12d, resolved.get(0).getPositionRatio(), 1e-9);
+        assertEquals(4d / 95d, resolved.get(0).getPositionRatio(), 1e-9);
         assertEquals(0d, resolved.get(1).getPositionRatio(), 1e-9);
         assertEquals(0d, resolved.get(2).getPositionRatio(), 1e-9);
     }
 
     @Test
-    public void ensureVisibleRatiosShouldKeepHistoricalRatiosWhenNoTradeEvidenceExists() {
+    public void ensureVisibleRatiosShouldZeroServerRatiosWhenNoLocalExposureExists() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 95d, 0.12d),
                 new CurvePoint(2_000L, 200d, 190d, 0.10d)
@@ -109,16 +114,16 @@ public class AccountCurvePositionRatioHelperTest {
                 10d
         );
 
-        assertEquals(0.12d, resolved.get(0).getPositionRatio(), 1e-9);
-        assertEquals(0.10d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(0d, resolved.get(0).getPositionRatio(), 1e-9);
+        assertEquals(0d, resolved.get(1).getPositionRatio(), 1e-9);
     }
 
     @Test
     public void ensureVisibleRatiosShouldReplayExposureFromOpenAndCloseDeals() {
         List<CurvePoint> points = Arrays.asList(
-                new CurvePoint(1_000L, 100d, 100d, 0d),
-                new CurvePoint(2_000L, 100d, 100d, 0d),
-                new CurvePoint(3_000L, 100d, 100d, 0d)
+                new CurvePoint(1_000L, 100d, 80d, 0d),
+                new CurvePoint(2_000L, 100d, 80d, 0d),
+                new CurvePoint(3_000L, 100d, 80d, 0d)
         );
         List<TradeRecordItem> trades = Arrays.asList(
                 new TradeRecordItem(
@@ -169,17 +174,17 @@ public class AccountCurvePositionRatioHelperTest {
 
         assertEquals(3, resolved.size());
         assertEquals(0d, resolved.get(0).getPositionRatio(), 1e-9);
-        assertEquals(0.04d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(0.05d, resolved.get(1).getPositionRatio(), 1e-9);
         assertEquals(0d, resolved.get(2).getPositionRatio(), 1e-9);
     }
 
     @Test
     public void ensureVisibleRatiosShouldUseDealTimestampWhenClosingTradeMissesCloseTime() {
         List<CurvePoint> points = Arrays.asList(
-                new CurvePoint(1_000L, 100d, 100d, 0d),
-                new CurvePoint(2_000L, 100d, 100d, 0d),
-                new CurvePoint(3_000L, 100d, 100d, 0d),
-                new CurvePoint(4_000L, 100d, 100d, 0d)
+                new CurvePoint(1_000L, 100d, 80d, 0d),
+                new CurvePoint(2_000L, 100d, 80d, 0d),
+                new CurvePoint(3_000L, 100d, 80d, 0d),
+                new CurvePoint(4_000L, 100d, 80d, 0d)
         );
         List<TradeRecordItem> trades = Arrays.asList(
                 new TradeRecordItem(
@@ -229,7 +234,7 @@ public class AccountCurvePositionRatioHelperTest {
         List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(points, null, trades, 10d);
 
         assertEquals(0d, resolved.get(0).getPositionRatio(), 1e-9);
-        assertEquals(0.04d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(0.05d, resolved.get(1).getPositionRatio(), 1e-9);
         assertEquals(0d, resolved.get(2).getPositionRatio(), 1e-9);
         assertEquals(0d, resolved.get(3).getPositionRatio(), 1e-9);
     }

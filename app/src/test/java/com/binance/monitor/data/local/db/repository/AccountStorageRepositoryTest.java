@@ -303,6 +303,70 @@ public class AccountStorageRepositoryTest {
         assertEquals(1_704_067_200_000L, restored.getCurvePoints().get(0).getTimestamp());
     }
 
+    // 当前持仓若共享同一个 positionTicket，也不能在写库时互相覆盖。
+    @Test
+    public void persistV2SnapshotShouldKeepMultiplePositionsWhenPositionTicketMatchesButOrderDiffers() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        repository.persistV2Snapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "V2网关",
+                "http://gateway",
+                5000L,
+                "",
+                5100L,
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(
+                        position("BTCUSD", 9001L, 10001L, 0.05d, 10d),
+                        position("BTCUSD", 9001L, 10002L, 0.03d, 8d)
+                ),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>()
+        ));
+
+        AccountStorageRepository.StoredSnapshot restored = repository.loadStoredSnapshot();
+        assertEquals(2, restored.getPositions().size());
+    }
+
+    // 即便没有 positionTicket/orderId，两笔同品种同方向同数量同开仓价的持仓也不能被压成一条。
+    @Test
+    public void persistV2SnapshotShouldKeepDuplicateFallbackPositionsWhenIdentityFieldsMatch() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        repository.persistV2Snapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "V2网关",
+                "http://gateway",
+                5000L,
+                "",
+                5100L,
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(
+                        position("BTCUSD", 0L, 0L, 0.05d, 10d),
+                        position("BTCUSD", 0L, 0L, 0.05d, 8d)
+                ),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>()
+        ));
+
+        AccountStorageRepository.StoredSnapshot restored = repository.loadStoredSnapshot();
+        assertEquals(2, restored.getPositions().size());
+    }
+
     private TradeRecordItem trade(long closeTime,
                                   long dealTicket,
                                   long orderId,
@@ -338,6 +402,35 @@ public class AccountStorageRepositoryTest {
                 "Buy",
                 1001L,
                 0L,
+                quantity,
+                quantity,
+                100d,
+                120d,
+                quantity * 120d,
+                0.5d,
+                profit,
+                profit,
+                0.2d,
+                0d,
+                0,
+                0d,
+                0d,
+                0d,
+                0d
+        );
+    }
+
+    private PositionItem position(String code,
+                                  long positionTicket,
+                                  long orderId,
+                                  double quantity,
+                                  double profit) {
+        return new PositionItem(
+                code,
+                code,
+                "Buy",
+                positionTicket,
+                orderId,
                 quantity,
                 quantity,
                 100d,
@@ -483,15 +576,29 @@ public class AccountStorageRepositoryTest {
 
         @Override
         public void insertPositions(List<PositionSnapshotEntity> items) {
-            if (items != null) {
-                positions.addAll(items);
+            if (items == null) {
+                return;
+            }
+            for (PositionSnapshotEntity item : items) {
+                if (item == null) {
+                    continue;
+                }
+                positions.removeIf(existing -> existing.snapshotKey.equals(item.snapshotKey));
+                positions.add(item);
             }
         }
 
         @Override
         public void insertPendingOrders(List<PendingOrderSnapshotEntity> items) {
-            if (items != null) {
-                pendingOrders.addAll(items);
+            if (items == null) {
+                return;
+            }
+            for (PendingOrderSnapshotEntity item : items) {
+                if (item == null) {
+                    continue;
+                }
+                pendingOrders.removeIf(existing -> existing.snapshotKey.equals(item.snapshotKey));
+                pendingOrders.add(item);
             }
         }
     }

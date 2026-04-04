@@ -17,12 +17,12 @@ import java.util.List;
 public class CurveAnalyticsHelperTest {
 
     @Test
-    public void resolveMaxDrawdownSegmentShouldUseEquitySeries() {
+    public void resolveMaxDrawdownSegmentShouldUseEquityBalanceGapAtSameTimestamp() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 100d),
-                new CurvePoint(2_000L, 120d, 120d),
-                new CurvePoint(3_000L, 90d, 118d),
-                new CurvePoint(4_000L, 110d, 119d)
+                new CurvePoint(2_000L, 80d, 100d),
+                new CurvePoint(3_000L, 90d, 100d),
+                new CurvePoint(4_000L, 110d, 100d)
         );
 
         CurveAnalyticsHelper.DrawdownSegment segment =
@@ -30,19 +30,19 @@ public class CurveAnalyticsHelperTest {
 
         assertNotNull(segment);
         assertEquals(2_000L, segment.getPeakTimestamp());
-        assertEquals(3_000L, segment.getValleyTimestamp());
-        assertEquals(120d, segment.getPeakEquity(), 1e-9);
-        assertEquals(90d, segment.getValleyEquity(), 1e-9);
-        assertEquals(-0.25d, segment.getDrawdownRate(), 1e-9);
+        assertEquals(2_000L, segment.getValleyTimestamp());
+        assertEquals(100d, segment.getPeakEquity(), 1e-9);
+        assertEquals(80d, segment.getValleyEquity(), 1e-9);
+        assertEquals(-0.20d, segment.getDrawdownRate(), 1e-9);
     }
 
     @Test
-    public void buildDrawdownSeriesShouldTrackRunningPeak() {
+    public void buildDrawdownSeriesShouldUseEquityBalanceGapAndClampPositiveValuesToZero() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 100d),
-                new CurvePoint(2_000L, 120d, 120d),
-                new CurvePoint(3_000L, 90d, 118d),
-                new CurvePoint(4_000L, 108d, 121d)
+                new CurvePoint(2_000L, 120d, 100d),
+                new CurvePoint(3_000L, 80d, 100d),
+                new CurvePoint(4_000L, 95d, 100d)
         );
 
         List<CurveAnalyticsHelper.DrawdownPoint> series =
@@ -51,8 +51,8 @@ public class CurveAnalyticsHelperTest {
         assertEquals(4, series.size());
         assertEquals(0d, series.get(0).getDrawdownRate(), 1e-9);
         assertEquals(0d, series.get(1).getDrawdownRate(), 1e-9);
-        assertEquals(-0.25d, series.get(2).getDrawdownRate(), 1e-9);
-        assertEquals(-0.10d, series.get(3).getDrawdownRate(), 1e-9);
+        assertEquals(-0.20d, series.get(2).getDrawdownRate(), 1e-9);
+        assertEquals(-0.05d, series.get(3).getDrawdownRate(), 1e-9);
     }
 
     @Test

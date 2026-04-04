@@ -235,32 +235,27 @@ public final class CurveAnalyticsHelper {
     @Nullable
     public static DrawdownSegment resolveMaxDrawdownSegment(@Nullable List<CurvePoint> source) {
         List<CurvePoint> points = normalizePoints(source);
-        if (points.size() < 2) {
+        if (points.isEmpty()) {
             return null;
         }
-        CurvePoint peakPoint = points.get(0);
-        CurvePoint maxPeak = null;
-        CurvePoint maxValley = null;
+        CurvePoint worstPoint = null;
         double maxDrawdownRate = 0d;
         for (CurvePoint point : points) {
-            if (point.getEquity() >= peakPoint.getEquity()) {
-                peakPoint = point;
-            }
-            double drawdownRate = safeDivide(point.getEquity() - peakPoint.getEquity(), peakPoint.getEquity());
+            // 当前区间回撤改为逐时点比较“净值相对结余的水下幅度”，盈利时不记正值。
+            double drawdownRate = Math.min(0d, safeDivide(point.getEquity() - point.getBalance(), point.getBalance()));
             if (drawdownRate < maxDrawdownRate) {
                 maxDrawdownRate = drawdownRate;
-                maxPeak = peakPoint;
-                maxValley = point;
+                worstPoint = point;
             }
         }
-        if (maxPeak == null || maxValley == null) {
+        if (worstPoint == null) {
             return null;
         }
         return new DrawdownSegment(
-                maxPeak.getTimestamp(),
-                maxValley.getTimestamp(),
-                maxPeak.getEquity(),
-                maxValley.getEquity(),
+                worstPoint.getTimestamp(),
+                worstPoint.getTimestamp(),
+                worstPoint.getBalance(),
+                worstPoint.getEquity(),
                 maxDrawdownRate
         );
     }
@@ -271,10 +266,9 @@ public final class CurveAnalyticsHelper {
         if (points.isEmpty()) {
             return result;
         }
-        double peak = Math.max(1e-9, points.get(0).getEquity());
         for (CurvePoint point : points) {
-            peak = Math.max(peak, point.getEquity());
-            double drawdownRate = Math.min(0d, safeDivide(point.getEquity() - peak, peak));
+            // 每个时间点都直接按“净值 - 结余”相对结余的比例计算回撤。
+            double drawdownRate = Math.min(0d, safeDivide(point.getEquity() - point.getBalance(), point.getBalance()));
             result.add(new DrawdownPoint(point.getTimestamp(), drawdownRate));
         }
         return result;

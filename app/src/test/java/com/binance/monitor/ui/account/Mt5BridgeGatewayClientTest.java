@@ -7,6 +7,7 @@ package com.binance.monitor.ui.account;
 import static org.junit.Assert.assertEquals;
 
 import com.binance.monitor.ui.account.model.CurvePoint;
+import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
 
 import org.json.JSONArray;
@@ -14,7 +15,9 @@ import org.json.JSONObject;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 public class Mt5BridgeGatewayClientTest {
@@ -113,5 +116,84 @@ public class Mt5BridgeGatewayClientTest {
         assertEquals(1_704_069_000_000L, trade.getCloseTime());
         assertEquals(95.0d, trade.getOpenPrice(), 1e-9);
         assertEquals(100.0d, trade.getClosePrice(), 1e-9);
+    }
+
+    // 旧网关回退链路里，同一个 positionTicket 下的不同订单也不能共用一个缓存键。
+    @Test
+    public void positionKeyShouldIncludeOrderIdWhenPositionTicketMatches() throws Exception {
+        Mt5BridgeGatewayClient client = new Mt5BridgeGatewayClient();
+        Method method = Mt5BridgeGatewayClient.class.getDeclaredMethod(
+                "positionKeyFromJson",
+                JSONObject.class,
+                PositionItem.class
+        );
+        method.setAccessible(true);
+
+        JSONObject raw = new JSONObject()
+                .put("positionTicket", 9001L)
+                .put("orderId", 10002L);
+        PositionItem item = new PositionItem(
+                "BTCUSD",
+                "BTCUSD",
+                "Buy",
+                9001L,
+                10002L,
+                0.03d,
+                0.03d,
+                100d,
+                120d,
+                3.6d,
+                0.1d,
+                8d,
+                8d,
+                0.2d,
+                0d,
+                0,
+                0d,
+                0d,
+                0d,
+                0d
+        );
+
+        String key = (String) method.invoke(client, raw, item);
+
+        assertEquals("position:9001:10002", key);
+    }
+
+    // 即便缺少 positionTicket/orderId，旧网关整包重建时也不能把两笔同价同量持仓覆盖成一条。
+    @Test
+    @SuppressWarnings("unchecked")
+    public void rebuildPositionCacheShouldKeepDuplicateFallbackPositions() throws Exception {
+        Mt5BridgeGatewayClient client = new Mt5BridgeGatewayClient();
+        Method method = Mt5BridgeGatewayClient.class.getDeclaredMethod(
+                "rebuildPositionCache",
+                LinkedHashMap.class,
+                JSONArray.class
+        );
+        method.setAccessible(true);
+        Field field = Mt5BridgeGatewayClient.class.getDeclaredField("cachedPositions");
+        field.setAccessible(true);
+        LinkedHashMap<String, PositionItem> target =
+                (LinkedHashMap<String, PositionItem>) field.get(client);
+
+        JSONArray array = new JSONArray()
+                .put(new JSONObject()
+                        .put("productName", "BTCUSD")
+                        .put("code", "BTCUSD")
+                        .put("side", "Buy")
+                        .put("quantity", 0.05d)
+                        .put("costPrice", 100d)
+                        .put("totalPnL", 10d))
+                .put(new JSONObject()
+                        .put("productName", "BTCUSD")
+                        .put("code", "BTCUSD")
+                        .put("side", "Buy")
+                        .put("quantity", 0.05d)
+                        .put("costPrice", 100d)
+                        .put("totalPnL", 8d));
+
+        method.invoke(client, target, array);
+
+        assertEquals(2, target.size());
     }
 }

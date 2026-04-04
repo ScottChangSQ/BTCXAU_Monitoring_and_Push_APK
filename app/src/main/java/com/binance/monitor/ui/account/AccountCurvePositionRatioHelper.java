@@ -29,40 +29,19 @@ final class AccountCurvePositionRatioHelper {
                                                 @Nullable List<PositionItem> positions,
                                                 @Nullable List<TradeRecordItem> trades,
                                                 double leverage) {
-        List<CurvePoint> result = new ArrayList<>();
         if (source == null || source.isEmpty()) {
-            return result;
+            return new ArrayList<>();
         }
         double effectiveLeverage = resolveEffectiveLeverage(leverage);
-        double totalMargin = resolveCurrentMargin(positions, effectiveLeverage);
-        if (hasVisibleRatio(source)) {
-            if (totalMargin <= RATIO_VISIBLE_THRESHOLD
-                    && !hasOpenExposureTrade(trades)
-                    && hasVisibleRatioAtTail(source)) {
-                return clearTailRatios(source, resolveTailClearStartTimestamp(trades));
-            }
-            result.addAll(source);
-            return result;
-        }
         List<CurvePoint> replayedPoints = rebuildRatiosFromTrades(source, trades, effectiveLeverage);
         if (hasVisibleRatio(replayedPoints)) {
             return replayedPoints;
         }
+        double totalMargin = resolveCurrentMargin(positions, effectiveLeverage);
         if (totalMargin <= RATIO_VISIBLE_THRESHOLD) {
-            result.addAll(source);
-            return result;
+            return resetRatios(source);
         }
-        for (CurvePoint point : source) {
-            double equityBase = Math.max(1d, Math.abs(point.getEquity()));
-            double estimatedRatio = Math.max(0d, totalMargin / equityBase);
-            result.add(new CurvePoint(
-                    point.getTimestamp(),
-                    point.getEquity(),
-                    point.getBalance(),
-                    estimatedRatio
-            ));
-        }
-        return result;
+        return rebuildRatiosFromCurrentPositions(source, totalMargin);
     }
 
     // 用历史成交回放每个时间点的持仓保证金，补出已经平仓阶段的历史仓位比例。
@@ -73,7 +52,7 @@ final class AccountCurvePositionRatioHelper {
         sortedPoints.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
         Map<Long, Double> marginEvents = buildMarginEvents(trades, leverage);
         if (marginEvents.isEmpty()) {
-            return sortedPoints;
+            return resetRatios(sortedPoints);
         }
         List<Long> eventTimes = new ArrayList<>(marginEvents.keySet());
         Collections.sort(eventTimes);
@@ -85,8 +64,9 @@ final class AccountCurvePositionRatioHelper {
                 activeMargin = Math.max(0d, activeMargin + marginEvents.get(eventTimes.get(eventIndex)));
                 eventIndex++;
             }
-            double equityBase = Math.max(1d, Math.abs(point.getEquity()));
-            double estimatedRatio = Math.max(0d, activeMargin / equityBase);
+            // 当前区间仓位改为按“仍在持仓的保证金 / 当时结余”计算。
+            double balanceBase = Math.max(1d, Math.abs(point.getBalance()));
+            double estimatedRatio = Math.max(0d, activeMargin / balanceBase);
             resolved.add(new CurvePoint(
                     point.getTimestamp(),
                     point.getEquity(),
@@ -97,22 +77,31 @@ final class AccountCurvePositionRatioHelper {
         return resolved;
     }
 
-    // 当前已空仓但尾部仍残留旧比率时，只清掉最新连续尾段，保留更早的真实历史。
-    private static List<CurvePoint> clearTailRatios(List<CurvePoint> source, long clearStartTimestamp) {
-        if (clearStartTimestamp <= 0L) {
-            return new ArrayList<>(source);
-        }
+    // 当本地没有任何仍在持仓的证据时，直接把服务器自带比率清零，避免继续展示旧口径。
+    private static List<CurvePoint> resetRatios(List<CurvePoint> source) {
         List<CurvePoint> resolved = new ArrayList<>(source.size());
         for (CurvePoint point : source) {
-            double ratio = point.getPositionRatio();
-            if (point.getTimestamp() >= clearStartTimestamp && Math.abs(ratio) > RATIO_VISIBLE_THRESHOLD) {
-                ratio = 0d;
-            }
             resolved.add(new CurvePoint(
                     point.getTimestamp(),
                     point.getEquity(),
                     point.getBalance(),
-                    ratio
+                    0d
+            ));
+        }
+        return resolved;
+    }
+
+    // 用当前仍在持仓的总保证金，给缺历史明细的场景补一条保守仓位曲线。
+    private static List<CurvePoint> rebuildRatiosFromCurrentPositions(List<CurvePoint> source, double totalMargin) {
+        List<CurvePoint> resolved = new ArrayList<>(source.size());
+        for (CurvePoint point : source) {
+            double balanceBase = Math.max(1d, Math.abs(point.getBalance()));
+            double estimatedRatio = Math.max(0d, totalMargin / balanceBase);
+            resolved.add(new CurvePoint(
+                    point.getTimestamp(),
+                    point.getEquity(),
+                    point.getBalance(),
+                    estimatedRatio
             ));
         }
         return resolved;
@@ -128,64 +117,6 @@ final class AccountCurvePositionRatioHelper {
         return false;
     }
 
-    // 判断当前区间末尾是否仍显示非零仓位比例。
-    private static boolean hasVisibleRatioAtTail(List<CurvePoint> source) {
-        if (source == null || source.isEmpty()) {
-            return false;
-        }
-        for (int index = source.size() - 1; index >= 0; index--) {
-            CurvePoint point = source.get(index);
-            if (point == null) {
-                continue;
-            }
-            if (Math.abs(point.getPositionRatio()) > RATIO_VISIBLE_THRESHOLD) {
-                return true;
-            }
-            return false;
-        }
-        return false;
-    }
-
-    // 历史成交里只要仍有未平仓暴露，就不能把尾部仓位比例直接清零。
-    private static boolean hasOpenExposureTrade(@Nullable List<TradeRecordItem> trades) {
-        Map<Long, Double> marginEvents = buildMarginEvents(trades, 1d);
-        if (marginEvents.isEmpty()) {
-            return false;
-        }
-        List<Long> eventTimes = new ArrayList<>(marginEvents.keySet());
-        Collections.sort(eventTimes);
-        double activeMargin = 0d;
-        for (Long eventTime : eventTimes) {
-            activeMargin = Math.max(0d, activeMargin + marginEvents.get(eventTime));
-        }
-        return activeMargin > RATIO_VISIBLE_THRESHOLD;
-    }
-
-    // 只有能从历史成交里确定“最后一次平仓后应为空仓”的时间点，才清尾部残留仓位。
-    private static long resolveTailClearStartTimestamp(@Nullable List<TradeRecordItem> trades) {
-        Map<Long, Double> marginEvents = buildMarginEvents(trades, 1d);
-        if (marginEvents.isEmpty()) {
-            return 0L;
-        }
-        List<Long> eventTimes = new ArrayList<>(marginEvents.keySet());
-        Collections.sort(eventTimes);
-        double activeMargin = 0d;
-        boolean everOpened = false;
-        long clearStartTimestamp = 0L;
-        for (Long eventTime : eventTimes) {
-            activeMargin = Math.max(0d, activeMargin + marginEvents.get(eventTime));
-            if (activeMargin > RATIO_VISIBLE_THRESHOLD) {
-                everOpened = true;
-                clearStartTimestamp = 0L;
-                continue;
-            }
-            if (everOpened) {
-                clearStartTimestamp = eventTime;
-            }
-        }
-        return clearStartTimestamp;
-    }
-
     // 汇总当前持仓保证金，作为历史仓位缺失时的保守估算输入。
     private static double resolveCurrentMargin(@Nullable List<PositionItem> positions, double leverage) {
         if (positions == null || positions.isEmpty()) {
@@ -196,7 +127,11 @@ final class AccountCurvePositionRatioHelper {
             if (item == null) {
                 continue;
             }
-            total += Math.max(0d, Math.abs(item.getMarketValue())) / leverage;
+            double marketValue = Math.max(0d, Math.abs(item.getMarketValue()));
+            if (marketValue <= RATIO_VISIBLE_THRESHOLD) {
+                marketValue = Math.abs(item.getQuantity()) * Math.max(0d, item.getLatestPrice());
+            }
+            total += marketValue / leverage;
         }
         return total;
     }
