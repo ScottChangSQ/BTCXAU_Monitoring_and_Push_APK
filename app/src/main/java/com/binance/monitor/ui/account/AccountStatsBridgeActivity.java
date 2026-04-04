@@ -1778,7 +1778,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             tradeWeekdayBasis = checkedId == R.id.btnTradeWeekdayOpenTime
                     ? TradeWeekdayBasis.OPEN_TIME
                     : TradeWeekdayBasis.CLOSE_TIME;
-            refreshTradeStats();
+            refreshTradeWeekdayStats(filterTradesBySideMode(baseTrades, tradePnlSideMode));
         });
     }
 
@@ -2613,9 +2613,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? new ArrayList<>()
                 : new ArrayList<>(snapshot.getCurvePoints());
 
-        mergeTradeHistory(snapshotTrades);
         if (remoteConnected) {
-            mergeCurveHistory(snapshotCurves);
+            replaceTradeHistory(snapshotTrades);
+        } else {
+            mergeTradeHistory(snapshotTrades);
+        }
+        if (remoteConnected) {
+            replaceCurveHistory(snapshotCurves);
             connectedPositionCache = new ArrayList<>(snapshotPositions);
             connectedPendingCache = new ArrayList<>(snapshotPending);
             connectedOverviewCache = snapshot.getOverviewMetrics() == null
@@ -2646,7 +2650,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 : new ArrayList<>(curveHistory.values());
         dataQualitySummary = buildDataQualitySummary(effectiveTrades, effectiveCurves, basePositions);
 
-        baseTrades = new ArrayList<>(effectiveTrades);
+        baseTrades = TradeLifecycleMergeHelper.merge(effectiveTrades, TRADE_PNL_ZERO_THRESHOLD);
         baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
         allCurvePoints = normalizeCurvePoints(effectiveCurves, baseTrades);
         logTradeVisibilitySnapshot(snapshotTrades, effectiveTrades, baseTrades);
@@ -2696,6 +2700,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
+    private void replaceCurveHistory(List<CurvePoint> source) {
+        curveHistory.clear();
+        mergeCurveHistory(source);
+    }
+
     private void mergeTradeHistory(List<TradeRecordItem> source) {
         if (source == null || source.isEmpty()) {
             return;
@@ -2711,6 +2720,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             String firstKey = tradeHistory.keySet().iterator().next();
             tradeHistory.remove(firstKey);
         }
+    }
+
+    private void replaceTradeHistory(List<TradeRecordItem> source) {
+        tradeHistory.clear();
+        mergeTradeHistory(source);
     }
 
     private String buildTradeHistoryKey(TradeRecordItem item) {
@@ -3327,13 +3341,21 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private long resolveOpenTime(TradeRecordItem item) {
-        long open = item.getOpenTime();
-        return open > 0L ? open : item.getTimestamp();
+        long open = normalizePossibleEpochMs(item.getOpenTime());
+        return open > 0L ? open : normalizePossibleEpochMs(item.getTimestamp());
     }
 
     private long resolveCloseTime(TradeRecordItem item) {
-        long close = item.getCloseTime();
-        return close > 0L ? close : item.getTimestamp();
+        long close = normalizePossibleEpochMs(item.getCloseTime());
+        return close > 0L ? close : normalizePossibleEpochMs(item.getTimestamp());
+    }
+
+    // 兼容旧缓存残留的秒级成交时间，避免统计页按 1970 年时间轴计算。
+    private long normalizePossibleEpochMs(long value) {
+        if (value >= 1_000_000_000L && value < 10_000_000_000L) {
+            return value * 1000L;
+        }
+        return value;
     }
 
     private String calcBalanceSharpe(List<CurvePoint> points) {

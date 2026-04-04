@@ -611,30 +611,34 @@ public class AccountStatsPreloadManager {
             if (item == null) {
                 continue;
             }
-            long timestamp = normalizeEpochMs(item.optLong("timestamp", 0L));
-            long openTime = normalizeEpochMs(item.optLong("openTime", timestamp));
-            long closeTime = normalizeEpochMs(item.optLong("closeTime", timestamp));
-            double price = optDouble(item, "price");
+            long timestamp = normalizeEpochMs(optLongAny(item, 0L, "timestamp", "time"));
+            long openTime = normalizeEpochMs(optLongAny(item, timestamp,
+                    "openTime", "open_time", "timeOpen", "time_open"));
+            long closeTime = normalizeEpochMs(optLongAny(item, timestamp,
+                    "closeTime", "close_time", "timeClose", "time_close"));
+            double price = optDoubleAny(item, 0d, "price");
             items.add(new TradeRecordItem(
                     timestamp,
                     optString(item, "productName", optString(item, "code", "--")),
                     optString(item, "code", optString(item, "productName", "--")),
                     optString(item, "side", "Buy"),
                     price,
-                    optDouble(item, "quantity"),
-                    optDouble(item, "amount"),
-                    optDouble(item, "fee"),
+                    optDoubleAny(item, 0d, "quantity", "qty", "volume"),
+                    optDoubleAny(item, 0d, "amount"),
+                    optDoubleAny(item, 0d, "fee"),
                     optString(item, "remark", ""),
-                    optDouble(item, "profit"),
+                    optDoubleAny(item, 0d, "profit", "pnl"),
                     openTime,
                     closeTime,
-                    optDouble(item, "storageFee"),
-                    optDouble(item, "openPrice", price),
-                    optDouble(item, "closePrice", price),
-                    item.optLong("dealTicket", 0L),
-                    item.optLong("orderId", 0L),
-                    item.optLong("positionId", 0L),
-                    item.optInt("entryType", 0)
+                    optDoubleAny(item, 0d, "storageFee", "storage_fee", "swap", "fee"),
+                    optDoubleAny(item, price,
+                            "openPrice", "open_time_price", "open_price", "open", "priceOpen", "entryPrice", "entry_price"),
+                    optDoubleAny(item, price,
+                            "closePrice", "close_time_price", "close_price", "close", "priceClose", "exitPrice", "exit_price"),
+                    optLongAny(item, 0L, "dealTicket", "deal_ticket"),
+                    optLongAny(item, 0L, "orderId", "order_id"),
+                    optLongAny(item, 0L, "positionId", "position_id"),
+                    (int) optLongAny(item, 0L, "entryType", "entry_type")
             ));
         }
         return items;
@@ -728,6 +732,46 @@ public class AccountStatsPreloadManager {
                 return Double.parseDouble(((String) value).trim());
             } catch (Exception ignored) {
                 return fallback;
+            }
+        }
+        return fallback;
+    }
+
+    // 读取多种候选浮点字段，兼容服务端驼峰与下划线口径。
+    private double optDoubleAny(JSONObject item, double fallback, String... keys) {
+        if (item == null || keys == null) {
+            return fallback;
+        }
+        for (String key : keys) {
+            if (key == null || key.trim().isEmpty()) {
+                continue;
+            }
+            double value = optDouble(item, key, Double.NaN);
+            if (!Double.isNaN(value)) {
+                return value;
+            }
+        }
+        return fallback;
+    }
+
+    // 读取多种候选长整数字段，兼容服务端驼峰与下划线口径。
+    private long optLongAny(JSONObject item, long fallback, String... keys) {
+        if (item == null || keys == null) {
+            return fallback;
+        }
+        for (String key : keys) {
+            if (key == null || key.trim().isEmpty() || !item.has(key)) {
+                continue;
+            }
+            Object value = item.opt(key);
+            if (value instanceof Number) {
+                return ((Number) value).longValue();
+            }
+            if (value instanceof String) {
+                try {
+                    return Long.parseLong(((String) value).trim());
+                } catch (Exception ignored) {
+                }
             }
         }
         return fallback;

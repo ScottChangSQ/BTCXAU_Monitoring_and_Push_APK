@@ -7,8 +7,10 @@ package com.binance.monitor.ui.account;
 import static org.junit.Assert.assertEquals;
 
 import com.binance.monitor.ui.account.model.CurvePoint;
+import com.binance.monitor.ui.account.model.TradeRecordItem;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 import org.junit.Test;
 
 import java.lang.reflect.Method;
@@ -45,5 +47,48 @@ public class Mt5BridgeGatewayClientTest {
 
         assertEquals(1, points.size());
         assertEquals(0.35d, points.get(0).getPositionRatio(), 1e-9);
+    }
+
+    // 秒级曲线时间戳必须在入口处升成毫秒，否则交易区间匹配不到曲线点。
+    @Test
+    @SuppressWarnings("unchecked")
+    public void parseCurvePointsShouldNormalizeSecondTimestamp() throws Exception {
+        Mt5BridgeGatewayClient client = new Mt5BridgeGatewayClient();
+        Method method = Mt5BridgeGatewayClient.class.getDeclaredMethod("parseCurvePoints", JSONArray.class);
+        method.setAccessible(true);
+
+        JSONArray array = new JSONArray("[{\"timestamp\":1704067200,\"equity\":100.0,\"balance\":90.0,\"positionRatio\":0.35}]");
+        List<CurvePoint> points = (List<CurvePoint>) method.invoke(client, array);
+
+        assertEquals(1, points.size());
+        assertEquals(1_704_067_200_000L, points.get(0).getTimestamp());
+    }
+
+    // 历史成交时间字段需要兼容下划线写法，否则持仓时长会被压成接近 0。
+    @Test
+    public void parseTradeItemShouldSupportSnakeCaseLifecycleTimeFields() throws Exception {
+        Mt5BridgeGatewayClient client = new Mt5BridgeGatewayClient();
+        Method method = Mt5BridgeGatewayClient.class.getDeclaredMethod("parseTradeItem", JSONObject.class);
+        method.setAccessible(true);
+
+        JSONObject item = new JSONObject()
+                .put("productName", "BTCUSD")
+                .put("code", "BTCUSD")
+                .put("side", "Buy")
+                .put("price", 100.0d)
+                .put("open_price", 95.0d)
+                .put("close_price", 100.0d)
+                .put("timestamp", 1704069000L)
+                .put("open_time", 1704067200L)
+                .put("close_time", 1704069000L)
+                .put("quantity", 1.0d)
+                .put("profit", 5.0d);
+
+        TradeRecordItem trade = (TradeRecordItem) method.invoke(client, item);
+
+        assertEquals(1_704_067_200_000L, trade.getOpenTime());
+        assertEquals(1_704_069_000_000L, trade.getCloseTime());
+        assertEquals(95.0d, trade.getOpenPrice(), 1e-9);
+        assertEquals(100.0d, trade.getClosePrice(), 1e-9);
     }
 }

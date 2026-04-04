@@ -33,6 +33,19 @@ public class AccountStatsPreloadManagerSourceTest {
                 source.contains("gatewayClient.fetchLive(AccountTimeRange.ALL)"));
     }
 
+    @Test
+    public void preloadManagerShouldAcceptSnakeCaseTradeLifecycleFields() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java"
+        );
+
+        assertTrue("v2 历史成交解析应兼容 open_time 字段",
+                source.contains("\"openTime\", \"open_time\""));
+        assertTrue("v2 历史成交解析应兼容 close_time 字段",
+                source.contains("\"closeTime\", \"close_time\""));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

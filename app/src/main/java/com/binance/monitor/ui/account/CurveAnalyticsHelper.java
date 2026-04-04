@@ -219,7 +219,7 @@ public final class CurveAnalyticsHelper {
         }
 
         private boolean matches(long durationMs) {
-            return durationMs > minDurationMs && durationMs <= maxDurationMs;
+            return durationMs >= minDurationMs && durationMs <= maxDurationMs;
         }
 
         private void increment(double profitWithStorage) {
@@ -375,10 +375,13 @@ public final class CurveAnalyticsHelper {
 
     private static double resolveTradeReturnRate(TradeRecordItem item) {
         double realized = item.getProfit() + item.getStorageFee();
+        double openPrice = item.getOpenPrice();
+        if (openPrice > 1e-9) {
+            return safeDivide(realized, openPrice);
+        }
         if (Math.abs(item.getAmount()) > 1e-9) {
             return safeDivide(realized, Math.abs(item.getAmount()));
         }
-        double openPrice = item.getOpenPrice();
         double closePrice = item.getClosePrice();
         if (openPrice > 1e-9 && closePrice > 1e-9) {
             boolean sell = "SELL".equalsIgnoreCase(item.getSide()) || "卖出".equals(item.getSide());
@@ -435,27 +438,30 @@ public final class CurveAnalyticsHelper {
     }
 
     private static long resolveOpenTime(TradeRecordItem item) {
-        long openTime = item.getOpenTime();
+        long openTime = normalizePossibleEpochMs(item.getOpenTime());
         if (openTime > 0L) {
             return openTime;
         }
-        return item.getTimestamp();
+        return normalizePossibleEpochMs(item.getTimestamp());
     }
 
     private static long resolveCloseTime(TradeRecordItem item) {
-        long closeTime = item.getCloseTime();
+        long closeTime = normalizePossibleEpochMs(item.getCloseTime());
         if (closeTime > 0L) {
             return closeTime;
         }
-        return item.getTimestamp();
+        return normalizePossibleEpochMs(item.getTimestamp());
     }
 
     private static long resolveHoldingDuration(TradeRecordItem item) {
-        long openTime = item.getOpenTime();
-        long closeTime = item.getCloseTime();
-        long timestamp = item.getTimestamp();
+        long openTime = normalizePossibleEpochMs(item.getOpenTime());
+        long closeTime = normalizePossibleEpochMs(item.getCloseTime());
+        long timestamp = normalizePossibleEpochMs(item.getTimestamp());
         if (openTime > 0L && closeTime > 0L && closeTime >= openTime) {
             return closeTime - openTime;
+        }
+        if (openTime > 0L && timestamp > openTime) {
+            return timestamp - openTime;
         }
         if (openTime > 0L && closeTime <= 0L && timestamp >= openTime) {
             return timestamp - openTime;
@@ -471,6 +477,14 @@ public final class CurveAnalyticsHelper {
             return closeTime - Math.max(0L, openTime);
         }
         return 0L;
+    }
+
+    // 历史成交在不同链路里可能混入秒级时间戳，这里统一升成毫秒；较小的旧样例时长值保持原样。
+    private static long normalizePossibleEpochMs(long value) {
+        if (value >= 1_000_000_000L && value < 10_000_000_000L) {
+            return value * 1000L;
+        }
+        return value;
     }
 
     private static String safeLabel(TradeRecordItem item) {

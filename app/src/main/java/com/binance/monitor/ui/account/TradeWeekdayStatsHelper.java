@@ -69,11 +69,11 @@ final class TradeWeekdayStatsHelper {
     // 统一解析聚合时间，缺失时退回记录时间，避免新旧数据格式不一致时直接丢行。
     private static long resolveTargetTime(TradeRecordItem item, TimeBasis basis) {
         if (basis == TimeBasis.OPEN_TIME) {
-            long openTime = item.getOpenTime();
-            return openTime > 0L ? openTime : item.getTimestamp();
+            long openTime = normalizePossibleEpochMs(item.getOpenTime());
+            return openTime > 0L ? openTime : normalizePossibleEpochMs(item.getTimestamp());
         }
-        long closeTime = item.getCloseTime();
-        return closeTime > 0L ? closeTime : item.getTimestamp();
+        long closeTime = normalizePossibleEpochMs(item.getCloseTime());
+        return closeTime > 0L ? closeTime : normalizePossibleEpochMs(item.getTimestamp());
     }
 
     // 把系统星期映射成“周一到周日”的固定表格顺序。
@@ -96,6 +96,14 @@ final class TradeWeekdayStatsHelper {
             default:
                 return -1;
         }
+    }
+
+    // 兼容旧缓存里残留的秒级时间戳，避免星期统计落到 1970 年。
+    private static long normalizePossibleEpochMs(long value) {
+        if (value >= 1_000_000_000L && value < 10_000_000_000L) {
+            return value * 1000L;
+        }
+        return value;
     }
 
     static final class Row {

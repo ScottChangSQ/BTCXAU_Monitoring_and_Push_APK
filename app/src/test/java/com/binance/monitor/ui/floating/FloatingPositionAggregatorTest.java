@@ -166,4 +166,68 @@ public class FloatingPositionAggregatorTest {
         assertEquals(2, cards.size());
         assertEquals(67_123.4d, cards.get(0).getLatestPrice(), 0.0001d);
     }
+
+    // 悬浮窗盈亏应统一包含隔夜费，不能再比账户页少一截。
+    @Test
+    public void aggregateShouldIncludeStorageFeeInTotalPnl() {
+        List<PositionItem> positions = Arrays.asList(
+                new PositionItem("BTCUSD", "BTCUSD", "Buy", 1L, 11L,
+                        0.05d, 0.05d, 66_000d, 66_500d, 3_325d, 0.1d,
+                        0d, 20d, 0.03d, 0d, 0, 0d, 0d, 0d, 2.5d),
+                new PositionItem("BTCUSD", "BTCUSD", "Buy", 2L, 12L,
+                        0.05d, 0.05d, 66_100d, 66_550d, 3_327.5d, 0.1d,
+                        0d, 10d, 0.02d, 0d, 0, 0d, 0d, 0d, -0.5d)
+        );
+
+        List<FloatingPositionPnlItem> items = FloatingPositionAggregator.aggregate(positions);
+
+        assertEquals(1, items.size());
+        assertEquals(32d, items.get(0).getTotalPnl(), 0.0001d);
+    }
+
+    // 悬浮窗盈亏应直接复用账户快照里的当前盈亏数字，实时价格只更新价格显示。
+    @Test
+    public void aggregateShouldKeepSnapshotPnlWhenRealtimePriceAvailable() {
+        List<PositionItem> positions = Arrays.asList(
+                new PositionItem("BTCUSD", "BTCUSD", "Buy", 1L, 11L,
+                        0.05d, 0.05d, 66_000d, 66_010d, 3_300.5d, 0.1d,
+                        0d, 0.5d, 0d, 0d, 0, 0d, 0d, 0d, 1d)
+        );
+        Map<String, Double> latestPrices = new HashMap<>();
+        latestPrices.put(AppConstants.SYMBOL_BTC, 67_000d);
+
+        List<FloatingPositionPnlItem> items = FloatingPositionAggregator.aggregate(
+                positions,
+                latestPrices,
+                true,
+                true
+        );
+
+        assertEquals(1, items.size());
+        assertEquals(1.5d, items.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(67_000d, items.get(0).getMarketPrice(), 0.0001d);
+    }
+
+    // 即使 quantity 是手数口径，悬浮窗也不应再自行推导合约乘数重算盈亏。
+    @Test
+    public void aggregateShouldIgnoreContractInferenceAndUseSnapshotPnl() {
+        List<PositionItem> positions = Arrays.asList(
+                new PositionItem("XAUUSD", "XAUUSD", "Buy", 1L, 11L,
+                        0.2d, 0.2d, 2_000d, 2_001d, 40_020d, 0.1d,
+                        0d, 20d, 0d, 0d, 0, 0d, 0d, 0d, -5d)
+        );
+        Map<String, Double> latestPrices = new HashMap<>();
+        latestPrices.put(AppConstants.SYMBOL_XAU, 2_010d);
+
+        List<FloatingPositionPnlItem> items = FloatingPositionAggregator.aggregate(
+                positions,
+                latestPrices,
+                true,
+                true
+        );
+
+        assertEquals(1, items.size());
+        assertEquals(15d, items.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(2_010d, items.get(0).getMarketPrice(), 0.0001d);
+    }
 }

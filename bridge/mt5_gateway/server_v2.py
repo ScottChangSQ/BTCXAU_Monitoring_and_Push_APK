@@ -1667,6 +1667,7 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
     deals = mt5.history_deals_get(from_time, to_time) or []
     mapped = []
     open_batches: Dict[str, List[Dict[str, Any]]] = {}
+    open_batches_by_symbol_side: Dict[str, List[Dict[str, Any]]] = {}
     contract_size_cache: Dict[str, float] = {}
     volume_epsilon = 1e-9
 
@@ -1691,37 +1692,58 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
     def infer_original_side(deal_type: int) -> str:
         return "Buy" if deal_type == 1 else "Sell"
 
+    def symbol_side_key(symbol: str, side: str) -> str:
+        return f"{symbol}:{side}"
+
     def append_open_batch(key: str,
+                          symbol: str,
                           side: str,
                           open_time_ms: int,
                           open_price: float,
                           volume: float) -> None:
         if volume <= volume_epsilon:
             return
-        queue = open_batches.setdefault(key, [])
-        queue.append({
+        batch = {
+            "symbol": symbol,
             "side": side,
             "open_time": int(open_time_ms),
             "open_price": float(open_price),
             "remaining_volume": float(volume),
-        })
+        }
+        primary_queue = open_batches.setdefault(key, [])
+        primary_queue.append(batch)
+        fallback_queue = open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), [])
+        fallback_queue.append(batch)
 
-    def consume_open_batches(key: str, close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
-        queue = open_batches.setdefault(key, [])
+    def consume_queue(queue: List[Dict[str, Any]], close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
         matches: List[Tuple[Dict[str, Any], float]] = []
         remaining = float(close_volume)
         while remaining > volume_epsilon and queue:
             batch = queue[0]
-            matched = min(remaining, float(batch.get("remaining_volume", 0.0)))
+            batch_remaining = float(batch.get("remaining_volume", 0.0))
+            if batch_remaining <= volume_epsilon:
+                queue.pop(0)
+                continue
+            matched = min(remaining, batch_remaining)
             if matched <= volume_epsilon:
                 queue.pop(0)
                 continue
             matches.append((dict(batch), matched))
-            batch["remaining_volume"] = max(0.0, float(batch.get("remaining_volume", 0.0)) - matched)
+            batch["remaining_volume"] = max(0.0, batch_remaining - matched)
             remaining -= matched
             if float(batch.get("remaining_volume", 0.0)) <= volume_epsilon:
                 queue.pop(0)
         return matches, max(0.0, remaining)
+
+    def consume_open_batches(key: str, close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        queue = open_batches.setdefault(key, [])
+        return consume_queue(queue, close_volume)
+
+    def consume_open_batches_by_symbol_side(symbol: str,
+                                            side: str,
+                                            close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        queue = open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), [])
+        return consume_queue(queue, close_volume)
 
     def resolve_split_ticket(ticket: int, split_count: int, split_index: int) -> int:
         if split_count <= 1 or ticket <= 0:
@@ -1803,7 +1825,15 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
         comment = getattr(deal, "comment", "") or ""
 
         if _is_entry_close(entry_type):
+            original_side = infer_original_side(deal_type)
             matches, remaining_after_close = consume_open_batches(key, volume)
+            if remaining_after_close > volume_epsilon:
+                fallback_matches, remaining_after_close = consume_open_batches_by_symbol_side(
+                    symbol,
+                    original_side,
+                    remaining_after_close,
+                )
+                matches.extend(fallback_matches)
             if entry_type == 2 and matches:
                 synthetic_close_volume = 0.0
                 reverse_open_volume = remaining_after_close
@@ -1854,7 +1884,7 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
                     total_swap=swap,
                     open_time=ts,
                     open_price=price,
-                    side=infer_original_side(deal_type),
+                    side=original_side,
                     split_count=split_count,
                     split_index=split_index,
                     remark=comment,
@@ -1866,6 +1896,7 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
             open_volume = volume if entry_type != 2 else reverse_open_volume
             append_open_batch(
                 key=key,
+                symbol=symbol,
                 side=current_side,
                 open_time_ms=ts,
                 open_price=price,

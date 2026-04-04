@@ -52,6 +52,25 @@ public class TradeWeekdayStatsHelperTest {
         assertEquals(1, rows.get(0).lossCount);
     }
 
+    @Test
+    public void buildRowsShouldNormalizeSecondBasedTimestampsBeforeResolvingWeekday() {
+        TradeRecordItem trade = buildTrade(1704067200L, 1704153600L, 18d, 0d);
+
+        List<TradeWeekdayStatsHelper.Row> openRows = TradeWeekdayStatsHelper.buildRows(
+                Arrays.asList(trade),
+                TradeWeekdayStatsHelper.TimeBasis.OPEN_TIME
+        );
+        List<TradeWeekdayStatsHelper.Row> closeRows = TradeWeekdayStatsHelper.buildRows(
+                Arrays.asList(trade),
+                TradeWeekdayStatsHelper.TimeBasis.CLOSE_TIME
+        );
+
+        assertEquals(1, openRows.get(0).tradeCount);
+        assertEquals(18d, openRows.get(0).totalPnl, 1e-6);
+        assertEquals(1, closeRows.get(1).tradeCount);
+        assertEquals(18d, closeRows.get(1).totalPnl, 1e-6);
+    }
+
     private static TradeRecordItem buildTrade(long openTime, long closeTime, double profit, double storage) {
         return new TradeRecordItem(
                 closeTime,

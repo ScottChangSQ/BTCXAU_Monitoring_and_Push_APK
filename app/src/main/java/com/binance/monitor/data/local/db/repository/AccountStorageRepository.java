@@ -657,7 +657,7 @@ public class AccountStorageRepository {
                 JSONObject item = array.optJSONObject(i);
                 if (item != null) {
                     result.add(new CurvePoint(
-                            item.optLong("timestamp", 0L),
+                            normalizeEpochMs(item.optLong("timestamp", 0L)),
                             item.optDouble("equity", 0d),
                             item.optDouble("balance", 0d),
                             item.optDouble("positionRatio", 0d)
@@ -706,6 +706,14 @@ public class AccountStorageRepository {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
+    }
+
+    // 统一把秒级时间戳修正为毫秒，兼容旧缓存残留的历史曲线口径。
+    private long normalizeEpochMs(long value) {
+        if (value <= 0L) {
+            return 0L;
+        }
+        return value < 10_000_000_000L ? value * 1000L : value;
     }
 
     public static class StoredSnapshot {

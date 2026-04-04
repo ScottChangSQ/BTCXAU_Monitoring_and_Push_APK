@@ -97,6 +97,22 @@ public class AccountStorageRepositoryTest {
         assertEquals(0.32d, restored.getCurvePoints().get(0).getPositionRatio(), 0.0001d);
     }
 
+    // 旧缓存里如果还残留秒级曲线时间戳，读取时也必须升成毫秒，避免回撤计算匹配失败。
+    @Test
+    public void loadStoredSnapshotShouldNormalizeSecondBasedCurvePointTimestamp() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        snapshotDao.meta = metaEntity();
+        snapshotDao.meta.curvePointsJson = "[{\"timestamp\":1704067200,\"equity\":100,\"balance\":90,\"positionRatio\":0.1}]";
+
+        AccountStorageRepository.StoredSnapshot restored = repository.loadStoredSnapshot();
+
+        assertEquals(1, restored.getCurvePoints().size());
+        assertEquals(1_704_067_200_000L, restored.getCurvePoints().get(0).getTimestamp());
+    }
+
     // 轻实时快照只应刷新持仓和摘要，不应清空已有挂单与历史交易。
     @Test
     public void persistLiveSnapshotUpdatesPositionsAndKeepsPendingAndTrades() {
@@ -251,7 +267,7 @@ public class AccountStorageRepositoryTest {
                 "",
                 5100L,
                 Arrays.asList(new AccountMetric("总资产", "$1000.00")),
-                Arrays.asList(new CurvePoint(4000L, 120d, 110d, 0.2d)),
+                Arrays.asList(new CurvePoint(1_704_067_200_000L, 120d, 110d, 0.2d)),
                 new ArrayList<>(),
                 Arrays.asList(position("BTCUSD", 0.05d, 10d)),
                 Arrays.asList(new PositionItem(
@@ -284,7 +300,7 @@ public class AccountStorageRepositoryTest {
         assertEquals(1, restored.getTrades().size());
         assertEquals("deal|300", tradeDao.items.get(0).tradeKey);
         assertEquals(1, restored.getCurvePoints().size());
-        assertEquals(4000L, restored.getCurvePoints().get(0).getTimestamp());
+        assertEquals(1_704_067_200_000L, restored.getCurvePoints().get(0).getTimestamp());
     }
 
     private TradeRecordItem trade(long closeTime,

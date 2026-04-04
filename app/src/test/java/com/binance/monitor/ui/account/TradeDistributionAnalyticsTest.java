@@ -129,4 +129,67 @@ public class TradeDistributionAnalyticsTest {
         assertEquals(0, buckets.get(6).getWinCount());
         assertEquals(1, buckets.get(6).getLossCount());
     }
+
+    @Test
+    public void buildTradeScatterPointsShouldUseOpenPriceForReturnRateAndNormalizeSecondTimestamps() {
+        TradeRecordItem trade = new TradeRecordItem(
+                1_704_074_400L,
+                "BTCUSD",
+                "BTCUSD",
+                "Buy",
+                120d,
+                0.5d,
+                5_000d,
+                0d,
+                "",
+                20d,
+                1_704_067_200L,
+                1_704_074_400L,
+                0d,
+                100d,
+                120d,
+                11L,
+                22L,
+                33L,
+                1
+        );
+
+        List<CurveAnalyticsHelper.TradeScatterPoint> scatter =
+                CurveAnalyticsHelper.buildTradeScatterPoints(Arrays.asList(trade), null);
+
+        assertEquals(1, scatter.size());
+        assertEquals(0.20d, scatter.get(0).getReturnRate(), 1e-9);
+        assertEquals(7_200_000L, scatter.get(0).getHoldingDurationMs());
+    }
+
+    @Test
+    public void buildHoldingDurationDistributionShouldNormalizeSecondBasedLifecycleTimestamps() {
+        TradeRecordItem trade = new TradeRecordItem(
+                1_704_074_400L,
+                "BTCUSD",
+                "BTCUSD",
+                "Buy",
+                120d,
+                0.5d,
+                5_000d,
+                0d,
+                "",
+                20d,
+                1_704_067_200L,
+                1_704_074_400L,
+                0d,
+                100d,
+                120d,
+                11L,
+                22L,
+                33L,
+                1
+        );
+
+        List<CurveAnalyticsHelper.DurationBucket> buckets =
+                CurveAnalyticsHelper.buildHoldingDurationDistribution(Arrays.asList(trade));
+
+        assertEquals(0, buckets.get(0).getCount());
+        assertEquals(1, buckets.get(1).getCount());
+    }
 }

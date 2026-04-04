@@ -418,6 +418,64 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertAlmostEqual(20.0, ordered[0]["profit"])
         self.assertAlmostEqual(10.0, ordered[1]["profit"])
 
+    def test_map_trades_falls_back_to_symbol_side_when_lifecycle_key_changes(self):
+        original_mt5 = server_v2.mt5
+
+        class _FakeMt5:
+            @staticmethod
+            def history_deals_get(from_time, to_time):
+                return [
+                    types.SimpleNamespace(
+                        symbol="BTCUSDT",
+                        type=0,
+                        volume=1.0,
+                        ticket=101,
+                        order=201,
+                        position_id=0,
+                        entry=0,
+                        time=100,
+                        price=100.0,
+                        profit=0.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="open-without-position",
+                    ),
+                    types.SimpleNamespace(
+                        symbol="BTCUSDT",
+                        type=1,
+                        volume=1.0,
+                        ticket=102,
+                        order=202,
+                        position_id=301,
+                        entry=1,
+                        time=300,
+                        price=120.0,
+                        profit=20.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="close-with-position",
+                    ),
+                ]
+
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        server_v2.mt5 = _FakeMt5()
+        try:
+            trades = server_v2._map_trades("1d")
+        finally:
+            server_v2.mt5 = original_mt5
+
+        self.assertEqual(1, len(trades))
+        trade = trades[0]
+        self.assertEqual("Buy", trade["side"])
+        self.assertEqual(100000, trade["openTime"])
+        self.assertEqual(300000, trade["closeTime"])
+        self.assertAlmostEqual(100.0, trade["openPrice"])
+        self.assertAlmostEqual(120.0, trade["closePrice"])
+        self.assertAlmostEqual(20.0, trade["profit"])
+
     def test_map_trades_maps_mt5_sell_lifecycle_into_single_trade_record(self):
         original_mt5 = server_v2.mt5
 

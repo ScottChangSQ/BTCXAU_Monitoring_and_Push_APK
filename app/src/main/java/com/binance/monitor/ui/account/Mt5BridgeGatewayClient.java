@@ -494,7 +494,7 @@ public class Mt5BridgeGatewayClient {
                 continue;
             }
             list.add(new CurvePoint(
-                    item.optLong("timestamp", 0L),
+                    normalizeEpochMs(optLongAny(item, 0L, "timestamp", "time")),
                     item.optDouble("equity", 0d),
                     item.optDouble("balance", 0d),
                     item.optDouble("positionRatio", 0d)));
@@ -638,9 +638,11 @@ public class Mt5BridgeGatewayClient {
                 "openPrice", "open_price", "open", "priceOpen", "entryPrice", "entry_price");
         double closePrice = optDoubleAny(item, price,
                 "closePrice", "close_price", "close", "priceClose", "exitPrice", "exit_price");
-        long timestampMs = normalizeEpochMs(item.optLong("timestamp", 0L));
-        long openTimeMs = normalizeEpochMs(item.optLong("openTime", item.optLong("timestamp", 0L)));
-        long closeTimeMs = normalizeEpochMs(item.optLong("closeTime", item.optLong("timestamp", 0L)));
+        long timestampMs = normalizeEpochMs(optLongAny(item, 0L, "timestamp", "time"));
+        long openTimeMs = normalizeEpochMs(optLongAny(item, timestampMs,
+                "openTime", "open_time", "timeOpen", "time_open"));
+        long closeTimeMs = normalizeEpochMs(optLongAny(item, timestampMs,
+                "closeTime", "close_time", "timeClose", "time_close"));
         return new TradeRecordItem(
                 timestampMs,
                 productName,
@@ -1055,6 +1057,28 @@ public class Mt5BridgeGatewayClient {
             return Math.copySign(Math.abs(sourceRate), pnlWithStorage);
         }
         return sourceRate;
+    }
+
+    private long optLongAny(JSONObject item, long fallback, String... keys) {
+        if (item == null || keys == null) {
+            return fallback;
+        }
+        for (String key : keys) {
+            if (key == null || key.trim().isEmpty() || !item.has(key)) {
+                continue;
+            }
+            Object value = item.opt(key);
+            if (value instanceof Number) {
+                return ((Number) value).longValue();
+            }
+            if (value instanceof String) {
+                try {
+                    return Long.parseLong(((String) value).trim());
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return fallback;
     }
 
     private static final class SubnetInfo {

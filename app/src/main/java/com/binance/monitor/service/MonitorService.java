@@ -1,5 +1,5 @@
 /*
- * 行情前台服务，负责拉取/接收行情、同步异常记录、驱动通知，以及刷新悬浮窗。
+ * 行情前台服务，负责拉取/接收行情、同步异常记录，以及刷新悬浮窗。
  * WebSocket、异常网关、本地异常记录和悬浮窗都在这里汇总调度。
  */
 package com.binance.monitor.service;
@@ -41,11 +41,9 @@ import com.binance.monitor.util.NotificationHelper;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -62,8 +60,6 @@ public class MonitorService extends Service {
     private final Map<String, Long> lastKlineTickAt = new HashMap<>();
     private final Map<String, Long> lastPricePublishAt = new HashMap<>();
     private final Map<String, Double> lastPublishedPrice = new HashMap<>();
-    private final Map<Long, PendingRound> pendingRounds = new HashMap<>();
-    private final Set<String> seenAlertIds = new LinkedHashSet<>();
     private final AppForegroundTracker.ForegroundStateListener appForegroundListener =
             foreground -> mainHandler.post(this::rescheduleRuntimePolicies);
     private final Runnable connectionWatchdogRunnable = new Runnable() {
@@ -305,7 +301,7 @@ public class MonitorService extends Service {
         logManager.info("行情流已启动");
     }
 
-    // 消费统一 v2 stream 消息，用它驱动账户与悬浮窗的同步提示。
+    // 消费统一 v2 stream 消息，用它驱动账户与悬浮窗刷新。
     private void handleV2StreamMessage(@Nullable GatewayV2StreamClient.StreamMessage message) {
         if (message == null) {
             return;
@@ -484,85 +480,7 @@ public class MonitorService extends Service {
                 appendedCount++;
             }
         }
-        boolean canNotify = abnormalBootstrapSynced;
-        for (AbnormalAlertItem alert : result.getAlerts()) {
-            boolean unseen = rememberAlertId(alert == null ? "" : alert.getId());
-            if (canNotify && unseen) {
-                dispatchSyncedAlert(alert);
-            }
-        }
         abnormalBootstrapSynced = true;
-        if (appendedCount > 0) {
-            logManager.info("异常同步完成，新增记录 " + appendedCount + " 条");
-        }
-    }
-
-    // 把新的服务端提醒转成系统通知与悬浮窗闪动提示。
-    private void dispatchSyncedAlert(@Nullable AbnormalAlertItem alert) {
-        if (alert == null) {
-            return;
-        }
-        if (!Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        if (!AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
-                alert.getSymbols(),
-                lastNotifyAt,
-                now,
-                AppConstants.NOTIFICATION_COOLDOWN_MS)) {
-            return;
-        }
-        String title = alert.getTitle() == null || alert.getTitle().trim().isEmpty()
-                ? getString(R.string.alert_title)
-                : alert.getTitle().trim();
-        String content = alert.getContent() == null ? "" : alert.getContent().trim();
-        notificationHelper.notifyAlert(resolveAlertNotificationId(alert), title, content);
-        for (String symbol : alert.getSymbols()) {
-            if (symbol != null && !symbol.trim().isEmpty()) {
-                floatingWindowManager.notifyAbnormalEvent(symbol);
-                lastNotifyAt.put(symbol.trim(), now);
-            }
-        }
-        if (!content.isEmpty()) {
-            logManager.warn("服务端异常提醒: " + content.replace("\n", " | "));
-        }
-    }
-
-    // 记住已经处理过的提醒，避免全量同步或重复增量时再次弹出。
-    private boolean rememberAlertId(String alertId) {
-        if (alertId == null || alertId.trim().isEmpty()) {
-            return false;
-        }
-        synchronized (seenAlertIds) {
-            boolean added = seenAlertIds.add(alertId);
-            if (seenAlertIds.size() > 240) {
-                String first = seenAlertIds.iterator().next();
-                seenAlertIds.remove(first);
-            }
-            return added;
-        }
-    }
-
-    private int resolveAlertNotificationId(AbnormalAlertItem alert) {
-        boolean hasBtc = false;
-        boolean hasXau = false;
-        if (alert != null) {
-            for (String symbol : alert.getSymbols()) {
-                if (AppConstants.SYMBOL_BTC.equals(symbol)) {
-                    hasBtc = true;
-                } else if (AppConstants.SYMBOL_XAU.equals(symbol)) {
-                    hasXau = true;
-                }
-            }
-        }
-        if (hasBtc && hasXau) {
-            return AppConstants.COMBINED_ALERT_NOTIFICATION_ID;
-        }
-        if (hasXau) {
-            return AppConstants.XAU_ALERT_NOTIFICATION_ID;
-        }
-        return AppConstants.BTC_ALERT_NOTIFICATION_ID;
     }
 
     // 把当前本地阈值配置推到网关端，保证服务端判断与设置页一致。
@@ -650,10 +568,6 @@ public class MonitorService extends Service {
                 + FormatUtils.formatVolume(data.getVolume())
                 + " | amount="
                 + FormatUtils.formatAmount(data.getQuoteAssetVolume()));
-        if (AbnormalSyncRuntimeHelper.shouldUseLocalFallbackNotification(abnormalSyncAttempted, abnormalSyncHealthy)
-                && Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
-            queueNotification(record);
-        }
     }
 
     private EvaluationResult evaluate(KlineData data, SymbolConfig config, boolean useAndMode) {
@@ -684,79 +598,6 @@ public class MonitorService extends Service {
                 ? triggered.size() == enabledCount
                 : !triggered.isEmpty();
         return new EvaluationResult(true, abnormal, String.join(" / ", triggered));
-    }
-
-    private void queueNotification(AbnormalRecord record) {
-        synchronized (pendingRounds) {
-            PendingRound round = pendingRounds.get(record.getCloseTime());
-            if (round == null) {
-                round = new PendingRound();
-                pendingRounds.put(record.getCloseTime(), round);
-                long roundKey = record.getCloseTime();
-                mainHandler.postDelayed(() -> dispatchRound(roundKey), AppConstants.MERGE_WINDOW_MS);
-            }
-            round.records.put(record.getSymbol(), record);
-        }
-    }
-
-    private void dispatchRound(long roundKey) {
-        PendingRound round;
-        synchronized (pendingRounds) {
-            round = pendingRounds.remove(roundKey);
-        }
-        if (!Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
-            return;
-        }
-        if (round == null || round.records.isEmpty()) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        AbnormalRecord btcRecord = round.records.get(AppConstants.SYMBOL_BTC);
-        AbnormalRecord xauRecord = round.records.get(AppConstants.SYMBOL_XAU);
-        boolean btcEligible = isEligible(btcRecord, now);
-        boolean xauEligible = isEligible(xauRecord, now);
-
-        if (btcEligible && xauEligible) {
-            String content = composeAlertLine("BTC", btcRecord.getTriggerSummary())
-                    + "\n"
-                    + composeAlertLine("XAU", xauRecord.getTriggerSummary());
-            notificationHelper.notifyAlert(
-                    AppConstants.COMBINED_ALERT_NOTIFICATION_ID,
-                    getString(R.string.alert_title),
-                    content
-            );
-            lastNotifyAt.put(AppConstants.SYMBOL_BTC, now);
-            lastNotifyAt.put(AppConstants.SYMBOL_XAU, now);
-            return;
-        }
-        if (btcEligible) {
-            notificationHelper.notifyAlert(
-                    AppConstants.BTC_ALERT_NOTIFICATION_ID,
-                    getString(R.string.alert_title),
-                    composeAlertLine("BTC", btcRecord.getTriggerSummary())
-            );
-            lastNotifyAt.put(AppConstants.SYMBOL_BTC, now);
-        }
-        if (xauEligible) {
-            notificationHelper.notifyAlert(
-                    AppConstants.XAU_ALERT_NOTIFICATION_ID,
-                    getString(R.string.alert_title),
-                    composeAlertLine("XAU", xauRecord.getTriggerSummary())
-            );
-            lastNotifyAt.put(AppConstants.SYMBOL_XAU, now);
-        }
-    }
-
-    private boolean isEligible(AbnormalRecord record, long now) {
-        if (record == null) {
-            return false;
-        }
-        long last = lastNotifyAt.getOrDefault(record.getSymbol(), 0L);
-        return now - last >= AppConstants.NOTIFICATION_COOLDOWN_MS;
-    }
-
-    private String composeAlertLine(String asset, String triggerSummary) {
-        return asset + " 的 " + triggerSummary + " 出现异常！";
     }
 
     private void updateConnectionStatus() {
@@ -969,10 +810,6 @@ public class MonitorService extends Service {
     private String normalizeAbnormalSyncError(@Nullable String error) {
         String safe = error == null ? "" : error.trim();
         return safe.isEmpty() ? "未知错误" : safe;
-    }
-
-    private static class PendingRound {
-        private final Map<String, AbnormalRecord> records = new LinkedHashMap<>();
     }
 
     private static class EvaluationResult {

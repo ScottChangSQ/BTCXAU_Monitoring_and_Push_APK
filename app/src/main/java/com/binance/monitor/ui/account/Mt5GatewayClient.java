@@ -136,7 +136,7 @@ public class Mt5GatewayClient {
                 continue;
             }
             list.add(new CurvePoint(
-                    item.optLong("timestamp", 0L),
+                    normalizeEpochMs(optLongAny(item, 0L, "timestamp", "time")),
                     item.optDouble("equity", 0d),
                     item.optDouble("balance", 0d)
             ));
@@ -202,6 +202,28 @@ public class Mt5GatewayClient {
         return fallback;
     }
 
+    private long optLongAny(JSONObject item, long fallback, String... keys) {
+        if (item == null || keys == null) {
+            return fallback;
+        }
+        for (String key : keys) {
+            if (key == null || key.trim().isEmpty() || !item.has(key)) {
+                continue;
+            }
+            Object value = item.opt(key);
+            if (value instanceof Number) {
+                return ((Number) value).longValue();
+            }
+            if (value instanceof String) {
+                try {
+                    return Long.parseLong(((String) value).trim());
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return fallback;
+    }
+
     private List<TradeRecordItem> parseTrades(JSONArray array) {
         List<TradeRecordItem> list = new ArrayList<>();
         if (array == null) {
@@ -217,9 +239,11 @@ public class Mt5GatewayClient {
                     "openPrice", "open_price", "open", "priceOpen", "entryPrice", "entry_price");
             double closePrice = optDoubleAny(item, price,
                     "closePrice", "close_price", "close", "priceClose", "exitPrice", "exit_price");
-            long timestampMs = normalizeEpochMs(item.optLong("timestamp", 0L));
-            long openTimeMs = normalizeEpochMs(item.optLong("openTime", item.optLong("timestamp", 0L)));
-            long closeTimeMs = normalizeEpochMs(item.optLong("closeTime", item.optLong("timestamp", 0L)));
+            long timestampMs = normalizeEpochMs(optLongAny(item, 0L, "timestamp", "time"));
+            long openTimeMs = normalizeEpochMs(optLongAny(item, timestampMs,
+                    "openTime", "open_time", "timeOpen", "time_open"));
+            long closeTimeMs = normalizeEpochMs(optLongAny(item, timestampMs,
+                    "closeTime", "close_time", "timeClose", "time_close"));
             list.add(new TradeRecordItem(
                     timestampMs,
                     item.optString("productName", "--"),

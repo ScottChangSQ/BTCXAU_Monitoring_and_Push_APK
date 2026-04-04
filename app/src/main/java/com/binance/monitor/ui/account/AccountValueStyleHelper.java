@@ -88,6 +88,7 @@ public final class AccountValueStyleHelper {
         StringBuilder builder = new StringBuilder();
         boolean started = false;
         boolean dotUsed = false;
+        boolean digitSeen = false;
         for (int i = 0; i < safe.length(); i++) {
             char current = safe.charAt(i);
             if (!started && (current == '+' || current == '-')) {
@@ -95,14 +96,21 @@ public final class AccountValueStyleHelper {
                 started = true;
                 continue;
             }
+            if (!digitSeen && isIgnoredNumberDecoration(current)) {
+                continue;
+            }
             if (Character.isDigit(current)) {
                 builder.append(current);
                 started = true;
+                digitSeen = true;
                 continue;
             }
             if (started && current == '.' && !dotUsed) {
                 builder.append(current);
                 dotUsed = true;
+                continue;
+            }
+            if (digitSeen && current == ',') {
                 continue;
             }
             if (started) {
@@ -118,5 +126,16 @@ public final class AccountValueStyleHelper {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    // 忽略金额前缀里的货币符号和空白，兼容 +$123.45 这类展示文本。
+    private static boolean isIgnoredNumberDecoration(char current) {
+        return Character.isWhitespace(current)
+                || current == '$'
+                || current == '¥'
+                || current == '￥'
+                || current == '€'
+                || current == '£'
+                || current == ',';
     }
 }

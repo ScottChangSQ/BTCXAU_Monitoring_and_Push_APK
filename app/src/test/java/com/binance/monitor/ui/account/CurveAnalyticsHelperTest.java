@@ -7,6 +7,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 import com.binance.monitor.ui.account.model.CurvePoint;
+import com.binance.monitor.ui.account.model.TradeRecordItem;
 
 import org.junit.Test;
 
@@ -69,6 +70,35 @@ public class CurveAnalyticsHelperTest {
         assertEquals(2, series.size());
         assertEquals(0.0952380952d, series.get(0).getReturnRate(), 1e-6);
         assertEquals(-0.10d, series.get(1).getReturnRate(), 1e-6);
+    }
+
+    @Test
+    public void buildHoldingDurationDistributionShouldCountZeroDurationTradesInFirstBucket() {
+        List<TradeRecordItem> trades = Arrays.asList(
+                new TradeRecordItem(
+                        buildTime(2026, 3, 1, 9),
+                        "BTC",
+                        "BTC",
+                        "Buy",
+                        66_000d,
+                        0.01d,
+                        660d,
+                        0d,
+                        "",
+                        10d,
+                        buildTime(2026, 3, 1, 9),
+                        buildTime(2026, 3, 1, 9),
+                        0d,
+                        66_000d,
+                        66_100d
+                )
+        );
+
+        List<CurveAnalyticsHelper.DurationBucket> buckets =
+                CurveAnalyticsHelper.buildHoldingDurationDistribution(trades);
+
+        assertEquals(1, buckets.get(0).getCount());
+        assertEquals(1, buckets.get(0).getWinCount());
     }
 
     private long buildTime(int year, int month, int day, int hourOfDay) {

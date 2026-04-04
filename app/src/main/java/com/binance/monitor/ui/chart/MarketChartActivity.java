@@ -47,8 +47,10 @@ import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.local.db.repository.ChartHistoryRepository;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.CandleEntry;
+import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.model.v2.MarketSeriesPayload;
+import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
@@ -132,6 +134,7 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private ActivityMarketChartBinding binding;
     private GatewayV2Client gatewayV2Client;
+    private MonitorRepository monitorRepository;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private ExecutorService ioExecutor;
     private Future<?> runningTask;
@@ -223,6 +226,7 @@ public class MarketChartActivity extends AppCompatActivity {
         binding = ActivityMarketChartBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         gatewayV2Client = new GatewayV2Client(this);
+        monitorRepository = MonitorRepository.getInstance(getApplicationContext());
         ioExecutor = Executors.newFixedThreadPool(2);
         chartHistoryRepository = new ChartHistoryRepository(this);
         accountStorageRepository = new AccountStorageRepository(getApplicationContext());
@@ -238,6 +242,7 @@ public class MarketChartActivity extends AppCompatActivity {
                 updateAbnormalAnnotationsOverlay();
             });
         }
+        observeRealtimeDisplayKlines();
 
         setupChart();
         setupSymbolSelector();
@@ -1340,9 +1345,116 @@ public class MarketChartActivity extends AppCompatActivity {
         );
     }
 
-    // 当前图表页还没有直接消费分钟实时尾部，因此不能把“有本地尾部推送”当成刷新前提。
+    // 图表页已经接入实时分钟尾部，除年线外都可以直接用它刷新最新桶。
     private boolean hasRealtimeTailSourceForChart() {
-        return false;
+        return monitorRepository != null
+                && !selectedInterval.yearAggregate
+                && AppConstants.MONITOR_SYMBOLS.contains(selectedSymbol);
+    }
+
+    // 直接监听监控服务的实时 K 线尾部，让图表页与悬浮窗共用同一套最新行情源。
+    private void observeRealtimeDisplayKlines() {
+        if (monitorRepository == null) {
+            return;
+        }
+        monitorRepository.getDisplayKlines().observe(this, snapshot -> {
+            if (snapshot == null || snapshot.isEmpty()) {
+                return;
+            }
+            applyRealtimeChartTail(snapshot.get(selectedSymbol));
+        });
+    }
+
+    // 用最新分钟 K 线修正当前图表的末尾，避免只能每 5 秒靠轮询回填。
+    private void applyRealtimeChartTail(@Nullable KlineData latestKline) {
+        if (latestKline == null || binding == null || !hasRealtimeTailSourceForChart()) {
+            return;
+        }
+        if (!matchesSelectedSymbol(latestKline.getSymbol())) {
+            return;
+        }
+        CandleEntry realtimeBaseCandle = toRealtimeCandleEntry(latestKline);
+        List<CandleEntry> minuteCandles = mergeRealtimeMinuteCache(realtimeBaseCandle);
+        List<CandleEntry> realtimeDisplay = buildRealtimeDisplayCandles(realtimeBaseCandle, minuteCandles);
+        if (realtimeDisplay.isEmpty()) {
+            return;
+        }
+        String key = buildCacheKey(selectedSymbol, selectedInterval);
+        List<CandleEntry> mergedDisplay = MarketChartDisplayHelper.mergeRealtimeTail(loadedCandles, realtimeDisplay);
+        if (mergedDisplay.isEmpty()) {
+            return;
+        }
+        boolean followingLatestViewport = binding.klineChartView != null
+                && binding.klineChartView.isFollowingLatestViewport();
+        applyDisplayCandles(key, mergedDisplay, true, followingLatestViewport, true);
+        lastSuccessUpdateMs = System.currentTimeMillis();
+        updateStateCount();
+        refreshChartOverlays();
+        if (!binding.klineChartView.hasActiveCrosshair()) {
+            renderInfoWithLatest();
+        }
+        updateRefreshCountdownText();
+    }
+
+    // 统一把服务层实时 K 线转成图表层 CandleEntry，避免两边字段口径再次分叉。
+    private CandleEntry toRealtimeCandleEntry(KlineData latestKline) {
+        return new CandleEntry(
+                selectedSymbol,
+                latestKline.getOpenTime(),
+                latestKline.getCloseTime(),
+                latestKline.getOpenPrice(),
+                latestKline.getHighPrice(),
+                latestKline.getLowPrice(),
+                latestKline.getClosePrice(),
+                latestKline.getVolume(),
+                latestKline.getQuoteAssetVolume()
+        );
+    }
+
+    // 分钟底稿先写回本地缓存，供切周期、异常标注和后续聚合统一复用。
+    private List<CandleEntry> mergeRealtimeMinuteCache(CandleEntry realtimeBaseCandle) {
+        IntervalOption minuteOption = INTERVALS[0];
+        String minuteKey = buildCacheKey(selectedSymbol, minuteOption);
+        List<CandleEntry> minuteSource = getCachedOrPersisted(minuteKey);
+        List<CandleEntry> mergedMinute = CandleAggregationHelper.mergeRealtimeBaseCandle(
+                minuteSource,
+                realtimeBaseCandle,
+                selectedSymbol,
+                Math.max(minuteOption.limit, FULL_WINDOW_LIMIT)
+        );
+        if (!mergedMinute.isEmpty()) {
+            klineCache.put(minuteKey, new ArrayList<>(mergedMinute));
+        }
+        return mergedMinute;
+    }
+
+    // 当前周期显示序列统一从分钟底稿派生，保证图表尾部与服务端实时价格口径一致。
+    private List<CandleEntry> buildRealtimeDisplayCandles(CandleEntry realtimeBaseCandle,
+                                                          List<CandleEntry> minuteCandles) {
+        if (selectedInterval.yearAggregate) {
+            return new ArrayList<>();
+        }
+        if ("1m".equalsIgnoreCase(selectedInterval.key)) {
+            return CandleAggregationHelper.mergeRealtimeBaseCandle(
+                    loadedCandles,
+                    realtimeBaseCandle,
+                    selectedSymbol,
+                    selectedInterval.limit
+            );
+        }
+        if (minuteCandles == null || minuteCandles.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return CandleAggregationHelper.aggregate(
+                minuteCandles,
+                selectedSymbol,
+                selectedInterval.apiInterval,
+                selectedInterval.limit
+        );
+    }
+
+    private boolean matchesSelectedSymbol(@Nullable String symbol) {
+        return symbol != null && symbol.trim().equalsIgnoreCase(selectedSymbol);
     }
 
     // 给周期/指标横向按钮条同步主题背景。
@@ -1971,10 +2083,7 @@ public class MarketChartActivity extends AppCompatActivity {
         if (binding == null || binding.klineChartView == null) {
             return;
         }
-        if (!ConfigManager.getInstance(this).isAccountSessionActive()) {
-            clearAccountAnnotationsOverlay();
-            return;
-        }
+        boolean sessionActive = ConfigManager.getInstance(this).isAccountSessionActive();
         AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
                 ? null
                 : accountStatsPreloadManager.getLatestCache();
@@ -1984,22 +2093,21 @@ public class MarketChartActivity extends AppCompatActivity {
         AccountSnapshot snapshot = AccountSnapshotDisplayResolver.resolve(
                 cache,
                 storedSnapshot,
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                sessionActive
         );
-        if (snapshot == null) {
+        List<TradeRecordItem> trades = ChartHistoricalTradeSourceResolver.resolve(snapshot, storedSnapshot);
+        if (snapshot == null && trades.isEmpty()) {
             clearAccountAnnotationsOverlay();
             return;
         }
 
-        List<PositionItem> positions = snapshot.getPositions() == null
+        List<PositionItem> positions = snapshot == null || snapshot.getPositions() == null
                 ? new ArrayList<>()
                 : new ArrayList<>(snapshot.getPositions());
-        List<PositionItem> pendingOrders = snapshot.getPendingOrders() == null
+        List<PositionItem> pendingOrders = snapshot == null || snapshot.getPendingOrders() == null
                 ? new ArrayList<>()
                 : new ArrayList<>(snapshot.getPendingOrders());
-        List<TradeRecordItem> trades = snapshot.getTrades() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getTrades());
 
         binding.klineChartView.setPositionAnnotations(buildPositionAnnotations(positions, trades));
         binding.klineChartView.setPendingAnnotations(buildPendingAnnotations(pendingOrders, trades));
