@@ -1,6 +1,24 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已完成本轮 2 个修正中的代码闭环：服务端 `bridge/mt5_gateway/server_v2.py` 的账户曲线重放不再只在成交点生成净值点，而是在“持仓跨越的历史时间段”内按 Binance 历史价格补采样，再用这些中间价格重算 `equity / positionRatio`。这样历史周期的净值曲线不再长期贴着结余曲线，附图长按时也不再只会反复落到同一个旧时间点。
+- 当前停点：本轮已新增并跑通服务端失败测试 `test_rebuild_curve_inserts_history_samples_for_open_interval`，并重新通过 `python -m unittest discover bridge/mt5_gateway/tests`、`.\gradlew.bat :app:testDebugUnitTest`、`.\gradlew.bat :app:assembleDebug`。下一步应优先真机确认 2 个现象：净值曲线在历史持仓区间内是否已经和结余线拉开、长按“当前区间仓位/当前区间回撤/当前区间日收益”时弹窗时间和数值是否会随手指连续变化。
+- 本轮关键决定：这次不先改 APP 长按 UI，而是先修服务端曲线源数据；原因是源码排查已确认联动逻辑本身支持按时间/x 位置插值，真正让弹窗“卡住”的更像是上游返回的曲线点过稀、历史净值缺少持仓区间内的真实价格采样。
+- 已完成本轮 3 个修正中的代码闭环：`NotificationHelper` 已移除旧的 alert channel 和 `notifyAlert(...)`，`AppConstants` 不再保留 `ALERT_CHANNEL_ID`；`MarketChartActivity.applyPrivacyMaskState()` 已把历史成交层从隐私遮罩里解耦，现在 K 线图“历史成交”只受图表页自己的 `showHistoryTrades` 开关控制，不再跟随“当前持仓/隐私隐藏”一起消失。
+- 当前停点：本轮已新增并跑通 `MarketChartHistoryTradeToggleSourceTest`、`NotificationHelperSourceTest`，并重新通过 `.\gradlew.bat :app:testDebugUnitTest` 与 `.\gradlew.bat :app:assembleDebug`。下一步应优先真机确认 3 个现象：日志里是否还存在旧提醒残留、K 线图历史成交是否恢复显示、图表页“历史成交”开关是否已与当前持仓显示完全解耦。
+- 本轮关键决定：这次不再继续补图表绘制层，而是直接切断“历史成交受隐私遮罩影响”这条上游控制链，同时把客户端残留的系统提醒通道彻底删除；原因是用户这轮反馈的两个表象本质上都指向“旧控制链仍在生效”，继续在下游加补丁会反复回退。
+- 已按新的性能优化顺序完成前 3 步代码改造：`AccountStatsPreloadManager` 新增 `fetchForOverlay()`，图表页/服务端高频账户刷新不再每轮拉 `ALL` 历史，而是先拉轻量 `v2/account/snapshot`，仅当 `tradeCount` 变化时才补拉 `v2/account/history(all)`；`MonitorService` 收到 v2 account delta 时也已改走这条轻量链路。
+- 服务端 `bridge/mt5_gateway/server_v2.py` 已完成“轻快照 + 按需重对象”切换：`/v2/market/snapshot`、`/v2/account/snapshot`、`/v2/sync` 运行态都改走 `_build_account_light_snapshot_with_cache()`，只保留 `/v2/account/history` 继续走 `_build_snapshot_with_cache(range)` 的重快照路径；同时新增 `_snapshot_from_mt5_light()`，轻快照只构建账户摘要、当前持仓和挂单，并补上 `tradeCount` 元信息供 APP 判断是否需要补拉全历史。
+- APP 端第 3 步已先落最小闭环：图表页 `updateAccountAnnotationsOverlay()` 去掉了一处对持仓/挂单的额外整份复制，避免高频 overlay 刷新再多做一次 `new ArrayList<>(...)`。
+- 当前停点：本轮已重新通过 `python -m unittest discover bridge/mt5_gateway/tests`、`.\gradlew.bat :app:testDebugUnitTest`、`.\gradlew.bat clean :app:assembleDebug`。下一步进入第 4 步“真机量化”，重点实测图表页前台、悬浮窗开启、账户页前后台切换时的 CPU、电量、流量和内存基线。
+- 本轮关键决定：不先动服务器部署，只先把代码链路切到“轻量快照优先、全历史按需补拉”，原因是用户明确要先完成本地代码闭环，再统一上服务器验证；同时这也是压掉 1.8G 内存和图表页无效轮询的最短路径。
+- 已继续修正“悬浮窗/账户总览持仓盈亏、预付款为 0、总资产和净资产长期一致”这一组同源问题：服务端 `bridge/mt5_gateway/server_v2.py` 的 `_build_overview(...)` 已改回直接使用 MT5 原始 `balance/equity/margin/margin_free`，不再错误把 `totalAsset` 算成 `equity + totalPnL * 0.3`；同时 `_snapshot_from_mt5(...)` 现在会把 `balance/equity/margin/freeMargin/marginLevel/profit` 一并写入 `accountMeta`，避免 `v2/account` 再把这些字段读成空值或 0。
+- 已继续修正 APP 侧残留旧口径：`AccountStatsBridgeActivity` 里“全周期总计盈亏（持仓）”摘要和持仓聚合列表都已去掉 `+ storageFee`，现在与“持仓行情-当前行情”和悬浮窗统一直接使用 `PositionItem.totalPnL`。
+- 当前停点：本轮已新增并跑通服务端回归测试 `test_build_overview_uses_balance_equity_and_mt5_margin_fields`、`test_build_snapshot_includes_account_meta_margin_fields_for_v2_account`，以及 APP 回归测试 `AccountStatsBridgeOverviewSourceTest.currentPositionSummaryShouldNotAddStorageFeeToTotalPnl`；并重新通过 `python -m unittest discover bridge/mt5_gateway/tests`、`.\gradlew.bat :app:testDebugUnitTest`、`.\gradlew.bat clean :app:assembleDebug`。下一步应优先真机确认 3 个现象：悬浮窗/账户总览持仓盈亏是否已与当前行情一致、预付款是否恢复为 MT5 实际值、总资产与净资产是否会按真实浮盈亏分离。
+- 本轮关键决定：这次不再继续只修 APP 展示层，而是同时修服务端 overview/accountMeta 源数据；原因是用户最新反馈已经证明，单改客户端后仍会被服务端错误账户口径继续覆盖，尤其是预付款与账户快照链路。
+- 已继续修正账户统计-账户总览和悬浮窗的持仓口径：账户总览新增 `AccountOverviewMetricsCalculator`，把“预付款/可用预付款/持仓市值/仓位占比/持仓收益率”统一改成用户指定公式，其中“保证金”字段已改成“预付款”且数据也改取预付款；悬浮窗盈亏已改为直接引用 `PositionItem.totalPnL`，不再额外叠加库存费，确保和“持仓行情-当前行情”一致。
+- 当前停点：本轮已新增并跑通 `AccountOverviewMetricsCalculatorTest`、`AccountStatsBridgeOverviewSourceTest`、更新后的 `FloatingPositionAggregatorTest`，并重新通过 `.\gradlew.bat :app:testDebugUnitTest` 与 `.\gradlew.bat clean :app:assembleDebug`。下一步应优先真机确认账户总览 5 个字段和悬浮窗盈亏是否已按新口径一致显示。
+- 本轮关键决定：不再沿用服务端回传的旧 `marketValue/positionRatio/returnRate` 字段直接展示，而是在 APP 侧按“持仓手数 × 实时价格”“持仓市值 / 净资产 × 杠杆”“持仓盈亏 / 总资产”即时重算；原因是用户已明确要求以这套口径为准，继续混用旧字段只会造成总览、当前行情、悬浮窗三处数字不一致。
 - 已继续修正账户统计剩余 2 个问题：这次确认主根因不在客户端图表，而在服务端 `bridge/mt5_gateway/server_v2.py` 的 `_map_trades(...)`。当 MT5 历史成交的生命周期 key 变化、导致开平仓批次配对失败时，旧逻辑会直接生成 `openTime == closeTime` 的 synthetic close，进而把“全周期历史交易分布”的最大回撤压成 0、把“全周期持仓时间分布”大量压进 `0-30分`。现已改成“先按原生命周期 key 配对，失败后再按 `symbol + 原持仓方向` 回退配对，最后才允许 synthetic close”。
 - 当前停点：本轮已新增并跑通服务端失败测试 `test_map_trades_falls_back_to_symbol_side_when_lifecycle_key_changes`，并重新通过 `python -m unittest discover bridge/mt5_gateway/tests`、`.\gradlew.bat :app:testDebugUnitTest`、`.\gradlew.bat assembleDebug`。下一步应优先真机验证这两个图是否恢复，不再出现大量点贴在 `最大回撤=0%` 竖线上、也不再几乎全部落在 `0-30分`。
 - 本轮关键决定：不再继续给客户端时间字段兼容或图表算法打补丁，而是直接修服务端历史成交闭合链路；原因是只要服务端还在大量产出 `openTime == closeTime` 的伪生命周期，客户端后续所有回撤、持仓时长、星期统计都会被同源污染。

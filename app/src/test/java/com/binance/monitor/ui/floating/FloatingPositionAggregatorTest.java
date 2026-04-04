@@ -167,9 +167,9 @@ public class FloatingPositionAggregatorTest {
         assertEquals(67_123.4d, cards.get(0).getLatestPrice(), 0.0001d);
     }
 
-    // 悬浮窗盈亏应统一包含隔夜费，不能再比账户页少一截。
+    // 悬浮窗盈亏现在直接复用当前行情页里的对应盈亏数字，不能再叠加库存费。
     @Test
-    public void aggregateShouldIncludeStorageFeeInTotalPnl() {
+    public void aggregateShouldUseSnapshotTotalPnlOnly() {
         List<PositionItem> positions = Arrays.asList(
                 new PositionItem("BTCUSD", "BTCUSD", "Buy", 1L, 11L,
                         0.05d, 0.05d, 66_000d, 66_500d, 3_325d, 0.1d,
@@ -182,7 +182,7 @@ public class FloatingPositionAggregatorTest {
         List<FloatingPositionPnlItem> items = FloatingPositionAggregator.aggregate(positions);
 
         assertEquals(1, items.size());
-        assertEquals(32d, items.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(30d, items.get(0).getTotalPnl(), 0.0001d);
     }
 
     // 悬浮窗盈亏应直接复用账户快照里的当前盈亏数字，实时价格只更新价格显示。
@@ -204,7 +204,7 @@ public class FloatingPositionAggregatorTest {
         );
 
         assertEquals(1, items.size());
-        assertEquals(1.5d, items.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(0.5d, items.get(0).getTotalPnl(), 0.0001d);
         assertEquals(67_000d, items.get(0).getMarketPrice(), 0.0001d);
     }
 
@@ -227,7 +227,7 @@ public class FloatingPositionAggregatorTest {
         );
 
         assertEquals(1, items.size());
-        assertEquals(15d, items.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(20d, items.get(0).getTotalPnl(), 0.0001d);
         assertEquals(2_010d, items.get(0).getMarketPrice(), 0.0001d);
     }
 }

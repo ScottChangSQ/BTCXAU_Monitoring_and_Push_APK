@@ -392,7 +392,7 @@ public class MarketChartActivity extends AppCompatActivity {
             return;
         }
         boolean masked = SensitiveDisplayMasker.isEnabled(this);
-        binding.klineChartView.setOverlayVisibility(!masked, !masked, !masked && showHistoryTrades, !masked);
+        binding.klineChartView.setOverlayVisibility(!masked, !masked, showHistoryTrades, !masked);
         updateHistoryTradeToggleButton();
         updateChartPositionPanel(lastChartPositions, lastChartPendingOrders);
     }
@@ -2103,11 +2103,11 @@ public class MarketChartActivity extends AppCompatActivity {
         }
 
         List<PositionItem> positions = snapshot == null || snapshot.getPositions() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getPositions());
+                ? Collections.emptyList()
+                : snapshot.getPositions();
         List<PositionItem> pendingOrders = snapshot == null || snapshot.getPendingOrders() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getPendingOrders());
+                ? Collections.emptyList()
+                : snapshot.getPendingOrders();
 
         binding.klineChartView.setPositionAnnotations(buildPositionAnnotations(positions, trades));
         binding.klineChartView.setPendingAnnotations(buildPendingAnnotations(pendingOrders, trades));

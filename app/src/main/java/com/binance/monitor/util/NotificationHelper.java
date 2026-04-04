@@ -9,7 +9,6 @@ import android.content.Intent;
 import android.os.Build;
 
 import androidx.core.app.NotificationCompat;
-import androidx.core.app.NotificationManagerCompat;
 
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
@@ -37,18 +36,7 @@ public class NotificationHelper {
         );
         serviceChannel.setDescription("前台行情与监控服务");
 
-        NotificationChannel alertChannel = new NotificationChannel(
-                AppConstants.ALERT_CHANNEL_ID,
-                context.getString(R.string.alert_channel_name),
-                NotificationManager.IMPORTANCE_HIGH
-        );
-        alertChannel.setDescription("异常交易提醒");
-        alertChannel.enableVibration(true);
-        alertChannel.enableLights(true);
-        alertChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-
         manager.createNotificationChannel(serviceChannel);
-        manager.createNotificationChannel(alertChannel);
     }
 
     public Notification buildServiceNotification(String connectionState, boolean monitoringEnabled) {
@@ -74,34 +62,6 @@ public class NotificationHelper {
                 .setContentIntent(pendingIntent)
                 .setOnlyAlertOnce(true)
                 .build();
-    }
-
-    public void notifyAlert(int notificationId, String title, String content) {
-        if (!PermissionHelper.hasNotificationPermission(context)) {
-            return;
-        }
-        Intent intent = new Intent(context, MainActivity.class)
-                .setAction(Intent.ACTION_MAIN)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                context,
-                101 + notificationId,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-        Notification notification = new NotificationCompat.Builder(context, AppConstants.ALERT_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_monitor_logo)
-                .setContentTitle(title)
-                .setContentText(content)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(content))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setDefaults(Notification.DEFAULT_ALL)
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent)
-                .build();
-        NotificationManagerCompat.from(context).notify(notificationId, notification);
     }
 
     public void cancelServiceNotification() {

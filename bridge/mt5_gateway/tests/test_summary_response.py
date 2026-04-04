@@ -91,6 +91,104 @@ import server_v2  # noqa: E402
 class SummaryResponseTests(unittest.TestCase):
     """验证后台摘要响应会去掉大体积列表字段。"""
 
+    def test_build_overview_uses_balance_equity_and_mt5_margin_fields(self):
+        original_mt5 = server_v2.mt5
+
+        class _FakeMt5:
+            @staticmethod
+            def account_info():
+                return types.SimpleNamespace(
+                    equity=1250.0,
+                    balance=1200.0,
+                    margin=150.0,
+                    margin_free=1100.0,
+                    leverage=100,
+                    margin_level=833.33,
+                )
+
+        server_v2.mt5 = _FakeMt5()
+        positions = [
+            {"marketValue": 3000.0, "totalPnL": 50.0, "dayPnL": 20.0},
+            {"marketValue": 1000.0, "totalPnL": -10.0, "dayPnL": -5.0},
+        ]
+        trades = [
+            {"timestamp": server_v2._now_ms(), "fee": 3.0},
+        ]
+        try:
+            overview = server_v2._build_overview(positions, trades)
+        finally:
+            server_v2.mt5 = original_mt5
+
+        values = {item["name"]: item["value"] for item in overview}
+        self.assertEqual("$1,200.00", values["Total Asset"])
+        self.assertEqual("$1,250.00", values["Current Equity"])
+        self.assertEqual("$150.00", values["Margin"])
+        self.assertEqual("$1,100.00", values["Free Fund"])
+
+    def test_build_snapshot_includes_account_meta_margin_fields_for_v2_account(self):
+        original_mt5 = server_v2.mt5
+        original_map_positions = server_v2._map_positions
+        original_map_pending_orders = server_v2._map_pending_orders
+        original_map_trades = server_v2._map_trades
+        original_build_curve = server_v2._build_curve
+        original_build_overview = server_v2._build_overview
+        original_curve_indicators = server_v2._curve_indicators
+        original_build_stats = server_v2._build_stats
+        original_ensure_mt5 = server_v2._ensure_mt5
+        original_shutdown = server_v2._shutdown_mt5
+
+        class _FakeMt5:
+            @staticmethod
+            def account_info():
+                return types.SimpleNamespace(
+                    login=7400048,
+                    server="ICMarketsSC-MT5-6",
+                    currency="USD",
+                    leverage=200,
+                    name="demo",
+                    company="demo-company",
+                    balance=1200.0,
+                    equity=1255.0,
+                    margin=150.0,
+                    margin_free=1105.0,
+                    margin_level=836.66,
+                    profit=55.0,
+                )
+
+        server_v2.mt5 = _FakeMt5()
+        server_v2._map_positions = lambda: []
+        server_v2._map_pending_orders = lambda: []
+        server_v2._map_trades = lambda range_key: []
+        server_v2._build_curve = lambda range_key, positions=None: [
+            {"timestamp": 1, "equity": 1255.0, "balance": 1200.0, "positionRatio": 0.0}
+        ]
+        server_v2._build_overview = lambda positions, trades: []
+        server_v2._curve_indicators = lambda points: []
+        server_v2._build_stats = lambda positions, trades, points: []
+        server_v2._ensure_mt5 = lambda: None
+        server_v2._shutdown_mt5 = lambda: None
+        try:
+            snapshot = server_v2._snapshot_from_mt5("all")
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2._map_positions = original_map_positions
+            server_v2._map_pending_orders = original_map_pending_orders
+            server_v2._map_trades = original_map_trades
+            server_v2._build_curve = original_build_curve
+            server_v2._build_overview = original_build_overview
+            server_v2._curve_indicators = original_curve_indicators
+            server_v2._build_stats = original_build_stats
+            server_v2._ensure_mt5 = original_ensure_mt5
+            server_v2._shutdown_mt5 = original_shutdown
+
+        account_meta = snapshot["accountMeta"]
+        self.assertEqual(1200.0, account_meta["balance"])
+        self.assertEqual(1255.0, account_meta["equity"])
+        self.assertEqual(150.0, account_meta["margin"])
+        self.assertEqual(1105.0, account_meta["freeMargin"])
+        self.assertEqual(836.66, account_meta["marginLevel"])
+        self.assertEqual(55.0, account_meta["profit"])
+
     def test_deal_time_ms_applies_configured_offset_minutes(self):
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
         try:
@@ -831,6 +929,64 @@ class SummaryResponseTests(unittest.TestCase):
             point_after_later_open["balance"],
             places=6,
             msg="卖单平仓后不应因为后续同品种价格更新继续残留浮盈亏",
+        )
+
+    def test_rebuild_curve_inserts_history_samples_for_open_interval(self):
+        helper = getattr(server_v2, "_replay_curve_from_history", None)
+        self.assertIsNotNone(helper, "缺少 _replay_curve_from_history，无法验证持仓区间历史采样")
+
+        deals = [
+            {
+                "timestamp": 1_000,
+                "price": 100.0,
+                "profit": 0.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 0,
+                "deal_type": 0,
+                "volume": 1.0,
+                "symbol": "BTCUSDT",
+                "position_id": 1,
+            },
+            {
+                "timestamp": 4_000,
+                "price": 104.0,
+                "profit": 4.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 1,
+                "deal_type": 1,
+                "volume": 1.0,
+                "symbol": "BTCUSDT",
+                "position_id": 1,
+            },
+        ]
+
+        original_fetch_rows = server_v2._fetch_binance_kline_rows
+        server_v2._fetch_binance_kline_rows = lambda symbol, interval, limit, **kwargs: [
+            [1_000, "100", "102", "99", "101", "0", 1_999, "0", 0],
+            [2_000, "101", "106", "100", "105", "0", 2_999, "0", 0],
+            [3_000, "105", "105", "102", "103", "0", 3_999, "0", 0],
+        ]
+        try:
+            points = helper(
+                deal_history=deals,
+                start_balance=1_000.0,
+                open_positions=[],
+                current_balance=1_004.0,
+                current_equity=1_004.0,
+                leverage=100.0,
+                contract_size_fn=lambda symbol: 1.0,
+                now_ms=5_000,
+            )
+        finally:
+            server_v2._fetch_binance_kline_rows = original_fetch_rows
+
+        sampled_points = [point for point in points if 1_000 < point["timestamp"] < 4_000]
+        self.assertTrue(sampled_points, "持仓跨越历史区间时，曲线中间应插入历史价格采样点")
+        self.assertTrue(
+            any(abs(point["equity"] - point["balance"]) > 0.0 for point in sampled_points),
+            "历史采样点应反映持仓浮盈亏，不能继续让净值等于结余",
         )
 
     def test_curve_point_digest_includes_position_ratio(self):

@@ -2805,7 +2805,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             result.add(new AccountMetric("总资产", "$" + FormatUtils.formatPrice(ACCOUNT_INITIAL_BALANCE)));
             result.add(new AccountMetric("净资产", "$" + FormatUtils.formatPrice(ACCOUNT_INITIAL_BALANCE)));
             result.add(new AccountMetric("可用预付款", "$0.00"));
-            result.add(new AccountMetric("保证金", "$0.00"));
+            result.add(new AccountMetric("预付款", "$0.00"));
             result.add(new AccountMetric("仓位占比", "0.00%"));
             result.add(new AccountMetric("持仓市值", "$0.00"));
             result.add(new AccountMetric("持仓盈亏", "$0.00"));
@@ -2820,25 +2820,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         CurvePoint last = allCurvePoints.get(allCurvePoints.size() - 1);
         double totalAsset = Math.max(0d, last.getBalance());
         double netAsset = Math.max(0d, last.getEquity());
-
-        double margin = metricValue(snapshotOverview, "保证金", "保证金金额", "Margin", "Margin Amount");
-        double free = metricValue(snapshotOverview, "可用预付款", "可用资金", "Free Fund", "Available Funds", "Available");
-        if (margin <= 0d) {
-            margin = Math.max(0d, netAsset * 0.35d);
-        }
-        if (free <= 0d) {
-            free = Math.max(0d, netAsset - margin);
-        }
-
-        double marketValue = 0d;
-        double positionPnl = 0d;
         List<PositionItem> metricsPositions = currentPositions == null ? new ArrayList<>() : currentPositions;
-        for (PositionItem item : metricsPositions) {
-            marketValue += item.getMarketValue();
-            positionPnl += item.getTotalPnL() + item.getStorageFee();
-        }
-        double positionRatio = safeDivide(marketValue, Math.max(1d, netAsset));
-        double positionPnlRate = safeDivide(positionPnl, Math.max(1d, marketValue));
+        AccountOverviewMetricsCalculator.OverviewValues overviewValues = AccountOverviewMetricsCalculator.calculate(
+                totalAsset,
+                netAsset,
+                snapshotOverview,
+                metricsPositions
+        );
 
         double dayClosedPnl = calcTodayClosedPnl(baseTrades);
         double dayStartAsset = calcTodayStartAsset(totalAsset, dayClosedPnl, allCurvePoints);
@@ -2851,12 +2839,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         result.add(new AccountMetric("总资产", "$" + FormatUtils.formatPrice(totalAsset)));
         result.add(new AccountMetric("净资产", "$" + FormatUtils.formatPrice(netAsset)));
-        result.add(new AccountMetric("可用预付款", "$" + FormatUtils.formatPrice(free)));
-        result.add(new AccountMetric("保证金", "$" + FormatUtils.formatPrice(margin)));
-        result.add(new AccountMetric("仓位占比", percent(positionRatio)));
-        result.add(new AccountMetric("持仓市值", "$" + FormatUtils.formatPrice(marketValue)));
-        result.add(new AccountMetric("持仓盈亏", signedMoney(positionPnl)));
-        result.add(new AccountMetric("持仓收益率", percent(positionPnlRate)));
+        result.add(new AccountMetric("可用预付款", "$" + FormatUtils.formatPrice(overviewValues.getFreePrepayment())));
+        result.add(new AccountMetric("预付款", "$" + FormatUtils.formatPrice(overviewValues.getPrepayment())));
+        result.add(new AccountMetric("仓位占比", percent(overviewValues.getPositionRatio())));
+        result.add(new AccountMetric("持仓市值", "$" + FormatUtils.formatPrice(overviewValues.getMarketValue())));
+        result.add(new AccountMetric("持仓盈亏", signedMoney(overviewValues.getPositionPnl())));
+        result.add(new AccountMetric("持仓收益率", percent(overviewValues.getPositionPnlRate())));
         result.add(new AccountMetric("当日盈亏", signedMoney(dayClosedPnl)));
         result.add(new AccountMetric("当日收益率", percent(dayReturn)));
         result.add(new AccountMetric("累计盈亏", signedMoney(cumulativePnl)));
@@ -2870,7 +2858,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         result.add(new AccountMetric("总资产", "--"));
         result.add(new AccountMetric("净资产", "--"));
         result.add(new AccountMetric("可用预付款", "--"));
-        result.add(new AccountMetric("保证金", "--"));
+        result.add(new AccountMetric("预付款", "--"));
         result.add(new AccountMetric("仓位占比", "--"));
         result.add(new AccountMetric("持仓市值", "--"));
         result.add(new AccountMetric("持仓盈亏", "--"));
@@ -5126,7 +5114,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         double totalPnl = 0d;
         for (PositionItem item : list) {
-            totalPnl += item.getTotalPnL() + item.getStorageFee();
+            totalPnl += item.getTotalPnL();
         }
         double totalMarketValue = 0d;
         for (PositionItem item : list) {
@@ -5264,7 +5252,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             aggregate.totalQuantity += quantity;
             aggregate.weightedCostAmount += quantity * item.getCostPrice();
             aggregate.weightedQuantity += quantity;
-            aggregate.totalPnl += item.getTotalPnL() + item.getStorageFee();
+            aggregate.totalPnl += item.getTotalPnL();
         }
 
         List<PositionAggregateAdapter.AggregateItem> result = new ArrayList<>();

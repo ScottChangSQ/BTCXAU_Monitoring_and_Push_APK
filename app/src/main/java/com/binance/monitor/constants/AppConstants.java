@@ -44,8 +44,6 @@ public final class AppConstants {
     public static final int CHART_BASE_MINUTE_HISTORY_LIMIT = 1500;
 
     public static final String SERVICE_CHANNEL_ID = "monitor_service_channel";
-    public static final String ALERT_CHANNEL_ID = "monitor_alert_channel";
-
     public static final int SERVICE_NOTIFICATION_ID = 9001;
     public static final int BTC_ALERT_NOTIFICATION_ID = 1001;
     public static final int XAU_ALERT_NOTIFICATION_ID = 1002;

@@ -30,7 +30,6 @@ import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.ui.account.AccountStatsPreloadManager;
-import com.binance.monitor.ui.account.AccountTimeRange;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.ui.floating.FloatingPositionAggregator;
 import com.binance.monitor.ui.floating.FloatingSymbolCardData;
@@ -329,7 +328,7 @@ public class MonitorService extends Service {
         v2AccountRefreshInFlight = true;
         executorService.execute(() -> {
             try {
-                accountStatsPreloadManager.fetchForUi(AccountTimeRange.ALL);
+                accountStatsPreloadManager.fetchForOverlay();
             } catch (Exception exception) {
                 logManager.warn("v2 stream 账户补拉失败: " + exception.getMessage());
             } finally {

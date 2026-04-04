@@ -148,6 +148,40 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual([{"symbol": "XAUUSD"}], payload["orders"])
         self.assertIn("syncToken", payload)
 
+    def test_v2_account_snapshot_uses_light_snapshot_builder(self):
+        light_snapshot = {
+            "accountMeta": {"login": "7400048", "balance": 1000.0},
+            "positions": [{"symbol": "BTCUSD"}],
+            "pendingOrders": [{"symbol": "XAUUSD"}],
+        }
+        with mock.patch.object(
+            server_v2, "_build_account_light_snapshot_with_cache", return_value=light_snapshot
+        ) as light_mock, mock.patch.object(
+            server_v2, "_build_snapshot_with_cache", side_effect=AssertionError("不应走重快照")
+        ):
+            payload = server_v2.v2_account_snapshot()
+
+        light_mock.assert_called_once_with()
+        self.assertEqual("BTCUSD", payload["positions"][0]["code"])
+        self.assertEqual("XAUUSD", payload["orders"][0]["code"])
+
+    def test_v2_market_snapshot_uses_light_snapshot_builder(self):
+        light_snapshot = {
+            "accountMeta": {"login": "7400048"},
+            "positions": [{"symbol": "BTCUSD"}],
+            "pendingOrders": [{"symbol": "XAUUSD"}],
+        }
+        with mock.patch.object(
+            server_v2, "_build_account_light_snapshot_with_cache", return_value=light_snapshot
+        ) as light_mock, mock.patch.object(
+            server_v2, "_build_snapshot_with_cache", side_effect=AssertionError("不应走重快照")
+        ):
+            payload = server_v2.v2_market_snapshot()
+
+        light_mock.assert_called_once_with()
+        self.assertEqual([{"symbol": "BTCUSD"}], payload["account"]["positions"])
+        self.assertEqual([{"symbol": "XAUUSD"}], payload["account"]["orders"])
+
 
 if __name__ == "__main__":
     unittest.main()

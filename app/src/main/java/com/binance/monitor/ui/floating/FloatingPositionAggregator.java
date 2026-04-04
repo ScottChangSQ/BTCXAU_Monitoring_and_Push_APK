@@ -208,12 +208,12 @@ public class FloatingPositionAggregator {
         return Double.NaN;
     }
 
-    // 悬浮窗盈亏直接复用账户快照里的当前盈亏口径，和当前行情页保持一致。
+    // 悬浮窗盈亏直接复用当前行情页里的持仓盈亏数字，不再额外叠加库存费。
     private static double resolveDisplayTotalPnl(PositionItem item) {
         if (item == null) {
             return 0d;
         }
-        return item.getTotalPnL() + item.getStorageFee();
+        return item.getTotalPnL();
     }
 
     // 兼容 MT5 持仓代码和 Binance 行情代码不一致的场景，保证悬浮窗仍能显示对应盈亏。

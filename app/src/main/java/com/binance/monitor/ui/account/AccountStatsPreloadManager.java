@@ -252,52 +252,20 @@ public class AccountStatsPreloadManager {
                 nextDelayMs = MAX_REFRESH_MS;
                 return;
             }
-            // 账户新架构下优先请求 v2 账户快照与历史，再失败时回退旧网关。
-            try {
-                AccountSnapshotPayload v2Payload = gatewayV2Client.fetchAccountSnapshot();
-                AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, "");
-                v2SnapshotStore.writeAccountSnapshot(v2Payload.getRawJson());
-                AccountStorageRepository.StoredSnapshot storedSnapshot =
-                        buildStoredSnapshotFromV2(v2Payload, historyPayload);
-                accountStorageRepository.persistV2Snapshot(storedSnapshot);
-                AccountSnapshot snapshot = new AccountSnapshot(
-                        storedSnapshot.getOverviewMetrics(),
-                        storedSnapshot.getCurvePoints(),
-                        storedSnapshot.getCurveIndicators(),
-                        storedSnapshot.getPositions(),
-                        storedSnapshot.getPendingOrders(),
-                        storedSnapshot.getTrades(),
-                        storedSnapshot.getStatsMetrics()
-                );
-                nextDelayMs = resolveRefreshDelayMs();
-                updateLatestCache(new Cache(
-                        true,
-                        snapshot,
-                        storedSnapshot.getAccount(),
-                        storedSnapshot.getServer(),
-                        storedSnapshot.getSource(),
-                        storedSnapshot.getGateway(),
-                        storedSnapshot.getUpdatedAt(),
-                        "",
-                        System.currentTimeMillis()));
-                return;
-            } catch (Exception ignored) {
+            // 图表页等前台轻量轮询时，只拉账户快照；只有历史成交数变化时才补拉全量历史。
+            if (fullSnapshotActive) {
+                Cache cache = fetchForOverlay();
+                if (cache != null) {
+                    nextDelayMs = resolveRefreshDelayMs();
+                    return;
+                }
             }
             Mt5BridgeGatewayClient.SnapshotResult result = gatewayClient.fetch(AccountTimeRange.ALL);
             if (!result.isSuccess()) {
                 nextDelayMs = resolveRefreshDelayMs();
                 Cache previous = latestCache;
                 if (previous != null) {
-                    updateLatestCache(new Cache(
-                            false,
-                            previous.snapshot,
-                            previous.account,
-                            previous.server,
-                            previous.source,
-                            previous.gateway,
-                            previous.updatedAt,
-                            result.getError(),
-                            System.currentTimeMillis()));
+                    updateLatestCache(buildFailureCache(previous, result.getError()));
                 }
                 return;
             }
@@ -312,25 +280,120 @@ public class AccountStatsPreloadManager {
                     result.getGatewayEndpoint(),
                     result.getUpdatedAt(),
                     "",
-                    System.currentTimeMillis()));
+                    System.currentTimeMillis(),
+                    snapshot == null ? 0 : snapshot.getTrades().size()));
             persistPreloadSnapshot(snapshot, result, fullSnapshotActive);
         } catch (Exception exception) {
             nextDelayMs = resolveRefreshDelayMs();
             Cache previous = latestCache;
             if (previous != null) {
-                updateLatestCache(new Cache(
-                        false,
-                        previous.snapshot,
-                        previous.account,
-                        previous.server,
-                        previous.source,
-                        previous.gateway,
-                        previous.updatedAt,
-                        exception.getMessage(),
-                        System.currentTimeMillis()));
+                updateLatestCache(buildFailureCache(previous, exception.getMessage()));
             }
         } finally {
             loading = false;
+        }
+    }
+
+    // 图表页和悬浮窗的高频账户刷新入口：先拿轻快照，只有检测到新历史成交时才补拉全历史。
+    public Cache fetchForOverlay() {
+        if (!isAccountSessionActive()) {
+            accountStorageRepository.clearRuntimeSnapshot();
+            accountStorageRepository.clearTradeHistory();
+            clearLatestCache();
+            nextDelayMs = MAX_REFRESH_MS;
+            return null;
+        }
+        try {
+            AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();
+            v2SnapshotStore.writeAccountSnapshot(snapshotPayload.getRawJson());
+            int remoteTradeCount = resolveRemoteTradeCount(snapshotPayload);
+            Cache previous = latestCache;
+            int cachedTradeCount = previous == null ? -1 : previous.getHistoryTradeCount();
+            boolean hasStoredTradeHistory = !accountStorageRepository.loadTrades().isEmpty();
+            boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
+                    remoteTradeCount,
+                    cachedTradeCount,
+                    hasStoredTradeHistory
+            );
+            if (shouldRefreshAllHistory) {
+                AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, "");
+                AccountStorageRepository.StoredSnapshot storedSnapshot =
+                        buildStoredSnapshotFromV2(snapshotPayload, historyPayload);
+                accountStorageRepository.persistV2Snapshot(storedSnapshot);
+                Cache cache = buildCache(storedSnapshot, storedSnapshot.getTrades().size());
+                nextDelayMs = resolveRefreshDelayMs();
+                updateLatestCache(cache);
+                return cache;
+            }
+
+            AccountStorageRepository.StoredSnapshot storedSnapshot =
+                    buildStoredSnapshotFromSnapshotOnly(snapshotPayload);
+            accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
+            Cache cache = buildCache(storedSnapshot, remoteTradeCount);
+            nextDelayMs = resolveRefreshDelayMs();
+            updateLatestCache(cache);
+            return cache;
+        } catch (Exception ignored) {
+        }
+
+        try {
+            Mt5BridgeGatewayClient.SnapshotResult result = gatewayClient.fetch(AccountTimeRange.ALL);
+            if (!result.isSuccess()) {
+                nextDelayMs = resolveRefreshDelayMs();
+                Cache previous = latestCache;
+                if (previous != null) {
+                    Cache cache = buildFailureCache(previous, result.getError());
+                    updateLatestCache(cache);
+                    return cache;
+                }
+                return new Cache(
+                        false,
+                        null,
+                        "",
+                        "",
+                        "历史数据（网关离线）",
+                        "Gateway offline",
+                        System.currentTimeMillis(),
+                        result.getError(),
+                        System.currentTimeMillis()
+                );
+            }
+            AccountSnapshot snapshot = result.getSnapshot();
+            Cache cache = new Cache(
+                    true,
+                    snapshot,
+                    result.getAccount(""),
+                    result.getServer(""),
+                    result.getLocalizedSource(),
+                    result.getGatewayEndpoint(),
+                    result.getUpdatedAt(),
+                    "",
+                    System.currentTimeMillis(),
+                    snapshot == null ? 0 : snapshot.getTrades().size()
+            );
+            nextDelayMs = resolveRefreshDelayMs();
+            updateLatestCache(cache);
+            persistPreloadSnapshot(snapshot, result, true);
+            return cache;
+        } catch (Exception exception) {
+            nextDelayMs = resolveRefreshDelayMs();
+            Cache previous = latestCache;
+            if (previous != null) {
+                Cache cache = buildFailureCache(previous, exception.getMessage());
+                updateLatestCache(cache);
+                return cache;
+            }
+            return new Cache(
+                    false,
+                    null,
+                    "",
+                    "",
+                    "历史数据（网关离线）",
+                    "Gateway offline",
+                    System.currentTimeMillis(),
+                    exception.getMessage(),
+                    System.currentTimeMillis()
+            );
         }
     }
 
@@ -369,7 +432,8 @@ public class AccountStatsPreloadManager {
                     storedSnapshot.getGateway(),
                     storedSnapshot.getUpdatedAt(),
                     "",
-                    System.currentTimeMillis()
+                    System.currentTimeMillis(),
+                    storedSnapshot.getTrades().size()
             );
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
@@ -419,7 +483,8 @@ public class AccountStatsPreloadManager {
                     result.getGatewayEndpoint(),
                     result.getUpdatedAt(),
                     "",
-                    System.currentTimeMillis()
+                    System.currentTimeMillis(),
+                    snapshot == null ? 0 : snapshot.getTrades().size()
             );
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
@@ -429,17 +494,7 @@ public class AccountStatsPreloadManager {
             nextDelayMs = resolveRefreshDelayMs();
             Cache previous = latestCache;
             if (previous != null) {
-                Cache cache = new Cache(
-                        false,
-                        previous.snapshot,
-                        previous.account,
-                        previous.server,
-                        previous.source,
-                        previous.gateway,
-                        previous.updatedAt,
-                        exception.getMessage(),
-                        System.currentTimeMillis()
-                );
+                Cache cache = buildFailureCache(previous, exception.getMessage());
                 updateLatestCache(cache);
                 return cache;
             }
@@ -534,6 +589,78 @@ public class AccountStatsPreloadManager {
                 tradeItems,
                 buildStatsMetrics(account, tradeItems)
         );
+    }
+
+    // 将 v2 轻快照转换为只包含账户摘要、当前持仓和挂单的本地结构。
+    private AccountStorageRepository.StoredSnapshot buildStoredSnapshotFromSnapshotOnly(AccountSnapshotPayload snapshotPayload) {
+        JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
+        JSONObject account = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccount();
+        JSONArray positions = snapshotPayload == null ? new JSONArray() : snapshotPayload.getPositions();
+        JSONArray orders = snapshotPayload == null ? new JSONArray() : snapshotPayload.getOrders();
+        return new AccountStorageRepository.StoredSnapshot(
+                true,
+                accountMeta.optString("login", ""),
+                accountMeta.optString("server", ""),
+                resolveV2Source(accountMeta),
+                resolveGatewayEndpoint(),
+                resolveUpdatedAt(snapshotPayload, null),
+                "",
+                System.currentTimeMillis(),
+                buildOverviewMetrics(account),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                parsePositionItems(positions, false),
+                parsePositionItems(orders, true),
+                new ArrayList<>(),
+                buildStatsMetrics(account, new ArrayList<>())
+        );
+    }
+
+    // 统一把存储快照转成页面缓存，避免同一份字段在多处重复拼装。
+    private Cache buildCache(AccountStorageRepository.StoredSnapshot storedSnapshot, int historyTradeCount) {
+        AccountSnapshot snapshot = new AccountSnapshot(
+                storedSnapshot.getOverviewMetrics(),
+                storedSnapshot.getCurvePoints(),
+                storedSnapshot.getCurveIndicators(),
+                storedSnapshot.getPositions(),
+                storedSnapshot.getPendingOrders(),
+                storedSnapshot.getTrades(),
+                storedSnapshot.getStatsMetrics()
+        );
+        return new Cache(
+                true,
+                snapshot,
+                storedSnapshot.getAccount(),
+                storedSnapshot.getServer(),
+                storedSnapshot.getSource(),
+                storedSnapshot.getGateway(),
+                storedSnapshot.getUpdatedAt(),
+                "",
+                System.currentTimeMillis(),
+                historyTradeCount
+        );
+    }
+
+    // 统一构建失败缓存，保留上一轮成功数据，只更新错误信息和抓取时间。
+    private Cache buildFailureCache(Cache previous, String errorMessage) {
+        return new Cache(
+                false,
+                previous.snapshot,
+                previous.account,
+                previous.server,
+                previous.source,
+                previous.gateway,
+                previous.updatedAt,
+                errorMessage,
+                System.currentTimeMillis(),
+                previous.historyTradeCount
+        );
+    }
+
+    // 读取服务端当前历史成交总数，用它判断是否需要补拉全量历史。
+    private int resolveRemoteTradeCount(AccountSnapshotPayload snapshotPayload) {
+        JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
+        return (int) optLongAny(accountMeta, 0L, "tradeCount", "trade_count");
     }
 
     // 生成账户页概要指标，保证 v2 成功时页面也有可展示的基础数字。
@@ -802,6 +929,7 @@ public class AccountStatsPreloadManager {
         private final long updatedAt;
         private final String error;
         private final long fetchedAt;
+        private final int historyTradeCount;
 
         public Cache(boolean connected,
                      AccountSnapshot snapshot,
@@ -812,6 +940,19 @@ public class AccountStatsPreloadManager {
                      long updatedAt,
                      String error,
                      long fetchedAt) {
+            this(connected, snapshot, account, server, source, gateway, updatedAt, error, fetchedAt, -1);
+        }
+
+        public Cache(boolean connected,
+                     AccountSnapshot snapshot,
+                     String account,
+                     String server,
+                     String source,
+                     String gateway,
+                     long updatedAt,
+                     String error,
+                     long fetchedAt,
+                     int historyTradeCount) {
             this.connected = connected;
             this.snapshot = snapshot;
             this.account = account == null ? "" : account;
@@ -821,6 +962,7 @@ public class AccountStatsPreloadManager {
             this.updatedAt = updatedAt;
             this.error = error == null ? "" : error;
             this.fetchedAt = fetchedAt;
+            this.historyTradeCount = historyTradeCount;
         }
 
         public boolean isConnected() {
@@ -857,6 +999,10 @@ public class AccountStatsPreloadManager {
 
         public long getFetchedAt() {
             return fetchedAt;
+        }
+
+        public int getHistoryTradeCount() {
+            return historyTradeCount;
         }
     }
 

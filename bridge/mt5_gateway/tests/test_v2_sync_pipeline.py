@@ -170,7 +170,7 @@ class V2SyncPipelineTests(unittest.TestCase):
             "restUpstream": "https://fapi.binance.com",
             "wsUpstream": "wss://fstream.binance.com",
         }
-        with mock.patch.object(server_v2, "_build_snapshot_with_cache", return_value=snapshot), mock.patch.object(
+        with mock.patch.object(server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot), mock.patch.object(
             server_v2, "_build_v2_market_section", return_value=market
         ):
             payload = server_v2.v2_sync_delta(syncToken="")
@@ -189,7 +189,7 @@ class V2SyncPipelineTests(unittest.TestCase):
         second_snapshot = self._build_stub_snapshot(position_count=1, order_count=0)
         with mock.patch.object(
             server_v2,
-            "_build_snapshot_with_cache",
+            "_build_account_light_snapshot_with_cache",
             side_effect=[first_snapshot, second_snapshot],
         ):
             bootstrap = server_v2.v2_sync_delta(syncToken="")
@@ -225,7 +225,7 @@ class V2SyncPipelineTests(unittest.TestCase):
             return None
 
         fake_client = _FakeClient()
-        with mock.patch.object(server_v2, "_build_snapshot_with_cache", return_value=snapshot), mock.patch.object(
+        with mock.patch.object(server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot), mock.patch.object(
             server_v2.asyncio, "sleep", new=_fast_sleep
         ):
             asyncio.run(server_v2.v2_stream(fake_client))

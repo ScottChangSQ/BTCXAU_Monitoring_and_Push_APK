@@ -226,7 +226,7 @@ def _sanitize_diff_payload(diff_payload: Dict[str, Any]) -> Dict[str, Any]:
 
 # 构建 v2 同步层运行态快照，统一 market/account 的摘要和计数。
 def _build_v2_sync_runtime_snapshot(server_time: int) -> Dict[str, Any]:
-    snapshot = _build_snapshot_with_cache("all")
+    snapshot = _build_account_light_snapshot_with_cache()
     market_section = _build_v2_market_section()
     account_section = _build_v2_account_section_from_snapshot(snapshot)
     normalized_account = {
@@ -236,7 +236,7 @@ def _build_v2_sync_runtime_snapshot(server_time: int) -> Dict[str, Any]:
     }
     market_digest = _stable_payload_digest(market_section)
     account_digest = _stable_payload_digest(normalized_account)
-    account_revision = _snapshot_digest(snapshot)
+    account_revision = _stable_payload_digest(account_section)
     state_digest = _stable_payload_digest({
         "marketDigest": market_digest,
         "accountDigest": account_digest,
@@ -250,8 +250,8 @@ def _build_v2_sync_runtime_snapshot(server_time: int) -> Dict[str, Any]:
         "accountDigest": account_digest,
         "accountRevision": account_revision,
         "digest": state_digest,
-        "tradeCount": len(snapshot.get("trades") or []),
-        "curvePointCount": len(snapshot.get("curvePoints") or []),
+        "tradeCount": int((account_section.get("accountMeta") or {}).get("tradeCount", 0) or 0),
+        "curvePointCount": int((account_section.get("accountMeta") or {}).get("curvePointCount", 0) or 0),
     }
 
 
@@ -1335,7 +1335,9 @@ def _calculate_curve_floating(
         contract_size = state.get("contract_size", 1.0)
         if volume <= 0.0 or contract_size <= 0.0:
             continue
-        price = last_price_by_symbol.get(symbol, 0.0)
+        price = float(last_price_by_symbol.get(symbol, 0.0) or 0.0)
+        if price <= 0.0:
+            price = float(last_price_by_symbol.get(_normalize_curve_market_symbol(symbol), 0.0) or 0.0)
         if price <= 0.0:
             continue
         avg_price = state.get("open_notional", 0.0) / max(volume * contract_size, 1e-9)
@@ -1355,6 +1357,8 @@ def _calculate_curve_market_value(
         if volume <= 0.0 or contract_size <= 0.0:
             continue
         price = float(last_price_by_symbol.get(symbol, 0.0) or 0.0)
+        if price <= 0.0:
+            price = float(last_price_by_symbol.get(_normalize_curve_market_symbol(symbol), 0.0) or 0.0)
         if price <= 0.0:
             continue
         total += abs(volume * price * contract_size)
@@ -1388,6 +1392,130 @@ def _resolve_positions_market_value(positions: List[Dict[str, Any]]) -> float:
     for position in positions or []:
         total += max(0.0, float(position.get("marketValue", 0.0) or 0.0))
     return total
+
+
+def _has_curve_exposure(exposures: Dict[Tuple[str, str], Dict[str, float]]) -> bool:
+    for state in exposures.values():
+        if float(state.get("volume", 0.0) or 0.0) > 0.0:
+            return True
+    return False
+
+
+def _normalize_curve_market_symbol(symbol: str) -> str:
+    value = str(symbol or "").strip().upper()
+    if value in {"BTC", "BTCUSD", "BTCUSDT", "XBT"}:
+        return "BTCUSDT"
+    if value in {"XAU", "XAUUSD", "XAUUSDT", "GOLD"}:
+        return "XAUUSDT"
+    return value
+
+
+def _curve_sampling_interval(duration_ms: int) -> Tuple[str, int]:
+    safe_duration = max(0, int(duration_ms or 0))
+    minute_ms = 60 * 1000
+    hour_ms = 60 * minute_ms
+    day_ms = 24 * hour_ms
+    if safe_duration <= 6 * hour_ms:
+        return "1m", minute_ms
+    if safe_duration <= 3 * day_ms:
+        return "5m", 5 * minute_ms
+    if safe_duration <= 14 * day_ms:
+        return "15m", 15 * minute_ms
+    if safe_duration <= 60 * day_ms:
+        return "1h", hour_ms
+    return "4h", 4 * hour_ms
+
+
+def _fetch_curve_price_samples(symbol: str,
+                               start_ms: int,
+                               end_ms: int,
+                               fetch_rows_fn=None) -> List[Dict[str, float]]:
+    normalized_symbol = _normalize_curve_market_symbol(symbol)
+    safe_start = max(0, int(start_ms or 0))
+    safe_end = max(safe_start, int(end_ms or 0))
+    if not normalized_symbol or safe_end <= safe_start:
+        return []
+
+    interval, interval_ms = _curve_sampling_interval(safe_end - safe_start)
+    fetcher = fetch_rows_fn or _fetch_binance_kline_rows
+    cursor = safe_start
+    collected: Dict[int, Dict[str, float]] = {}
+
+    while cursor < safe_end:
+        remaining = safe_end - cursor
+        limit = max(1, min(1500, int(math.ceil(remaining / max(interval_ms, 1))) + 2))
+        rows = fetcher(
+            normalized_symbol,
+            interval,
+            limit,
+            start_time_ms=cursor,
+            end_time_ms=safe_end,
+        ) or []
+        if not rows:
+            break
+        last_open_time = cursor
+        for row in rows:
+            if not isinstance(row, (list, tuple)) or len(row) < 5:
+                continue
+            open_time = int(row[0] or 0)
+            close_time = int(row[6] or 0) if len(row) > 6 else (open_time + interval_ms - 1)
+            close_price = float(row[4] or 0.0)
+            last_open_time = max(last_open_time, open_time)
+            if close_price <= 0.0 or close_time <= safe_start or close_time >= safe_end:
+                continue
+            collected[close_time] = {
+                "timestamp": close_time,
+                "symbol": normalized_symbol,
+                "price": close_price,
+            }
+        next_cursor = last_open_time + interval_ms
+        if next_cursor <= cursor:
+            break
+        cursor = next_cursor
+
+    return [collected[key] for key in sorted(collected.keys())]
+
+
+def _append_curve_history_samples(points: List[Dict[str, float]],
+                                  exposures: Dict[Tuple[str, str], Dict[str, float]],
+                                  last_price_by_symbol: Dict[str, float],
+                                  running_balance: float,
+                                  leverage: float,
+                                  start_ms: int,
+                                  end_ms: int,
+                                  fetch_rows_fn=None) -> None:
+    safe_start = int(start_ms or 0)
+    safe_end = int(end_ms or 0)
+    if safe_end <= safe_start or not _has_curve_exposure(exposures):
+        return
+
+    sample_map: Dict[int, Dict[str, float]] = {}
+    active_symbols = sorted({
+        _normalize_curve_market_symbol(symbol)
+        for symbol, _side in exposures.keys()
+        if symbol and float((exposures.get((symbol, _side)) or {}).get("volume", 0.0) or 0.0) > 0.0
+    })
+    for symbol in active_symbols:
+        for sample in _fetch_curve_price_samples(symbol, safe_start, safe_end, fetch_rows_fn):
+            timestamp = int(sample.get("timestamp", 0) or 0)
+            if timestamp <= safe_start or timestamp >= safe_end:
+                continue
+            price = float(sample.get("price", 0.0) or 0.0)
+            if price <= 0.0:
+                continue
+            sample_map.setdefault(timestamp, {})[symbol] = price
+
+    for timestamp in sorted(sample_map.keys()):
+        for symbol, price in sample_map[timestamp].items():
+            last_price_by_symbol[symbol] = price
+        floating = _calculate_curve_floating(exposures, last_price_by_symbol)
+        equity = running_balance + floating
+        points.append(_curve_point(
+            timestamp,
+            equity,
+            running_balance,
+            _calculate_curve_position_ratio(exposures, last_price_by_symbol, equity, leverage),
+        ))
 
 
 def _inject_positions_into_exposures(
@@ -1428,6 +1556,7 @@ def _replay_curve_from_history(
     leverage: float,
     contract_size_fn,
     now_ms: int,
+    fetch_rows_fn=None,
 ) -> List[Dict[str, float]]:
     # 以时间序列方式重放成交和持仓，生成 equity/balance 分离的曲线点
     if not deal_history:
@@ -1462,12 +1591,24 @@ def _replay_curve_from_history(
         _calculate_curve_position_ratio(exposures, last_price_by_symbol, first_equity, leverage),
     ))
 
-    for deal in sorted_deals:
+    last_event_ts = first_ts
+    for index, deal in enumerate(sorted_deals):
         timestamp = int(deal.get("timestamp", 0))
+        if index > 0 and timestamp > last_event_ts:
+            _append_curve_history_samples(
+                points,
+                exposures,
+                last_price_by_symbol,
+                running_balance,
+                leverage,
+                last_event_ts,
+                timestamp,
+                fetch_rows_fn,
+            )
         symbol = str(deal.get("symbol", "") or "")
         price = float(deal.get("price", 0.0))
         if symbol and price > 0.0:
-            last_price_by_symbol[symbol] = price
+            last_price_by_symbol[_normalize_curve_market_symbol(symbol)] = price
 
         entry = int(deal.get("entry", 0))
         deal_type = int(deal.get("deal_type", -1))
@@ -1493,6 +1634,19 @@ def _replay_curve_from_history(
             running_balance,
             _calculate_curve_position_ratio(exposures, last_price_by_symbol, equity, leverage),
         ))
+        last_event_ts = timestamp
+
+    if now_ms > last_event_ts:
+        _append_curve_history_samples(
+            points,
+            exposures,
+            last_price_by_symbol,
+            running_balance,
+            leverage,
+            last_event_ts,
+            now_ms,
+            fetch_rows_fn,
+        )
 
     current_market_value = _resolve_positions_market_value(open_positions)
     if current_market_value <= 0.0:
@@ -1926,7 +2080,7 @@ def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
     day_fee = sum(t["fee"] for t in trades if t["timestamp"] >= today_ts)
     day_pnl -= day_fee
 
-    total_asset = equity + max(0.0, total_pnl * 0.3)
+    total_asset = balance
     day_return = _safe_div(day_pnl, max(1.0, equity - day_pnl))
     total_return = _safe_div(total_pnl, max(1.0, balance - total_pnl))
     position_ratio = _safe_div(market_value, max(1.0, equity))
@@ -2076,6 +2230,12 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
                     "updatedAt": _now_ms(),
                     "currency": str(getattr(account, "currency", "")),
                     "leverage": int(getattr(account, "leverage", 0) or 0),
+                    "balance": float(getattr(account, "balance", 0.0) or 0.0),
+                    "equity": float(getattr(account, "equity", 0.0) or 0.0),
+                    "margin": float(getattr(account, "margin", 0.0) or 0.0),
+                    "freeMargin": float(getattr(account, "margin_free", 0.0) or 0.0),
+                    "marginLevel": float(getattr(account, "margin_level", 0.0) or 0.0),
+                    "profit": float(getattr(account, "profit", 0.0) or 0.0),
                     "name": str(getattr(account, "name", "")),
                     "company": str(getattr(account, "company", "")),
                     "range": range_key,
@@ -2091,6 +2251,53 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
                 "pendingOrders": pending_orders,
                 "trades": trades,
                 "statsMetrics": stats,
+            }
+        finally:
+            _shutdown_mt5()
+
+
+# 构建只包含账户摘要、当前持仓和挂单的轻快照，供高频 v2 接口复用。
+def _snapshot_from_mt5_light() -> Dict:
+    with state_lock:
+        _ensure_mt5()
+        try:
+            account = mt5.account_info()
+            if account is None:
+                raise RuntimeError("account_info is None")
+            positions = _map_positions()
+            pending_orders = _map_pending_orders()
+            from_time, to_time = _mt5_history_window("all")
+            trade_count = 0
+            try:
+                history_deals_total = getattr(mt5, "history_deals_total", None)
+                if callable(history_deals_total):
+                    trade_count = int(history_deals_total(from_time, to_time) or 0)
+            except Exception:
+                trade_count = 0
+            return {
+                "accountMeta": {
+                    "login": str(getattr(account, "login", LOGIN)),
+                    "server": str(getattr(account, "server", SERVER)),
+                    "source": "MT5 Python Pull",
+                    "updatedAt": _now_ms(),
+                    "currency": str(getattr(account, "currency", "")),
+                    "leverage": int(getattr(account, "leverage", 0) or 0),
+                    "balance": float(getattr(account, "balance", 0.0) or 0.0),
+                    "equity": float(getattr(account, "equity", 0.0) or 0.0),
+                    "margin": float(getattr(account, "margin", 0.0) or 0.0),
+                    "freeMargin": float(getattr(account, "margin_free", 0.0) or 0.0),
+                    "marginLevel": float(getattr(account, "margin_level", 0.0) or 0.0),
+                    "profit": float(getattr(account, "profit", 0.0) or 0.0),
+                    "name": str(getattr(account, "name", "")),
+                    "company": str(getattr(account, "company", "")),
+                    "range": "light",
+                    "tradeCount": trade_count,
+                    "positionCount": len(positions),
+                    "pendingOrderCount": len(pending_orders),
+                    "curvePointCount": 0,
+                },
+                "positions": positions,
+                "pendingOrders": pending_orders,
             }
         finally:
             _shutdown_mt5()
@@ -2364,6 +2571,32 @@ def _build_snapshot_with_cache(range_key: str) -> Dict:
     return snapshot
 
 
+# 构建账户轻快照缓存，避免高频 v2 snapshot/sync 重复生成整份历史对象。
+def _build_account_light_snapshot_with_cache() -> Dict:
+    cache_key = "account-light"
+    now_ms = _now_ms()
+    with snapshot_cache_lock:
+        cached = snapshot_build_cache.get(cache_key)
+        if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+            cached["lastAccessAt"] = now_ms
+            _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+            return cached.get("snapshot")
+        if _should_slide_snapshot_build_cache(cached, now_ms):
+            cached["builtAt"] = now_ms
+            cached["lastAccessAt"] = now_ms
+            _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+            return cached.get("snapshot")
+
+    snapshot = _build_account_light_snapshot()
+    with snapshot_cache_lock:
+        _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
+            "builtAt": now_ms,
+            "lastAccessAt": now_ms,
+            "snapshot": snapshot,
+        }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+    return snapshot
+
+
 def _build_summary_snapshot(snapshot: Dict) -> Dict:
     summary = {
         "accountMeta": dict(snapshot.get("accountMeta") or {}),
@@ -2603,6 +2836,45 @@ def _select_snapshot(range_key: str) -> Dict:
     raise RuntimeError("No available data source. Configure MT5 pull or start EA push.")
 
 
+# 统一把完整快照裁成账户轻快照，供高频账户同步接口复用。
+def _strip_account_light_snapshot(snapshot: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    safe_snapshot = snapshot or {}
+    return {
+        "accountMeta": dict(safe_snapshot.get("accountMeta") or {}),
+        "positions": [dict(item) for item in (safe_snapshot.get("positions") or [])],
+        "pendingOrders": [dict(item) for item in (safe_snapshot.get("pendingOrders") or [])],
+    }
+
+
+# 轻快照数据源选择：高频接口只拿账户摘要、持仓和挂单，保留历史接口按需走重快照。
+def _build_account_light_snapshot() -> Dict[str, Any]:
+    mode = GATEWAY_MODE if GATEWAY_MODE in {"auto", "pull", "ea"} else "auto"
+
+    if mode == "ea":
+        if _is_ea_snapshot_fresh():
+            return _strip_account_light_snapshot(_normalize_snapshot(ea_snapshot_cache, "MT5 EA Push"))
+        raise RuntimeError("No fresh EA snapshot found. Please start MT5 EA push first.")
+
+    if mode == "pull":
+        return _snapshot_from_mt5_light()
+
+    if mt5 is not None and _is_mt5_configured():
+        try:
+            return _snapshot_from_mt5_light()
+        except Exception:
+            pass
+
+    if _is_ea_snapshot_fresh():
+        return _strip_account_light_snapshot(_normalize_snapshot(ea_snapshot_cache, "MT5 EA Push"))
+
+    if ea_snapshot_cache is not None:
+        stale = _normalize_snapshot(ea_snapshot_cache, "MT5 EA Push")
+        stale["accountMeta"]["source"] = f"{stale['accountMeta'].get('source', 'MT5 EA Push')} (stale)"
+        return _strip_account_light_snapshot(stale)
+
+    raise RuntimeError("No available data source. Configure MT5 pull or start EA push.")
+
+
 def _join_query(params: Dict[str, Any]) -> str:
     clean_params: List[Tuple[str, Any]] = []
     for key, value in params.items():
@@ -2837,7 +3109,7 @@ def source_status():
 def v2_market_snapshot():
     try:
         now_ms = _now_ms()
-        snapshot = _build_snapshot_with_cache("all")
+        snapshot = _build_account_light_snapshot_with_cache()
         return _build_v2_market_snapshot_payload(
             market=_build_v2_market_section(),
             account=_build_v2_account_section_from_snapshot(snapshot),
@@ -2877,7 +3149,7 @@ def v2_market_candles(symbol: str,
 def v2_account_snapshot():
     try:
         now_ms = _now_ms()
-        snapshot = _build_snapshot_with_cache("all")
+        snapshot = _build_account_light_snapshot_with_cache()
         account_section = _build_v2_account_section_from_snapshot(snapshot)
         snapshot_model = v2_account.build_account_snapshot_model(
             {
