@@ -49,7 +49,7 @@ public class AccountSnapshotRestoreHelperTest {
     }
 
     @Test
-    public void shouldMergeStoredTradesIntoExistingPreloadTrades() {
+    public void shouldKeepPreloadTradesWhenRemoteSnapshotAlreadyHasTrades() {
         TradeRecordItem preloadTrade = new TradeRecordItem(
                 3L, "XAU", "XAUUSD", "Sell", 2d, 1d, 2d, 0d, "",
                 -5d, 3L, 4L, 0d
@@ -72,11 +72,11 @@ public class AccountSnapshotRestoreHelperTest {
 
         AccountSnapshot merged = AccountSnapshotRestoreHelper.mergeMissingTrades(preloadSnapshot, storedSnapshot);
 
-        assertTradeCodes(merged.getTrades(), "XAUUSD", "BTCUSD");
+        assertTradeCodes(merged.getTrades(), "XAUUSD");
     }
 
     @Test
-    public void shouldMergeStoredTradesWhenPreloadSnapshotIsIncomplete() {
+    public void shouldNotMergeStoredTradesWhenRemoteSnapshotContainsNewLifecycleShape() {
         TradeRecordItem preloadTrade = new TradeRecordItem(
                 3L, "XAU", "XAUUSD", "Sell", 2d, 1d, 2d, 0d, "",
                 -5d, 3L, 4L, 0d, 20d, 21d, 9001L, 9101L, 9201L, 1
@@ -99,7 +99,7 @@ public class AccountSnapshotRestoreHelperTest {
 
         AccountSnapshot merged = AccountSnapshotRestoreHelper.mergeMissingTrades(preloadSnapshot, storedSnapshot);
 
-        assertTradeCodes(merged.getTrades(), "XAUUSD", "BTCUSD");
+        assertTradeCodes(merged.getTrades(), "XAUUSD");
     }
 
     private AccountStorageRepository.StoredSnapshot buildStoredSnapshot(List<TradeRecordItem> trades) {

@@ -51,6 +51,44 @@ class V2AccountPipelineTests(unittest.TestCase):
         self.assertEqual(1, len(payload["orders"]))
         self.assertEqual(1, len(payload["curvePoints"]))
 
+    def test_build_account_history_model_keeps_trade_lifecycle_fields(self):
+        payload = v2_account.build_account_history_model(
+            {
+                "trades": [{
+                    "timestamp": 200,
+                    "symbol": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Sell",
+                    "price": 120.0,
+                    "quantity": 0.1,
+                    "profit": 8.0,
+                    "fee": 1.5,
+                    "storageFee": -3.0,
+                    "openTime": 100,
+                    "closeTime": 200,
+                    "openPrice": 100.0,
+                    "closePrice": 120.0,
+                    "dealTicket": 12,
+                    "orderId": 102,
+                    "positionId": 201,
+                    "entryType": 1,
+                }],
+                "orders": [],
+                "curvePoints": [],
+            }
+        )
+
+        trade = payload["trades"][0]
+        self.assertEqual(100, trade["openTime"])
+        self.assertEqual(200, trade["closeTime"])
+        self.assertEqual(100.0, trade["openPrice"])
+        self.assertEqual(120.0, trade["closePrice"])
+        self.assertEqual(-3.0, trade["storageFee"])
+        self.assertEqual(12, trade["dealTicket"])
+        self.assertEqual(102, trade["orderId"])
+        self.assertEqual(201, trade["positionId"])
+        self.assertEqual(1, trade["entryType"])
+
     def test_build_account_snapshot_response_keeps_meta(self):
         payload = v2_account.build_account_snapshot_response(
             {"balance": 1000.0, "positions": [], "orders": []},

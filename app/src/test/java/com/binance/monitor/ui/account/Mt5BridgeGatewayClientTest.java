@@ -13,6 +13,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -32,6 +33,28 @@ public class Mt5BridgeGatewayClientTest {
         assertEquals("pending:all", Mt5BridgeGatewayClient.buildSyncRequestKey("pending", "all"));
         assertEquals("trades:all", Mt5BridgeGatewayClient.buildSyncRequestKey("trades", "all"));
         assertEquals("curve:all", Mt5BridgeGatewayClient.buildSyncRequestKey("curve", "all"));
+    }
+
+    // 已明确配置公网网关时，不应再拼接本机和局域网回退地址，避免一次超时放大成整串错误。
+    @Test
+    public void resolveCandidateBaseUrlsShouldKeepRemoteGatewayOnly() {
+        assertEquals(
+                Arrays.asList("http://43.155.214.62:8787"),
+                Mt5BridgeGatewayClient.resolveCandidateBaseUrls("http://43.155.214.62:8787")
+        );
+    }
+
+    // 只有本地调试地址才附带模拟器与 localhost 回退。
+    @Test
+    public void resolveCandidateBaseUrlsShouldAppendLocalFallbacksForLoopbackHost() {
+        assertEquals(
+                Arrays.asList(
+                        "http://127.0.0.1:8787",
+                        "http://10.0.2.2:8787",
+                        "http://localhost:8787"
+                ),
+                Mt5BridgeGatewayClient.resolveCandidateBaseUrls("http://127.0.0.1:8787")
+        );
     }
 
     // 曲线点解析时必须把历史仓位比例一并读入，后续图表与缓存才能继续使用。

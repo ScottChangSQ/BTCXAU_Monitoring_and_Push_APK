@@ -2303,6 +2303,374 @@ def _snapshot_from_mt5_light() -> Dict:
             _shutdown_mt5()
 
 
+def _infer_trade_contract_size(item: Dict[str, Any]) -> float:
+    quantity = abs(float(item.get("quantity", 0.0) or 0.0))
+    price = abs(float(item.get("price", 0.0) or 0.0))
+    amount = abs(float(item.get("amount", 0.0) or 0.0))
+    if quantity <= 0.0 or price <= 0.0 or amount <= 0.0:
+        return 1.0
+    inferred = amount / (quantity * price)
+    return inferred if inferred > 0.0 else 1.0
+
+
+def _should_rebuild_ea_trade_records(records: List[Dict[str, Any]]) -> bool:
+    if not records:
+        return False
+    identified_count = 0
+    raw_like_count = 0
+    for item in records:
+        if not isinstance(item, dict):
+            continue
+        if any(key in item for key in ("entryType", "dealType", "dealTicket", "positionId", "orderId")):
+            identified_count += 1
+        timestamp = int(item.get("timestamp", item.get("time", 0)) or 0)
+        price = float(item.get("price", 0.0) or 0.0)
+        open_time = int(item.get("openTime", timestamp) or timestamp)
+        close_time = int(item.get("closeTime", timestamp) or timestamp)
+        open_price = float(item.get("openPrice", price) or price)
+        close_price = float(item.get("closePrice", price) or price)
+        if open_time == timestamp and close_time == timestamp and abs(open_price - price) < 1e-9 and abs(close_price - price) < 1e-9:
+            raw_like_count += 1
+    return identified_count > 0 and raw_like_count >= max(1, len(records) - 1)
+
+
+def _rebuild_ea_trade_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    rebuilt: List[Dict[str, Any]] = []
+    open_batches: Dict[str, List[Dict[str, Any]]] = {}
+    open_batches_by_symbol_side: Dict[str, List[Dict[str, Any]]] = {}
+    volume_epsilon = 1e-9
+
+    def contract_size_of(item: Dict[str, Any]) -> float:
+        return _infer_trade_contract_size(item)
+
+    def lifecycle_key(position_id: int, order_id: int, ticket: int) -> str:
+        if position_id > 0:
+            return f"position:{position_id}"
+        if order_id > 0:
+            return f"order:{order_id}"
+        return f"ticket:{ticket}"
+
+    def infer_original_side(deal_type: int) -> str:
+        return "Buy" if deal_type == 1 else "Sell"
+
+    def symbol_side_key(symbol: str, side: str) -> str:
+        return f"{symbol}:{side}"
+
+    def append_open_batch(key: str,
+                          symbol: str,
+                          side: str,
+                          open_time_ms: int,
+                          open_price: float,
+                          volume: float) -> None:
+        if volume <= volume_epsilon:
+            return
+        batch = {
+            "symbol": symbol,
+            "side": side,
+            "open_time": int(open_time_ms),
+            "open_price": float(open_price),
+            "remaining_volume": float(volume),
+        }
+        open_batches.setdefault(key, []).append(batch)
+        open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), []).append(batch)
+
+    def consume_queue(queue: List[Dict[str, Any]], close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        matches: List[Tuple[Dict[str, Any], float]] = []
+        remaining = float(close_volume)
+        while remaining > volume_epsilon and queue:
+            batch = queue[0]
+            batch_remaining = float(batch.get("remaining_volume", 0.0))
+            if batch_remaining <= volume_epsilon:
+                queue.pop(0)
+                continue
+            matched = min(remaining, batch_remaining)
+            if matched <= volume_epsilon:
+                queue.pop(0)
+                continue
+            matches.append((dict(batch), matched))
+            batch["remaining_volume"] = max(0.0, batch_remaining - matched)
+            remaining -= matched
+            if float(batch.get("remaining_volume", 0.0)) <= volume_epsilon:
+                queue.pop(0)
+        return matches, max(0.0, remaining)
+
+    def consume_open_batches(key: str, close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        return consume_queue(open_batches.setdefault(key, []), close_volume)
+
+    def consume_open_batches_by_symbol_side(symbol: str,
+                                            side: str,
+                                            close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        return consume_queue(open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), []), close_volume)
+
+    def resolve_split_ticket(ticket: int, split_count: int, split_index: int) -> int:
+        if split_count <= 1 or ticket <= 0:
+            return ticket
+        return ticket * 1000 + split_index
+
+    def append_close_record(symbol: str,
+                            ticket: int,
+                            order_id: int,
+                            position_id: int,
+                            entry_type: int,
+                            close_time: int,
+                            close_price: float,
+                            close_volume: float,
+                            total_volume: float,
+                            total_profit: float,
+                            total_commission: float,
+                            total_swap: float,
+                            open_time: int,
+                            open_price: float,
+                            side: str,
+                            split_count: int,
+                            split_index: int,
+                            remark: str,
+                            contract_size: float) -> None:
+        if close_volume <= volume_epsilon or total_volume <= volume_epsilon:
+            return
+        ratio = close_volume / total_volume
+        commission_fee = abs(total_commission) * ratio
+        storage_fee = total_swap * ratio
+        amount = abs(close_volume * close_price * contract_size)
+        rebuilt.append(
+            {
+                "timestamp": close_time,
+                "productName": symbol,
+                "code": symbol,
+                "side": side,
+                "price": close_price,
+                "quantity": close_volume,
+                "amount": amount,
+                "fee": commission_fee,
+                "profit": total_profit * ratio,
+                "openTime": open_time,
+                "closeTime": close_time,
+                "openPrice": open_price if open_price > 0.0 else close_price,
+                "closePrice": close_price if close_price > 0.0 else open_price,
+                "storageFee": storage_fee,
+                "dealTicket": resolve_split_ticket(ticket, split_count, split_index),
+                "orderId": order_id,
+                "positionId": position_id,
+                "entryType": entry_type,
+                "remark": remark or "",
+            }
+        )
+
+    sorted_records = sorted(records, key=lambda item: int(item.get("timestamp", item.get("time", 0)) or 0))
+    for record in sorted_records:
+        symbol = str(record.get("code") or record.get("productName") or "").strip()
+        if not symbol:
+            continue
+        deal_type = int(record.get("dealType", 0 if str(record.get("side", "")).strip().lower() == "buy" else 1) or 0)
+        if not _is_trade_deal_type(deal_type):
+            continue
+        volume = abs(float(record.get("quantity", record.get("volume", 0.0)) or 0.0))
+        if volume <= 0.0:
+            continue
+        ticket = int(record.get("dealTicket", record.get("ticket", 0)) or 0)
+        order_id = int(record.get("orderId", record.get("order", 0)) or 0)
+        position_id = int(record.get("positionId", record.get("position_id", 0)) or 0)
+        key = lifecycle_key(position_id, order_id, ticket)
+        entry_type = int(record.get("entryType", record.get("entry", 0)) or 0)
+        timestamp = int(record.get("timestamp", record.get("time", 0)) or 0)
+        price = float(record.get("price", 0.0) or 0.0)
+        profit = float(record.get("profit", 0.0) or 0.0)
+        commission = float(record.get("commission", record.get("fee", 0.0)) or 0.0)
+        swap = float(record.get("swap", record.get("storageFee", 0.0)) or 0.0)
+        current_side = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
+        comment = str(record.get("remark", "") or "")
+        contract_size = contract_size_of(record)
+
+        if _is_entry_close(entry_type):
+            original_side = infer_original_side(deal_type)
+            matches, remaining_after_close = consume_open_batches(key, volume)
+            if remaining_after_close > volume_epsilon:
+                fallback_matches, remaining_after_close = consume_open_batches_by_symbol_side(
+                    symbol,
+                    original_side,
+                    remaining_after_close,
+                )
+                matches.extend(fallback_matches)
+
+            split_count = len(matches) if matches else 1
+            if matches:
+                for split_index, (batch, matched_volume) in enumerate(matches):
+                    append_close_record(
+                        symbol=symbol,
+                        ticket=ticket,
+                        order_id=order_id,
+                        position_id=position_id,
+                        entry_type=entry_type,
+                        close_time=timestamp,
+                        close_price=price,
+                        close_volume=matched_volume,
+                        total_volume=volume,
+                        total_profit=profit,
+                        total_commission=commission,
+                        total_swap=swap,
+                        open_time=int(batch.get("open_time", timestamp) or timestamp),
+                        open_price=float(batch.get("open_price", price) or price),
+                        side=original_side,
+                        split_count=split_count,
+                        split_index=split_index,
+                        remark=comment,
+                        contract_size=contract_size,
+                    )
+            elif remaining_after_close > volume_epsilon:
+                append_close_record(
+                    symbol=symbol,
+                    ticket=ticket,
+                    order_id=order_id,
+                    position_id=position_id,
+                    entry_type=entry_type,
+                    close_time=timestamp,
+                    close_price=price,
+                    close_volume=remaining_after_close,
+                    total_volume=volume,
+                    total_profit=profit,
+                    total_commission=commission,
+                    total_swap=swap,
+                    open_time=timestamp,
+                    open_price=price,
+                    side=original_side,
+                    split_count=1,
+                    split_index=0,
+                    remark=comment,
+                    contract_size=contract_size,
+                )
+
+        if _is_entry_open(entry_type):
+            append_open_batch(key, symbol, current_side, timestamp, price, volume)
+
+    rebuilt.sort(key=lambda item: int(item.get("closeTime", item.get("timestamp", 0)) or 0), reverse=True)
+    return rebuilt
+
+
+def _normalize_ea_snapshot_trades(account_meta: Dict[str, Any], trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    source = str((account_meta or {}).get("source", "") or "")
+    if "MT5 EA Push" not in source:
+        return trades
+    if not _should_rebuild_ea_trade_records(trades):
+        return trades
+    rebuilt = _rebuild_ea_trade_records(trades)
+    return rebuilt if rebuilt else trades
+
+
+def _overview_metric_value(metrics: List[Dict[str, Any]], *names: str) -> float:
+    if not metrics or not names:
+        return 0.0
+    normalized_names = [str(name or "").strip().lower() for name in names if str(name or "").strip()]
+    for metric in metrics:
+        if not isinstance(metric, dict):
+            continue
+        metric_name = str(metric.get("name", "") or "").strip().lower()
+        if not metric_name:
+            continue
+        if any(candidate in metric_name for candidate in normalized_names):
+            raw_value = str(metric.get("value", "") or "")
+            number = "".join(ch for ch in raw_value if ch.isdigit() or ch in ".-+")
+            try:
+                return float(number)
+            except Exception:
+                return 0.0
+    return 0.0
+
+
+def _infer_ea_curve_contract_size(item: Dict[str, Any]) -> float:
+    quantity = abs(float(item.get("quantity", item.get("volume", 0.0)) or 0.0))
+    price = abs(float(item.get("price", 0.0) or 0.0))
+    amount = abs(float(item.get("amount", 0.0) or 0.0))
+    if quantity <= 0.0 or price <= 0.0 or amount <= 0.0:
+        return 1.0
+    inferred = amount / (quantity * price)
+    return inferred if inferred > 0.0 else 1.0
+
+
+def _rebuild_sparse_ea_curve_points(account_meta: Dict[str, Any],
+                                    overview_metrics: List[Dict[str, Any]],
+                                    curve_points: List[Dict[str, Any]],
+                                    raw_trades: List[Dict[str, Any]],
+                                    positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    source = str((account_meta or {}).get("source", "") or "")
+    if "MT5 EA Push" not in source:
+        return curve_points
+    if not raw_trades:
+        return curve_points
+
+    deal_history: List[Dict[str, Any]] = []
+    realized = 0.0
+    contract_size_cache: Dict[str, float] = {}
+
+    def contract_size_fn(symbol: str) -> float:
+        cached = contract_size_cache.get(symbol)
+        if cached is not None:
+            return cached
+        for item in raw_trades:
+            item_symbol = str(item.get("code") or item.get("productName") or item.get("symbol") or "").strip()
+            if item_symbol != symbol:
+                continue
+            cached = _infer_ea_curve_contract_size(item)
+            contract_size_cache[symbol] = cached
+            return cached
+        contract_size_cache[symbol] = 1.0
+        return 1.0
+
+    for item in sorted(raw_trades, key=lambda current: int(current.get("timestamp", current.get("time", 0)) or 0)):
+        entry = int(item.get("entryType", item.get("entry", 0)) or 0)
+        deal_type = int(item.get("dealType", item.get("deal_type", 0)) or 0)
+        volume = abs(float(item.get("quantity", item.get("volume", 0.0)) or 0.0))
+        symbol = str(item.get("code") or item.get("productName") or item.get("symbol") or "").strip()
+        if not symbol or volume <= 0.0 or not _is_trade_deal_type(deal_type):
+            continue
+        profit = float(item.get("profit", 0.0) or 0.0)
+        commission = float(item.get("commission", item.get("fee", 0.0)) or 0.0)
+        swap = float(item.get("swap", item.get("storageFee", 0.0)) or 0.0)
+        realized += profit + commission + swap
+        deal_history.append({
+            "timestamp": int(item.get("timestamp", item.get("time", 0)) or 0),
+            "price": float(item.get("price", 0.0) or 0.0),
+            "profit": profit,
+            "commission": commission,
+            "swap": swap,
+            "entry": entry,
+            "deal_type": deal_type,
+            "volume": volume,
+            "symbol": symbol,
+            "position_id": int(item.get("positionId", item.get("position_id", 0)) or 0),
+        })
+
+    if not deal_history:
+        return curve_points
+
+    current_balance = float((account_meta or {}).get("balance", 0.0) or 0.0)
+    current_equity = float((account_meta or {}).get("equity", 0.0) or 0.0)
+    leverage = float((account_meta or {}).get("leverage", 0.0) or 0.0)
+    if current_balance <= 0.0:
+        current_balance = _overview_metric_value(overview_metrics, "balance", "结余")
+    if current_equity <= 0.0:
+        current_equity = _overview_metric_value(overview_metrics, "current equity", "equity", "净资产", "净值")
+    if leverage <= 0.0:
+        leverage = _overview_metric_value(overview_metrics, "leverage", "杠杆")
+    if current_balance <= 0.0:
+        current_balance = current_equity
+    if current_equity <= 0.0:
+        current_equity = current_balance
+    start_balance = current_balance - realized
+
+    rebuilt = _replay_curve_from_history(
+        deal_history=deal_history,
+        start_balance=start_balance,
+        open_positions=positions or [],
+        current_balance=current_balance,
+        current_equity=current_equity,
+        leverage=leverage,
+        contract_size_fn=contract_size_fn,
+        now_ms=max(int((account_meta or {}).get("updatedAt", 0) or 0), _now_ms()),
+        fetch_rows_fn=lambda symbol, interval, limit, **kwargs: [],
+    )
+    return rebuilt if rebuilt else curve_points
+
+
 def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     data = payload or {}
     account_meta = data.get("accountMeta") or {}
@@ -2316,7 +2684,15 @@ def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     data["curveIndicators"] = data.get("curveIndicators") or []
     data["positions"] = data.get("positions") or []
     data["pendingOrders"] = data.get("pendingOrders") or []
-    data["trades"] = data.get("trades") or []
+    raw_trades = data.get("trades") or []
+    data["trades"] = _normalize_ea_snapshot_trades(account_meta, raw_trades)
+    data["curvePoints"] = _rebuild_sparse_ea_curve_points(
+        account_meta,
+        data["overviewMetrics"],
+        data["curvePoints"],
+        raw_trades,
+        data["positions"],
+    )
     data["statsMetrics"] = data.get("statsMetrics") or []
     return data
 

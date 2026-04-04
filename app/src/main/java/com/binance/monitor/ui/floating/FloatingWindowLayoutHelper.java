@@ -8,7 +8,7 @@ import android.view.Gravity;
 
 final class FloatingWindowLayoutHelper {
 
-    private static final int EXPANDED_WIDTH_DP = 96;
+    private static final int EXPANDED_WIDTH_DP = 90;
     private static final int HORIZONTAL_PADDING_DP = 4;
     private static final int TRAILING_INSET_DP = 0;
     private static final int MINIMIZE_BUTTON_SIZE_DP = 14;

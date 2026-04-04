@@ -46,4 +46,24 @@ public class AccountCurvePointNormalizerTest {
         assertEquals(0.66d, normalized.get(0).getPositionRatio(), 1e-9);
         assertEquals(0.66d, normalized.get(1).getPositionRatio(), 1e-9);
     }
+
+    @Test
+    public void normalizeShouldDeduplicateSameTimestampUsingLatestPoint() {
+        List<CurvePoint> normalized = AccountCurvePointNormalizer.normalize(
+                Arrays.asList(
+                        new CurvePoint(1_000L, 100d, 100d, 0.10d),
+                        new CurvePoint(1_000L, 150d, 120d, 0.30d),
+                        new CurvePoint(2_000L, 160d, 125d, 0.35d)
+                ),
+                100d,
+                9_999L
+        );
+
+        assertEquals(2, normalized.size());
+        assertEquals(1_000L, normalized.get(0).getTimestamp());
+        assertEquals(150d, normalized.get(0).getEquity(), 1e-9);
+        assertEquals(120d, normalized.get(0).getBalance(), 1e-9);
+        assertEquals(0.30d, normalized.get(0).getPositionRatio(), 1e-9);
+        assertEquals(2_000L, normalized.get(1).getTimestamp());
+    }
 }

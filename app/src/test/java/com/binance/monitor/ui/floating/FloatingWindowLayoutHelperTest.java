@@ -13,14 +13,14 @@ public class FloatingWindowLayoutHelperTest {
 
     @Test
     public void expandedLayoutShouldUseTighterWidthPreset() {
-        assertEquals(96, FloatingWindowLayoutHelper.resolveExpandedWidthDp());
-        assertEquals(88, FloatingWindowLayoutHelper.resolveExpandedContentWidthDp());
+        assertEquals(90, FloatingWindowLayoutHelper.resolveExpandedWidthDp());
+        assertEquals(82, FloatingWindowLayoutHelper.resolveExpandedContentWidthDp());
         assertEquals(0, FloatingWindowLayoutHelper.resolveTrailingInsetDp());
     }
 
     @Test
     public void valueRowsShouldFillContentWidth() {
-        assertEquals(88, FloatingWindowLayoutHelper.resolveValueRowWidthDp());
+        assertEquals(82, FloatingWindowLayoutHelper.resolveValueRowWidthDp());
     }
 
     @Test

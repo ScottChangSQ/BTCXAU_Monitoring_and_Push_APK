@@ -22,16 +22,26 @@ final class AccountRefreshMetaHelper {
     }
 
     // 根据已排队的下一次刷新时间，计算顶部倒计时剩余秒数。
-    static long resolveRemainingSeconds(long nextRefreshAtMs, long nowMs, long intervalSeconds) {
+    static long resolveRemainingSeconds(long nextRefreshAtMs,
+                                        long nowMs,
+                                        long intervalSeconds) {
+        return resolveRemainingSeconds(nextRefreshAtMs, nowMs, intervalSeconds, false);
+    }
+
+    // 请求已发出但下一次调度尚未重新排队时，顶部应保持临近刷新状态，不能跳回整轮周期。
+    static long resolveRemainingSeconds(long nextRefreshAtMs,
+                                        long nowMs,
+                                        long intervalSeconds,
+                                        boolean loading) {
         if (intervalSeconds <= 0L) {
             return 1L;
         }
         if (nextRefreshAtMs <= 0L) {
-            return intervalSeconds;
+            return loading ? 1L : intervalSeconds;
         }
         long remainMs = Math.max(0L, nextRefreshAtMs - nowMs);
         if (remainMs <= 0L) {
-            return intervalSeconds;
+            return 1L;
         }
         return Math.max(1L, (remainMs + 999L) / 1_000L);
     }

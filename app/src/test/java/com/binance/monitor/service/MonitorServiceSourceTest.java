@@ -1,6 +1,10 @@
+/*
+ * 监控服务源码约束测试，确保进入应用和回到前台时会主动刷新账户与行情。
+ */
 package com.binance.monitor.service;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -12,11 +16,52 @@ import java.nio.file.Paths;
 public class MonitorServiceSourceTest {
 
     @Test
-    public void monitorServiceShouldNotKeepLegacyAlertDispatchLogic() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/service/MonitorService.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+    public void foregroundEntryShouldRefreshAccountAndMarket() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
 
-        assertFalse(source.contains("dispatchSyncedAlert("));
-        assertFalse(source.contains("result.getAlerts()"));
+        assertTrue("前台切回时应走统一前台状态处理入口",
+                source.contains("foreground -> mainHandler.post(() -> handleForegroundStateChanged(foreground))"));
+        assertTrue("前台切回时应主动刷新账户数据",
+                source.contains("requestAccountRefreshFromV2();"));
+        assertTrue("前台切回时应主动刷新行情数据",
+                source.contains("requestMarketRefreshFromV2();"));
+    }
+
+    @Test
+    public void bootstrapShouldRefreshAccountAndMarketOnce() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertTrue("新进入 APP 时应主动触发一次全局刷新",
+                source.contains("requestForegroundEntryRefresh();"));
+    }
+
+    @Test
+    public void floatingSnapshotShouldUseDisplayResolverSnapshotPositions() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertTrue("悬浮窗应和图表页一样先解析页面快照",
+                source.contains("AccountSnapshotDisplayResolver.resolve("));
+        assertFalse("悬浮窗不应再直接读取数据库持仓列表",
+                source.contains("accountStorageRepository == null ? new ArrayList<>() : accountStorageRepository.loadPositions()"));
+    }
+
+    private static String readUtf8(String... candidates) throws Exception {
+        Path workingDir = Paths.get(System.getProperty("user.dir"));
+        for (String candidate : candidates) {
+            Path path = workingDir.resolve(candidate).normalize();
+            if (Files.exists(path)) {
+                return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+            }
+        }
+        throw new IllegalStateException("找不到 MonitorService.java");
     }
 }

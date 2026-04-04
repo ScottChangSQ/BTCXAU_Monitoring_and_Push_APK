@@ -22,12 +22,15 @@ final class AccountSnapshotRestoreHelper {
         if (preloadSnapshot == null) {
             return null;
         }
-        if (storedSnapshot == null || storedSnapshot.getTrades() == null || storedSnapshot.getTrades().isEmpty()) {
-            return preloadSnapshot;
-        }
         List<TradeRecordItem> preloadTrades = preloadSnapshot.getTrades() == null
                 ? new ArrayList<>()
                 : new ArrayList<>(preloadSnapshot.getTrades());
+        if (!preloadTrades.isEmpty()) {
+            return preloadSnapshot;
+        }
+        if (storedSnapshot == null || storedSnapshot.getTrades() == null || storedSnapshot.getTrades().isEmpty()) {
+            return preloadSnapshot;
+        }
         List<TradeRecordItem> mergedTrades = AccountStorageRepository.mergeTrades(
                 preloadTrades,
                 storedSnapshot.getTrades()

@@ -101,6 +101,64 @@ public class CurveAnalyticsHelperTest {
         assertEquals(1, buckets.get(0).getWinCount());
     }
 
+    @Test
+    public void buildTradeScatterPointsShouldUseBtcNotionalFormulaForReturnRate() {
+        List<TradeRecordItem> trades = Arrays.asList(
+                new TradeRecordItem(
+                        2_000L,
+                        "BTCUSD",
+                        "BTCUSD",
+                        "Sell",
+                        120d,
+                        0.1d,
+                        12d,
+                        0d,
+                        "",
+                        8d,
+                        1_000L,
+                        2_000L,
+                        0d,
+                        100d,
+                        120d
+                )
+        );
+
+        List<CurveAnalyticsHelper.TradeScatterPoint> points =
+                CurveAnalyticsHelper.buildTradeScatterPoints(trades, null);
+
+        assertEquals(1, points.size());
+        assertEquals(0.8d, points.get(0).getReturnRate(), 1e-9);
+    }
+
+    @Test
+    public void buildTradeScatterPointsShouldUseXauContractMultiplierForReturnRate() {
+        List<TradeRecordItem> trades = Arrays.asList(
+                new TradeRecordItem(
+                        2_000L,
+                        "XAUUSD",
+                        "XAUUSD",
+                        "Sell",
+                        2050d,
+                        0.01d,
+                        2050d,
+                        0d,
+                        "",
+                        20d,
+                        1_000L,
+                        2_000L,
+                        0d,
+                        2000d,
+                        2050d
+                )
+        );
+
+        List<CurveAnalyticsHelper.TradeScatterPoint> points =
+                CurveAnalyticsHelper.buildTradeScatterPoints(trades, null);
+
+        assertEquals(1, points.size());
+        assertEquals(0.01d, points.get(0).getReturnRate(), 1e-9);
+    }
+
     private long buildTime(int year, int month, int day, int hourOfDay) {
         java.util.Calendar calendar = java.util.Calendar.getInstance();
         calendar.set(java.util.Calendar.YEAR, year);

@@ -167,9 +167,9 @@ public class FloatingPositionAggregatorTest {
         assertEquals(67_123.4d, cards.get(0).getLatestPrice(), 0.0001d);
     }
 
-    // 悬浮窗盈亏现在直接复用当前行情页里的对应盈亏数字，不能再叠加库存费。
+    // 悬浮窗盈亏现在与行情持仓页统一，直接使用 totalPnL + storageFee。
     @Test
-    public void aggregateShouldUseSnapshotTotalPnlOnly() {
+    public void aggregateShouldIncludeStorageFeeInDisplayedPnl() {
         List<PositionItem> positions = Arrays.asList(
                 new PositionItem("BTCUSD", "BTCUSD", "Buy", 1L, 11L,
                         0.05d, 0.05d, 66_000d, 66_500d, 3_325d, 0.1d,
@@ -182,12 +182,12 @@ public class FloatingPositionAggregatorTest {
         List<FloatingPositionPnlItem> items = FloatingPositionAggregator.aggregate(positions);
 
         assertEquals(1, items.size());
-        assertEquals(30d, items.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(32d, items.get(0).getTotalPnl(), 0.0001d);
     }
 
-    // 悬浮窗盈亏应直接复用账户快照里的当前盈亏数字，实时价格只更新价格显示。
+    // 悬浮窗盈亏应与行情持仓页一致，包含库存费；实时价格只更新价格显示。
     @Test
-    public void aggregateShouldKeepSnapshotPnlWhenRealtimePriceAvailable() {
+    public void aggregateShouldKeepSnapshotPnlWithStorageWhenRealtimePriceAvailable() {
         List<PositionItem> positions = Arrays.asList(
                 new PositionItem("BTCUSD", "BTCUSD", "Buy", 1L, 11L,
                         0.05d, 0.05d, 66_000d, 66_010d, 3_300.5d, 0.1d,
@@ -204,13 +204,13 @@ public class FloatingPositionAggregatorTest {
         );
 
         assertEquals(1, items.size());
-        assertEquals(0.5d, items.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(1.5d, items.get(0).getTotalPnl(), 0.0001d);
         assertEquals(67_000d, items.get(0).getMarketPrice(), 0.0001d);
     }
 
-    // 即使 quantity 是手数口径，悬浮窗也不应再自行推导合约乘数重算盈亏。
+    // 即使 quantity 是手数口径，悬浮窗也不应自行推导重算，只取 totalPnL + storageFee。
     @Test
-    public void aggregateShouldIgnoreContractInferenceAndUseSnapshotPnl() {
+    public void aggregateShouldIgnoreContractInferenceAndUseSnapshotPnlWithStorage() {
         List<PositionItem> positions = Arrays.asList(
                 new PositionItem("XAUUSD", "XAUUSD", "Buy", 1L, 11L,
                         0.2d, 0.2d, 2_000d, 2_001d, 40_020d, 0.1d,
@@ -227,7 +227,7 @@ public class FloatingPositionAggregatorTest {
         );
 
         assertEquals(1, items.size());
-        assertEquals(20d, items.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(15d, items.get(0).getTotalPnl(), 0.0001d);
         assertEquals(2_010d, items.get(0).getMarketPrice(), 0.0001d);
     }
 }

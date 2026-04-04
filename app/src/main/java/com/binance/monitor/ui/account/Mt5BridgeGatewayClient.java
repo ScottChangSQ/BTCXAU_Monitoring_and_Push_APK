@@ -19,6 +19,7 @@ import org.json.JSONObject;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.net.URI;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -185,6 +186,10 @@ public class Mt5BridgeGatewayClient {
         Set<String> attempted = new HashSet<>();
         String rangeKey = mapRange(range);
         String requestKey = buildSyncRequestKey(scope, rangeKey);
+        String configuredBaseUrl = configManager != null
+                ? configManager.getMt5GatewayBaseUrl()
+                : AppConstants.MT5_GATEWAY_BASE_URL;
+        boolean shouldTryLocalFallbacks = shouldAppendLocalFallbacks(normalizeBaseUrl(configuredBaseUrl));
 
         if (!discoveredLanBaseUrl.isEmpty()) {
             if (fetchFromBaseUrl(discoveredLanBaseUrl, endpointPath, rangeKey, scope, result, errors)) {
@@ -193,7 +198,7 @@ public class Mt5BridgeGatewayClient {
             attempted.add(discoveredLanBaseUrl);
         }
 
-        for (String baseUrl : buildCandidateBaseUrls()) {
+        for (String baseUrl : resolveCandidateBaseUrls(configuredBaseUrl)) {
             if (attempted.contains(baseUrl)) {
                 continue;
             }
@@ -203,13 +208,15 @@ public class Mt5BridgeGatewayClient {
             attempted.add(baseUrl);
         }
 
-        String discovered = discoverLanGatewayBaseUrl();
-        if (!discovered.isEmpty() && !attempted.contains(discovered)) {
-            if (fetchFromBaseUrl(discovered, endpointPath, rangeKey, scope, result, errors)) {
-                return result;
+        if (shouldTryLocalFallbacks) {
+            String discovered = discoverLanGatewayBaseUrl();
+            if (!discovered.isEmpty() && !attempted.contains(discovered)) {
+                if (fetchFromBaseUrl(discovered, endpointPath, rangeKey, scope, result, errors)) {
+                    return result;
+                }
+            } else if (discovered.isEmpty()) {
+                errors.add("LAN scan -> no reachable gateway found");
             }
-        } else if (discovered.isEmpty()) {
-            errors.add("LAN scan -> no reachable gateway found");
         }
 
         result.error = String.join(" ; ", errors);
@@ -433,16 +440,39 @@ public class Mt5BridgeGatewayClient {
     }
 
     private List<String> buildCandidateBaseUrls() {
+        String configuredBaseUrl = configManager != null
+                ? configManager.getMt5GatewayBaseUrl()
+                : AppConstants.MT5_GATEWAY_BASE_URL;
+        return resolveCandidateBaseUrls(configuredBaseUrl);
+    }
+
+    // 远端网关只请求自身，只有本地地址才附带模拟器和 localhost 回退。
+    static List<String> resolveCandidateBaseUrls(@Nullable String configuredBaseUrl) {
         Set<String> urls = new LinkedHashSet<>();
-        if (configManager != null) {
-            urls.add(configManager.getMt5GatewayBaseUrl());
-        } else {
-            urls.add(AppConstants.MT5_GATEWAY_BASE_URL);
+        String primary = GatewayUrlResolver.normalizeBaseUrl(configuredBaseUrl, AppConstants.MT5_GATEWAY_BASE_URL);
+        urls.add(primary);
+        if (shouldAppendLocalFallbacks(primary)) {
+            urls.add("http://10.0.2.2:8787");
+            urls.add("http://127.0.0.1:8787");
+            urls.add("http://localhost:8787");
         }
-        urls.add("http://10.0.2.2:8787");
-        urls.add("http://127.0.0.1:8787");
-        urls.add("http://localhost:8787");
         return new ArrayList<>(urls);
+    }
+
+    private static boolean shouldAppendLocalFallbacks(String baseUrl) {
+        try {
+            URI uri = new URI(GatewayUrlResolver.normalizeBaseUrl(baseUrl, AppConstants.MT5_GATEWAY_BASE_URL));
+            String host = uri.getHost();
+            if (host == null) {
+                return false;
+            }
+            String normalizedHost = host.trim().toLowerCase(Locale.ROOT);
+            return "127.0.0.1".equals(normalizedHost)
+                    || "localhost".equals(normalizedHost)
+                    || "10.0.2.2".equals(normalizedHost);
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private String mapRange(AccountTimeRange range) {

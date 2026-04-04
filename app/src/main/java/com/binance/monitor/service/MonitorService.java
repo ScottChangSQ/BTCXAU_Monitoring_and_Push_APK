@@ -29,7 +29,9 @@ import com.binance.monitor.data.model.v2.MarketSeriesPayload;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
 import com.binance.monitor.data.repository.MonitorRepository;
+import com.binance.monitor.ui.account.AccountSnapshotDisplayResolver;
 import com.binance.monitor.ui.account.AccountStatsPreloadManager;
+import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.ui.floating.FloatingPositionAggregator;
 import com.binance.monitor.ui.floating.FloatingSymbolCardData;
@@ -60,7 +62,7 @@ public class MonitorService extends Service {
     private final Map<String, Long> lastPricePublishAt = new HashMap<>();
     private final Map<String, Double> lastPublishedPrice = new HashMap<>();
     private final AppForegroundTracker.ForegroundStateListener appForegroundListener =
-            foreground -> mainHandler.post(this::rescheduleRuntimePolicies);
+            foreground -> mainHandler.post(() -> handleForegroundStateChanged(foreground));
     private final Runnable connectionWatchdogRunnable = new Runnable() {
         @Override
         public void run() {
@@ -165,6 +167,7 @@ public class MonitorService extends Service {
                 break;
             case AppConstants.ACTION_BOOTSTRAP:
             default:
+                requestForegroundEntryRefresh();
                 break;
         }
         requestFloatingWindowRefresh(true);
@@ -525,6 +528,22 @@ public class MonitorService extends Service {
         scheduleAbnormalSync(resolveAbnormalSyncDelayMs());
     }
 
+    // 应用回到前台时立即补拉一次账户与行情，保证页面恢复后先拿到一轮新数据。
+    private void handleForegroundStateChanged(boolean foreground) {
+        rescheduleRuntimePolicies();
+        if (!foreground || !pipelineStarted) {
+            return;
+        }
+        requestForegroundEntryRefresh();
+    }
+
+    // 统一处理“新进入 APP / 后台回前台”的一次性刷新，避免不同入口刷新不一致。
+    private void requestForegroundEntryRefresh() {
+        requestAccountRefreshFromV2();
+        requestMarketRefreshFromV2();
+        requestFloatingWindowRefresh(true);
+    }
+
     // 安排下一次连接心跳检查。
     private void scheduleConnectionWatchdog(long delayMs) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -777,8 +796,24 @@ public class MonitorService extends Service {
 
     // 组装一份统一悬浮窗快照，确保所有字段在同一次 UI 刷新中一起变化。
     private FloatingWindowSnapshot buildFloatingSnapshot() {
+        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
+                ? null
+                : accountStatsPreloadManager.getLatestCache();
+        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository == null
+                ? null
+                : accountStorageRepository.loadStoredSnapshot();
+        AccountSnapshot displaySnapshot = AccountSnapshotDisplayResolver.resolve(
+                cache,
+                storedSnapshot,
+                System.currentTimeMillis(),
+                configManager != null && configManager.isAccountSessionActive()
+        );
+        List<com.binance.monitor.ui.account.model.PositionItem> positions =
+                displaySnapshot == null || displaySnapshot.getPositions() == null
+                        ? new ArrayList<>()
+                        : displaySnapshot.getPositions();
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
-                accountStorageRepository == null ? new ArrayList<>() : accountStorageRepository.loadPositions(),
+                positions,
                 repository.getDisplayKlineSnapshot(),
                 repository.getDisplayPriceSnapshot(),
                 configManager.isShowBtc(),

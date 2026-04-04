@@ -48,6 +48,19 @@ public class AccountStatsPreloadManagerSourceTest {
                 source.contains("\"closeTime\", \"close_time\""));
     }
 
+    @Test
+    public void overlayFetchShouldRejectConcurrentRefreshes() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java"
+        );
+
+        assertTrue("图表页和流事件共用的轻量补拉应有并发保护，避免两轮快照交替覆盖",
+                source.contains("overlayFetchInFlight.compareAndSet(false, true)"));
+        assertTrue("轻量补拉结束后应释放并发保护",
+                source.contains("overlayFetchInFlight.set(false);"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

@@ -266,7 +266,7 @@ public class FloatingWindowManager {
                 ? palette.textSecondary
                 : (masked ? palette.textPrimary : resolvePnlColor(totalPnl, hasCard));
         binding.tvOverlayStatus.setTextColor(pnlColor);
-        binding.tvOverlayStatus.setTextSize(hasCard ? 13f : 12f);
+        binding.tvOverlayStatus.setTextSize(hasCard ? 12f : 11f);
         binding.tvOverlayStatus.setTypeface(null, android.graphics.Typeface.BOLD);
         binding.btnMinimize.setTextColor(palette.textPrimary);
         binding.btnMinimize.setBackground(UiPaletteManager.createOutlinedDrawable(context, palette.control, palette.stroke));
@@ -332,7 +332,7 @@ public class FloatingWindowManager {
         ));
         titleView.setText(buildStyledCardTitle(card, palette, masked));
         titleView.setTextColor(palette.textPrimary);
-        titleView.setTextSize(10f);
+        titleView.setTextSize(9f);
         titleView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         titleView.setSingleLine(true);
         titleView.setMaxLines(1);
@@ -351,7 +351,7 @@ public class FloatingWindowManager {
                 ? SensitiveDisplayMasker.maskPrice(FormatUtils.formatPriceWithUnit(card.getLatestPrice()), masked)
                 : "--");
         priceView.setTextColor(palette.textPrimary);
-        priceView.setTextSize(13f);
+        priceView.setTextSize(11f);
         priceView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         priceView.setSingleLine(true);
         priceView.setMaxLines(1);

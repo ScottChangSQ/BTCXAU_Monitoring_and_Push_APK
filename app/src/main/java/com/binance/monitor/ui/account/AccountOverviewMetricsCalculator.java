@@ -39,7 +39,7 @@ public final class AccountOverviewMetricsCalculator {
                     continue;
                 }
                 marketValue += Math.abs(item.getQuantity()) * Math.max(0d, item.getLatestPrice());
-                positionPnl += item.getTotalPnL();
+                positionPnl += item.getTotalPnL() + item.getStorageFee();
             }
         }
 

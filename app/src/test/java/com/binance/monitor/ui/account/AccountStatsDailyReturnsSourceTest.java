@@ -24,6 +24,19 @@ public class AccountStatsDailyReturnsSourceTest {
                 source.contains("formatReturnValue(0d, 0d, true)"));
     }
 
+    @Test
+    public void tradeBasedReturnsShouldUsePeriodStartAssetInsteadOfTradeNotional() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        );
+
+        assertTrue("交易口径收益率应统一走期初总资产辅助逻辑",
+                source.contains("AccountPeriodReturnHelper.resolvePeriodReturnRate("));
+        assertTrue("旧的成交名义金额收益率计算函数应被移除",
+                !source.contains("resolveTradeReturnNotional("));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

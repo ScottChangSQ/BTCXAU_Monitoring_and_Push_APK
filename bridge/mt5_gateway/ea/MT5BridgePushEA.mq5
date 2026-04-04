@@ -182,11 +182,14 @@ string BuildTrades()
       string symbol = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
       long dealType = HistoryDealGetInteger(dealTicket, DEAL_TYPE);
       string side = (dealType == DEAL_TYPE_BUY ? "Buy" : "Sell");
+      long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+      long orderId = HistoryDealGetInteger(dealTicket, DEAL_ORDER);
+      long positionId = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
       double volume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
       double price = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
       double commission = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
       double swapFee = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
-      double fee = MathAbs(commission + swapFee);
+      double fee = MathAbs(commission);
       double profit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
       long timeMs = (long)HistoryDealGetInteger(dealTicket, DEAL_TIME_MSC);
       if(timeMs <= 0)
@@ -195,7 +198,7 @@ string BuildTrades()
       string comment = HistoryDealGetString(dealTicket, DEAL_COMMENT);
 
       string item = StringFormat(
-         "{\"timestamp\":%I64d,\"productName\":\"%s\",\"code\":\"%s\",\"side\":\"%s\",\"price\":%.5f,\"openPrice\":%.5f,\"closePrice\":%.5f,\"quantity\":%.4f,\"amount\":%.2f,\"fee\":%.2f,\"profit\":%.2f,\"openTime\":%I64d,\"closeTime\":%I64d,\"storageFee\":%.2f,\"remark\":\"%s\"}",
+         "{\"timestamp\":%I64d,\"productName\":\"%s\",\"code\":\"%s\",\"side\":\"%s\",\"price\":%.5f,\"openPrice\":%.5f,\"closePrice\":%.5f,\"quantity\":%.4f,\"amount\":%.2f,\"fee\":%.2f,\"commission\":%.2f,\"profit\":%.2f,\"openTime\":%I64d,\"closeTime\":%I64d,\"storageFee\":%.2f,\"swap\":%.2f,\"dealTicket\":%I64u,\"orderId\":%I64d,\"positionId\":%I64d,\"entryType\":%I64d,\"dealType\":%I64d,\"remark\":\"%s\"}",
          timeMs,
          JsonEscape(symbol),
          JsonEscape(symbol),
@@ -206,10 +209,17 @@ string BuildTrades()
          volume,
          amount,
          fee,
+         commission,
          profit,
          timeMs,
          timeMs,
-         fee,
+         swapFee,
+         swapFee,
+         dealTicket,
+         orderId,
+         positionId,
+         entryType,
+         dealType,
          JsonEscape(comment)
       );
 
@@ -279,10 +289,28 @@ string BuildSnapshotStateSignature(string overviewMetrics,
       positions + "|" + trades);
 }
 
+int BuildRequestPayload(string body, char &payload[])
+{
+   // WebRequest 只需要 JSON 正文，不能把结尾的空字符一起发出去。
+   int copied = StringToCharArray(body, payload, 0, StringLen(body), CP_UTF8);
+   if(copied <= 0)
+   {
+      ArrayResize(payload, 0);
+      return 0;
+   }
+
+   ArrayResize(payload, copied);
+   return copied;
+}
+
 bool PushSnapshotBody(string body)
 {
    char payload[];
-   StringToCharArray(body, payload, 0, -1, CP_UTF8);
+   if(BuildRequestPayload(body, payload) <= 0)
+   {
+      Print("MT5BridgePushEA: payload build failed.");
+      return false;
+   }
 
    string headers = "Content-Type: application/json\r\n";
    if(StringLen(BridgeToken) > 0)
@@ -300,7 +328,7 @@ bool PushSnapshotBody(string body)
    string responseText = CharArrayToString(response, 0, -1, CP_UTF8);
    if(code < 200 || code >= 300)
    {
-      Print("MT5BridgePushEA: push status=", code, " response=", responseText);
+      Print("MT5BridgePushEA: push status=", code, " response=", responseText, " payloadBytes=", ArraySize(payload));
       return false;
    }
    return true;

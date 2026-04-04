@@ -56,6 +56,49 @@ public class AccountCurvePositionRatioHelperTest {
     public void ensureVisibleRatiosShouldClearStaleHistoricalRatiosWhenNoLiveExposure() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 95d, 0.12d),
+                new CurvePoint(2_000L, 200d, 190d, 0.10d),
+                new CurvePoint(3_000L, 200d, 190d, 0.08d)
+        );
+        List<TradeRecordItem> trades = Arrays.asList(
+                new TradeRecordItem(
+                        2_000L,
+                        "BTC",
+                        "BTCUSDT",
+                        "BUY",
+                        40d,
+                        1d,
+                        40d,
+                        0d,
+                        "",
+                        10d,
+                        1_000L,
+                        2_000L,
+                        0d,
+                        40d,
+                        50d,
+                        2L,
+                        1L,
+                        1L,
+                        1
+                )
+        );
+
+        List<CurvePoint> resolved = AccountCurvePositionRatioHelper.ensureVisibleRatios(
+                points,
+                Collections.emptyList(),
+                trades,
+                10d
+        );
+
+        assertEquals(0.12d, resolved.get(0).getPositionRatio(), 1e-9);
+        assertEquals(0d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(0d, resolved.get(2).getPositionRatio(), 1e-9);
+    }
+
+    @Test
+    public void ensureVisibleRatiosShouldKeepHistoricalRatiosWhenNoTradeEvidenceExists() {
+        List<CurvePoint> points = Arrays.asList(
+                new CurvePoint(1_000L, 100d, 95d, 0.12d),
                 new CurvePoint(2_000L, 200d, 190d, 0.10d)
         );
 
@@ -66,8 +109,8 @@ public class AccountCurvePositionRatioHelperTest {
                 10d
         );
 
-        assertEquals(0d, resolved.get(0).getPositionRatio(), 1e-9);
-        assertEquals(0d, resolved.get(1).getPositionRatio(), 1e-9);
+        assertEquals(0.12d, resolved.get(0).getPositionRatio(), 1e-9);
+        assertEquals(0.10d, resolved.get(1).getPositionRatio(), 1e-9);
     }
 
     @Test

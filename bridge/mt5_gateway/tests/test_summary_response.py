@@ -638,6 +638,224 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(1774794820000, trade["openTime"])
         self.assertEqual(1774813268000, trade["closeTime"])
 
+    def test_normalize_snapshot_rebuilds_raw_ea_deals_into_trade_lifecycle(self):
+        payload = {
+            "accountMeta": {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 EA Push",
+                "updatedAt": 1775303081955,
+            },
+            "trades": [
+                {
+                    "timestamp": 100000,
+                    "productName": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Buy",
+                    "price": 100.0,
+                    "openPrice": 100.0,
+                    "closePrice": 100.0,
+                    "quantity": 0.1,
+                    "amount": 10.0,
+                    "fee": 1.5,
+                    "commission": -1.5,
+                    "profit": 0.0,
+                    "openTime": 100000,
+                    "closeTime": 100000,
+                    "storageFee": 0.0,
+                    "swap": 0.0,
+                    "dealTicket": 11,
+                    "orderId": 101,
+                    "positionId": 201,
+                    "entryType": 0,
+                    "dealType": 0,
+                    "remark": "open",
+                },
+                {
+                    "timestamp": 200000,
+                    "productName": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Sell",
+                    "price": 120.0,
+                    "openPrice": 120.0,
+                    "closePrice": 120.0,
+                    "quantity": 0.1,
+                    "amount": 12.0,
+                    "fee": 2.0,
+                    "commission": -2.0,
+                    "profit": 8.0,
+                    "openTime": 200000,
+                    "closeTime": 200000,
+                    "storageFee": -3.0,
+                    "swap": -3.0,
+                    "dealTicket": 12,
+                    "orderId": 102,
+                    "positionId": 201,
+                    "entryType": 1,
+                    "dealType": 1,
+                    "remark": "close",
+                },
+            ],
+        }
+
+        snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
+
+        self.assertEqual(1, len(snapshot["trades"]))
+        trade = snapshot["trades"][0]
+        self.assertEqual(100000, trade["openTime"])
+        self.assertEqual(200000, trade["closeTime"])
+        self.assertAlmostEqual(100.0, trade["openPrice"])
+        self.assertAlmostEqual(120.0, trade["closePrice"])
+        self.assertAlmostEqual(8.0, trade["profit"])
+        self.assertAlmostEqual(2.0, trade["fee"])
+        self.assertAlmostEqual(-3.0, trade["storageFee"])
+
+    def test_normalize_snapshot_rebuilds_sparse_ea_curve_points_from_raw_deals(self):
+        payload = {
+            "accountMeta": {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 EA Push",
+                "updatedAt": 1775303081955,
+            },
+            "overviewMetrics": [
+                {"name": "Current Equity", "value": "1008.00"},
+                {"name": "Balance", "value": "1008.00"},
+                {"name": "Leverage", "value": "100x"},
+            ],
+            "positions": [],
+            "curvePoints": [
+                {"timestamp": 200000, "equity": 1008.0, "balance": 1008.0},
+            ],
+            "trades": [
+                {
+                    "timestamp": 100000,
+                    "productName": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Buy",
+                    "price": 100.0,
+                    "quantity": 0.1,
+                    "amount": 10.0,
+                    "fee": 1.5,
+                    "commission": -1.5,
+                    "profit": 0.0,
+                    "openTime": 100000,
+                    "closeTime": 100000,
+                    "storageFee": 0.0,
+                    "swap": 0.0,
+                    "dealTicket": 11,
+                    "orderId": 101,
+                    "positionId": 201,
+                    "entryType": 0,
+                    "dealType": 0,
+                },
+                {
+                    "timestamp": 200000,
+                    "productName": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Sell",
+                    "price": 120.0,
+                    "quantity": 0.1,
+                    "amount": 12.0,
+                    "fee": 2.0,
+                    "commission": -2.0,
+                    "profit": 8.0,
+                    "openTime": 200000,
+                    "closeTime": 200000,
+                    "storageFee": -3.0,
+                    "swap": -3.0,
+                    "dealTicket": 12,
+                    "orderId": 102,
+                    "positionId": 201,
+                    "entryType": 1,
+                    "dealType": 1,
+                },
+            ],
+        }
+
+        snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
+
+        self.assertGreaterEqual(len(snapshot["curvePoints"]), 2)
+        self.assertEqual(100000, snapshot["curvePoints"][0]["timestamp"])
+        self.assertGreaterEqual(snapshot["curvePoints"][-1]["timestamp"], 200000)
+
+    def test_normalize_snapshot_rebuilds_ea_curve_points_even_when_source_curve_has_multiple_points(self):
+        payload = {
+            "accountMeta": {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 EA Push",
+                "updatedAt": 1775303081955,
+                "balance": 1008.0,
+                "equity": 1008.0,
+                "leverage": 100,
+            },
+            "overviewMetrics": [
+                {"name": "Current Equity", "value": "1008.00"},
+                {"name": "Balance", "value": "1008.00"},
+                {"name": "Leverage", "value": "100x"},
+            ],
+            "positions": [],
+            "curvePoints": [
+                {"timestamp": 100000, "equity": 9999.0, "balance": 9999.0},
+                {"timestamp": 200000, "equity": 8888.0, "balance": 8888.0},
+            ],
+            "trades": [
+                {
+                    "timestamp": 100000,
+                    "productName": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Buy",
+                    "price": 100.0,
+                    "quantity": 0.1,
+                    "amount": 10.0,
+                    "fee": 1.5,
+                    "commission": -1.5,
+                    "profit": 0.0,
+                    "openTime": 100000,
+                    "closeTime": 100000,
+                    "storageFee": 0.0,
+                    "swap": 0.0,
+                    "dealTicket": 11,
+                    "orderId": 101,
+                    "positionId": 201,
+                    "entryType": 0,
+                    "dealType": 0,
+                },
+                {
+                    "timestamp": 200000,
+                    "productName": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Sell",
+                    "price": 120.0,
+                    "quantity": 0.1,
+                    "amount": 12.0,
+                    "fee": 2.0,
+                    "commission": -2.0,
+                    "profit": 8.0,
+                    "openTime": 200000,
+                    "closeTime": 200000,
+                    "storageFee": -3.0,
+                    "swap": -3.0,
+                    "dealTicket": 12,
+                    "orderId": 102,
+                    "positionId": 201,
+                    "entryType": 1,
+                    "dealType": 1,
+                },
+            ],
+        }
+
+        snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
+
+        self.assertGreaterEqual(len(snapshot["curvePoints"]), 2)
+        self.assertEqual(100000, snapshot["curvePoints"][0]["timestamp"])
+        self.assertAlmostEqual(1006.5, snapshot["curvePoints"][0]["balance"])
+        self.assertAlmostEqual(1006.5, snapshot["curvePoints"][0]["equity"])
+        self.assertNotEqual(9999.0, snapshot["curvePoints"][0]["equity"])
+        self.assertAlmostEqual(1008.0, snapshot["curvePoints"][-1]["equity"])
+        self.assertAlmostEqual(1008.0, snapshot["curvePoints"][-1]["balance"])
+
     def test_trim_cache_entries_locked_keeps_newest_entries_only(self):
         helper = getattr(server_v2, "_trim_cache_entries_locked", None)
         self.assertIsNotNone(helper, "缺少 _trim_cache_entries_locked，无法验证快照缓存裁剪")

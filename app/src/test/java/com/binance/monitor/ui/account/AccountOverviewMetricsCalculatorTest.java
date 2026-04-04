@@ -37,8 +37,8 @@ public class AccountOverviewMetricsCalculatorTest {
         assertEquals(200d, values.getPrepayment(), 0.0001d);
         assertEquals(600d, values.getFreePrepayment(), 0.0001d);
         assertEquals(39800d, values.getMarketValue(), 0.0001d);
-        assertEquals(200d, values.getPositionPnl(), 0.0001d);
+        assertEquals(230d, values.getPositionPnl(), 0.0001d);
         assertEquals(4975d, values.getPositionRatio(), 0.0001d);
-        assertEquals(0.2d, values.getPositionPnlRate(), 0.0001d);
+        assertEquals(0.23d, values.getPositionPnlRate(), 0.0001d);
     }
 }

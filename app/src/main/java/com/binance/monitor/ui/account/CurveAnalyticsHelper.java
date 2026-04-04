@@ -376,8 +376,11 @@ public final class CurveAnalyticsHelper {
     private static double resolveTradeReturnRate(TradeRecordItem item) {
         double realized = item.getProfit() + item.getStorageFee();
         double openPrice = item.getOpenPrice();
-        if (openPrice > 1e-9) {
-            return safeDivide(realized, openPrice);
+        double quantity = Math.abs(item.getQuantity());
+        double contractMultiplier = resolveTradeContractMultiplier(item);
+        double notional = Math.abs(quantity * openPrice * contractMultiplier);
+        if (notional > 1e-9) {
+            return safeDivide(realized, notional);
         }
         if (Math.abs(item.getAmount()) > 1e-9) {
             return safeDivide(realized, Math.abs(item.getAmount()));
@@ -392,6 +395,14 @@ public final class CurveAnalyticsHelper {
             return grossRate + feeRate;
         }
         return 0d;
+    }
+
+    private static double resolveTradeContractMultiplier(TradeRecordItem item) {
+        String code = safeLabel(item);
+        if (code.startsWith("XAU")) {
+            return 100d;
+        }
+        return 1d;
     }
 
     private static double resolveTradeWindowDrawdown(TradeRecordItem item,

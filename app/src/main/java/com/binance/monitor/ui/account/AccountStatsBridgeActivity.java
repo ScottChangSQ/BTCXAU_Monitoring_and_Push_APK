@@ -262,7 +262,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private boolean draggingTradeScrollBar;
     private final Runnable hideLoginSuccessBannerRunnable = this::hideLoginSuccessBannerNow;
     private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {
-        if (cache == null || isFinishing() || isDestroyed()) {
+        if (cache == null || isFinishing() || isDestroyed() || loading) {
             return;
         }
         applyPreloadedCacheIfAvailable();
@@ -323,7 +323,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         applyPreloadedCacheIfAvailable();
         snapshotLoopEnabled = true;
         if (userLoggedIn) {
-            requestSnapshot();
+            if (hasFreshPreloadedCache()) {
+                scheduleNextSnapshot(dynamicRefreshDelayMs);
+            } else {
+                requestSnapshot();
+            }
         } else {
             clearScheduledRefresh();
             setConnectionStatus(false);
@@ -343,6 +347,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         snapshotLoopEnabled = true;
         if (userLoggedIn) {
             if (!loading && nextRefreshAtMs <= 0L) {
+                if (hasFreshPreloadedCache()) {
+                    scheduleNextSnapshot(dynamicRefreshDelayMs);
+                    return;
+                }
                 requestSnapshot();
             }
         } else {
@@ -375,7 +383,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
         }
         if (preloadManager != null) {
-            preloadManager.removeCacheListener(preloadCacheListener);
             preloadManager.setLiveScreenActive(false);
         }
         if (ioExecutor != null) {
@@ -1869,12 +1876,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             applyStoredSnapshotIfAvailable();
             return;
         }
+        long updateAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
+        if (isOlderThanCurrentSnapshot(updateAt)) {
+            return;
+        }
         connectedAccount = cache.getAccount().isEmpty() ? ACCOUNT : cache.getAccount();
         connectedAccountName = connectedAccount;
         connectedServer = cache.getServer().isEmpty() ? SERVER : cache.getServer();
         connectedSource = normalizeSource(cache.getSource());
         connectedGateway = cache.getGateway().isEmpty() ? "--" : cache.getGateway();
-        long updateAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
         connectedUpdateAtMs = updateAt;
         connectedUpdate = FormatUtils.formatDateTime(updateAt);
         connectedError = cache.getError();
@@ -1923,6 +1933,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setConnectionStatus(snapshot.isConnected());
         updateOverviewHeader();
         applySnapshot(buildAccountSnapshot(snapshot), snapshot.isConnected());
+    }
+
+    private boolean hasFreshPreloadedCache() {
+        if (preloadManager == null) {
+            return false;
+        }
+        AccountStatsPreloadManager.Cache cache = preloadManager.getLatestCache();
+        if (cache == null || cache.getSnapshot() == null) {
+            return false;
+        }
+        return System.currentTimeMillis() - cache.getFetchedAt() <= AppConstants.ACCOUNT_REFRESH_INTERVAL_MS * 3L;
     }
 
     private AccountSnapshot buildAccountSnapshot(AccountStorageRepository.StoredSnapshot snapshot) {
@@ -2008,7 +2029,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         long remainSeconds = AccountRefreshMetaHelper.resolveRemainingSeconds(
                 nextRefreshAtMs,
                 nowMs,
-                intervalSeconds
+                intervalSeconds,
+                loading
         );
         return FormatUtils.formatDateTime(updateAt) + "（" + remainSeconds + "秒/" + intervalSeconds + "秒）";
     }
@@ -2114,6 +2136,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 connectedUpdate = FormatUtils.formatDateTime(finalUpdatedAt);
                 connectedError = finalError;
 
+                if (isOlderThanCurrentSnapshot(finalUpdatedAt)) {
+                    loading = false;
+                    if (shouldKeepRefreshLoop()) {
+                        scheduleNextSnapshot(dynamicRefreshDelayMs);
+                    }
+                    return;
+                }
                 setConnectionStatus(finalConnected);
                 if (AccountConnectionTransitionHelper.shouldShowLoginSuccess(previousConnected, finalConnected, userLoggedIn)) {
                     showLoginSuccessBanner();
@@ -2133,6 +2162,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 updateOverviewHeader();
             });
         });
+    }
+
+    private boolean isOlderThanCurrentSnapshot(long incomingUpdatedAt) {
+        if (incomingUpdatedAt <= 0L || connectedUpdateAtMs <= 0L) {
+            return false;
+        }
+        return incomingUpdatedAt < connectedUpdateAtMs;
     }
 
     private void persistSnapshotToStorage(AccountSnapshot snapshot,
@@ -2791,7 +2827,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source, List<TradeRecordItem> trades) {
-        return AccountCurveRebuildHelper.rebuild(source, trades, ACCOUNT_INITIAL_BALANCE);
+        return AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);
     }
 
     private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview,
@@ -2820,7 +2856,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         CurvePoint last = allCurvePoints.get(allCurvePoints.size() - 1);
         double totalAsset = Math.max(0d, last.getBalance());
         double netAsset = Math.max(0d, last.getEquity());
-        List<PositionItem> metricsPositions = currentPositions == null ? new ArrayList<>() : currentPositions;
+        List<PositionItem> metricsPositions = resolveOverviewPositionsFromDisplaySnapshot(currentPositions);
         AccountOverviewMetricsCalculator.OverviewValues overviewValues = AccountOverviewMetricsCalculator.calculate(
                 totalAsset,
                 netAsset,
@@ -2849,6 +2885,36 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         result.add(new AccountMetric("当日收益率", percent(dayReturn)));
         result.add(new AccountMetric("累计盈亏", signedMoney(cumulativePnl)));
         result.add(new AccountMetric("累计收益率", percent(cumulativeRate)));
+        return result;
+    }
+
+    // 账户概览持仓口径改成与图表页一致，优先使用页面展示解析器选出的快照。
+    private List<PositionItem> resolveOverviewPositionsFromDisplaySnapshot(List<PositionItem> fallbackPositions) {
+        AccountStatsPreloadManager.Cache cache = preloadManager == null
+                ? null
+                : preloadManager.getLatestCache();
+        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository == null
+                ? null
+                : accountStorageRepository.loadStoredSnapshot();
+        AccountSnapshot displaySnapshot = AccountSnapshotDisplayResolver.resolve(
+                cache,
+                storedSnapshot,
+                System.currentTimeMillis(),
+                isAccountSessionReady()
+        );
+        List<PositionItem> source = displaySnapshot == null || displaySnapshot.getPositions() == null
+                ? fallbackPositions
+                : displaySnapshot.getPositions();
+        List<PositionItem> result = new ArrayList<>();
+        if (source == null || source.isEmpty()) {
+            return result;
+        }
+        for (PositionItem item : source) {
+            if (item == null || Math.abs(item.getQuantity()) <= 1e-9) {
+                continue;
+            }
+            result.add(item);
+        }
         return result;
     }
 
@@ -3079,8 +3145,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         List<TradePnlBarChartView.Entry> entries = buildTradePnlChartEntries(baseTrades, tradePnlSideMode);
         binding.tradePnlBarChart.setEntries(entries);
         List<TradeRecordItem> scopedTrades = filterTradesBySideMode(baseTrades, tradePnlSideMode);
+        List<TradeRecordItem> distributionTrades = filterTradeDistributionSymbols(scopedTrades);
         binding.tradeDistributionScatterView.setPoints(
-                CurveAnalyticsHelper.buildTradeScatterPoints(scopedTrades, allCurvePoints));
+                CurveAnalyticsHelper.buildTradeScatterPoints(distributionTrades, allCurvePoints));
         binding.holdingDurationDistributionView.setBuckets(
                 CurveAnalyticsHelper.buildHoldingDurationDistribution(scopedTrades));
         refreshTradeWeekdayStats(scopedTrades);
@@ -3525,12 +3592,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderCurveWithIndicators(List<CurvePoint> points) {
-        List<CurvePoint> effectivePoints = AccountCurvePositionRatioHelper.ensureVisibleRatios(
-                points,
-                basePositions,
-                baseTrades,
-                parseLeverageNumber(connectedLeverageText)
-        );
+        List<CurvePoint> effectivePoints = points == null
+                ? new ArrayList<>()
+                : new ArrayList<>(points);
         displayedCurvePoints = effectivePoints;
         CurveAnalyticsHelper.DrawdownSegment drawdownSegment = CurveAnalyticsHelper.resolveMaxDrawdownSegment(effectivePoints);
         curveBaseBalance = resolveCurvePercentBase(effectivePoints);
@@ -3900,6 +3964,38 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.tableMonthlyReturns.removeAllViews();
         binding.tvMonthlyReturnsHint.setVisibility(View.GONE);
         binding.tvMonthlyReturnsHint.setText("");
+        if (shouldUseTradeBasedReturns()) {
+            long referenceTime = resolveTradeReturnReferenceTime();
+            String periodText = isPrivacyMasked()
+                    ? SensitiveDisplayMasker.MASK_TEXT
+                    : formatMonthLabel(referenceTime);
+            binding.tvReturnsPeriod.setText(periodText);
+            switch (returnStatsMode) {
+                case DAY:
+                    binding.tvReturnsPeriod.setVisibility(View.VISIBLE);
+                    binding.tvReturnsPeriod.setClickable(true);
+                    binding.tvReturnsPeriod.setText(periodText);
+                    renderDailyReturnsTableFromTrades(referenceTime);
+                    break;
+                case YEAR:
+                    binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
+                    binding.tvReturnsPeriod.setClickable(false);
+                    renderYearlyReturnsTableFromTrades();
+                    break;
+                case STAGE:
+                    binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
+                    binding.tvReturnsPeriod.setClickable(false);
+                    renderStageReturnsTableFromTrades(referenceTime);
+                    break;
+                case MONTH:
+                default:
+                    binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
+                    binding.tvReturnsPeriod.setClickable(false);
+                    renderMonthlyReturnsTableFromTrades();
+                    break;
+            }
+            return;
+        }
         if (source == null || source.size() < 2) {
             binding.tvReturnsPeriod.setText("--");
             return;
@@ -3949,6 +4045,27 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 calendar.get(Calendar.MONTH) + 1);
     }
 
+    private boolean shouldUseTradeBasedReturns() {
+        return baseTrades != null && !baseTrades.isEmpty();
+    }
+
+    private long resolveTradeReturnReferenceTime() {
+        if (baseTrades == null || baseTrades.isEmpty()) {
+            return System.currentTimeMillis();
+        }
+        long latest = 0L;
+        for (TradeRecordItem item : baseTrades) {
+            if (item == null) {
+                continue;
+            }
+            latest = Math.max(latest, resolveCloseTime(item));
+        }
+        if (returnStatsAnchorDateMs <= 0L || returnStatsAnchorDateMs > latest) {
+            returnStatsAnchorDateMs = latest;
+        }
+        return Math.min(returnStatsAnchorDateMs, latest);
+    }
+
     private void ensureReturnStatsAnchor() {
         if (allCurvePoints == null || allCurvePoints.isEmpty()) {
             returnStatsAnchorDateMs = 0L;
@@ -3961,12 +4078,196 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private long resolveReturnStatsReferenceTime(List<CurvePoint> source) {
+        if (shouldUseTradeBasedReturns()) {
+            return resolveTradeReturnReferenceTime();
+        }
         long latest = source.get(source.size() - 1).getTimestamp();
         if (returnStatsAnchorDateMs <= 0L) {
             returnStatsAnchorDateMs = latest;
             return latest;
         }
         return Math.min(returnStatsAnchorDateMs, latest);
+    }
+
+    private void renderDailyReturnsTableFromTrades(long referenceTime) {
+        TableLayout table = binding.tableMonthlyReturns;
+        table.removeAllViews();
+        table.setShrinkAllColumns(true);
+        table.setStretchAllColumns(true);
+        table.addView(createSimpleHeaderRow(new String[]{"一", "二", "三", "四", "五", "六", "日"}, 48));
+
+        Calendar target = Calendar.getInstance();
+        target.setTimeInMillis(referenceTime);
+        int year = target.get(Calendar.YEAR);
+        int month = target.get(Calendar.MONTH);
+
+        Map<Integer, MonthReturnInfo> dayInfoMap = new LinkedHashMap<>();
+        for (TradeRecordItem trade : baseTrades) {
+            if (trade == null) {
+                continue;
+            }
+            long closeTime = resolveCloseTime(trade);
+            if (closeTime <= 0L) {
+                continue;
+            }
+            Calendar calendar = Calendar.getInstance();
+            calendar.setTimeInMillis(closeTime);
+            if (calendar.get(Calendar.YEAR) != year || calendar.get(Calendar.MONTH) != month) {
+                continue;
+            }
+            int day = calendar.get(Calendar.DAY_OF_MONTH);
+            MonthReturnInfo info = dayInfoMap.get(day);
+            if (info == null) {
+                info = new MonthReturnInfo();
+                info.startMs = startOfDay(closeTime);
+                info.endMs = endOfDay(closeTime);
+                info.hasData = true;
+                dayInfoMap.put(day, info);
+            }
+            info.returnAmount += trade.getProfit() + trade.getStorageFee();
+        }
+        for (MonthReturnInfo info : dayInfoMap.values()) {
+            info.returnRate = AccountPeriodReturnHelper.resolvePeriodReturnRate(
+                    allCurvePoints,
+                    info.startMs,
+                    info.returnAmount
+            );
+        }
+
+        Calendar firstDay = Calendar.getInstance();
+        firstDay.set(year, month, 1, 0, 0, 0);
+        firstDay.set(Calendar.MILLISECOND, 0);
+        int firstWeek = (firstDay.get(Calendar.DAY_OF_WEEK) + 5) % 7;
+        int daysInMonth = firstDay.getActualMaximum(Calendar.DAY_OF_MONTH);
+        Calendar prevMonth = Calendar.getInstance();
+        prevMonth.set(year, month, 1, 0, 0, 0);
+        prevMonth.add(Calendar.MONTH, -1);
+        int prevDaysInMonth = prevMonth.getActualMaximum(Calendar.DAY_OF_MONTH);
+        int nextDayValue = 1;
+
+        int totalCells = firstWeek + daysInMonth;
+        int rows = (int) Math.ceil(totalCells / 7d);
+        int dayValue = 1;
+        for (int row = 0; row < rows; row++) {
+            TableRow tableRow = new TableRow(this);
+            for (int col = 0; col < 7; col++) {
+                int index = row * 7 + col;
+                if (index < firstWeek || dayValue > daysInMonth) {
+                    String ghostLabel = index < firstWeek
+                            ? String.valueOf(prevDaysInMonth - (firstWeek - index) + 1)
+                            : String.valueOf(nextDayValue++);
+                    View ghostCell = createDailyReturnsCell(
+                            ghostLabel,
+                            null,
+                            ContextCompat.getColor(this, R.color.text_secondary),
+                            null,
+                            null,
+                            null);
+                    applyReturnsCellLayout(ghostCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
+                            RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
+                    tableRow.addView(ghostCell);
+                    continue;
+                }
+
+                MonthReturnInfo info = dayInfoMap.get(dayValue);
+                String valueText = formatReturnValue(
+                        info == null ? 0d : info.returnRate,
+                        info == null ? 0d : info.returnAmount,
+                        true);
+                int color = resolveReturnDisplayColor(
+                        info == null ? 0d : info.returnRate,
+                        info == null ? 0d : info.returnAmount,
+                        R.color.text_secondary);
+                View.OnClickListener click = null;
+                Double heatRate = 0d;
+                if (info != null && info.hasData && info.endMs > info.startMs) {
+                    long startMs = info.startMs;
+                    long endMs = info.endMs;
+                    click = v -> applyCurveRangeFromTableSelection(startMs, endMs);
+                    heatRate = info.returnRate;
+                }
+                View dayCell = createDailyReturnsCell(
+                        String.valueOf(dayValue),
+                        valueText,
+                        ContextCompat.getColor(this, R.color.text_primary),
+                        color,
+                        click,
+                        heatRate);
+                applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
+                        RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
+                tableRow.addView(dayCell);
+                dayValue++;
+            }
+            table.addView(tableRow);
+        }
+    }
+
+    private void renderMonthlyReturnsTableFromTrades() {
+        rebuildMonthlyTableThreeRowsV4(binding.tableMonthlyReturns, buildMonthlyReturnRowsFromTrades(baseTrades));
+    }
+
+    private void renderYearlyReturnsTableFromTrades() {
+        TableLayout table = binding.tableMonthlyReturns;
+        table.removeAllViews();
+        table.setStretchAllColumns(false);
+        table.setShrinkAllColumns(false);
+        String valueHeader = returnValueMode == ReturnValueMode.RATE ? "收益率" : "收益额";
+        table.addView(createAlignedReturnsRow("年份", valueHeader, true, null, null));
+
+        List<YearlyReturnRow> rows = buildMonthlyReturnRowsFromTrades(baseTrades);
+        for (YearlyReturnRow row : rows) {
+            int color = resolveReturnDisplayColor(row.yearReturnRate, row.yearReturnAmount, R.color.text_secondary);
+            String valueText = formatReturnValue(row.yearReturnRate, row.yearReturnAmount);
+            long startMs = row.startMs;
+            long endMs = row.endMs;
+            table.addView(createAlignedReturnsRow(
+                    row.year + "年",
+                    valueText,
+                    false,
+                    color,
+                    row.yearReturnRate,
+                    v -> applyCurveRangeFromTableSelection(startMs, endMs)));
+        }
+    }
+
+    private void renderStageReturnsTableFromTrades(long referenceTime) {
+        TableLayout table = binding.tableMonthlyReturns;
+        table.removeAllViews();
+        table.setStretchAllColumns(false);
+        table.setShrinkAllColumns(false);
+        String valueHeader = returnValueMode == ReturnValueMode.RATE ? "收益率" : "收益额";
+        table.addView(createAlignedReturnsRow("阶段", valueHeader, true, null, null));
+
+        long endMs = endOfDay(referenceTime);
+        long allStart = resolveTradeRangeStart(baseTrades);
+        List<StageRange> stageRanges = new ArrayList<>();
+        stageRanges.add(new StageRange("近1日", endMs - 24L * 60L * 60L * 1000L, endMs));
+        stageRanges.add(new StageRange("近7日", endMs - 7L * 24L * 60L * 60L * 1000L, endMs));
+        stageRanges.add(new StageRange("近30日", endMs - 30L * 24L * 60L * 60L * 1000L, endMs));
+        stageRanges.add(new StageRange("近3月", endMs - 90L * 24L * 60L * 60L * 1000L, endMs));
+        stageRanges.add(new StageRange("近1年", endMs - 365L * 24L * 60L * 60L * 1000L, endMs));
+        stageRanges.add(new StageRange("今年以来", startOfYear(endMs), endMs));
+        stageRanges.add(new StageRange("全部", allStart, endMs));
+        if (manualCurveRangeEnabled) {
+            stageRanges.add(new StageRange("自定义区间", manualCurveRangeStartMs, manualCurveRangeEndMs));
+        }
+
+        for (StageRange stage : stageRanges) {
+            MonthReturnInfo info = buildTradeReturnInfo(baseTrades, stage.startMs, stage.endMs);
+            if (info == null || !info.hasData) {
+                table.addView(createAlignedReturnsRow(stage.label, "--", false, null, null));
+                continue;
+            }
+            int color = resolveReturnDisplayColor(info.returnRate, info.returnAmount, R.color.text_secondary);
+            String valueText = formatReturnValue(info.returnRate, info.returnAmount);
+            table.addView(createAlignedReturnsRow(
+                    stage.label,
+                    valueText,
+                    false,
+                    color,
+                    info.returnRate,
+                    v -> applyCurveRangeFromTableSelection(stage.startMs, stage.endMs)));
+        }
     }
 
     private long endOfDay(long timeMs) {
@@ -3976,6 +4277,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         calendar.set(Calendar.MINUTE, 59);
         calendar.set(Calendar.SECOND, 59);
         calendar.set(Calendar.MILLISECOND, 999);
+        return calendar.getTimeInMillis();
+    }
+
+    private long startOfDay(long timeMs) {
+        Calendar calendar = Calendar.getInstance(BEIJING_TIME_ZONE);
+        calendar.setTimeInMillis(timeMs);
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
         return calendar.getTimeInMillis();
     }
 
@@ -4796,6 +5107,28 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return calendar.getTimeInMillis();
     }
 
+    private long startOfMonth(long timeMs) {
+        Calendar calendar = Calendar.getInstance(BEIJING_TIME_ZONE);
+        calendar.setTimeInMillis(timeMs);
+        calendar.set(Calendar.DAY_OF_MONTH, 1);
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+        return calendar.getTimeInMillis();
+    }
+
+    private long endOfMonth(long timeMs) {
+        Calendar calendar = Calendar.getInstance(BEIJING_TIME_ZONE);
+        calendar.setTimeInMillis(timeMs);
+        calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH));
+        calendar.set(Calendar.HOUR_OF_DAY, 23);
+        calendar.set(Calendar.MINUTE, 59);
+        calendar.set(Calendar.SECOND, 59);
+        calendar.set(Calendar.MILLISECOND, 999);
+        return calendar.getTimeInMillis();
+    }
+
     private TableRow createSimpleHeaderRow(String[] headers) {
         return createSimpleHeaderRow(headers, 80);
     }
@@ -4984,6 +5317,128 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return "--";
         }
         return safe.replace(" ", "\u00A0");
+    }
+
+    private List<YearlyReturnRow> buildMonthlyReturnRowsFromTrades(List<TradeRecordItem> trades) {
+        List<YearlyReturnRow> rows = new ArrayList<>();
+        if (trades == null || trades.isEmpty()) {
+            return rows;
+        }
+
+        Map<Integer, MonthReturnInfo> monthReturnMap = new TreeMap<>();
+        for (TradeRecordItem trade : trades) {
+            if (trade == null) {
+                continue;
+            }
+            long closeTime = resolveCloseTime(trade);
+            if (closeTime <= 0L) {
+                continue;
+            }
+            Calendar calendar = Calendar.getInstance();
+            calendar.setTimeInMillis(closeTime);
+            int year = calendar.get(Calendar.YEAR);
+            int month = calendar.get(Calendar.MONTH) + 1;
+            int key = year * 100 + month;
+            MonthReturnInfo info = monthReturnMap.get(key);
+            if (info == null) {
+                info = new MonthReturnInfo();
+                info.startMs = startOfMonth(closeTime);
+                info.endMs = endOfMonth(closeTime);
+                info.hasData = true;
+                monthReturnMap.put(key, info);
+            }
+            info.returnAmount += trade.getProfit() + trade.getStorageFee();
+        }
+        if (monthReturnMap.isEmpty()) {
+            return rows;
+        }
+        for (MonthReturnInfo info : monthReturnMap.values()) {
+            info.returnRate = AccountPeriodReturnHelper.resolvePeriodReturnRate(
+                    allCurvePoints,
+                    info.startMs,
+                    info.returnAmount
+            );
+        }
+
+        int firstKey = monthReturnMap.keySet().iterator().next();
+        int lastKey = firstKey;
+        for (Integer key : monthReturnMap.keySet()) {
+            lastKey = key;
+        }
+
+        int firstYear = firstKey / 100;
+        int lastYear = lastKey / 100;
+        for (int year = firstYear; year <= lastYear; year++) {
+            YearlyReturnRow yearly = new YearlyReturnRow(year);
+            for (int month = 1; month <= 12; month++) {
+                int key = year * 100 + month;
+                MonthReturnInfo info = monthReturnMap.get(key);
+                yearly.monthly.put(month, info);
+                if (info != null && info.hasData) {
+                    yearly.yearReturnAmount += info.returnAmount;
+                    if (yearly.startMs == 0L || info.startMs < yearly.startMs) {
+                        yearly.startMs = info.startMs;
+                    }
+                    if (info.endMs > yearly.endMs) {
+                        yearly.endMs = info.endMs;
+                    }
+                }
+            }
+            yearly.yearReturnRate = AccountPeriodReturnHelper.resolvePeriodReturnRate(
+                    allCurvePoints,
+                    yearly.startMs,
+                    yearly.yearReturnAmount
+            );
+            rows.add(yearly);
+        }
+        return rows;
+    }
+
+    @Nullable
+    private MonthReturnInfo buildTradeReturnInfo(List<TradeRecordItem> trades, long startMs, long endMs) {
+        if (trades == null || trades.isEmpty()) {
+            return null;
+        }
+        MonthReturnInfo info = new MonthReturnInfo();
+        info.startMs = startMs;
+        info.endMs = endMs;
+        for (TradeRecordItem trade : trades) {
+            if (trade == null) {
+                continue;
+            }
+            long closeTime = resolveCloseTime(trade);
+            if (closeTime < startMs || closeTime > endMs) {
+                continue;
+            }
+            info.hasData = true;
+            info.returnAmount += trade.getProfit() + trade.getStorageFee();
+        }
+        if (!info.hasData) {
+            return null;
+        }
+        info.returnRate = AccountPeriodReturnHelper.resolvePeriodReturnRate(
+                allCurvePoints,
+                info.startMs,
+                info.returnAmount
+        );
+        return info;
+    }
+
+    private long resolveTradeRangeStart(List<TradeRecordItem> trades) {
+        if (trades == null || trades.isEmpty()) {
+            return 0L;
+        }
+        long start = Long.MAX_VALUE;
+        for (TradeRecordItem trade : trades) {
+            if (trade == null) {
+                continue;
+            }
+            long closeTime = resolveCloseTime(trade);
+            if (closeTime > 0L) {
+                start = Math.min(start, closeTime);
+            }
+        }
+        return start == Long.MAX_VALUE ? 0L : start;
     }
 
     private List<YearlyReturnRow> buildMonthlyReturnRows(List<CurvePoint> source) {
@@ -5654,6 +6109,24 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             scrollTradesToTop();
         }
         updateTradePnlSummary(filtered, product, side, FILTER_DATE);
+    }
+
+    private List<TradeRecordItem> filterTradeDistributionSymbols(List<TradeRecordItem> source) {
+        List<TradeRecordItem> filtered = new ArrayList<>();
+        if (source == null || source.isEmpty()) {
+            return filtered;
+        }
+        for (TradeRecordItem item : source) {
+            if (item == null) {
+                continue;
+            }
+            String code = trim(item.getCode()).toUpperCase(Locale.ROOT);
+            if ("BTCUSDT".equals(code) || "BTCUSD".equals(code)
+                    || "XAUUSDT".equals(code) || "XAUUSD".equals(code)) {
+                filtered.add(item);
+            }
+        }
+        return filtered;
     }
 
     // 记录快照交易、历史缓存和页面基表的诊断摘要，定位漏单发生在数据装载的哪一层。

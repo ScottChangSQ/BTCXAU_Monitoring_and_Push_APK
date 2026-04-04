@@ -11,7 +11,9 @@ import com.binance.monitor.ui.account.model.TradeRecordItem;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 final class AccountCurveRebuildHelper {
 
@@ -36,6 +38,9 @@ final class AccountCurveRebuildHelper {
             }
         }
         if (sortedTrades.isEmpty()) {
+            return normalized;
+        }
+        if (!shouldRebuild(normalized, sortedTrades)) {
             return normalized;
         }
         sortedTrades.sort(Comparator.comparingLong(AccountCurveRebuildHelper::resolveTradeSortTimestamp));
@@ -67,6 +72,98 @@ final class AccountCurveRebuildHelper {
             ));
         }
         return rebuilt;
+    }
+
+    // 只有当源曲线明显不满足“结余平、净值浮”的基本口径时，才启动客户端兜底重建。
+    private static boolean shouldRebuild(List<CurvePoint> source, List<TradeRecordItem> trades) {
+        for (TradeRecordItem trade : trades) {
+            long openTime = resolveOpenTime(trade);
+            long closeTime = resolveCloseTime(trade);
+            if (openTime <= 0L || closeTime <= openTime) {
+                continue;
+            }
+            LifecycleCurveState state = inspectLifecycleCurveState(source, openTime, closeTime);
+            if (!state.hasInteriorPoints) {
+                continue;
+            }
+            if (state.balanceMovesDuringOpen) {
+                return true;
+            }
+            if (Math.abs(resolveTradeDelta(trade)) > VALUE_EPSILON && !state.hasVisibleFloatingSpread) {
+                return true;
+            }
+        }
+        return hasMissingCloseBalanceJump(source, trades);
+    }
+
+    // 检查单笔持仓生命周期内，源曲线是否已经具备平滑净值和稳定结余。
+    private static LifecycleCurveState inspectLifecycleCurveState(List<CurvePoint> source,
+                                                                  long openTime,
+                                                                  long closeTime) {
+        boolean hasInteriorPoints = false;
+        boolean hasVisibleFloatingSpread = false;
+        boolean balanceMovesDuringOpen = false;
+        double anchorBalance = 0d;
+        boolean anchorInitialized = false;
+        for (CurvePoint point : source) {
+            long timestamp = point.getTimestamp();
+            if (timestamp <= openTime || timestamp >= closeTime) {
+                continue;
+            }
+            hasInteriorPoints = true;
+            if (Math.abs(resolveSourceFloating(point)) > VALUE_EPSILON) {
+                hasVisibleFloatingSpread = true;
+            }
+            double balance = point.getBalance();
+            if (!anchorInitialized) {
+                anchorBalance = balance;
+                anchorInitialized = true;
+                continue;
+            }
+            if (Math.abs(balance - anchorBalance) > VALUE_EPSILON) {
+                balanceMovesDuringOpen = true;
+            }
+        }
+        return new LifecycleCurveState(hasInteriorPoints, hasVisibleFloatingSpread, balanceMovesDuringOpen);
+    }
+
+    // 若某个平仓时刻的结余跳变与该时刻所有已实现盈亏之和不一致，说明源曲线仍是旧口径。
+    private static boolean hasMissingCloseBalanceJump(List<CurvePoint> source, List<TradeRecordItem> trades) {
+        Map<Long, Double> expectedDeltaByCloseTime = new LinkedHashMap<>();
+        for (TradeRecordItem trade : trades) {
+            long closeTime = resolveCloseTime(trade);
+            long openTime = resolveOpenTime(trade);
+            double tradeDelta = resolveTradeDelta(trade);
+            if (closeTime <= 0L || closeTime <= openTime || Math.abs(tradeDelta) <= VALUE_EPSILON) {
+                continue;
+            }
+            expectedDeltaByCloseTime.put(
+                    closeTime,
+                    expectedDeltaByCloseTime.getOrDefault(closeTime, 0d) + tradeDelta
+            );
+        }
+        for (Map.Entry<Long, Double> entry : expectedDeltaByCloseTime.entrySet()) {
+            CurvePoint beforeClosePoint = null;
+            CurvePoint afterClosePoint = null;
+            long closeTime = entry.getKey();
+            for (CurvePoint point : source) {
+                long timestamp = point.getTimestamp();
+                if (timestamp < closeTime) {
+                    beforeClosePoint = point;
+                }
+                if (afterClosePoint == null && timestamp >= closeTime) {
+                    afterClosePoint = point;
+                }
+            }
+            if (beforeClosePoint == null || afterClosePoint == null) {
+                continue;
+            }
+            double actualDelta = afterClosePoint.getBalance() - beforeClosePoint.getBalance();
+            if (Math.abs(actualDelta - entry.getValue()) > VALUE_EPSILON) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // 汇总到当前时刻之前已平仓成交的已实现盈亏。
@@ -134,10 +231,11 @@ final class AccountCurveRebuildHelper {
                 && Math.signum(sourceFloating) != Math.signum(simulatedFloating)) {
             return false;
         }
-        double maxReasonableFloating = Math.max(
-                Math.abs(simulatedFloating) * 4d + 50d,
-                Math.abs(rebuiltBalance) * 2.5d
-        );
+        if (Math.abs(simulatedFloating) > VALUE_EPSILON) {
+            double maxFloatingGap = Math.max(Math.abs(simulatedFloating) * 2.5d, 50d);
+            return Math.abs(sourceFloating - simulatedFloating) <= maxFloatingGap;
+        }
+        double maxReasonableFloating = Math.max(Math.abs(rebuiltBalance) * 0.15d, 50d);
         return Math.abs(sourceFloating) <= maxReasonableFloating;
     }
 
@@ -172,5 +270,19 @@ final class AccountCurveRebuildHelper {
     private static long resolveTradeSortTimestamp(TradeRecordItem trade) {
         long closeTime = resolveCloseTime(trade);
         return closeTime > 0L ? closeTime : resolveOpenTime(trade);
+    }
+
+    private static final class LifecycleCurveState {
+        final boolean hasInteriorPoints;
+        final boolean hasVisibleFloatingSpread;
+        final boolean balanceMovesDuringOpen;
+
+        private LifecycleCurveState(boolean hasInteriorPoints,
+                                    boolean hasVisibleFloatingSpread,
+                                    boolean balanceMovesDuringOpen) {
+            this.hasInteriorPoints = hasInteriorPoints;
+            this.hasVisibleFloatingSpread = hasVisibleFloatingSpread;
+            this.balanceMovesDuringOpen = balanceMovesDuringOpen;
+        }
     }
 }

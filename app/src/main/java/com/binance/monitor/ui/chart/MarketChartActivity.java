@@ -59,6 +59,7 @@ import com.binance.monitor.ui.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
 import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
+import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
@@ -189,6 +190,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private PendingOrderAdapter chartPendingOrderAdapter;
     private final List<PositionItem> lastChartPositions = new ArrayList<>();
     private final List<PositionItem> lastChartPendingOrders = new ArrayList<>();
+    private double lastChartTotalAsset;
     private int pricePaneLeftPx;
     private int pricePaneTopPx;
     private int pricePaneRightPx;
@@ -394,7 +396,7 @@ public class MarketChartActivity extends AppCompatActivity {
         boolean masked = SensitiveDisplayMasker.isEnabled(this);
         binding.klineChartView.setOverlayVisibility(!masked, !masked, showHistoryTrades, !masked);
         updateHistoryTradeToggleButton();
-        updateChartPositionPanel(lastChartPositions, lastChartPendingOrders);
+        updateChartPositionPanel(lastChartPositions, lastChartPendingOrders, lastChartTotalAsset);
     }
 
     private void setupSymbolSelector() {
@@ -686,10 +688,12 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.recyclerChartPendingOrders.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerChartPendingOrders.setItemAnimator(null);
         binding.recyclerChartPendingOrders.setAdapter(chartPendingOrderAdapter);
-        updateChartPositionPanel(new ArrayList<>(), new ArrayList<>());
+        updateChartPositionPanel(new ArrayList<>(), new ArrayList<>(), 0d);
     }
 
-    private void updateChartPositionPanel(List<PositionItem> positions, List<PositionItem> pendingOrders) {
+    private void updateChartPositionPanel(List<PositionItem> positions,
+                                          List<PositionItem> pendingOrders,
+                                          double totalAsset) {
         if (binding == null
                 || chartPositionAggregateAdapter == null
                 || chartPositionAdapter == null
@@ -704,6 +708,7 @@ public class MarketChartActivity extends AppCompatActivity {
         if (pendingOrders != null) {
             lastChartPendingOrders.addAll(pendingOrders);
         }
+        lastChartTotalAsset = Math.max(0d, totalAsset);
         boolean masked = SensitiveDisplayMasker.isEnabled(this);
         List<PositionItem> filteredPositions = new ArrayList<>();
         if (positions != null) {
@@ -753,12 +758,10 @@ public class MarketChartActivity extends AppCompatActivity {
         }
 
         double totalPnl = 0d;
-        double totalMarketValue = 0d;
         for (PositionItem item : filteredPositions) {
             totalPnl += item.getTotalPnL() + item.getStorageFee();
-            totalMarketValue += Math.max(0d, Math.abs(item.getMarketValue()));
         }
-        double ratio = totalMarketValue <= 1e-9 ? 0d : totalPnl / totalMarketValue;
+        double ratio = totalAsset <= 1e-9 ? 0d : totalPnl / totalAsset;
         if (filteredPositions.isEmpty()) {
             if (masked) {
                 binding.tvChartPositionSummary.setText("当前持仓：**** | 当前挂单：****");
@@ -771,6 +774,69 @@ public class MarketChartActivity extends AppCompatActivity {
             binding.tvChartPositionSummary.setText("持仓盈亏: **** | 持仓收益率: ****");
         } else {
             binding.tvChartPositionSummary.setText(buildPositionPnlSummaryForChart(totalPnl, ratio));
+        }
+    }
+
+    // 图表页当前持仓收益率统一按“持仓盈亏 / 当前总资产（总结余）”计算。
+    private double resolveChartTotalAsset(@Nullable AccountSnapshot snapshot) {
+        if (snapshot == null || snapshot.getOverviewMetrics() == null || snapshot.getOverviewMetrics().isEmpty()) {
+            return 0d;
+        }
+        double balance = resolveMetricNumber(snapshot.getOverviewMetrics(), "结余", "Balance");
+        if (balance > 1e-9) {
+            return balance;
+        }
+        return Math.max(0d, resolveMetricNumber(snapshot.getOverviewMetrics(), "总资产", "Total Asset", "Equity"));
+    }
+
+    private double resolveMetricNumber(List<AccountMetric> metrics, String... names) {
+        if (metrics == null || metrics.isEmpty() || names == null || names.length == 0) {
+            return 0d;
+        }
+        for (AccountMetric metric : metrics) {
+            if (metric == null) {
+                continue;
+            }
+            String metricName = metric.getName() == null ? "" : metric.getName().trim().toLowerCase(Locale.ROOT);
+            for (String name : names) {
+                String candidate = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+                if (candidate.isEmpty()) {
+                    continue;
+                }
+                if (metricName.contains(candidate)) {
+                    return parseMetricNumber(metric.getValue());
+                }
+            }
+        }
+        return 0d;
+    }
+
+    private double parseMetricNumber(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return 0d;
+        }
+        StringBuilder builder = new StringBuilder();
+        boolean hasDecimal = false;
+        boolean hasSign = false;
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if ((c == '+' || c == '-') && !hasSign && builder.length() == 0) {
+                builder.append(c);
+                hasSign = true;
+            } else if (Character.isDigit(c)) {
+                builder.append(c);
+            } else if (c == '.' && !hasDecimal) {
+                builder.append(c);
+                hasDecimal = true;
+            }
+        }
+        if (builder.length() == 0 || "+".contentEquals(builder) || "-".contentEquals(builder)) {
+            return 0d;
+        }
+        try {
+            return Double.parseDouble(builder.toString());
+        } catch (Exception ignored) {
+            return 0d;
         }
     }
 
@@ -856,7 +922,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     ratioStart,
                     ratioStart + ratioText.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new AbsoluteSizeSpan(15, true),
+            spannable.setSpan(new AbsoluteSizeSpan(16, true),
                     ratioStart,
                     ratioStart + ratioText.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -2108,12 +2174,13 @@ public class MarketChartActivity extends AppCompatActivity {
         List<PositionItem> pendingOrders = snapshot == null || snapshot.getPendingOrders() == null
                 ? Collections.emptyList()
                 : snapshot.getPendingOrders();
+        double totalAsset = resolveChartTotalAsset(snapshot);
 
         binding.klineChartView.setPositionAnnotations(buildPositionAnnotations(positions, trades));
         binding.klineChartView.setPendingAnnotations(buildPendingAnnotations(pendingOrders, trades));
         binding.klineChartView.setHistoryTradeAnnotations(buildHistoricalTradeAnnotations(trades));
         binding.klineChartView.setAggregateCostAnnotation(buildAggregateCostAnnotation(positions));
-        updateChartPositionPanel(positions, pendingOrders);
+        updateChartPositionPanel(positions, pendingOrders, totalAsset);
     }
 
     // 当没有任何可用账户快照时，统一清空图表上的持仓与挂单标注。
@@ -2122,7 +2189,7 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.klineChartView.setPendingAnnotations(new ArrayList<>());
         binding.klineChartView.setHistoryTradeAnnotations(new ArrayList<>());
         binding.klineChartView.setAggregateCostAnnotation(null);
-        updateChartPositionPanel(new ArrayList<>(), new ArrayList<>());
+        updateChartPositionPanel(new ArrayList<>(), new ArrayList<>(), 0d);
     }
 
     private List<KlineChartView.PriceAnnotation> buildHistoricalTradeAnnotations(List<TradeRecordItem> trades) {

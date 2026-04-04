@@ -34,6 +34,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AccountStatsPreloadManager {
     private static volatile AccountStatsPreloadManager instance;
@@ -57,6 +58,7 @@ public class AccountStatsPreloadManager {
     private volatile boolean liveScreenActive;
     private volatile boolean fullSnapshotActive;
     private volatile long nextDelayMs = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
+    private final AtomicBoolean overlayFetchInFlight = new AtomicBoolean(false);
     private ScheduledFuture<?> scheduledFetchFuture;
     private long scheduleGeneration;
     private volatile boolean foregroundListenerRegistered;
@@ -296,6 +298,10 @@ public class AccountStatsPreloadManager {
 
     // 图表页和悬浮窗的高频账户刷新入口：先拿轻快照，只有检测到新历史成交时才补拉全历史。
     public Cache fetchForOverlay() {
+        if (!overlayFetchInFlight.compareAndSet(false, true)) {
+            return latestCache;
+        }
+        try {
         if (!isAccountSessionActive()) {
             accountStorageRepository.clearRuntimeSnapshot();
             accountStorageRepository.clearTradeHistory();
@@ -394,6 +400,9 @@ public class AccountStatsPreloadManager {
                     exception.getMessage(),
                     System.currentTimeMillis()
             );
+        }
+        } finally {
+            overlayFetchInFlight.set(false);
         }
     }
 

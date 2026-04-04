@@ -30,4 +30,18 @@ public class AccountRefreshMetaHelperTest {
 
         assertEquals(5L, remainSeconds);
     }
+
+    @Test
+    public void remainingSecondsShouldClampToOneWhenScheduleAlreadyExpired() {
+        long remainSeconds = AccountRefreshMetaHelper.resolveRemainingSeconds(1_000L, 1_500L, 5L);
+
+        assertEquals(1L, remainSeconds);
+    }
+
+    @Test
+    public void remainingSecondsShouldStayAtOneWhileRequestIsLoadingWithoutScheduledRefresh() {
+        long remainSeconds = AccountRefreshMetaHelper.resolveRemainingSeconds(0L, 1_000L, 5L, true);
+
+        assertEquals(1L, remainSeconds);
+    }
 }

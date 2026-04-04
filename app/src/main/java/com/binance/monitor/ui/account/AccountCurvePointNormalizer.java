@@ -10,7 +10,9 @@ import com.binance.monitor.ui.account.model.CurvePoint;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 final class AccountCurvePointNormalizer {
 
@@ -57,6 +59,7 @@ final class AccountCurvePointNormalizer {
         double lastEquity = initialBalance;
         double lastBalance = initialBalance;
         boolean first = true;
+        Map<Long, CurvePoint> deduplicated = new LinkedHashMap<>();
         for (CurvePoint point : sorted) {
             long timestamp = point.getTimestamp() > 0L ? point.getTimestamp() : nowTimestamp;
             double equity = point.getEquity();
@@ -93,8 +96,10 @@ final class AccountCurvePointNormalizer {
             }
             lastEquity = equity;
             lastBalance = balance;
-            normalized.add(new CurvePoint(timestamp, equity, balance, positionRatio));
+            // 同一时间戳只保留最后一条，避免图表在同一个横坐标上画出竖直毛刺。
+            deduplicated.put(timestamp, new CurvePoint(timestamp, equity, balance, positionRatio));
         }
+        normalized.addAll(deduplicated.values());
 
         if (normalized.size() == 1) {
             CurvePoint only = normalized.get(0);

@@ -64,14 +64,46 @@ def _normalize_order(raw: Mapping[str, Any]) -> Dict[str, Any]:
 def _normalize_trade(raw: Mapping[str, Any]) -> Dict[str, Any]:
     """把成交原始数据标准化为 V2 历史成交行。"""
     timestamp = raw.get("timestamp") or raw.get("time") or 0
+    price = _to_float(raw.get("price") or raw.get("openPrice") or raw.get("closePrice"))
+    open_price = _to_float(
+        raw.get("openPrice")
+        or raw.get("open_price")
+        or raw.get("open")
+        or raw.get("priceOpen")
+        or raw.get("entryPrice")
+        or raw.get("entry_price"),
+        price,
+    )
+    close_price = _to_float(
+        raw.get("closePrice")
+        or raw.get("close_price")
+        or raw.get("close")
+        or raw.get("priceClose")
+        or raw.get("exitPrice")
+        or raw.get("exit_price"),
+        price,
+    )
+    open_time = int(raw.get("openTime") or raw.get("open_time") or raw.get("timeOpen") or raw.get("time_open") or timestamp)
+    close_time = int(raw.get("closeTime") or raw.get("close_time") or raw.get("timeClose") or raw.get("time_close") or timestamp)
     return {
         "timestamp": int(timestamp),
         "productName": raw.get("productName") or raw.get("symbol") or raw.get("code"),
         "code": raw.get("code") or raw.get("symbol"),
         "side": str(raw.get("side") or raw.get("direction") or raw.get("entry") or "").strip(),
-        "price": _to_float(raw.get("price") or raw.get("openPrice") or raw.get("closePrice")),
+        "price": price,
         "quantity": _to_float(raw.get("quantity") or raw.get("volume")),
         "profit": _to_float(raw.get("profit") or raw.get("pnl")),
+        "fee": _to_float(raw.get("fee") or raw.get("commission")),
+        "storageFee": _to_float(raw.get("storageFee") or raw.get("storage_fee") or raw.get("swap")),
+        "openTime": open_time,
+        "closeTime": close_time,
+        "openPrice": open_price if open_price > 0.0 else price,
+        "closePrice": close_price if close_price > 0.0 else price,
+        "dealTicket": int(raw.get("dealTicket") or raw.get("deal_ticket") or 0),
+        "orderId": int(raw.get("orderId") or raw.get("order_id") or 0),
+        "positionId": int(raw.get("positionId") or raw.get("position_id") or 0),
+        "entryType": int(raw.get("entryType") or raw.get("entry_type") or 0),
+        "remark": raw.get("remark") or raw.get("comment") or "",
     }
 
 
