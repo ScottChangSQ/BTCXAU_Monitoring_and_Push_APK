@@ -4,6 +4,8 @@ const logsBox = document.getElementById('logsBox');
 const envEditor = document.getElementById('envEditor');
 const abnormalEditor = document.getElementById('abnormalEditor');
 const globalNotice = document.getElementById('globalNotice');
+const toggleLogsBtn = document.getElementById('toggleLogsBtn');
+const API_BASE = './api';
 
 // 统一发请求并处理错误。
 async function requestJson(url, options = {}) {
@@ -56,7 +58,7 @@ function renderComponents(components) {
 
 // 刷新状态区。
 async function loadState() {
-    const payload = await requestJson('/api/state');
+    const payload = await requestJson(`${API_BASE}/state`);
     renderComponents(payload.components || {});
     gatewayStateBox.textContent = JSON.stringify({
         gatewayUrl: payload.gatewayUrl,
@@ -67,26 +69,33 @@ async function loadState() {
 
 // 刷新日志区。
 async function loadLogs() {
-    const payload = await requestJson('/api/logs?limit=200');
+    const payload = await requestJson(`${API_BASE}/logs?limit=80`);
     const text = (payload.entries || []).map((item) => `[${item.file}] ${item.line}`).join('\n');
     logsBox.textContent = text || '暂无日志';
 }
 
+// 切换日志区域展开与收起，减少默认占屏高度。
+function toggleLogsView() {
+    const expanded = logsBox.classList.toggle('expanded');
+    logsBox.classList.toggle('compact', !expanded);
+    toggleLogsBtn.textContent = expanded ? '收起日志' : '展开日志';
+}
+
 // 读取当前 .env。
 async function loadEnv() {
-    const payload = await requestJson('/api/env');
+    const payload = await requestJson(`${API_BASE}/env`);
     envEditor.value = payload.content || '';
 }
 
 // 读取当前异常规则配置。
 async function loadAbnormalConfig() {
-    const payload = await requestJson('/api/abnormal-config');
+    const payload = await requestJson(`${API_BASE}/abnormal-config`);
     abnormalEditor.value = JSON.stringify(payload, null, 2);
 }
 
 // 保存 .env。
 async function saveEnv() {
-    await requestJson('/api/env', {
+    await requestJson(`${API_BASE}/env`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: envEditor.value })
@@ -97,7 +106,7 @@ async function saveEnv() {
 // 保存异常规则。
 async function saveAbnormalConfig() {
     const payload = JSON.parse(abnormalEditor.value || '{}');
-    await requestJson('/api/abnormal-config', {
+    await requestJson(`${API_BASE}/abnormal-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -107,7 +116,7 @@ async function saveAbnormalConfig() {
 
 // 清理网关运行时缓存。
 async function clearCache() {
-    const payload = await requestJson('/api/cache/clear', {
+    const payload = await requestJson(`${API_BASE}/cache/clear`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
@@ -118,7 +127,7 @@ async function clearCache() {
 
 // 执行组件管理动作。
 async function executeProcessAction(target, action) {
-    await requestJson('/api/process', {
+    await requestJson(`${API_BASE}/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target, action })
@@ -129,7 +138,22 @@ async function executeProcessAction(target, action) {
 
 // 一次性刷新全部区块。
 async function refreshAll() {
-    await Promise.all([loadState(), loadLogs(), loadEnv(), loadAbnormalConfig()]);
+    const failures = [];
+    const tasks = [
+        ['网关状态', loadState],
+        ['最近日志', loadLogs],
+        ['.env 配置', loadEnv]
+    ];
+    for (const [label, loader] of tasks) {
+        try {
+            await loader();
+        } catch (error) {
+            failures.push(`${label}: ${error.message}`);
+        }
+    }
+    if (failures.length > 0) {
+        throw new Error(failures.join(' | '));
+    }
 }
 
 document.getElementById('refreshAllBtn').addEventListener('click', async () => {
@@ -157,6 +181,10 @@ document.getElementById('refreshLogsBtn').addEventListener('click', async () => 
     } catch (error) {
         setNotice(`刷新日志失败：${error.message}`, true);
     }
+});
+
+toggleLogsBtn.addEventListener('click', () => {
+    toggleLogsView();
 });
 
 document.getElementById('saveEnvBtn').addEventListener('click', async () => {

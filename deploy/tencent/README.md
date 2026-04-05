@@ -55,8 +55,8 @@ deploy/tencent/windows_server_bundle
    - 有域名后用于 HTTPS / WSS
 4. 不要对公网开放 `8787`
    - MT5 网关只监听本机 `127.0.0.1`
-5. 如果你要直接公网访问轻量管理面板，再放行 `8788`
-   - 这是独立管理服务默认端口
+5. 不要对公网开放 `8788`
+   - 轻量管理面板只监听本机，再由 Caddy 通过 `/admin/` 转发
 
 ## 3. 第一步：在服务器上准备 MT5 网关
 
@@ -83,7 +83,7 @@ MT5_PATH=C:\Program Files\MetaTrader 5\terminal64.exe
 GATEWAY_HOST=127.0.0.1
 GATEWAY_PORT=8787
 GATEWAY_MODE=auto
-ADMIN_PANEL_HOST=0.0.0.0
+ADMIN_PANEL_HOST=127.0.0.1
 ADMIN_PANEL_PORT=8788
 ADMIN_GATEWAY_URL=http://127.0.0.1:8787
 ```
@@ -108,7 +108,7 @@ Invoke-RestMethod http://127.0.0.1:8787/v1/snapshot?range=1d
 
 ## 5. 第三步：启动轻量管理面板
 
-管理面板是独立进程，默认同时支持服务器本机 `localhost` 和公网访问：
+管理面板是独立进程，默认只监听服务器本机，再由 Caddy 统一通过 `/admin/` 对外开放：
 
 ```powershell
 cd C:\BTCXAU_Monitoring_and_Push_APK\bridge\mt5_gateway
@@ -119,7 +119,8 @@ cd C:\BTCXAU_Monitoring_and_Push_APK\bridge\mt5_gateway
 
 ```text
 http://127.0.0.1:8788
-http://你的公网IP:8788
+http://127.0.0.1/admin/
+http://你的公网IP/admin/
 ```
 
 当前面板支持：
@@ -167,8 +168,13 @@ cd C:\BTCXAU_Monitoring_and_Push_APK
 
 - `/health`、`/v1/*`、`/v2/*`
 - `/mt5/*`
+- `/admin/*`
 - `/binance-rest/*`
 - `/binance-ws/*`
+
+其中 `/admin/*` 已加 Basic Auth。
+当前用户名：`a378910115`
+当前密码：`a378910115`
 
 ### 方案 B：Linux Nginx 反向代理
 

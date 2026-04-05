@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import os
 import asyncio
+import socket
 import subprocess
 import urllib.error
 import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -23,7 +25,7 @@ except Exception:  # pragma: no cover - 测试环境可缺省运行依赖
         return None
 
 try:
-    from fastapi import FastAPI, HTTPException, Query
+    from fastapi import FastAPI, HTTPException, Query, Response
     from fastapi.responses import HTMLResponse, PlainTextResponse
 except Exception:  # pragma: no cover - 测试环境可缺省运行依赖
     class FastAPI:  # type: ignore[override]
@@ -56,6 +58,11 @@ except Exception:  # pragma: no cover - 测试环境可缺省运行依赖
 
     class PlainTextResponse(str):
         pass
+
+    class Response:  # type: ignore[override]
+        def __init__(self, content: str = "", media_type: str = "text/plain"):
+            self.content = content
+            self.media_type = media_type
 
 BASE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BASE_DIR.parent.parent
@@ -91,7 +98,12 @@ def _configure_windows_event_loop_policy() -> None:
 def read_text_file_utf8(path: Path) -> str:
     if not path.exists():
         return ""
-    return path.read_text(encoding="utf-8")
+    for encoding, errors in (("utf-8", "strict"), ("gbk", "strict"), ("utf-8", "replace"), ("gbk", "replace")):
+        try:
+            return path.read_text(encoding=encoding, errors=errors).lstrip("\ufeff\ufffe")
+        except Exception:
+            continue
+    return path.read_text(encoding="utf-8", errors="replace").lstrip("\ufeff\ufffe")
 
 
 # 统一按 UTF-8 写回文本文件。
@@ -381,7 +393,11 @@ def read_process_status(process_names: List[str]) -> Dict[str, Any]:
 
 
 # 从网关拉取 JSON，失败时统一抛出可读错误。
-def request_gateway_json(base_url: str, path: str, method: str = "GET", payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def request_gateway_json(base_url: str,
+                         path: str,
+                         method: str = "GET",
+                         payload: Optional[Dict[str, Any]] = None,
+                         timeout: int = 8) -> Dict[str, Any]:
     url = f"{str(base_url or '').rstrip('/')}{path}"
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
@@ -390,9 +406,25 @@ def request_gateway_json(base_url: str, path: str, method: str = "GET", payload:
         headers={"Content-Type": "application/json"},
         method=method,
     )
-    with urllib.request.urlopen(request, timeout=8) as response:
+    with urllib.request.urlopen(request, timeout=max(1, int(timeout or 8))) as response:
         text = response.read().decode("utf-8")
     return json.loads(text or "{}")
+
+
+# 读取本机 TCP 端口是否已监听，供网关健康检查失败时兜底判断。
+def is_tcp_endpoint_open(url: str, timeout: float = 1.0) -> bool:
+    parsed = urllib.parse.urlparse(str(url or ""))
+    host = str(parsed.hostname or "").strip()
+    if not host:
+        return False
+    if host in ("0.0.0.0", "::"):
+        host = "127.0.0.1"
+    port = int(parsed.port or (443 if parsed.scheme == "https" else 80))
+    try:
+        with socket.create_connection((host, port), timeout=max(0.2, float(timeout or 1.0))):
+            return True
+    except Exception:
+        return False
 
 
 # 读取管理面板右侧日志区的最近内容。
@@ -425,13 +457,19 @@ def read_recent_logs(logs_dir: Path, limit: int) -> List[Dict[str, Any]]:
 def inspect_component(target: str, spec: Dict[str, Any], gateway_url: str) -> Dict[str, Any]:
     if target == "gateway":
         try:
-            health = request_gateway_json(gateway_url, "/health")
+            health = request_gateway_json(gateway_url, "/health", timeout=3)
             return {
                 "running": bool(health.get("ok", False)),
                 "statusText": "在线" if health.get("ok", False) else "异常",
                 "details": health,
             }
         except Exception as exc:
+            if is_tcp_endpoint_open(gateway_url, timeout=1.0):
+                return {
+                    "running": True,
+                    "statusText": "端口在线",
+                    "details": {"warning": str(exc)},
+                }
             return {"running": False, "statusText": "离线", "details": {"error": str(exc)}}
 
     if spec.get("statusMode") == "service":
@@ -447,11 +485,11 @@ def build_admin_state() -> Dict[str, Any]:
     gateway_health: Dict[str, Any]
     gateway_source: Dict[str, Any]
     try:
-        gateway_health = request_gateway_json(gateway_url, "/health")
+        gateway_health = request_gateway_json(gateway_url, "/health", timeout=3)
     except Exception as exc:
         gateway_health = {"ok": False, "error": str(exc)}
     try:
-        gateway_source = request_gateway_json(gateway_url, "/v1/source")
+        gateway_source = request_gateway_json(gateway_url, "/v1/source", timeout=3)
     except Exception as exc:
         gateway_source = {"ok": False, "error": str(exc)}
 
@@ -480,14 +518,20 @@ def index() -> str:
 
 # 提供管理面板脚本文件。
 @app.get("/app.js", response_class=PlainTextResponse)
-def app_js() -> str:
-    return read_text_file_utf8(STATIC_DIR / "app.js")
+def app_js() -> Response:
+    return Response(
+        content=read_text_file_utf8(STATIC_DIR / "app.js"),
+        media_type="application/javascript",
+    )
 
 
 # 提供管理面板样式文件。
 @app.get("/styles.css", response_class=PlainTextResponse)
-def styles_css() -> str:
-    return read_text_file_utf8(STATIC_DIR / "styles.css")
+def styles_css() -> Response:
+    return Response(
+        content=read_text_file_utf8(STATIC_DIR / "styles.css"),
+        media_type="text/css",
+    )
 
 
 # 返回统一状态卡片需要的数据。

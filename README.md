@@ -125,10 +125,12 @@ MT5 网关 Python 侧常用验证：
 - Windows 服务器精简上传包见 [deploy/tencent/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle)
 - Windows 部署根目录现统一为 `C:\mt5_bundle`
 - 上传方式改为：整体替换 `deploy/tencent/windows_server_bundle` 对应内容，不再手工挑单个文件补传
-- 当前默认公网入口为 `http://43.155.214.62:8787`
-- 统一控制台默认入口为 `http://43.155.214.62:8788`
+- 当前默认公网入口为 `http://43.155.214.62`
+- 统一控制台默认入口为 `http://43.155.214.62/admin/`
+- 管理面板直连端口入口仍可用：`http://43.155.214.62:8788`
 - 统一承接：
   - `MT5 /v1/*`
+  - `Admin /admin/*`
   - `Binance REST /binance-rest/*`
   - `Binance WebSocket /binance-ws/*`
 - 如果需要让管理面板开机自启，可执行：

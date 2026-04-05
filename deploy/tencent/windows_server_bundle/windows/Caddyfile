@@ -22,6 +22,14 @@
         reverse_proxy 127.0.0.1:8787
     }
 
+    basic_auth /admin/* {
+        a378910115 $2b$14$G4poTjzSnRuvkj.M87Wi5.qLUyTce4QmGtp34llNXxW2mNPDCAPti
+    }
+
+    handle_path /admin/* {
+        reverse_proxy 127.0.0.1:8788
+    }
+
     handle_path /binance-rest/* {
         reverse_proxy https://fapi.binance.com {
             header_up Host fapi.binance.com

@@ -1,16 +1,16 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$RepoRoot,
+    [string]$BundleRoot,
     [string]$EnvFile = ".env"
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $RepoRoot)) {
-    throw "RepoRoot not found: $RepoRoot"
+if (-not (Test-Path $BundleRoot)) {
+    throw "BundleRoot not found: $BundleRoot"
 }
-$repo = (Resolve-Path $RepoRoot).Path
-$gatewayDir = Join-Path $repo "bridge\mt5_gateway"
+$bundle = (Resolve-Path $BundleRoot).Path
+$gatewayDir = Join-Path $bundle "mt5_gateway"
 $startScript = Join-Path $gatewayDir "start_admin_panel.ps1"
 if (-not (Test-Path $startScript)) {
     throw "start_admin_panel.ps1 not found: $startScript"
@@ -24,7 +24,7 @@ while ($true) {
     $logFile = Join-Path $logsDir "admin-panel-$ts.log"
     try {
         Set-Location $gatewayDir
-        & $startScript -EnvFile $EnvFile *>&1 | Tee-Object -FilePath $logFile
+        & $startScript -EnvFile $EnvFile *> $logFile
     } catch {
         $_ | Out-String | Tee-Object -FilePath $logFile -Append
     }

@@ -72,6 +72,15 @@ class AdminPanelTests(unittest.TestCase):
 
         self.assertEqual(content, restored)
 
+    def test_read_text_file_utf8_should_fallback_to_gbk_when_needed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "sample.log"
+            log_path.write_bytes("中文日志".encode("gbk"))
+
+            restored = admin_panel.read_text_file_utf8(log_path)
+
+        self.assertEqual("中文日志", restored)
+
     def test_configure_windows_event_loop_policy_should_switch_to_selector_on_windows(self):
         class _FakeSelectorPolicy:
             pass
@@ -85,6 +94,55 @@ class AdminPanelTests(unittest.TestCase):
 
         selected_policy = set_mock.call_args[0][0]
         self.assertIsInstance(selected_policy, _FakeSelectorPolicy)
+
+    def test_admin_index_should_use_relative_asset_paths_for_subpath_proxy(self):
+        html = admin_panel.index()
+
+        self.assertIn('href="./styles.css"', html)
+        self.assertIn('src="./app.js"', html)
+        self.assertIn('id="toggleLogsBtn"', html)
+        self.assertIn('id="logsBox" class="code-box compact"', html)
+
+    def test_admin_app_script_should_use_relative_api_paths_for_subpath_proxy(self):
+        response = admin_panel.app_js()
+        script = getattr(response, "body", None)
+        if isinstance(script, bytes):
+            script = script.decode("utf-8")
+        if script is None:
+            script = getattr(response, "content", "")
+
+        self.assertIn("const API_BASE = './api';", script)
+        self.assertIn("requestJson(`${API_BASE}/state`)", script)
+        self.assertIn("requestJson(`${API_BASE}/logs?limit=80`)", script)
+        self.assertIn("requestJson(`${API_BASE}/env`)", script)
+
+    def test_admin_static_assets_should_return_browser_friendly_media_types(self):
+        js_response = admin_panel.app_js()
+        css_response = admin_panel.styles_css()
+
+        self.assertEqual("application/javascript", getattr(js_response, "media_type", ""))
+        self.assertEqual("text/css", getattr(css_response, "media_type", ""))
+
+    def test_admin_app_script_should_include_log_toggle_behavior(self):
+        response = admin_panel.app_js()
+        script = getattr(response, "body", None)
+        if isinstance(script, bytes):
+            script = script.decode("utf-8")
+        if script is None:
+            script = getattr(response, "content", "")
+
+        self.assertIn("toggleLogsBtn", script)
+        self.assertIn("logsBox.classList.toggle('expanded')", script)
+
+    def test_start_admin_panel_script_should_skip_noisy_pip_install_when_requirements_unchanged(self):
+        script_path = ROOT / "start_admin_panel.ps1"
+        content = script_path.read_text(encoding="utf-8")
+
+        self.assertIn(".requirements.sha256", content)
+        self.assertIn("--quiet", content)
+        self.assertIn("chcp 65001", content)
+        self.assertIn('$ErrorActionPreference = "Continue"', content)
+        self.assertNotIn('2>&1 | ForEach-Object', content)
 
 
 if __name__ == "__main__":

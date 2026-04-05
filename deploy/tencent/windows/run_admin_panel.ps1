@@ -24,7 +24,7 @@ while ($true) {
     $logFile = Join-Path $logsDir "admin-panel-$ts.log"
     try {
         Set-Location $gatewayDir
-        & $startScript -EnvFile $EnvFile *>&1 | Tee-Object -FilePath $logFile
+        & $startScript -EnvFile $EnvFile *> $logFile
     } catch {
         $_ | Out-String | Tee-Object -FilePath $logFile -Append
     }

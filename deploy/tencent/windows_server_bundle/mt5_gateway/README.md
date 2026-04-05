@@ -76,12 +76,14 @@ cd bridge\mt5_gateway
 
 ```text
 http://127.0.0.1:8788
-http://<你的公网IP>:8788
+http://127.0.0.1/admin/
+http://<你的公网IP>/admin/
 ```
 
 说明：
 - 管理面板与主网关是独立进程。
-- 默认推荐 `ADMIN_PANEL_HOST=0.0.0.0`，这样同一套配置可同时支持服务器本机和公网访问。
+- 建议 `ADMIN_PANEL_HOST=127.0.0.1`，不要直接对公网暴露 `8788`。
+- 如果通过 Caddy 对外开放 `/admin/`，建议同时开启 Basic Auth。
 - 面板默认反向控制 `ADMIN_GATEWAY_URL=http://127.0.0.1:8787` 指向的主网关。
 
 ## 3）EA 推送模式（可选）

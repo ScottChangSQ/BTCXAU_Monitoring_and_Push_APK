@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MT5 网关管理面板</title>
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
 <main class="page">
@@ -33,9 +33,12 @@
         <article class="panel">
             <div class="panel-header">
                 <h2>最近日志</h2>
-                <button id="refreshLogsBtn" class="secondary-btn">刷新</button>
+                <div class="inline-actions">
+                    <button id="toggleLogsBtn" class="secondary-btn">展开日志</button>
+                    <button id="refreshLogsBtn" class="secondary-btn">刷新</button>
+                </div>
             </div>
-            <pre id="logsBox" class="code-box"></pre>
+            <pre id="logsBox" class="code-box compact"></pre>
         </article>
     </section>
 
@@ -61,6 +64,6 @@
     </section>
 </main>
 
-<script src="/app.js"></script>
+<script src="./app.js"></script>
 </body>
 </html>

@@ -1,6 +1,32 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 正在收口轻量 Web 管理面板的公网暴露策略。最新决定已经明确：`8788` 只允许本机访问，公网统一只保留 `/admin/`，并在 Caddy 的 `/admin/*` 上加 Basic Auth。
+- 已完成的部署包改动是：`deploy/tencent/windows/Caddyfile` 与 `deploy/tencent/windows_server_bundle/windows/Caddyfile` 均已给 `/admin/*` 增加 Basic Auth；`deploy/tencent/windows/.env.example`、`deploy/tencent/windows_server_bundle/windows/.env.example`、`deploy/tencent/windows_server_bundle/mt5_gateway/.env.example` 都把 `ADMIN_PANEL_HOST` 收回到 `127.0.0.1`；对应部署 README 也已改成“不开放 8788，只通过 `/admin/` 访问”。
+- 当前 Basic Auth 口径已固定为：用户名 `a378910115`，密码 `a378910115`。
+- 当前停点：仓库和部署包已经改完，服务器端需要把 `C:\mt5_bundle\mt5_gateway\.env` 中的 `ADMIN_PANEL_HOST` 改成 `127.0.0.1`，并把 `C:\mt5_bundle\windows\Caddyfile` 替换成带 `/admin/*` Basic Auth 的版本后重启 Caddy 与管理面板。
+- 本轮关键决定：不再保留公网直连 `8788`，统一走 Caddy `/admin/`，这样服务端只暴露一个入口，并把鉴权收敛在反向代理层。
+- 正在继续收口轻量 Web 管理面板的“计划任务启动失败”问题。最新定位已经明确：面板服务、`.env`、Caddy 反代都没有问题，手工运行 `admin_panel.py` 可正常监听 `8788`；真正失败的是计划任务链路里两层 PowerShell 包装把 Python/uvicorn 写到 stderr 的普通启动日志误判成 PowerShell 错误，导致自启动立刻退出。
+- 已完成的修复是：`start_admin_panel.ps1` 的 `Invoke-NativeCommandSafely()` 现在会在执行原生命令时临时把 `$ErrorActionPreference` 放宽为 `Continue`，只按退出码判断成败；`run_admin_panel.ps1` 不再使用 `Tee-Object` 包裹整条启动管道，改成直接 `*> $logFile` 写日志。
+- 已验证 `python -m unittest bridge.mt5_gateway.tests.test_admin_panel` 13 条通过，并补了回归断言锁住“不能再把原生命令 stderr 直接并入 PowerShell 错误管道”。
+- 当前停点：仓库和部署包里的脚本都已经修好，服务器端需要重新覆盖 `C:\mt5_bundle\mt5_gateway\start_admin_panel.ps1` 与 `C:\mt5_bundle\windows\run_admin_panel.ps1`，然后重启 `MT5AdminPanelAutoStart` 任务并复测 `127.0.0.1:8788`、`127.0.0.1/admin/`。
+- 本轮关键决定：不继续改 Caddy、`.env`、管理面板前端或任务 principal，只收口“计划任务包装层误杀正常 uvicorn 日志”这一条根因。
+- 正在收口轻量 Web 管理面板的两处体验问题：一是 `start_admin_panel.ps1` 启动日志需要改成更干净的 UTF-8 输出，二是“最近日志”区域默认占屏过大。
+- 已完成的代码口径是：`start_admin_panel.ps1` 现在会先切 UTF-8 控制台、仅在 `requirements.txt` 哈希变化时才执行一次静默 `pip install`，避免每次启动都刷整屏 `Requirement already satisfied`；前端日志区默认改为紧凑高度，增加“展开日志 / 收起日志”，并把默认日志条数从 `200` 收到 `80`。
+- 已验证 `python -m unittest bridge.mt5_gateway.tests.test_admin_panel` 13 条通过，`python -m py_compile bridge/mt5_gateway/admin_panel.py deploy/tencent/windows_server_bundle/mt5_gateway/admin_panel.py` 通过。
+- 当前停点：仓库内这轮收口已经完成，服务器端只需覆盖 `C:\mt5_bundle\mt5_gateway\start_admin_panel.ps1`、`static\admin\index.html`、`static\admin\styles.css`、`static\admin\app.js`，重启管理面板后再看日志首行是否还出现 `��`，以及日志区默认高度是否已收紧。
+- 本轮关键决定：不扩到鉴权、Nginx 或异常规则链路，只收口“启动日志更干净”和“日志区更紧凑”这两个明确目标。
+- 正在继续收口“轻量 Web 管理面板入口已通，但浏览器打开仍是裸 HTML、首屏提示首次加载失败”的剩余问题。最新定位已确认是两条独立根因叠加：其一，`admin_panel.py` 之前把 `app.js` 与 `styles.css` 用 `text/plain` 返回，而 Caddy 又统一加了 `X-Content-Type-Options: nosniff`，浏览器会直接拦掉脚本和样式；其二，前端 `refreshAll()` 之前使用 `Promise.all(...)`，只要某一块接口失败，就会把整页初始化提示打成失败。
+- 已修正 `bridge/mt5_gateway/admin_panel.py` 与部署包对应文件：`/app.js` 现在返回 `application/javascript`，`/styles.css` 返回 `text/css`，不再触发浏览器的 MIME 拦截；同时把前端 `static/admin/app.js` 的首屏刷新改成“逐块加载、逐块记录失败”，避免单个接口异常把整页拖成不可用。
+- 已验证 `python -m unittest bridge.mt5_gateway.tests.test_admin_panel` 共 10 条通过，`python -m py_compile bridge/mt5_gateway/admin_panel.py deploy/tencent/windows_server_bundle/mt5_gateway/admin_panel.py` 通过，并额外确认源码与部署包中的 `admin_panel.py`、`static/admin/app.js` 内容一致。
+- 当前停点：仓库和部署包的修复已经完成，服务器端需要重新覆盖 `C:\mt5_bundle\mt5_gateway\admin_panel.py` 与 `C:\mt5_bundle\mt5_gateway\static\admin\app.js`，再重启管理面板并强制刷新浏览器缓存，随后复测 `http://127.0.0.1:8788` 与 `http://43.155.214.62/admin/` 的页面样式和数据加载。
+- 本轮关键决定：不改 Caddy 反代结构，也不改网关接口，只修“静态资源 MIME”与“前端初始化容错”；原因是当前入口本身已经通，真正让用户看到裸 HTML 和空数据的是浏览器资源拦截与前端初始化策略。
+- 正在继续推进“外网 / 本机访问的轻量 Web 管理面板”收口。最新定位已确认：管理面板服务 `admin_panel.py`、静态页面和启动脚本早已存在，真正未闭合的是“统一入口访问”；默认 Caddy 之前只代理了 `8787` 主网关和 Binance 代理，没有把 `8788` 管理面板纳入同一公网入口。
+- 已把轻量面板改成同时支持两种访问方式：一是直连 `http://127.0.0.1:8788` / `http://<公网IP>:8788`，二是通过 Caddy 统一入口访问 `http://127.0.0.1/admin/` / `http://<公网IP>/admin/`。为此，管理面板静态资源和前端 API 调用已全部改成相对路径，默认 Caddy 配置也新增了 `/admin/* -> 127.0.0.1:8788` 反代。
+- 已同步更新源码与精简部署包：`bridge/mt5_gateway/static/admin/*`、`deploy/tencent/windows_server_bundle/mt5_gateway/static/admin/*`、`deploy/tencent/windows/Caddyfile`、`deploy/tencent/windows_server_bundle/windows/Caddyfile` 均已对齐；部署文档也补上了 `/admin/` 入口说明。
+- 已补并通过最小回归：`python -m unittest bridge.mt5_gateway.tests.test_admin_panel`、`python -m unittest bridge.mt5_gateway.tests.test_gateway_bundle_parity`、`python -m py_compile bridge/mt5_gateway/admin_panel.py`。同时用 `git diff --no-index` 直接确认源码静态页、精简包静态页和两份 Caddyfile 当前无内容漂移。
+- 当前停点：仓库内代码、部署包和文档已经收口完成，下一步应把最新 `deploy/tencent/windows_server_bundle` 整包覆盖到服务器，重启 Caddy 与管理面板后，优先实测 `http://127.0.0.1/admin/`、`http://127.0.0.1:8788`、`http://<公网IP>/admin/` 三个入口是否都正常打开。
+- 本轮关键决定：不再要求外网管理面板必须直接暴露 `8788` 端口，而是优先通过现有 `:80` 统一入口承接 `/admin/`；保留 `8788` 直连仅作为本机调试和备用入口。
 - 正在继续收口“图表页 30m / 1w 等长周期数量偏少、偶发 timeout”的服务端根因。最新定位已经确认：`/v2/market/candles` 之前会把 `limit` 直接透传给 Binance REST，单次大窗口请求容易超时，手机端本地库里缺少 `30m/1w` 也与这条链路一致。
 - 已在 `bridge/mt5_gateway/server_v2.py` 为 `/v2/market/candles` 补上两层最小修复：第一层是“分块分页拉取”，把大于 `MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT` 的请求自动拆成多段向前/向后分页；第二层是“短 TTL 查询缓存”，同一 symbol/interval/window 的请求在 `MARKET_CANDLES_CACHE_MS` 内直接复用，减少 APP 切页和首屏重试时的重复上游压力。
 - 已补回归测试锁住这次行为：`test_market_candles_should_fetch_large_window_in_multiple_chunks` 与 `test_market_candles_should_reuse_short_lived_query_cache`。当前 `python -m unittest bridge.mt5_gateway.tests.test_v2_contracts bridge.mt5_gateway.tests.test_v2_market_pipeline` 共 19 条通过。

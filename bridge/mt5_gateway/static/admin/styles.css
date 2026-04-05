@@ -203,6 +203,16 @@ button:disabled {
     overflow: auto;
 }
 
+.code-box.compact {
+    min-height: 180px;
+    max-height: 240px;
+}
+
+.code-box.expanded {
+    min-height: 420px;
+    max-height: 640px;
+}
+
 .editor {
     resize: vertical;
 }

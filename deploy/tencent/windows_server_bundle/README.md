@@ -48,7 +48,7 @@ MT5_PATH=C:\Program Files\MetaTrader 5\terminal64.exe
 GATEWAY_HOST=127.0.0.1
 GATEWAY_PORT=8787
 GATEWAY_MODE=auto
-ADMIN_PANEL_HOST=0.0.0.0
+ADMIN_PANEL_HOST=127.0.0.1
 ADMIN_PANEL_PORT=8788
 ADMIN_GATEWAY_URL=http://127.0.0.1:8787
 ```
@@ -77,6 +77,7 @@ Invoke-RestMethod http://127.0.0.1:8787/v1/pending?range=all
 Invoke-RestMethod http://127.0.0.1:8787/v1/trades?range=all
 Invoke-RestMethod http://127.0.0.1:8787/v1/curve?range=all
 Invoke-WebRequest http://127.0.0.1:8788
+Invoke-WebRequest http://127.0.0.1/admin/
 ```
 
 ## 第四步：注册开机自启
@@ -95,21 +96,27 @@ cd C:\mt5_bundle
 2. 默认直接使用随包附带的 `windows\Caddyfile`
 3. 如果你有域名并要上 HTTPS，再改用 `windows\Caddyfile.example`
 4. 启动 Caddy
-5. 如果需要直接访问管理面板，再放行 `8788`
+5. 不要对公网放行 `8788`
 
-管理面板默认既可本机访问，也可公网直接访问：
+管理面板默认支持这些入口：
 
 ```text
 http://127.0.0.1:8788
-http://你的公网IP:8788
+http://127.0.0.1/admin/
+http://你的公网IP/admin/
 ```
 
 当前默认 `windows\Caddyfile` 已经直接开放：
 
 - `/health`、`/v1/*`、`/v2/*`
 - `/mt5/*`
+- `/admin/*`
 - `/binance-rest/*`
 - `/binance-ws/*`
+
+其中 `/admin/*` 默认已加 Basic Auth。
+当前用户名：`a378910115`
+当前密码：`a378910115`
 
 ## APK 侧地址
 

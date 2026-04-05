@@ -27,6 +27,25 @@ except Exception:  # pragma: no cover
 
 load_dotenv()
 
+
+def _configure_windows_event_loop_policy() -> None:
+    if os.name != "nt":
+        return
+    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy is None:
+        return
+    try:
+        current_policy = asyncio.get_event_loop_policy()
+        if isinstance(current_policy, selector_policy):
+            return
+    except Exception:
+        pass
+    try:
+        asyncio.set_event_loop_policy(selector_policy())
+    except Exception:
+        pass
+
+
 LOGIN = int(os.getenv("MT5_LOGIN", "7400048"))
 PASSWORD = os.getenv("MT5_PASSWORD", "_fWsAeW1")
 SERVER = os.getenv("MT5_SERVER", "ICMarketsSC-MT5-6")
@@ -56,8 +75,12 @@ SNAPSHOT_DELTA_FALLBACK_RATIO = float(os.getenv("SNAPSHOT_DELTA_FALLBACK_RATIO",
 SNAPSHOT_SYNC_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_SYNC_CACHE_MAX_ENTRIES", "12")))
 SNAPSHOT_RANGE_ALL_DAYS = max(30, int(os.getenv("SNAPSHOT_RANGE_ALL_DAYS", "730")))
 MT5_HISTORY_LOOKAHEAD_HOURS = max(0, int(os.getenv("MT5_HISTORY_LOOKAHEAD_HOURS", "24")))
+TRADE_HISTORY_TARGET_ITEMS = max(200, int(os.getenv("TRADE_HISTORY_TARGET_ITEMS", "1000")))
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
+MARKET_CANDLES_CACHE_MS = max(1000, int(os.getenv("MARKET_CANDLES_CACHE_MS", "8000")))
+MARKET_CANDLES_CACHE_MAX_ENTRIES = max(8, int(os.getenv("MARKET_CANDLES_CACHE_MAX_ENTRIES", "120")))
+MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT = max(100, min(1000, int(os.getenv("MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT", "500"))))
 ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "500")))
 ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
 ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "8")))
@@ -77,6 +100,7 @@ mt5_last_connected_path = ""
 snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
 snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
 v2_sync_state: Dict[str, Any] = {}
+market_candles_cache: Dict[str, Dict[str, Any]] = {}
 abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
 abnormal_record_store: List[Dict[str, Any]] = []
 abnormal_alert_store: List[Dict[str, Any]] = []
@@ -88,26 +112,6 @@ abnormal_sync_state: Dict[str, Any] = {}
 
 def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
-
-
-# Windows 下默认 Proactor 事件循环在 WebSocket 断链场景里容易反复抛 WinError 10054，
-# 严重时会把整条网关事件循环拖挂，因此这里统一切回更稳定的 Selector 策略。
-def _configure_windows_event_loop_policy() -> None:
-    if os.name != "nt":
-        return
-    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
-    if selector_policy is None:
-        return
-    try:
-        current_policy = asyncio.get_event_loop_policy()
-        if isinstance(current_policy, selector_policy):
-            return
-    except Exception:
-        pass
-    try:
-        asyncio.set_event_loop_policy(selector_policy())
-    except Exception:
-        pass
 
 
 # 统一生成 v2 同步 token，供快照、增量和 WS 消息复用。
@@ -491,6 +495,65 @@ def _remember_cache_entry_locked(cache: Dict[str, Any], key: str, value: Any, li
     cache.pop(key, None)
     cache[key] = value
     _trim_cache_entries_locked(cache, limit)
+
+
+# 统一生成行情 K 线查询缓存键，避免同窗口短时间重复打上游。
+def _build_market_candles_cache_key(symbol: str,
+                                    interval: str,
+                                    limit: int,
+                                    start_time_ms: int,
+                                    end_time_ms: int) -> str:
+    return "|".join(
+        [
+            str(symbol or "").strip().upper(),
+            str(interval or "").strip(),
+            str(max(1, int(limit or 0))),
+            str(max(0, int(start_time_ms or 0))),
+            str(max(0, int(end_time_ms or 0))),
+        ]
+    )
+
+
+# 行情 K 线短缓存：同一窗口短时间直接复用，减小手机反复切页时的上游压力。
+def _get_cached_market_candle_rows(cache_key: str, now_ms: int) -> Optional[List[Any]]:
+    with snapshot_cache_lock:
+        cached = market_candles_cache.get(cache_key)
+        if not cached:
+            return None
+        if now_ms - int(cached.get("builtAt", 0) or 0) > MARKET_CANDLES_CACHE_MS:
+            market_candles_cache.pop(cache_key, None)
+            return None
+        cached["lastAccessAt"] = now_ms
+        _remember_cache_entry_locked(
+            market_candles_cache,
+            cache_key,
+            cached,
+            MARKET_CANDLES_CACHE_MAX_ENTRIES,
+        )
+        return [list(item) if isinstance(item, (list, tuple)) else dict(item) for item in (cached.get("rows") or [])]
+
+
+# 统一写入行情 K 线短缓存，命中时刷新最近使用顺序。
+def _remember_market_candle_rows(cache_key: str, rows: List[Any], now_ms: int) -> None:
+    normalized_rows: List[Any] = []
+    for item in rows or []:
+        if isinstance(item, (list, tuple)):
+            normalized_rows.append(list(item))
+        elif isinstance(item, dict):
+            normalized_rows.append(dict(item))
+        else:
+            normalized_rows.append(item)
+    with snapshot_cache_lock:
+        _remember_cache_entry_locked(
+            market_candles_cache,
+            cache_key,
+            {
+                "builtAt": now_ms,
+                "lastAccessAt": now_ms,
+                "rows": normalized_rows,
+            },
+            MARKET_CANDLES_CACHE_MAX_ENTRIES,
+        )
 
 
 # 仅在 EA 推送仍新鲜时延长快照缓存寿命，减少固定轮询下的一快一慢交替。
@@ -1671,15 +1734,20 @@ def _replay_curve_from_history(
     current_market_value = _resolve_positions_market_value(open_positions)
     if current_market_value <= 0.0:
         current_market_value = _calculate_curve_market_value(exposures, last_price_by_symbol)
-    points.append(_curve_point(
-        now_ms,
+    final_timestamp = max(now_ms, last_event_ts)
+    final_point = _curve_point(
+        final_timestamp,
         current_equity,
         current_balance,
         _curve_position_ratio_from_margin(
             _safe_div(current_market_value, _resolve_effective_leverage(leverage)),
             current_equity,
         ),
-    ))
+    )
+    if points and int(points[-1].get("timestamp", 0) or 0) >= final_timestamp:
+        points[-1] = final_point
+    else:
+        points.append(final_point)
     return points
 
 
@@ -1836,9 +1904,30 @@ def _map_pending_orders() -> List[Dict]:
     return mapped
 
 
-def _map_trades(range_key: str = "all") -> List[Dict]:
+def _progressive_trade_history_deals(range_key: str) -> List[Any]:
     from_time, to_time = _mt5_history_window(range_key)
-    deals = mt5.history_deals_get(from_time, to_time) or []
+    if range_key.lower() != "all":
+        return mt5.history_deals_get(from_time, to_time) or []
+
+    max_days = max(30, SNAPSHOT_RANGE_ALL_DAYS)
+    progressive_days = [30, 90, 180, 365, max_days]
+    unique_days: List[int] = []
+    for days in progressive_days:
+        safe_days = max(30, min(days, max_days))
+        if safe_days not in unique_days:
+            unique_days.append(safe_days)
+
+    now_local = datetime.now()
+    deals: List[Any] = []
+    for days in unique_days:
+        window_from = now_local - timedelta(days=days)
+        deals = mt5.history_deals_get(window_from, to_time) or []
+        if len(deals) >= TRADE_HISTORY_TARGET_ITEMS:
+            break
+    return deals
+
+
+def _map_trade_deals(deals: List[Any]) -> List[Dict]:
     mapped = []
     open_batches: Dict[str, List[Dict[str, Any]]] = {}
     open_batches_by_symbol_side: Dict[str, List[Dict[str, Any]]] = {}
@@ -2079,6 +2168,11 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
 
     mapped.sort(key=lambda item: item["timestamp"], reverse=True)
     return mapped
+
+
+def _map_trades(range_key: str = "all") -> List[Dict]:
+    deals = _progressive_trade_history_deals(range_key)
+    return _map_trade_deals(deals)
 
 
 def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
@@ -2717,6 +2811,19 @@ def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     return data
 
 
+def _clone_snapshot_payload(snapshot: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    safe_snapshot = snapshot or {}
+    cloned: Dict[str, Any] = {}
+    for key, value in safe_snapshot.items():
+        if isinstance(value, dict):
+            cloned[key] = dict(value)
+        elif isinstance(value, list):
+            cloned[key] = [dict(item) if isinstance(item, dict) else item for item in value]
+        else:
+            cloned[key] = value
+    return cloned
+
+
 def _stable_json_size(value: Any) -> int:
     return len(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
 
@@ -2993,6 +3100,42 @@ def _build_account_light_snapshot_with_cache() -> Dict:
     return snapshot
 
 
+def _snapshot_trades_from_mt5(range_key: str) -> List[Dict[str, Any]]:
+    with state_lock:
+        _ensure_mt5()
+        try:
+            return _map_trades(range_key)
+        finally:
+            _shutdown_mt5()
+
+
+def _build_trade_history_with_cache(range_key: str, fallback_snapshot: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    cache_key = f"{range_key}:trade-history"
+    now_ms = _now_ms()
+    with snapshot_cache_lock:
+        cached = snapshot_build_cache.get(cache_key)
+        if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+            cached["lastAccessAt"] = now_ms
+            _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+            return [dict(item) for item in (cached.get("trades") or [])]
+
+    if mt5 is not None and _is_mt5_configured():
+        try:
+            trades = _snapshot_trades_from_mt5(range_key)
+        except Exception:
+            trades = [dict(item) for item in ((fallback_snapshot or {}).get("trades") or [])]
+    else:
+        trades = [dict(item) for item in ((fallback_snapshot or {}).get("trades") or [])]
+
+    with snapshot_cache_lock:
+        _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
+            "builtAt": now_ms,
+            "lastAccessAt": now_ms,
+            "trades": trades,
+        }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+    return [dict(item) for item in trades]
+
+
 def _build_summary_snapshot(snapshot: Dict) -> Dict:
     summary = {
         "accountMeta": dict(snapshot.get("accountMeta") or {}),
@@ -3013,28 +3156,25 @@ def _build_live_snapshot(snapshot: Dict) -> Dict:
 
 
 def _build_pending_snapshot(snapshot: Dict) -> Dict:
-    pending = {
+    return {
         "accountMeta": dict(snapshot.get("accountMeta") or {}),
         "pendingOrders": snapshot.get("pendingOrders") or [],
     }
-    return _normalize_snapshot(pending, str((snapshot.get("accountMeta") or {}).get("source", "MT5 Gateway")))
 
 
 def _build_trades_snapshot(snapshot: Dict) -> Dict:
-    trades = {
+    return {
         "accountMeta": dict(snapshot.get("accountMeta") or {}),
         "trades": snapshot.get("trades") or [],
     }
-    return _normalize_snapshot(trades, str((snapshot.get("accountMeta") or {}).get("source", "MT5 Gateway")))
 
 
 def _build_curve_snapshot(snapshot: Dict) -> Dict:
-    curve = {
+    return {
         "accountMeta": dict(snapshot.get("accountMeta") or {}),
         "curvePoints": snapshot.get("curvePoints") or [],
         "curveIndicators": snapshot.get("curveIndicators") or [],
     }
-    return _normalize_snapshot(curve, str((snapshot.get("accountMeta") or {}).get("source", "MT5 Gateway")))
 
 
 def _projection_profile(name: str) -> Dict[str, Any]:
@@ -3188,7 +3328,67 @@ def _build_pending_snapshot_response(range_key: str, since_seq: int, delta: bool
 
 
 def _build_trades_snapshot_response(range_key: str, since_seq: int, delta: bool) -> Dict:
-    return _build_projected_snapshot_response(range_key, since_seq, delta, projection_name="trades")
+    snapshot = _build_snapshot_with_cache(range_key)
+    trades_snapshot = {
+        "accountMeta": dict(snapshot.get("accountMeta") or {}),
+        "trades": _build_trade_history_with_cache(range_key, snapshot),
+    }
+    digest = _snapshot_digest(trades_snapshot)
+    cache_key = f"{range_key}:trades"
+
+    with snapshot_cache_lock:
+        state = snapshot_sync_cache.get(cache_key)
+        previous_snapshot: Optional[Dict] = None
+        previous_seq = 0
+
+        if state is None:
+            sync_seq = 1
+            _remember_cache_entry_locked(snapshot_sync_cache, cache_key, {
+                "seq": sync_seq,
+                "digest": digest,
+                "snapshot": trades_snapshot,
+                "previousSeq": 0,
+                "previousSnapshot": None,
+            }, SNAPSHOT_SYNC_CACHE_MAX_ENTRIES)
+        else:
+            if state.get("digest") == digest:
+                sync_seq = int(state.get("seq", 1))
+                trades_snapshot = state.get("snapshot") or trades_snapshot
+                previous_seq = int(state.get("previousSeq", 0))
+                previous_snapshot = state.get("previousSnapshot")
+                _remember_cache_entry_locked(snapshot_sync_cache, cache_key, state, SNAPSHOT_SYNC_CACHE_MAX_ENTRIES)
+            else:
+                previous_seq = int(state.get("seq", 0))
+                previous_snapshot = state.get("snapshot")
+                sync_seq = previous_seq + 1
+                _remember_cache_entry_locked(snapshot_sync_cache, cache_key, {
+                    "seq": sync_seq,
+                    "digest": digest,
+                    "snapshot": trades_snapshot,
+                    "previousSeq": previous_seq,
+                    "previousSnapshot": previous_snapshot,
+                }, SNAPSHOT_SYNC_CACHE_MAX_ENTRIES)
+
+    if not SNAPSHOT_DELTA_ENABLED or not delta or since_seq <= 0:
+        return _build_trades_response(trades_snapshot, sync_seq)
+
+    meta = dict(trades_snapshot.get("accountMeta") or {})
+    meta["syncSeq"] = sync_seq
+    meta["deltaEnabled"] = SNAPSHOT_DELTA_ENABLED
+
+    if since_seq == sync_seq:
+        return {"accountMeta": meta, "isDelta": True, "unchanged": True}
+
+    if previous_snapshot is None or since_seq < previous_seq:
+        return _build_trades_response(trades_snapshot, sync_seq)
+
+    delta_payload = _build_scoped_delta_snapshot(previous_snapshot, trades_snapshot, ["trades"])
+    return {
+        "accountMeta": meta,
+        "isDelta": True,
+        "unchanged": False,
+        "trades": delta_payload.get("trades", {"upsert": [], "remove": []}),
+    }
 
 
 def _build_curve_snapshot_response(range_key: str, since_seq: int, delta: bool) -> Dict:
@@ -3208,24 +3408,27 @@ def _select_snapshot(range_key: str) -> Dict:
 
     if mode == "ea":
         if _is_ea_snapshot_fresh():
-            return _normalize_snapshot(ea_snapshot_cache, "MT5 EA Push")
+            return _clone_snapshot_payload(ea_snapshot_cache)
         raise RuntimeError("No fresh EA snapshot found. Please start MT5 EA push first.")
 
     if mode == "pull":
         return _snapshot_from_mt5(range_key)
 
-    # auto mode: prefer MT5 pull first (full historical fidelity), then EA push fallback.
+    # auto mode: 只要 EA 快照仍是新鲜的，就优先复用 EA。
+    # 否则高频账户接口会持续触发 MT5 Python Pull，把线程池和 MT5 拉取链路占满，
+    # 反过来又拖慢 EA push 的 POST /v1/ea/snapshot。
+    if _is_ea_snapshot_fresh():
+        return _clone_snapshot_payload(ea_snapshot_cache)
+
+    # 没有新鲜 EA 时，再退回 MT5 pull。
     if mt5 is not None and _is_mt5_configured():
         try:
             return _snapshot_from_mt5(range_key)
         except Exception:
             pass
 
-    if _is_ea_snapshot_fresh():
-        return _normalize_snapshot(ea_snapshot_cache, "MT5 EA Push")
-
     if ea_snapshot_cache is not None:
-        stale = _normalize_snapshot(ea_snapshot_cache, "MT5 EA Push")
+        stale = _clone_snapshot_payload(ea_snapshot_cache)
         stale["accountMeta"]["source"] = f"{stale['accountMeta'].get('source', 'MT5 EA Push')} (stale)"
         return stale
 
@@ -3248,11 +3451,14 @@ def _build_account_light_snapshot() -> Dict[str, Any]:
 
     if mode == "ea":
         if _is_ea_snapshot_fresh():
-            return _strip_account_light_snapshot(_normalize_snapshot(ea_snapshot_cache, "MT5 EA Push"))
+            return _strip_account_light_snapshot(_clone_snapshot_payload(ea_snapshot_cache))
         raise RuntimeError("No fresh EA snapshot found. Please start MT5 EA push first.")
 
     if mode == "pull":
         return _snapshot_from_mt5_light()
+
+    if _is_ea_snapshot_fresh():
+        return _strip_account_light_snapshot(_clone_snapshot_payload(ea_snapshot_cache))
 
     if mt5 is not None and _is_mt5_configured():
         try:
@@ -3260,11 +3466,8 @@ def _build_account_light_snapshot() -> Dict[str, Any]:
         except Exception:
             pass
 
-    if _is_ea_snapshot_fresh():
-        return _strip_account_light_snapshot(_normalize_snapshot(ea_snapshot_cache, "MT5 EA Push"))
-
     if ea_snapshot_cache is not None:
-        stale = _normalize_snapshot(ea_snapshot_cache, "MT5 EA Push")
+        stale = _clone_snapshot_payload(ea_snapshot_cache)
         stale["accountMeta"]["source"] = f"{stale['accountMeta'].get('source', 'MT5 EA Push')} (stale)"
         return _strip_account_light_snapshot(stale)
 
@@ -3385,6 +3588,182 @@ def _fetch_binance_kline_rows(symbol: str,
     if not isinstance(payload, list):
         raise ValueError("Binance kline payload is not a list")
     return payload
+
+
+# 行情 K 线大窗口查询按块拉取，避免单次 limit 过大把 Binance REST 拖到超时。
+def _fetch_market_candle_rows_with_cache(symbol: str,
+                                         interval: str,
+                                         limit: int,
+                                         *,
+                                         start_time_ms: int = 0,
+                                         end_time_ms: int = 0) -> List[Any]:
+    safe_symbol = str(symbol or "").strip().upper()
+    safe_interval = str(interval or "").strip()
+    safe_limit = max(1, min(int(limit or 0), 1500))
+    safe_start = max(0, int(start_time_ms or 0))
+    safe_end = max(0, int(end_time_ms or 0))
+    cache_key = _build_market_candles_cache_key(
+        safe_symbol,
+        safe_interval,
+        safe_limit,
+        safe_start,
+        safe_end,
+    )
+    now_ms = _now_ms()
+    cached_rows = _get_cached_market_candle_rows(cache_key, now_ms)
+    if cached_rows is not None:
+        return cached_rows
+
+    rows = _fetch_market_candle_rows_paged(
+        safe_symbol,
+        safe_interval,
+        safe_limit,
+        start_time_ms=safe_start,
+        end_time_ms=safe_end,
+    )
+    _remember_market_candle_rows(cache_key, rows, now_ms)
+    return rows
+
+
+# 按开始/结束时间自动选择向前或向后分页，保证返回仍是同一份升序 K 线列表。
+def _fetch_market_candle_rows_paged(symbol: str,
+                                    interval: str,
+                                    limit: int,
+                                    *,
+                                    start_time_ms: int = 0,
+                                    end_time_ms: int = 0) -> List[Any]:
+    safe_limit = max(1, min(int(limit or 0), 1500))
+    if safe_limit <= MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT:
+        return _fetch_binance_kline_rows(
+            symbol,
+            interval,
+            safe_limit,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
+        )
+    if int(start_time_ms or 0) > 0:
+        return _fetch_market_candle_rows_forward(
+            symbol,
+            interval,
+            safe_limit,
+            start_time_ms=int(start_time_ms or 0),
+            end_time_ms=int(end_time_ms or 0),
+        )
+    return _fetch_market_candle_rows_backward(
+        symbol,
+        interval,
+        safe_limit,
+        end_time_ms=int(end_time_ms or 0),
+    )
+
+
+# 已知 startTime 时从旧到新分页，避免精确窗口查询重复回卷。
+def _fetch_market_candle_rows_forward(symbol: str,
+                                      interval: str,
+                                      limit: int,
+                                      *,
+                                      start_time_ms: int,
+                                      end_time_ms: int = 0) -> List[Any]:
+    remaining = max(1, min(int(limit or 0), 1500))
+    cursor = max(0, int(start_time_ms or 0))
+    safe_end = max(0, int(end_time_ms or 0))
+    collected: Dict[int, Any] = {}
+
+    while remaining > 0:
+        chunk_limit = min(remaining, MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT)
+        rows = _fetch_binance_kline_rows(
+            symbol,
+            interval,
+            chunk_limit,
+            start_time_ms=cursor,
+            end_time_ms=safe_end,
+        ) or []
+        if not rows:
+            break
+        last_open_time = cursor
+        new_count = 0
+        for row in rows:
+            open_time = _extract_market_row_open_time(row)
+            if open_time <= 0:
+                continue
+            if safe_end > 0 and open_time > safe_end:
+                continue
+            last_open_time = max(last_open_time, open_time)
+            if open_time in collected:
+                continue
+            collected[open_time] = row
+            new_count += 1
+        if new_count <= 0:
+            break
+        remaining -= new_count
+        if len(rows) < chunk_limit:
+            break
+        next_cursor = last_open_time + 1
+        if next_cursor <= cursor:
+            break
+        cursor = next_cursor
+
+    return [collected[key] for key in sorted(collected.keys())]
+
+
+# 未指定 startTime 时从新到旧分页，再统一升序返回，适合图表整窗历史拉取。
+def _fetch_market_candle_rows_backward(symbol: str,
+                                       interval: str,
+                                       limit: int,
+                                       *,
+                                       end_time_ms: int = 0) -> List[Any]:
+    remaining = max(1, min(int(limit or 0), 1500))
+    cursor_end = max(0, int(end_time_ms or 0))
+    collected: Dict[int, Any] = {}
+
+    while remaining > 0:
+        chunk_limit = min(remaining, MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT)
+        rows = _fetch_binance_kline_rows(
+            symbol,
+            interval,
+            chunk_limit,
+            start_time_ms=0,
+            end_time_ms=cursor_end,
+        ) or []
+        if not rows:
+            break
+        first_open_time: Optional[int] = None
+        new_count = 0
+        for row in rows:
+            open_time = _extract_market_row_open_time(row)
+            if open_time <= 0:
+                continue
+            if first_open_time is None:
+                first_open_time = open_time
+            else:
+                first_open_time = min(first_open_time, open_time)
+            if open_time in collected:
+                continue
+            collected[open_time] = row
+            new_count += 1
+        if new_count <= 0 or first_open_time is None:
+            break
+        remaining -= new_count
+        if len(rows) < chunk_limit or first_open_time <= 0:
+            break
+        cursor_end = first_open_time - 1
+
+    return [collected[key] for key in sorted(collected.keys())]
+
+
+# 统一提取 K 线开盘时间，供分页去重和翻页游标使用。
+def _extract_market_row_open_time(row: Any) -> int:
+    if isinstance(row, (list, tuple)) and row:
+        try:
+            return int(row[0] or 0)
+        except Exception:
+            return 0
+    if isinstance(row, dict):
+        try:
+            return int((row.get("k") or row).get("t") or (row.get("k") or row).get("openTime") or 0)
+        except Exception:
+            return 0
+    return 0
 
 
 async def _pipe_websocket_client_to_upstream(client: WebSocket, upstream) -> None:
@@ -3523,7 +3902,7 @@ def v2_market_candles(symbol: str,
                       endTime: int = Query(default=0, ge=0)):
     try:
         now_ms = _now_ms()
-        rest_rows = _fetch_binance_kline_rows(
+        rest_rows = _fetch_market_candle_rows_with_cache(
             symbol,
             interval,
             limit,
@@ -3582,10 +3961,11 @@ def v2_account_history(
 ):
     try:
         now_ms = _now_ms()
-        snapshot = _build_snapshot_with_cache(range.lower())
+        range_key = range.lower()
+        snapshot = _build_snapshot_with_cache(range_key)
         history_model = v2_account.build_account_history_model(
             {
-                "trades": snapshot.get("trades") or [],
+                "trades": _build_trade_history_with_cache(range_key, snapshot),
                 "orders": snapshot.get("pendingOrders") or [],
                 "curvePoints": snapshot.get("curvePoints") or [],
             }
@@ -3595,7 +3975,7 @@ def v2_account_history(
             account_meta={
                 **(snapshot.get("accountMeta") or {}),
                 "serverTime": now_ms,
-                "syncToken": _build_sync_token(now_ms, f"account-history:{range.lower()}:{cursor}"),
+                "syncToken": _build_sync_token(now_ms, f"account-history:{range_key}:{cursor}"),
             },
         )
         payload["nextCursor"] = ""
@@ -3740,11 +4120,13 @@ def admin_cache_clear():
         cleared = {
             "snapshotBuildCache": len(snapshot_build_cache),
             "snapshotSyncCache": len(snapshot_sync_cache),
+            "marketCandlesCache": len(market_candles_cache),
             "v2SyncState": 1 if v2_sync_state else 0,
             "abnormalSyncState": 1 if abnormal_sync_state else 0,
         }
         snapshot_build_cache.clear()
         snapshot_sync_cache.clear()
+        market_candles_cache.clear()
         v2_sync_state.clear()
         abnormal_sync_state.clear()
     return {"ok": True, "cleared": cleared}

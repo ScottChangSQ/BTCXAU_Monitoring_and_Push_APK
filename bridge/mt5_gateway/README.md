@@ -84,6 +84,8 @@ cd bridge\mt5_gateway
 ```text
 http://127.0.0.1:8788
 http://<你的公网IP>:8788
+http://127.0.0.1/admin/
+http://<你的公网IP>/admin/
 ```
 
 说明：

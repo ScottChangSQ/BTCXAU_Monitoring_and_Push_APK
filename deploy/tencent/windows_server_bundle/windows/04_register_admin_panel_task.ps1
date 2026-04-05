@@ -1,17 +1,17 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$RepoRoot,
+    [string]$BundleRoot,
     [string]$TaskName = "MT5AdminPanelAutoStart",
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $RepoRoot)) {
-    throw "RepoRoot not found: $RepoRoot"
+if (-not (Test-Path $BundleRoot)) {
+    throw "BundleRoot not found: $BundleRoot"
 }
-$repo = (Resolve-Path $RepoRoot).Path
-$runner = Join-Path $repo "deploy\tencent\windows\run_admin_panel.ps1"
+$bundle = (Resolve-Path $BundleRoot).Path
+$runner = Join-Path $bundle "windows\run_admin_panel.ps1"
 if (-not (Test-Path $runner)) {
     throw "Runner script not found: $runner"
 }
@@ -24,7 +24,7 @@ if ($existing) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
-$args = "-NoProfile -ExecutionPolicy Bypass -File `"$runner`" -RepoRoot `"$repo`""
+$args = "-NoProfile -ExecutionPolicy Bypass -File `"$runner`" -BundleRoot `"$bundle`""
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $args
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
