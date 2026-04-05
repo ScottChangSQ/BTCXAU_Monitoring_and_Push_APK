@@ -3510,12 +3510,14 @@ def v2_market_candles(symbol: str,
             start_time_ms=startTime,
             end_time_ms=endTime,
         )
+        closed_rest_rows, latest_rest_patch = v2_market.separate_closed_rest_rows(rest_rows, now_ms)
         return v2_market.build_market_candles_response(
             symbol=symbol,
             interval=interval,
             server_time=now_ms,
-            rest_rows=rest_rows,
-            latest_patch=None,
+            rest_rows=closed_rest_rows,
+            latest_patch=latest_rest_patch,
+            patch_source="binance-rest",
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -3709,6 +3711,23 @@ def abnormal_config(payload: Dict[str, Any]):
         return _set_abnormal_config(payload or {})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# 清空运行时缓存，让管理面板可以强制下一轮重新构建快照。
+@app.post("/internal/admin/cache/clear")
+def admin_cache_clear():
+    with snapshot_cache_lock:
+        cleared = {
+            "snapshotBuildCache": len(snapshot_build_cache),
+            "snapshotSyncCache": len(snapshot_sync_cache),
+            "v2SyncState": 1 if v2_sync_state else 0,
+            "abnormalSyncState": 1 if abnormal_sync_state else 0,
+        }
+        snapshot_build_cache.clear()
+        snapshot_sync_cache.clear()
+        v2_sync_state.clear()
+        abnormal_sync_state.clear()
+    return {"ok": True, "cleared": cleared}
 
 
 @app.websocket("/binance-ws/{path_value:path}")

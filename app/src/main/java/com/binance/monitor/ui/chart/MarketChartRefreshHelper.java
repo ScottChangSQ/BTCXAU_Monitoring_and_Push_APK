@@ -49,7 +49,10 @@ final class MarketChartRefreshHelper {
         // 只有页面确实接入了实时尾部数据时，1m 才允许完全依赖本地跳过 REST。
         boolean supportsMinuteDerivedSkip = hasRealtimeTailSource && !yearAggregate && intervalMs == 60_000L;
         int requiredWindowSize = Math.max(1, Math.min(targetLimit, fullWindowLimit));
-        if (hasLocalSeries && realtimeFresh && supportsMinuteDerivedSkip) {
+        if (hasLocalSeries
+                && realtimeFresh
+                && supportsMinuteDerivedSkip
+                && localSeries.size() >= requiredWindowSize) {
             return new SyncPlan(SyncMode.SKIP, -1L);
         }
         if (!hasLocalSeries) {

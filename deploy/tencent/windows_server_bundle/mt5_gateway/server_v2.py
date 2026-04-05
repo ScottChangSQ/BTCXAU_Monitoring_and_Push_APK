@@ -17,6 +17,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.gzip import GZipMiddleware
 import websockets
+import v2_account
+import v2_market
 
 try:
     import MetaTrader5 as mt5
@@ -34,31 +36,456 @@ try:
     MT5_INIT_TIMEOUT_MS = int(os.getenv("MT5_INIT_TIMEOUT_MS", "60000"))
 except Exception:
     MT5_INIT_TIMEOUT_MS = 60000
+try:
+    MT5_TIME_OFFSET_MINUTES = int(os.getenv("MT5_TIME_OFFSET_MINUTES", "0"))
+except Exception:
+    MT5_TIME_OFFSET_MINUTES = 0
 HOST = os.getenv("GATEWAY_HOST", "0.0.0.0")
 PORT = int(os.getenv("GATEWAY_PORT", "8787"))
 GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull | ea
 EA_SNAPSHOT_TTL_SEC = int(os.getenv("EA_SNAPSHOT_TTL_SEC", "35"))
 EA_INGEST_TOKEN = os.getenv("EA_INGEST_TOKEN", "").strip()
 SNAPSHOT_BUILD_CACHE_MS = int(os.getenv("SNAPSHOT_BUILD_CACHE_MS", "8000"))
+SNAPSHOT_BUILD_MAX_STALE_MS = max(
+    SNAPSHOT_BUILD_CACHE_MS,
+    int(os.getenv("SNAPSHOT_BUILD_MAX_STALE_MS", "30000"))
+)
+SNAPSHOT_BUILD_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_BUILD_CACHE_MAX_ENTRIES", "6")))
 SNAPSHOT_DELTA_ENABLED = os.getenv("SNAPSHOT_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 SNAPSHOT_DELTA_FALLBACK_RATIO = float(os.getenv("SNAPSHOT_DELTA_FALLBACK_RATIO", "0.85"))
+SNAPSHOT_SYNC_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_SYNC_CACHE_MAX_ENTRIES", "12")))
+SNAPSHOT_RANGE_ALL_DAYS = max(30, int(os.getenv("SNAPSHOT_RANGE_ALL_DAYS", "730")))
+MT5_HISTORY_LOOKAHEAD_HOURS = max(0, int(os.getenv("MT5_HISTORY_LOOKAHEAD_HOURS", "24")))
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
+ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "500")))
+ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
+ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "8")))
+ABNORMAL_FETCH_CACHE_MS = max(1000, int(os.getenv("ABNORMAL_FETCH_CACHE_MS", "4000")))
+ABNORMAL_DELTA_ENABLED = os.getenv("ABNORMAL_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+ABNORMAL_SYMBOLS = ("BTCUSDT", "XAUUSD")
 
 app = FastAPI(title="MT5 Bridge Gateway", version="1.1.0")
 app.add_middleware(GZipMiddleware, minimum_size=512)
 state_lock = Lock()
 snapshot_cache_lock = Lock()
+abnormal_state_lock = Lock()
 ea_snapshot_cache: Optional[Dict] = None
 ea_snapshot_received_at_ms = 0
 ea_snapshot_change_digest = ""
 mt5_last_connected_path = ""
 snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
 snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
+v2_sync_state: Dict[str, Any] = {}
+abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
+abnormal_record_store: List[Dict[str, Any]] = []
+abnormal_alert_store: List[Dict[str, Any]] = []
+abnormal_last_close_time_by_symbol: Dict[str, int] = {}
+abnormal_last_notify_at: Dict[str, int] = {}
+abnormal_kline_cache: Dict[str, Dict[str, Any]] = {}
+abnormal_sync_state: Dict[str, Any] = {}
 
 
 def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+# 统一生成 v2 同步 token，供快照、增量和 WS 消息复用。
+def _build_sync_token(server_time_ms: int, revision: str) -> str:
+    payload = f"{int(server_time_ms)}:{revision}".encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+# 构建 v2 行情总快照返回体，统一保留市场区和账户区。
+def _build_v2_market_snapshot_payload(market: Dict[str, Any],
+                                      account: Dict[str, Any],
+                                      server_time: int) -> Dict[str, Any]:
+    return {
+        "serverTime": int(server_time),
+        "syncToken": _build_sync_token(server_time, "market-snapshot"),
+        "market": dict(market or {}),
+        "account": dict(account or {}),
+    }
+
+
+# 构建 v2 K 线返回体，强制把闭合历史和当前 patch 分层。
+def _build_v2_market_candles_payload(symbol: str,
+                                     interval: str,
+                                     server_time: int,
+                                     candles: List[Dict[str, Any]],
+                                     latest_patch: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    safe_candles = [dict(item) for item in (candles or [])]
+    safe_patch = None if latest_patch is None else dict(latest_patch)
+    return {
+        "symbol": str(symbol or ""),
+        "interval": str(interval or ""),
+        "serverTime": int(server_time),
+        "candles": safe_candles,
+        "latestPatch": safe_patch,
+        "nextSyncToken": _build_sync_token(server_time, f"market:{symbol}:{interval}:{len(safe_candles)}"),
+    }
+
+
+# 构建 v2 账户快照返回体，统一输出当前账户、持仓和挂单。
+def _build_v2_account_snapshot_payload(account: Dict[str, Any],
+                                       positions: List[Dict[str, Any]],
+                                       orders: List[Dict[str, Any]],
+                                       server_time: int) -> Dict[str, Any]:
+    return {
+        "serverTime": int(server_time),
+        "syncToken": _build_sync_token(server_time, "account-snapshot"),
+        "account": dict(account or {}),
+        "positions": [dict(item) for item in (positions or [])],
+        "orders": [dict(item) for item in (orders or [])],
+    }
+
+
+# 构建 v2 增量返回体，供 HTTP delta 同步入口统一复用。
+def _build_v2_delta_payload(market_delta: List[Dict[str, Any]],
+                             account_delta: List[Dict[str, Any]],
+                             server_time: int,
+                             next_sync_token: Optional[str] = None,
+                             unchanged: bool = False,
+                             full_refresh: Optional[Dict[str, Any]] = None,
+                             summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    safe_market_delta = [dict(item) for item in (market_delta or [])]
+    safe_account_delta = [dict(item) for item in (account_delta or [])]
+    refresh_payload = full_refresh or {
+        "required": False,
+        "reason": "",
+        "snapshot": None,
+    }
+    return {
+        "serverTime": int(server_time),
+        "marketDelta": safe_market_delta,
+        "accountDelta": safe_account_delta,
+        "unchanged": bool(unchanged),
+        "fullRefresh": {
+            "required": bool(refresh_payload.get("required", False)),
+            "reason": str(refresh_payload.get("reason", "")),
+            "snapshot": refresh_payload.get("snapshot"),
+        },
+        "summary": dict(summary or {}),
+        "nextSyncToken": str(next_sync_token or _build_sync_token(
+            server_time,
+            f"delta:{len(safe_market_delta)}:{len(safe_account_delta)}"
+        )),
+    }
+
+
+# 构建 v2 WS 消息体，统一保留类型、载荷和同步 token。
+def _build_v2_ws_message(message_type: str,
+                         payload: Dict[str, Any],
+                         sync_token: str,
+                         server_time: int) -> Dict[str, Any]:
+    return {
+        "type": str(message_type or ""),
+        "payload": dict(payload or {}),
+        "serverTime": int(server_time),
+        "syncToken": str(sync_token or ""),
+    }
+
+
+# 统一生成稳定 JSON 摘要，供 v2 同步态判断是否变化。
+def _stable_payload_digest(value: Any) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+# 为 v2 同步层生成“状态不变则 token 不变”的稳定 token。
+def _build_v2_state_token(sync_seq: int, state_digest: str) -> str:
+    payload = f"v2-sync:{int(sync_seq)}:{state_digest}".encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+# 清理账户元数据里的易抖动字段，避免无效增量。
+def _normalize_v2_account_meta(account_meta: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "login": str(account_meta.get("login", "")),
+        "server": str(account_meta.get("server", "")),
+        "source": str(account_meta.get("source", "")),
+        "currency": str(account_meta.get("currency", "")),
+        "leverage": int(account_meta.get("leverage", 0) or 0),
+        "name": str(account_meta.get("name", "")),
+        "company": str(account_meta.get("company", "")),
+    }
+
+
+# 清理 diff 里的内部字段，避免把内部实现细节暴露给客户端。
+def _sanitize_diff_payload(diff_payload: Dict[str, Any]) -> Dict[str, Any]:
+    upsert_items: List[Dict[str, Any]] = []
+    for item in (diff_payload.get("upsert") or []):
+        safe_item = dict(item)
+        safe_item.pop("_key", None)
+        upsert_items.append(safe_item)
+    return {
+        "upsert": upsert_items,
+        "remove": [str(value) for value in (diff_payload.get("remove") or [])],
+    }
+
+
+# 构建 v2 同步层运行态快照，统一 market/account 的摘要和计数。
+def _build_v2_sync_runtime_snapshot(server_time: int) -> Dict[str, Any]:
+    snapshot = _build_account_light_snapshot_with_cache()
+    market_section = _build_v2_market_section()
+    account_section = _build_v2_account_section_from_snapshot(snapshot)
+    normalized_account = {
+        "accountMeta": _normalize_v2_account_meta(account_section.get("accountMeta") or {}),
+        "positions": [dict(item) for item in (account_section.get("positions") or [])],
+        "orders": [dict(item) for item in (account_section.get("orders") or [])],
+    }
+    market_digest = _stable_payload_digest(market_section)
+    account_digest = _stable_payload_digest(normalized_account)
+    account_revision = _stable_payload_digest(account_section)
+    state_digest = _stable_payload_digest({
+        "marketDigest": market_digest,
+        "accountDigest": account_digest,
+        "accountRevision": account_revision,
+    })
+    return {
+        "serverTime": int(server_time),
+        "market": dict(market_section),
+        "account": normalized_account,
+        "marketDigest": market_digest,
+        "accountDigest": account_digest,
+        "accountRevision": account_revision,
+        "digest": state_digest,
+        "tradeCount": int((account_section.get("accountMeta") or {}).get("tradeCount", 0) or 0),
+        "curvePointCount": int((account_section.get("accountMeta") or {}).get("curvePointCount", 0) or 0),
+    }
+
+
+# 根据运行态快照构建稳定 summary，供 HTTP 和 WS 统一输出。
+def _build_v2_sync_summary(runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    account_meta = (runtime_snapshot.get("account") or {}).get("accountMeta") or {}
+    market_symbols = (runtime_snapshot.get("market") or {}).get("symbols") or []
+    return {
+        "marketDigest": str(runtime_snapshot.get("marketDigest", "")),
+        "accountDigest": str(runtime_snapshot.get("accountDigest", "")),
+        "accountRevision": str(runtime_snapshot.get("accountRevision", "")),
+        "marketSymbolCount": len(market_symbols),
+        "positionCount": len(((runtime_snapshot.get("account") or {}).get("positions") or [])),
+        "orderCount": len(((runtime_snapshot.get("account") or {}).get("orders") or [])),
+        "tradeCount": int(runtime_snapshot.get("tradeCount", 0) or 0),
+        "curvePointCount": int(runtime_snapshot.get("curvePointCount", 0) or 0),
+        "login": str(account_meta.get("login", "")),
+        "server": str(account_meta.get("server", "")),
+        "source": str(account_meta.get("source", "")),
+    }
+
+
+# 计算 v2 market/account 的最小增量事件，供 delta 与 stream 复用。
+def _build_v2_sync_delta_events(previous_snapshot: Dict[str, Any], current_snapshot: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    market_delta: List[Dict[str, Any]] = []
+    account_delta: List[Dict[str, Any]] = []
+
+    previous_market = previous_snapshot.get("market") or {}
+    current_market = current_snapshot.get("market") or {}
+    market_changed_keys = sorted({
+        key
+        for key in set(previous_market.keys()) | set(current_market.keys())
+        if previous_market.get(key) != current_market.get(key)
+    })
+    if market_changed_keys:
+        market_delta.append({
+            "type": "marketSnapshotChanged",
+            "digest": str(current_snapshot.get("marketDigest", "")),
+            "changedKeys": market_changed_keys,
+            "snapshot": dict(current_market),
+        })
+
+    previous_account = previous_snapshot.get("account") or {}
+    current_account = current_snapshot.get("account") or {}
+    previous_meta = previous_account.get("accountMeta") or {}
+    current_meta = current_account.get("accountMeta") or {}
+    meta_changed = previous_meta != current_meta
+    positions_diff = _sanitize_diff_payload(_diff_entities(
+        previous_account.get("positions") or [],
+        current_account.get("positions") or [],
+        _position_key,
+    ))
+    orders_diff = _sanitize_diff_payload(_diff_entities(
+        previous_account.get("orders") or [],
+        current_account.get("orders") or [],
+        _pending_key,
+    ))
+    has_positions_delta = bool(positions_diff["upsert"] or positions_diff["remove"])
+    has_orders_delta = bool(orders_diff["upsert"] or orders_diff["remove"])
+    account_revision_changed = str(previous_snapshot.get("accountRevision", "")) != str(current_snapshot.get("accountRevision", ""))
+    if meta_changed or has_positions_delta or has_orders_delta or account_revision_changed:
+        account_event: Dict[str, Any] = {
+            "type": "accountSnapshotChanged",
+            "digest": str(current_snapshot.get("accountDigest", "")),
+            "revision": str(current_snapshot.get("accountRevision", "")),
+            "accountMetaChanged": meta_changed,
+            "positions": positions_diff,
+            "orders": orders_diff,
+        }
+        if meta_changed:
+            account_event["accountMeta"] = dict(current_meta)
+        if account_revision_changed and not (meta_changed or has_positions_delta or has_orders_delta):
+            account_event["refreshHint"] = "accountHistoryChanged"
+        account_delta.append(account_event)
+
+    return market_delta, account_delta
+
+
+# 提交 v2 同步状态，保留“当前 + 上一版本”用于单步增量计算。
+def _commit_v2_sync_state(runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    with snapshot_cache_lock:
+        if not v2_sync_state:
+            seq = 1
+            token = _build_v2_state_token(seq, str(runtime_snapshot.get("digest", "")))
+            v2_sync_state.update({
+                "seq": seq,
+                "token": token,
+                "digest": runtime_snapshot.get("digest"),
+                "snapshot": runtime_snapshot,
+                "previousSeq": 0,
+                "previousToken": "",
+                "previousSnapshot": None,
+            })
+        elif str(v2_sync_state.get("digest", "")) == str(runtime_snapshot.get("digest", "")):
+            v2_sync_state["snapshot"] = runtime_snapshot
+        else:
+            previous_seq = int(v2_sync_state.get("seq", 0) or 0)
+            previous_token = str(v2_sync_state.get("token", ""))
+            previous_snapshot = v2_sync_state.get("snapshot")
+            seq = previous_seq + 1
+            token = _build_v2_state_token(seq, str(runtime_snapshot.get("digest", "")))
+            v2_sync_state.update({
+                "seq": seq,
+                "token": token,
+                "digest": runtime_snapshot.get("digest"),
+                "snapshot": runtime_snapshot,
+                "previousSeq": previous_seq,
+                "previousToken": previous_token,
+                "previousSnapshot": previous_snapshot,
+            })
+
+        return {
+            "seq": int(v2_sync_state.get("seq", 1) or 1),
+            "token": str(v2_sync_state.get("token", "")),
+            "snapshot": v2_sync_state.get("snapshot") or runtime_snapshot,
+            "previousSeq": int(v2_sync_state.get("previousSeq", 0) or 0),
+            "previousToken": str(v2_sync_state.get("previousToken", "")),
+            "previousSnapshot": v2_sync_state.get("previousSnapshot"),
+        }
+
+
+# 生成 v2 同步 delta/full-refresh 响应，供 HTTP 与 WS 复用。
+def _build_v2_sync_delta_response(sync_token: str, server_time: int) -> Dict[str, Any]:
+    runtime_snapshot = _build_v2_sync_runtime_snapshot(server_time)
+    state = _commit_v2_sync_state(runtime_snapshot)
+    current_token = str(state.get("token", ""))
+    previous_token = str(state.get("previousToken", ""))
+    current_snapshot = state.get("snapshot") or runtime_snapshot
+    previous_snapshot = state.get("previousSnapshot")
+    client_token = str(sync_token or "")
+
+    market_delta: List[Dict[str, Any]] = []
+    account_delta: List[Dict[str, Any]] = []
+    unchanged = False
+    full_refresh = {
+        "required": False,
+        "reason": "",
+        "snapshot": None,
+    }
+
+    if not client_token:
+        full_refresh = {
+            "required": True,
+            "reason": "bootstrap",
+            "snapshot": {
+                "market": dict(current_snapshot.get("market") or {}),
+                "account": dict(current_snapshot.get("account") or {}),
+            },
+        }
+    elif client_token == current_token:
+        unchanged = True
+    elif previous_token and client_token == previous_token and previous_snapshot is not None:
+        market_delta, account_delta = _build_v2_sync_delta_events(previous_snapshot, current_snapshot)
+        if not market_delta and not account_delta:
+            full_refresh = {
+                "required": True,
+                "reason": "stateChanged",
+                "snapshot": {
+                    "market": dict(current_snapshot.get("market") or {}),
+                    "account": dict(current_snapshot.get("account") or {}),
+                },
+            }
+    else:
+        full_refresh = {
+            "required": True,
+            "reason": "tokenMismatch",
+            "snapshot": {
+                "market": dict(current_snapshot.get("market") or {}),
+                "account": dict(current_snapshot.get("account") or {}),
+            },
+        }
+
+    return _build_v2_delta_payload(
+        market_delta=market_delta,
+        account_delta=account_delta,
+        server_time=server_time,
+        next_sync_token=current_token,
+        unchanged=unchanged,
+        full_refresh=full_refresh,
+        summary=_build_v2_sync_summary(current_snapshot),
+    )
+
+
+# 把 delta 结果映射成 WS 事件类型，保证首包和后续消息都有业务含义。
+def _resolve_v2_stream_message_type(sync_token: str, delta_payload: Dict[str, Any]) -> str:
+    full_refresh = (delta_payload.get("fullRefresh") or {}).get("required", False)
+    if full_refresh:
+        return "syncBootstrap" if not str(sync_token or "") else "syncRefresh"
+    if bool(delta_payload.get("unchanged", False)):
+        return "syncSummary"
+    return "syncDelta"
+
+
+def _apply_mt5_time_offset_ms(value: int) -> int:
+    """按配置补偿 MT5 返回时间与本地展示口径之间的固定偏移。"""
+    if value <= 0:
+        return 0
+    return int(value + MT5_TIME_OFFSET_MINUTES * 60 * 1000)
+
+
+def _deal_time_ms(deal: Any) -> int:
+    value = int(getattr(deal, "time_msc", 0) or 0)
+    if value > 0:
+        return _apply_mt5_time_offset_ms(value)
+    return _apply_mt5_time_offset_ms(int(getattr(deal, "time", 0) or 0) * 1000)
+
+
+# 统一裁剪缓存条目，只保留最近访问的部分，避免快照缓存长期堆满内存。
+def _trim_cache_entries_locked(cache: Dict[str, Any], limit: int) -> None:
+    while len(cache) > max(1, limit):
+        oldest_key = next(iter(cache))
+        cache.pop(oldest_key, None)
+
+
+# 统一写入有序缓存，命中时会刷新顺序，便于按最近使用裁剪。
+def _remember_cache_entry_locked(cache: Dict[str, Any], key: str, value: Any, limit: int) -> None:
+    cache.pop(key, None)
+    cache[key] = value
+    _trim_cache_entries_locked(cache, limit)
+
+
+# 仅在 EA 推送仍新鲜时延长快照缓存寿命，减少固定轮询下的一快一慢交替。
+def _should_slide_snapshot_build_cache(cached: Optional[Dict[str, Any]], now_ms: int) -> bool:
+    if not cached:
+        return False
+    built_at = int(cached.get("builtAt", 0))
+    age = now_ms - built_at
+    if age <= SNAPSHOT_BUILD_CACHE_MS or age > SNAPSHOT_BUILD_MAX_STALE_MS:
+        return False
+    snapshot = cached.get("snapshot") or {}
+    source = str((snapshot.get("accountMeta") or {}).get("source", ""))
+    if "EA Push" not in source:
+        return False
+    return _is_ea_snapshot_fresh()
 
 
 def _fmt_money(value: float) -> str:
@@ -78,6 +505,454 @@ def _safe_div(a: float, b: float) -> float:
     if abs(b) < 1e-9:
         return 0.0
     return a / b
+
+
+def _normalize_abnormal_symbol(symbol: str) -> str:
+    value = str(symbol or "").strip().upper()
+    if value in {"BTC", "BTCUSD", "BTCUSDT", "XBT"}:
+        return "BTCUSDT"
+    if value in {"XAU", "XAUUSD", "GOLD"}:
+        return "XAUUSD"
+    return value
+
+
+def _default_abnormal_symbol_config(symbol: str) -> Dict[str, Any]:
+    normalized = _normalize_abnormal_symbol(symbol)
+    if normalized == "XAUUSD":
+        return {
+            "symbol": normalized,
+            "volumeThreshold": 3000.0,
+            "amountThreshold": 15000000.0,
+            "priceChangeThreshold": 10.0,
+            "volumeEnabled": True,
+            "amountEnabled": True,
+            "priceChangeEnabled": True,
+        }
+    return {
+        "symbol": "BTCUSDT",
+        "volumeThreshold": 1000.0,
+        "amountThreshold": 70000000.0,
+        "priceChangeThreshold": 200.0,
+        "volumeEnabled": True,
+        "amountEnabled": True,
+        "priceChangeEnabled": True,
+    }
+
+
+def _abnormal_bool(value: Any, fallback: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return fallback
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return fallback
+
+
+def _abnormal_float(value: Any, fallback: float) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(fallback)
+
+
+def _sanitize_abnormal_symbol_config(symbol: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    defaults = _default_abnormal_symbol_config(symbol)
+    return {
+        "symbol": defaults["symbol"],
+        "volumeThreshold": max(0.0, _abnormal_float(payload.get("volumeThreshold"), defaults["volumeThreshold"])),
+        "amountThreshold": max(0.0, _abnormal_float(payload.get("amountThreshold"), defaults["amountThreshold"])),
+        "priceChangeThreshold": max(0.0, _abnormal_float(payload.get("priceChangeThreshold"), defaults["priceChangeThreshold"])),
+        "volumeEnabled": _abnormal_bool(payload.get("volumeEnabled"), defaults["volumeEnabled"]),
+        "amountEnabled": _abnormal_bool(payload.get("amountEnabled"), defaults["amountEnabled"]),
+        "priceChangeEnabled": _abnormal_bool(payload.get("priceChangeEnabled"), defaults["priceChangeEnabled"]),
+    }
+
+
+def _ensure_abnormal_defaults_locked() -> None:
+    symbols = abnormal_config_state.setdefault("symbols", {})
+    for symbol in ABNORMAL_SYMBOLS:
+        normalized = _normalize_abnormal_symbol(symbol)
+        if normalized not in symbols:
+            symbols[normalized] = _default_abnormal_symbol_config(normalized)
+
+
+def _copy_abnormal_config_locked() -> Dict[str, Any]:
+    _ensure_abnormal_defaults_locked()
+    return {
+        "logicAnd": bool(abnormal_config_state.get("logicAnd", False)),
+        "symbols": {
+            symbol: dict(config)
+            for symbol, config in (abnormal_config_state.get("symbols") or {}).items()
+        },
+    }
+
+
+def _abnormal_snapshot_digest(snapshot: Dict[str, Any]) -> str:
+    payload = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+def _build_abnormal_snapshot_locked() -> Dict[str, Any]:
+    config_snapshot = _copy_abnormal_config_locked()
+    return {
+        "abnormalMeta": {
+            "updatedAt": _now_ms(),
+            "logicAnd": bool(config_snapshot.get("logicAnd", False)),
+            "recordCount": len(abnormal_record_store),
+            "alertCount": len(abnormal_alert_store),
+        },
+        "configs": [
+            dict(config_snapshot["symbols"][symbol])
+            for symbol in ABNORMAL_SYMBOLS
+            if symbol in config_snapshot["symbols"]
+        ],
+        "records": [dict(item) for item in abnormal_record_store],
+        "alerts": [dict(item) for item in abnormal_alert_store],
+    }
+
+
+def _commit_abnormal_snapshot_locked() -> None:
+    snapshot = _build_abnormal_snapshot_locked()
+    digest = _abnormal_snapshot_digest(snapshot)
+    state = abnormal_sync_state
+    if not state:
+        abnormal_sync_state.update({
+            "seq": 1,
+            "digest": digest,
+            "snapshot": snapshot,
+            "previousSeq": 0,
+            "previousSnapshot": None,
+        })
+        return
+    if state.get("digest") == digest:
+        abnormal_sync_state["snapshot"] = snapshot
+        return
+    previous_seq = int(state.get("seq", 0))
+    previous_snapshot = state.get("snapshot")
+    abnormal_sync_state.update({
+        "seq": previous_seq + 1,
+        "digest": digest,
+        "snapshot": snapshot,
+        "previousSeq": previous_seq,
+        "previousSnapshot": previous_snapshot,
+    })
+
+
+def _build_full_abnormal_response(snapshot: Dict[str, Any], sync_seq: int) -> Dict[str, Any]:
+    meta = dict(snapshot.get("abnormalMeta") or {})
+    meta["syncSeq"] = sync_seq
+    meta["deltaEnabled"] = ABNORMAL_DELTA_ENABLED
+    return {
+        "abnormalMeta": meta,
+        "configs": snapshot.get("configs") or [],
+        "records": snapshot.get("records") or [],
+        "alerts": snapshot.get("alerts") or [],
+        "isDelta": False,
+        "unchanged": False,
+    }
+
+
+def _diff_abnormal_items(previous: List[Dict[str, Any]], current: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    previous_ids = {str(item.get("id", "")) for item in (previous or [])}
+    return [dict(item) for item in (current or []) if str(item.get("id", "")) not in previous_ids]
+
+
+def _parse_recent_closed_kline(row: List[Any], symbol: str, now_ms: int) -> Optional[Dict[str, Any]]:
+    if row is None or len(row) < 8:
+        return None
+    try:
+        open_time = int(row[0])
+        close_time = int(row[6])
+        if close_time <= 0 or close_time >= now_ms:
+            return None
+        open_price = float(row[1])
+        close_price = float(row[4])
+        volume = float(row[5])
+        amount = float(row[7])
+    except Exception:
+        return None
+    price_change = abs(close_price - open_price)
+    percent_change = abs(_safe_div(close_price - open_price, open_price) * 100.0)
+    return {
+        "symbol": _normalize_abnormal_symbol(symbol),
+        "openTime": open_time,
+        "closeTime": close_time,
+        "openPrice": open_price,
+        "closePrice": close_price,
+        "volume": volume,
+        "amount": amount,
+        "priceChange": price_change,
+        "percentChange": percent_change,
+    }
+
+
+def _fetch_recent_closed_binance_klines(symbol: str, limit: int = ABNORMAL_KLINE_LIMIT) -> List[Dict[str, Any]]:
+    normalized_symbol = _normalize_abnormal_symbol(symbol)
+    now_ms = _now_ms()
+    with abnormal_state_lock:
+        cached = abnormal_kline_cache.get(normalized_symbol)
+        if cached and now_ms - int(cached.get("fetchedAt", 0) or 0) <= ABNORMAL_FETCH_CACHE_MS:
+            return [dict(item) for item in (cached.get("items") or [])]
+
+    upstream_url = _build_binance_rest_upstream_url(
+        "/fapi/v1/klines",
+        {"symbol": normalized_symbol, "interval": "1m", "limit": max(2, limit)},
+    )
+    request = urllib.request.Request(
+        upstream_url,
+        headers={"User-Agent": "mt5-gateway-abnormal-monitor/1.0"},
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=12) as response:
+        body = response.read().decode("utf-8")
+    rows = json.loads(body or "[]")
+    items: List[Dict[str, Any]] = []
+    for row in rows:
+        item = _parse_recent_closed_kline(row, normalized_symbol, now_ms)
+        if item is not None:
+            items.append(item)
+    items.sort(key=lambda current: int(current.get("closeTime", 0) or 0))
+    with abnormal_state_lock:
+        abnormal_kline_cache[normalized_symbol] = {
+            "fetchedAt": now_ms,
+            "items": [dict(item) for item in items],
+        }
+    return items
+
+
+def _evaluate_abnormal_kline(kline: Dict[str, Any], config: Dict[str, Any], use_and_mode: bool) -> Dict[str, Any]:
+    enabled_count = 0
+    triggered: List[str] = []
+    if config.get("volumeEnabled", False):
+        enabled_count += 1
+        if float(kline.get("volume", 0.0) or 0.0) >= float(config.get("volumeThreshold", 0.0) or 0.0):
+            triggered.append("成交量")
+    if config.get("amountEnabled", False):
+        enabled_count += 1
+        if float(kline.get("amount", 0.0) or 0.0) >= float(config.get("amountThreshold", 0.0) or 0.0):
+            triggered.append("成交额")
+    if config.get("priceChangeEnabled", False):
+        enabled_count += 1
+        if float(kline.get("priceChange", 0.0) or 0.0) >= float(config.get("priceChangeThreshold", 0.0) or 0.0):
+            triggered.append("价格变化")
+    if enabled_count == 0:
+        return {"participating": False, "abnormal": False, "summary": ""}
+    abnormal = len(triggered) == enabled_count if use_and_mode else bool(triggered)
+    return {"participating": True, "abnormal": abnormal, "summary": " / ".join(triggered)}
+
+
+def _build_abnormal_record(symbol: str, kline: Dict[str, Any], summary: str) -> Dict[str, Any]:
+    normalized_symbol = _normalize_abnormal_symbol(symbol)
+    close_time = int(kline.get("closeTime", 0) or 0)
+    record_id = hashlib.sha1(f"{normalized_symbol}:{close_time}:{summary}".encode("utf-8")).hexdigest()
+    return {
+        "id": record_id,
+        "symbol": normalized_symbol,
+        "timestamp": _now_ms(),
+        "closeTime": close_time,
+        "openPrice": float(kline.get("openPrice", 0.0) or 0.0),
+        "closePrice": float(kline.get("closePrice", 0.0) or 0.0),
+        "volume": float(kline.get("volume", 0.0) or 0.0),
+        "amount": float(kline.get("amount", 0.0) or 0.0),
+        "priceChange": float(kline.get("priceChange", 0.0) or 0.0),
+        "percentChange": float(kline.get("percentChange", 0.0) or 0.0),
+        "triggerSummary": summary or "",
+    }
+
+
+def _compose_abnormal_alert_line(asset: str, trigger_summary: str) -> str:
+    return f"{asset} 的 {trigger_summary} 出现异常！"
+
+
+def _is_abnormal_alert_eligible_locked(record: Optional[Dict[str, Any]], now_ms: int) -> bool:
+    if not record:
+        return False
+    symbol = _normalize_abnormal_symbol(record.get("symbol"))
+    last_notify = int(abnormal_last_notify_at.get(symbol, 0) or 0)
+    return now_ms - last_notify >= 5 * 60 * 1000
+
+
+def _build_abnormal_alert(symbols: List[str], close_time: int, content: str) -> Dict[str, Any]:
+    normalized_symbols = sorted({_normalize_abnormal_symbol(symbol) for symbol in (symbols or []) if symbol})
+    alert_key = ",".join(normalized_symbols)
+    alert_id = hashlib.sha1(f"{alert_key}:{close_time}:{content}".encode("utf-8")).hexdigest()
+    return {
+        "id": alert_id,
+        "symbols": normalized_symbols,
+        "title": "异常提醒",
+        "content": content,
+        "closeTime": int(close_time or 0),
+        "createdAt": _now_ms(),
+    }
+
+
+def _build_abnormal_alerts_locked(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[int, Dict[str, Dict[str, Any]]] = {}
+    for record in records or []:
+        close_time = int(record.get("closeTime", 0) or 0)
+        if close_time <= 0:
+            continue
+        grouped.setdefault(close_time, {})[_normalize_abnormal_symbol(record.get("symbol"))] = record
+
+    created: List[Dict[str, Any]] = []
+    for close_time in sorted(grouped.keys()):
+        current_group = grouped.get(close_time) or {}
+        now_ms = _now_ms()
+        btc_record = current_group.get("BTCUSDT")
+        xau_record = current_group.get("XAUUSD")
+        btc_eligible = _is_abnormal_alert_eligible_locked(btc_record, now_ms)
+        xau_eligible = _is_abnormal_alert_eligible_locked(xau_record, now_ms)
+        if btc_eligible and xau_eligible:
+            content = _compose_abnormal_alert_line("BTC", str(btc_record.get("triggerSummary", "")))
+            content += "\n" + _compose_abnormal_alert_line("XAU", str(xau_record.get("triggerSummary", "")))
+            created.append(_build_abnormal_alert(["BTCUSDT", "XAUUSD"], close_time, content))
+            abnormal_last_notify_at["BTCUSDT"] = now_ms
+            abnormal_last_notify_at["XAUUSD"] = now_ms
+            continue
+        if btc_eligible and btc_record:
+            created.append(_build_abnormal_alert(
+                ["BTCUSDT"],
+                close_time,
+                _compose_abnormal_alert_line("BTC", str(btc_record.get("triggerSummary", ""))),
+            ))
+            abnormal_last_notify_at["BTCUSDT"] = now_ms
+        if xau_eligible and xau_record:
+            created.append(_build_abnormal_alert(
+                ["XAUUSD"],
+                close_time,
+                _compose_abnormal_alert_line("XAU", str(xau_record.get("triggerSummary", ""))),
+            ))
+            abnormal_last_notify_at["XAUUSD"] = now_ms
+    return created
+
+
+def _append_abnormal_updates_locked(records: List[Dict[str, Any]]) -> None:
+    existing_record_ids = {str(item.get("id", "")) for item in abnormal_record_store}
+    appended_records: List[Dict[str, Any]] = []
+    for record in sorted(records or [], key=lambda item: (int(item.get("closeTime", 0) or 0), str(item.get("symbol", "")))):
+        record_id = str(record.get("id", ""))
+        if not record_id or record_id in existing_record_ids:
+            continue
+        abnormal_record_store.insert(0, dict(record))
+        existing_record_ids.add(record_id)
+        appended_records.append(dict(record))
+    if appended_records:
+        del abnormal_record_store[ABNORMAL_RECORD_LIMIT:]
+
+    existing_alert_ids = {str(item.get("id", "")) for item in abnormal_alert_store}
+    for alert in _build_abnormal_alerts_locked(appended_records):
+        alert_id = str(alert.get("id", ""))
+        if not alert_id or alert_id in existing_alert_ids:
+            continue
+        abnormal_alert_store.insert(0, dict(alert))
+        existing_alert_ids.add(alert_id)
+    if abnormal_alert_store:
+        del abnormal_alert_store[ABNORMAL_ALERT_LIMIT:]
+
+    _commit_abnormal_snapshot_locked()
+
+
+def _set_abnormal_config(payload: Dict[str, Any]) -> Dict[str, Any]:
+    with abnormal_state_lock:
+        _ensure_abnormal_defaults_locked()
+        current = _copy_abnormal_config_locked()
+        normalized = {
+            "logicAnd": _abnormal_bool((payload or {}).get("logicAnd"), current.get("logicAnd", False)),
+            "symbols": {symbol: _default_abnormal_symbol_config(symbol) for symbol in ABNORMAL_SYMBOLS},
+        }
+        raw_configs = (payload or {}).get("configs")
+        if isinstance(raw_configs, list):
+            for item in raw_configs:
+                if not isinstance(item, dict):
+                    continue
+                symbol = _normalize_abnormal_symbol(item.get("symbol"))
+                if symbol not in normalized["symbols"]:
+                    continue
+                normalized["symbols"][symbol] = _sanitize_abnormal_symbol_config(symbol, item)
+        changed = normalized != current
+        if changed:
+            abnormal_config_state["logicAnd"] = normalized["logicAnd"]
+            abnormal_config_state["symbols"] = normalized["symbols"]
+            _commit_abnormal_snapshot_locked()
+        return {
+            "ok": True,
+            "changed": changed,
+            "config": {
+                "logicAnd": normalized["logicAnd"],
+                "configs": [dict(normalized["symbols"][symbol]) for symbol in ABNORMAL_SYMBOLS],
+            },
+        }
+
+
+def _refresh_abnormal_state() -> None:
+    with abnormal_state_lock:
+        _ensure_abnormal_defaults_locked()
+        config_snapshot = _copy_abnormal_config_locked()
+        last_close_by_symbol = dict(abnormal_last_close_time_by_symbol)
+
+    new_records: List[Dict[str, Any]] = []
+    for symbol in ABNORMAL_SYMBOLS:
+        recent_klines = _fetch_recent_closed_binance_klines(symbol, ABNORMAL_KLINE_LIMIT)
+        symbol_config = (config_snapshot.get("symbols") or {}).get(symbol) or _default_abnormal_symbol_config(symbol)
+        last_close_time = int(last_close_by_symbol.get(symbol, 0) or 0)
+        for kline in recent_klines:
+            close_time = int(kline.get("closeTime", 0) or 0)
+            if close_time <= last_close_time:
+                continue
+            evaluation = _evaluate_abnormal_kline(kline, symbol_config, bool(config_snapshot.get("logicAnd", False)))
+            if evaluation.get("abnormal"):
+                new_records.append(_build_abnormal_record(symbol, kline, str(evaluation.get("summary", ""))))
+            last_close_time = max(last_close_time, close_time)
+        if last_close_time > 0:
+            last_close_by_symbol[symbol] = last_close_time
+
+    with abnormal_state_lock:
+        for symbol, close_time in last_close_by_symbol.items():
+            abnormal_last_close_time_by_symbol[symbol] = max(
+                int(abnormal_last_close_time_by_symbol.get(symbol, 0) or 0),
+                int(close_time or 0),
+            )
+        if new_records or not abnormal_sync_state:
+            _append_abnormal_updates_locked(new_records)
+
+
+def _build_abnormal_response(since_seq: int, delta: bool) -> Dict[str, Any]:
+    _refresh_abnormal_state()
+    with abnormal_state_lock:
+        _ensure_abnormal_defaults_locked()
+        if not abnormal_sync_state:
+            _commit_abnormal_snapshot_locked()
+        snapshot = abnormal_sync_state.get("snapshot") or _build_abnormal_snapshot_locked()
+        sync_seq = int(abnormal_sync_state.get("seq", 1) or 1)
+        previous_seq = int(abnormal_sync_state.get("previousSeq", 0) or 0)
+        previous_snapshot = abnormal_sync_state.get("previousSnapshot")
+
+    if not ABNORMAL_DELTA_ENABLED or not delta or since_seq <= 0:
+        return _build_full_abnormal_response(snapshot, sync_seq)
+
+    meta = dict(snapshot.get("abnormalMeta") or {})
+    meta["syncSeq"] = sync_seq
+    meta["deltaEnabled"] = ABNORMAL_DELTA_ENABLED
+
+    if since_seq == sync_seq:
+        return {"abnormalMeta": meta, "isDelta": True, "unchanged": True}
+
+    if previous_snapshot is not None and since_seq == previous_seq:
+        return {
+            "abnormalMeta": meta,
+            "isDelta": True,
+            "unchanged": False,
+            "delta": {
+                "records": _diff_abnormal_items(previous_snapshot.get("records") or [], snapshot.get("records") or []),
+                "alerts": _diff_abnormal_items(previous_snapshot.get("alerts") or [], snapshot.get("alerts") or []),
+            },
+        }
+
+    return _build_full_abnormal_response(snapshot, sync_seq)
 
 
 def _is_buy_trade_type(trade_type: int) -> bool:
@@ -107,6 +982,11 @@ def _is_entry_close(entry_type: int) -> bool:
     return entry_type in (1, 2, 3)
 
 
+def _curve_exposure_side_for_close(deal_type: int) -> str:
+    # 平仓成交方向与原持仓方向相反，关闭曝光时需要回到原持仓侧。
+    return "Sell" if _is_buy_deal_type(deal_type) else "Buy"
+
+
 def _range_hours(range_key: str) -> int:
     mapping = {
         "1d": 24,
@@ -114,9 +994,17 @@ def _range_hours(range_key: str) -> int:
         "1m": 24 * 30,
         "3m": 24 * 90,
         "1y": 24 * 365,
-        "all": 24 * 365 * 10,
+        "all": 24 * SNAPSHOT_RANGE_ALL_DAYS,
     }
     return mapping.get(range_key.lower(), 24 * 7)
+
+
+# MT5 Python 历史接口对“本地无时区 datetime”更稳定，避免 UTC aware 时间把当天后半段成交截掉。
+def _mt5_history_window(range_key: str) -> Tuple[datetime, datetime]:
+    now_local = datetime.now()
+    to_time = now_local + timedelta(hours=MT5_HISTORY_LOOKAHEAD_HOURS)
+    from_time = now_local - timedelta(hours=_range_hours(range_key))
+    return from_time, to_time
 
 
 def _is_mt5_configured() -> bool:
@@ -271,7 +1159,19 @@ def _ensure_mt5() -> None:
     for path_value in attempts:
         label = path_value if path_value else "<auto>"
 
-        # First try: initialize with credentials directly.
+        # 优先附着到当前终端已有会话，避免重新拉起鉴权后进入缺历史缓存的上下文。
+        _shutdown_mt5()
+        initialized, init_message = _mt5_initialize(path_value)
+        if not initialized:
+            errors.append(f"init({label})={init_message}")
+        else:
+            logged_in, login_message = _mt5_login()
+            if logged_in:
+                mt5_last_connected_path = label
+                return
+            errors.append(f"login({label})={login_message}")
+
+        # 回退到带鉴权初始化，兼容机器上还没有可复用登录态的场景。
         for server_name in server_candidates:
             _shutdown_mt5()
             initialized, init_message = _mt5_initialize(
@@ -284,19 +1184,6 @@ def _ensure_mt5() -> None:
                 mt5_last_connected_path = label
                 return
             errors.append(f"init+login({label},{server_name})={init_message}")
-
-        # Fallback: initialize first, then login.
-        _shutdown_mt5()
-        initialized, init_message = _mt5_initialize(path_value)
-        if not initialized:
-            errors.append(f"init({label})={init_message}")
-            continue
-
-        logged_in, login_message = _mt5_login()
-        if logged_in:
-            mt5_last_connected_path = label
-            return
-        errors.append(f"login({label})={login_message}")
 
     discovered_hint = ", ".join(MT5_TERMINAL_CANDIDATES[:3]) if MT5_TERMINAL_CANDIDATES else "none"
     raise RuntimeError(
@@ -319,34 +1206,460 @@ def _deal_profit(deal) -> float:
     )
 
 
-def _build_curve(range_key: str) -> List[Dict]:
-    now = datetime.now(timezone.utc)
-    from_time = now - timedelta(hours=_range_hours(range_key))
-    deals = mt5.history_deals_get(from_time, now) or []
+def _build_curve(range_key: str, current_positions: Optional[List[Dict]] = None) -> List[Dict]:
+    from_time, to_time = _mt5_history_window(range_key)
+    deals = mt5.history_deals_get(from_time, to_time) or []
     account = mt5.account_info()
     if account is None:
         return []
 
-    current_balance = float(account.balance)
-    current_equity = float(account.equity)
-    realized = sum(_deal_profit(deal) for deal in deals)
+    current_balance = float(getattr(account, "balance", 0.0))
+    current_equity = float(getattr(account, "equity", 0.0))
+    realized = 0.0
+    deal_history: List[Dict[str, Any]] = []
+    for deal in deals:
+        profit = float(getattr(deal, "profit", 0.0))
+        commission = float(getattr(deal, "commission", 0.0))
+        swap = float(getattr(deal, "swap", 0.0))
+        realized += profit + commission + swap
+        deal_history.append({
+            "timestamp": _deal_time_ms(deal),
+            "price": float(getattr(deal, "price", 0.0)),
+            "profit": profit,
+            "commission": commission,
+            "swap": swap,
+            "entry": int(getattr(deal, "entry", 0)),
+            "deal_type": int(getattr(deal, "type", -1)),
+            "volume": abs(float(getattr(deal, "volume", 0.0))),
+            "symbol": str(getattr(deal, "symbol", "") or ""),
+            "position_id": int(getattr(deal, "position_id", 0)),
+        })
+
     start_balance = current_balance - realized
+    positions = current_positions or _map_positions()
+    contract_cache: Dict[str, float] = {}
+    contract_size_fn = lambda symbol: _contract_size_for_symbol(symbol, contract_cache)
+    leverage = float(getattr(mt5.account_info(), "leverage", 0.0) or 0.0) if mt5 is not None else 0.0
+    return _replay_curve_from_history(
+        deal_history=deal_history,
+        start_balance=start_balance,
+        open_positions=positions,
+        current_balance=current_balance,
+        current_equity=current_equity,
+        leverage=leverage,
+        contract_size_fn=contract_size_fn,
+        now_ms=_now_ms(),
+    )
 
-    points = []
-    running = start_balance
-    deals_sorted = sorted(deals, key=lambda x: int(getattr(x, "time", 0)))
-    if not deals_sorted:
-        ts = _now_ms()
-        return [{"timestamp": ts, "equity": current_equity, "balance": current_balance}]
 
-    first_ts = int(getattr(deals_sorted[0], "time", int(now.timestamp()))) * 1000
-    points.append({"timestamp": first_ts, "equity": running, "balance": running})
-    for deal in deals_sorted:
-        running += _deal_profit(deal)
-        ts = int(getattr(deal, "time", int(now.timestamp()))) * 1000
-        points.append({"timestamp": ts, "equity": running, "balance": running})
+def _contract_size_for_symbol(symbol: str, cache: Dict[str, float]) -> float:
+    if not symbol:
+        return 1.0
+    cached = cache.get(symbol)
+    if cached is not None:
+        return cached
+    if mt5 is None:
+        cache[symbol] = 1.0
+        return 1.0
+    size = 1.0
+    sinfo = mt5.symbol_info(symbol)
+    if sinfo is not None and float(getattr(sinfo, "trade_contract_size", 0.0) or 0.0) > 0:
+        size = float(getattr(sinfo, "trade_contract_size", 1.0))
+    cache[symbol] = size
+    return size
 
-    points.append({"timestamp": _now_ms(), "equity": current_equity, "balance": current_balance})
+
+def _curve_point(timestamp: int, equity: float, balance: float, position_ratio: float = 0.0) -> Dict[str, float]:
+    safe_ratio = float(position_ratio or 0.0)
+    if not math.isfinite(safe_ratio) or safe_ratio < 0.0:
+        safe_ratio = 0.0
+    return {
+        "timestamp": int(timestamp),
+        "equity": float(equity),
+        "balance": float(balance),
+        "positionRatio": safe_ratio,
+    }
+
+
+def _add_curve_exposure(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    symbol: str,
+    side: str,
+    volume: float,
+    price: float,
+    contract_size: float,
+) -> None:
+    if not symbol or volume <= 0.0 or price <= 0.0 or contract_size <= 0.0:
+        return
+    key = (symbol, side)
+    state = exposures.setdefault(key, {"volume": 0.0, "open_notional": 0.0, "contract_size": contract_size})
+    state["volume"] += volume
+    state["open_notional"] += volume * price * contract_size
+    state["contract_size"] = contract_size
+
+
+def _remove_curve_exposure(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    symbol: str,
+    side: str,
+    volume: float,
+) -> None:
+    if not symbol or volume <= 0.0:
+        return
+    key = (symbol, side)
+    state = exposures.get(key)
+    if not state:
+        return
+    contract_size = state.get("contract_size", 1.0)
+    current_volume = state.get("volume", 0.0)
+    if current_volume <= 0.0:
+        exposures.pop(key, None)
+        return
+    remove_volume = min(volume, current_volume)
+    avg_open_price = state.get("open_notional", 0.0) / max(current_volume * contract_size, 1e-9)
+    reduction = avg_open_price * remove_volume * contract_size
+    state["volume"] = max(0.0, current_volume - remove_volume)
+    state["open_notional"] = max(0.0, state.get("open_notional", 0.0) - reduction)
+    if state["volume"] <= 1e-9:
+        exposures.pop(key, None)
+
+
+def _calculate_curve_floating(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    last_price_by_symbol: Dict[str, float],
+) -> float:
+    # 计算每个持仓按照最新价格的浮动盈亏，缺少价格时就跳过
+    total = 0.0
+    for (symbol, side), state in exposures.items():
+        volume = state.get("volume", 0.0)
+        contract_size = state.get("contract_size", 1.0)
+        if volume <= 0.0 or contract_size <= 0.0:
+            continue
+        price = float(last_price_by_symbol.get(symbol, 0.0) or 0.0)
+        if price <= 0.0:
+            price = float(last_price_by_symbol.get(_normalize_curve_market_symbol(symbol), 0.0) or 0.0)
+        if price <= 0.0:
+            continue
+        avg_price = state.get("open_notional", 0.0) / max(volume * contract_size, 1e-9)
+        direction = 1.0 if side == "Buy" else -1.0
+        total += (price - avg_price) * direction * volume * contract_size
+    return total
+
+
+def _calculate_curve_market_value(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    last_price_by_symbol: Dict[str, float],
+) -> float:
+    total = 0.0
+    for (symbol, _side), state in exposures.items():
+        volume = float(state.get("volume", 0.0) or 0.0)
+        contract_size = float(state.get("contract_size", 1.0) or 1.0)
+        if volume <= 0.0 or contract_size <= 0.0:
+            continue
+        price = float(last_price_by_symbol.get(symbol, 0.0) or 0.0)
+        if price <= 0.0:
+            price = float(last_price_by_symbol.get(_normalize_curve_market_symbol(symbol), 0.0) or 0.0)
+        if price <= 0.0:
+            continue
+        total += abs(volume * price * contract_size)
+    return total
+
+
+def _resolve_effective_leverage(leverage: float) -> float:
+    return max(1.0, float(leverage or 0.0))
+
+
+def _curve_position_ratio_from_margin(margin: float, equity: float) -> float:
+    ratio = _safe_div(max(0.0, float(margin or 0.0)), max(1.0, float(equity or 0.0)))
+    if not math.isfinite(ratio) or ratio < 0.0:
+        return 0.0
+    return ratio
+
+
+def _calculate_curve_position_ratio(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    last_price_by_symbol: Dict[str, float],
+    equity: float,
+    leverage: float,
+) -> float:
+    market_value = _calculate_curve_market_value(exposures, last_price_by_symbol)
+    margin = _safe_div(market_value, _resolve_effective_leverage(leverage))
+    return _curve_position_ratio_from_margin(margin, equity)
+
+
+def _resolve_positions_market_value(positions: List[Dict[str, Any]]) -> float:
+    total = 0.0
+    for position in positions or []:
+        total += max(0.0, float(position.get("marketValue", 0.0) or 0.0))
+    return total
+
+
+def _has_curve_exposure(exposures: Dict[Tuple[str, str], Dict[str, float]]) -> bool:
+    for state in exposures.values():
+        if float(state.get("volume", 0.0) or 0.0) > 0.0:
+            return True
+    return False
+
+
+def _normalize_curve_market_symbol(symbol: str) -> str:
+    value = str(symbol or "").strip().upper()
+    if value in {"BTC", "BTCUSD", "BTCUSDT", "XBT"}:
+        return "BTCUSDT"
+    if value in {"XAU", "XAUUSD", "XAUUSDT", "GOLD"}:
+        return "XAUUSDT"
+    return value
+
+
+def _curve_sampling_interval(duration_ms: int) -> Tuple[str, int]:
+    safe_duration = max(0, int(duration_ms or 0))
+    minute_ms = 60 * 1000
+    hour_ms = 60 * minute_ms
+    day_ms = 24 * hour_ms
+    if safe_duration <= 6 * hour_ms:
+        return "1m", minute_ms
+    if safe_duration <= 3 * day_ms:
+        return "5m", 5 * minute_ms
+    if safe_duration <= 14 * day_ms:
+        return "15m", 15 * minute_ms
+    if safe_duration <= 60 * day_ms:
+        return "1h", hour_ms
+    return "4h", 4 * hour_ms
+
+
+def _fetch_curve_price_samples(symbol: str,
+                               start_ms: int,
+                               end_ms: int,
+                               fetch_rows_fn=None) -> List[Dict[str, float]]:
+    normalized_symbol = _normalize_curve_market_symbol(symbol)
+    safe_start = max(0, int(start_ms or 0))
+    safe_end = max(safe_start, int(end_ms or 0))
+    if not normalized_symbol or safe_end <= safe_start:
+        return []
+
+    interval, interval_ms = _curve_sampling_interval(safe_end - safe_start)
+    fetcher = fetch_rows_fn or _fetch_binance_kline_rows
+    cursor = safe_start
+    collected: Dict[int, Dict[str, float]] = {}
+
+    while cursor < safe_end:
+        remaining = safe_end - cursor
+        limit = max(1, min(1500, int(math.ceil(remaining / max(interval_ms, 1))) + 2))
+        rows = fetcher(
+            normalized_symbol,
+            interval,
+            limit,
+            start_time_ms=cursor,
+            end_time_ms=safe_end,
+        ) or []
+        if not rows:
+            break
+        last_open_time = cursor
+        for row in rows:
+            if not isinstance(row, (list, tuple)) or len(row) < 5:
+                continue
+            open_time = int(row[0] or 0)
+            close_time = int(row[6] or 0) if len(row) > 6 else (open_time + interval_ms - 1)
+            close_price = float(row[4] or 0.0)
+            last_open_time = max(last_open_time, open_time)
+            if close_price <= 0.0 or close_time <= safe_start or close_time >= safe_end:
+                continue
+            collected[close_time] = {
+                "timestamp": close_time,
+                "symbol": normalized_symbol,
+                "price": close_price,
+            }
+        next_cursor = last_open_time + interval_ms
+        if next_cursor <= cursor:
+            break
+        cursor = next_cursor
+
+    return [collected[key] for key in sorted(collected.keys())]
+
+
+def _append_curve_history_samples(points: List[Dict[str, float]],
+                                  exposures: Dict[Tuple[str, str], Dict[str, float]],
+                                  last_price_by_symbol: Dict[str, float],
+                                  running_balance: float,
+                                  leverage: float,
+                                  start_ms: int,
+                                  end_ms: int,
+                                  fetch_rows_fn=None) -> None:
+    safe_start = int(start_ms or 0)
+    safe_end = int(end_ms or 0)
+    if safe_end <= safe_start or not _has_curve_exposure(exposures):
+        return
+
+    sample_map: Dict[int, Dict[str, float]] = {}
+    active_symbols = sorted({
+        _normalize_curve_market_symbol(symbol)
+        for symbol, _side in exposures.keys()
+        if symbol and float((exposures.get((symbol, _side)) or {}).get("volume", 0.0) or 0.0) > 0.0
+    })
+    for symbol in active_symbols:
+        for sample in _fetch_curve_price_samples(symbol, safe_start, safe_end, fetch_rows_fn):
+            timestamp = int(sample.get("timestamp", 0) or 0)
+            if timestamp <= safe_start or timestamp >= safe_end:
+                continue
+            price = float(sample.get("price", 0.0) or 0.0)
+            if price <= 0.0:
+                continue
+            sample_map.setdefault(timestamp, {})[symbol] = price
+
+    for timestamp in sorted(sample_map.keys()):
+        for symbol, price in sample_map[timestamp].items():
+            last_price_by_symbol[symbol] = price
+        floating = _calculate_curve_floating(exposures, last_price_by_symbol)
+        equity = running_balance + floating
+        points.append(_curve_point(
+            timestamp,
+            equity,
+            running_balance,
+            _calculate_curve_position_ratio(exposures, last_price_by_symbol, equity, leverage),
+        ))
+
+
+def _inject_positions_into_exposures(
+    exposures: Dict[Tuple[str, str], Dict[str, float]],
+    positions: List[Dict[str, Any]],
+    open_position_ids: set,
+    contract_size_fn,
+    last_price_by_symbol: Dict[str, float],
+) -> None:
+    # 把当前未平仓持仓注入到曝光映射里，避免与本窗口内开仓的重复叠加
+    for position in positions or []:
+        ticket = int(position.get("positionTicket", 0))
+        if ticket > 0 and ticket in open_position_ids:
+            continue
+        symbol = str(position.get("code") or position.get("productName") or "").strip()
+        if not symbol:
+            continue
+        side = str(position.get("side") or "Buy")
+        volume = float(position.get("quantity", 0.0))
+        if volume <= 0.0:
+            continue
+        open_price = float(position.get("costPrice", 0.0))
+        contract_size = contract_size_fn(symbol)
+        latest_price = float(position.get("latestPrice", 0.0))
+        if open_price <= 0.0 and latest_price > 0.0:
+            open_price = latest_price
+        _add_curve_exposure(exposures, symbol, side, volume, open_price, contract_size)
+        if latest_price > 0.0:
+            last_price_by_symbol.setdefault(symbol, latest_price)
+
+
+def _replay_curve_from_history(
+    deal_history: List[Dict[str, Any]],
+    start_balance: float,
+    open_positions: List[Dict[str, Any]],
+    current_balance: float,
+    current_equity: float,
+    leverage: float,
+    contract_size_fn,
+    now_ms: int,
+    fetch_rows_fn=None,
+) -> List[Dict[str, float]]:
+    # 以时间序列方式重放成交和持仓，生成 equity/balance 分离的曲线点
+    if not deal_history:
+        market_value = _resolve_positions_market_value(open_positions)
+        return [_curve_point(
+            now_ms,
+            current_equity,
+            current_balance,
+            _curve_position_ratio_from_margin(
+                _safe_div(market_value, _resolve_effective_leverage(leverage)),
+                current_equity,
+            ),
+        )]
+
+    exposures: Dict[Tuple[str, str], Dict[str, float]] = {}
+    last_price_by_symbol: Dict[str, float] = {}
+    open_position_ids = {
+        int(deal.get("position_id", 0)) for deal in deal_history if _is_entry_open(int(deal.get("entry", 0)))
+    }
+    _inject_positions_into_exposures(exposures, open_positions, open_position_ids, contract_size_fn, last_price_by_symbol)
+
+    sorted_deals = sorted(deal_history, key=lambda item: int(item.get("timestamp", 0)))
+    running_balance = float(start_balance)
+    points: List[Dict[str, float]] = []
+    first_ts = max(int(sorted_deals[0].get("timestamp", 0)), 0)
+    floating = _calculate_curve_floating(exposures, last_price_by_symbol)
+    first_equity = running_balance + floating
+    points.append(_curve_point(
+        first_ts,
+        first_equity,
+        running_balance,
+        _calculate_curve_position_ratio(exposures, last_price_by_symbol, first_equity, leverage),
+    ))
+
+    last_event_ts = first_ts
+    for index, deal in enumerate(sorted_deals):
+        timestamp = int(deal.get("timestamp", 0))
+        if index > 0 and timestamp > last_event_ts:
+            _append_curve_history_samples(
+                points,
+                exposures,
+                last_price_by_symbol,
+                running_balance,
+                leverage,
+                last_event_ts,
+                timestamp,
+                fetch_rows_fn,
+            )
+        symbol = str(deal.get("symbol", "") or "")
+        price = float(deal.get("price", 0.0))
+        if symbol and price > 0.0:
+            last_price_by_symbol[_normalize_curve_market_symbol(symbol)] = price
+
+        entry = int(deal.get("entry", 0))
+        deal_type = int(deal.get("deal_type", -1))
+        volume = abs(float(deal.get("volume", 0.0)))
+        direction = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
+
+        if _is_entry_close(entry):
+            _remove_curve_exposure(exposures, symbol, _curve_exposure_side_for_close(deal_type), volume)
+        if _is_entry_open(entry):
+            contract_size = contract_size_fn(symbol)
+            _add_curve_exposure(exposures, symbol, direction, volume, price, contract_size)
+
+        running_balance += (
+            float(deal.get("profit", 0.0))
+            + float(deal.get("commission", 0.0))
+            + float(deal.get("swap", 0.0))
+        )
+        floating = _calculate_curve_floating(exposures, last_price_by_symbol)
+        equity = running_balance + floating
+        points.append(_curve_point(
+            timestamp,
+            equity,
+            running_balance,
+            _calculate_curve_position_ratio(exposures, last_price_by_symbol, equity, leverage),
+        ))
+        last_event_ts = timestamp
+
+    if now_ms > last_event_ts:
+        _append_curve_history_samples(
+            points,
+            exposures,
+            last_price_by_symbol,
+            running_balance,
+            leverage,
+            last_event_ts,
+            now_ms,
+            fetch_rows_fn,
+        )
+
+    current_market_value = _resolve_positions_market_value(open_positions)
+    if current_market_value <= 0.0:
+        current_market_value = _calculate_curve_market_value(exposures, last_price_by_symbol)
+    points.append(_curve_point(
+        now_ms,
+        current_equity,
+        current_balance,
+        _curve_position_ratio_from_margin(
+            _safe_div(current_market_value, _resolve_effective_leverage(leverage)),
+            current_equity,
+        ),
+    ))
     return points
 
 
@@ -504,12 +1817,13 @@ def _map_pending_orders() -> List[Dict]:
 
 
 def _map_trades(range_key: str = "all") -> List[Dict]:
-    now = datetime.now(timezone.utc)
-    from_time = now - timedelta(hours=_range_hours(range_key))
-    deals = mt5.history_deals_get(from_time, now) or []
+    from_time, to_time = _mt5_history_window(range_key)
+    deals = mt5.history_deals_get(from_time, to_time) or []
     mapped = []
-    lifecycle: Dict[int, Dict[str, float]] = {}
+    open_batches: Dict[str, List[Dict[str, Any]]] = {}
+    open_batches_by_symbol_side: Dict[str, List[Dict[str, Any]]] = {}
     contract_size_cache: Dict[str, float] = {}
+    volume_epsilon = 1e-9
 
     def contract_size_of(symbol: str) -> float:
         cached = contract_size_cache.get(symbol)
@@ -521,6 +1835,121 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
             size = float(getattr(sinfo, "trade_contract_size", 1.0))
         contract_size_cache[symbol] = size
         return size
+
+    def lifecycle_key(position_id: int, order_id: int, ticket: int) -> str:
+        if position_id > 0:
+            return f"position:{position_id}"
+        if order_id > 0:
+            return f"order:{order_id}"
+        return f"ticket:{ticket}"
+
+    def infer_original_side(deal_type: int) -> str:
+        return "Buy" if deal_type == 1 else "Sell"
+
+    def symbol_side_key(symbol: str, side: str) -> str:
+        return f"{symbol}:{side}"
+
+    def append_open_batch(key: str,
+                          symbol: str,
+                          side: str,
+                          open_time_ms: int,
+                          open_price: float,
+                          volume: float) -> None:
+        if volume <= volume_epsilon:
+            return
+        batch = {
+            "symbol": symbol,
+            "side": side,
+            "open_time": int(open_time_ms),
+            "open_price": float(open_price),
+            "remaining_volume": float(volume),
+        }
+        primary_queue = open_batches.setdefault(key, [])
+        primary_queue.append(batch)
+        fallback_queue = open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), [])
+        fallback_queue.append(batch)
+
+    def consume_queue(queue: List[Dict[str, Any]], close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        matches: List[Tuple[Dict[str, Any], float]] = []
+        remaining = float(close_volume)
+        while remaining > volume_epsilon and queue:
+            batch = queue[0]
+            batch_remaining = float(batch.get("remaining_volume", 0.0))
+            if batch_remaining <= volume_epsilon:
+                queue.pop(0)
+                continue
+            matched = min(remaining, batch_remaining)
+            if matched <= volume_epsilon:
+                queue.pop(0)
+                continue
+            matches.append((dict(batch), matched))
+            batch["remaining_volume"] = max(0.0, batch_remaining - matched)
+            remaining -= matched
+            if float(batch.get("remaining_volume", 0.0)) <= volume_epsilon:
+                queue.pop(0)
+        return matches, max(0.0, remaining)
+
+    def consume_open_batches(key: str, close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        queue = open_batches.setdefault(key, [])
+        return consume_queue(queue, close_volume)
+
+    def consume_open_batches_by_symbol_side(symbol: str,
+                                            side: str,
+                                            close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        queue = open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), [])
+        return consume_queue(queue, close_volume)
+
+    def resolve_split_ticket(ticket: int, split_count: int, split_index: int) -> int:
+        if split_count <= 1 or ticket <= 0:
+            return ticket
+        return ticket * 1000 + split_index
+
+    def append_close_record(symbol: str,
+                            ticket: int,
+                            order_id: int,
+                            position_id: int,
+                            entry_type: int,
+                            close_time: int,
+                            close_price: float,
+                            close_volume: float,
+                            total_volume: float,
+                            total_profit: float,
+                            total_commission: float,
+                            total_swap: float,
+                            open_time: int,
+                            open_price: float,
+                            side: str,
+                            split_count: int,
+                            split_index: int,
+                            remark: str) -> None:
+        if close_volume <= volume_epsilon or total_volume <= volume_epsilon:
+            return
+        ratio = close_volume / total_volume
+        storage_fee = (total_commission + total_swap) * ratio
+        amount = abs(close_volume * close_price * contract_size_of(symbol))
+        mapped.append(
+            {
+                "timestamp": close_time,
+                "productName": symbol,
+                "code": symbol,
+                "side": side,
+                "price": close_price,
+                "quantity": close_volume,
+                "amount": amount,
+                "fee": storage_fee,
+                "profit": total_profit * ratio,
+                "openTime": open_time,
+                "closeTime": close_time,
+                "openPrice": open_price if open_price > 0.0 else close_price,
+                "closePrice": close_price if close_price > 0.0 else open_price,
+                "storageFee": storage_fee,
+                "dealTicket": resolve_split_ticket(ticket, split_count, split_index),
+                "orderId": order_id,
+                "positionId": position_id,
+                "entryType": entry_type,
+                "remark": remark or "",
+            }
+        )
 
     sorted_deals = sorted(deals, key=lambda d: int(getattr(d, "time", 0)))
 
@@ -539,106 +1968,94 @@ def _map_trades(range_key: str = "all") -> List[Dict]:
         ticket = int(getattr(deal, "ticket", 0))
         order_id = int(getattr(deal, "order", 0))
         position_id = int(getattr(deal, "position_id", 0))
-        key = position_id if position_id > 0 else (order_id if order_id > 0 else ticket)
+        key = lifecycle_key(position_id, order_id, ticket)
         entry_type = int(getattr(deal, "entry", 0))
-        ts = int(getattr(deal, "time", 0)) * 1000
-        price = float(getattr(deal, "price", 0.0))
-
-        state = lifecycle.setdefault(
-            key,
-            {
-                "open_time": 0.0,
-                "open_price_notional": 0.0,
-                "open_volume": 0.0,
-                "open_price": price,
-                "close_time": 0.0,
-                "close_price": price,
-                "side": "Buy",
-            },
-        )
-
-        if _is_entry_open(entry_type):
-            if state["open_time"] <= 0.0 or ts < state["open_time"]:
-                state["open_time"] = float(ts)
-            state["open_volume"] += volume
-            state["open_price_notional"] += volume * price
-            if state["open_volume"] > 1e-9:
-                state["open_price"] = state["open_price_notional"] / state["open_volume"]
-            state["side"] = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
-
-        if _is_entry_close(entry_type):
-            if ts >= state["close_time"]:
-                state["close_time"] = float(ts)
-                state["close_price"] = price
-
-    for deal in sorted_deals:
-        symbol = getattr(deal, "symbol", "--")
-        if symbol == "--" or not symbol:
-            continue
-        deal_type = int(getattr(deal, "type", -1))
-        if not _is_trade_deal_type(deal_type):
-            continue
-
-        entry_type = int(getattr(deal, "entry", 0))
-        if not _is_entry_close(entry_type):
-            # 交易记录以“成交(平仓/反手)”为口径，避免开仓成交重复占用统计口径。
-            continue
-
-        volume = abs(float(getattr(deal, "volume", 0.0)))
-        if volume <= 0.0:
-            continue
-
+        ts = _deal_time_ms(deal)
         price = float(getattr(deal, "price", 0.0))
         profit = float(getattr(deal, "profit", 0.0))
         commission = float(getattr(deal, "commission", 0.0))
         swap = float(getattr(deal, "swap", 0.0))
-        storage_fee = commission + swap
-        amount = abs(volume * price * contract_size_of(symbol))
+        current_side = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
+        comment = getattr(deal, "comment", "") or ""
 
-        ticket = int(getattr(deal, "ticket", 0))
-        order_id = int(getattr(deal, "order", 0))
-        position_id = int(getattr(deal, "position_id", 0))
-        key = position_id if position_id > 0 else (order_id if order_id > 0 else ticket)
-        state = lifecycle.get(key, {})
-        ts = int(getattr(deal, "time", 0)) * 1000
-
-        open_time = int(state.get("open_time", 0))
-        if open_time <= 0:
-            open_time = ts
-        close_time = ts
-
-        open_price = float(state.get("open_price", price))
-        close_price = price
-        lifecycle_side = str(state.get("side", "")).strip()
-        if lifecycle_side in ("Buy", "Sell"):
-            side = lifecycle_side
+        if _is_entry_close(entry_type):
+            original_side = infer_original_side(deal_type)
+            matches, remaining_after_close = consume_open_batches(key, volume)
+            if remaining_after_close > volume_epsilon:
+                fallback_matches, remaining_after_close = consume_open_batches_by_symbol_side(
+                    symbol,
+                    original_side,
+                    remaining_after_close,
+                )
+                matches.extend(fallback_matches)
+            if entry_type == 2 and matches:
+                synthetic_close_volume = 0.0
+                reverse_open_volume = remaining_after_close
+            elif entry_type == 2:
+                synthetic_close_volume = volume
+                reverse_open_volume = 0.0
+            else:
+                synthetic_close_volume = remaining_after_close
+                reverse_open_volume = 0.0
+            split_count = len(matches) + (1 if synthetic_close_volume > volume_epsilon else 0)
+            split_index = 0
+            for batch, matched_volume in matches:
+                split_index += 1
+                append_close_record(
+                    symbol=symbol,
+                    ticket=ticket,
+                    order_id=order_id,
+                    position_id=position_id,
+                    entry_type=entry_type,
+                    close_time=ts,
+                    close_price=price,
+                    close_volume=matched_volume,
+                    total_volume=volume,
+                    total_profit=profit,
+                    total_commission=commission,
+                    total_swap=swap,
+                    open_time=int(batch.get("open_time", ts)),
+                    open_price=float(batch.get("open_price", price)),
+                    side=str(batch.get("side", infer_original_side(deal_type))),
+                    split_count=split_count,
+                    split_index=split_index,
+                    remark=comment,
+                )
+            if synthetic_close_volume > volume_epsilon:
+                split_index += 1
+                append_close_record(
+                    symbol=symbol,
+                    ticket=ticket,
+                    order_id=order_id,
+                    position_id=position_id,
+                    entry_type=entry_type,
+                    close_time=ts,
+                    close_price=price,
+                    close_volume=synthetic_close_volume,
+                    total_volume=volume,
+                    total_profit=profit,
+                    total_commission=commission,
+                    total_swap=swap,
+                    open_time=ts,
+                    open_price=price,
+                    side=original_side,
+                    split_count=split_count,
+                    split_index=split_index,
+                    remark=comment,
+                )
         else:
-            # 若窗口内缺失开仓成交，则根据平仓成交方向反推原始持仓方向。
-            side = "Buy" if deal_type == 1 else "Sell"
+            reverse_open_volume = 0.0
 
-        mapped.append(
-            {
-                "timestamp": close_time,
-                "productName": symbol,
-                "code": symbol,
-                "side": side,
-                "price": price,
-                "quantity": volume,
-                "amount": amount,
-                "fee": storage_fee,
-                "profit": profit,
-                "openTime": open_time,
-                "closeTime": close_time,
-                "openPrice": open_price if open_price > 0.0 else price,
-                "closePrice": close_price if close_price > 0.0 else price,
-                "storageFee": storage_fee,
-                "dealTicket": ticket,
-                "orderId": order_id,
-                "positionId": position_id,
-                "entryType": entry_type,
-                "remark": getattr(deal, "comment", "") or "",
-            }
-        )
+        if _is_entry_open(entry_type):
+            open_volume = volume if entry_type != 2 else reverse_open_volume
+            append_open_batch(
+                key=key,
+                symbol=symbol,
+                side=current_side,
+                open_time_ms=ts,
+                open_price=price,
+                volume=open_volume,
+            )
 
     mapped.sort(key=lambda item: item["timestamp"], reverse=True)
     return mapped
@@ -663,7 +2080,7 @@ def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
     day_fee = sum(t["fee"] for t in trades if t["timestamp"] >= today_ts)
     day_pnl -= day_fee
 
-    total_asset = equity + max(0.0, total_pnl * 0.3)
+    total_asset = balance
     day_return = _safe_div(day_pnl, max(1.0, equity - day_pnl))
     total_return = _safe_div(total_pnl, max(1.0, balance - total_pnl))
     position_ratio = _safe_div(market_value, max(1.0, equity))
@@ -798,8 +2215,8 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
             account = mt5.account_info()
             if account is None:
                 raise RuntimeError("account_info is None")
-            points = _build_curve(range_key)
             positions = _map_positions()
+            points = _build_curve(range_key, positions)
             pending_orders = _map_pending_orders()
             trades = _map_trades(range_key)
             overview = _build_overview(positions, trades)
@@ -813,6 +2230,12 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
                     "updatedAt": _now_ms(),
                     "currency": str(getattr(account, "currency", "")),
                     "leverage": int(getattr(account, "leverage", 0) or 0),
+                    "balance": float(getattr(account, "balance", 0.0) or 0.0),
+                    "equity": float(getattr(account, "equity", 0.0) or 0.0),
+                    "margin": float(getattr(account, "margin", 0.0) or 0.0),
+                    "freeMargin": float(getattr(account, "margin_free", 0.0) or 0.0),
+                    "marginLevel": float(getattr(account, "margin_level", 0.0) or 0.0),
+                    "profit": float(getattr(account, "profit", 0.0) or 0.0),
                     "name": str(getattr(account, "name", "")),
                     "company": str(getattr(account, "company", "")),
                     "range": range_key,
@@ -833,6 +2256,421 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
             _shutdown_mt5()
 
 
+# 构建只包含账户摘要、当前持仓和挂单的轻快照，供高频 v2 接口复用。
+def _snapshot_from_mt5_light() -> Dict:
+    with state_lock:
+        _ensure_mt5()
+        try:
+            account = mt5.account_info()
+            if account is None:
+                raise RuntimeError("account_info is None")
+            positions = _map_positions()
+            pending_orders = _map_pending_orders()
+            from_time, to_time = _mt5_history_window("all")
+            trade_count = 0
+            try:
+                history_deals_total = getattr(mt5, "history_deals_total", None)
+                if callable(history_deals_total):
+                    trade_count = int(history_deals_total(from_time, to_time) or 0)
+            except Exception:
+                trade_count = 0
+            return {
+                "accountMeta": {
+                    "login": str(getattr(account, "login", LOGIN)),
+                    "server": str(getattr(account, "server", SERVER)),
+                    "source": "MT5 Python Pull",
+                    "updatedAt": _now_ms(),
+                    "currency": str(getattr(account, "currency", "")),
+                    "leverage": int(getattr(account, "leverage", 0) or 0),
+                    "balance": float(getattr(account, "balance", 0.0) or 0.0),
+                    "equity": float(getattr(account, "equity", 0.0) or 0.0),
+                    "margin": float(getattr(account, "margin", 0.0) or 0.0),
+                    "freeMargin": float(getattr(account, "margin_free", 0.0) or 0.0),
+                    "marginLevel": float(getattr(account, "margin_level", 0.0) or 0.0),
+                    "profit": float(getattr(account, "profit", 0.0) or 0.0),
+                    "name": str(getattr(account, "name", "")),
+                    "company": str(getattr(account, "company", "")),
+                    "range": "light",
+                    "tradeCount": trade_count,
+                    "positionCount": len(positions),
+                    "pendingOrderCount": len(pending_orders),
+                    "curvePointCount": 0,
+                },
+                "positions": positions,
+                "pendingOrders": pending_orders,
+            }
+        finally:
+            _shutdown_mt5()
+
+
+def _infer_trade_contract_size(item: Dict[str, Any]) -> float:
+    quantity = abs(float(item.get("quantity", 0.0) or 0.0))
+    price = abs(float(item.get("price", 0.0) or 0.0))
+    amount = abs(float(item.get("amount", 0.0) or 0.0))
+    if quantity <= 0.0 or price <= 0.0 or amount <= 0.0:
+        return 1.0
+    inferred = amount / (quantity * price)
+    return inferred if inferred > 0.0 else 1.0
+
+
+def _should_rebuild_ea_trade_records(records: List[Dict[str, Any]]) -> bool:
+    if not records:
+        return False
+    identified_count = 0
+    raw_like_count = 0
+    for item in records:
+        if not isinstance(item, dict):
+            continue
+        if any(key in item for key in ("entryType", "dealType", "dealTicket", "positionId", "orderId")):
+            identified_count += 1
+        timestamp = int(item.get("timestamp", item.get("time", 0)) or 0)
+        price = float(item.get("price", 0.0) or 0.0)
+        open_time = int(item.get("openTime", timestamp) or timestamp)
+        close_time = int(item.get("closeTime", timestamp) or timestamp)
+        open_price = float(item.get("openPrice", price) or price)
+        close_price = float(item.get("closePrice", price) or price)
+        if open_time == timestamp and close_time == timestamp and abs(open_price - price) < 1e-9 and abs(close_price - price) < 1e-9:
+            raw_like_count += 1
+    return identified_count > 0 and raw_like_count >= max(1, len(records) - 1)
+
+
+def _rebuild_ea_trade_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    rebuilt: List[Dict[str, Any]] = []
+    open_batches: Dict[str, List[Dict[str, Any]]] = {}
+    open_batches_by_symbol_side: Dict[str, List[Dict[str, Any]]] = {}
+    volume_epsilon = 1e-9
+
+    def contract_size_of(item: Dict[str, Any]) -> float:
+        return _infer_trade_contract_size(item)
+
+    def lifecycle_key(position_id: int, order_id: int, ticket: int) -> str:
+        if position_id > 0:
+            return f"position:{position_id}"
+        if order_id > 0:
+            return f"order:{order_id}"
+        return f"ticket:{ticket}"
+
+    def infer_original_side(deal_type: int) -> str:
+        return "Buy" if deal_type == 1 else "Sell"
+
+    def symbol_side_key(symbol: str, side: str) -> str:
+        return f"{symbol}:{side}"
+
+    def append_open_batch(key: str,
+                          symbol: str,
+                          side: str,
+                          open_time_ms: int,
+                          open_price: float,
+                          volume: float) -> None:
+        if volume <= volume_epsilon:
+            return
+        batch = {
+            "symbol": symbol,
+            "side": side,
+            "open_time": int(open_time_ms),
+            "open_price": float(open_price),
+            "remaining_volume": float(volume),
+        }
+        open_batches.setdefault(key, []).append(batch)
+        open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), []).append(batch)
+
+    def consume_queue(queue: List[Dict[str, Any]], close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        matches: List[Tuple[Dict[str, Any], float]] = []
+        remaining = float(close_volume)
+        while remaining > volume_epsilon and queue:
+            batch = queue[0]
+            batch_remaining = float(batch.get("remaining_volume", 0.0))
+            if batch_remaining <= volume_epsilon:
+                queue.pop(0)
+                continue
+            matched = min(remaining, batch_remaining)
+            if matched <= volume_epsilon:
+                queue.pop(0)
+                continue
+            matches.append((dict(batch), matched))
+            batch["remaining_volume"] = max(0.0, batch_remaining - matched)
+            remaining -= matched
+            if float(batch.get("remaining_volume", 0.0)) <= volume_epsilon:
+                queue.pop(0)
+        return matches, max(0.0, remaining)
+
+    def consume_open_batches(key: str, close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        return consume_queue(open_batches.setdefault(key, []), close_volume)
+
+    def consume_open_batches_by_symbol_side(symbol: str,
+                                            side: str,
+                                            close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
+        return consume_queue(open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), []), close_volume)
+
+    def resolve_split_ticket(ticket: int, split_count: int, split_index: int) -> int:
+        if split_count <= 1 or ticket <= 0:
+            return ticket
+        return ticket * 1000 + split_index
+
+    def append_close_record(symbol: str,
+                            ticket: int,
+                            order_id: int,
+                            position_id: int,
+                            entry_type: int,
+                            close_time: int,
+                            close_price: float,
+                            close_volume: float,
+                            total_volume: float,
+                            total_profit: float,
+                            total_commission: float,
+                            total_swap: float,
+                            open_time: int,
+                            open_price: float,
+                            side: str,
+                            split_count: int,
+                            split_index: int,
+                            remark: str,
+                            contract_size: float) -> None:
+        if close_volume <= volume_epsilon or total_volume <= volume_epsilon:
+            return
+        ratio = close_volume / total_volume
+        commission_fee = abs(total_commission) * ratio
+        storage_fee = total_swap * ratio
+        amount = abs(close_volume * close_price * contract_size)
+        rebuilt.append(
+            {
+                "timestamp": close_time,
+                "productName": symbol,
+                "code": symbol,
+                "side": side,
+                "price": close_price,
+                "quantity": close_volume,
+                "amount": amount,
+                "fee": commission_fee,
+                "profit": total_profit * ratio,
+                "openTime": open_time,
+                "closeTime": close_time,
+                "openPrice": open_price if open_price > 0.0 else close_price,
+                "closePrice": close_price if close_price > 0.0 else open_price,
+                "storageFee": storage_fee,
+                "dealTicket": resolve_split_ticket(ticket, split_count, split_index),
+                "orderId": order_id,
+                "positionId": position_id,
+                "entryType": entry_type,
+                "remark": remark or "",
+            }
+        )
+
+    sorted_records = sorted(records, key=lambda item: int(item.get("timestamp", item.get("time", 0)) or 0))
+    for record in sorted_records:
+        symbol = str(record.get("code") or record.get("productName") or "").strip()
+        if not symbol:
+            continue
+        deal_type = int(record.get("dealType", 0 if str(record.get("side", "")).strip().lower() == "buy" else 1) or 0)
+        if not _is_trade_deal_type(deal_type):
+            continue
+        volume = abs(float(record.get("quantity", record.get("volume", 0.0)) or 0.0))
+        if volume <= 0.0:
+            continue
+        ticket = int(record.get("dealTicket", record.get("ticket", 0)) or 0)
+        order_id = int(record.get("orderId", record.get("order", 0)) or 0)
+        position_id = int(record.get("positionId", record.get("position_id", 0)) or 0)
+        key = lifecycle_key(position_id, order_id, ticket)
+        entry_type = int(record.get("entryType", record.get("entry", 0)) or 0)
+        timestamp = int(record.get("timestamp", record.get("time", 0)) or 0)
+        price = float(record.get("price", 0.0) or 0.0)
+        profit = float(record.get("profit", 0.0) or 0.0)
+        commission = float(record.get("commission", record.get("fee", 0.0)) or 0.0)
+        swap = float(record.get("swap", record.get("storageFee", 0.0)) or 0.0)
+        current_side = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
+        comment = str(record.get("remark", "") or "")
+        contract_size = contract_size_of(record)
+
+        if _is_entry_close(entry_type):
+            original_side = infer_original_side(deal_type)
+            matches, remaining_after_close = consume_open_batches(key, volume)
+            if remaining_after_close > volume_epsilon:
+                fallback_matches, remaining_after_close = consume_open_batches_by_symbol_side(
+                    symbol,
+                    original_side,
+                    remaining_after_close,
+                )
+                matches.extend(fallback_matches)
+
+            split_count = len(matches) if matches else 1
+            if matches:
+                for split_index, (batch, matched_volume) in enumerate(matches):
+                    append_close_record(
+                        symbol=symbol,
+                        ticket=ticket,
+                        order_id=order_id,
+                        position_id=position_id,
+                        entry_type=entry_type,
+                        close_time=timestamp,
+                        close_price=price,
+                        close_volume=matched_volume,
+                        total_volume=volume,
+                        total_profit=profit,
+                        total_commission=commission,
+                        total_swap=swap,
+                        open_time=int(batch.get("open_time", timestamp) or timestamp),
+                        open_price=float(batch.get("open_price", price) or price),
+                        side=original_side,
+                        split_count=split_count,
+                        split_index=split_index,
+                        remark=comment,
+                        contract_size=contract_size,
+                    )
+            elif remaining_after_close > volume_epsilon:
+                append_close_record(
+                    symbol=symbol,
+                    ticket=ticket,
+                    order_id=order_id,
+                    position_id=position_id,
+                    entry_type=entry_type,
+                    close_time=timestamp,
+                    close_price=price,
+                    close_volume=remaining_after_close,
+                    total_volume=volume,
+                    total_profit=profit,
+                    total_commission=commission,
+                    total_swap=swap,
+                    open_time=timestamp,
+                    open_price=price,
+                    side=original_side,
+                    split_count=1,
+                    split_index=0,
+                    remark=comment,
+                    contract_size=contract_size,
+                )
+
+        if _is_entry_open(entry_type):
+            append_open_batch(key, symbol, current_side, timestamp, price, volume)
+
+    rebuilt.sort(key=lambda item: int(item.get("closeTime", item.get("timestamp", 0)) or 0), reverse=True)
+    return rebuilt
+
+
+def _normalize_ea_snapshot_trades(account_meta: Dict[str, Any], trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    source = str((account_meta or {}).get("source", "") or "")
+    if "MT5 EA Push" not in source:
+        return trades
+    if not _should_rebuild_ea_trade_records(trades):
+        return trades
+    rebuilt = _rebuild_ea_trade_records(trades)
+    return rebuilt if rebuilt else trades
+
+
+def _overview_metric_value(metrics: List[Dict[str, Any]], *names: str) -> float:
+    if not metrics or not names:
+        return 0.0
+    normalized_names = [str(name or "").strip().lower() for name in names if str(name or "").strip()]
+    for metric in metrics:
+        if not isinstance(metric, dict):
+            continue
+        metric_name = str(metric.get("name", "") or "").strip().lower()
+        if not metric_name:
+            continue
+        if any(candidate in metric_name for candidate in normalized_names):
+            raw_value = str(metric.get("value", "") or "")
+            number = "".join(ch for ch in raw_value if ch.isdigit() or ch in ".-+")
+            try:
+                return float(number)
+            except Exception:
+                return 0.0
+    return 0.0
+
+
+def _infer_ea_curve_contract_size(item: Dict[str, Any]) -> float:
+    quantity = abs(float(item.get("quantity", item.get("volume", 0.0)) or 0.0))
+    price = abs(float(item.get("price", 0.0) or 0.0))
+    amount = abs(float(item.get("amount", 0.0) or 0.0))
+    if quantity <= 0.0 or price <= 0.0 or amount <= 0.0:
+        return 1.0
+    inferred = amount / (quantity * price)
+    return inferred if inferred > 0.0 else 1.0
+
+
+def _rebuild_sparse_ea_curve_points(account_meta: Dict[str, Any],
+                                    overview_metrics: List[Dict[str, Any]],
+                                    curve_points: List[Dict[str, Any]],
+                                    raw_trades: List[Dict[str, Any]],
+                                    positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    source = str((account_meta or {}).get("source", "") or "")
+    if "MT5 EA Push" not in source:
+        return curve_points
+    if not raw_trades:
+        return curve_points
+
+    deal_history: List[Dict[str, Any]] = []
+    realized = 0.0
+    contract_size_cache: Dict[str, float] = {}
+
+    def contract_size_fn(symbol: str) -> float:
+        cached = contract_size_cache.get(symbol)
+        if cached is not None:
+            return cached
+        for item in raw_trades:
+            item_symbol = str(item.get("code") or item.get("productName") or item.get("symbol") or "").strip()
+            if item_symbol != symbol:
+                continue
+            cached = _infer_ea_curve_contract_size(item)
+            contract_size_cache[symbol] = cached
+            return cached
+        contract_size_cache[symbol] = 1.0
+        return 1.0
+
+    for item in sorted(raw_trades, key=lambda current: int(current.get("timestamp", current.get("time", 0)) or 0)):
+        entry = int(item.get("entryType", item.get("entry", 0)) or 0)
+        deal_type = int(item.get("dealType", item.get("deal_type", 0)) or 0)
+        volume = abs(float(item.get("quantity", item.get("volume", 0.0)) or 0.0))
+        symbol = str(item.get("code") or item.get("productName") or item.get("symbol") or "").strip()
+        if not symbol or volume <= 0.0 or not _is_trade_deal_type(deal_type):
+            continue
+        profit = float(item.get("profit", 0.0) or 0.0)
+        commission = float(item.get("commission", item.get("fee", 0.0)) or 0.0)
+        swap = float(item.get("swap", item.get("storageFee", 0.0)) or 0.0)
+        realized += profit + commission + swap
+        deal_history.append({
+            "timestamp": int(item.get("timestamp", item.get("time", 0)) or 0),
+            "price": float(item.get("price", 0.0) or 0.0),
+            "profit": profit,
+            "commission": commission,
+            "swap": swap,
+            "entry": entry,
+            "deal_type": deal_type,
+            "volume": volume,
+            "symbol": symbol,
+            "position_id": int(item.get("positionId", item.get("position_id", 0)) or 0),
+        })
+
+    if not deal_history:
+        return curve_points
+
+    current_balance = float((account_meta or {}).get("balance", 0.0) or 0.0)
+    current_equity = float((account_meta or {}).get("equity", 0.0) or 0.0)
+    leverage = float((account_meta or {}).get("leverage", 0.0) or 0.0)
+    if current_balance <= 0.0:
+        current_balance = _overview_metric_value(overview_metrics, "balance", "结余")
+    if current_equity <= 0.0:
+        current_equity = _overview_metric_value(overview_metrics, "current equity", "equity", "净资产", "净值")
+    if leverage <= 0.0:
+        leverage = _overview_metric_value(overview_metrics, "leverage", "杠杆")
+    if current_balance <= 0.0:
+        current_balance = current_equity
+    if current_equity <= 0.0:
+        current_equity = current_balance
+    start_balance = current_balance - realized
+
+    rebuilt = _replay_curve_from_history(
+        deal_history=deal_history,
+        start_balance=start_balance,
+        open_positions=positions or [],
+        current_balance=current_balance,
+        current_equity=current_equity,
+        leverage=leverage,
+        contract_size_fn=contract_size_fn,
+        now_ms=max(int((account_meta or {}).get("updatedAt", 0) or 0), _now_ms()),
+        fetch_rows_fn=lambda symbol, interval, limit, **kwargs: [],
+    )
+    return rebuilt if rebuilt else curve_points
+
+
 def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     data = payload or {}
     account_meta = data.get("accountMeta") or {}
@@ -846,7 +2684,15 @@ def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     data["curveIndicators"] = data.get("curveIndicators") or []
     data["positions"] = data.get("positions") or []
     data["pendingOrders"] = data.get("pendingOrders") or []
-    data["trades"] = data.get("trades") or []
+    raw_trades = data.get("trades") or []
+    data["trades"] = _normalize_ea_snapshot_trades(account_meta, raw_trades)
+    data["curvePoints"] = _rebuild_sparse_ea_curve_points(
+        account_meta,
+        data["overviewMetrics"],
+        data["curvePoints"],
+        raw_trades,
+        data["positions"],
+    )
     data["statsMetrics"] = data.get("statsMetrics") or []
     return data
 
@@ -864,6 +2710,7 @@ def _normalize_digest_curve_points(points: List[Dict]) -> List[Dict]:
         point = {
             "equity": round(float(item.get("equity", 0.0) or 0.0), 2),
             "balance": round(float(item.get("balance", 0.0) or 0.0), 2),
+            "positionRatio": round(float(item.get("positionRatio", 0.0) or 0.0), 6),
         }
         if keep_timestamp:
             point["timestamp"] = int(item.get("timestamp", 0) or 0)
@@ -1081,11 +2928,48 @@ def _build_snapshot_with_cache(range_key: str) -> Dict:
     with snapshot_cache_lock:
         cached = snapshot_build_cache.get(range_key)
         if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+            cached["lastAccessAt"] = now_ms
+            _remember_cache_entry_locked(snapshot_build_cache, range_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+            return cached.get("snapshot")
+        if _should_slide_snapshot_build_cache(cached, now_ms):
+            cached["builtAt"] = now_ms
+            cached["lastAccessAt"] = now_ms
+            _remember_cache_entry_locked(snapshot_build_cache, range_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
             return cached.get("snapshot")
 
     snapshot = _normalize_snapshot(_select_snapshot(range_key), "MT5 Gateway")
     with snapshot_cache_lock:
-        snapshot_build_cache[range_key] = {"builtAt": now_ms, "snapshot": snapshot}
+        _remember_cache_entry_locked(snapshot_build_cache, range_key, {
+            "builtAt": now_ms,
+            "lastAccessAt": now_ms,
+            "snapshot": snapshot,
+        }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+    return snapshot
+
+
+# 构建账户轻快照缓存，避免高频 v2 snapshot/sync 重复生成整份历史对象。
+def _build_account_light_snapshot_with_cache() -> Dict:
+    cache_key = "account-light"
+    now_ms = _now_ms()
+    with snapshot_cache_lock:
+        cached = snapshot_build_cache.get(cache_key)
+        if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+            cached["lastAccessAt"] = now_ms
+            _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+            return cached.get("snapshot")
+        if _should_slide_snapshot_build_cache(cached, now_ms):
+            cached["builtAt"] = now_ms
+            cached["lastAccessAt"] = now_ms
+            _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+            return cached.get("snapshot")
+
+    snapshot = _build_account_light_snapshot()
+    with snapshot_cache_lock:
+        _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
+            "builtAt": now_ms,
+            "lastAccessAt": now_ms,
+            "snapshot": snapshot,
+        }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
     return snapshot
 
 
@@ -1208,13 +3092,13 @@ def _build_projected_snapshot_response(range_key: str, since_seq: int, delta: bo
 
         if state is None:
             sync_seq = 1
-            snapshot_sync_cache[cache_key] = {
+            _remember_cache_entry_locked(snapshot_sync_cache, cache_key, {
                 "seq": sync_seq,
                 "digest": digest,
                 "snapshot": projected_snapshot,
                 "previousSeq": 0,
                 "previousSnapshot": None,
-            }
+            }, SNAPSHOT_SYNC_CACHE_MAX_ENTRIES)
             changed = True
         else:
             if state.get("digest") == digest:
@@ -1223,17 +3107,18 @@ def _build_projected_snapshot_response(range_key: str, since_seq: int, delta: bo
                 projected_snapshot = state.get("snapshot") or projected_snapshot
                 previous_seq = int(state.get("previousSeq", 0))
                 previous_snapshot = state.get("previousSnapshot")
+                _remember_cache_entry_locked(snapshot_sync_cache, cache_key, state, SNAPSHOT_SYNC_CACHE_MAX_ENTRIES)
             else:
                 previous_seq = int(state.get("seq", 0))
                 previous_snapshot = state.get("snapshot")
                 sync_seq = previous_seq + 1
-                snapshot_sync_cache[cache_key] = {
+                _remember_cache_entry_locked(snapshot_sync_cache, cache_key, {
                     "seq": sync_seq,
                     "digest": digest,
                     "snapshot": projected_snapshot,
                     "previousSeq": previous_seq,
                     "previousSnapshot": previous_snapshot,
-                }
+                }, SNAPSHOT_SYNC_CACHE_MAX_ENTRIES)
                 changed = True
 
     if not SNAPSHOT_DELTA_ENABLED or not delta or since_seq <= 0:
@@ -1327,6 +3212,45 @@ def _select_snapshot(range_key: str) -> Dict:
     raise RuntimeError("No available data source. Configure MT5 pull or start EA push.")
 
 
+# 统一把完整快照裁成账户轻快照，供高频账户同步接口复用。
+def _strip_account_light_snapshot(snapshot: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    safe_snapshot = snapshot or {}
+    return {
+        "accountMeta": dict(safe_snapshot.get("accountMeta") or {}),
+        "positions": [dict(item) for item in (safe_snapshot.get("positions") or [])],
+        "pendingOrders": [dict(item) for item in (safe_snapshot.get("pendingOrders") or [])],
+    }
+
+
+# 轻快照数据源选择：高频接口只拿账户摘要、持仓和挂单，保留历史接口按需走重快照。
+def _build_account_light_snapshot() -> Dict[str, Any]:
+    mode = GATEWAY_MODE if GATEWAY_MODE in {"auto", "pull", "ea"} else "auto"
+
+    if mode == "ea":
+        if _is_ea_snapshot_fresh():
+            return _strip_account_light_snapshot(_normalize_snapshot(ea_snapshot_cache, "MT5 EA Push"))
+        raise RuntimeError("No fresh EA snapshot found. Please start MT5 EA push first.")
+
+    if mode == "pull":
+        return _snapshot_from_mt5_light()
+
+    if mt5 is not None and _is_mt5_configured():
+        try:
+            return _snapshot_from_mt5_light()
+        except Exception:
+            pass
+
+    if _is_ea_snapshot_fresh():
+        return _strip_account_light_snapshot(_normalize_snapshot(ea_snapshot_cache, "MT5 EA Push"))
+
+    if ea_snapshot_cache is not None:
+        stale = _normalize_snapshot(ea_snapshot_cache, "MT5 EA Push")
+        stale["accountMeta"]["source"] = f"{stale['accountMeta'].get('source', 'MT5 EA Push')} (stale)"
+        return _strip_account_light_snapshot(stale)
+
+    raise RuntimeError("No available data source. Configure MT5 pull or start EA push.")
+
+
 def _join_query(params: Dict[str, Any]) -> str:
     clean_params: List[Tuple[str, Any]] = []
     for key, value in params.items():
@@ -1384,6 +3308,63 @@ def _proxy_binance_rest(path_value: str, request: Request) -> Response:
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Binance REST proxy failed: {exc}")
+
+
+# 基于现有快照构建 v2 账户区最小返回体，后续会替换为独立账户真值模块。
+def _build_v2_account_section_from_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    meta = dict(snapshot.get("accountMeta") or {})
+    return {
+        "accountMeta": meta,
+        "positions": [dict(item) for item in (snapshot.get("positions") or [])],
+        "orders": [dict(item) for item in (snapshot.get("pendingOrders") or [])],
+    }
+
+
+# 基于现有配置构建 v2 行情区最小返回体，后续会替换为 Binance 真值聚合结果。
+def _build_v2_market_section() -> Dict[str, Any]:
+    return {
+        "source": "binance",
+        "symbols": ["BTCUSDT", "XAUUSDT"],
+        "restUpstream": BINANCE_REST_UPSTREAM,
+        "wsUpstream": BINANCE_WS_UPSTREAM,
+    }
+
+
+# 从 Binance REST 拉指定周期 K 线原始行，供 v2 行情真值接口使用。
+def _fetch_binance_kline_rows(symbol: str,
+                             interval: str,
+                             limit: int,
+                             *,
+                             start_time_ms: int = 0,
+                             end_time_ms: int = 0) -> List[Any]:
+    safe_symbol = str(symbol or "").strip().upper()
+    safe_interval = str(interval or "").strip()
+    safe_limit = max(1, min(int(limit), 1500))
+    query_payload = {
+        "symbol": safe_symbol,
+        "interval": safe_interval,
+        "limit": safe_limit,
+    }
+    if int(start_time_ms or 0) > 0:
+        query_payload["startTime"] = int(start_time_ms)
+    if int(end_time_ms or 0) > 0:
+        query_payload["endTime"] = int(end_time_ms)
+    query = urllib.parse.urlencode(query_payload)
+    upstream_url = f"{BINANCE_REST_UPSTREAM}/fapi/v1/klines?{query}"
+    request = urllib.request.Request(
+        upstream_url,
+        headers={
+            "User-Agent": "mt5-gateway-v2-market/1.0",
+            "Accept-Encoding": "identity",
+        },
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        body = response.read().decode("utf-8")
+    payload = json.loads(body or "[]")
+    if not isinstance(payload, list):
+        raise ValueError("Binance kline payload is not a list")
+    return payload
 
 
 async def _pipe_websocket_client_to_upstream(client: WebSocket, upstream) -> None:
@@ -1444,6 +3425,7 @@ def health():
             "mt5ConfiguredLogin": str(LOGIN),
             "mt5ConfiguredServer": SERVER,
             "mt5PathEnv": PATH or "",
+            "mt5TimeOffsetMinutes": MT5_TIME_OFFSET_MINUTES,
             "mt5LastConnectedPath": mt5_last_connected_path,
             "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
             "eaSnapshotFresh": _is_ea_snapshot_fresh(),
@@ -1489,6 +3471,7 @@ def source_status():
         "mt5ConfiguredLogin": str(LOGIN),
         "mt5ConfiguredServer": SERVER,
         "mt5PathEnv": PATH or "",
+        "mt5TimeOffsetMinutes": MT5_TIME_OFFSET_MINUTES,
         "mt5LastConnectedPath": mt5_last_connected_path,
         "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
         "eaSnapshotFresh": _is_ea_snapshot_fresh(),
@@ -1496,6 +3479,118 @@ def source_status():
         "snapshotDeltaEnabled": SNAPSHOT_DELTA_ENABLED,
         "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
     }
+
+
+@app.get("/v2/market/snapshot")
+def v2_market_snapshot():
+    try:
+        now_ms = _now_ms()
+        snapshot = _build_account_light_snapshot_with_cache()
+        return _build_v2_market_snapshot_payload(
+            market=_build_v2_market_section(),
+            account=_build_v2_account_section_from_snapshot(snapshot),
+            server_time=now_ms,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v2/market/candles")
+def v2_market_candles(symbol: str,
+                      interval: str,
+                      limit: int = Query(default=300, ge=1, le=1500),
+                      startTime: int = Query(default=0, ge=0),
+                      endTime: int = Query(default=0, ge=0)):
+    try:
+        now_ms = _now_ms()
+        rest_rows = _fetch_binance_kline_rows(
+            symbol,
+            interval,
+            limit,
+            start_time_ms=startTime,
+            end_time_ms=endTime,
+        )
+        closed_rest_rows, latest_rest_patch = v2_market.separate_closed_rest_rows(rest_rows, now_ms)
+        return v2_market.build_market_candles_response(
+            symbol=symbol,
+            interval=interval,
+            server_time=now_ms,
+            rest_rows=closed_rest_rows,
+            latest_patch=latest_rest_patch,
+            patch_source="binance-rest",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v2/account/snapshot")
+def v2_account_snapshot():
+    try:
+        now_ms = _now_ms()
+        snapshot = _build_account_light_snapshot_with_cache()
+        account_section = _build_v2_account_section_from_snapshot(snapshot)
+        snapshot_model = v2_account.build_account_snapshot_model(
+            {
+                "metrics": {
+                    "balance": (snapshot.get("accountMeta") or {}).get("balance"),
+                    "equity": (snapshot.get("accountMeta") or {}).get("equity"),
+                    "margin": (snapshot.get("accountMeta") or {}).get("margin"),
+                    "freeMargin": (snapshot.get("accountMeta") or {}).get("freeMargin"),
+                    "marginLevel": (snapshot.get("accountMeta") or {}).get("marginLevel"),
+                    "profit": (snapshot.get("accountMeta") or {}).get("profit"),
+                },
+                "positions": account_section.get("positions") or [],
+                "orders": account_section.get("orders") or [],
+            }
+        )
+        return v2_account.build_account_snapshot_response(
+            snapshot_model,
+            account_meta={
+                **(account_section.get("accountMeta") or {}),
+                "serverTime": now_ms,
+                "syncToken": _build_sync_token(now_ms, "account-snapshot"),
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v2/account/history")
+def v2_account_history(
+    range: str = Query(default="all", pattern="^(1d|7d|1m|3m|1y|all)$"),
+    cursor: str = Query(default=""),
+):
+    try:
+        now_ms = _now_ms()
+        snapshot = _build_snapshot_with_cache(range.lower())
+        history_model = v2_account.build_account_history_model(
+            {
+                "trades": snapshot.get("trades") or [],
+                "orders": snapshot.get("pendingOrders") or [],
+                "curvePoints": snapshot.get("curvePoints") or [],
+            }
+        )
+        payload = v2_account.build_account_history_response(
+            history_model,
+            account_meta={
+                **(snapshot.get("accountMeta") or {}),
+                "serverTime": now_ms,
+                "syncToken": _build_sync_token(now_ms, f"account-history:{range.lower()}:{cursor}"),
+            },
+        )
+        payload["nextCursor"] = ""
+        return payload
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v2/sync/delta")
+def v2_sync_delta(syncToken: str = Query(default="")):
+    try:
+        now_ms = _now_ms()
+        return _build_v2_sync_delta_response(sync_token=syncToken, server_time=now_ms)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/v1/ea/snapshot")
@@ -1522,6 +3617,7 @@ def ingest_ea_snapshot(payload: Dict, x_bridge_token: Optional[str] = Header(def
     if changed:
         with snapshot_cache_lock:
             snapshot_build_cache.clear()
+            snapshot_sync_cache.clear()
 
     return {"ok": True, "receivedAt": ea_snapshot_received_at_ms, "changed": changed}
 
@@ -1598,9 +3694,70 @@ def curve(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.get("/v1/abnormal")
+def abnormal(
+    since: int = Query(default=0, ge=0),
+    delta: int = Query(default=1, ge=0, le=1),
+):
+    try:
+        return _build_abnormal_response(since_seq=since, delta=(delta == 1))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/v1/abnormal/config")
+def abnormal_config(payload: Dict[str, Any]):
+    try:
+        return _set_abnormal_config(payload or {})
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# 清空运行时缓存，让管理面板可以强制下一轮重新构建快照。
+@app.post("/internal/admin/cache/clear")
+def admin_cache_clear():
+    with snapshot_cache_lock:
+        cleared = {
+            "snapshotBuildCache": len(snapshot_build_cache),
+            "snapshotSyncCache": len(snapshot_sync_cache),
+            "v2SyncState": 1 if v2_sync_state else 0,
+            "abnormalSyncState": 1 if abnormal_sync_state else 0,
+        }
+        snapshot_build_cache.clear()
+        snapshot_sync_cache.clear()
+        v2_sync_state.clear()
+        abnormal_sync_state.clear()
+    return {"ok": True, "cleared": cleared}
+
+
 @app.websocket("/binance-ws/{path_value:path}")
 async def binance_ws_proxy(client: WebSocket, path_value: str):
     await _proxy_binance_websocket(client, path_value)
+
+
+@app.websocket("/v2/stream")
+async def v2_stream(client: WebSocket):
+    await client.accept()
+    current_sync_token = ""
+    try:
+        while True:
+            now_ms = _now_ms()
+            previous_sync_token = current_sync_token
+            delta_payload = _build_v2_sync_delta_response(sync_token=previous_sync_token, server_time=now_ms)
+            current_sync_token = str(delta_payload.get("nextSyncToken", ""))
+            await client.send_json(
+                _build_v2_ws_message(
+                    message_type=_resolve_v2_stream_message_type(sync_token=previous_sync_token, delta_payload=delta_payload),
+                    payload=delta_payload,
+                    sync_token=current_sync_token,
+                    server_time=now_ms,
+                )
+            )
+            await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        await client.close(code=1011, reason=f"v2 stream failed: {exc}")
 
 
 if __name__ == "__main__":

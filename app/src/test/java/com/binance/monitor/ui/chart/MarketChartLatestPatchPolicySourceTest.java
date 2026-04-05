@@ -9,14 +9,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-public class MarketChartPersistenceSourceTest {
+public class MarketChartLatestPatchPolicySourceTest {
 
     @Test
-    public void activityShouldPersistRefreshWindowAndHistoryPageSeparately() throws Exception {
+    public void activityShouldGuardMinuteTailRealtimeRefreshByIntervalPolicy() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("ChartPersistenceWindowHelper.retainClosedCandles(finalProcessed, System.currentTimeMillis())"));
-        assertTrue(source.contains("persistCandlesAsync(cacheKey, older, reqSymbol, reqInterval, false);"));
+        assertTrue(source.contains("ChartWarmDisplayPolicyHelper.canRefreshFromMinuteTail(selectedInterval.key, selectedInterval.yearAggregate)"));
     }
 }

@@ -5,9 +5,9 @@
 ## 目录说明
 
 - `mt5_gateway/`
-  - MT5 网关主程序、依赖清单、环境示例、EA 文件
+  - MT5 网关主程序、轻量管理面板、静态页面、依赖清单、环境示例、EA 文件
 - `windows/`
-  - Windows 部署脚本、Caddy 反向代理样例
+  - Windows 部署脚本、Caddy 反向代理样例、管理面板自启脚本
 
 ## 推荐上传路径
 
@@ -48,6 +48,9 @@ MT5_PATH=C:\Program Files\MetaTrader 5\terminal64.exe
 GATEWAY_HOST=127.0.0.1
 GATEWAY_PORT=8787
 GATEWAY_MODE=auto
+ADMIN_PANEL_HOST=0.0.0.0
+ADMIN_PANEL_PORT=8788
+ADMIN_GATEWAY_URL=http://127.0.0.1:8787
 ```
 
 ## 第三步：手动启动检查
@@ -55,6 +58,13 @@ GATEWAY_MODE=auto
 ```powershell
 cd C:\mt5_bundle\mt5_gateway
 .\start_gateway.ps1
+```
+
+如果你要使用轻量管理面板，再开一个 PowerShell：
+
+```powershell
+cd C:\mt5_bundle\mt5_gateway
+.\start_admin_panel.ps1
 ```
 
 另开一个 PowerShell：
@@ -66,6 +76,7 @@ Invoke-RestMethod http://127.0.0.1:8787/v1/live?range=all
 Invoke-RestMethod http://127.0.0.1:8787/v1/pending?range=all
 Invoke-RestMethod http://127.0.0.1:8787/v1/trades?range=all
 Invoke-RestMethod http://127.0.0.1:8787/v1/curve?range=all
+Invoke-WebRequest http://127.0.0.1:8788
 ```
 
 ## 第四步：注册开机自启
@@ -73,6 +84,7 @@ Invoke-RestMethod http://127.0.0.1:8787/v1/curve?range=all
 ```powershell
 cd C:\mt5_bundle
 .\windows\02_register_startup_task.ps1 -BundleRoot 'C:\mt5_bundle' -Force
+.\windows\04_register_admin_panel_task.ps1 -BundleRoot 'C:\mt5_bundle' -Force
 ```
 
 ## 第五步：公网入口
@@ -83,6 +95,14 @@ cd C:\mt5_bundle
 2. 使用 `windows\Caddyfile.example`
 3. 把 `PUBLIC_HOST_OR_IP` 改成你的公网 IP：`43.155.214.62`
 4. 启动 Caddy
+5. 如果需要直接访问管理面板，再放行 `8788`
+
+管理面板默认既可本机访问，也可公网直接访问：
+
+```text
+http://127.0.0.1:8788
+http://你的公网IP:8788
+```
 
 ## APK 侧地址
 
@@ -98,3 +118,4 @@ BINANCE_WS_BASE_URL=ws://43.155.214.62/binance-ws/ws/
 
 - App 后台常驻时会优先走 `/mt5/v1/live`
 - 打开账户页后首次会拉 `/mt5/v1/snapshot`，后续再分开拉 `/mt5/v1/pending`、`/mt5/v1/trades`、`/mt5/v1/curve`
+- 管理面板是独立进程，主网关停掉后仍可继续从浏览器里启动、停止、重启网关和相关组件

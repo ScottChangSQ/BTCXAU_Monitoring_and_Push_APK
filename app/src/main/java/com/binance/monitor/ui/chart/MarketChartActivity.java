@@ -1192,7 +1192,9 @@ public class MarketChartActivity extends AppCompatActivity {
                     activeDataKey = key;
                     if (displayUpdate.candlesChanged) {
                         applyDisplayCandles(key, displayUpdate.toDisplay, autoRefresh, displayUpdate.shouldFollowLatest, true);
-                        persistCandlesAsync(key, finalProcessed, selectedSymbol, selectedInterval, true);
+                        List<CandleEntry> closedPersistenceWindow =
+                                ChartPersistenceWindowHelper.retainClosedCandles(finalProcessed, System.currentTimeMillis());
+                        persistCandlesAsync(key, closedPersistenceWindow, selectedSymbol, selectedInterval, true);
                     }
                     applyRequestSuccessState(autoRefresh, requestStartedAtMs);
                 });
@@ -1424,10 +1426,10 @@ public class MarketChartActivity extends AppCompatActivity {
         );
     }
 
-    // 图表页已经接入实时分钟尾部，除年线外都可以直接用它刷新最新桶。
+    // 图表页实时分钟尾部只允许覆盖 1d 及以下周期，周/月/年线继续等待正式快照。
     private boolean hasRealtimeTailSourceForChart() {
         return monitorRepository != null
-                && !selectedInterval.yearAggregate
+                && ChartWarmDisplayPolicyHelper.canRefreshFromMinuteTail(selectedInterval.key, selectedInterval.yearAggregate)
                 && AppConstants.MONITOR_SYMBOLS.contains(selectedSymbol);
     }
 

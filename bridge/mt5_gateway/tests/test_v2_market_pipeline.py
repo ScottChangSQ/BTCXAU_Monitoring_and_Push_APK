@@ -109,6 +109,26 @@ class V2MarketPipelineTests(unittest.TestCase):
         self.assertEqual([1000, 2000], [c["openTime"] for c in payload["candles"]])
         self.assertTrue(payload["nextSyncToken"])
 
+    def test_build_market_candles_response_can_use_rest_row_as_latest_patch(self):
+        rest_rows = [
+            [1000, "1.0", "2.0", "0.5", "1.5", "10.0", 1999, "20.0", 3],
+        ]
+        patch_row = [2000, "2.0", "2.5", "1.8", "2.1", "5.0", 3999, "12.0", 2]
+
+        payload = v2_market.build_market_candles_response(
+            symbol="BTCUSDT",
+            interval="1m",
+            server_time=3000,
+            rest_rows=rest_rows,
+            latest_patch=patch_row,
+            patch_source="binance-rest",
+        )
+
+        self.assertEqual([1000], [c["openTime"] for c in payload["candles"]])
+        self.assertEqual(2000, payload["latestPatch"]["openTime"])
+        self.assertEqual("binance-rest", payload["latestPatch"]["source"])
+        self.assertFalse(payload["latestPatch"]["isClosed"])
+
 
 if __name__ == "__main__":
     unittest.main()

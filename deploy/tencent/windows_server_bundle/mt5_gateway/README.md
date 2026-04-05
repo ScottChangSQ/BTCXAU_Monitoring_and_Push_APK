@@ -63,6 +63,27 @@ http://127.0.0.1:8787
 .\start_gateway.ps1 -EnvFile ".env"
 ```
 
+## 2.1）启动轻量管理面板
+
+如果你需要从浏览器直接查看状态、编辑 `.env`、修改异常规则、清缓存，或者控制网关 / MT5 / Caddy / Nginx，可额外启动管理面板：
+
+```powershell
+cd bridge\mt5_gateway
+.\start_admin_panel.ps1
+```
+
+默认访问地址：
+
+```text
+http://127.0.0.1:8788
+http://<你的公网IP>:8788
+```
+
+说明：
+- 管理面板与主网关是独立进程。
+- 默认推荐 `ADMIN_PANEL_HOST=0.0.0.0`，这样同一套配置可同时支持服务器本机和公网访问。
+- 面板默认反向控制 `ADMIN_GATEWAY_URL=http://127.0.0.1:8787` 指向的主网关。
+
 ## 3）EA 推送模式（可选）
 
 1. 打开 MT5 MetaEditor

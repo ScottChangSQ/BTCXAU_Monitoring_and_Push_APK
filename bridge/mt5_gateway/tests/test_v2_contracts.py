@@ -134,6 +134,27 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual("BTCUSDT", payload["symbol"])
         self.assertEqual("1m", payload["interval"])
 
+    def test_market_candles_should_separate_latest_rest_row_as_patch_when_not_closed(self):
+        rest_rows = [
+            [1000, "1.0", "2.0", "0.5", "1.5", "10.0", 1999, "20.0", 3],
+            [2000, "2.0", "2.5", "1.8", "2.1", "5.0", 4999, "12.0", 2],
+        ]
+        with mock.patch.object(server_v2, "_now_ms", return_value=3000), mock.patch.object(
+            server_v2, "_fetch_binance_kline_rows", return_value=rest_rows
+        ):
+            payload = server_v2.v2_market_candles(
+                symbol="BTCUSDT",
+                interval="1m",
+                limit=20,
+                startTime=0,
+                endTime=0,
+            )
+
+        self.assertEqual([1000], [item["openTime"] for item in payload["candles"]])
+        self.assertEqual(2000, payload["latestPatch"]["openTime"])
+        self.assertEqual("binance-rest", payload["latestPatch"]["source"])
+        self.assertFalse(payload["latestPatch"]["isClosed"])
+
     def test_account_snapshot_has_positions_and_orders(self):
         payload = server_v2._build_v2_account_snapshot_payload(
             account={"balance": 1000.0},
@@ -181,6 +202,20 @@ class V2ContractTests(unittest.TestCase):
         light_mock.assert_called_once_with()
         self.assertEqual([{"symbol": "BTCUSD"}], payload["account"]["positions"])
         self.assertEqual([{"symbol": "XAUUSD"}], payload["account"]["orders"])
+
+    def test_admin_cache_clear_should_flush_runtime_caches(self):
+        server_v2.snapshot_build_cache = {"build": {"snapshot": 1}}
+        server_v2.snapshot_sync_cache = {"sync": {"snapshot": 2}}
+        server_v2.v2_sync_state = {"seq": 3}
+
+        payload = server_v2.admin_cache_clear()
+
+        self.assertEqual(1, payload["cleared"]["snapshotBuildCache"])
+        self.assertEqual(1, payload["cleared"]["snapshotSyncCache"])
+        self.assertEqual(1, payload["cleared"]["v2SyncState"])
+        self.assertEqual({}, server_v2.snapshot_build_cache)
+        self.assertEqual({}, server_v2.snapshot_sync_cache)
+        self.assertEqual({}, server_v2.v2_sync_state)
 
 
 if __name__ == "__main__":

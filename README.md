@@ -10,6 +10,8 @@
 - 新架构切换中：监控服务已接入 `v2/stream` 作为统一同步信号入口，旧 Binance `kline` WebSocket 暂时只保留为行情 tick 回退
 - 新架构切换中：`MonitorService` 收到 `v2 stream` 的 `market/account` 变化后，已经会主动补拉最新市场/账户数据，不再只做被动提示
 - 新架构切换中：图表页本地缓存已收口为 `ChartHistoryRepository + 内存窗口`，不再保留旧文件 K 线缓存，也不再把图表序列混写进 `V2SnapshotStore`
+- 新架构切换中：K 线链路已继续收口为“闭合历史快照 + 最新 1 条 patch”；闭合历史才会持久化到 Room，未收盘最新 K 线只留在内存与界面，且分钟实时 patch 只允许覆盖 `1d` 及以下周期
+- 服务端已新增独立轻量 Web 管理面板，可在服务器本机 `localhost` 或公网访问，用来查看网关状态、查看日志、编辑 `.env`、管理异常规则、清缓存，以及控制网关 / MT5 / Caddy / Nginx
 - 主监控页与图表页的 Binance 行情统一走韩国服务器转发，手机不再直接访问 Binance 官方地址
 - MT5 账户支持轻量摘要、轻实时持仓、挂单增量、交易增量和权益曲线追加
 - 悬浮窗支持显示连接状态、合并盈亏、分产品盈亏、最新价格、成交量、成交额
@@ -34,8 +36,10 @@
 - 服务端已新增 `v2/market/snapshot`、`v2/market/candles`、`v2/account/snapshot`、`v2/account/history`、`v2/sync/delta`、`v2/stream` 的最小可用链路
 - APP 已新增 `GatewayV2Client`、`V2SnapshotStore` 和 `v2` 载荷模型，图表页已切到服务端 `candles + latestPatch` 口径
 - 图表页左滑历史分页和增量补尾也已切到 `v2/market/candles?startTime/endTime`，不再走旧 `BinanceApiClient` 图表历史接口
+- 服务端 `v2/market/candles` 已开始把最后一根未闭合 REST K 线拆成 `latestPatch`，不再把它伪装成闭合历史
 - 图表页已删除本地分钟底稿对最终真值的旧覆盖链路，旧缓存版本升级为 `2` 并会在启动时一次性清旧
 - 图表页已删除 `KlineCacheStore` 这层废弃文件缓存，`V2SnapshotStore` 也已收口到只保存 `market/account` 快照，避免图表清缓存误删账户恢复数据
+- 图表页最新窗口落库前会自动剔除未闭合 patch，Room 里只保留闭合历史快照
 - 账户预加载已改成 v2 优先，成功时走 `persistV2Snapshot(...)` 原子替换本地账户数据
 - 账户统计页主动刷新已统一改走 `AccountStatsPreloadManager.fetchForUi(...)`，与后台预加载共用同一套 `v2` 优先抓取逻辑
 - 监控服务已新增 `GatewayV2StreamClient`，开始消费 `/v2/stream` 的统一同步消息
@@ -88,6 +92,7 @@
 - 行情监控页已删除手动监控按钮，服务默认监控开启
 - 登录成功后会在账户统计页中央显示快速淡出的成功提示动画
 - 悬浮窗盈亏合计金额已加粗，桌面图标图案整体上移
+- 服务器侧已新增独立管理服务 `admin_panel.py` 与静态页面，可直接通过浏览器操作启动 / 停止 / 重启网关、MT5 客户端、Caddy、Nginx，并支持编辑 `.env`、修改异常规则与清空运行时缓存
 
 ## 本地运行方法
 
@@ -108,7 +113,9 @@ MT5 网关 Python 侧常用验证：
 
 ```bash
 .\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response -v
+.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_admin_panel -v
 .\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py
+.\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/admin_panel.py
 ```
 
 ## 部署方法和命令
@@ -116,10 +123,13 @@ MT5 网关 Python 侧常用验证：
 - 服务器部署说明见 [deploy/tencent/README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/README.md)
 - Windows 服务器精简上传包见 [deploy/tencent/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle)
 - 当前默认公网入口为 `http://43.155.214.62:8787`
+- 轻量管理面板默认入口为 `http://43.155.214.62:8788`
 - 统一承接：
   - `MT5 /v1/*`
   - `Binance REST /binance-rest/*`
   - `Binance WebSocket /binance-ws/*`
+- 如果需要让管理面板开机自启，可执行：
+  - `.\deploy\tencent\windows\04_register_admin_panel_task.ps1 -RepoRoot "<仓库路径>" -Force`
 - 如果服务器地址变化，可直接在 App 设置页修改“MT5 网关地址”
 - 本轮网关新增 `SNAPSHOT_RANGE_ALL_DAYS` 配置；若服务器内存偏高，可在 `bridge/mt5_gateway/.env` 里调低 `all` 区间历史回看天数后重启网关
 - 如果 MT5 返回的成交时间比北京时间固定慢若干分钟，可在 `bridge/mt5_gateway/.env` 里设置 `MT5_TIME_OFFSET_MINUTES`；例如慢 8 小时就填 `480`，这样交易记录、历史成交点和账户曲线会一起按同一口径修正
@@ -132,6 +142,8 @@ MT5 网关 Python 侧常用验证：
   主监控页 UI 与交互。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
   行情图表页入口。
+- [app/src/main/java/com/binance/monitor/ui/chart/ChartPersistenceWindowHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartPersistenceWindowHelper.java)
+  图表持久化窗口工具，负责在落库前剔除未闭合 latest patch。
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java)
   行情图右上角倒计时与延迟文案格式化工具。
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java)
@@ -158,6 +170,8 @@ MT5 网关 Python 侧常用验证：
   Room 数据库层。
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
   MT5 网关服务。
+- [bridge/mt5_gateway/admin_panel.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py)
+  轻量 Web 管理面板服务，负责状态聚合、日志、`.env` 编辑、异常规则代理、缓存清理和本机组件管理。
 
 ## 搜索记录（2026-03-29）
 

@@ -1,6 +1,14 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 正在按用户已确认方案连续完成两个任务且不再中途停顿：一是把 K 线链路收口成“历史快照 + 最新 1 条 latestPatch”，二是新增允许服务器本机 `localhost` 与公网访问的轻量 Web 管理面板。当前业务代码、测试与部署脚本已基本落地，正在做最后的文档同步、扩展验证和 APK 编译收尾。
+- 当前停点：K 线相关 Android 改动、`/v2/market/candles` 服务端 latestPatch 拆分、`admin_panel.py` 管理面板及其静态页面和部署脚本都已写完；接下来只剩 `CONTEXT.md` / 网关文档同步、补齐 `windows_server_bundle`、跑更完整测试并编译 APK。
+- 本轮关键决定：
+- `1m` 图只有在本地实时窗口已经足够完整时，才允许跳过整窗历史请求；避免只拿到 1~2 根实时尾巴就把整屏历史误判为“已新鲜”。
+- latestPatch 只允许覆盖 `1d` 及以下周期；周、月、年等大周期继续以闭合历史快照为准，避免被短分钟底稿误覆盖。
+- latestPatch 只在内存和界面层使用，不写入 Room；只有收盘后的闭合 K 线才进入持久化历史。
+- 轻量 Web 面板独立成 `admin_panel.py`，不塞进主网关进程；这样即使主网关被停止，面板本身仍能继续提供启动、停止、重启和状态查看能力。
+- 管理面板默认监听 `0.0.0.0:8788`，因此同一套服务同时支持服务器本机 `http://127.0.0.1:8788` 和公网 `http://<公网IP>:8788` 访问。
 - 正在按用户最新要求对两个问题做纯分析、不改代码：一是“行情持仓-K 线图数据不全”的根因和修复方案，二是“Windows 云服务器能否补一个轻量 UI 面板”的实现路径和资源代价。当前已确认一个关键链路问题：`MarketChartActivity` 在 `onCreate()` 里先 `observeRealtimeDisplayKlines()`、后 `requestKlines()`，而 `MonitorService` 现阶段只会为每个 symbol 预拉 `1m limit=2` 的实时尾部；因此图表页可能先吃到 1~2 根实时分钟线，再因为 `MarketChartRefreshHelper.resolvePlan()` 对 `1m + realtimeFresh` 直接返回 `SKIP`，导致整窗历史请求被跳过，表现成 1 分钟图只剩最新几根。`/v2/market/candles` 服务端目前也只转发 Binance REST 闭合 candles，`latestPatch` 仍固定为 `None`，所以“历史快照 + 最新一条实时 patch”这一路线与现架构基本一致，但还没有完整收口。
 - 当前停点：已完成图表页 `requestKlines / restorePersistedCache / observeRealtimeDisplayKlines / loadCandlesForRequest`、`MarketChartRefreshHelper`、`MarketChartDisplayHelper`、`ChartHistoryRepository`、`GatewayV2Client`、`MonitorService`、`server_v2.py`、`v2_market.py`、`deploy/tencent` 部署脚本的阅读；尚未改任何业务代码、未编译 APK、未做 ADB 操作，下一步是把分析结论整理成用户可直接决策的建议。
 - 本轮关键决定：先不直接修代码，而是先把“实时尾部预显示、整窗跳过策略、服务端 candles 形态、Windows 运维入口”这四段链路一起看完；原因是这两个问题都不是单点小 bug，先确认全链路边界，才能避免再次用局部补丁掩盖结构性问题。

@@ -28,6 +28,8 @@
   图表视口计算工具，负责 K 线横向边界和右侧留白相关数学逻辑。
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java)
   倒计时文案工具，负责拼接“剩余秒数/周期秒数 延迟ms”。
+- [app/src/main/java/com/binance/monitor/ui/chart/ChartPersistenceWindowHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartPersistenceWindowHelper.java)
+  图表持久化窗口工具，负责在 Room 落库前剔除未闭合 latest patch，只保留闭合历史快照。
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java)
   缩放方向判定工具，负责把双指手势分成横向、纵向和斜向整体缩放。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
@@ -87,13 +89,17 @@
 - [app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java)
   图表历史仓库，负责把上层已经整理好的 K 线窗口直接写入 Room，不再重复回读整段旧历史再合并。
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
-  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出。
+  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出，并提供运行时缓存清理接口。
+- [bridge/mt5_gateway/admin_panel.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py)
+  轻量管理面板服务，负责聚合网关状态、读取日志、编辑 `.env`、代理异常规则配置，并管理网关 / MT5 / Caddy / Nginx。
 - [bridge/mt5_gateway/v2_market.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_market.py)
-  v2 行情模型工具，负责把 Binance K 线原始数据整理成闭合 candles 与 latestPatch。
+  v2 行情模型工具，负责把 Binance K 线原始数据整理成闭合 candles 与 latestPatch，并能从 REST 窗口里拆出最后一根未闭合 patch。
 - [bridge/mt5_gateway/v2_account.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_account.py)
   v2 账户模型工具，负责把账户快照、历史成交、曲线转换成 APP 侧展示模型。
 - [bridge/mt5_gateway/start_gateway.ps1](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/start_gateway.ps1)
   网关启动脚本，负责加载 `.env` 并使用本地虚拟环境启动服务。
+- [bridge/mt5_gateway/start_admin_panel.ps1](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/start_admin_panel.ps1)
+  管理面板启动脚本，负责加载 `.env` 并使用本地虚拟环境启动轻量 Web 面板。
 
 ## 模块之间的调用关系
 
@@ -117,6 +123,8 @@
   把行情和持仓聚合成统一快照，再一次性刷新悬浮窗。
 - `MarketChartActivity` -> `ChartHistoryRepository` -> Room
   先读本地历史，再按需补网络数据；落库时直接 upsert 当前整理好的窗口，不再回读整段旧历史。
+- `MarketChartActivity` -> `ChartPersistenceWindowHelper` -> `ChartHistoryRepository`
+  最新窗口在持久化前先剔除未闭合 patch，避免 Room 把活 K 线当成历史真值恢复。
 - `MarketChartActivity` -> `GatewayV2Client` -> `server_v2.py /v2/market/candles`
   图表页最终真值、左滑历史分页、以及增量补尾都从服务端读取闭合 candles 与 latestPatch，本地只负责快照与展示。
 - `MarketChartActivity` -> `ChartRefreshMetaFormatter`
@@ -153,12 +161,17 @@
   异常交易触发后统一发系统通知。
 - `MainViewModel` / `MainActivity` -> `MonitorRepository`
   读取主监控页当前展示所需的最新价格/K 线快照，而不是参与图表真值计算。
+- `admin_panel.py` -> `server_v2.py /health`、`/v1/source`、`/v1/abnormal`、`/v1/abnormal/config`、`/internal/admin/cache/clear`
+  轻量管理面板通过本机 HTTP 读取网关状态、代理异常规则配置，并触发缓存清理。
+- `admin_panel.py` -> PowerShell / Windows 计划任务 / 进程控制
+  轻量管理面板直接管理网关、MT5 客户端、Caddy、Nginx 的启停与重启。
 
 ## 关键的设计决定和原因
 
 - Binance 行情链路统一走韩国服务器转发，避免手机继续直连 Binance 官方地址。
 - 新架构下把“Binance 行情真值”和“MT5 账户真值”明确拆开：行情、K 线、成交量、指标只认 Binance，MT5 只负责账户侧事实；原因是这样才能消除 APP 本地拼 K 和多份缓存互相覆盖造成的口径漂移。
 - 图表页当前不再让本地分钟底稿参与最终真值计算，只保留服务端 `candles + latestPatch` 和本地展示缓存；原因是之前本地聚合尾部会反向污染官方历史窗口。
+- 图表页这轮继续收口为“闭合历史快照 + 最新 1 条 patch”：分钟实时 patch 只允许覆盖 `1d` 及以下周期，且未闭合 patch 不再写入 Room；原因是之前 1m 短尾部会把整窗历史跳过，且长周期还会被分钟 patch 错误覆盖。
 - 图表本地缓存当前只保留 `ChartHistoryRepository` 这一层，已删除旧 `KlineCacheStore` 文件缓存，并禁止把图表序列写进 `V2SnapshotStore`；原因是旧设计会形成“图表缓存清理误伤账户快照”和“同一份 K 线被多处重复存储”的结构性问题。
 - 图表历史仓库当前不再负责“读旧历史再合并”，而只负责写入上层已整理好的窗口；原因是图表页内存窗口已经是本轮展示真值，仓库层重复再读一次只会增加 IO 和复杂度。
 - `MonitorService` 不再承担“预热图表 1m 底稿”的职责，冷启动和 stale 回退都统一改成 `GatewayV2Client.fetchMarketSeries(...)`；原因是服务层现在只负责展示快照和悬浮窗，不应再反向参与图表历史真值。
@@ -169,6 +182,7 @@
 - MT5 历史成交时间改成“网关统一按 `MT5_TIME_OFFSET_MINUTES` 做可配置偏移”；原因是当前用户环境里，MT5 Python 返回时间与本地北京时间存在固定偏差，若只在图表层补偿会继续造成交易列表、历史成交点和账户曲线三处口径不一致。
 - 图表页实时刷新改成“未收盘分钟线先进本地分钟底稿，再覆盖当前周期最新尾部”；原因是这样既能补上 1 分钟实时 K 线，也能继续沿用本地多周期缓存减少切周期卡顿。
 - 服务端异常同步 `HTTP 404` 改成客户端一次识别后暂停轮询；原因是接口未部署时继续固定频率请求只会刷日志和浪费流量。
+- 服务器管理 UI 独立为 `admin_panel.py` 轻量服务，而不是塞进 `server_v2.py` 本体；原因是这样即便主网关被停止或重启，管理面板仍可继续提供浏览器入口，才能真正完成“启动 / 停止 / 重启网关”这类操作。
 - 账户预加载节奏从管理器内联常量改成 `AccountPreloadPolicyHelper` 统一计算；原因是这样更容易和前后台策略保持一致，也便于后续继续压缩账户页相关资源消耗。
 - 悬浮窗改为“统一快照 + 产品卡片”模型，解决不同字段更新时间不一致的问题。
 - 悬浮窗拖动增加长按触发、位移阈值和帧节流，减少拖动卡顿和误触。
