@@ -217,6 +217,92 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual({}, server_v2.snapshot_sync_cache)
         self.assertEqual({}, server_v2.v2_sync_state)
 
+    def test_select_snapshot_auto_should_prefer_fresh_ea_snapshot_before_mt5_pull(self):
+        ea_snapshot = {
+            "accountMeta": {"source": "MT5 EA Push", "updatedAt": 123},
+            "overviewMetrics": [],
+            "curvePoints": [],
+            "curveIndicators": [],
+            "positions": [],
+            "pendingOrders": [],
+            "trades": [],
+            "statsMetrics": [],
+        }
+
+        with mock.patch.object(server_v2, "GATEWAY_MODE", "auto"), mock.patch.object(
+            server_v2, "_is_ea_snapshot_fresh", return_value=True
+        ), mock.patch.object(server_v2, "ea_snapshot_cache", ea_snapshot), mock.patch.object(
+            server_v2, "_snapshot_from_mt5", side_effect=AssertionError("不应优先走 MT5 pull")
+        ):
+            snapshot = server_v2._select_snapshot("all")
+
+        self.assertEqual("MT5 EA Push", snapshot["accountMeta"]["source"])
+
+    def test_select_snapshot_auto_should_not_re_normalize_fresh_ea_snapshot(self):
+        ea_snapshot = {
+            "accountMeta": {"source": "MT5 EA Push", "updatedAt": 123},
+            "overviewMetrics": [],
+            "curvePoints": [{"timestamp": 1, "equity": 100.0, "balance": 100.0}],
+            "curveIndicators": [],
+            "positions": [],
+            "pendingOrders": [],
+            "trades": [],
+            "statsMetrics": [],
+        }
+
+        with mock.patch.object(server_v2, "GATEWAY_MODE", "auto"), mock.patch.object(
+            server_v2, "_is_ea_snapshot_fresh", return_value=True
+        ), mock.patch.object(server_v2, "ea_snapshot_cache", ea_snapshot), mock.patch.object(
+            server_v2, "_normalize_snapshot", side_effect=AssertionError("不应再次标准化 EA 缓存")
+        ):
+            snapshot = server_v2._select_snapshot("all")
+
+        self.assertEqual(ea_snapshot["curvePoints"], snapshot["curvePoints"])
+        self.assertIsNot(snapshot, ea_snapshot)
+        self.assertIsNot(snapshot["accountMeta"], ea_snapshot["accountMeta"])
+
+    def test_build_trade_history_with_cache_should_prefer_mt5_complete_history(self):
+        fallback_snapshot = {
+            "trades": [{"dealTicket": 1, "code": "BTCUSD"}],
+        }
+        mt5_trades = [
+            {"dealTicket": 11, "code": "BTCUSD"},
+            {"dealTicket": 12, "code": "XAUUSD"},
+        ]
+        server_v2.snapshot_build_cache.clear()
+
+        with mock.patch.object(server_v2, "mt5", object()), mock.patch.object(
+            server_v2, "_is_mt5_configured", return_value=True
+        ), mock.patch.object(
+            server_v2, "_snapshot_trades_from_mt5", return_value=mt5_trades
+        ) as mt5_mock:
+            trades = server_v2._build_trade_history_with_cache("all", fallback_snapshot)
+
+        mt5_mock.assert_called_once_with("all")
+        self.assertEqual(mt5_trades, trades)
+
+    def test_v2_account_history_should_use_complete_trade_history_builder(self):
+        snapshot = {
+            "accountMeta": {"login": "7400048", "source": "MT5 EA Push"},
+            "pendingOrders": [{"symbol": "XAUUSD"}],
+            "curvePoints": [{"timestamp": 1, "equity": 100.0, "balance": 100.0}],
+            "trades": [{"dealTicket": 1, "code": "BTCUSD"}],
+        }
+        mt5_trades = [
+            {"dealTicket": 11, "code": "BTCUSD"},
+            {"dealTicket": 12, "code": "XAUUSD"},
+        ]
+
+        with mock.patch.object(server_v2, "_build_snapshot_with_cache", return_value=snapshot), mock.patch.object(
+            server_v2, "_build_trade_history_with_cache", return_value=mt5_trades
+        ) as history_mock:
+            payload = server_v2.v2_account_history(range="all", cursor="")
+
+        history_mock.assert_called_once_with("all", snapshot)
+        self.assertEqual([11, 12], [item["dealTicket"] for item in payload["trades"]])
+        self.assertEqual(1, payload["curvePoints"][0]["timestamp"])
+        self.assertEqual(100.0, payload["curvePoints"][0]["equity"])
+
 
 if __name__ == "__main__":
     unittest.main()

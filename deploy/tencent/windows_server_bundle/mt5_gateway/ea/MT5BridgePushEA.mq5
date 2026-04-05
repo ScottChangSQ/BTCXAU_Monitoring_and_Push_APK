@@ -4,9 +4,9 @@ input string GatewayUrl = "http://127.0.0.1:8787/v1/ea/snapshot";
 input string BridgeToken = "";
 input int PushIntervalSeconds = 10;
 input int HeartbeatIntervalSeconds = 20;
-input int RequestTimeoutMs = 3000;
-input int TradeHistoryDays = 3650;
-input int MaxTradeItems = 5000;
+input int RequestTimeoutMs = 15000;
+input int TradeHistoryDays = 30;
+input int MaxTradeItems = 200;
 
 string g_lastSuccessfulState = "";
 datetime g_lastSuccessfulPushTime = 0;
@@ -280,7 +280,16 @@ string BuildSnapshotStateSignature(string overviewMetrics,
 bool PushSnapshotBody(string body)
 {
    char payload[];
-   StringToCharArray(body, payload, 0, -1, CP_UTF8);
+   int copied = StringToCharArray(body, payload, 0, -1, CP_UTF8);
+   if(copied <= 0)
+   {
+      Print("MT5BridgePushEA: payload build failed.");
+      return false;
+   }
+   if(payload[copied - 1] == 0)
+      ArrayResize(payload, copied - 1);
+   else
+      ArrayResize(payload, copied);
 
    string headers = "Content-Type: application/json\r\n";
    if(StringLen(BridgeToken) > 0)

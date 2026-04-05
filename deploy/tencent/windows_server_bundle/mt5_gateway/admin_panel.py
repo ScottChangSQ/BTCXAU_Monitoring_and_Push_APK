@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import asyncio
 import subprocess
 import urllib.error
 import urllib.request
@@ -65,6 +66,25 @@ STATIC_DIR = BASE_DIR / "static" / "admin"
 load_dotenv(ENV_PATH)
 
 app = FastAPI(title="MT5 Gateway Admin Panel", version="1.0.0")
+
+
+# 管理面板也运行在同一台 Windows 主机上，统一切回 Selector 事件循环，避免 Proactor 断链异常污染进程。
+def _configure_windows_event_loop_policy() -> None:
+    if os.name != "nt":
+        return
+    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy is None:
+        return
+    try:
+        current_policy = asyncio.get_event_loop_policy()
+        if isinstance(current_policy, selector_policy):
+            return
+    except Exception:
+        pass
+    try:
+        asyncio.set_event_loop_policy(selector_policy())
+    except Exception:
+        pass
 
 
 # 统一按 UTF-8 读取文本文件。
@@ -557,4 +577,5 @@ if __name__ == "__main__":
     env_map = load_env_map()
     host = str(env_map.get("ADMIN_PANEL_HOST", "0.0.0.0") or "0.0.0.0").strip()
     port = int(str(env_map.get("ADMIN_PANEL_PORT", "8788") or "8788").strip() or "8788")
+    _configure_windows_event_loop_policy()
     uvicorn.run("admin_panel:app", host=host, port=port, reload=False)

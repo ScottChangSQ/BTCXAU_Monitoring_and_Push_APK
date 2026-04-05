@@ -11,7 +11,7 @@
 - 新架构切换中：`MonitorService` 收到 `v2 stream` 的 `market/account` 变化后，已经会主动补拉最新市场/账户数据，不再只做被动提示
 - 新架构切换中：图表页本地缓存已收口为 `ChartHistoryRepository + 内存窗口`，不再保留旧文件 K 线缓存，也不再把图表序列混写进 `V2SnapshotStore`
 - 新架构切换中：K 线链路已继续收口为“闭合历史快照 + 最新 1 条 patch”；闭合历史才会持久化到 Room，未收盘最新 K 线只留在内存与界面，且分钟实时 patch 只允许覆盖 `1d` 及以下周期
-- 服务端已新增独立轻量 Web 管理面板，可在服务器本机 `localhost` 或公网访问，用来查看网关状态、查看日志、编辑 `.env`、管理异常规则、清缓存，以及控制网关 / MT5 / Caddy / Nginx
+- 服务端已新增统一 Web 服务器控制台，可在服务器本机 `localhost` 或公网访问，用来查看总览、组件控制、配置中心、诊断中心、日志与历史，并控制网关 / MT5 / Caddy / Nginx
 - 主监控页与图表页的 Binance 行情统一走韩国服务器转发，手机不再直接访问 Binance 官方地址
 - MT5 账户支持轻量摘要、轻实时持仓、挂单增量、交易增量和权益曲线追加
 - 悬浮窗支持显示连接状态、合并盈亏、分产品盈亏、最新价格、成交量、成交额
@@ -92,7 +92,7 @@
 - 行情监控页已删除手动监控按钮，服务默认监控开启
 - 登录成功后会在账户统计页中央显示快速淡出的成功提示动画
 - 悬浮窗盈亏合计金额已加粗，桌面图标图案整体上移
-- 服务器侧已新增独立管理服务 `admin_panel.py` 与静态页面，可直接通过浏览器操作启动 / 停止 / 重启网关、MT5 客户端、Caddy、Nginx，并支持编辑 `.env`、修改异常规则与清空运行时缓存
+- 服务器侧已新增统一控制台服务 `admin_panel.py` 与配套静态页面 / 状态 helper / 诊断 helper / 配置 helper，可直接通过浏览器操作启动 / 停止 / 重启网关、MT5 客户端、Caddy、Nginx，并支持查看中文诊断、编辑 `.env`、查看配置变更影响、修改异常规则与清空运行时缓存
 
 ## 本地运行方法
 
@@ -114,6 +114,7 @@ MT5 网关 Python 侧常用验证：
 ```bash
 .\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response -v
 .\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_admin_panel -v
+.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_admin_panel_bundle_parity -v
 .\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py
 .\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/admin_panel.py
 ```
@@ -122,8 +123,10 @@ MT5 网关 Python 侧常用验证：
 
 - 服务器部署说明见 [deploy/tencent/README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/README.md)
 - Windows 服务器精简上传包见 [deploy/tencent/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle)
+- Windows 部署根目录现统一为 `C:\mt5_bundle`
+- 上传方式改为：整体替换 `deploy/tencent/windows_server_bundle` 对应内容，不再手工挑单个文件补传
 - 当前默认公网入口为 `http://43.155.214.62:8787`
-- 轻量管理面板默认入口为 `http://43.155.214.62:8788`
+- 统一控制台默认入口为 `http://43.155.214.62:8788`
 - 统一承接：
   - `MT5 /v1/*`
   - `Binance REST /binance-rest/*`

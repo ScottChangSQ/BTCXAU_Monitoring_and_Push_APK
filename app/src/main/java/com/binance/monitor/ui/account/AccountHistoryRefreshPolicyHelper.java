@@ -14,7 +14,7 @@ public final class AccountHistoryRefreshPolicyHelper {
                                                   int cachedTradeCount,
                                                   boolean hasStoredTradeHistory) {
         if (remoteTradeCount <= 0) {
-            return false;
+            return !hasStoredTradeHistory || cachedTradeCount <= 0;
         }
         if (cachedTradeCount < 0) {
             return !hasStoredTradeHistory;

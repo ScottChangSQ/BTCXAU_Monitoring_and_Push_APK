@@ -1,0 +1,152 @@
+<h2>组件控制页 + 诊断中心草图</h2>
+<p class="subtitle">目标：所有动作都能点按钮完成，所有故障都先给出结论，再给建议动作，不让用户自己拼命令。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">页面 2：组件控制</div>
+    <div class="mockup-body" style="padding:18px;background:#0b1220;color:#dbe5f0;border-radius:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:20px;font-weight:700;">组件控制</div>
+        <button class="mock-button">刷新全部状态</button>
+      </div>
+
+      <div style="display:grid;gap:12px;">
+        <div style="padding:14px;background:#132033;border-radius:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div class="label">MT5 网关</div>
+              <div style="font-size:18px;font-weight:700;color:#4ade80;">运行中</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="mock-button">启动</button>
+              <button class="mock-button">重启</button>
+              <button class="mock-button">停止</button>
+            </div>
+          </div>
+          <div style="margin-top:8px;opacity:.85;">端口 8787 | 最后健康检查 8 秒前 | 自动拉起：已开启</div>
+        </div>
+
+        <div style="padding:14px;background:#132033;border-radius:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div class="label">MT5 客户端</div>
+              <div style="font-size:18px;font-weight:700;color:#fbbf24;">已打开</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="mock-button">启动</button>
+              <button class="mock-button">重启</button>
+              <button class="mock-button">停止</button>
+            </div>
+          </div>
+          <div style="margin-top:8px;opacity:.85;">当前账号 7400048 | 当前服务器 ICMarketsSC-MT5-6</div>
+        </div>
+
+        <div style="padding:14px;background:#132033;border-radius:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div class="label">EA 推送</div>
+              <div style="font-size:18px;font-weight:700;color:#4ade80;">心跳正常</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="mock-button">检查 EA 状态</button>
+              <button class="mock-button">打开 EA 指引</button>
+            </div>
+          </div>
+          <div style="margin-top:8px;opacity:.85;">最近推送 8 秒前 | 推送源：MT5 EA Push</div>
+        </div>
+
+        <div style="padding:14px;background:#132033;border-radius:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div class="label">反向代理</div>
+              <div style="font-size:18px;font-weight:700;color:#f87171;">未运行</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="mock-button">启动</button>
+              <button class="mock-button">重启</button>
+              <button class="mock-button">停止</button>
+            </div>
+          </div>
+          <div style="margin-top:8px;opacity:.85;">当前建议：启用代理后，APP 地址统一改用 /mt5</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">页面 4：诊断中心</div>
+    <div class="mockup-body" style="padding:18px;background:#0b1220;color:#dbe5f0;border-radius:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:20px;font-weight:700;">连接与诊断</div>
+        <button class="mock-button">一键诊断</button>
+      </div>
+
+      <div style="padding:14px;background:#132033;border-radius:14px;margin-bottom:12px;">
+        <div class="label">当前结论</div>
+        <div style="font-size:20px;font-weight:700;color:#f87171;margin-top:4px;">APP 连不上，不是主网关挂了，是公网入口未通过</div>
+        <div style="opacity:.85;margin-top:8px;">建议：启动代理，并把 APP 地址改成 http://43.155.214.62/mt5</div>
+      </div>
+
+      <div style="display:grid;gap:10px;">
+        <div style="padding:12px;background:#132033;border-radius:12px;">
+          <div style="display:flex;justify-content:space-between;">
+            <div>本机网关检查</div>
+            <div style="color:#4ade80;font-weight:700;">通过</div>
+          </div>
+          <div style="opacity:.8;">127.0.0.1:8787/health 已返回</div>
+        </div>
+        <div style="padding:12px;background:#132033;border-radius:12px;">
+          <div style="display:flex;justify-content:space-between;">
+            <div>公网网关检查</div>
+            <div style="color:#f87171;font-weight:700;">失败</div>
+          </div>
+          <div style="opacity:.8;">43.155.214.62:8787/health 无响应</div>
+        </div>
+        <div style="padding:12px;background:#132033;border-radius:12px;">
+          <div style="display:flex;justify-content:space-between;">
+            <div>反向代理检查</div>
+            <div style="color:#fbbf24;font-weight:700;">未配置</div>
+          </div>
+          <div style="opacity:.8;">/mt5 入口还没建立</div>
+        </div>
+        <div style="padding:12px;background:#132033;border-radius:12px;">
+          <div style="display:flex;justify-content:space-between;">
+            <div>APP 建议地址</div>
+            <div style="color:#93c5fd;font-weight:700;">http://43.155.214.62/mt5</div>
+          </div>
+          <div style="opacity:.8;">诊断完成后由页面直接给出，不让用户自己猜</div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="mock-button">自动修复建议</button>
+        <button class="mock-button">复制建议地址</button>
+        <button class="mock-button">打开配置中心</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>这两页方向对</h3>
+      <p>继续设计“配置中心”和“首次初始化向导”。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>组件控制还不够强</h3>
+      <p>希望所有核心组件都能一键启停，状态更大更明显。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>诊断中心还不够傻瓜化</h3>
+      <p>希望直接显示“问题原因 + 解决按钮”，少放技术词。</p>
+    </div>
+  </div>
+</div>

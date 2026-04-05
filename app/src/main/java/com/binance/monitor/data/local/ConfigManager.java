@@ -115,25 +115,33 @@ public class ConfigManager {
 
     public String getMt5GatewayBaseUrl() {
         String stored = preferences.getString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL);
-        return GatewayUrlResolver.resolveBaseUrl(stored, AppConstants.MT5_GATEWAY_BASE_URL);
+        String resolved = GatewayUrlResolver.resolveBaseUrl(stored, AppConstants.MT5_GATEWAY_BASE_URL);
+        String migrated = GatewayUrlResolver.alignGatewayBaseUrlToTarget(resolved, AppConstants.MT5_GATEWAY_BASE_URL);
+        if (!migrated.equals(resolved)) {
+            preferences.edit().putString(KEY_MT5_GATEWAY_URL, migrated).apply();
+        }
+        return migrated;
     }
 
     public void setMt5GatewayBaseUrl(String baseUrl) {
+        String resolved = GatewayUrlResolver.resolveBaseUrl(baseUrl, AppConstants.MT5_GATEWAY_BASE_URL);
         preferences.edit()
-                .putString(KEY_MT5_GATEWAY_URL, GatewayUrlResolver.resolveBaseUrl(baseUrl, AppConstants.MT5_GATEWAY_BASE_URL))
+                .putString(KEY_MT5_GATEWAY_URL, GatewayUrlResolver.alignGatewayBaseUrlToTarget(resolved, AppConstants.MT5_GATEWAY_BASE_URL))
                 .apply();
     }
 
     public String getBinanceRestBaseUrl() {
-        return GatewayUrlResolver.buildBinanceRestBaseUrl(
+        return GatewayUrlResolver.resolveBinanceRestBaseUrl(
                 getMt5GatewayBaseUrl(),
+                AppConstants.BASE_REST_URL,
                 AppConstants.MT5_GATEWAY_BASE_URL
         );
     }
 
     public String getBinanceWebSocketBaseUrl() {
-        return GatewayUrlResolver.buildBinanceWebSocketBaseUrl(
+        return GatewayUrlResolver.resolveBinanceWebSocketBaseUrl(
                 getMt5GatewayBaseUrl(),
+                AppConstants.BASE_WS_URL,
                 AppConstants.MT5_GATEWAY_BASE_URL
         );
     }

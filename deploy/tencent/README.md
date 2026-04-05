@@ -4,8 +4,10 @@
 
 ```text
 Android App
-  -> /mt5
+  -> /health, /v1/*, /v2/*
        -> 本机 MT5 Python 网关（127.0.0.1:8787）
+  -> /mt5/*
+       -> 兼容旧入口，仍反代到本机 MT5 Python 网关
   -> /binance-rest
        -> https://fapi.binance.com
   -> /binance-ws
@@ -153,16 +155,17 @@ cd C:\BTCXAU_Monitoring_and_Push_APK
 最适合你现在这台香港 Windows 服务器。
 
 1. 安装 Caddy
-2. 把 `deploy/tencent/windows/Caddyfile.example` 复制成实际配置
-3. 只保留一个站点块：
-   - 没域名：保留 `http://PUBLIC_HOST_OR_IP`
+2. 优先直接使用仓库自带的 `deploy/tencent/windows/Caddyfile`
+3. 如需域名 / HTTPS，再参考 `deploy/tencent/windows/Caddyfile.example`
+4. 如果改用样例文件，只保留一个站点块：
+   - 没域名：保留 `:80`
    - 有域名：保留 `gateway.example.com`
-4. 替换实际公网 IP 或域名
-   - 你当前公网 IP 可直接用 `43.155.214.62`
-5. 启动或重载 Caddy
+5. 如果使用域名块，再替换成实际域名
+6. 启动或重载 Caddy
 
-这份样例已经把 3 条路径配好了：
+这份样例现在同时支持两组 MT5 入口：
 
+- `/health`、`/v1/*`、`/v2/*`
 - `/mt5/*`
 - `/binance-rest/*`
 - `/binance-ws/*`
@@ -178,7 +181,7 @@ cd C:\BTCXAU_Monitoring_and_Push_APK
 项目已经支持通过 `gradle.properties` 改这 3 个入口：
 
 ```properties
-MT5_GATEWAY_BASE_URL=http://43.155.214.62/mt5
+MT5_GATEWAY_BASE_URL=http://43.155.214.62
 BINANCE_REST_BASE_URL=http://43.155.214.62/binance-rest/fapi/v1/klines
 BINANCE_WS_BASE_URL=ws://43.155.214.62/binance-ws/ws/
 ```
@@ -186,7 +189,7 @@ BINANCE_WS_BASE_URL=ws://43.155.214.62/binance-ws/ws/
 如果你后面有域名并启用 HTTPS，就改成：
 
 ```properties
-MT5_GATEWAY_BASE_URL=https://gateway.example.com/mt5
+MT5_GATEWAY_BASE_URL=https://gateway.example.com
 BINANCE_REST_BASE_URL=https://gateway.example.com/binance-rest/fapi/v1/klines
 BINANCE_WS_BASE_URL=wss://gateway.example.com/binance-ws/ws/
 ```
@@ -202,12 +205,12 @@ BINANCE_WS_BASE_URL=wss://gateway.example.com/binance-ws/ws/
 先测 MT5：
 
 ```powershell
-Invoke-RestMethod http://43.155.214.62/mt5/health
-Invoke-RestMethod http://43.155.214.62/mt5/v1/source
-Invoke-RestMethod http://43.155.214.62/mt5/v1/live?range=all
-Invoke-RestMethod http://43.155.214.62/mt5/v1/pending?range=all
-Invoke-RestMethod http://43.155.214.62/mt5/v1/trades?range=all
-Invoke-RestMethod http://43.155.214.62/mt5/v1/curve?range=all
+Invoke-RestMethod http://43.155.214.62/health
+Invoke-RestMethod http://43.155.214.62/v1/source
+Invoke-RestMethod http://43.155.214.62/v1/live?range=all
+Invoke-RestMethod http://43.155.214.62/v1/pending?range=all
+Invoke-RestMethod http://43.155.214.62/v1/trades?range=all
+Invoke-RestMethod http://43.155.214.62/v1/curve?range=all
 ```
 
 再测 Binance REST：
@@ -217,6 +220,8 @@ Invoke-RestMethod "http://43.155.214.62/binance-rest/fapi/v1/klines?symbol=BTCUS
 ```
 
 如果这两个都能返回内容，APK 侧基本就可以切过去了。
+
+如果 `curl -I` 只有响应头、`curl` 正文为空，说明服务器上的 Caddy 还没换成这里这份根路径配置。
 
 再测轻量管理面板：
 

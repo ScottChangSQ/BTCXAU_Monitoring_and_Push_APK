@@ -8,6 +8,7 @@ import androidx.annotation.Nullable;
 
 import java.net.URI;
 import java.util.Locale;
+import java.util.Objects;
 
 public final class GatewayUrlResolver {
 
@@ -75,12 +76,12 @@ public final class GatewayUrlResolver {
 
     // 基于同一个网关根地址拼出 Binance REST 地址。
     public static String buildBinanceRestBaseUrl(@Nullable String rawBaseUrl, @Nullable String fallback) {
-        return buildEndpoint(resolveGatewayRootBaseUrl(rawBaseUrl, fallback), PATH_BINANCE_REST + "/fapi/v1/klines");
+        return appendPath(resolveGatewayRootBaseUrl(rawBaseUrl, fallback), PATH_BINANCE_REST + "/fapi/v1/klines");
     }
 
     // 基于同一个网关根地址拼出 Binance WebSocket 地址。
     public static String buildBinanceWebSocketBaseUrl(@Nullable String rawBaseUrl, @Nullable String fallback) {
-        String httpBase = buildEndpoint(resolveGatewayRootBaseUrl(rawBaseUrl, fallback), PATH_BINANCE_WS);
+        String httpBase = appendPath(resolveGatewayRootBaseUrl(rawBaseUrl, fallback), PATH_BINANCE_WS);
         if (httpBase.startsWith("https://")) {
             return "wss://" + httpBase.substring("https://".length());
         }
@@ -90,12 +91,76 @@ public final class GatewayUrlResolver {
         return httpBase;
     }
 
+    // 优先使用显式配置的 Binance REST 默认地址；只有 MT5 地址被用户改成别的主机时才跟随派生。
+    public static String resolveBinanceRestBaseUrl(@Nullable String mt5BaseUrl,
+                                                   @Nullable String defaultRestBaseUrl,
+                                                   @Nullable String defaultMt5BaseUrl) {
+        String preferredMt5 = alignGatewayBaseUrlToTarget(
+                normalizeBaseUrl(mt5BaseUrl, defaultMt5BaseUrl),
+                normalizeBaseUrl(defaultMt5BaseUrl, DEFAULT_FALLBACK)
+        );
+        String normalizedDefaultMt5 = normalizeBaseUrl(defaultMt5BaseUrl, DEFAULT_FALLBACK);
+        if (Objects.equals(preferredMt5, normalizedDefaultMt5)) {
+            return sanitizeExplicitUrl(defaultRestBaseUrl, buildBinanceRestBaseUrl(normalizedDefaultMt5, normalizedDefaultMt5));
+        }
+        return buildBinanceRestBaseUrl(preferredMt5, normalizedDefaultMt5);
+    }
+
+    // 优先使用显式配置的 Binance WS 默认地址；只有 MT5 地址被用户改成别的主机时才跟随派生。
+    public static String resolveBinanceWebSocketBaseUrl(@Nullable String mt5BaseUrl,
+                                                        @Nullable String defaultWsBaseUrl,
+                                                        @Nullable String defaultMt5BaseUrl) {
+        String preferredMt5 = alignGatewayBaseUrlToTarget(
+                normalizeBaseUrl(mt5BaseUrl, defaultMt5BaseUrl),
+                normalizeBaseUrl(defaultMt5BaseUrl, DEFAULT_FALLBACK)
+        );
+        String normalizedDefaultMt5 = normalizeBaseUrl(defaultMt5BaseUrl, DEFAULT_FALLBACK);
+        if (Objects.equals(preferredMt5, normalizedDefaultMt5)) {
+            return sanitizeExplicitUrl(defaultWsBaseUrl, buildBinanceWebSocketBaseUrl(normalizedDefaultMt5, normalizedDefaultMt5));
+        }
+        return buildBinanceWebSocketBaseUrl(preferredMt5, normalizedDefaultMt5);
+    }
+
+    // 同主机的 `/mt5` 与 `:8787` 视为同一网关的两种入口形态，按当前目标入口统一收口。
+    public static String alignGatewayBaseUrlToTarget(@Nullable String currentBaseUrl, @Nullable String targetBaseUrl) {
+        String normalizedCurrent = normalizeBaseUrl(currentBaseUrl, targetBaseUrl);
+        String normalizedTarget = normalizeBaseUrl(targetBaseUrl, targetBaseUrl);
+        try {
+            URI current = new URI(prepareForUri(normalizedCurrent));
+            URI target = new URI(prepareForUri(normalizedTarget));
+            String currentHost = current.getHost();
+            String targetHost = target.getHost();
+            if (currentHost == null || targetHost == null) {
+                return normalizedCurrent;
+            }
+            if (!currentHost.equalsIgnoreCase(targetHost)) {
+                return normalizedCurrent;
+            }
+            String currentPath = sanitizePath(current.getPath());
+            String targetPath = sanitizePath(target.getPath());
+            boolean currentDirect8787 = current.getPort() == 8787 && currentPath.isEmpty();
+            boolean currentProxyMt5 = PATH_MT5.equalsIgnoreCase(currentPath);
+            boolean currentRootDefault = currentPath.isEmpty() && current.getPort() < 0;
+            boolean targetDirect8787 = target.getPort() == 8787 && targetPath.isEmpty();
+            boolean targetProxyMt5 = PATH_MT5.equalsIgnoreCase(targetPath);
+            boolean targetRootDefault = targetPath.isEmpty() && target.getPort() < 0;
+            if ((currentDirect8787 || currentProxyMt5 || currentRootDefault)
+                    && (targetDirect8787 || targetProxyMt5 || targetRootDefault)) {
+                return normalizedTarget;
+            }
+        } catch (Exception ignored) {
+            return normalizedCurrent;
+        }
+        return normalizedCurrent;
+    }
+
     private static String normalizeCandidate(@Nullable String raw, String fallback) {
         try {
             String source = raw == null ? "" : raw.trim();
             if (source.isEmpty()) {
                 return fallback;
             }
+            boolean rawHasExplicitScheme = hasExplicitScheme(source);
             String prepared = prepareForUri(source);
             URI uri = new URI(prepared);
             if (uri.getHost() == null || uri.getHost().trim().isEmpty()) {
@@ -106,7 +171,7 @@ public final class GatewayUrlResolver {
             String host = uri.getHost().trim();
             String sanitizedPath = sanitizePath(uri.getPath());
             boolean rawHasExplicitPort = uri.getPort() > 0;
-            int port = resolvePort(uri, fallback, rawHasExplicitPort, sanitizedPath);
+            int port = resolvePort(uri, fallback, rawHasExplicitPort, rawHasExplicitScheme, sanitizedPath);
             boolean writePort = shouldWritePort(rawHasExplicitPort, sanitizedPath, port, scheme);
 
             StringBuilder builder = new StringBuilder();
@@ -135,6 +200,15 @@ public final class GatewayUrlResolver {
             value = "http://" + value;
         }
         return value;
+    }
+
+    // 显式写出 scheme 的地址视为“用户已经选定入口形态”，不要再从回退值补旧端口。
+    private static boolean hasExplicitScheme(String raw) {
+        String value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        return value.startsWith("http://")
+                || value.startsWith("https://")
+                || value.startsWith("ws://")
+                || value.startsWith("wss://");
     }
 
     private static String normalizeScheme(@Nullable String scheme) {
@@ -193,16 +267,20 @@ public final class GatewayUrlResolver {
     private static int resolvePort(URI uri,
                                    String fallback,
                                    boolean rawHasExplicitPort,
+                                   boolean rawHasExplicitScheme,
                                    String sanitizedPath) {
         if (rawHasExplicitPort) {
             return uri.getPort();
         }
         if (sanitizedPath.isEmpty()) {
+            if (rawHasExplicitScheme) {
+                return -1;
+            }
             int fallbackPort = extractPort(fallback);
             if (fallbackPort > 0) {
                 return fallbackPort;
             }
-            return 8787;
+            return -1;
         }
         return defaultPort(normalizeScheme(uri.getScheme()));
     }
@@ -234,5 +312,32 @@ public final class GatewayUrlResolver {
 
     private static int defaultPort(String scheme) {
         return "https".equalsIgnoreCase(scheme) ? 443 : 80;
+    }
+
+    // 在已规范化的基础地址后追加路径，保留现有 host/port，不再额外套用旧回退端口。
+    private static String appendPath(String baseUrl, String path) {
+        String base = baseUrl == null ? "" : baseUrl.trim();
+        if (base.isEmpty()) {
+            base = DEFAULT_FALLBACK;
+        }
+        String suffix = path == null ? "" : path.trim();
+        if (suffix.isEmpty()) {
+            return base;
+        }
+        if (!suffix.startsWith("/")) {
+            suffix = "/" + suffix;
+        }
+        if (base.endsWith("/")) {
+            return base.substring(0, base.length() - 1) + suffix;
+        }
+        return base + suffix;
+    }
+
+    private static String sanitizeExplicitUrl(@Nullable String value, String fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? fallback : trimmed;
     }
 }

@@ -92,8 +92,8 @@ cd C:\mt5_bundle
 如果你想让手机访问这台服务器：
 
 1. 安装 Caddy
-2. 使用 `windows\Caddyfile.example`
-3. 把 `PUBLIC_HOST_OR_IP` 改成你的公网 IP：`43.155.214.62`
+2. 默认直接使用随包附带的 `windows\Caddyfile`
+3. 如果你有域名并要上 HTTPS，再改用 `windows\Caddyfile.example`
 4. 启动 Caddy
 5. 如果需要直接访问管理面板，再放行 `8788`
 
@@ -104,18 +104,25 @@ http://127.0.0.1:8788
 http://你的公网IP:8788
 ```
 
+当前默认 `windows\Caddyfile` 已经直接开放：
+
+- `/health`、`/v1/*`、`/v2/*`
+- `/mt5/*`
+- `/binance-rest/*`
+- `/binance-ws/*`
+
 ## APK 侧地址
 
 你本地打包 APK 时可填写：
 
 ```properties
-MT5_GATEWAY_BASE_URL=http://43.155.214.62/mt5
+MT5_GATEWAY_BASE_URL=http://43.155.214.62
 BINANCE_REST_BASE_URL=http://43.155.214.62/binance-rest/fapi/v1/klines
 BINANCE_WS_BASE_URL=ws://43.155.214.62/binance-ws/ws/
 ```
 
 说明：
 
-- App 后台常驻时会优先走 `/mt5/v1/live`
-- 打开账户页后首次会拉 `/mt5/v1/snapshot`，后续再分开拉 `/mt5/v1/pending`、`/mt5/v1/trades`、`/mt5/v1/curve`
+- App 后台常驻时会优先走 `/v1/live`
+- 打开账户页后首次会拉 `/v1/snapshot`，后续再分开拉 `/v1/pending`、`/v1/trades`、`/v1/curve`
 - 管理面板是独立进程，主网关停掉后仍可继续从浏览器里启动、停止、重启网关和相关组件

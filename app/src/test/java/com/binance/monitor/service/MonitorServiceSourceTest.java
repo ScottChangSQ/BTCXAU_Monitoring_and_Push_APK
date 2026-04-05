@@ -54,6 +54,23 @@ public class MonitorServiceSourceTest {
                 source.contains("accountStorageRepository == null ? new ArrayList<>() : accountStorageRepository.loadPositions()"));
     }
 
+    @Test
+    public void startupShouldLogResolvedGatewayAddresses() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertTrue("服务启动时应打印构建默认 MT5 网关地址",
+                source.contains("APP诊断 BuildConfig MT5="));
+        assertTrue("服务启动时应打印运行时解析后的 MT5 网关地址",
+                source.contains("APP诊断 Runtime MT5="));
+        assertTrue("服务启动时应打印运行时解析后的 Binance WS 地址",
+                source.contains("APP诊断 Runtime BinanceWS="));
+        assertTrue("服务启动时应统一走地址诊断入口",
+                source.contains("logResolvedGatewayAddresses();"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

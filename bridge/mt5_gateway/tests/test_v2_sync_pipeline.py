@@ -236,6 +236,20 @@ class V2SyncPipelineTests(unittest.TestCase):
         self.assertIn("fullRefresh", fake_client.messages[0]["payload"])
         self.assertNotEqual("heartbeat", fake_client.messages[1]["type"])
 
+    def test_configure_windows_event_loop_policy_should_switch_to_selector_on_windows(self):
+        class _FakeSelectorPolicy:
+            pass
+
+        with mock.patch.object(server_v2.os, "name", "nt"), mock.patch.object(
+            server_v2.asyncio, "WindowsSelectorEventLoopPolicy", _FakeSelectorPolicy, create=True
+        ), mock.patch.object(server_v2.asyncio, "get_event_loop_policy", return_value=object()), mock.patch.object(
+            server_v2.asyncio, "set_event_loop_policy"
+        ) as set_mock:
+            server_v2._configure_windows_event_loop_policy()
+
+        selected_policy = set_mock.call_args[0][0]
+        self.assertIsInstance(selected_policy, _FakeSelectorPolicy)
+
 
 if __name__ == "__main__":
     unittest.main()

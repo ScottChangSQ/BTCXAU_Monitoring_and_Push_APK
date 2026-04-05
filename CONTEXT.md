@@ -1,6 +1,73 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 正在继续收口“手机端图表页历史 K 线仍有缺段”的客户端残留问题，并已用 ADB 与应用内日志把现状进一步钉死：账户页本地库 `trade_history` 已有 `1078` 条交易，`Trade visibility snapshot` 日志里的 `snapshot/effective/base` 也都是 `1078`，说明“账户统计交易记录不完整”的主因已不再是服务端或账户页二次折叠，当前主矛盾已收敛到图表页补历史链路。
+- 已定位图表缺段的一条客户端根因：`MarketChartActivity.expandFullHistoryWhenGapDetected()` 之前拿“上一轮最新一根时间”去和“新窗口最老一根时间”比较，这个比较几乎永远不会触发左侧补历史，导致本地已有更早历史但当前窗口不完整时，缺口会长期保留。
+- 已新增 `ChartGapFillHelper`，并把 `MarketChartActivity` 的补缺口判定改为基于“上一轮最老一根时间”；也就是只有当当前新窗口的最老一根明显晚于上一轮已显示的最老一根时，才继续向左分页补历史。
+- 已补最小回归测试：`ChartGapFillHelperTest` 与 `MarketChartGapFillSourceTest`；并联同 `MarketChartV2SourceTest`、`MarketChartDisplayHelperTest` 复跑通过。命令是 `./gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.ChartGapFillHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartGapFillSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartV2SourceTest" --tests "com.binance.monitor.ui.chart.MarketChartDisplayHelperTest"`。
+- 已重新执行 `./gradlew.bat :app:assembleDebug` 并通过 ADB 安装最新 APK 到设备 `7fab54c4`。当前停点：需要继续用真机复测图表页，确认这次“按上一轮最老一根补历史”的修复后，历史缺段是否明显减少或消失；若仍有缺段，再继续排查服务端 `/v2/market/candles` 返回本身是否存在时间桶缺失。
+- 本轮关键决定：不继续围绕账户页交易列表做大改，因为真机日志、真机截图和本地数据库都已经证明账户页当前实际拿到了完整的 1078 条历史；最短路径是只修图表补历史的错误比较基准。
+- 正在继续收口“把交易历史改成 MT5 完整拉取后，`/v1/trades?range=all` 与 `/v2/account/history?range=all` 又长时间卡住”的服务器问题。已确认根因不是交易配对逻辑本身，而是 `range=all` 直接把 MT5 历史窗口一次拉到 `730` 天，导致请求线程在服务器上明显阻塞。
+- 已把交易历史拉取策略改成“逐步扩窗而不是一次全拉”：`range=all` 下依次尝试 `30/90/180/365/730` 天窗口，达到 `TRADE_HISTORY_TARGET_ITEMS`（默认 `1000`）就停止；这样比 EA 的 `200` 条完整很多，同时避免一次性全拉导致接口卡死。非 `all` 范围仍保持单次窗口查询。
+- 交易历史接口仍继续保留“优先 MT5，失败再回退 EA 快照”的原则，但现在 MT5 侧不再直接走最大窗口。
+- 已补回归测试锁住“`all` 会逐步扩窗并尽早停止”；当前 `python -m unittest bridge.mt5_gateway.tests.test_summary_response bridge.mt5_gateway.tests.test_v2_contracts bridge.mt5_gateway.tests.test_v2_account_pipeline` 共 47 条通过，`python -m unittest bridge.mt5_gateway.tests.test_v2_sync_pipeline bridge.mt5_gateway.tests.test_admin_panel bridge.mt5_gateway.tests.test_gateway_bundle_parity` 共 15 条通过。
+- 当前停点：最新 `server_v2.py` 需要再次覆盖到服务器并重启 `8787`，然后重新复测 `curl.exe http://127.0.0.1:8787/v1/trades?range=all` 与 `curl.exe "http://127.0.0.1:8787/v2/account/history?range=all"` 的响应时间和返回条数；如果仍慢，再继续把 `TRADE_HISTORY_TARGET_ITEMS` 和扩窗上限做成更保守的部署默认值。
+- 本轮关键决定：不再让交易历史接口同步拉 `730` 天全量窗口，而是先保证“能返回且比 EA 完整得多”；原因是当前用户的主阻塞已从“接口空/超时”转为“接口慢且列表被截断”，先把可用性恢复是最短路径。
+- 正在继续收口“手机端图表页仍有历史缺段、账户统计交易记录仍不完整”的剩余服务器问题。最新证据已经明确一条独立根因：EA 推送端当前只上传 `TradeHistoryDays=30`、`MaxTradeItems=200`，因此只要账户历史超过这个窗口，账户统计里的交易记录就一定被截断。
+- 已新增交易历史专用服务器修复：`/v1/trades` 与 `/v2/account/history` 不再直接使用 EA 快照里的截断交易列表，而是优先通过 MT5 Python 接口拉完整历史，再用短缓存复用结果；实时页、持仓和曲线仍继续走 EA 快照，避免重新拖慢快接口。
+- 当前图表页“K 线有数据但仍有缺失”尚未单独收口；现阶段先把已确认的交易历史截断问题切掉，再继续针对市场 K 线链路排查。
+- 已补回归测试锁住“交易历史接口优先使用 MT5 完整历史”与“`/v2/account/history` 复用同一套交易历史来源”；当前 `python -m unittest bridge.mt5_gateway.tests.test_v2_contracts bridge.mt5_gateway.tests.test_v2_account_pipeline` 共 17 条通过，`python -m unittest bridge.mt5_gateway.tests.test_summary_response bridge.mt5_gateway.tests.test_v2_sync_pipeline bridge.mt5_gateway.tests.test_admin_panel bridge.mt5_gateway.tests.test_gateway_bundle_parity` 共 44 条通过。
+- 当前停点：最新 `server_v2.py` 需要再次覆盖到服务器并重启 `8787`，随后优先复测 `curl.exe http://127.0.0.1:8787/v1/trades?range=all` 与 `curl.exe http://127.0.0.1:8787/v2/account/history?range=all`，确认交易记录条数已不再受 EA 截断；图表缺段问题留在下一轮继续收口。
+- 本轮关键决定：不再尝试把 EA 包重新放大来“兼容完整历史”，而是让交易历史接口直接走 MT5 完整源；原因是继续放大 EA payload 会重新逼近之前的超时/卡死问题。
+- 正在继续收口“`/v1/curve` 虽已恢复返回，但曲线尾点时间顺序错乱”的剩余服务端问题。最新服务器回包里已确认：末尾“当前快照点”时间戳会早于前面的历史成交点，直接造成 `curvePoints` 非递增，图表端可能表现为历史线间断、尾部跳动或补拉异常。
+- 已修正 `server_v2.py` 的历史曲线回放尾点逻辑：`_replay_curve_from_history()` 生成最终当前快照点时，时间戳改为不小于最后一个事件时间；若最后一个点时间已不晚于尾点，则直接用当前快照覆盖最后一点，避免再插入一个更早的尾点。
+- 已补回归测试锁住“最终当前快照点不能把 `curvePoints` 顺序打乱”；当前 `python -m unittest bridge.mt5_gateway.tests.test_summary_response` 共 29 条通过，`python -m unittest bridge.mt5_gateway.tests.test_v2_contracts bridge.mt5_gateway.tests.test_v2_sync_pipeline` 共 16 条通过。
+- 当前停点：曲线接口已从“卡住”进入“可返回但需收口时间顺序”阶段，下一步应把最新 `server_v2.py` 再次覆盖到服务器并重启 `8787`，优先复测 `/v1/curve?range=all` 回包末尾时间戳是否仍倒退，再观察 APP 图表页和账户页是否还报 timeout。
+- 本轮关键决定：先保证服务端曲线时间序列严格非递减，不先处理更深层的 MT5/EA 时间源口径；原因是图表渲染首先要求时间轴有序，这一步最短且可直接验证。
+- 正在继续收口“`/v1/trades` 已恢复，但 `/v1/curve?range=all` 仍明显变慢”的剩余服务器内部瓶颈。已进一步确认第二层重复处理：`POST /v1/ea/snapshot` 写入时已经做过 `_normalize_snapshot()`，但 `_select_snapshot()` 和 `_build_account_light_snapshot()` 读取 EA 缓存时又再次执行了一遍标准化，导致曲线重建仍会反复发生。
+- 已新增 `server_v2.py` 的缓存读取修复：读取新鲜或 stale 的 EA 缓存时，改为只复制已标准化快照，不再再次调用 `_normalize_snapshot()`；这样完整快照和轻快照都不会在读取阶段重复触发 EA 交易/曲线重建。
+- 已补回归测试锁住 `_select_snapshot()` 对新鲜 EA 缓存不能再次调用 `_normalize_snapshot()`；当前 `python -m unittest bridge.mt5_gateway.tests.test_v2_contracts bridge.mt5_gateway.tests.test_summary_response` 共 38 条通过，`python -m unittest bridge.mt5_gateway.tests.test_v2_sync_pipeline bridge.mt5_gateway.tests.test_admin_panel bridge.mt5_gateway.tests.test_gateway_bundle_parity` 共 15 条通过。
+- 当前停点：仓库内已经切掉两层重复重建点，下一步应再次把最新 `server_v2.py` 覆盖到服务器并重启 `8787`，然后优先复测 `curl.exe http://127.0.0.1:8787/v1/curve?range=all`；如果仍慢，再继续查 `_replay_curve_from_history()` 本身的输出规模和采样策略。
+- 本轮关键决定：不去碰 APP 和 Caddy，继续只收口 Python 网关内的重复曲线重建；原因是现在 `127.0.0.1:8787/v1/trades` 已经恢复，说明外层链路已基本打通，剩余问题明确落在 EA 曲线快照读取路径。
+- 正在收口“`/v1/trades?range=all`、`/v1/curve?range=all` 在服务器本机 `127.0.0.1:8787` 也会卡住”的服务器内部阻塞问题。已确认这是 Python 网关投影链路里的重复处理，不是 Caddy、APK 地址或公网入口问题。
+- 已修正 `bridge/mt5_gateway/server_v2.py` 的投影构建：`_build_pending_snapshot`、`_build_trades_snapshot`、`_build_curve_snapshot` 不再把已经标准化过的完整快照再次送进 `_normalize_snapshot()`，改为只裁剪需要的字段，避免投影接口重复进入 EA 快照重建链路。
+- 已补最小回归测试，直接锁住 `trades/curve` 投影不能再次调用 `_normalize_snapshot()`；当前 `python -m unittest bridge.mt5_gateway.tests.test_summary_response` 共 28 条通过，`python -m unittest bridge.mt5_gateway.tests.test_v2_sync_pipeline bridge.mt5_gateway.tests.test_v2_contracts bridge.mt5_gateway.tests.test_admin_panel bridge.mt5_gateway.tests.test_gateway_bundle_parity` 共 24 条通过。
+- 当前停点：仓库内修复和回归保护已完成，下一步应把最新 `server_v2.py` 覆盖到服务器 `C:\mt5_bundle\mt5_gateway\server_v2.py`，重启 `8787` 后优先复测本机 `curl.exe http://127.0.0.1:8787/v1/trades?range=all` 与 `curl.exe http://127.0.0.1:8787/v1/curve?range=all` 是否恢复秒级返回。
+- 本轮关键决定：先切掉投影接口上的重复标准化，再看是否还残留更深层的快照构建瓶颈；原因是用户已经给出“本机 `v1/trades` 卡住”的直接证据，这条链路是当前最短、最可验证的阻塞点。
+- 正在收口“服务器 `8787` 网关会周期性卡死、EA 推送持续 `status=1003`”这一轮根因修复。当前已确认两条新证据：一是用户服务器本机 `curl.exe http://127.0.0.1:8787/health` 会间歇性长时间无响应，重启 Python 进程后又暂时恢复，说明主问题在 Windows 网关进程稳定性；二是 MT5 专家日志持续报 `MT5BridgePushEA: push status=1003 payloadBytes=628800`，说明账户/持仓为空不是 APP 丢数据，而是 EA 大快照在 3 秒超时下持续推送失败。
+- 已进一步确认 EA 推送里还存在第二个独立问题：用户把新 EA 重新加载后，日志开始出现 `422 json_invalid / Extra data`，定位到 MQL `StringToCharArray` 发包时把结尾空字符也一并送进了 HTTP body，导致 FastAPI 把请求体判定为“完整 JSON 后还有额外数据”。现在源码与部署包里的 EA 都已经补上“去掉尾部 `\0` 再发送”的处理。
+- 已继续确认一个更上层的服务器瓶颈：当前 `gatewayMode=auto` 时，`/v1/live`、`/v1/summary`、`/v2` 账户链路会优先走 MT5 Python Pull，而不是优先使用已存在的 EA 快照；在用户服务器上，这会把高频账户请求拖进慢 MT5 拉取，反过来让 EA 的 `POST /v1/ea/snapshot` 排队超时，表现为 EA 端持续 `status=1003`、本机 `curl /v1/live?range=all` 长时间无返回。现在已把 `auto` 模式改成“新鲜 EA 快照优先，MT5 Pull 只做回退”，并补了单测锁住这个选择顺序。
+- 已把源码目录 `bridge/mt5_gateway` 同步到和部署包一致的 Windows 修复口径：`server_v2.py` 启动时强制切回 `asyncio.WindowsSelectorEventLoopPolicy()`，并给 `v2_stream` 的 `client.close()` 补了保护；`admin_panel.py` 也补上同样的事件循环切换，避免管理面板在 Windows 上重复踩到 Proactor 断链问题。
+- 已把 EA 默认推送预算从“高风险大包”收紧到“先恢复稳定”为主：`RequestTimeoutMs` 从 `3000` 调到 `15000`，`TradeHistoryDays` 从 `3650` 调到 `30`，`MaxTradeItems` 从 `5000` 调到 `200`；同样的默认值已经同时改到源码和 `deploy/tencent/windows_server_bundle` 部署包，避免再次漂移。
+- 当前停点：仓库内针对这轮改动的最小单测已通过，命令是 `python -m unittest bridge.mt5_gateway.tests.test_admin_panel bridge.mt5_gateway.tests.test_v2_sync_pipeline bridge.mt5_gateway.tests.test_gateway_bundle_parity`。下一步不是继续改 APP，而是把这几份文件覆盖到服务器与 EA 端，再复测 `8787` 健康检查和持仓快照是否恢复。
+- 本轮关键决定：不再继续围绕 APK 地址、Caddy 根路径或 UI 页面猜测；当前证据已经足够说明，主阻塞点收敛为“Windows Proactor 事件循环拖挂网关”加上“EA 推送体过大且超时太短”。
+- 正在收口“服务器公网 MT5 入口仍未真正切到根路径代理”的问题。当前已拿到两条关键证据：一是手机侧 `curl http://43.155.214.62/health`、`curl http://43.155.214.62/v1/source` 现在虽然返回 `200`，但正文仍为空，说明公网 `:80` 上跑着的 Caddy 还不是仓库里这版正确反代；二是本地重新编译后的 APK 二进制里已经不再包含 `http://43.155.214.62:8787` 或 `/mt5` 常量，说明“客户端继续锁死旧入口”不再是本轮代码产物本身的问题。
+- 已修正 `GatewayUrlResolver` 的根因：对于用户显式写出的 `http://host` / `https://host` 根地址，不再错误继承回退端口 `8787`。这样旧配置从 `http://43.155.214.62:8787` 迁移到 `http://43.155.214.62` 时，不会再被内部规范化逻辑偷偷补回旧端口。
+- 已把服务器部署包进一步收口为“自带可直接使用的 Caddyfile”：新增 `deploy/tencent/windows/Caddyfile` 与 `deploy/tencent/windows_server_bundle/windows/Caddyfile`，默认直接监听 `:80`，并同时代理 `/health`、`/v1/*`、`/v2/*`、`/mt5/*`、`/binance-rest/*`、`/binance-ws/*`。原因是用户此前多次手工创建 `C:\mt5_bundle\windows\Caddyfile`，实际线上症状也证明手工配置极易偏离仓库样例。
+- 当前停点：`.\gradlew.bat :app:assembleDebug --rerun-tasks` 已通过，生成的 APK 中已确认只包含 `MT5_GATEWAY_BASE_URL=http://43.155.214.62`；但 `testDebugUnitTest --tests "com.binance.monitor.util.GatewayUrlResolverTest"` 仍会被项目内一批与本次无关的旧测试编译错误拦住，因此当前验证证据以“源码规则 + 成功打包 + APK 二进制常量检查 + 手机侧 curl 实测”为准。下一步应优先把服务器上的实际 `C:\mt5_bundle\windows\Caddyfile` 替换为仓库这份新默认配置，再重启 Caddy 做手机侧复测。
+- 本轮关键决定：这次不再继续猜“APP 有没有装对”，而是把问题拆成两层分别钉死。客户端层已经确认新的 APK 本体不再内置 `:8787`；剩余阻塞点是服务器公网 `:80` 实际还没换到正确的根路径反代配置。
+- 正在继续收口“浮窗和行情监控正常，但 K 线历史、账户统计、当前持仓都走不通”的问题。当前已经把故障域进一步收窄：Binance 相关链路通过 Caddy 的 `/binance-rest`、`/binance-ws` 是正常的，真正超时的是 MT5 网关经 `/mt5` 反代这一层。因此本轮决定先把默认配置切成“MT5 直连 `43.155.214.62:8787`，Binance 继续走 `http://43.155.214.62/binance-rest/...` 与 `ws://43.155.214.62/binance-ws/...`”，优先恢复 APP 主功能。
+- 已修正客户端默认地址策略：`ConfigManager` 不再从 MT5 地址强行派生 Binance REST/WS 地址，而是优先使用 `BuildConfig` 中显式配置的 Binance 地址；只有用户把 MT5 网关改成别的主机时，才跟随派生同主机的 `/binance-rest`、`/binance-ws`。同时新增“同主机 `/mt5` 与 `:8787` 双向对齐”规则，确保已装旧配置的设备也会自动切到当前目标入口。
+- 当前停点：`GatewayUrlResolverTest`、`MonitorServiceSourceTest` 已通过，`.\gradlew.bat clean :app:assembleDebug --rerun-tasks` 已通过，并已确认生成的 `BuildConfig.MT5_GATEWAY_BASE_URL = http://43.155.214.62:8787`、`BINANCE_REST_BASE_URL = http://43.155.214.62/binance-rest/fapi/v1/klines`、`BINANCE_WS_BASE_URL = ws://43.155.214.62/binance-ws/ws/`。最新 APK 仍在 `app/build/outputs/apk/debug/app-debug.apk`。
+- 本轮关键决定：不再强求单一 `/mt5` 入口承载全部功能；原因是现有证据已经足够说明“`/mt5` 反代层超时，而 Binance 代理层正常”，继续把 MT5 流量塞进 `/mt5` 只会持续卡住账户、K 线和当前持仓。
+- 正在继续收口“重装最新 APK 后，APP 日志仍显示回连 `43.155.214.62:8787`”的问题。当前已确认这次不只是安装或缓存问题，而是客户端地址拼接链里存在真实 bug：`GatewayUrlResolver.buildBinanceRestBaseUrl/buildBinanceWebSocketBaseUrl` 在把 `/mt5` 根入口改写成 `/binance-rest`、`/binance-ws` 时，会再次错误套用旧回退端口 `8787`，因此运行时仍会把回退行情链路拼成 `43.155.214.62:8787/...`。现已改为保留当前根入口的 host/port 原样追加路径，不再额外补旧端口。
+- 已在 `MonitorService` 启动与刷新配置时加入运行时地址诊断日志，会直接打印 `BuildConfig MT5 / BinanceREST / BinanceWS` 和 `Runtime MT5 / GatewayRoot / BinanceREST / BinanceWS / V2Stream`，用于在真机日志里直接确认 APP 实际正在使用的地址，避免继续猜测“是不是还锁死旧地址”。
+- 当前停点：`GatewayUrlResolverTest` 与 `MonitorServiceSourceTest` 已通过，`.\gradlew.bat :app:assembleDebug` 已通过，最新 APK 仍在 `app/build/outputs/apk/debug/app-debug.apk`。下一步应优先安装这版 APK，并回贴 APP 新增的 `APP诊断 ...` 日志行，确认运行时地址是否已经切到 `/mt5` 与 `/binance-ws`。
+- 本轮关键决定：先用运行时日志把“APP 实际在用哪个 URL”钉死，再继续看是否还存在 WebSocket 保活或 Caddy 反代问题；原因是这次已经确认过，单看用户感知日志不足以区分“旧地址残留”和“新地址连接后又断开”。
+- 正在继续收口“即使重装最新 APK，APP 仍回连旧的 :8787 地址”的残留。根因已经定位到客户端配置恢复链：应用仍允许 `allowBackup=true`，系统可能把旧的 `SharedPreferences` 网关地址恢复回来；同时 `ConfigManager` 读取时也没有把旧公网 `:8787` 地址迁移到新的 `/mt5`。当前已决定同时关闭自动备份，并在读取/写入网关地址时自动把同主机的旧 `:8787` 入口迁移成当前 `BuildConfig` 指向的 `/mt5`。
+- 正在继续收口“APP 仍然回连旧的 :8787 地址”的最后一个残留。已确认服务器链路已经切到 `Caddy + /mt5 /binance-rest /binance-ws`，但当前 APK 的 `gradle.properties` 仍把 `MT5_GATEWAY_BASE_URL / BINANCE_REST_BASE_URL / BINANCE_WS_BASE_URL` 写死为 `43.155.214.62:8787`，导致回退行情链路和默认入口继续绕过 Caddy。当前已决定直接把构建常量全部改到 Caddy 入口后重新编译 APK。
+- 正在继续收口“APP 已连上服务器，但账户统计与持仓后续不再更新”的问题。当前判断是：公网、EA 推送、异常接口都已恢复后，剩余问题集中在 APP 的实时兜底逻辑；只要 `v2 stream` 后续一段时间没再收到消息，`MonitorService` 之前只会补行情，不会补账户，导致账户页和持仓摘要停在旧值。当前已决定先加最小兜底：`v2 stream` 超时时按冷却时间主动补拉一次账户快照，再编译 APK 复测。
+- “服务器唯一运维控制台”第一阶段 1-6 号任务已全部完成。当前停点是：源码、部署包和文档都已收口，等待后续是否继续做提交、合并或服务器实装。
+- 上次停点：Windows 部署包已同步为单根目录 `C:\mt5_bundle` 思路，`bridge.mt5_gateway.tests.test_admin_panel` 共 23 条单测通过，`bridge.mt5_gateway.tests.test_admin_panel_bundle_parity` 共 2 条测试通过，并已补上源码与 bundle 文件内容一致校验。
+- 本轮关键决定：部署包闭合不只校验“文件存在”，还校验“文件内容与源码一致”；原因是用户当前最怕的不是少文件，而是服务器上跑着旧版本文件，导致 UI 或脚本看似齐全但行为不一致。
+- “服务器唯一运维控制台”设计文档已获用户批准，实施计划也已完成，计划文件为 `docs/superpowers/plans/2026-04-05-server-control-console.md`。当前停点是：等待用户选择执行方式，再进入实际实现。
+- 本轮关键决定：实施阶段按 5 块收口，分别是后台统一状态聚合、中文诊断规则、表单化配置、完整控制台前端、单目录部署包闭合校验；不在第一阶段加入复杂权限、多实例或远程 MT5 图表级控制。
+- 已完成“服务器唯一运维控制台”的设计确认。用户已明确不要再依赖命令行，希望把服务器、网关、MT5、EA、代理、APP 连通性、配置、日志、状态与诊断全部收进一个新的 Web 控制台中；并新增硬性要求：所有部署到服务器的文件必须统一收口到单一根目录，避免路径不一致导致失败。正式设计文档已写入 `docs/superpowers/specs/2026-04-05-server-control-console-design.md`。
+- 当前停点：设计阶段已完成，下一步需要等待用户审阅该 spec；只有在用户确认后，才能进入实现计划与代码阶段。
+- 本轮关键决定：不继续在现有轻量面板上做小修小补，而是新做一个更完整的 Web 控制台；但后台仍尽量复用现有 `admin_panel.py`、`server_v2.py`、计划任务和 PowerShell 执行层，避免重写整套服务。
+- 已定位并修复云端 Windows 精简部署包的启动阻塞问题：`deploy/tencent/windows_server_bundle/mt5_gateway` 之前缺少 `v2_account.py`，但 `server_v2.py` 启动时会直接 `import v2_account`，因此按精简包部署到服务器后会在 `start_gateway.ps1` 阶段立刻报 `ModuleNotFoundError`。现在部署包已补齐该文件，同目录导入验证已通过。
+- 当前停点：服务器上现有 `C:\mt5_bundle\mt5_gateway\` 仍需要补传这一个缺失文件，或直接重新覆盖上传最新 `windows_server_bundle`；补齐后重新执行 `.\start_gateway.ps1` 即可继续验证主网关与 Web 面板。
+- 本轮关键决定：这次不改服务器启动脚本，也不继续怀疑 `.env`；原因是根因已明确是“部署包缺文件”，继续调启动参数不会解决问题。
 - 正在按用户已确认方案连续完成两个任务且不再中途停顿：一是把 K 线链路收口成“历史快照 + 最新 1 条 latestPatch”，二是新增允许服务器本机 `localhost` 与公网访问的轻量 Web 管理面板。当前业务代码、测试与部署脚本已基本落地，正在做最后的文档同步、扩展验证和 APK 编译收尾。
 - 当前停点：K 线相关 Android 改动、`/v2/market/candles` 服务端 latestPatch 拆分、`admin_panel.py` 管理面板及其静态页面和部署脚本都已写完；接下来只剩 `CONTEXT.md` / 网关文档同步、补齐 `windows_server_bundle`、跑更完整测试并编译 APK。
 - 本轮关键决定：

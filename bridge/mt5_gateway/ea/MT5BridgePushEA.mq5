@@ -4,9 +4,9 @@ input string GatewayUrl = "http://127.0.0.1:8787/v1/ea/snapshot";
 input string BridgeToken = "";
 input int PushIntervalSeconds = 10;
 input int HeartbeatIntervalSeconds = 20;
-input int RequestTimeoutMs = 3000;
-input int TradeHistoryDays = 3650;
-input int MaxTradeItems = 5000;
+input int RequestTimeoutMs = 15000;
+input int TradeHistoryDays = 30;
+input int MaxTradeItems = 200;
 
 string g_lastSuccessfulState = "";
 datetime g_lastSuccessfulPushTime = 0;
@@ -291,13 +291,16 @@ string BuildSnapshotStateSignature(string overviewMetrics,
 
 int BuildRequestPayload(string body, char &payload[])
 {
-   // WebRequest 只需要 JSON 正文，不能把结尾的空字符一起发出去。
-   int copied = StringToCharArray(body, payload, 0, StringLen(body), CP_UTF8);
+   // WebRequest 只接受纯 JSON 字节，不能把结尾的空字符一起发出去。
+   int copied = StringToCharArray(body, payload, 0, -1, CP_UTF8);
    if(copied <= 0)
    {
       ArrayResize(payload, 0);
       return 0;
    }
+
+   if(payload[copied - 1] == 0)
+      copied--;
 
    ArrayResize(payload, copied);
    return copied;

@@ -90,6 +90,26 @@ def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
+# Windows 下默认 Proactor 事件循环在 WebSocket 断链场景里容易反复抛 WinError 10054，
+# 严重时会把整条网关事件循环拖挂，因此这里统一切回更稳定的 Selector 策略。
+def _configure_windows_event_loop_policy() -> None:
+    if os.name != "nt":
+        return
+    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy is None:
+        return
+    try:
+        current_policy = asyncio.get_event_loop_policy()
+        if isinstance(current_policy, selector_policy):
+            return
+    except Exception:
+        pass
+    try:
+        asyncio.set_event_loop_policy(selector_policy())
+    except Exception:
+        pass
+
+
 # 统一生成 v2 同步 token，供快照、增量和 WS 消息复用。
 def _build_sync_token(server_time_ms: int, revision: str) -> str:
     payload = f"{int(server_time_ms)}:{revision}".encode("utf-8")
@@ -3757,8 +3777,12 @@ async def v2_stream(client: WebSocket):
     except WebSocketDisconnect:
         return
     except Exception as exc:
-        await client.close(code=1011, reason=f"v2 stream failed: {exc}")
+        try:
+            await client.close(code=1011, reason=f"v2 stream failed: {exc}")
+        except Exception:
+            return
 
 
 if __name__ == "__main__":
+    _configure_windows_event_loop_policy()
     uvicorn.run("server_v2:app", host=HOST, port=PORT, reload=False)

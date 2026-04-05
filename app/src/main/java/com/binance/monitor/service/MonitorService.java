@@ -38,6 +38,7 @@ import com.binance.monitor.ui.floating.FloatingSymbolCardData;
 import com.binance.monitor.ui.floating.FloatingWindowSnapshot;
 import com.binance.monitor.ui.floating.FloatingWindowManager;
 import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.util.GatewayUrlResolver;
 import com.binance.monitor.util.NotificationHelper;
 
 import java.util.ArrayList;
@@ -105,6 +106,7 @@ public class MonitorService extends Service {
     private boolean floatingRefreshScheduled;
     private long lastForcedReconnectAt;
     private long lastStaleRestRefreshAt;
+    private long lastStaleAccountRefreshAt;
     private volatile boolean staleRestRefreshInFlight;
     private volatile boolean abnormalSyncInFlight;
     private long abnormalSyncSeq;
@@ -138,6 +140,7 @@ public class MonitorService extends Service {
         AppForegroundTracker.getInstance().addListener(appForegroundListener);
         repository.setMonitoringEnabled(true);
         logManager.info("服务初始化完成");
+        logResolvedGatewayAddresses();
         applyFloatingPreferences();
     }
 
@@ -162,6 +165,7 @@ public class MonitorService extends Service {
             case AppConstants.ACTION_REFRESH_CONFIG:
                 applyFloatingPreferences();
                 abnormalEndpointUnsupported = false;
+                logResolvedGatewayAddresses();
                 syncAbnormalConfigAsync();
                 scheduleAbnormalSync(0L);
                 break;
@@ -339,6 +343,29 @@ public class MonitorService extends Service {
                 mainHandler.post(() -> requestFloatingWindowRefresh(true));
             }
         });
+    }
+
+    // 启动时打印构建默认值和运行时解析值，便于直接确认 APP 实际在用哪个入口。
+    private void logResolvedGatewayAddresses() {
+        if (logManager == null || configManager == null) {
+            return;
+        }
+        String runtimeMt5 = configManager.getMt5GatewayBaseUrl();
+        String runtimeRoot = GatewayUrlResolver.resolveGatewayRootBaseUrl(
+                runtimeMt5,
+                AppConstants.MT5_GATEWAY_BASE_URL
+        );
+        String runtimeRest = configManager.getBinanceRestBaseUrl();
+        String runtimeWs = configManager.getBinanceWebSocketBaseUrl();
+        String runtimeV2Stream = GatewayUrlResolver.buildEndpoint(runtimeMt5, "/v2/stream");
+        logManager.info("APP诊断 BuildConfig MT5=" + AppConstants.MT5_GATEWAY_BASE_URL);
+        logManager.info("APP诊断 BuildConfig BinanceREST=" + AppConstants.BASE_REST_URL);
+        logManager.info("APP诊断 BuildConfig BinanceWS=" + AppConstants.BASE_WS_URL);
+        logManager.info("APP诊断 Runtime MT5=" + runtimeMt5);
+        logManager.info("APP诊断 Runtime GatewayRoot=" + runtimeRoot);
+        logManager.info("APP诊断 Runtime BinanceREST=" + runtimeRest);
+        logManager.info("APP诊断 Runtime BinanceWS=" + runtimeWs);
+        logManager.info("APP诊断 Runtime V2Stream=" + runtimeV2Stream);
     }
 
     // 收到市场侧 delta 或 full refresh 时，补拉最新 1m 序列，修正最新价与最近收盘。
@@ -718,6 +745,7 @@ public class MonitorService extends Service {
         if (isV2StreamHealthy(now)) {
             return;
         }
+        refreshAccountFromV2IfStale(now);
         List<String> staleSymbols = new ArrayList<>();
         for (String symbol : AppConstants.MONITOR_SYMBOLS) {
             long last = lastKlineTickAt.getOrDefault(symbol, 0L);
@@ -739,6 +767,15 @@ public class MonitorService extends Service {
         logManager.warn("行情心跳超时，触发重连: " + String.join(", ", staleSymbols));
         fallbackKlineSocketManager.forceReconnect("行情心跳超时");
         updateConnectionStatus();
+    }
+
+    // 当统一流超时时，按冷却时间补一轮账户真值，避免账户页和持仓摘要停在旧值。
+    private void refreshAccountFromV2IfStale(long now) {
+        if (now - lastStaleAccountRefreshAt < 20_000L) {
+            return;
+        }
+        lastStaleAccountRefreshAt = now;
+        requestAccountRefreshFromV2();
     }
 
     // 当 v2 stream 仍健康时，旧 WebSocket 只保留为回退层，不再主导状态和重连。

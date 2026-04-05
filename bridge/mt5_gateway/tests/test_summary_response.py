@@ -388,6 +388,33 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertIsNone(_FakeMt5.captured_from.tzinfo)
         self.assertIsNone(_FakeMt5.captured_to.tzinfo)
 
+    def test_progressive_trade_history_deals_should_expand_window_until_target(self):
+        original_mt5 = server_v2.mt5
+        original_target = getattr(server_v2, "TRADE_HISTORY_TARGET_ITEMS", 1000)
+
+        class _FakeMt5:
+            calls = []
+
+            @staticmethod
+            def history_deals_get(from_time, to_time):
+                _FakeMt5.calls.append(from_time)
+                if len(_FakeMt5.calls) == 1:
+                    return [object()] * 100
+                if len(_FakeMt5.calls) == 2:
+                    return [object()] * 1200
+                return [object()] * 2000
+
+        server_v2.mt5 = _FakeMt5()
+        server_v2.TRADE_HISTORY_TARGET_ITEMS = 1000
+        try:
+            deals = server_v2._progressive_trade_history_deals("all")
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2.TRADE_HISTORY_TARGET_ITEMS = original_target
+
+        self.assertEqual(2, len(_FakeMt5.calls))
+        self.assertEqual(1200, len(deals))
+
     def test_ensure_mt5_prefers_plain_initialize_before_auth_initialize(self):
         original_mt5 = server_v2.mt5
         original_login = server_v2.LOGIN
@@ -1018,6 +1045,56 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertNotIn("curvePoints", response)
         self.assertNotIn("overviewMetrics", response)
 
+    def test_build_trades_snapshot_does_not_re_normalize_snapshot(self):
+        snapshot = {
+            "accountMeta": {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 EA Push",
+                "updatedAt": 1774868116886,
+            },
+            "trades": [{"dealTicket": 1779714434, "profit": -67.17}],
+        }
+        original_normalize_snapshot = server_v2._normalize_snapshot
+
+        def _unexpected_normalize(*args, **kwargs):
+            raise AssertionError("trades 投影不应再次进入 _normalize_snapshot")
+
+        server_v2._normalize_snapshot = _unexpected_normalize
+        try:
+            projected = server_v2._build_trades_snapshot(snapshot)
+        finally:
+            server_v2._normalize_snapshot = original_normalize_snapshot
+
+        self.assertEqual(snapshot["accountMeta"], projected["accountMeta"])
+        self.assertEqual(snapshot["trades"], projected["trades"])
+
+    def test_build_curve_snapshot_does_not_re_normalize_snapshot(self):
+        snapshot = {
+            "accountMeta": {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 EA Push",
+                "updatedAt": 1774868116886,
+            },
+            "curvePoints": [{"timestamp": 1, "equity": 100.0, "balance": 100.0}],
+            "curveIndicators": [{"name": "1D Return", "value": "-0.58%"}],
+        }
+        original_normalize_snapshot = server_v2._normalize_snapshot
+
+        def _unexpected_normalize(*args, **kwargs):
+            raise AssertionError("curve 投影不应再次进入 _normalize_snapshot")
+
+        server_v2._normalize_snapshot = _unexpected_normalize
+        try:
+            projected = server_v2._build_curve_snapshot(snapshot)
+        finally:
+            server_v2._normalize_snapshot = original_normalize_snapshot
+
+        self.assertEqual(snapshot["accountMeta"], projected["accountMeta"])
+        self.assertEqual(snapshot["curvePoints"], projected["curvePoints"])
+        self.assertEqual(snapshot["curveIndicators"], projected["curveIndicators"])
+
     def test_rebuild_curve_includes_open_positions(self):
         helper = getattr(server_v2, "_replay_curve_from_history", None)
         self.assertIsNotNone(helper, "缺少 _replay_curve_from_history，无法验证曲线重算")
@@ -1206,6 +1283,55 @@ class SummaryResponseTests(unittest.TestCase):
             any(abs(point["equity"] - point["balance"]) > 0.0 for point in sampled_points),
             "历史采样点应反映持仓浮盈亏，不能继续让净值等于结余",
         )
+
+    def test_rebuild_curve_keeps_final_snapshot_point_in_non_decreasing_order(self):
+        helper = getattr(server_v2, "_replay_curve_from_history", None)
+        self.assertIsNotNone(helper, "缺少 _replay_curve_from_history，无法验证曲线时间顺序")
+
+        deals = [
+            {
+                "timestamp": 2_000,
+                "price": 100.0,
+                "profit": 0.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 0,
+                "deal_type": 0,
+                "volume": 1.0,
+                "symbol": "XAUUSD",
+                "position_id": 1,
+            },
+            {
+                "timestamp": 3_000,
+                "price": 110.0,
+                "profit": 10.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 1,
+                "deal_type": 1,
+                "volume": 1.0,
+                "symbol": "XAUUSD",
+                "position_id": 1,
+            },
+        ]
+
+        points = helper(
+            deal_history=deals,
+            start_balance=1_000.0,
+            open_positions=[],
+            current_balance=1_010.0,
+            current_equity=1_010.0,
+            leverage=100.0,
+            contract_size_fn=lambda symbol: 1.0,
+            now_ms=2_500,
+            fetch_rows_fn=lambda symbol, interval, limit, **kwargs: [],
+        )
+
+        timestamps = [int(point["timestamp"]) for point in points]
+        self.assertEqual(sorted(timestamps), timestamps)
+        self.assertEqual(3_000, timestamps[-1])
+        self.assertAlmostEqual(1_010.0, points[-1]["equity"])
+        self.assertAlmostEqual(1_010.0, points[-1]["balance"])
 
     def test_curve_point_digest_includes_position_ratio(self):
         helper = getattr(server_v2, "_normalize_digest_curve_points", None)

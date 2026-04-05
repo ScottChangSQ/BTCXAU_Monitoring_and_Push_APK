@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -70,6 +71,20 @@ class AdminPanelTests(unittest.TestCase):
             restored = admin_panel.read_text_file_utf8(env_path)
 
         self.assertEqual(content, restored)
+
+    def test_configure_windows_event_loop_policy_should_switch_to_selector_on_windows(self):
+        class _FakeSelectorPolicy:
+            pass
+
+        with mock.patch.object(admin_panel.os, "name", "nt"), mock.patch.object(
+            admin_panel.asyncio, "WindowsSelectorEventLoopPolicy", _FakeSelectorPolicy, create=True
+        ), mock.patch.object(admin_panel.asyncio, "get_event_loop_policy", return_value=object()), mock.patch.object(
+            admin_panel.asyncio, "set_event_loop_policy"
+        ) as set_mock:
+            admin_panel._configure_windows_event_loop_policy()
+
+        selected_policy = set_mock.call_args[0][0]
+        self.assertIsInstance(selected_policy, _FakeSelectorPolicy)
 
 
 if __name__ == "__main__":

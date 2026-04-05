@@ -91,7 +91,13 @@
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
   MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出，并提供运行时缓存清理接口。
 - [bridge/mt5_gateway/admin_panel.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py)
-  轻量管理面板服务，负责聚合网关状态、读取日志、编辑 `.env`、代理异常规则配置，并管理网关 / MT5 / Caddy / Nginx。
+  统一服务器控制台服务，负责聚合总览状态、输出中文诊断、提供配置 schema / 变更影响、读取日志、编辑 `.env`、代理异常规则配置，并管理网关 / MT5 / Caddy / Nginx。
+- [bridge/mt5_gateway/admin_panel_state.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel_state.py)
+  控制台总览状态构造器，负责把首页卡片、主动作、最近日志和旧字段兼容收口成统一响应。
+- [bridge/mt5_gateway/admin_panel_diagnostics.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel_diagnostics.py)
+  控制台诊断构造器，负责把本机网关、公网入口、EA 心跳和代理状态翻译成中文结论与建议动作。
+- [bridge/mt5_gateway/admin_panel_config.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel_config.py)
+  控制台配置元数据与影响分析工具，负责输出字段分组 schema，并判断保存后哪些组件需要重启。
 - [bridge/mt5_gateway/v2_market.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_market.py)
   v2 行情模型工具，负责把 Binance K 线原始数据整理成闭合 candles 与 latestPatch，并能从 REST 窗口里拆出最后一根未闭合 patch。
 - [bridge/mt5_gateway/v2_account.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_account.py)
@@ -162,9 +168,9 @@
 - `MainViewModel` / `MainActivity` -> `MonitorRepository`
   读取主监控页当前展示所需的最新价格/K 线快照，而不是参与图表真值计算。
 - `admin_panel.py` -> `server_v2.py /health`、`/v1/source`、`/v1/abnormal`、`/v1/abnormal/config`、`/internal/admin/cache/clear`
-  轻量管理面板通过本机 HTTP 读取网关状态、代理异常规则配置，并触发缓存清理。
+  统一控制台通过本机 HTTP 读取网关状态、诊断输入、异常规则配置，并触发缓存清理。
 - `admin_panel.py` -> PowerShell / Windows 计划任务 / 进程控制
-  轻量管理面板直接管理网关、MT5 客户端、Caddy、Nginx 的启停与重启。
+  统一控制台直接管理网关、MT5 客户端、Caddy、Nginx 的启停与重启。
 
 ## 关键的设计决定和原因
 
@@ -182,7 +188,8 @@
 - MT5 历史成交时间改成“网关统一按 `MT5_TIME_OFFSET_MINUTES` 做可配置偏移”；原因是当前用户环境里，MT5 Python 返回时间与本地北京时间存在固定偏差，若只在图表层补偿会继续造成交易列表、历史成交点和账户曲线三处口径不一致。
 - 图表页实时刷新改成“未收盘分钟线先进本地分钟底稿，再覆盖当前周期最新尾部”；原因是这样既能补上 1 分钟实时 K 线，也能继续沿用本地多周期缓存减少切周期卡顿。
 - 服务端异常同步 `HTTP 404` 改成客户端一次识别后暂停轮询；原因是接口未部署时继续固定频率请求只会刷日志和浪费流量。
-- 服务器管理 UI 独立为 `admin_panel.py` 轻量服务，而不是塞进 `server_v2.py` 本体；原因是这样即便主网关被停止或重启，管理面板仍可继续提供浏览器入口，才能真正完成“启动 / 停止 / 重启网关”这类操作。
+- 服务器管理 UI 独立为 `admin_panel.py` 控制台服务，而不是塞进 `server_v2.py` 本体；原因是这样即便主网关被停止或重启，控制台仍可继续提供浏览器入口，才能真正完成“启动 / 停止 / 重启网关”这类操作。
+- Windows 部署包现要求闭合为单根目录 `C:\mt5_bundle`；原因是用户明确不接受再靠手工补文件排查路径问题，控制台运行时、静态页和脚本都必须能整包替换上传。
 - 账户预加载节奏从管理器内联常量改成 `AccountPreloadPolicyHelper` 统一计算；原因是这样更容易和前后台策略保持一致，也便于后续继续压缩账户页相关资源消耗。
 - 悬浮窗改为“统一快照 + 产品卡片”模型，解决不同字段更新时间不一致的问题。
 - 悬浮窗拖动增加长按触发、位移阈值和帧节流，减少拖动卡顿和误触。

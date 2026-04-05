@@ -32,6 +32,8 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 public class GatewayV2Client {
+    private static final long CONNECT_TIMEOUT_SECONDS = 5L;
+    private static final long READ_TIMEOUT_SECONDS = 20L;
 
     private final OkHttpClient client;
     @Nullable
@@ -39,16 +41,16 @@ public class GatewayV2Client {
 
     public GatewayV2Client() {
         this.client = new OkHttpClient.Builder()
-                .connectTimeout(3, TimeUnit.SECONDS)
-                .readTimeout(6, TimeUnit.SECONDS)
+                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .build();
         this.configManager = null;
     }
 
     public GatewayV2Client(@Nullable Context context) {
         this.client = new OkHttpClient.Builder()
-                .connectTimeout(3, TimeUnit.SECONDS)
-                .readTimeout(6, TimeUnit.SECONDS)
+                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .build();
         this.configManager = context == null
                 ? null

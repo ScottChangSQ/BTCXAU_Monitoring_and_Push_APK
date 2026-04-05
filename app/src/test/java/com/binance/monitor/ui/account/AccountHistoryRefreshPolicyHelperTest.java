@@ -21,6 +21,16 @@ public class AccountHistoryRefreshPolicyHelperTest {
     @Test
     public void shouldSkipAllHistoryWhenRemoteTradeCountUnchanged() {
         assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(5, 5, true));
-        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(0, -1, false));
+    }
+
+    @Test
+    public void shouldRefreshAllHistoryWhenRemoteTradeCountUnavailableButLocalHistoryMissing() {
+        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(0, -1, false));
+        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(0, 0, true));
+    }
+
+    @Test
+    public void shouldSkipAllHistoryWhenRemoteTradeCountUnavailableButLocalHistoryExists() {
+        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(0, 12, true));
     }
 }
