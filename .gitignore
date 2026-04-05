@@ -8,3 +8,4 @@ build/
 *.ipr
 local.properties
 *.log
+.worktrees/
