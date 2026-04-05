@@ -71,6 +71,21 @@ public class MonitorServiceSourceTest {
                 source.contains("logResolvedGatewayAddresses();"));
     }
 
+    @Test
+    public void abnormalHandlingShouldRespectMonitoringSwitchAndDispatchAlerts() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertTrue("本地异常命中前应先判断监控开关是否开启",
+                source.contains("if (!Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue()))"));
+        assertTrue("本地新异常应发消息提醒",
+                source.contains("dispatchLocalAbnormalNotification(record);"));
+        assertTrue("服务端 alerts 也应进入补发提醒链路",
+                source.contains("dispatchServerAlertIfNeeded(alert);"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

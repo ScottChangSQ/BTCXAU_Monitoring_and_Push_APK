@@ -25,6 +25,12 @@ final class FloatingWindowTextFormatter {
         return masked ? SensitiveDisplayMasker.MASK_TEXT : formatVisiblePnl(totalPnl);
     }
 
+    // 统一格式化悬浮窗产品价格，改为一位小数并保留隐私遮罩行为。
+    static String formatPriceText(double price, boolean masked) {
+        String visibleText = FormatUtils.formatPriceOneDecimalWithUnit(price);
+        return SensitiveDisplayMasker.maskPrice(visibleText, masked);
+    }
+
     // 判断盈亏是否应按中性色展示，避免 0 值仍被误显示成涨色或跌色。
     static boolean shouldUseNeutralPnlStyle(double totalPnl) {
         return Math.abs(totalPnl) < ZERO_EPSILON;
@@ -52,6 +58,6 @@ final class FloatingWindowTextFormatter {
         if (shouldUseNeutralPnlStyle(totalPnl)) {
             return "$-";
         }
-        return FormatUtils.formatSignedMoneyNoDecimal(totalPnl);
+        return FormatUtils.formatSignedMoneyOneDecimal(totalPnl);
     }
 }

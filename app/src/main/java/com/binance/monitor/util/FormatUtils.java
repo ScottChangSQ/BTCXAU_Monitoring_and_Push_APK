@@ -39,8 +39,16 @@ public final class FormatUtils {
         return formatSignedCurrency(value, "#,##0", false);
     }
 
+    public static String formatSignedMoneyOneDecimal(double value) {
+        return formatSignedCurrency(value, "#,##0.0", true);
+    }
+
     public static String formatPriceWithUnit(double value) {
         return "$" + formatPrice(value);
+    }
+
+    public static String formatPriceOneDecimalWithUnit(double value) {
+        return "$" + decimal("#,##0.0", value);
     }
 
     public static String formatPriceNoDecimalWithUnit(double value) {

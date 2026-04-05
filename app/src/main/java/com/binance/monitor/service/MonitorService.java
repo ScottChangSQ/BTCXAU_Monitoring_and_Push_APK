@@ -509,6 +509,11 @@ public class MonitorService extends Service {
                 appendedCount++;
             }
         }
+        if (Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
+            for (AbnormalAlertItem alert : result.getAlerts()) {
+                dispatchServerAlertIfNeeded(alert);
+            }
+        }
         abnormalBootstrapSynced = true;
     }
 
@@ -585,6 +590,9 @@ public class MonitorService extends Service {
         if (data == null || configManager == null || recordManager == null) {
             return;
         }
+        if (!Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
+            return;
+        }
         EvaluationResult evaluation = evaluate(data, configManager.getSymbolConfig(data.getSymbol()), configManager.isUseAndMode());
         if (!evaluation.participating || !evaluation.abnormal) {
             return;
@@ -603,6 +611,7 @@ public class MonitorService extends Service {
         if (!recordManager.addRecordIfAbsent(record)) {
             return;
         }
+        dispatchLocalAbnormalNotification(record);
         floatingWindowManager.notifyAbnormalEvent(data.getSymbol());
         logManager.warn(data.getSymbol()
                 + " 异常触发: "
@@ -613,6 +622,76 @@ public class MonitorService extends Service {
                 + FormatUtils.formatVolume(data.getVolume())
                 + " | amount="
                 + FormatUtils.formatAmount(data.getQuoteAssetVolume()));
+    }
+
+    // 本地命中新异常后立即发通知，并沿用品种级冷却避免同一轮重复弹出。
+    private void dispatchLocalAbnormalNotification(AbnormalRecord record) {
+        if (record == null || notificationHelper == null) {
+            return;
+        }
+        List<String> symbols = java.util.Collections.singletonList(record.getSymbol());
+        long now = System.currentTimeMillis();
+        if (!AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
+                symbols,
+                lastNotifyAt,
+                now,
+                AppConstants.NOTIFICATION_COOLDOWN_MS)) {
+            return;
+        }
+        String asset = AppConstants.symbolToAsset(record.getSymbol());
+        notificationHelper.notifyAbnormalAlert(
+                "异常交易提醒",
+                asset + " 的 " + record.getTriggerSummary() + " 出现异常",
+                resolveAlertNotificationId(symbols)
+        );
+        lastNotifyAt.put(record.getSymbol(), now);
+    }
+
+    // 服务端 alert 只做补发，仍按同一套冷却判定避免与本地即时提醒重复。
+    private void dispatchServerAlertIfNeeded(@Nullable AbnormalAlertItem alert) {
+        if (alert == null || notificationHelper == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (!AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
+                alert.getSymbols(),
+                lastNotifyAt,
+                now,
+                AppConstants.NOTIFICATION_COOLDOWN_MS)) {
+            return;
+        }
+        notificationHelper.notifyAbnormalAlert(
+                alert.getTitle(),
+                alert.getContent(),
+                resolveAlertNotificationId(alert.getSymbols())
+        );
+        for (String symbol : alert.getSymbols()) {
+            if (symbol != null && !symbol.trim().isEmpty()) {
+                lastNotifyAt.put(symbol.trim(), now);
+            }
+        }
+    }
+
+    private int resolveAlertNotificationId(@Nullable List<String> symbols) {
+        if (symbols == null || symbols.isEmpty()) {
+            return AppConstants.COMBINED_ALERT_NOTIFICATION_ID;
+        }
+        boolean hasBtc = false;
+        boolean hasXau = false;
+        for (String symbol : symbols) {
+            if (AppConstants.SYMBOL_BTC.equalsIgnoreCase(symbol)) {
+                hasBtc = true;
+            } else if (AppConstants.SYMBOL_XAU.equalsIgnoreCase(symbol)) {
+                hasXau = true;
+            }
+        }
+        if (hasBtc && hasXau) {
+            return AppConstants.COMBINED_ALERT_NOTIFICATION_ID;
+        }
+        if (hasXau) {
+            return AppConstants.XAU_ALERT_NOTIFICATION_ID;
+        }
+        return AppConstants.BTC_ALERT_NOTIFICATION_ID;
     }
 
     private EvaluationResult evaluate(KlineData data, SymbolConfig config, boolean useAndMode) {

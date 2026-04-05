@@ -12,6 +12,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemStatsMetricBinding;
 import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.ui.account.MetricNameTranslator;
+import com.binance.monitor.ui.account.TradeStatsMetricStyleHelper;
 import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
@@ -124,16 +125,13 @@ public class StatsMetricAdapter extends RecyclerView.Adapter<StatsMetricAdapter.
                 return "--";
             }
             SpannableString span = new SpannableString(raw);
-            int signPos = raw.indexOf('+');
-            if (signPos < 0) {
-                signPos = raw.indexOf('-');
-            }
-            if (signPos < 0) {
+            int tintStart = TradeStatsMetricStyleHelper.resolveStreakTintStart(label, raw);
+            if (tintStart >= raw.length()) {
                 return span;
             }
             int color = resolveMetricColor(label, raw, R.color.text_primary);
             span.setSpan(new ForegroundColorSpan(color),
-                    signPos,
+                    tintStart,
                     raw.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             return span;

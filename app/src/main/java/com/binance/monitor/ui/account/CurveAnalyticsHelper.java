@@ -403,19 +403,38 @@ public final class CurveAnalyticsHelper {
                                                      List<CurvePoint> curvePoints,
                                                      double fallbackReturnRate) {
         if (curvePoints == null || curvePoints.size() < 2) {
-            return Math.min(0d, fallbackReturnRate);
+            return 0d;
         }
         long openTime = resolveOpenTime(item);
         long closeTime = resolveCloseTime(item);
         List<CurvePoint> range = new ArrayList<>();
+        CurvePoint previousPoint = null;
+        CurvePoint nextPoint = null;
         for (CurvePoint point : curvePoints) {
             long ts = point.getTimestamp();
             if (ts >= openTime && ts <= closeTime) {
                 range.add(point);
+                continue;
+            }
+            if (ts < openTime) {
+                previousPoint = point;
+                continue;
+            }
+            if (ts > closeTime && nextPoint == null) {
+                nextPoint = point;
             }
         }
+        if (range.isEmpty() && previousPoint != null) {
+            range.add(previousPoint);
+        }
+        if (previousPoint != null && (range.isEmpty() || range.get(0).getTimestamp() != previousPoint.getTimestamp())) {
+            range.add(0, previousPoint);
+        }
+        if (nextPoint != null) {
+            range.add(nextPoint);
+        }
         if (range.size() < 2) {
-            return Math.min(0d, fallbackReturnRate);
+            return 0d;
         }
         double peak = Math.max(1e-9, range.get(0).getEquity());
         double drawdownRate = 0d;

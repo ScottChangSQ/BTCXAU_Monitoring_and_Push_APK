@@ -134,6 +134,33 @@ class AdminPanelTests(unittest.TestCase):
         self.assertIn("toggleLogsBtn", script)
         self.assertIn("logsBox.classList.toggle('expanded')", script)
 
+    def test_build_admin_state_should_surface_port_online_fallback_and_time_offset_warning(self):
+        with mock.patch.object(admin_panel, "load_env_map", return_value={}), mock.patch.object(
+            admin_panel, "resolve_gateway_url", return_value="http://127.0.0.1:8787"
+        ), mock.patch.object(
+            admin_panel,
+            "build_component_registry",
+            return_value={"gateway": {"label": "MT5 网关", "actions": {}}},
+        ), mock.patch.object(
+            admin_panel,
+            "inspect_component",
+            return_value={
+                "running": True,
+                "statusText": "端口在线",
+                "details": {"warning": "健康检查超时或失败：timed out"},
+            },
+        ), mock.patch.object(
+            admin_panel,
+            "request_gateway_json",
+            side_effect=[RuntimeError("timed out"), {"mt5TimeOffsetMinutes": 180}],
+        ):
+            state = admin_panel.build_admin_state()
+
+        self.assertTrue(state["gatewayHealth"]["portOnline"])
+        self.assertEqual("端口在线", state["gatewayHealth"]["statusText"])
+        self.assertIn("timed out", state["gatewayHealth"]["warning"])
+        self.assertIn("180", state["gatewaySource"]["mt5TimeOffsetWarning"])
+
     def test_start_admin_panel_script_should_skip_noisy_pip_install_when_requirements_unchanged(self):
         script_path = ROOT / "start_admin_panel.ps1"
         content = script_path.read_text(encoding="utf-8")

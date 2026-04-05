@@ -323,11 +323,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         applyPreloadedCacheIfAvailable();
         snapshotLoopEnabled = true;
         if (userLoggedIn) {
-            if (hasFreshPreloadedCache()) {
-                scheduleNextSnapshot(dynamicRefreshDelayMs);
-            } else {
-                requestSnapshot();
-            }
+            requestForegroundEntrySnapshot();
         } else {
             clearScheduledRefresh();
             setConnectionStatus(false);
@@ -346,13 +342,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         snapshotLoopEnabled = true;
         if (userLoggedIn) {
-            if (!loading && nextRefreshAtMs <= 0L) {
-                if (hasFreshPreloadedCache()) {
-                    scheduleNextSnapshot(dynamicRefreshDelayMs);
-                    return;
-                }
-                requestSnapshot();
-            }
+            requestForegroundEntrySnapshot();
         } else {
             clearScheduledRefresh();
         }
@@ -2035,6 +2025,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return FormatUtils.formatDateTime(updateAt) + "（" + remainSeconds + "秒/" + intervalSeconds + "秒）";
     }
 
+    // 页面首次进入和应用回到前台时，都立即拉一次账户总计，避免只显示旧缓存。
+    private void requestForegroundEntrySnapshot() {
+        if (!userLoggedIn) {
+            clearScheduledRefresh();
+            return;
+        }
+        clearScheduledRefresh();
+        if (loading) {
+            return;
+        }
+        requestSnapshot();
+    }
+
     private void requestSnapshot() {
         if (!userLoggedIn) {
             loading = false;
@@ -2534,7 +2537,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
             double lots = Math.max(0d, item.getPendingLots());
             int count = Math.max(0, item.getPendingCount());
-            if (lots <= 1e-9 && count <= 0) {
+            if (count <= 0) {
                 continue;
             }
             String code = symbolForLog(item.getCode(), item.getProductName());
@@ -2692,6 +2695,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             latestOverviewMetrics = snapshot.getOverviewMetrics() == null
                     ? new ArrayList<>()
                     : new ArrayList<>(snapshot.getOverviewMetrics());
+            if (!AccountLeverageResolver.hasDisplayLeverage(latestOverviewMetrics)
+                    && AccountLeverageResolver.hasDisplayLeverage(connectedOverviewCache)) {
+                latestOverviewMetrics = mergeMissingLeverageMetric(latestOverviewMetrics, connectedOverviewCache);
+            }
         }
         baseTrades = TradeLifecycleMergeHelper.merge(effectiveTrades, TRADE_PNL_ZERO_THRESHOLD);
         baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
@@ -2734,6 +2741,26 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             Long firstKey = curveHistory.keySet().iterator().next();
             curveHistory.remove(firstKey);
         }
+    }
+
+    // 轻快照偶发不带杠杆时，只补回上一轮已知杠杆，不回退整套账户数字。
+    private List<AccountMetric> mergeMissingLeverageMetric(List<AccountMetric> current,
+                                                           List<AccountMetric> fallback) {
+        List<AccountMetric> merged = current == null ? new ArrayList<>() : new ArrayList<>(current);
+        if (AccountLeverageResolver.hasDisplayLeverage(merged)
+                || !AccountLeverageResolver.hasDisplayLeverage(fallback)) {
+            return merged;
+        }
+        for (AccountMetric metric : fallback) {
+            if (metric == null) {
+                continue;
+            }
+            if (AccountLeverageResolver.hasDisplayLeverage(java.util.Collections.singletonList(metric))) {
+                merged.add(metric);
+                return merged;
+            }
+        }
+        return merged;
     }
 
     private void replaceCurveHistory(List<CurvePoint> source) {

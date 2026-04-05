@@ -13,7 +13,7 @@ public class FloatingWindowTextFormatterTest {
     public void formatCardTitleShouldCombineAssetAndPnl() {
         String title = FloatingWindowTextFormatter.formatCardTitle("BTC", -1250d, false);
 
-        assertEquals("BTC（-$1,250）", title);
+        assertEquals("BTC（-$1,250.0）", title);
     }
 
     @Test
@@ -33,6 +33,16 @@ public class FloatingWindowTextFormatterTest {
     @Test
     public void formatPnlAmountShouldShowDashWhenSummaryPnlIsZero() {
         assertEquals("$-", FloatingWindowTextFormatter.formatPnlAmount(0d, false));
+    }
+
+    @Test
+    public void formatPnlAmountShouldKeepOneDecimal() {
+        assertEquals("+$12.3", FloatingWindowTextFormatter.formatPnlAmount(12.34d, false));
+    }
+
+    @Test
+    public void formatPriceTextShouldKeepOneDecimal() {
+        assertEquals("$45,678.9", FloatingWindowTextFormatter.formatPriceText(45678.94d, false));
     }
 
     @Test

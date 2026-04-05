@@ -35,8 +35,15 @@ public class NotificationHelper {
                 NotificationManager.IMPORTANCE_LOW
         );
         serviceChannel.setDescription("前台行情与监控服务");
+        NotificationChannel alertChannel = new NotificationChannel(
+                AppConstants.ALERT_CHANNEL_ID,
+                "异常交易提醒",
+                NotificationManager.IMPORTANCE_HIGH
+        );
+        alertChannel.setDescription("异常交易命中后的消息提醒");
 
         manager.createNotificationChannel(serviceChannel);
+        manager.createNotificationChannel(alertChannel);
     }
 
     public Notification buildServiceNotification(String connectionState, boolean monitoringEnabled) {
@@ -68,5 +75,32 @@ public class NotificationHelper {
         if (manager != null) {
             manager.cancel(AppConstants.SERVICE_NOTIFICATION_ID);
         }
+    }
+
+    public void notifyAbnormalAlert(String title, String content, int notificationId) {
+        if (manager == null || !PermissionHelper.hasNotificationPermission(context)) {
+            return;
+        }
+        String safeTitle = title == null || title.trim().isEmpty() ? "异常提醒" : title.trim();
+        String safeContent = content == null ? "" : content.trim();
+        Intent intent = new Intent(context, MainActivity.class)
+                .setAction(Intent.ACTION_MAIN)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                context,
+                200 + Math.max(0, notificationId),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        Notification notification = new NotificationCompat.Builder(context, AppConstants.ALERT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_monitor_logo)
+                .setContentTitle(safeTitle)
+                .setContentText(safeContent)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(safeContent))
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingIntent)
+                .build();
+        manager.notify(notificationId, notification);
     }
 }

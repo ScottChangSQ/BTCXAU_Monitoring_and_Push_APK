@@ -39,4 +39,15 @@ public class FormatUtilsMoneyFormatTest {
         assertEquals("$0.00", FormatUtils.formatSignedMoney(0.004d));
         assertEquals("$0", FormatUtils.formatSignedMoneyNoDecimal(0.4d));
     }
+
+    @Test
+    public void shouldFormatSignedMoneyWithOneDecimal() {
+        assertEquals("+$1,234.6", FormatUtils.formatSignedMoneyOneDecimal(1234.56));
+        assertEquals("-$1,234.6", FormatUtils.formatSignedMoneyOneDecimal(-1234.56));
+    }
+
+    @Test
+    public void shouldFormatPriceWithOneDecimalUnit() {
+        assertEquals("$1,234.6", FormatUtils.formatPriceOneDecimalWithUnit(1234.56));
+    }
 }

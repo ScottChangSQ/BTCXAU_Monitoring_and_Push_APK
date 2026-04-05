@@ -158,8 +158,42 @@ public class TradeDistributionAnalyticsTest {
                 CurveAnalyticsHelper.buildTradeScatterPoints(Arrays.asList(trade), null);
 
         assertEquals(1, scatter.size());
-        assertEquals(0.20d, scatter.get(0).getReturnRate(), 1e-9);
+        assertEquals(0.40d, scatter.get(0).getReturnRate(), 1e-9);
         assertEquals(7_200_000L, scatter.get(0).getHoldingDurationMs());
+    }
+
+    @Test
+    public void buildTradeScatterPointsShouldNotReuseReturnRateAsDrawdownWhenCurveWindowMissing() {
+        TradeRecordItem trade = new TradeRecordItem(
+                5_000L,
+                "BTCUSD",
+                "BTCUSD",
+                "Buy",
+                120d,
+                1d,
+                100d,
+                0d,
+                "",
+                -10d,
+                2_000L,
+                5_000L,
+                0d,
+                100d,
+                90d,
+                1L,
+                2L,
+                3L,
+                1
+        );
+
+        List<CurveAnalyticsHelper.TradeScatterPoint> scatter =
+                CurveAnalyticsHelper.buildTradeScatterPoints(Arrays.asList(trade), Arrays.asList(
+                        new CurvePoint(1_000L, 100d, 100d)
+                ));
+
+        assertEquals(1, scatter.size());
+        assertEquals(-0.10d, scatter.get(0).getReturnRate(), 1e-9);
+        assertEquals(0d, scatter.get(0).getMaxDrawdownRate(), 1e-9);
     }
 
     @Test

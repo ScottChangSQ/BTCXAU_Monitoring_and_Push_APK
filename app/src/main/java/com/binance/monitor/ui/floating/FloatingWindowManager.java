@@ -348,7 +348,7 @@ public class FloatingWindowManager {
         priceParams.topMargin = dp(1);
         priceView.setLayoutParams(priceParams);
         priceView.setText(card.hasLatestPrice()
-                ? SensitiveDisplayMasker.maskPrice(FormatUtils.formatPriceWithUnit(card.getLatestPrice()), masked)
+                ? FloatingWindowTextFormatter.formatPriceText(card.getLatestPrice(), masked)
                 : "--");
         priceView.setTextColor(palette.textPrimary);
         priceView.setTextSize(11f);

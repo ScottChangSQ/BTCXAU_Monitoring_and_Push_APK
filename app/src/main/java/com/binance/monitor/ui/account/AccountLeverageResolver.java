@@ -27,6 +27,11 @@ public final class AccountLeverageResolver {
         return formatLeverage(leverage);
     }
 
+    // 判断指标列表里是否真的带了杠杆，供页面在轻快照缺字段时回退到上一轮已知值。
+    public static boolean hasDisplayLeverage(@Nullable List<AccountMetric> metrics) {
+        return resolveMetricLeverage(metrics) > 0d;
+    }
+
     // 曲线计算仍保留 1 倍兜底，避免缺杠杆时除零。
     public static double resolveCurveLeverage(@Nullable List<AccountMetric> metrics) {
         double leverage = resolveMetricLeverage(metrics);

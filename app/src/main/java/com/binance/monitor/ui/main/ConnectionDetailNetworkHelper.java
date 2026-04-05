@@ -22,8 +22,8 @@ import java.util.List;
 
 public final class ConnectionDetailNetworkHelper {
 
-    private static final int CONNECT_TIMEOUT_MS = 1200;
-    private static final int READ_TIMEOUT_MS = 1500;
+    private static final int CONNECT_TIMEOUT_MS = 2500;
+    private static final int READ_TIMEOUT_MS = 3500;
     private static final String HEALTH_PATH = "/health";
     private static final String IP_GEO_LOOKUP_PREFIX = "https://ipwho.is/";
 
@@ -150,9 +150,7 @@ public final class ConnectionDetailNetworkHelper {
             connection.connect();
             int responseCode = connection.getResponseCode();
             consumeQuietly(responseCode >= 400 ? connection.getErrorStream() : connection.getInputStream());
-            return responseCode >= 200 && responseCode < 500
-                    ? Math.max(1L, Math.round((System.nanoTime() - startNs) / 1_000_000d))
-                    : -1L;
+            return Math.max(1L, Math.round((System.nanoTime() - startNs) / 1_000_000d));
         } catch (Exception ignored) {
             return -1L;
         } finally {

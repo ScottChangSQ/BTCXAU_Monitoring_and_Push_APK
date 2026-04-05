@@ -388,7 +388,7 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertIsNone(_FakeMt5.captured_from.tzinfo)
         self.assertIsNone(_FakeMt5.captured_to.tzinfo)
 
-    def test_progressive_trade_history_deals_should_expand_window_until_target(self):
+    def test_progressive_trade_history_deals_should_expand_window_until_count_stops_growing(self):
         original_mt5 = server_v2.mt5
         original_target = getattr(server_v2, "TRADE_HISTORY_TARGET_ITEMS", 1000)
 
@@ -412,8 +412,8 @@ class SummaryResponseTests(unittest.TestCase):
             server_v2.mt5 = original_mt5
             server_v2.TRADE_HISTORY_TARGET_ITEMS = original_target
 
-        self.assertEqual(2, len(_FakeMt5.calls))
-        self.assertEqual(1200, len(deals))
+        self.assertEqual(4, len(_FakeMt5.calls))
+        self.assertEqual(2000, len(deals))
 
     def test_ensure_mt5_prefers_plain_initialize_before_auth_initialize(self):
         original_mt5 = server_v2.mt5
@@ -1161,6 +1161,57 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(points[-1]["equity"], 1030.0)
         self.assertAlmostEqual(points[-1]["positionRatio"], 10.5 / 1030.0, places=6)
 
+    def test_rebuild_curve_should_not_preinject_position_when_position_id_already_exists_in_history(self):
+        helper = getattr(server_v2, "_replay_curve_from_history", None)
+        self.assertIsNotNone(helper, "缺少 _replay_curve_from_history，无法验证持仓重复注入问题")
+
+        deals = [
+            {
+                "timestamp": 1_000,
+                "price": 100.0,
+                "profit": 0.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 0,
+                "deal_type": 0,
+                "volume": 1.0,
+                "symbol": "BTCUSD",
+                "position_id": 301,
+            },
+        ]
+        open_positions = [
+            {
+                "positionId": 301,
+                "positionTicket": 999,
+                "code": "BTCUSD",
+                "productName": "BTCUSD",
+                "side": "Buy",
+                "quantity": 1.0,
+                "costPrice": 100.0,
+                "latestPrice": 110.0,
+                "marketValue": 110.0,
+            }
+        ]
+
+        points = helper(
+            deal_history=deals,
+            start_balance=1_000.0,
+            open_positions=open_positions,
+            current_balance=1_000.0,
+            current_equity=1_010.0,
+            leverage=100.0,
+            contract_size_fn=lambda symbol: 1.0,
+            now_ms=2_000,
+            fetch_rows_fn=lambda symbol, interval, limit, **kwargs: [],
+        )
+
+        self.assertAlmostEqual(
+            points[0]["equity"],
+            points[0]["balance"],
+            places=6,
+            msg="历史里已能重放出的持仓，不应再在窗口起点提前注入一遍",
+        )
+
     def test_rebuild_curve_removes_closed_sell_exposure_before_later_price_updates(self):
         helper = getattr(server_v2, "_replay_curve_from_history", None)
         self.assertIsNotNone(helper, "缺少 _replay_curve_from_history，无法验证平仓后残留仓位问题")
@@ -1332,6 +1383,59 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(3_000, timestamps[-1])
         self.assertAlmostEqual(1_010.0, points[-1]["equity"])
         self.assertAlmostEqual(1_010.0, points[-1]["balance"])
+
+    def test_health_should_return_cached_payload_when_recheck_throws(self):
+        original_mt5 = server_v2.mt5
+        original_cache = dict(server_v2.health_status_cache)
+        original_cache_ms = getattr(server_v2, "HEALTH_CACHE_MS", 5000)
+        original_now_ms = server_v2._now_ms
+        original_ensure_mt5 = server_v2._ensure_mt5
+        original_shutdown_mt5 = server_v2._shutdown_mt5
+
+        class _HealthyMt5:
+            @staticmethod
+            def account_info():
+                return types.SimpleNamespace(login=7400048, server="demo")
+
+            @staticmethod
+            def last_error():
+                return (0, "ok")
+
+        class _BrokenMt5:
+            @staticmethod
+            def account_info():
+                raise RuntimeError("boom")
+
+            @staticmethod
+            def last_error():
+                return (500, "boom")
+
+        try:
+            server_v2.health_status_cache.clear()
+            server_v2.HEALTH_CACHE_MS = 1
+            values = iter([1_000, 1_005])
+            server_v2._now_ms = lambda: next(values)
+            server_v2._ensure_mt5 = lambda: None
+            server_v2._shutdown_mt5 = lambda: None
+
+            server_v2.mt5 = _HealthyMt5()
+            healthy = server_v2.health()
+
+            server_v2.mt5 = _BrokenMt5()
+            broken = server_v2.health()
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2.health_status_cache.clear()
+            server_v2.health_status_cache.update(original_cache)
+            server_v2.HEALTH_CACHE_MS = original_cache_ms
+            server_v2._now_ms = original_now_ms
+            server_v2._ensure_mt5 = original_ensure_mt5
+            server_v2._shutdown_mt5 = original_shutdown_mt5
+
+        self.assertTrue(healthy["ok"])
+        self.assertTrue(broken["ok"])
+        self.assertTrue(broken["healthCached"])
+        self.assertIn("warning", broken)
 
     def test_curve_point_digest_includes_position_ratio(self):
         helper = getattr(server_v2, "_normalize_digest_curve_points", None)

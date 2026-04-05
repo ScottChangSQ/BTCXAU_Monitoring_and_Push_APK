@@ -1658,59 +1658,50 @@ public class KlineChartView extends View {
     private void drawCandlePopup(Canvas canvas, int index) {
         boolean hasCandle = crosshairOnCandle && index >= 0 && index < candles.size();
         CandleEntry candle = hasCandle ? candles.get(index) : null;
-        String timeText = hasCandle ? axisTimeFmt.format(new Date(candle.getOpenTime())) : "-";
-        String openText = hasCandle ? FormatUtils.formatPrice(candle.getOpen()) : "-";
-        String highText = hasCandle ? FormatUtils.formatPrice(candle.getHigh()) : "-";
-        String lowText = hasCandle ? FormatUtils.formatPrice(candle.getLow()) : "-";
-        String closeText = hasCandle ? FormatUtils.formatPrice(candle.getClose()) : "-";
-        String changeText = hasCandle ? formatSignedPriceDelta(candle.getClose() - candle.getOpen()) : "-";
-        String volText = hasCandle ? formatVolumeNumber(candle.getVolume(), false) : "-";
-        String tovText = hasCandle ? formatVolumeNumber(candle.getQuoteVolume(), false) : "-";
-        String[] leftLabels = new String[]{
-                "时间",
-                "O",
-                "H",
-                "L",
-                "C",
-                "价格变动",
-                "VOL",
-                "TOV"
-        };
-        String[] rightValues = new String[]{
-                timeText,
-                openText,
-                highText,
-                lowText,
-                closeText,
-                changeText,
-                volText,
-                tovText
-        };
+        List<KlinePopupDataHelper.Row> rows = KlinePopupDataHelper.buildRows(
+                candle,
+                showBoll,
+                bollPeriod,
+                bollStdMultiplier,
+                valueAt(bollUp, index),
+                valueAt(bollMid, index),
+                valueAt(bollDn, index),
+                showMa,
+                maPeriod,
+                valueAt(maLine, index),
+                showEma,
+                emaPeriod,
+                valueAt(emaLine, index),
+                showSra,
+                sraPeriod,
+                valueAt(sraLine, index)
+        );
 
         float pad = dp(6f);
         float lineH = dp(11f);
         float maxLabelWidth = 0f;
         float maxValueWidth = 0f;
-        for (int i = 0; i < leftLabels.length; i++) {
-            maxLabelWidth = Math.max(maxLabelWidth, popupTextPaint.measureText(leftLabels[i]));
-            maxValueWidth = Math.max(maxValueWidth, popupTextPaint.measureText(rightValues[i]));
+        for (KlinePopupDataHelper.Row row : rows) {
+            maxLabelWidth = Math.max(maxLabelWidth, popupTextPaint.measureText(row.label));
+            maxValueWidth = Math.max(maxValueWidth, popupTextPaint.measureText(row.value));
         }
         float columnGap = dp(10f);
         float w = maxLabelWidth + maxValueWidth + columnGap + pad * 2f;
-        float h = lineH * leftLabels.length + pad * 2f;
+        float h = lineH * rows.size() + pad * 2f;
         float left = crosshairX + dp(8f);
         if (left + w > priceRect.right) left = crosshairX - w - dp(8f);
         left = clamp(left, priceRect.left, priceRect.right - w);
         float top = clamp(priceRect.top + dp(14f), priceRect.top, priceRect.bottom - h);
         RectF box = new RectF(left, top, left + w, top + h);
         canvas.drawRoundRect(box, dp(6f), dp(6f), popupBgPaint);
-        for (int i = 0; i < leftLabels.length; i++) {
+        for (int i = 0; i < rows.size(); i++) {
+            KlinePopupDataHelper.Row row = rows.get(i);
             float baseline = box.top + pad + lineH * (i + 0.8f);
             float labelX = box.left + pad;
-            String value = rightValues[i];
+            String value = row.value;
             float valueWidth = popupTextPaint.measureText(value);
             float valueX = box.right - pad - valueWidth;
-            canvas.drawText(leftLabels[i], labelX, baseline, popupTextPaint);
+            canvas.drawText(row.label, labelX, baseline, popupTextPaint);
             canvas.drawText(value, valueX, baseline, resolvePopupValuePaint(i, hasCandle ? candle.getClose() - candle.getOpen() : 0d));
         }
     }

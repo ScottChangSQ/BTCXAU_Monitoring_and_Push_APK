@@ -149,6 +149,23 @@ class AbnormalGatewayTests(unittest.TestCase):
         self.assertEqual(1, len(second["delta"]["alerts"]))
         self.assertEqual("a2", second["delta"]["alerts"][0]["id"])
 
+    def test_build_abnormal_response_should_fallback_to_cached_snapshot_when_refresh_fails(self):
+        original_fetch = server_v2._fetch_recent_closed_binance_klines
+        server_v2._fetch_recent_closed_binance_klines = lambda symbol, limit: (_ for _ in ()).throw(RuntimeError("upstream failed"))
+        server_v2._set_abnormal_config({"logicAnd": False, "configs": []})
+        with server_v2.abnormal_state_lock:
+            server_v2.abnormal_record_store[:] = [self._build_record("r1", "BTCUSDT", 1000, "成交量")]
+            server_v2.abnormal_alert_store[:] = []
+            server_v2._commit_abnormal_snapshot_locked()
+        try:
+            response = server_v2._build_abnormal_response(since_seq=0, delta=True)
+        finally:
+            server_v2._fetch_recent_closed_binance_klines = original_fetch
+
+        self.assertFalse(response["isDelta"])
+        self.assertEqual("r1", response["records"][0]["id"])
+        self.assertIn("warning", response["abnormalMeta"])
+
     def _reset_state(self):
         with server_v2.abnormal_state_lock:
             server_v2.abnormal_config_state.clear()

@@ -397,7 +397,7 @@ def request_gateway_json(base_url: str,
                          path: str,
                          method: str = "GET",
                          payload: Optional[Dict[str, Any]] = None,
-                         timeout: int = 8) -> Dict[str, Any]:
+                         timeout: int = 12) -> Dict[str, Any]:
     url = f"{str(base_url or '').rstrip('/')}{path}"
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
@@ -406,7 +406,7 @@ def request_gateway_json(base_url: str,
         headers={"Content-Type": "application/json"},
         method=method,
     )
-    with urllib.request.urlopen(request, timeout=max(1, int(timeout or 8))) as response:
+    with urllib.request.urlopen(request, timeout=max(1, int(timeout or 12))) as response:
         text = response.read().decode("utf-8")
     return json.loads(text or "{}")
 
@@ -457,7 +457,7 @@ def read_recent_logs(logs_dir: Path, limit: int) -> List[Dict[str, Any]]:
 def inspect_component(target: str, spec: Dict[str, Any], gateway_url: str) -> Dict[str, Any]:
     if target == "gateway":
         try:
-            health = request_gateway_json(gateway_url, "/health", timeout=3)
+            health = request_gateway_json(gateway_url, "/health", timeout=6)
             return {
                 "running": bool(health.get("ok", False)),
                 "statusText": "在线" if health.get("ok", False) else "异常",
@@ -468,7 +468,7 @@ def inspect_component(target: str, spec: Dict[str, Any], gateway_url: str) -> Di
                 return {
                     "running": True,
                     "statusText": "端口在线",
-                    "details": {"warning": str(exc)},
+                    "details": {"warning": f"健康检查超时或失败：{exc}"},
                 }
             return {"running": False, "statusText": "离线", "details": {"error": str(exc)}}
 
@@ -477,27 +477,48 @@ def inspect_component(target: str, spec: Dict[str, Any], gateway_url: str) -> Di
     return read_process_status(list(spec.get("processNames") or []))
 
 
+def decorate_gateway_payload(payload: Dict[str, Any], fallback_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    safe_payload = dict(payload or {})
+    offset_minutes = int(safe_payload.get("mt5TimeOffsetMinutes", 0) or 0)
+    if offset_minutes != 0:
+        safe_payload["mt5TimeOffsetWarning"] = (
+            f"当前 MT5_TIME_OFFSET_MINUTES={offset_minutes}，历史成交时间会整体偏移 {abs(offset_minutes)} 分钟"
+        )
+    if fallback_state and str(safe_payload.get("error", "") or "").strip():
+        safe_payload.setdefault("portOnline", bool(fallback_state.get("running", False)))
+        safe_payload.setdefault("statusText", str(fallback_state.get("statusText", "") or ""))
+        fallback_details = fallback_state.get("details") or {}
+        warning = str(fallback_details.get("warning", "") or "")
+        if warning:
+            safe_payload["warning"] = warning
+    return safe_payload
+
+
 # 读取管理面板总状态。
 def build_admin_state() -> Dict[str, Any]:
     env_map = load_env_map()
     gateway_url = resolve_gateway_url(env_map)
     registry = build_component_registry(env_map, str(REPO_ROOT))
+    gateway_component_state = inspect_component("gateway", registry.get("gateway") or {}, gateway_url)
     gateway_health: Dict[str, Any]
     gateway_source: Dict[str, Any]
     try:
-        gateway_health = request_gateway_json(gateway_url, "/health", timeout=3)
+        gateway_health = request_gateway_json(gateway_url, "/health", timeout=6)
     except Exception as exc:
-        gateway_health = {"ok": False, "error": str(exc)}
+        gateway_health = {"ok": False, "error": f"健康检查超时或失败：{exc}"}
     try:
-        gateway_source = request_gateway_json(gateway_url, "/v1/source", timeout=3)
+        gateway_source = request_gateway_json(gateway_url, "/v1/source", timeout=6)
     except Exception as exc:
-        gateway_source = {"ok": False, "error": str(exc)}
+        gateway_source = {"ok": False, "error": f"来源检查超时或失败：{exc}"}
+    gateway_health = decorate_gateway_payload(gateway_health, gateway_component_state)
+    gateway_source = decorate_gateway_payload(gateway_source, gateway_component_state)
 
     components = {}
     for target, spec in registry.items():
+        state = gateway_component_state if target == "gateway" else inspect_component(target, spec, gateway_url)
         components[target] = {
             "label": spec.get("label"),
-            "state": inspect_component(target, spec, gateway_url),
+            "state": state,
             "actions": spec.get("actions") or {},
         }
     return {

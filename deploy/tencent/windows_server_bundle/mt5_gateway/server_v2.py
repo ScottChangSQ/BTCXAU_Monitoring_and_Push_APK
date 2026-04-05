@@ -78,10 +78,12 @@ MT5_HISTORY_LOOKAHEAD_HOURS = max(0, int(os.getenv("MT5_HISTORY_LOOKAHEAD_HOURS"
 TRADE_HISTORY_TARGET_ITEMS = max(200, int(os.getenv("TRADE_HISTORY_TARGET_ITEMS", "1000")))
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
+HEALTH_CACHE_MS = max(1000, int(os.getenv("HEALTH_CACHE_MS", "5000")))
 MARKET_CANDLES_CACHE_MS = max(1000, int(os.getenv("MARKET_CANDLES_CACHE_MS", "8000")))
 MARKET_CANDLES_CACHE_MAX_ENTRIES = max(8, int(os.getenv("MARKET_CANDLES_CACHE_MAX_ENTRIES", "120")))
 MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT = max(100, min(1000, int(os.getenv("MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT", "500"))))
-ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "500")))
+MARKET_CANDLES_UPSTREAM_RETRY = max(0, int(os.getenv("MARKET_CANDLES_UPSTREAM_RETRY", "1")))
+ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "5000")))
 ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
 ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "8")))
 ABNORMAL_FETCH_CACHE_MS = max(1000, int(os.getenv("ABNORMAL_FETCH_CACHE_MS", "4000")))
@@ -101,6 +103,7 @@ snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
 snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
 v2_sync_state: Dict[str, Any] = {}
 market_candles_cache: Dict[str, Dict[str, Any]] = {}
+health_status_cache: Dict[str, Any] = {}
 abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
 abnormal_record_store: List[Dict[str, Any]] = []
 abnormal_alert_store: List[Dict[str, Any]] = []
@@ -118,6 +121,10 @@ def _now_ms() -> int:
 def _build_sync_token(server_time_ms: int, revision: str) -> str:
     payload = f"{int(server_time_ms)}:{revision}".encode("utf-8")
     return hashlib.sha1(payload).hexdigest()
+
+
+def _clone_json_value(value: Any) -> Any:
+    return json.loads(json.dumps(value, ensure_ascii=False))
 
 
 # 构建 v2 行情总快照返回体，统一保留市场区和账户区。
@@ -729,6 +736,9 @@ def _build_full_abnormal_response(snapshot: Dict[str, Any], sync_seq: int) -> Di
     meta = dict(snapshot.get("abnormalMeta") or {})
     meta["syncSeq"] = sync_seq
     meta["deltaEnabled"] = ABNORMAL_DELTA_ENABLED
+    last_error = str(abnormal_sync_state.get("lastError", "") or "")
+    if last_error:
+        meta["warning"] = last_error
     return {
         "abnormalMeta": meta,
         "configs": snapshot.get("configs") or [],
@@ -972,35 +982,43 @@ def _set_abnormal_config(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _refresh_abnormal_state() -> None:
-    with abnormal_state_lock:
-        _ensure_abnormal_defaults_locked()
-        config_snapshot = _copy_abnormal_config_locked()
-        last_close_by_symbol = dict(abnormal_last_close_time_by_symbol)
+    try:
+        with abnormal_state_lock:
+            _ensure_abnormal_defaults_locked()
+            config_snapshot = _copy_abnormal_config_locked()
+            last_close_by_symbol = dict(abnormal_last_close_time_by_symbol)
 
-    new_records: List[Dict[str, Any]] = []
-    for symbol in ABNORMAL_SYMBOLS:
-        recent_klines = _fetch_recent_closed_binance_klines(symbol, ABNORMAL_KLINE_LIMIT)
-        symbol_config = (config_snapshot.get("symbols") or {}).get(symbol) or _default_abnormal_symbol_config(symbol)
-        last_close_time = int(last_close_by_symbol.get(symbol, 0) or 0)
-        for kline in recent_klines:
-            close_time = int(kline.get("closeTime", 0) or 0)
-            if close_time <= last_close_time:
-                continue
-            evaluation = _evaluate_abnormal_kline(kline, symbol_config, bool(config_snapshot.get("logicAnd", False)))
-            if evaluation.get("abnormal"):
-                new_records.append(_build_abnormal_record(symbol, kline, str(evaluation.get("summary", ""))))
-            last_close_time = max(last_close_time, close_time)
-        if last_close_time > 0:
-            last_close_by_symbol[symbol] = last_close_time
+        new_records: List[Dict[str, Any]] = []
+        for symbol in ABNORMAL_SYMBOLS:
+            recent_klines = _fetch_recent_closed_binance_klines(symbol, ABNORMAL_KLINE_LIMIT)
+            symbol_config = (config_snapshot.get("symbols") or {}).get(symbol) or _default_abnormal_symbol_config(symbol)
+            last_close_time = int(last_close_by_symbol.get(symbol, 0) or 0)
+            for kline in recent_klines:
+                close_time = int(kline.get("closeTime", 0) or 0)
+                if close_time <= last_close_time:
+                    continue
+                evaluation = _evaluate_abnormal_kline(kline, symbol_config, bool(config_snapshot.get("logicAnd", False)))
+                if evaluation.get("abnormal"):
+                    new_records.append(_build_abnormal_record(symbol, kline, str(evaluation.get("summary", ""))))
+                last_close_time = max(last_close_time, close_time)
+            if last_close_time > 0:
+                last_close_by_symbol[symbol] = last_close_time
 
-    with abnormal_state_lock:
-        for symbol, close_time in last_close_by_symbol.items():
-            abnormal_last_close_time_by_symbol[symbol] = max(
-                int(abnormal_last_close_time_by_symbol.get(symbol, 0) or 0),
-                int(close_time or 0),
-            )
-        if new_records or not abnormal_sync_state:
-            _append_abnormal_updates_locked(new_records)
+        with abnormal_state_lock:
+            for symbol, close_time in last_close_by_symbol.items():
+                abnormal_last_close_time_by_symbol[symbol] = max(
+                    int(abnormal_last_close_time_by_symbol.get(symbol, 0) or 0),
+                    int(close_time or 0),
+                )
+            abnormal_sync_state.pop("lastError", None)
+            if new_records or not abnormal_sync_state:
+                _append_abnormal_updates_locked(new_records)
+    except Exception as exc:
+        with abnormal_state_lock:
+            _ensure_abnormal_defaults_locked()
+            if not abnormal_sync_state:
+                _commit_abnormal_snapshot_locked()
+            abnormal_sync_state["lastError"] = str(exc)
 
 
 def _build_abnormal_response(since_seq: int, delta: bool) -> Dict[str, Any]:
@@ -1020,6 +1038,9 @@ def _build_abnormal_response(since_seq: int, delta: bool) -> Dict[str, Any]:
     meta = dict(snapshot.get("abnormalMeta") or {})
     meta["syncSeq"] = sync_seq
     meta["deltaEnabled"] = ABNORMAL_DELTA_ENABLED
+    last_error = str(abnormal_sync_state.get("lastError", "") or "")
+    if last_error:
+        meta["warning"] = last_error
 
     if since_seq == sync_seq:
         return {"abnormalMeta": meta, "isDelta": True, "unchanged": True}
@@ -1610,8 +1631,9 @@ def _inject_positions_into_exposures(
 ) -> None:
     # 把当前未平仓持仓注入到曝光映射里，避免与本窗口内开仓的重复叠加
     for position in positions or []:
+        position_id = int(position.get("positionId", 0) or 0)
         ticket = int(position.get("positionTicket", 0))
-        if ticket > 0 and ticket in open_position_ids:
+        if (position_id > 0 and position_id in open_position_ids) or (ticket > 0 and ticket in open_position_ids):
             continue
         symbol = str(position.get("code") or position.get("productName") or "").strip()
         if not symbol:
@@ -1628,6 +1650,37 @@ def _inject_positions_into_exposures(
         _add_curve_exposure(exposures, symbol, side, volume, open_price, contract_size)
         if latest_price > 0.0:
             last_price_by_symbol.setdefault(symbol, latest_price)
+
+
+def _resolve_open_position_ids_from_history(deal_history: List[Dict[str, Any]]) -> set:
+    # 只保留在历史窗口末尾仍然未平的 position id，避免把已平历史仓位误当成当前持仓。
+    states: Dict[Tuple[int, str], float] = {}
+    sorted_deals = sorted(
+        deal_history or [],
+        key=lambda item: (int(item.get("timestamp", 0) or 0), int(item.get("position_id", 0) or 0)),
+    )
+    for deal in sorted_deals:
+        position_id = int(deal.get("position_id", 0) or 0)
+        if position_id <= 0:
+            continue
+        entry = int(deal.get("entry", 0) or 0)
+        deal_type = int(deal.get("deal_type", -1) or -1)
+        volume = abs(float(deal.get("volume", 0.0) or 0.0))
+        if volume <= 0.0:
+            continue
+        if _is_entry_close(entry):
+            close_side = _curve_exposure_side_for_close(deal_type)
+            close_key = (position_id, close_side)
+            states[close_key] = max(0.0, float(states.get(close_key, 0.0) or 0.0) - volume)
+        if _is_entry_open(entry):
+            open_side = "Buy" if _is_buy_deal_type(deal_type) else "Sell"
+            open_key = (position_id, open_side)
+            states[open_key] = float(states.get(open_key, 0.0) or 0.0) + volume
+    return {
+        position_id
+        for (position_id, _side), volume in states.items()
+        if float(volume or 0.0) > 1e-9
+    }
 
 
 def _replay_curve_from_history(
@@ -1656,9 +1709,7 @@ def _replay_curve_from_history(
 
     exposures: Dict[Tuple[str, str], Dict[str, float]] = {}
     last_price_by_symbol: Dict[str, float] = {}
-    open_position_ids = {
-        int(deal.get("position_id", 0)) for deal in deal_history if _is_entry_open(int(deal.get("entry", 0)))
-    }
+    open_position_ids = _resolve_open_position_ids_from_history(deal_history)
     _inject_positions_into_exposures(exposures, open_positions, open_position_ids, contract_size_fn, last_price_by_symbol)
 
     sorted_deals = sorted(deal_history, key=lambda item: int(item.get("timestamp", 0)))
@@ -1829,6 +1880,7 @@ def _map_positions() -> List[Dict]:
                 "productName": symbol,
                 "code": symbol,
                 "side": side,
+                "positionId": int(getattr(position, "identifier", 0) or getattr(position, "ticket", 0)),
                 "positionTicket": int(getattr(position, "ticket", 0)),
                 "quantity": volume,
                 "sellableQuantity": volume,
@@ -1919,11 +1971,13 @@ def _progressive_trade_history_deals(range_key: str) -> List[Any]:
 
     now_local = datetime.now()
     deals: List[Any] = []
+    previous_count = -1
     for days in unique_days:
         window_from = now_local - timedelta(days=days)
         deals = mt5.history_deals_get(window_from, to_time) or []
-        if len(deals) >= TRADE_HISTORY_TARGET_ITEMS:
+        if len(deals) <= previous_count:
             break
+        previous_count = len(deals)
     return deals
 
 
@@ -3511,7 +3565,7 @@ def _proxy_binance_rest(path_value: str, request: Request) -> Response:
         method="GET",
     )
     try:
-        with urllib.request.urlopen(upstream_request, timeout=15) as upstream_response:
+        with urllib.request.urlopen(upstream_request, timeout=25) as upstream_response:
             body = upstream_response.read()
             content_type = upstream_response.headers.get("Content-Type", "application/json")
             return Response(
@@ -3582,12 +3636,35 @@ def _fetch_binance_kline_rows(symbol: str,
         },
         method="GET",
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=25) as response:
         body = response.read().decode("utf-8")
     payload = json.loads(body or "[]")
     if not isinstance(payload, list):
         raise ValueError("Binance kline payload is not a list")
     return payload
+
+
+def _fetch_binance_kline_rows_resilient(symbol: str,
+                                        interval: str,
+                                        limit: int,
+                                        *,
+                                        start_time_ms: int = 0,
+                                        end_time_ms: int = 0) -> List[Any]:
+    last_error: Optional[Exception] = None
+    for _ in range(max(0, MARKET_CANDLES_UPSTREAM_RETRY) + 1):
+        try:
+            return _fetch_binance_kline_rows(
+                symbol,
+                interval,
+                limit,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+            )
+        except Exception as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    return []
 
 
 # 行情 K 线大窗口查询按块拉取，避免单次 limit 过大把 Binance REST 拖到超时。
@@ -3634,7 +3711,7 @@ def _fetch_market_candle_rows_paged(symbol: str,
                                     end_time_ms: int = 0) -> List[Any]:
     safe_limit = max(1, min(int(limit or 0), 1500))
     if safe_limit <= MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT:
-        return _fetch_binance_kline_rows(
+        return _fetch_binance_kline_rows_resilient(
             symbol,
             interval,
             safe_limit,
@@ -3671,7 +3748,7 @@ def _fetch_market_candle_rows_forward(symbol: str,
 
     while remaining > 0:
         chunk_limit = min(remaining, MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT)
-        rows = _fetch_binance_kline_rows(
+        rows = _fetch_binance_kline_rows_resilient(
             symbol,
             interval,
             chunk_limit,
@@ -3718,7 +3795,7 @@ def _fetch_market_candle_rows_backward(symbol: str,
 
     while remaining > 0:
         chunk_limit = min(remaining, MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT)
-        rows = _fetch_binance_kline_rows(
+        rows = _fetch_binance_kline_rows_resilient(
             symbol,
             interval,
             chunk_limit,
@@ -3816,6 +3893,15 @@ async def _proxy_binance_websocket(client: WebSocket, path_value: str) -> None:
 @app.get("/health")
 def health():
     try:
+        now_ms = _now_ms()
+        with snapshot_cache_lock:
+            cached_payload = _clone_json_value(health_status_cache.get("payload")) if health_status_cache.get("payload") else None
+            cached_built_at = int(health_status_cache.get("builtAt", 0) or 0)
+        if cached_payload and (now_ms - cached_built_at) <= HEALTH_CACHE_MS:
+            cached_payload["healthCached"] = True
+            cached_payload["healthCacheAgeMs"] = max(0, now_ms - cached_built_at)
+            return cached_payload
+
         info = {
             "ok": True,
             "gatewayMode": GATEWAY_MODE,
@@ -3831,6 +3917,8 @@ def health():
             "eaSnapshotReceivedAt": ea_snapshot_received_at_ms,
             "snapshotDeltaEnabled": SNAPSHOT_DELTA_ENABLED,
             "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
+            "healthCached": False,
+            "healthCacheAgeMs": 0,
         }
         if mt5 is None:
             return info
@@ -3844,6 +3932,11 @@ def health():
                     info["server"] = str(getattr(account, "server", SERVER)) if account else SERVER
                     info["lastError"] = str(mt5.last_error())
                 except Exception as exc:
+                    if cached_payload:
+                        cached_payload["healthCached"] = True
+                        cached_payload["healthCacheAgeMs"] = max(0, now_ms - cached_built_at)
+                        cached_payload["warning"] = f"实时健康检查失败，暂时返回最近一次结果：{exc}"
+                        return cached_payload
                     info["mt5Connected"] = False
                     info["lastError"] = str(exc)
                 finally:
@@ -3851,8 +3944,20 @@ def health():
             else:
                 info["mt5Connected"] = False
                 info["lastError"] = str(mt5.last_error())
+        with snapshot_cache_lock:
+            health_status_cache["payload"] = _clone_json_value(info)
+            health_status_cache["builtAt"] = now_ms
         return info
     except Exception as exc:
+        now_ms = _now_ms()
+        with snapshot_cache_lock:
+            cached_payload = _clone_json_value(health_status_cache.get("payload")) if health_status_cache.get("payload") else None
+            cached_built_at = int(health_status_cache.get("builtAt", 0) or 0)
+        if cached_payload:
+            cached_payload["healthCached"] = True
+            cached_payload["healthCacheAgeMs"] = max(0, now_ms - cached_built_at)
+            cached_payload["warning"] = f"实时健康检查失败，暂时返回最近一次结果：{exc}"
+            return cached_payload
         return {"ok": False, "error": str(exc)}
 
 
@@ -3877,6 +3982,7 @@ def source_status():
         "eaSnapshotReceivedAt": ea_snapshot_received_at_ms,
         "snapshotDeltaEnabled": SNAPSHOT_DELTA_ENABLED,
         "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
+        "healthCacheMs": HEALTH_CACHE_MS,
     }
 
 

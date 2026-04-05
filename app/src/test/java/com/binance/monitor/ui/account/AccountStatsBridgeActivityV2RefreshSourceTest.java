@@ -26,6 +26,24 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
         assertTrue("账户页不应继续自己直连旧 gatewayClient.fetch", legacyIndex < 0);
     }
 
+    @Test
+    public void foregroundEntryShouldTriggerImmediateUiRefresh() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        );
+
+        assertTrue("账户页应提供统一的前台进入刷新入口",
+                source.contains("private void requestForegroundEntrySnapshot()"));
+        assertTrue("页面创建时应立即触发一次账户主动刷新",
+                source.contains("if (userLoggedIn) {\n            requestForegroundEntrySnapshot();"));
+        assertTrue("页面回到前台时也应立即触发一次账户主动刷新",
+                source.contains("protected void onResume()")
+                        && source.contains("requestForegroundEntrySnapshot();"));
+        assertTrue("前台进入刷新不应再因为缓存够新而只做延后调度",
+                !source.contains("if (hasFreshPreloadedCache()) {\n                    scheduleNextSnapshot(dynamicRefreshDelayMs);"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

@@ -32,8 +32,8 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 public class GatewayV2Client {
-    private static final long CONNECT_TIMEOUT_SECONDS = 5L;
-    private static final long READ_TIMEOUT_SECONDS = 20L;
+    private static final long CONNECT_TIMEOUT_SECONDS = 8L;
+    private static final long READ_TIMEOUT_SECONDS = 35L;
 
     private final OkHttpClient client;
     @Nullable

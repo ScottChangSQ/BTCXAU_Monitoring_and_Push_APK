@@ -29,6 +29,14 @@ public class AccountLeverageResolverTest {
     }
 
     @Test
+    public void hasDisplayLeverageShouldReportPresenceOfRealMetric() {
+        assertEquals(false, AccountLeverageResolver.hasDisplayLeverage(Collections.emptyList()));
+        assertEquals(true, AccountLeverageResolver.hasDisplayLeverage(
+                Collections.singletonList(new AccountMetric("杠杆", "200x"))
+        ));
+    }
+
+    @Test
     public void curveLeverageShouldStillFallbackToOneWhenMetricMissing() {
         assertEquals(1d, AccountLeverageResolver.resolveCurveLeverage(Collections.emptyList()), 0.0001d);
     }

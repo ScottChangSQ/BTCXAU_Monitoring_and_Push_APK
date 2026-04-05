@@ -1,6 +1,33 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 正在把项目从“监控工具”升级到“实盘交易终端”的前期分析继续细化，整理成一份按“必须先做 / 可以后做”拆分的分阶段实施清单；这轮只固定实施顺序和结构边界，不直接改交易代码。
+- 已完成的核对结论是：`bridge/mt5_gateway/server_v2.py` 目前仍只有 `v2/market`、`v2/account`、`v2/sync` 和旧 `v1` 读取接口，还没有 `trade/check`、`trade/submit`、`order_check`、`order_send` 这一类实盘执行入口；`GatewayV2Client` 也仍只覆盖 `market/account/history/sync` 读取；`MarketChartActivity` 当前能画持仓、挂单、TP/SL 和历史成交标注，但还没有把图上交互提交成真实交易命令。
+- 当前停点：实盘版最短正确路径已明确为四阶段推进。第一阶段先只做最小交易闭环：服务端交易网关、交易命令状态机、统一确认、交易后强一致刷新，以及单笔开仓/平仓/挂单/改单；图表交易、批量交易、DOM、一键交易和高级风控都后置。
+- 本轮关键决定：实盘升级先补“命令式 + 快照式”双轨架构，而不是先做图表按钮或批量操作；原因是当前项目的结构性缺口不在展示，而在缺少可校验、可确认、可回执、可审计的交易主链。
+- 正在继续收口 4 个未闭环问题里的服务端部分：K 线更深层缺段、历史成交点延后 3 小时、控制面板 MT5 网关常显示 timeout、净值曲线长期高于结余曲线。
+- 本轮已完成的新修复是：`server_v2.py` 的曲线重放现在会先按历史成交净额推导“窗口末尾仍未平的 position id”，并在注入当前持仓时同时识别 `positionId/positionTicket`，避免同一仓位因 ID 不一致被提前重复注入，从而把历史净值系统性抬高；`/health` 新增短缓存和失败回退，MT5 健康检查偶发变慢或抛错时会先返回最近一次可用结果，不再频繁把控制面板打成 timeout；K 线上游分页拉取新增一次重试，继续压缩 Binance 短暂抖动带来的缺段/timeout；管理面板在网关端口在线但健康检查慢时，会把“端口在线”与 warning 一起展示，并把非 0 的 `MT5_TIME_OFFSET_MINUTES` 直接写成告警文案，方便现场确认 3 小时时差是不是部署配置导致。
+- 已完成验证：`python -m unittest bridge.mt5_gateway.tests.test_summary_response bridge.mt5_gateway.tests.test_admin_panel bridge.mt5_gateway.tests.test_v2_contracts bridge.mt5_gateway.tests.test_gateway_bundle_parity` 共 62 条通过；`python -m py_compile bridge/mt5_gateway/server_v2.py bridge/mt5_gateway/admin_panel.py deploy/tencent/windows_server_bundle/mt5_gateway/server_v2.py deploy/tencent/windows_server_bundle/mt5_gateway/admin_panel.py` 通过。
+- 当前停点：仓库与 Windows 部署包中的网关/管理面板代码已经同步，下一步应把最新 `server_v2.py` 与 `admin_panel.py` 覆盖到服务器，重启 `8787` 和管理面板后，重点复测三件事：控制面板里 MT5 网关是否从“常 timeout”收敛成正常或“端口在线但健康检查慢”；若 `mt5TimeOffsetMinutes` 仍非 0，则直接修服务器 `.env`；净值/结余曲线是否不再长期整体分离。
+- 本轮关键决定：历史成交点延后 3 小时这件事，继续不在 APK 里硬补一个反向偏移，而是把服务器实际偏移配置直接暴露出来；原因是当前代码证据仍指向部署配置，不是客户端重复加了 3 小时。
+- 正在继续收口图表页与异常提醒的三项更正：`最大连续亏损` 只让金额部分变红/绿、异常交易恢复系统消息通知、对照币安公开指标逻辑重新核对当前实现是否一致。
+- 已完成的代码改动是：`TradeStatsMetricStyleHelper` 已收回到“只从金额符号开始着色”，恢复“次数部分中性色、金额部分红/绿”的口径；`NotificationHelper` 已恢复异常提醒频道与 `notifyAbnormalAlert()`；`MonitorService` 现在会在本地新异常命中后立即发提醒、在服务端 `alerts` 到达时按冷却规则补发提醒，并且 `停止监控` 时不再继续走本地异常判定链路。
+- 已完成的核对结论是：`BOLL / EMA / RSI / STOCHRSI / MACD` 与币安公开说明的公式口径基本一致，其中 `MACD` 还被仓库内测试明确锁定为“柱值 = DIF - DEA，不乘 2”；但 `KDJ` 没找到币安官方公开公式页，且 `EMA / MACD` 的初始值种子细节币安公开文档也没写死，所以当前还不能把“全部指标和币安完全一致”表述成已验证事实。
+- 已验证 `./gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.TradeStatsMetricStyleHelperTest" --tests "com.binance.monitor.util.NotificationHelperSourceTest" --tests "com.binance.monitor.service.AbnormalSyncRuntimeHelperTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.chart.KlinePopupDataHelperTest" --tests "com.binance.monitor.ui.floating.FloatingWindowTextFormatterTest" --tests "com.binance.monitor.util.FormatUtilsMoneyFormatTest"` 通过。
+- 已再次复跑同一组定向单测并确认仍全部通过，当前可以直接向用户回报这 3 个更正项的代码结论；但本轮仍未做真机通知与页面显示复测。
+- 已核对“账户总计页在打开 APP 时拉一次、后台回前台再拉一次”的链路，当前 `MonitorService` 已通过 `ACTION_BOOTSTRAP -> requestForegroundEntryRefresh()` 和前后台监听 `handleForegroundStateChanged(true) -> requestForegroundEntryRefresh()` 覆盖这两个入口，暂不需要追加代码改动。
+- 已进一步追到账户总计页真实数据入口后确认：问题不在 `MonitorService`，而在 `AccountStatsBridgeActivity` 之前会因为“已有新鲜预加载缓存”而只安排延后刷新，没有强制页面前台进入立即拉取。现已改为页面创建时与 `onResume` 时统一走 `requestForegroundEntrySnapshot()`，每次都会立刻触发一次 `preloadManager.fetchForUi(...)` 主动刷新；并已通过账户页定向单测和 `:app:assembleDebug` 编译验证。
+- 已开始收口 12 项账户/K 线/日志问题里可直接定位的根因，并完成一轮可验证修复：账户页现在会在当前快照缺少杠杆字段时回退到上一轮已知杠杆，不再忽隐忽现；网关交易历史“all”范围不再达到 `1000` 条就提前停下，而是继续扩窗到条数不再增长；异常同步刷新失败时会回退到缓存快照并在 `abnormalMeta.warning` 里带出错误，不再直接抛 `HTTP 500`；连接状态弹窗的延迟探测放宽超时并改成无论返回 `2xx/4xx/5xx` 都显示实际耗时；控制面板的网关健康/来源探测超时从 `3s` 放宽到 `6s` 并把提示改成“超时或失败”；异常黄点服务端默认保留上限从 `500` 放大到 `5000`；逆市交易分布图在缺少完整曲线窗口时不再把“收益率”直接复用成“最大回撤”。
+- 已完成验证：`./gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountLeverageResolverTest" --tests "com.binance.monitor.ui.main.ConnectionDetailNetworkHelperTest" --tests "com.binance.monitor.ui.account.TradeDistributionAnalyticsTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityV2RefreshSourceTest"` 通过；`python -m unittest bridge.mt5_gateway.tests.test_summary_response bridge.mt5_gateway.tests.test_abnormal_gateway bridge.mt5_gateway.tests.test_admin_panel bridge.mt5_gateway.tests.test_gateway_bundle_parity` 通过；`./gradlew.bat :app:assembleDebug` 通过。
+- 当前仍未完全收口的点：K 线历史成交点“延后 3 小时”已再次确认更像服务器 `MT5_TIME_OFFSET_MINUTES` 配置问题，不是这轮客户端代码直接引起；净值曲线长期高于结余曲线和部分 K 线缺段/timeout 还需要继续追曲线重建与市场分页的更深层口径。
+- 当前停点：仓库内代码和定向单测已完成，下一步应安装最新 APK 真机复测两件事：一是异常发生时通知栏是否按冷却规则弹出；二是“最大连续亏损”是否已恢复为只有金额染色。
+- 本轮关键决定：恢复异常通知时不把旧的“每轮都弹”逻辑整段搬回，而是只保留“新异常立即提醒 + 服务端 alerts 冷却补发”的最小正确链路，避免重复轰炸。
+- 正在收口图表页与悬浮窗的 5 个明确点：`最大连续亏损` 红色显示、K 线长按弹窗补主图已开启指标、核对异常交易通知现状、核对指标与币安口径、悬浮窗价格/持仓盈亏改成一位小数。
+- 已完成的代码改动是：`StatsMetricAdapter` 现在会把“最大连续盈利/亏损”的整段值一起着色；`KlineChartView` 的长按弹窗改为通过 `KlinePopupDataHelper` 追加主图已开启的 `BOLL / MA / EMA / SRA` 数据；`FloatingWindowTextFormatter` 与 `FormatUtils` 已新增一位小数格式，悬浮窗产品价格和产品盈亏都切到一位小数。
+- 已完成的核对结论是：当前异常交易不会再发 Android 系统通知，只会写异常记录并让最小化悬浮窗闪烁；指标里只有 `MACD 柱值 = DIF - DEA（不乘 2）` 被代码和测试明确锁成币安口径，其余 `EMA / BOLL / RSI / KDJ / STOCHRSI` 目前没有“与币安结果逐项对齐”的验证证据。
+- 已验证 `./gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.TradeStatsMetricStyleHelperTest" --tests "com.binance.monitor.ui.chart.KlinePopupDataHelperTest" --tests "com.binance.monitor.ui.floating.FloatingWindowTextFormatterTest" --tests "com.binance.monitor.util.FormatUtilsMoneyFormatTest" --tests "com.binance.monitor.ui.floating.FloatingWindowManagerSourceTest" --tests "com.binance.monitor.ui.chart.KlineChartViewMacdSourceTest"` 通过。
+- 当前停点：仓库内代码和定向单测已完成，下一步应安装最新 APK 真机复测这 3 个界面变化，尤其确认长按 K 线弹窗新增指标行后不会遮挡，以及悬浮窗一位小数在 `BTC / XAU` 两个产品上都正常。
+- 本轮关键决定：第 3、4 项先给“代码现状结论”，不顺手重启系统通知链路，也不把“指标和币安完全一致”表述成已确认事实；原因是当前代码证据只支持这两个较窄结论。
 - 正在收口轻量 Web 管理面板的公网暴露策略。最新决定已经明确：`8788` 只允许本机访问，公网统一只保留 `/admin/`，并在 Caddy 的 `/admin/*` 上加 Basic Auth。
 - 已完成的部署包改动是：`deploy/tencent/windows/Caddyfile` 与 `deploy/tencent/windows_server_bundle/windows/Caddyfile` 均已给 `/admin/*` 增加 Basic Auth；`deploy/tencent/windows/.env.example`、`deploy/tencent/windows_server_bundle/windows/.env.example`、`deploy/tencent/windows_server_bundle/mt5_gateway/.env.example` 都把 `ADMIN_PANEL_HOST` 收回到 `127.0.0.1`；对应部署 README 也已改成“不开放 8788，只通过 `/admin/` 访问”。
 - 当前 Basic Auth 口径已固定为：用户名 `a378910115`，密码 `a378910115`。
