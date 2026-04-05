@@ -78,6 +78,9 @@ MT5_HISTORY_LOOKAHEAD_HOURS = max(0, int(os.getenv("MT5_HISTORY_LOOKAHEAD_HOURS"
 TRADE_HISTORY_TARGET_ITEMS = max(200, int(os.getenv("TRADE_HISTORY_TARGET_ITEMS", "1000")))
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
+MARKET_CANDLES_CACHE_MS = max(1000, int(os.getenv("MARKET_CANDLES_CACHE_MS", "8000")))
+MARKET_CANDLES_CACHE_MAX_ENTRIES = max(8, int(os.getenv("MARKET_CANDLES_CACHE_MAX_ENTRIES", "120")))
+MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT = max(100, min(1000, int(os.getenv("MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT", "500"))))
 ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "500")))
 ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
 ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "8")))
@@ -97,6 +100,7 @@ mt5_last_connected_path = ""
 snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
 snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
 v2_sync_state: Dict[str, Any] = {}
+market_candles_cache: Dict[str, Dict[str, Any]] = {}
 abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
 abnormal_record_store: List[Dict[str, Any]] = []
 abnormal_alert_store: List[Dict[str, Any]] = []
@@ -491,6 +495,65 @@ def _remember_cache_entry_locked(cache: Dict[str, Any], key: str, value: Any, li
     cache.pop(key, None)
     cache[key] = value
     _trim_cache_entries_locked(cache, limit)
+
+
+# 统一生成行情 K 线查询缓存键，避免同窗口短时间重复打上游。
+def _build_market_candles_cache_key(symbol: str,
+                                    interval: str,
+                                    limit: int,
+                                    start_time_ms: int,
+                                    end_time_ms: int) -> str:
+    return "|".join(
+        [
+            str(symbol or "").strip().upper(),
+            str(interval or "").strip(),
+            str(max(1, int(limit or 0))),
+            str(max(0, int(start_time_ms or 0))),
+            str(max(0, int(end_time_ms or 0))),
+        ]
+    )
+
+
+# 行情 K 线短缓存：同一窗口短时间直接复用，减小手机反复切页时的上游压力。
+def _get_cached_market_candle_rows(cache_key: str, now_ms: int) -> Optional[List[Any]]:
+    with snapshot_cache_lock:
+        cached = market_candles_cache.get(cache_key)
+        if not cached:
+            return None
+        if now_ms - int(cached.get("builtAt", 0) or 0) > MARKET_CANDLES_CACHE_MS:
+            market_candles_cache.pop(cache_key, None)
+            return None
+        cached["lastAccessAt"] = now_ms
+        _remember_cache_entry_locked(
+            market_candles_cache,
+            cache_key,
+            cached,
+            MARKET_CANDLES_CACHE_MAX_ENTRIES,
+        )
+        return [list(item) if isinstance(item, (list, tuple)) else dict(item) for item in (cached.get("rows") or [])]
+
+
+# 统一写入行情 K 线短缓存，命中时刷新最近使用顺序。
+def _remember_market_candle_rows(cache_key: str, rows: List[Any], now_ms: int) -> None:
+    normalized_rows: List[Any] = []
+    for item in rows or []:
+        if isinstance(item, (list, tuple)):
+            normalized_rows.append(list(item))
+        elif isinstance(item, dict):
+            normalized_rows.append(dict(item))
+        else:
+            normalized_rows.append(item)
+    with snapshot_cache_lock:
+        _remember_cache_entry_locked(
+            market_candles_cache,
+            cache_key,
+            {
+                "builtAt": now_ms,
+                "lastAccessAt": now_ms,
+                "rows": normalized_rows,
+            },
+            MARKET_CANDLES_CACHE_MAX_ENTRIES,
+        )
 
 
 # 仅在 EA 推送仍新鲜时延长快照缓存寿命，减少固定轮询下的一快一慢交替。
@@ -3527,6 +3590,182 @@ def _fetch_binance_kline_rows(symbol: str,
     return payload
 
 
+# 行情 K 线大窗口查询按块拉取，避免单次 limit 过大把 Binance REST 拖到超时。
+def _fetch_market_candle_rows_with_cache(symbol: str,
+                                         interval: str,
+                                         limit: int,
+                                         *,
+                                         start_time_ms: int = 0,
+                                         end_time_ms: int = 0) -> List[Any]:
+    safe_symbol = str(symbol or "").strip().upper()
+    safe_interval = str(interval or "").strip()
+    safe_limit = max(1, min(int(limit or 0), 1500))
+    safe_start = max(0, int(start_time_ms or 0))
+    safe_end = max(0, int(end_time_ms or 0))
+    cache_key = _build_market_candles_cache_key(
+        safe_symbol,
+        safe_interval,
+        safe_limit,
+        safe_start,
+        safe_end,
+    )
+    now_ms = _now_ms()
+    cached_rows = _get_cached_market_candle_rows(cache_key, now_ms)
+    if cached_rows is not None:
+        return cached_rows
+
+    rows = _fetch_market_candle_rows_paged(
+        safe_symbol,
+        safe_interval,
+        safe_limit,
+        start_time_ms=safe_start,
+        end_time_ms=safe_end,
+    )
+    _remember_market_candle_rows(cache_key, rows, now_ms)
+    return rows
+
+
+# 按开始/结束时间自动选择向前或向后分页，保证返回仍是同一份升序 K 线列表。
+def _fetch_market_candle_rows_paged(symbol: str,
+                                    interval: str,
+                                    limit: int,
+                                    *,
+                                    start_time_ms: int = 0,
+                                    end_time_ms: int = 0) -> List[Any]:
+    safe_limit = max(1, min(int(limit or 0), 1500))
+    if safe_limit <= MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT:
+        return _fetch_binance_kline_rows(
+            symbol,
+            interval,
+            safe_limit,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
+        )
+    if int(start_time_ms or 0) > 0:
+        return _fetch_market_candle_rows_forward(
+            symbol,
+            interval,
+            safe_limit,
+            start_time_ms=int(start_time_ms or 0),
+            end_time_ms=int(end_time_ms or 0),
+        )
+    return _fetch_market_candle_rows_backward(
+        symbol,
+        interval,
+        safe_limit,
+        end_time_ms=int(end_time_ms or 0),
+    )
+
+
+# 已知 startTime 时从旧到新分页，避免精确窗口查询重复回卷。
+def _fetch_market_candle_rows_forward(symbol: str,
+                                      interval: str,
+                                      limit: int,
+                                      *,
+                                      start_time_ms: int,
+                                      end_time_ms: int = 0) -> List[Any]:
+    remaining = max(1, min(int(limit or 0), 1500))
+    cursor = max(0, int(start_time_ms or 0))
+    safe_end = max(0, int(end_time_ms or 0))
+    collected: Dict[int, Any] = {}
+
+    while remaining > 0:
+        chunk_limit = min(remaining, MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT)
+        rows = _fetch_binance_kline_rows(
+            symbol,
+            interval,
+            chunk_limit,
+            start_time_ms=cursor,
+            end_time_ms=safe_end,
+        ) or []
+        if not rows:
+            break
+        last_open_time = cursor
+        new_count = 0
+        for row in rows:
+            open_time = _extract_market_row_open_time(row)
+            if open_time <= 0:
+                continue
+            if safe_end > 0 and open_time > safe_end:
+                continue
+            last_open_time = max(last_open_time, open_time)
+            if open_time in collected:
+                continue
+            collected[open_time] = row
+            new_count += 1
+        if new_count <= 0:
+            break
+        remaining -= new_count
+        if len(rows) < chunk_limit:
+            break
+        next_cursor = last_open_time + 1
+        if next_cursor <= cursor:
+            break
+        cursor = next_cursor
+
+    return [collected[key] for key in sorted(collected.keys())]
+
+
+# 未指定 startTime 时从新到旧分页，再统一升序返回，适合图表整窗历史拉取。
+def _fetch_market_candle_rows_backward(symbol: str,
+                                       interval: str,
+                                       limit: int,
+                                       *,
+                                       end_time_ms: int = 0) -> List[Any]:
+    remaining = max(1, min(int(limit or 0), 1500))
+    cursor_end = max(0, int(end_time_ms or 0))
+    collected: Dict[int, Any] = {}
+
+    while remaining > 0:
+        chunk_limit = min(remaining, MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT)
+        rows = _fetch_binance_kline_rows(
+            symbol,
+            interval,
+            chunk_limit,
+            start_time_ms=0,
+            end_time_ms=cursor_end,
+        ) or []
+        if not rows:
+            break
+        first_open_time: Optional[int] = None
+        new_count = 0
+        for row in rows:
+            open_time = _extract_market_row_open_time(row)
+            if open_time <= 0:
+                continue
+            if first_open_time is None:
+                first_open_time = open_time
+            else:
+                first_open_time = min(first_open_time, open_time)
+            if open_time in collected:
+                continue
+            collected[open_time] = row
+            new_count += 1
+        if new_count <= 0 or first_open_time is None:
+            break
+        remaining -= new_count
+        if len(rows) < chunk_limit or first_open_time <= 0:
+            break
+        cursor_end = first_open_time - 1
+
+    return [collected[key] for key in sorted(collected.keys())]
+
+
+# 统一提取 K 线开盘时间，供分页去重和翻页游标使用。
+def _extract_market_row_open_time(row: Any) -> int:
+    if isinstance(row, (list, tuple)) and row:
+        try:
+            return int(row[0] or 0)
+        except Exception:
+            return 0
+    if isinstance(row, dict):
+        try:
+            return int((row.get("k") or row).get("t") or (row.get("k") or row).get("openTime") or 0)
+        except Exception:
+            return 0
+    return 0
+
+
 async def _pipe_websocket_client_to_upstream(client: WebSocket, upstream) -> None:
     while True:
         message = await client.receive()
@@ -3663,7 +3902,7 @@ def v2_market_candles(symbol: str,
                       endTime: int = Query(default=0, ge=0)):
     try:
         now_ms = _now_ms()
-        rest_rows = _fetch_binance_kline_rows(
+        rest_rows = _fetch_market_candle_rows_with_cache(
             symbol,
             interval,
             limit,
@@ -3881,11 +4120,13 @@ def admin_cache_clear():
         cleared = {
             "snapshotBuildCache": len(snapshot_build_cache),
             "snapshotSyncCache": len(snapshot_sync_cache),
+            "marketCandlesCache": len(market_candles_cache),
             "v2SyncState": 1 if v2_sync_state else 0,
             "abnormalSyncState": 1 if abnormal_sync_state else 0,
         }
         snapshot_build_cache.clear()
         snapshot_sync_cache.clear()
+        market_candles_cache.clear()
         v2_sync_state.clear()
         abnormal_sync_state.clear()
     return {"ok": True, "cleared": cleared}

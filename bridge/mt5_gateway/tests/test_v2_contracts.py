@@ -155,6 +155,68 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual("binance-rest", payload["latestPatch"]["source"])
         self.assertFalse(payload["latestPatch"]["isClosed"])
 
+    def test_market_candles_should_fetch_large_window_in_multiple_chunks(self):
+        first_chunk = [
+            [2000, "2.0", "2.1", "1.9", "2.0", "5.0", 2999, "10.0", 2],
+            [3000, "3.0", "3.1", "2.9", "3.0", "5.0", 3999, "10.0", 2],
+        ]
+        second_chunk = [
+            [1, "0.0", "0.1", "-0.1", "0.0", "5.0", 999, "10.0", 2],
+            [1000, "1.0", "1.1", "0.9", "1.0", "5.0", 1999, "10.0", 2],
+        ]
+        with mock.patch.object(server_v2, "MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT", 2), mock.patch.object(
+            server_v2, "_now_ms", return_value=10_000
+        ), mock.patch.object(server_v2, "_fetch_binance_kline_rows", side_effect=[first_chunk, second_chunk]) as fetch_mock:
+            payload = server_v2.v2_market_candles(
+                symbol="BTCUSDT",
+                interval="30m",
+                limit=4,
+                startTime=0,
+                endTime=0,
+            )
+
+        self.assertEqual([1, 1000, 2000, 3000], [item["openTime"] for item in payload["candles"]])
+        self.assertEqual(
+            [
+                mock.call("BTCUSDT", "30m", 2, start_time_ms=0, end_time_ms=0),
+                mock.call("BTCUSDT", "30m", 2, start_time_ms=0, end_time_ms=1999),
+            ],
+            fetch_mock.call_args_list,
+        )
+
+    def test_market_candles_should_reuse_short_lived_query_cache(self):
+        rows = [
+            [1000, "1.0", "2.0", "0.5", "1.5", "10.0", 1999, "20.0", 3],
+        ]
+        with mock.patch.object(server_v2, "_now_ms", side_effect=[5_000, 5_000, 5_100, 5_100]), mock.patch.object(
+            server_v2,
+            "_fetch_binance_kline_rows",
+            return_value=rows,
+        ) as fetch_mock:
+            first = server_v2.v2_market_candles(
+                symbol="BTCUSDT",
+                interval="1h",
+                limit=300,
+                startTime=0,
+                endTime=0,
+            )
+            second = server_v2.v2_market_candles(
+                symbol="BTCUSDT",
+                interval="1h",
+                limit=300,
+                startTime=0,
+                endTime=0,
+            )
+
+        self.assertEqual(first["candles"], second["candles"])
+        fetch_mock.assert_called_once_with(
+            "BTCUSDT",
+            "1h",
+            300,
+            start_time_ms=0,
+            end_time_ms=0,
+        )
+
     def test_account_snapshot_has_positions_and_orders(self):
         payload = server_v2._build_v2_account_snapshot_payload(
             account={"balance": 1000.0},

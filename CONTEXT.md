@@ -1,6 +1,11 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 正在继续收口“图表页 30m / 1w 等长周期数量偏少、偶发 timeout”的服务端根因。最新定位已经确认：`/v2/market/candles` 之前会把 `limit` 直接透传给 Binance REST，单次大窗口请求容易超时，手机端本地库里缺少 `30m/1w` 也与这条链路一致。
+- 已在 `bridge/mt5_gateway/server_v2.py` 为 `/v2/market/candles` 补上两层最小修复：第一层是“分块分页拉取”，把大于 `MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT` 的请求自动拆成多段向前/向后分页；第二层是“短 TTL 查询缓存”，同一 symbol/interval/window 的请求在 `MARKET_CANDLES_CACHE_MS` 内直接复用，减少 APP 切页和首屏重试时的重复上游压力。
+- 已补回归测试锁住这次行为：`test_market_candles_should_fetch_large_window_in_multiple_chunks` 与 `test_market_candles_should_reuse_short_lived_query_cache`。当前 `python -m unittest bridge.mt5_gateway.tests.test_v2_contracts bridge.mt5_gateway.tests.test_v2_market_pipeline` 共 19 条通过。
+- 当前停点：仓库内修复和单测已经完成，下一步应把最新 `bridge/mt5_gateway/server_v2.py` 覆盖到服务器并重启 `8787`，然后优先复测 `http://127.0.0.1:8787/v2/market/candles?symbol=BTCUSDT&interval=30m&limit=1500` 与 `interval=1w&limit=1500` 的返回速度，再用 ADB 检查手机本地 `market_kline` 是否开始补齐 `30m/1w`。
+- 本轮关键决定：先不引入新的客户端兜底策略，也不先做服务端长周期聚合；最短正确路径是先把现有 `/v2/market/candles` 的“大请求拆小 + 短缓存复用”落地，确认是否已经足够把 timeout 和缺段压下去。
 - 正在继续收口“手机端图表页历史 K 线仍有缺段”的客户端残留问题，并已用 ADB 与应用内日志把现状进一步钉死：账户页本地库 `trade_history` 已有 `1078` 条交易，`Trade visibility snapshot` 日志里的 `snapshot/effective/base` 也都是 `1078`，说明“账户统计交易记录不完整”的主因已不再是服务端或账户页二次折叠，当前主矛盾已收敛到图表页补历史链路。
 - 已定位图表缺段的一条客户端根因：`MarketChartActivity.expandFullHistoryWhenGapDetected()` 之前拿“上一轮最新一根时间”去和“新窗口最老一根时间”比较，这个比较几乎永远不会触发左侧补历史，导致本地已有更早历史但当前窗口不完整时，缺口会长期保留。
 - 已新增 `ChartGapFillHelper`，并把 `MarketChartActivity` 的补缺口判定改为基于“上一轮最老一根时间”；也就是只有当当前新窗口的最老一根明显晚于上一轮已显示的最老一根时，才继续向左分页补历史。
