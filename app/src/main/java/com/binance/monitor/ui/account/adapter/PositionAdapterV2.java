@@ -37,6 +37,16 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
     private final List<String> rowKeys = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
     private boolean masked;
+    private ActionListener actionListener;
+
+    public interface ActionListener {
+        void onActionRequested(PositionItem item);
+    }
+
+    // 注册持仓操作回调，供图表页接入平仓和改单入口。
+    public void setActionListener(ActionListener actionListener) {
+        this.actionListener = actionListener;
+    }
 
     public void submitList(List<PositionItem> data) {
         List<PositionItem> nextItems = data == null ? new ArrayList<>() : new ArrayList<>(data);
@@ -100,7 +110,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, false, masked);
+        holder.bind(item, expanded, false, masked, actionListener != null);
         holder.binding.layoutHeader.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= rowKeys.size()) {
@@ -114,6 +124,17 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             }
             notifyItemChanged(adapterPosition, PAYLOAD_EXPAND_STATE);
         });
+        holder.binding.btnPositionAction.setOnClickListener(v -> {
+            ActionListener listener = actionListener;
+            if (listener == null) {
+                return;
+            }
+            int adapterPosition = holder.getBindingAdapterPosition();
+            if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= items.size()) {
+                return;
+            }
+            listener.onActionRequested(items.get(adapterPosition));
+        });
     }
 
     @Override
@@ -125,7 +146,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE), masked);
+        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE), masked, actionListener != null);
     }
 
     @Override
@@ -231,7 +252,13 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             this.binding = binding;
         }
 
-        void bind(PositionItem item, boolean expanded, boolean animateExpand, boolean masked) {
+        void bind(PositionItem item,
+                  boolean expanded,
+                  boolean animateExpand,
+                  boolean masked,
+                  boolean actionEnabled) {
+            binding.btnPositionAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
+            binding.btnPositionAction.setText("平仓/改单");
             if (masked) {
                 binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
                 binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
@@ -321,7 +348,6 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         }
 
         private void updateExpandState(boolean expanded, boolean animate) {
-            binding.tvExpandHint.setText(expanded ? "收起" : "展开");
             View detail = binding.layoutDetail;
             detail.animate().cancel();
             if (!animate) {

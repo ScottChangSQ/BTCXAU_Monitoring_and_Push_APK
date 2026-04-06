@@ -21,4 +21,14 @@ public class MarketChartRefreshSourceTest {
         assertFalse(source.contains("? new ArrayList<>(loadedCandles)\r\n                : getCachedOrPersisted(key);"));
         assertFalse(source.contains("List<CandleEntry> visible = loadedCandles == null ? new ArrayList<>() : new ArrayList<>(loadedCandles);"));
     }
+
+    @Test
+    public void activityShouldDebounceAccountOverlayRefreshes() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("scheduleChartOverlayRefresh"));
+        assertTrue(source.contains("accountOverlayRefreshPending"));
+        assertTrue(source.contains("lastAccountOverlaySignature"));
+    }
 }

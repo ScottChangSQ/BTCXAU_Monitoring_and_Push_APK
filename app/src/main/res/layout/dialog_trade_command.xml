@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_trade_dialog_surface"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/tvTradeCommandHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:id="@+id/layoutTradeOrderType"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="挂单类型"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinnerTradeOrderType"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/control_height_lg"
+                android:layout_marginTop="4dp"
+                android:background="@drawable/bg_spinner_filter"
+                android:popupBackground="@drawable/bg_spinner_popup"
+                android:spinnerMode="dropdown" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvTradeVolumeLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="手数"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/etTradeVolume"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/control_height_lg"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_trade_field"
+            android:gravity="center_vertical"
+            android:includeFontPadding="false"
+            android:inputType="numberDecimal"
+            android:minHeight="@dimen/control_height_lg"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="10dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tvTradePriceLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="价格"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/etTradePrice"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/control_height_lg"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_trade_field"
+            android:gravity="center_vertical"
+            android:includeFontPadding="false"
+            android:inputType="numberDecimal"
+            android:minHeight="@dimen/control_height_lg"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="10dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tvTradeSlLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="止损"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/etTradeSl"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/control_height_lg"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_trade_field"
+            android:gravity="center_vertical"
+            android:includeFontPadding="false"
+            android:inputType="numberDecimal"
+            android:minHeight="@dimen/control_height_lg"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="10dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tvTradeTpLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="止盈"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/etTradeTp"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/control_height_lg"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_trade_field"
+            android:gravity="center_vertical"
+            android:includeFontPadding="false"
+            android:inputType="numberDecimal"
+            android:minHeight="@dimen/control_height_lg"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="10dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

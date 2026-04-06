@@ -60,7 +60,7 @@ public class PositionAdapter extends RecyclerView.Adapter<PositionAdapter.Holder
                     item.getSide(),
                     item.getQuantity(),
                     signedMoney(item.getTotalPnL())));
-            binding.tvExpandHint.setText("详情");
+            binding.btnPositionAction.setVisibility(View.GONE);
             binding.layoutDetail.setVisibility(View.VISIBLE);
             binding.tvProduct.setText(item.getProductName() + " (" + item.getCode() + ")");
             binding.tvBase.setText(String.format(Locale.getDefault(),

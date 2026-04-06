@@ -7,6 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE_EA = ROOT / "bridge" / "mt5_gateway" / "ea" / "MT5BridgePushEA.mq5"
 BUNDLE_EA = ROOT / "deploy" / "tencent" / "windows_server_bundle" / "mt5_gateway" / "ea" / "MT5BridgePushEA.mq5"
+SOURCE_SERVER = ROOT / "bridge" / "mt5_gateway" / "server_v2.py"
+BUNDLE_SERVER = ROOT / "deploy" / "tencent" / "windows_server_bundle" / "mt5_gateway" / "server_v2.py"
+BUNDLE_TRADE = ROOT / "deploy" / "tencent" / "windows_server_bundle" / "mt5_gateway" / "v2_trade.py"
+BUNDLE_TRADE_MODELS = ROOT / "deploy" / "tencent" / "windows_server_bundle" / "mt5_gateway" / "v2_trade_models.py"
 
 
 class GatewayBundleParityTests(unittest.TestCase):
@@ -35,6 +39,19 @@ class GatewayBundleParityTests(unittest.TestCase):
 
     def test_windows_bundle_ea_should_match_source_defaults(self):
         self.assertEqual(self._extract_default_lines(SOURCE_EA), self._extract_default_lines(BUNDLE_EA))
+
+    def test_windows_bundle_should_include_trade_gateway_modules(self):
+        self.assertTrue(BUNDLE_TRADE.exists())
+        self.assertTrue(BUNDLE_TRADE_MODELS.exists())
+
+    def test_windows_bundle_server_should_expose_trade_endpoints(self):
+        source = SOURCE_SERVER.read_text(encoding="utf-8")
+        bundle = BUNDLE_SERVER.read_text(encoding="utf-8")
+
+        self.assertIn('@app.post("/v2/trade/check")', source)
+        self.assertIn('@app.post("/v2/trade/check")', bundle)
+        self.assertIn('import v2_trade', bundle)
+        self.assertIn('import v2_trade_models', bundle)
 
 
 if __name__ == "__main__":

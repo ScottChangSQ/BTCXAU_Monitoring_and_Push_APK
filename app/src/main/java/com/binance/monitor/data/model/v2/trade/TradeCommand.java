@@ -4,6 +4,8 @@
  */
 package com.binance.monitor.data.model.v2.trade;
 
+import org.json.JSONObject;
+
 public class TradeCommand {
     private final String requestId;
     private final String accountId;
@@ -13,6 +15,7 @@ public class TradeCommand {
     private final double price;
     private final double sl;
     private final double tp;
+    private final JSONObject params;
 
     // 构造交易命令对象。
     public TradeCommand(String requestId,
@@ -23,6 +26,19 @@ public class TradeCommand {
                         double price,
                         double sl,
                         double tp) {
+        this(requestId, accountId, symbol, action, volume, price, sl, tp, null);
+    }
+
+    // 构造带扩展参数的交易命令对象。
+    public TradeCommand(String requestId,
+                        String accountId,
+                        String symbol,
+                        String action,
+                        double volume,
+                        double price,
+                        double sl,
+                        double tp,
+                        JSONObject params) {
         this.requestId = requestId == null ? "" : requestId;
         this.accountId = accountId == null ? "" : accountId;
         this.symbol = symbol == null ? "" : symbol;
@@ -31,6 +47,7 @@ public class TradeCommand {
         this.price = price;
         this.sl = sl;
         this.tp = tp;
+        this.params = cloneJson(params);
     }
 
     // 返回请求 ID。
@@ -71,5 +88,22 @@ public class TradeCommand {
     // 返回止盈价。
     public double getTp() {
         return tp;
+    }
+
+    // 返回扩展参数。
+    public JSONObject getParams() {
+        return cloneJson(params);
+    }
+
+    // 安全复制扩展参数，避免上层意外改到内部状态。
+    private static JSONObject cloneJson(JSONObject source) {
+        if (source == null) {
+            return new JSONObject();
+        }
+        try {
+            return new JSONObject(source.toString());
+        } catch (Exception ignored) {
+            return new JSONObject();
+        }
     }
 }

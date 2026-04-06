@@ -48,7 +48,7 @@ public class TradeCommandStateMachine {
         return true;
     }
 
-    // 处理检查结果，成功进入确认，失败进入拒绝。
+    // 处理检查结果，成功进入确认，基础设施异常进入待确认，业务失败进入拒绝。
     public synchronized boolean onCheckCompleted(@Nullable TradeCheckResult result) {
         if (step != Step.CHECKING) {
             return false;
@@ -56,15 +56,27 @@ public class TradeCommandStateMachine {
         checkResult = result;
         if (result == null) {
             error = ExecutionError.of("TRADE_CHECK_EMPTY", "检查结果为空");
-            step = Step.REJECTED;
+            step = Step.TIMEOUT;
             return true;
         }
         error = result.getError();
         if (result.isExecutable()) {
             step = Step.CONFIRMING;
+        } else if (isTimeoutStatus(result.getStatus()) || isTimeoutError(error)) {
+            step = Step.TIMEOUT;
         } else {
             step = Step.REJECTED;
         }
+        return true;
+    }
+
+    // 检查请求异常时进入 TIMEOUT，避免界面误判为业务拒单。
+    public synchronized boolean onCheckTimeout(String message) {
+        if (step != Step.CHECKING) {
+            return false;
+        }
+        error = ExecutionError.of("TRADE_CHECK_TIMEOUT", message == null ? "检查超时" : message);
+        step = Step.TIMEOUT;
         return true;
     }
 
@@ -162,18 +174,21 @@ public class TradeCommandStateMachine {
         return step == Step.SETTLED;
     }
 
-    // 判断错误是否属于超时类别。
+    // 判断错误是否属于待确认类别。
     private static boolean isTimeoutError(@Nullable ExecutionError executionError) {
         if (executionError == null) {
             return false;
         }
         String code = executionError.getCode();
         return "TRADE_TIMEOUT".equalsIgnoreCase(code)
+                || "TRADE_CHECK_TIMEOUT".equalsIgnoreCase(code)
+                || "TRADE_CHECK_PENDING".equalsIgnoreCase(code)
+                || "TRADE_CHECK_UNKNOWN".equalsIgnoreCase(code)
                 || "TRADE_SUBMIT_TIMEOUT".equalsIgnoreCase(code)
                 || "TRADE_RESULT_UNKNOWN".equalsIgnoreCase(code);
     }
 
-    // 判断提交状态是否属于待确认超时分支。
+    // 判断状态是否属于待确认超时分支。
     private static boolean isTimeoutStatus(@Nullable String status) {
         if (status == null) {
             return false;
@@ -188,8 +203,12 @@ public class TradeCommandStateMachine {
         if (receipt == null || !receipt.isIdempotent()) {
             return false;
         }
-        if ("DUPLICATE".equalsIgnoreCase(receipt.getStatus())) {
+        String status = receipt.getStatus();
+        if ("DUPLICATE".equalsIgnoreCase(status)) {
             return true;
+        }
+        if (!"ACCEPTED".equalsIgnoreCase(status)) {
+            return false;
         }
         ExecutionError executionError = receipt.getError();
         return executionError != null

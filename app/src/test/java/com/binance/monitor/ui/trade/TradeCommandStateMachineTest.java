@@ -1,3 +1,7 @@
+/*
+ * 交易命令状态机单测，负责锁定检查、确认、提交、超时和结算的状态边界。
+ * 与 TradeCommandStateMachine 实现一起保证页面不会把未确认状态误判成已下单。
+ */
 package com.binance.monitor.ui.trade;
 
 import static org.junit.Assert.assertEquals;
@@ -46,6 +50,37 @@ public class TradeCommandStateMachineTest {
     }
 
     @Test
+    public void emptyCheckResultShouldMoveToTimeoutState() {
+        TradeCommandStateMachine machine = new TradeCommandStateMachine(buildCommand("req-empty-check"));
+        machine.beginChecking();
+
+        boolean handled = machine.onCheckCompleted(null);
+
+        assertTrue(handled);
+        assertEquals(TradeCommandStateMachine.Step.TIMEOUT, machine.getStep());
+        assertEquals("TRADE_CHECK_EMPTY", machine.getError().getCode());
+    }
+
+    @Test
+    public void unknownCheckStatusShouldMoveToTimeoutState() throws Exception {
+        TradeCommandStateMachine machine = new TradeCommandStateMachine(buildCommand("req-unknown-check"));
+        machine.beginChecking();
+
+        boolean handled = machine.onCheckCompleted(new TradeCheckResult(
+                "req-unknown-check",
+                "OPEN_MARKET",
+                "netting",
+                "UNKNOWN",
+                null,
+                new JSONObject().put("retcode", 0),
+                1L
+        ));
+
+        assertTrue(handled);
+        assertEquals(TradeCommandStateMachine.Step.TIMEOUT, machine.getStep());
+    }
+
+    @Test
     public void submitShouldIgnoreRepeatedClickWhileSubmitting() throws Exception {
         TradeCommandStateMachine machine = new TradeCommandStateMachine(buildCommand("req-repeat-submit"));
         moveToConfirming(machine, "req-repeat-submit");
@@ -89,6 +124,29 @@ public class TradeCommandStateMachineTest {
         assertTrue(handled);
         assertEquals(TradeCommandStateMachine.Step.REJECTED, machine.getStep());
         assertEquals("TRADE_INSUFFICIENT_MARGIN", machine.getError().getCode());
+    }
+
+    @Test
+    public void failedDuplicateReceiptShouldStayRejected() throws Exception {
+        TradeCommandStateMachine machine = new TradeCommandStateMachine(buildCommand("req-failed-duplicate"));
+        moveToConfirming(machine, "req-failed-duplicate");
+        machine.beginSubmitting();
+
+        boolean handled = machine.onSubmitCompleted(new TradeReceipt(
+                "req-failed-duplicate",
+                "OPEN_MARKET",
+                "netting",
+                "FAILED",
+                ExecutionError.of("TRADE_DUPLICATE_SUBMISSION", "duplicate"),
+                new JSONObject().put("retcode", 10030),
+                new JSONObject().put("order", 7001).put("deal", 7002),
+                true,
+                2L
+        ));
+
+        assertTrue(handled);
+        assertEquals(TradeCommandStateMachine.Step.REJECTED, machine.getStep());
+        assertFalse(machine.isOrderAccepted());
     }
 
     @Test

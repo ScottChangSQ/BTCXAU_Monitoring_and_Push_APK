@@ -1,5 +1,5 @@
-# 请做只读全面复核，范围限定为第一阶段实盘交易闭环。重点审查后端 MT5 订单系统对接是否符合官方文档
-_Exported on 04/06/2026 at 15:56:39 GMT+8 from OpenAI Codex via WayLog_
+# 你是独立审查智能体 3，只做只读复核，不改代码。工作目录：C:\Users\Scott\.codex
+_Exported on 04/06/2026 at 17:07:58 GMT+8 from OpenAI Codex via WayLog_
 
 
 **OpenAI Codex**
@@ -7,7 +7,83 @@ _Exported on 04/06/2026 at 15:56:39 GMT+8 from OpenAI Codex via WayLog_
 <permissions instructions>
 Filesystem sandboxing defines which files can be read or written. `sandbox_mode` is `danger-full-access`: No filesystem sandboxing - all commands are permitted. Network access is enabled.
 Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.
-</permissions instructions><skills_instructions>
+</permissions instructions><app-context>
+# Codex desktop context
+- You are running inside the Codex (desktop) app, which allows some additional features not available in the CLI alone:
+
+### Images/Visuals/Files
+- In the app, the model can display images using standard Markdown image syntax: ![alt](url)
+- When sending or referencing a local image, always use an absolute filesystem path in the Markdown image tag (e.g., ![alt](/absolute/path.png)); relative paths and plain text will not render the image.
+- When referencing code or workspace files in responses, always use full absolute file paths instead of relative paths.
+- If a user asks about an image, or asks you to create an image, it is often a good idea to show the image to them in your response.
+- Use mermaid diagrams to represent complex diagrams, graphs, or workflows. Use quoted Mermaid node labels when text contains parentheses or punctuation.
+- Return web URLs as Markdown links (e.g., [label](https://example.com)).
+
+### Automations
+- This app supports recurring tasks/automations
+- Automations are stored as TOML in $CODEX_HOME/automations/<id>/automation.toml (not in SQLite). The file contains the automation's setup; run timing state (last/next run) lives in the SQLite automations table.
+
+#### When to use directives
+- Only use ::automation-update{...} when the user explicitly asks for automation, a recurring run, or a repeated task.
+- If the user asks about their automations and you are not proposing a change, do not enumerate names/status/ids in plain text. Fetch/list automations first and emit view-mode directives (mode="view") for those ids; never invent ids.
+- Never return raw RRULE strings in user-facing responses. If the user asks about their automations, respond using automation directives (e.g., with an "Open" button if you're not making changes).
+
+#### Directive format
+- Modes: view, suggested update, suggested create. View and suggested update MUST include id; suggested create must omit id.
+- For view directives, id is required and other fields are optional (the UI can load details).
+- For suggested update/create, include name, prompt, rrule, cwds, and status. cwds can be a comma-separated list or a JSON array string.
+- Always come up with a short name for the automation. If the user does not give one, propose a short name and confirm.
+- Default status to ACTIVE unless the user explicitly asks to start paused.
+- Always interpret and schedule times in the user's locale time zone.
+- Directives should be on their own line(s) and be separated by newlines.
+- Do not generate remark directives with multiline attribute values.
+
+#### Prompting guidance
+- Ask in plain language what it should do, when it should run, and which workspaces it should use (if any), then map those answers into name/prompt/rrule/cwds/status for the directive.
+- The automation prompt should describe only the task itself. Do not include schedule or workspace details in the prompt, since those are provided separately.
+- Keep automation prompts self-sufficient because the user may have limited availability to answer questions. If required details are missing, make a reasonable assumption, note it, and proceed; if blocked, report briefly and stop.
+- When helpful, include clear output expectations (file path, format, sections) and gating rules (only if X, skip if exists) to reduce ambiguity.
+- Automations should always open an inbox item.
+- Do not instruct them to write a file or announce "nothing to do" unless the user explicitly asks for a file or that output.
+- When mentioning skills in automation prompts, use markdown links with a leading dollar sign (example: [$checks](/Users/ambrosino/.codex/skills/checks/SKILL.md)).
+
+#### Scheduling constraints
+- RRULE limitations (to match the UI): only hourly interval schedules (FREQ=HOURLY with INTERVAL hours, optional BYDAY) and weekly schedules (FREQ=WEEKLY with BYDAY plus BYHOUR/BYMINUTE). Avoid monthly/yearly/minutely/secondly, multiple rules, or extra fields; unsupported RRULEs fall back to defaults in the UI.
+
+#### Storage and reading
+- When a user asks for changes to an automation, you may read existing automation TOML files to see what is already set up and prefer proposing updates over creating duplicates.
+- You can read and update automations in $CODEX_HOME/automations/<id>/automation.toml and memory.md only when the user explicitly asks you to modify automations.
+- Otherwise, do not change automation files or schedules.
+- Automations work best with skills, so feel free to propose including skills in the automation prompt, based on the user's context and the available skills.
+
+#### Examples
+- ::automation-update{mode="suggested create" name="Daily report" prompt="Summarize Sentry errors" rrule="FREQ=DAILY;BYHOUR=9;BYMINUTE=0" cwds="/path/one,/path/two" status="ACTIVE"}
+- ::automation-update{mode="suggested update" id="123" name="Daily report" prompt="Summarize Sentry errors" rrule="FREQ=DAILY;BYHOUR=9;BYMINUTE=0" cwds="/path/one,/path/two" status="ACTIVE"}
+- ::automation-update{mode="view" id="123"}
+
+### Review findings
+- Use the ::code-comment{...} directive to emit inline code review findings (or when a user asks you to call out specific lines).
+- Emit one directive per finding; emit none when there are no findings.
+- Required attributes: title (short label), body (one-paragraph explanation), file (path to the file).
+- Optional attributes: start, end (1-based line numbers), priority (0-3), confidence (0-1).
+- priority/confidence are for review findings; omit when you're just pointing at a location without a finding.
+- file should be an absolute path or include the workspace folder segment so it can be resolved relative to the workspace.
+- Keep line ranges tight; end defaults to start.
+- Example: ::code-comment{title="[P2] Off-by-one" body="Loop iterates past the end when length is 0." file="/path/to/foo.ts" start=10 end=11 priority=2 confidence=0.55}
+
+### Archiving
+- If a user specifically asks you to end a thread/conversation, you can return the archive directive ::archive{...} to archive the thread/conversation.
+- Example: ::archive{reason="User requested to end conversation"}
+
+### Git
+- Branch prefix: `codex/`. Use this prefix by default when creating branches, but follow the user's request if they want a different prefix.
+- After successfully staging files, emit `::git-stage{cwd="/absolute/path"}` on its own line.
+- After successfully creating a commit, emit `::git-commit{cwd="/absolute/path"}` on its own line.
+- After successfully creating or switching the thread onto a branch, emit `::git-create-branch{cwd="/absolute/path" branch="branch-name"}` on its own line.
+- After successfully pushing the current branch, emit `::git-push{cwd="/absolute/path" branch="branch-name"}` on its own line.
+- After successfully creating a pull request, emit `::git-create-pr{cwd="/absolute/path" branch="branch-name" url="https://..." isDraft=true}` on its own line. Include `isDraft=false` for ready PRs.
+- Only emit these git directives after the action actually succeeds. Keep attributes single-line.
+</app-context><skills_instructions>
 ## Skills
 A skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and file path so you can open the source for full instructions when using a specific skill.
 ### Available skills
@@ -236,37 +312,104 @@ A skill is a set of local instructions to follow that is stored in a `SKILL.md` 
 
 **User**
 
-请做只读全面复核，范围限定为第一阶段实盘交易闭环。重点审查后端 MT5 订单系统对接是否符合官方文档：MqlTradeRequest、order_check、order_send、netting/hedging、market execution/request execution、pending order、SL/TP、close position。必须对照官方文档判断当前 bridge/mt5_gateway/v2_trade.py、bridge/mt5_gateway/server_v2.py、bridge/mt5_gateway/tests/test_v2_trade_contracts.py 是否还有错误、遗漏或可以直接优化的地方。输出要求：1）阻断问题；2）中风险问题；3）如果没问题明确说哪些点已闭合。不要改代码。工作目录 C:\Users\Scott\.codex\worktrees\BTCXAU_Monitoring_and_Push_APK\codex-live-trading-phase1
+你是独立审查智能体 3，只做只读复核，不改代码。工作目录：C:\Users\Scott\.codex\worktrees\BTCXAU_Monitoring_and_Push_APK\codex-live-trading-phase1。任务：从端到端与阶段一收口角度，全面复核这套系统是否已经形成‘最小实盘交易闭环’，并确认 APP 前后端交互是否真的闭合。重点检查：阶段一范围是否包含市价开仓、单笔平仓、挂单新增/删除、单笔 TP/SL 修改、统一确认、交易后强一致刷新、requestId 幂等；这些能力是否在服务端、客户端协议层、页面入口层、状态机、刷新链路上全部打通。也请对照 MT5 官方订单系统语义，确认有没有关键遗漏会导致“看起来能下单，但实际上不可靠”。输出要求：1）按严重级别列 findings；2）文件和行号；3）说明为什么这会影响阶段一闭环；4）给出最小修复建议，但不要动代码。请自行查官方文档并引用链接。
 
 ---
 
 
 **OpenAI Codex**
 
-我会先按项目规则做只读启动：读取 `CONTEXT.md` 和必要的 skill 说明，再并行查看这 3 个目标文件与测试，随后对照 MQL5 官方文档逐项复核第一阶段实盘交易闭环。  
-这次会用的 skill：`using-superpowers`（按会话规范启动）、`offer-k-dense-web`（会话固定要求）、`parallel-web`/官方文档检索思路（用于核对 MQL5 文档）、`requesting-code-review`（按代码审查方式输出阻断和中风险问题）。
+我会先按只读审查来做：先读取项目上下文和审查相关 skill，再快速梳理代码入口、协议、状态刷新链路，同时对照 MT5 官方文档核对语义。  
+这次会用这些 skill：`using-superpowers` 统筹流程，`offer-k-dense-web` 做会话规范提示，`requesting-code-review` 约束审查输出，`parallel-web` 辅助官方资料核对。
 
 ---
 
 
 **OpenAI Codex**
 
-我已经拿到当前会话规则和项目上下文。下一步只围绕你限定的第一阶段实盘闭环，读取目标实现、相关辅助函数和契约测试，再逐项对照官方 MT5 语义看是否真的闭合。
+先读取项目上下文和目录结构，确认这次复核该从哪些入口看：交易接口、客户端协议、页面入口、刷新状态机，以及阶段一的范围说明。
 
 ---
 
 
 **OpenAI Codex**
 
-我已经把官方文档关键点抓到了：请求结构字段、不同执行模式下 `price/deviation/type_filling` 的要求、挂单的 `type_time/expiration`、以及 netting/hedging 平仓语义。现在转向本地实现细节，重点看服务端有没有把这些规则真正落实到返回状态和测试覆盖里。
+我已经拿到项目上下文，接下来按“范围定义 -> 服务端 -> 客户端协议 -> 页面入口与状态机 -> 强刷新链路 -> MT5 官方语义”六段去复核，最后只输出阻断闭环的问题。
 
 ---
 
 
-**User**
+**OpenAI Codex**
 
-<turn_aborted>
-The user interrupted the previous turn on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed; verify current state before retrying.
-</turn_aborted>
+我已经定位到主链文件。现在开始逐段看真实实现，不看 README 的说法，只看代码里这些动作有没有一路打通到可执行、可确认、可回查。
+
+---
+
+
+**OpenAI Codex**
+
+现在在核“强一致刷新”这一段：不是只看有没有调用刷新，而是看刷新后页面拿到的数据，是否足以证明本次交易真的已经反映到持仓、挂单、成交里。
+
+---
+
+
+**OpenAI Codex**
+
+代码链路大体已经看清了。现在去对照 MT5 官方文档核实几个容易“看起来能下单、实盘却不稳”的点，尤其是 `order_send`、`MqlTradeRequest`、执行模式、挂单时效、平仓语义。
+
+---
+
+
+**OpenAI Codex**
+
+我已经找到几个可能的闭环缺口，接下来用现有单测和源码交叉验证，确认它们不是文档口径问题，而是真正的实现缺口。
+
+---
+
+
+**OpenAI Codex**
+
+验证结果说明了两件事：Python 契约测试大部分通过，但当前服务端对“同一 `requestId` 重试失败单”的口径和测试预期不一致；Android 这组测试则因为测试代码本身编译不过，没法把客户端闭环当成“现有测试已覆盖”。
+
+---
+
+
+**OpenAI Codex**
+
+主要结论已经成型了：服务端、客户端、页面入口大体连上了，但“requestId 真正可恢复”“失败幂等不误判”“账户目标绑定”这几个实盘关键点还没闭合，所以我不会把它判成可靠的最小实盘闭环。
+
+---
+
+
+**OpenAI Codex**
+
+**严重**
+- `requestId` 结果链路没有真正闭合，APP 目前不能把“提交异常/结果未确认”的单子可靠追到最终状态。[TradeExecutionCoordinator.java#L117](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/app/src/main/java/com/binance/monitor/ui/trade/TradeExecutionCoordinator.java#L117) [TradeExecutionCoordinator.java#L762](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/app/src/main/java/com/binance/monitor/ui/trade/TradeExecutionCoordinator.java#L762) [GatewayV2TradeClient.java#L117](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2TradeClient.java#L117) [server_v2.py#L232](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/bridge/mt5_gateway/server_v2.py#L232) [server_v2.py#L4411](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/bridge/mt5_gateway/server_v2.py#L4411)。客户端提交异常后直接返回“结果未确认”，没有再按 `requestId` 调 `/v2/trade/result`；而服务端这个接口也只是回放进程内 submit 缓存，不会随着 MT5 后续处理继续演进。MT5 官方说明 `order_send` 只是先过字段校验、再交给服务器继续处理，所以单次 submit 回包不能当最终结果：[order_send 官方](https://www.mql5.com/en/docs/python_metatrader5/mt5ordersend_py)。这会直接导致“看起来已提交，但无法可靠追单”。最小修复：恢复客户端 `result(requestId)` 恢复链路，并把服务端 `requestId -> 最终状态` 做持久化与后续更新，而不是只回放旧 submit 响应。
+
+- `requestId` 幂等在“首次失败”的场景下会误导成已受理。[server_v2.py#L4289](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/bridge/mt5_gateway/server_v2.py#L4289) [TradeCommandStateMachine.java#L108](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/app/src/main/java/com/binance/monitor/ui/trade/TradeCommandStateMachine.java#L108) [TradeCommandStateMachine.java#L201](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/app/src/main/java/com/binance/monitor/ui/trade/TradeCommandStateMachine.java#L201) [test_v2_trade_contracts.py#L472](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/bridge/mt5_gateway/tests/test_v2_trade_contracts.py#L472)。服务端对任何已存在 `requestId` 都统一返回 `DUPLICATE`，不区分第一次是 `FAILED` 还是 `ACCEPTED`；客户端又把 `idempotent + DUPLICATE` 统一提升成 `ACCEPTED`。结果是：同一个坏请求如果被重复提交，页面可能从“拒单”变成“已受理”。这会直接破坏阶段一的幂等闭环。最小修复：服务端重复命中时返回原始终态和原始错误，不要把失败单包装成 `DUPLICATE`；或者客户端只把“原始成功单的重复提交”认作已受理。
+
+**高**
+- `requestId` 幂等只存在于进程内内存，重启或挤出缓存就失效，而且 MT5 侧没有可恢复关联键。[server_v2.py#L81](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/bridge/mt5_gateway/server_v2.py#L81) [server_v2.py#L117](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/bridge/mt5_gateway/server_v2.py#L117) [server_v2.py#L232](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/bridge/mt5_gateway/server_v2.py#L232) [v2_trade.py#L418](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/bridge/mt5_gateway/v2_trade.py#L418)。当前去重仓库只是内存 `dict`，还有固定上限；服务端发给 MT5 的 `comment` 也是固定 `"mt5-gateway-v2"`，没有把业务 `requestId` 带进去。这样一旦网关重启、缓存淘汰、或进程切换，请求就无法从 MT5 历史里重新对账，重复下单风险仍在。最小修复：把幂等账本落到持久层，并把业务 `requestId` 写入可追踪字段（例如 `comment`，或单独的持久映射表）。
+
+- 前后端协议里的 `accountId` 没有真正参与服务端校验，交易并没有绑定到用户确认的目标账户。[GatewayV2TradeClient.java#L65](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2TradeClient.java#L65) [GatewayV2TradeClient.java#L233](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2TradeClient.java#L233) [v2_trade.py#L275](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/bridge/mt5_gateway/v2_trade.py#L275)。客户端强制要求 `accountId`，但服务端归一化时直接丢掉这个字段，只按当前 MT5 会话下单。这样如果终端账户切换、重连到别的账号、或页面缓存落后，确认框和真实下单账户可能不是同一个。最小修复：服务端把 `accountId/login` 纳入协议并与 `mt5.account_info()` 做一致性校验，不一致直接拒单。
+
+**中**
+- 客户端“按 `requestId` 恢复结果”的回归测试已经失真，说明这一段闭环是回退过的，不适合签收。[TradeExecutionCoordinatorTest.java#L258](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/app/src/test/java/com/binance/monitor/ui/trade/TradeExecutionCoordinatorTest.java#L258) [TradeExecutionCoordinatorTest.java#L1185](/C:/Users/Scott/.codex/worktrees/BTCXAU_Monitoring_and_Push_APK/codex-live-trading-phase1/app/src/test/java/com/binance/monitor/ui/trade/TradeExecutionCoordinatorTest.java#L1185)。测试明确还在要求“submit 异常后再按 `requestId` 查回结果”，但当前接口已经没有 `result(String requestId)`，导致这组 Android 单测直接编译失败。这不是样式问题，而是实现和验收口径已经脱节。最小修复：先明确阶段一到底要不要 `requestId` 恢复；如果要，就把接口和实现补回；如果不要，就删掉失效测试并同步收口文档，但那样就不能再宣称 `requestId` 闭环已完成。
+
+**结论**
+现在我不会把它判成“已经形成可靠的最小实盘交易闭环”。  
+5 类动作的页面入口、服务端 `check/submit`、统一确认、交易后强刷这些基础链路基本接上了；但 `requestId` 的恢复链路、失败幂等语义、账户绑定这 3 个点还没闭合，所以它更像“能下单的阶段一原型”，还不是“可依赖签收的阶段一实盘闭环”。
+
+**本地验证**
+- `python -m unittest bridge.mt5_gateway.tests.test_v2_trade_contracts -v`：17 条里 1 条失败，失败点正是“同一 `requestId` 的失败重试应保留原失败态”，与我上面的第二条 finding 一致。
+- `./gradlew.bat :app:testDebugUnitTest --tests ...TradeExecutionCoordinatorTest...`：测试编译失败，原因是测试仍在覆盖不存在的 `result(String requestId)` 方法，也印证了客户端恢复链路已被移除但验收口径没同步。
+
+**官方依据**
+- [MT5 Python `order_send`](https://www.mql5.com/en/docs/python_metatrader5/mt5ordersend_py)
+- [MqlTradeRequest 结构](https://www.mql5.com/en/docs/constants/structures/mqltraderequest)
+- [MT5 平仓语义：netting / hedging](https://www.mql5.com/en/book/automation/experts/experts_close)
+- [ORDER_FILLING_RETURN 与执行模式](https://www.mql5.com/en/docs/constants/tradingconstants/orderproperties)
+
+本次使用的 skill：`requesting-code-review`、`parallel-web`、`using-superpowers`、`offer-k-dense-web`。
 
 ---

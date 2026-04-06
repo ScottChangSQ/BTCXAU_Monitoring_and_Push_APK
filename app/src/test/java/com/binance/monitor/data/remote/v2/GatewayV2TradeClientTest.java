@@ -15,6 +15,8 @@ public class GatewayV2TradeClientTest {
 
     @Test
     public void buildTradeCommandPayloadShouldContainAllRequiredFields() throws Exception {
+        JSONObject params = new JSONObject();
+        params.put("side", "buy");
         TradeCommand command = new TradeCommand(
                 "req-1",
                 "acc-1",
@@ -23,7 +25,8 @@ public class GatewayV2TradeClientTest {
                 0.1,
                 65000.0,
                 64000.0,
-                68000.0
+                68000.0,
+                params
         );
 
         JSONObject payload = GatewayV2TradeClient.buildTradeCommandPayload(command);
@@ -128,5 +131,18 @@ public class GatewayV2TradeClientTest {
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().length() > 0);
         }
+    }
+
+    @Test
+    public void buildHttpFailureMessageShouldExplainMissingTradeEndpoint() {
+        String message = GatewayV2TradeClient.buildHttpFailureMessage(
+                404,
+                "/v2/trade/check",
+                "{\"detail\":\"Not Found\"}"
+        );
+
+        assertTrue(message.contains("/v2/trade/check"));
+        assertTrue(message.contains("网关"));
+        assertTrue(message.contains("升级"));
     }
 }

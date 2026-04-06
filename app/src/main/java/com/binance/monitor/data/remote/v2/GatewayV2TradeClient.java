@@ -19,6 +19,7 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.MediaType;
@@ -57,24 +58,19 @@ public class GatewayV2TradeClient {
     }
 
     // 构建交易命令请求体，固定带 8 个关键字段。
-    public static JSONObject buildTradeCommandPayload(TradeCommand command) throws Exception {
+    public static JSONObject buildTradeCommandPayload(TradeCommand command) {
         validateTradeCommand(command);
         JSONObject payload = new JSONObject();
-        payload.put("requestId", command.getRequestId());
-        payload.put("accountId", command.getAccountId());
-        payload.put("symbol", command.getSymbol());
-        payload.put("action", command.getAction());
-        payload.put("volume", command.getVolume());
-        payload.put("price", command.getPrice());
-        payload.put("sl", command.getSl());
-        payload.put("tp", command.getTp());
-        JSONObject params = new JSONObject();
-        params.put("symbol", command.getSymbol());
-        params.put("volume", command.getVolume());
-        params.put("price", command.getPrice());
-        params.put("sl", command.getSl());
-        params.put("tp", command.getTp());
-        payload.put("params", params);
+        JSONObject params = mergeTradeParams(command);
+        putQuietly(payload, "requestId", command.getRequestId());
+        putQuietly(payload, "accountId", command.getAccountId());
+        putQuietly(payload, "symbol", command.getSymbol());
+        putQuietly(payload, "action", command.getAction());
+        putQuietly(payload, "volume", command.getVolume());
+        putQuietly(payload, "price", command.getPrice());
+        putQuietly(payload, "sl", command.getSl());
+        putQuietly(payload, "tp", command.getTp());
+        putQuietly(payload, "params", params);
         return payload;
     }
 
@@ -143,10 +139,11 @@ public class GatewayV2TradeClient {
         String url = resolveBaseUrl() + path;
         Request request = new Request.Builder().url(url).get().build();
         try (Response response = client.newCall(request).execute()) {
+            String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                throw new IOException("HTTP " + response.code() + " for " + path);
+                throw new IOException(buildHttpFailureMessage(response.code(), path, responseBody));
             }
-            return response.body() == null ? "" : response.body().string();
+            return responseBody;
         }
     }
 
@@ -156,10 +153,11 @@ public class GatewayV2TradeClient {
         RequestBody body = RequestBody.create(bodyJson == null ? "{}" : bodyJson, JSON_MEDIA_TYPE);
         Request request = new Request.Builder().url(url).post(body).build();
         try (Response response = client.newCall(request).execute()) {
+            String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                throw new IOException("HTTP " + response.code() + " for " + path);
+                throw new IOException(buildHttpFailureMessage(response.code(), path, responseBody));
             }
-            return response.body() == null ? "" : response.body().string();
+            return responseBody;
         }
     }
 
@@ -180,6 +178,53 @@ public class GatewayV2TradeClient {
         return body == null ? "{}" : body;
     }
 
+    // 尽量保留服务端 detail/error 里的结构化错误信息，避免只剩 HTTP 状态码。
+    static String buildHttpFailureMessage(int httpCode, String path, @Nullable String body) {
+        String fallback = "HTTP " + httpCode + " for " + path;
+        if (httpCode == 404 && path != null && path.startsWith("/v2/trade/")) {
+            return fallback + "，当前网关未部署交易接口，请升级 server_v2.py 并重启 8787";
+        }
+        String text = body == null ? "" : body.trim();
+        if (text.isEmpty()) {
+            return fallback;
+        }
+        try {
+            JSONObject json = new JSONObject(text);
+            JSONObject detail = json.optJSONObject("detail");
+            if (detail != null) {
+                return buildStructuredFailureMessage(httpCode, path, detail, fallback);
+            }
+            JSONObject error = json.optJSONObject("error");
+            if (error != null) {
+                return buildStructuredFailureMessage(httpCode, path, error, fallback);
+            }
+        } catch (Exception ignored) {
+        }
+        return fallback + " " + text;
+    }
+
+    // 统一拼接结构化错误消息。
+    private static String buildStructuredFailureMessage(int httpCode,
+                                                        String path,
+                                                        JSONObject object,
+                                                        String fallback) {
+        if (object == null) {
+            return fallback;
+        }
+        String code = object.optString("code", "").trim();
+        String message = object.optString("message", "").trim();
+        if (!code.isEmpty() && !message.isEmpty()) {
+            return "HTTP " + httpCode + " for " + path + " [" + code + "] " + message;
+        }
+        if (!message.isEmpty()) {
+            return "HTTP " + httpCode + " for " + path + " " + message;
+        }
+        if (!code.isEmpty()) {
+            return "HTTP " + httpCode + " for " + path + " [" + code + "]";
+        }
+        return fallback;
+    }
+
     // 提交前执行客户端最小校验，拒绝明显坏命令。
     private static void validateTradeCommand(@Nullable TradeCommand command) {
         if (command == null) {
@@ -197,22 +242,95 @@ public class GatewayV2TradeClient {
         if (isBlank(command.getAction())) {
             throw new IllegalArgumentException("action 不能为空");
         }
-        if (command.getVolume() <= 0.0d) {
-            throw new IllegalArgumentException("volume 必须大于 0");
-        }
-        if (command.getPrice() <= 0.0d) {
-            throw new IllegalArgumentException("price 必须大于 0");
-        }
         if (Double.isNaN(command.getSl()) || Double.isInfinite(command.getSl())) {
             throw new IllegalArgumentException("sl 非法");
         }
         if (Double.isNaN(command.getTp()) || Double.isInfinite(command.getTp())) {
             throw new IllegalArgumentException("tp 非法");
         }
+        JSONObject params = mergeTradeParams(command);
+        String action = command.getAction().trim().toUpperCase(Locale.ROOT);
+        if ("OPEN_MARKET".equals(action)) {
+            requirePositive(command.getVolume(), "volume 必须大于 0");
+            String side = params.optString("side", "").trim().toLowerCase(Locale.ROOT);
+            if (!"buy".equals(side) && !"sell".equals(side)) {
+                throw new IllegalArgumentException("side 仅支持 buy/sell");
+            }
+            return;
+        }
+        if ("CLOSE_POSITION".equals(action)) {
+            requirePositive(command.getVolume(), "volume 必须大于 0");
+            return;
+        }
+        if ("PENDING_ADD".equals(action)) {
+            requirePositive(command.getVolume(), "volume 必须大于 0");
+            requirePositive(command.getPrice(), "price 必须大于 0");
+            if (isBlank(params.optString("orderType", ""))) {
+                throw new IllegalArgumentException("orderType 不能为空");
+            }
+            return;
+        }
+        if ("PENDING_CANCEL".equals(action)) {
+            long orderTicket = params.optLong("orderTicket", params.optLong("orderId", 0L));
+            if (orderTicket <= 0L) {
+                throw new IllegalArgumentException("orderTicket 不能为空");
+            }
+            return;
+        }
+        if ("MODIFY_TPSL".equals(action)) {
+            if (command.getSl() <= 0.0d && command.getTp() <= 0.0d) {
+                throw new IllegalArgumentException("修改 TP/SL 至少要传一个值");
+            }
+            return;
+        }
+        requirePositive(command.getVolume(), "volume 必须大于 0");
+        requirePositive(command.getPrice(), "price 必须大于 0");
     }
 
     // 判断字符串是否为空白。
     private static boolean isBlank(@Nullable String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    // 合并基础字段和扩展 params，保证服务端统一从 params 读取也能拿到完整命令。
+    private static JSONObject mergeTradeParams(TradeCommand command) {
+        JSONObject params = command == null ? new JSONObject() : command.getParams();
+        if (params == null) {
+            params = new JSONObject();
+        }
+        if (isBlank(params.optString("symbol", ""))) {
+            putQuietly(params, "symbol", command.getSymbol());
+        }
+        if (!params.has("volume") && command.getVolume() > 0d) {
+            putQuietly(params, "volume", command.getVolume());
+        }
+        if (!params.has("price") && command.getPrice() > 0d) {
+            putQuietly(params, "price", command.getPrice());
+        }
+        if (!params.has("sl") && command.getSl() > 0d) {
+            putQuietly(params, "sl", command.getSl());
+        }
+        if (!params.has("tp") && command.getTp() > 0d) {
+            putQuietly(params, "tp", command.getTp());
+        }
+        return params;
+    }
+
+    // 安全写入 JSON，避免把理论上不会发生的格式异常扩散到页面层。
+    private static void putQuietly(JSONObject target, String key, Object value) {
+        if (target == null || isBlank(key)) {
+            return;
+        }
+        try {
+            target.put(key, value);
+        } catch (Exception ignored) {
+        }
+    }
+
+    // 统一校验正数。
+    private static void requirePositive(double value, String message) {
+        if (!Double.isFinite(value) || value <= 0.0d) {
+            throw new IllegalArgumentException(message);
+        }
     }
 }

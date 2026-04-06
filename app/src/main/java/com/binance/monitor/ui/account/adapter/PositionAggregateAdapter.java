@@ -67,10 +67,10 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
         }
 
         void bind(AggregateItem item, boolean masked) {
+            binding.btnPositionAction.setVisibility(View.GONE);
             if (masked) {
                 binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
                 binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
-                binding.tvExpandHint.setVisibility(View.GONE);
                 binding.layoutDetail.setVisibility(View.GONE);
                 return;
             }
@@ -91,7 +91,6 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             }
             binding.tvSummary.setText(span);
 
-            binding.tvExpandHint.setVisibility(View.GONE);
             binding.layoutDetail.setVisibility(View.GONE);
         }
 

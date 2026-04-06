@@ -506,6 +506,53 @@
                     android:text="持仓盈亏: -- | 持仓收益率: --"
                     android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
+                <LinearLayout
+                    android:id="@+id/layoutChartPositionRows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal"
+                    android:visibility="visible">
+
+                    <Button
+                        android:id="@+id/btnChartTradeBuy"
+                        android:layout_width="0dp"
+                        android:layout_height="@dimen/control_height_sm"
+                        android:layout_weight="1"
+                        android:background="@android:color/transparent"
+                        android:minWidth="0dp"
+                        android:text="买入"
+                        android:textAllCaps="false"
+                        android:textColor="@color/text_primary"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/btnChartTradeSell"
+                        android:layout_width="0dp"
+                        android:layout_height="@dimen/control_height_sm"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:background="@android:color/transparent"
+                        android:minWidth="0dp"
+                        android:text="卖出"
+                        android:textAllCaps="false"
+                        android:textColor="@color/text_primary"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/btnChartTradePending"
+                        android:layout_width="0dp"
+                        android:layout_height="@dimen/control_height_sm"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:background="@android:color/transparent"
+                        android:minWidth="0dp"
+                        android:text="挂单"
+                        android:textAllCaps="false"
+                        android:textColor="@color/text_primary"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
                 <TextView
                     android:id="@+id/tvChartPositionAggregateTitle"
                     android:layout_width="match_parent"
@@ -576,14 +623,6 @@
                     android:layout_marginTop="4dp"
                     android:text="暂无挂单"
                     android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
-                    android:visibility="gone" />
-
-                <LinearLayout
-                    android:id="@+id/layoutChartPositionRows"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:orientation="vertical"
                     android:visibility="gone" />
             </LinearLayout>
 

@@ -24,11 +24,16 @@
                 android:textAppearance="@style/TextAppearance.BinanceMonitor.MetaStrong" />
 
             <TextView
-                android:id="@+id/tvExpandHint"
+                android:id="@+id/btnPositionAction"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="展开"
-                android:textAppearance="@style/TextAppearance.BinanceMonitor.MetaStrong" />
+                android:layout_marginStart="@dimen/space_12"
+                android:background="@drawable/bg_position_action_button"
+                android:paddingHorizontal="@dimen/space_8"
+                android:paddingVertical="@dimen/space_4"
+                android:text="操作"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
+                android:visibility="gone" />
         </LinearLayout>
 
         <LinearLayout
