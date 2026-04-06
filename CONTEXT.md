@@ -6,6 +6,7 @@
 - 唯一服务器上传目录固定为 `dist/windows_server_bundle`，由 `python scripts/build_windows_server_bundle.py` 生成，并直接对应服务器目录 `C:\mt5_bundle\windows_server_bundle`。
 - 正在修复双击 `deploy_bundle.cmd` 时批处理被 Windows 误读的问题，确保服务器侧可以直接双击完成部署。
 - 正在把“App 远程驱动服务器切换 MT5 账号”整理成正式设计文档，准备进入实现计划阶段。
+- 已进入“App 远程驱动服务器切换 MT5 账号”的实现计划阶段，下一步按计划逐任务执行。
 
 ## 上次停在哪个位置
 - 已完成 `scripts/build_windows_server_bundle.py`，可以实际生成 `dist/windows_server_bundle`，产物结构已扩展为 `mt5_gateway/ + windows/ + deploy_bundle.cmd + deploy_bundle.ps1 + README.md`。
@@ -16,6 +17,7 @@
 - 已定位部署第 4 步“找不到 `02_register_startup_task.ps1`”的直接原因：第 3 步 bootstrap 脚本会把当前目录切到 `mt5_gateway`，而主部署脚本后续仍用相对路径调用 `windows` 目录下的脚本；现已改为在主部署脚本里提前拼出绝对路径调用，并补了自动测试防回退。
 - 已定位部署第 6 步“找不到 `caddy.exe`”的直接原因：脚本之前只认 `windows_server_bundle\windows\caddy.exe`，而服务器现场实际把 `caddy.exe` 放在 `C:\mt5_bundle`；现已改为自动按“`windows` 目录 -> 部署包根目录 -> 上级目录”三层顺序查找，并补了自动测试防回退。
 - 已完成“App 远程驱动服务器切换 MT5 账号”设计文档，路径为 `docs/superpowers/specs/2026-04-06-remote-mt5-account-session-design.md`；设计已明确采用 HTTPS + 服务器公钥加密登录 + 服务端加密保存账号档案 + 单激活账号会话的方案。
+- 已完成实现计划文档，路径为 `docs/superpowers/plans/2026-04-06-remote-mt5-account-session.md`；计划已拆成服务端会话层、会话接口、App 会话客户端、App 状态机与文档验收 6 个任务。
 
 ## 近期关键决定和原因
 - 不再把 `deploy/tencent/windows_server_bundle` 作为仓库里的长期维护目录；原因是它和真实源码长期双份并存，已经多次导致修改位置漂移、部署文件不一致、服务器现场排查困难。

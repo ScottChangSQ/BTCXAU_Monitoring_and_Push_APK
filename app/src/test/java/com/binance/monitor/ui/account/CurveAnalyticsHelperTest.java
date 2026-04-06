@@ -17,7 +17,7 @@ import java.util.List;
 public class CurveAnalyticsHelperTest {
 
     @Test
-    public void resolveMaxDrawdownSegmentShouldUseEquityBalanceGapAtSameTimestamp() {
+    public void resolveMaxDrawdownSegmentShouldUsePeakToValleyEquityDrawdown() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 100d),
                 new CurvePoint(2_000L, 80d, 100d),
@@ -29,7 +29,7 @@ public class CurveAnalyticsHelperTest {
                 CurveAnalyticsHelper.resolveMaxDrawdownSegment(points);
 
         assertNotNull(segment);
-        assertEquals(2_000L, segment.getPeakTimestamp());
+        assertEquals(1_000L, segment.getPeakTimestamp());
         assertEquals(2_000L, segment.getValleyTimestamp());
         assertEquals(100d, segment.getPeakEquity(), 1e-9);
         assertEquals(80d, segment.getValleyEquity(), 1e-9);
@@ -37,7 +37,7 @@ public class CurveAnalyticsHelperTest {
     }
 
     @Test
-    public void buildDrawdownSeriesShouldUseEquityBalanceGapAndClampPositiveValuesToZero() {
+    public void buildDrawdownSeriesShouldUseRunningPeakEquityAndClampPositiveValuesToZero() {
         List<CurvePoint> points = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 100d),
                 new CurvePoint(2_000L, 120d, 100d),
@@ -51,8 +51,8 @@ public class CurveAnalyticsHelperTest {
         assertEquals(4, series.size());
         assertEquals(0d, series.get(0).getDrawdownRate(), 1e-9);
         assertEquals(0d, series.get(1).getDrawdownRate(), 1e-9);
-        assertEquals(-0.20d, series.get(2).getDrawdownRate(), 1e-9);
-        assertEquals(-0.05d, series.get(3).getDrawdownRate(), 1e-9);
+        assertEquals(-0.3333333333d, series.get(2).getDrawdownRate(), 1e-9);
+        assertEquals(-0.2083333333d, series.get(3).getDrawdownRate(), 1e-9);
     }
 
     @Test

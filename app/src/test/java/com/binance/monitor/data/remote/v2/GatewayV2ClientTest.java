@@ -67,4 +67,33 @@ public class GatewayV2ClientTest {
         assertEquals("cursor-2", payload.getNextCursor());
         assertTrue(payload.getRawJson().contains("\"trades\""));
     }
+
+    @Test
+    public void parseAccountSnapshotShouldFallbackToPendingOrdersAlias() throws Exception {
+        String body = "{"
+                + "\"accountMeta\":{\"serverTime\":3333},"
+                + "\"balance\":1000.0,"
+                + "\"pendingOrders\":[{\"orderId\":22,\"code\":\"XAUUSD\"}]"
+                + "}";
+
+        AccountSnapshotPayload payload = GatewayV2Client.parseAccountSnapshot(body);
+
+        assertEquals(1, payload.getOrders().length());
+        assertEquals("XAUUSD", payload.getOrders().optJSONObject(0).optString("code"));
+    }
+
+    @Test
+    public void parseAccountHistoryShouldFallbackToPendingOrdersAlias() throws Exception {
+        String body = "{"
+                + "\"accountMeta\":{\"serverTime\":4444},"
+                + "\"trades\":[],"
+                + "\"pendingOrders\":[{\"orderId\":22,\"code\":\"XAUUSD\"}],"
+                + "\"curvePoints\":[]"
+                + "}";
+
+        AccountHistoryPayload payload = GatewayV2Client.parseAccountHistory(body);
+
+        assertEquals(1, payload.getOrders().length());
+        assertEquals("XAUUSD", payload.getOrders().optJSONObject(0).optString("code"));
+    }
 }

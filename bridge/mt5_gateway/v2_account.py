@@ -8,6 +8,16 @@ from __future__ import annotations
 from typing import Any, Iterable, Mapping, Sequence, MutableMapping, Dict, List, Optional
 
 
+def _to_int(value: Any, default: int = 0) -> int:
+    """将任意值安全转换为整数，无法转换时返回默认值。"""
+    if value is None:
+        return default
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def _to_float(value: Any, default: float = 0.0) -> float:
     """将任意值安全转换为浮点，无法转换时返回默认值。"""
     if value is None:
@@ -40,12 +50,18 @@ def _normalize_position(raw: Mapping[str, Any]) -> Dict[str, Any]:
         "productName": raw.get("productName") or raw.get("symbol") or raw.get("code"),
         "code": raw.get("code") or raw.get("symbol"),
         "side": str(raw.get("side") or raw.get("direction") or "").strip(),
+        "positionTicket": _to_int(raw.get("positionTicket") or raw.get("positionId") or raw.get("ticket")),
+        "orderId": _to_int(raw.get("orderId") or raw.get("order") or raw.get("ticket")),
         "quantity": _to_float(raw.get("quantity") or raw.get("volume") or raw.get("lots")),
         "costPrice": _to_float(raw.get("costPrice") or raw.get("entryPrice")),
         "latestPrice": _to_float(
             raw.get("latestPrice") or raw.get("markPrice") or raw.get("price") or raw.get("closePrice")
         ),
         "totalPnL": _to_float(raw.get("totalPnL") or raw.get("floatingPnL") or raw.get("profit")),
+        "pendingCount": _to_int(raw.get("pendingCount") or raw.get("pendingOrderCount")),
+        "takeProfit": _to_float(raw.get("takeProfit") or raw.get("tp") or raw.get("tpPrice")),
+        "stopLoss": _to_float(raw.get("stopLoss") or raw.get("sl") or raw.get("slPrice")),
+        "storageFee": _to_float(raw.get("storageFee") or raw.get("storage_fee") or raw.get("swap")),
     }
 
 
@@ -55,8 +71,14 @@ def _normalize_order(raw: Mapping[str, Any]) -> Dict[str, Any]:
         "productName": raw.get("productName") or raw.get("symbol") or raw.get("code"),
         "code": raw.get("code") or raw.get("symbol"),
         "side": str(raw.get("side") or raw.get("direction") or "").strip(),
+        "orderId": _to_int(raw.get("orderId") or raw.get("order") or raw.get("ticket")),
+        "quantity": _to_float(raw.get("quantity") or raw.get("pendingLots") or raw.get("volume") or raw.get("pendingVolume")),
         "pendingLots": _to_float(raw.get("pendingLots") or raw.get("volume") or raw.get("pendingVolume")),
         "pendingPrice": _to_float(raw.get("pendingPrice") or raw.get("price")),
+        "latestPrice": _to_float(raw.get("latestPrice") or raw.get("markPrice") or raw.get("priceCurrent")),
+        "pendingCount": _to_int(raw.get("pendingCount") or raw.get("pendingOrderCount") or 1),
+        "takeProfit": _to_float(raw.get("takeProfit") or raw.get("tp") or raw.get("tpPrice")),
+        "stopLoss": _to_float(raw.get("stopLoss") or raw.get("sl") or raw.get("slPrice")),
         "status": raw.get("status") or raw.get("state"),
     }
 

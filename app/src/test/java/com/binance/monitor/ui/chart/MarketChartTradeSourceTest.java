@@ -80,4 +80,12 @@ public class MarketChartTradeSourceTest {
         assertTrue(source.contains("btnPositionAction"));
         assertFalse(source.contains("tvExpandHint"));
     }
+
+    @Test
+    public void chartPositionPanelShouldFilterRowsByCurrentChartSymbolLikeAnnotations() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {"));
+    }
 }

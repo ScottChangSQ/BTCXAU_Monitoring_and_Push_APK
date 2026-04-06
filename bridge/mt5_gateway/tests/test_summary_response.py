@@ -415,6 +415,28 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(4, len(_FakeMt5.calls))
         self.assertEqual(2000, len(deals))
 
+    def test_progressive_trade_history_deals_all_should_continue_expanding_past_two_years(self):
+        original_mt5 = server_v2.mt5
+        original_all_days = getattr(server_v2, "SNAPSHOT_RANGE_ALL_DAYS", 36500)
+
+        class _FakeMt5:
+            calls = []
+
+            @staticmethod
+            def history_deals_get(from_time, to_time):
+                _FakeMt5.calls.append(from_time)
+                return [object()] * (100 * len(_FakeMt5.calls))
+
+        server_v2.mt5 = _FakeMt5()
+        server_v2.SNAPSHOT_RANGE_ALL_DAYS = 36500
+        try:
+            server_v2._progressive_trade_history_deals("all")
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2.SNAPSHOT_RANGE_ALL_DAYS = original_all_days
+
+        self.assertGreaterEqual(len(_FakeMt5.calls), 6)
+
     def test_ensure_mt5_prefers_plain_initialize_before_auth_initialize(self):
         original_mt5 = server_v2.mt5
         original_login = server_v2.LOGIN

@@ -93,7 +93,7 @@ public class AccountCurveRebuildHelperTest {
         assertEquals(100d, rebuilt.get(1).getBalance(), 1e-9);
         assertEquals(120d, rebuilt.get(2).getBalance(), 1e-9);
         assertEquals(100d, rebuilt.get(0).getEquity(), 1e-9);
-        assertEquals(110d, rebuilt.get(1).getEquity(), 1e-9);
+        assertEquals(118d, rebuilt.get(1).getEquity(), 1e-9);
         assertEquals(120d, rebuilt.get(2).getEquity(), 1e-9);
     }
 
@@ -133,8 +133,8 @@ public class AccountCurveRebuildHelperTest {
 
         assertEquals(100d, rebuilt.get(1).getBalance(), 1e-9);
         assertEquals(100d, rebuilt.get(2).getBalance(), 1e-9);
-        assertEquals(110d, rebuilt.get(1).getEquity(), 1e-9);
-        assertEquals(115d, rebuilt.get(2).getEquity(), 1e-9);
+        assertEquals(118d, rebuilt.get(1).getEquity(), 1e-9);
+        assertEquals(119d, rebuilt.get(2).getEquity(), 1e-9);
         assertEquals(120d, rebuilt.get(3).getBalance(), 1e-9);
     }
 
@@ -267,11 +267,11 @@ public class AccountCurveRebuildHelperTest {
 
         List<CurvePoint> rebuilt = AccountCurveRebuildHelper.rebuild(source, trades, 100d);
 
-        assertEquals(105d, rebuilt.get(1).getEquity(), 1e-9);
+        assertEquals(106d, rebuilt.get(1).getEquity(), 1e-9);
         assertEquals(100d, rebuilt.get(1).getBalance(), 1e-9);
-        assertEquals(116.6666666667d, rebuilt.get(2).getEquity(), 1e-9);
+        assertEquals(110d, rebuilt.get(2).getEquity(), 1e-9);
         assertEquals(110d, rebuilt.get(2).getBalance(), 1e-9);
-        assertEquals(123.3333333333d, rebuilt.get(3).getEquity(), 1e-9);
+        assertEquals(123d, rebuilt.get(3).getEquity(), 1e-9);
         assertEquals(110d, rebuilt.get(3).getBalance(), 1e-9);
         assertEquals(130d, rebuilt.get(4).getEquity(), 1e-9);
         assertEquals(130d, rebuilt.get(4).getBalance(), 1e-9);

@@ -2,6 +2,7 @@
 .gradle/
 build/
 */build/
+dist/
 .idea/
 *.iml
 *.iws

@@ -14,6 +14,7 @@ import com.binance.monitor.ui.account.model.PositionItem;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -125,9 +126,11 @@ public class FloatingPositionAggregatorTest {
         assertEquals(2, cards.size());
         assertEquals(AppConstants.SYMBOL_BTC, cards.get(0).getCode());
         assertEquals("BTC", cards.get(0).getLabel());
+        assertEquals(true, cards.get(0).hasActivePosition());
         assertEquals(-20d, cards.get(0).getTotalPnl(), 0.0001d);
         assertEquals(AppConstants.SYMBOL_XAU, cards.get(1).getCode());
         assertEquals("XAU", cards.get(1).getLabel());
+        assertEquals(true, cards.get(1).hasActivePosition());
         assertEquals(4d, cards.get(1).getTotalPnl(), 0.0001d);
     }
 
@@ -165,6 +168,54 @@ public class FloatingPositionAggregatorTest {
 
         assertEquals(2, cards.size());
         assertEquals(67_123.4d, cards.get(0).getLatestPrice(), 0.0001d);
+    }
+
+    @Test
+    public void buildSymbolCardsMarksHasPositionWhenPositionsExist() {
+        List<PositionItem> positions = Collections.singletonList(
+                new PositionItem("BTCUSD", "BTCUSD", "Sell", 1L, 11L,
+                        0.05d, 0.05d, 66000d, 67000d, 3350d, 0.1d,
+                        -10d, -20d, -0.03d, 0d, 0, 0d, 0d, 0d, 0d)
+        );
+        List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
+                positions,
+                null,
+                Collections.emptyMap(),
+                true,
+                true
+        );
+
+        assertEquals(2, cards.size());
+        assertTrue(cards.get(0).hasPosition());
+        assertFalse(cards.get(1).hasPosition());
+    }
+
+    @Test
+    public void buildSymbolCardsShouldMarkConfiguredSymbolWithoutPositionAsInactive() {
+        Map<String, com.binance.monitor.data.model.KlineData> latestKlines = new HashMap<>();
+        latestKlines.put(AppConstants.SYMBOL_BTC, new com.binance.monitor.data.model.KlineData(
+                AppConstants.SYMBOL_BTC,
+                66_000d,
+                67_000d,
+                65_900d,
+                66_500d,
+                123d,
+                456_000d,
+                1_000L,
+                2_000L,
+                true
+        ));
+
+        List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
+                new java.util.ArrayList<>(),
+                latestKlines,
+                new HashMap<>(),
+                true,
+                false
+        );
+
+        assertEquals(1, cards.size());
+        assertEquals(false, cards.get(0).hasActivePosition());
     }
 
     // 悬浮窗盈亏现在与行情持仓页统一，直接使用 totalPnL + storageFee。

@@ -14,6 +14,7 @@ public class FloatingSymbolCardData {
     private final double volume;
     private final double amount;
     private final long updatedAt;
+    private final boolean hasPosition;
 
     public FloatingSymbolCardData(String code,
                                   String label,
@@ -22,7 +23,8 @@ public class FloatingSymbolCardData {
                                   boolean hasLatestPrice,
                                   double volume,
                                   double amount,
-                                  long updatedAt) {
+                                  long updatedAt,
+                                  boolean hasPosition) {
         this.code = code == null ? "" : code;
         this.label = label == null ? "" : label;
         this.totalPnl = totalPnl;
@@ -31,6 +33,7 @@ public class FloatingSymbolCardData {
         this.volume = volume;
         this.amount = amount;
         this.updatedAt = updatedAt;
+        this.hasPosition = hasPosition;
     }
 
     // 返回产品代码。
@@ -71,5 +74,14 @@ public class FloatingSymbolCardData {
     // 返回本卡片对应的行情时间。
     public long getUpdatedAt() {
         return updatedAt;
+    }
+
+    public boolean hasPosition() {
+        return hasPosition;
+    }
+
+    // 兼容更明确的命名，供悬浮窗状态判断和测试复用。
+    public boolean hasActivePosition() {
+        return hasPosition;
     }
 }

@@ -16,8 +16,10 @@ public class FloatingWindowManagerSourceTest {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("binding.tvOverlayStatus.setTextSize(hasCard ? 12f : 11f);"));
+        assertTrue(source.contains("binding.tvOverlayStatus.setTextSize(hasActivePositions ? 12f : 11f);"));
         assertTrue(source.contains("titleView.setTextSize(9f);"));
         assertTrue(source.contains("priceView.setTextSize(11f);"));
+        assertTrue(source.contains("titleView.setTypeface(null, android.graphics.Typeface.BOLD);"));
+        assertTrue(source.contains("priceView.setTypeface(null, android.graphics.Typeface.BOLD);"));
     }
 }

@@ -27,23 +27,41 @@ Android App
 1. 腾讯云 CVM，建议 Windows Server 2019 / 2022
 2. Python 3.10+
 3. MT5 终端，并且已经在服务器里登录只读账户
-4. 仓库放到服务器本地路径，例如：
+4. 在本地仓库根目录先生成唯一上传包：
 
-```text
-C:\BTCXAU_Monitoring_and_Push_APK
+```powershell
+cd E:\Github\BTCXAU_Monitoring_and_Push_APK
+python scripts\build_windows_server_bundle.py
 ```
 
-5. 可选：
+5. 把生成好的整个 `dist\windows_server_bundle` 文件夹复制到服务器，例如：
+
+```text
+C:\mt5_bundle\windows_server_bundle
+
+6. `caddy.exe` 可以放在下面任一位置：
+
+```text
+C:\mt5_bundle\windows_server_bundle\windows\caddy.exe
+```
+
+或：
+
+```text
+C:\mt5_bundle\caddy.exe
+```
+
+部署脚本会自动查找，不需要手工改脚本路径。
+```
+
+6. 可选：
    - 有域名：后面直接上 HTTPS / WSS
    - 没域名：先用公网 IP + HTTP / WS 跑通
 
-如果你不想上传整个仓库，可以直接上传这个精简包：
+现在不再长期维护 `windows_server_bundle` 静态副本。服务器真正需要的脚本、网关程序、EA 文件和 Caddy 样例，都从下面两处源码生成：
 
-```text
-deploy/tencent/windows_server_bundle
-```
-
-它已经包含服务器真正需要的脚本、网关程序、EA 文件和 Caddy 样例。
+- `bridge/mt5_gateway`
+- `deploy/tencent/windows`
 
 ## 2. 安全组和防火墙建议
 
@@ -63,14 +81,14 @@ deploy/tencent/windows_server_bundle
 在管理员 PowerShell 里执行：
 
 ```powershell
-cd C:\BTCXAU_Monitoring_and_Push_APK
-.\deploy\tencent\windows\01_bootstrap_gateway.ps1 -RepoRoot "C:\BTCXAU_Monitoring_and_Push_APK"
+cd C:\mt5_bundle\windows_server_bundle
+.\windows\01_bootstrap_gateway.ps1 -BundleRoot "C:\mt5_bundle\windows_server_bundle"
 ```
 
 然后编辑运行环境文件：
 
 ```powershell
-notepad C:\BTCXAU_Monitoring_and_Push_APK\bridge\mt5_gateway\.env
+notepad C:\mt5_bundle\windows_server_bundle\mt5_gateway\.env
 ```
 
 至少确认这些值：
@@ -91,7 +109,7 @@ ADMIN_GATEWAY_URL=http://127.0.0.1:8787
 ## 4. 第二步：先在服务器本机把 MT5 跑通
 
 ```powershell
-cd C:\BTCXAU_Monitoring_and_Push_APK\bridge\mt5_gateway
+cd C:\mt5_bundle\windows_server_bundle\mt5_gateway
 .\start_gateway.ps1
 ```
 
@@ -111,7 +129,7 @@ Invoke-RestMethod http://127.0.0.1:8787/v1/snapshot?range=1d
 管理面板是独立进程，默认只监听服务器本机，再由 Caddy 统一通过 `/admin/` 对外开放：
 
 ```powershell
-cd C:\BTCXAU_Monitoring_and_Push_APK\bridge\mt5_gateway
+cd C:\mt5_bundle\windows_server_bundle\mt5_gateway
 .\start_admin_panel.ps1
 ```
 
@@ -127,7 +145,7 @@ http://你的公网IP/admin/
 
 - 查看网关健康状态和来源状态
 - 查看最近日志
-- 编辑 `bridge\mt5_gateway\.env`
+- 编辑 `C:\mt5_bundle\windows_server_bundle\mt5_gateway\.env`
 - 修改异常规则配置
 - 清空网关运行时缓存
 - 启动 / 停止 / 重启：
@@ -141,11 +159,19 @@ http://你的公网IP/admin/
 本机联通后执行：
 
 ```powershell
-cd C:\BTCXAU_Monitoring_and_Push_APK
-.\deploy\tencent\windows\02_register_startup_task.ps1 -RepoRoot "C:\BTCXAU_Monitoring_and_Push_APK" -Force
-.\deploy\tencent\windows\04_register_admin_panel_task.ps1 -RepoRoot "C:\BTCXAU_Monitoring_and_Push_APK" -Force
-.\deploy\tencent\windows\03_run_healthcheck.ps1
+cd C:\mt5_bundle\windows_server_bundle
+.\windows\02_register_startup_task.ps1 -BundleRoot "C:\mt5_bundle\windows_server_bundle" -Force
+.\windows\04_register_admin_panel_task.ps1 -BundleRoot "C:\mt5_bundle\windows_server_bundle" -Force
+.\windows\03_run_healthcheck.ps1
 ```
+
+如果你希望双击就执行，可以直接双击：
+
+```text
+C:\mt5_bundle\windows_server_bundle\deploy_bundle.cmd
+```
+
+这个脚本会自动隐藏启动 Caddy，不会再弹出独立命令窗口。
 
 这样服务器重启后会自动拉起网关和管理面板。
 
@@ -156,8 +182,8 @@ cd C:\BTCXAU_Monitoring_and_Push_APK
 最适合你现在这台香港 Windows 服务器。
 
 1. 安装 Caddy
-2. 优先直接使用仓库自带的 `deploy/tencent/windows/Caddyfile`
-3. 如需域名 / HTTPS，再参考 `deploy/tencent/windows/Caddyfile.example`
+2. 优先直接使用部署包里的 `windows\Caddyfile`
+3. 如需域名 / HTTPS，再参考 `windows\Caddyfile.example`
 4. 如果改用样例文件，只保留一个站点块：
    - 没域名：保留 `:80`
    - 有域名：保留 `gateway.example.com`

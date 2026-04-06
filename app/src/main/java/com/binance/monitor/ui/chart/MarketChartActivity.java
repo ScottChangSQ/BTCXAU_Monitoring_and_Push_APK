@@ -1297,6 +1297,9 @@ public class MarketChartActivity extends AppCompatActivity {
                 if (item == null || Math.abs(item.getQuantity()) <= 1e-9) {
                     continue;
                 }
+                if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {
+                    continue;
+                }
                 filteredPositions.add(item);
             }
         }
@@ -1306,6 +1309,9 @@ public class MarketChartActivity extends AppCompatActivity {
         if (pendingOrders != null) {
             for (PositionItem item : pendingOrders) {
                 if (item == null) {
+                    continue;
+                }
+                if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {
                     continue;
                 }
                 double pendingLots = resolvePendingLots(item);

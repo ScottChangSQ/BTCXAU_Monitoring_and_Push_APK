@@ -104,13 +104,17 @@ public class GatewayV2Client {
         if (account == null) {
             account = buildAccountObject(json);
         }
+        JSONArray orders = json.optJSONArray("orders");
+        if (orders == null) {
+            orders = json.optJSONArray("pendingOrders");
+        }
         return new AccountSnapshotPayload(
                 extractServerTime(json, accountMeta),
                 extractSyncToken(json, accountMeta),
                 accountMeta,
                 account,
                 json.optJSONArray("positions"),
-                json.optJSONArray("orders"),
+                orders,
                 safeBody(body)
         );
     }
@@ -119,11 +123,15 @@ public class GatewayV2Client {
     public static AccountHistoryPayload parseAccountHistory(String body) throws Exception {
         JSONObject json = new JSONObject(safeBody(body));
         JSONObject accountMeta = json.optJSONObject("accountMeta");
+        JSONArray orders = json.optJSONArray("orders");
+        if (orders == null) {
+            orders = json.optJSONArray("pendingOrders");
+        }
         return new AccountHistoryPayload(
                 extractServerTime(json, accountMeta),
                 extractSyncToken(json, accountMeta),
                 json.optJSONArray("trades"),
-                json.optJSONArray("orders"),
+                orders,
                 json.optJSONArray("curvePoints"),
                 json.optString("nextCursor", ""),
                 safeBody(body)

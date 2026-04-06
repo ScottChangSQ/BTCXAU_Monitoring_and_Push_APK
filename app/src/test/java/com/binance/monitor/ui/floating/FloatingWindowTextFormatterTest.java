@@ -42,7 +42,18 @@ public class FloatingWindowTextFormatterTest {
 
     @Test
     public void formatPriceTextShouldKeepOneDecimal() {
-        assertEquals("$45,678.9", FloatingWindowTextFormatter.formatPriceText(45678.94d, false));
+        assertEquals("$ 45,678.9", FloatingWindowTextFormatter.formatPriceText(45678.94d, false));
+    }
+
+    @Test
+    public void formatMiniStatusTextShouldShowNoPositionWhenThereIsNoActivePosition() {
+        assertEquals("无持仓", FloatingWindowTextFormatter.formatMiniStatusText(false, false, 0d, false));
+    }
+
+    @Test
+    public void formatMiniStatusTextShouldKeepOfflineAndMaskedRules() {
+        assertEquals("离线", FloatingWindowTextFormatter.formatMiniStatusText(true, false, 0d, false));
+        assertEquals("*", FloatingWindowTextFormatter.formatMiniStatusText(false, true, 12.3d, true));
     }
 
     @Test

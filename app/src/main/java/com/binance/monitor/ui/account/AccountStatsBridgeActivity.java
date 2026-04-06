@@ -2675,7 +2675,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             if (!remoteConnected && !connectedPendingCache.isEmpty()) {
                 basePendingOrders = new ArrayList<>(connectedPendingCache);
             } else {
-                basePendingOrders = buildPendingOrders(basePositions);
+                basePendingOrders = new ArrayList<>();
             }
         } else {
             basePendingOrders = snapshotPending;

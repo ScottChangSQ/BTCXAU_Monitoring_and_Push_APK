@@ -65,10 +65,20 @@ except Exception:  # pragma: no cover - 测试环境可缺省运行依赖
             self.media_type = media_type
 
 BASE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = BASE_DIR.parent.parent
 ENV_PATH = BASE_DIR / ".env"
 LOGS_DIR = BASE_DIR / "logs"
 STATIC_DIR = BASE_DIR / "static" / "admin"
+
+
+# 兼容“仓库源码目录”和“部署包目录”两种运行布局。
+def resolve_project_root() -> Path:
+    bundle_root = BASE_DIR.parent
+    if (bundle_root / "windows").exists():
+        return bundle_root
+    return BASE_DIR.parent.parent
+
+
+REPO_ROOT = resolve_project_root()
 
 load_dotenv(ENV_PATH)
 
@@ -156,16 +166,75 @@ def compose_restart_command(stop_command: str, start_command: str) -> str:
     return f"{stop_part}; Start-Sleep -Seconds 2; {start_part}"
 
 
+# 解析当前管理面板所处的部署布局。
+def resolve_runtime_layout(project_root: str) -> Dict[str, Any]:
+    safe_root = Path(str(project_root or REPO_ROOT))
+    bundle_windows_dir = safe_root / "windows"
+    if bundle_windows_dir.exists():
+        return {
+            "mode": "bundle",
+            "root": safe_root,
+            "windows_dir": bundle_windows_dir,
+            "gateway_runner": bundle_windows_dir / "run_gateway.ps1",
+            "gateway_arg_name": "BundleRoot",
+        }
+    repo_windows_dir = safe_root / "deploy" / "tencent" / "windows"
+    return {
+        "mode": "repo",
+        "root": safe_root,
+        "windows_dir": repo_windows_dir,
+        "gateway_runner": repo_windows_dir / "run_gateway.ps1",
+        "gateway_arg_name": "RepoRoot",
+    }
+
+
+# 生成隐藏启动 Caddy 的默认命令，避免弹出独立命令窗口。
+def build_hidden_caddy_start_command(exe_path: str, windows_dir: Path, config_path: str) -> str:
+    if not exe_path:
+        return ""
+    safe_exe = ps_quote(exe_path)
+    safe_windows_dir = ps_quote(str(windows_dir))
+    safe_config = ps_quote(config_path)
+    safe_log_dir = ps_quote(str(windows_dir / "logs"))
+    safe_stdout = ps_quote(str(windows_dir / "logs" / "caddy-out.log"))
+    safe_stderr = ps_quote(str(windows_dir / "logs" / "caddy-err.log"))
+    return (
+        f"if (Test-Path {safe_exe}) "
+        + "{ "
+        + f"New-Item -ItemType Directory -Force -Path {safe_log_dir} | Out-Null; "
+        + "Get-Process caddy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; "
+        + "Start-Process -WindowStyle Hidden -FilePath "
+        + safe_exe
+        + " -ArgumentList @('run','--config',"
+        + safe_config
+        + ") -WorkingDirectory "
+        + safe_windows_dir
+        + " -RedirectStandardOutput "
+        + safe_stdout
+        + " -RedirectStandardError "
+        + safe_stderr
+        + " } else { throw 'Executable path is not configured.' }"
+    )
+
+
 # 统一把组件管理能力整理成页面可直接消费的结构。
 def build_component_registry(env_map: Dict[str, str], repo_root: str) -> Dict[str, Dict[str, Any]]:
     safe_env = env_map or {}
     safe_repo_root = str(repo_root or REPO_ROOT)
     safe_repo_root_pattern = safe_repo_root.replace("'", "''")
+    runtime_layout = resolve_runtime_layout(safe_repo_root)
     gateway_task_name = str(safe_env.get("ADMIN_GATEWAY_TASK_NAME", "MT5GatewayAutoStart") or "MT5GatewayAutoStart").strip()
-    gateway_runner = Path(safe_repo_root) / "deploy" / "tencent" / "windows" / "run_gateway.ps1"
+    gateway_runner = runtime_layout["gateway_runner"]
+    gateway_arg_name = str(runtime_layout["gateway_arg_name"] or "RepoRoot")
+    windows_dir = runtime_layout["windows_dir"]
     mt5_path = str(safe_env.get("ADMIN_MT5_PATH") or safe_env.get("MT5_PATH") or "").strip()
     caddy_path = str(safe_env.get("ADMIN_CADDY_PATH") or safe_env.get("CADDY_PATH") or "").strip()
     nginx_path = str(safe_env.get("ADMIN_NGINX_PATH") or safe_env.get("NGINX_PATH") or "").strip()
+    caddy_config_path = str(
+        safe_env.get("ADMIN_CADDY_CONFIG_PATH")
+        or safe_env.get("CADDY_CONFIG_PATH")
+        or (windows_dir / "Caddyfile")
+    ).strip()
 
     gateway_start = str(safe_env.get("ADMIN_GATEWAY_START_CMD", "") or "").strip()
     if not gateway_start:
@@ -178,7 +247,9 @@ def build_component_registry(env_map: Dict[str, str], repo_root: str) -> Dict[st
             + ") { Start-Process powershell.exe -ArgumentList "
             + "@('-NoProfile','-ExecutionPolicy','Bypass','-File',"
             + ps_quote(str(gateway_runner))
-            + ",'-RepoRoot',"
+            + ",'-"
+            + gateway_arg_name
+            + "',"
             + ps_quote(safe_repo_root)
             + ") } else { throw 'Gateway runner not found.' }"
         )
@@ -226,6 +297,8 @@ def build_component_registry(env_map: Dict[str, str], repo_root: str) -> Dict[st
             restart_cmd=str(safe_env.get("ADMIN_CADDY_RESTART_CMD", "") or "").strip(),
             exe_path=caddy_path,
             stop_signal_arg="",
+            windows_dir=windows_dir,
+            config_path=caddy_config_path,
         ),
         "nginx": build_service_or_process_component(
             label="Nginx",
@@ -236,6 +309,8 @@ def build_component_registry(env_map: Dict[str, str], repo_root: str) -> Dict[st
             restart_cmd=str(safe_env.get("ADMIN_NGINX_RESTART_CMD", "") or "").strip(),
             exe_path=nginx_path,
             stop_signal_arg="-s stop",
+            windows_dir=windows_dir,
+            config_path="",
         ),
     }
     return registry
@@ -283,7 +358,9 @@ def build_service_or_process_component(label: str,
                                        stop_cmd: str,
                                        restart_cmd: str,
                                        exe_path: str,
-                                       stop_signal_arg: str) -> Dict[str, Any]:
+                                       stop_signal_arg: str,
+                                       windows_dir: Path,
+                                       config_path: str) -> Dict[str, Any]:
     if service_name:
         service_start = start_cmd or f"Start-Service -Name {ps_quote(service_name)}"
         service_stop = stop_cmd or f"Stop-Service -Name {ps_quote(service_name)} -Force"
@@ -301,12 +378,16 @@ def build_service_or_process_component(label: str,
         }
 
     effective_start = start_cmd or (
-        f"if (Test-Path {ps_quote(exe_path)}) "
-        + "{ Start-Process -FilePath "
-        + ps_quote(exe_path)
-        + " } else { throw 'Executable path is not configured.' }"
-        if exe_path
-        else ""
+        build_hidden_caddy_start_command(exe_path, windows_dir, config_path)
+        if label == "Caddy"
+        else (
+            f"if (Test-Path {ps_quote(exe_path)}) "
+            + "{ Start-Process -FilePath "
+            + ps_quote(exe_path)
+            + " } else { throw 'Executable path is not configured.' }"
+            if exe_path
+            else ""
+        )
     )
     effective_stop = stop_cmd
     if not effective_stop:

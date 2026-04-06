@@ -75,7 +75,7 @@ SNAPSHOT_BUILD_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_BUILD_CACHE_MA
 SNAPSHOT_DELTA_ENABLED = os.getenv("SNAPSHOT_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 SNAPSHOT_DELTA_FALLBACK_RATIO = float(os.getenv("SNAPSHOT_DELTA_FALLBACK_RATIO", "0.85"))
 SNAPSHOT_SYNC_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_SYNC_CACHE_MAX_ENTRIES", "12")))
-SNAPSHOT_RANGE_ALL_DAYS = max(30, int(os.getenv("SNAPSHOT_RANGE_ALL_DAYS", "730")))
+SNAPSHOT_RANGE_ALL_DAYS = max(30, int(os.getenv("SNAPSHOT_RANGE_ALL_DAYS", "36500")))
 MT5_HISTORY_LOOKAHEAD_HOURS = max(0, int(os.getenv("MT5_HISTORY_LOOKAHEAD_HOURS", "24")))
 TRADE_HISTORY_TARGET_ITEMS = max(200, int(os.getenv("TRADE_HISTORY_TARGET_ITEMS", "1000")))
 TRADE_REQUEST_STORE_MAX_ENTRIES = max(100, int(os.getenv("TRADE_REQUEST_STORE_MAX_ENTRIES", "2000")))
@@ -88,7 +88,7 @@ MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT = max(100, min(1000, int(os.getenv("MARKET_C
 MARKET_CANDLES_UPSTREAM_RETRY = max(0, int(os.getenv("MARKET_CANDLES_UPSTREAM_RETRY", "1")))
 ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "5000")))
 ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
-ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "8")))
+ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "60")))
 ABNORMAL_FETCH_CACHE_MS = max(1000, int(os.getenv("ABNORMAL_FETCH_CACHE_MS", "4000")))
 ABNORMAL_DELTA_ENABLED = os.getenv("ABNORMAL_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 ABNORMAL_SYMBOLS = ("BTCUSDT", "XAUUSD")
@@ -940,6 +940,16 @@ def _fetch_recent_closed_binance_klines(symbol: str, limit: int = ABNORMAL_KLINE
     return items
 
 
+def _resolve_abnormal_fetch_limit(last_close_time: int, now_ms: int) -> int:
+    """按断档分钟数动态放大异常补抓窗口，避免长时间断连后丢远期黄点。"""
+    base_limit = max(2, ABNORMAL_KLINE_LIMIT)
+    if last_close_time <= 0 or now_ms <= last_close_time:
+        return base_limit
+    gap_minutes = int(math.ceil(max(0, now_ms - last_close_time) / 60_000.0))
+    # 多抓 2 根，给“上一根已处理 + 当前最新闭合根”留出缓冲。
+    return max(base_limit, min(1500, gap_minutes + 2))
+
+
 def _evaluate_abnormal_kline(kline: Dict[str, Any], config: Dict[str, Any], use_and_mode: bool) -> Dict[str, Any]:
     enabled_count = 0
     triggered: List[str] = []
@@ -1110,10 +1120,12 @@ def _refresh_abnormal_state() -> None:
             _ensure_abnormal_defaults_locked()
             config_snapshot = _copy_abnormal_config_locked()
             last_close_by_symbol = dict(abnormal_last_close_time_by_symbol)
+            now_ms = _now_ms()
 
         new_records: List[Dict[str, Any]] = []
         for symbol in ABNORMAL_SYMBOLS:
-            recent_klines = _fetch_recent_closed_binance_klines(symbol, ABNORMAL_KLINE_LIMIT)
+            fetch_limit = _resolve_abnormal_fetch_limit(int(last_close_by_symbol.get(symbol, 0) or 0), now_ms)
+            recent_klines = _fetch_recent_closed_binance_klines(symbol, fetch_limit)
             symbol_config = (config_snapshot.get("symbols") or {}).get(symbol) or _default_abnormal_symbol_config(symbol)
             last_close_time = int(last_close_by_symbol.get(symbol, 0) or 0)
             for kline in recent_klines:
@@ -2085,7 +2097,7 @@ def _progressive_trade_history_deals(range_key: str) -> List[Any]:
         return mt5.history_deals_get(from_time, to_time) or []
 
     max_days = max(30, SNAPSHOT_RANGE_ALL_DAYS)
-    progressive_days = [30, 90, 180, 365, max_days]
+    progressive_days = [30, 90, 180, 365, 730, 1095, 1825, 3650, max_days]
     unique_days: List[int] = []
     for days in progressive_days:
         safe_days = max(30, min(days, max_days))

@@ -7,6 +7,7 @@ package com.binance.monitor.ui.floating;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Handler;
@@ -220,7 +221,8 @@ public class FloatingWindowManager {
                 : snapshot.getConnectionStatus()));
         binding.tvOverlayConnection.setTextColor(palette.textSecondary);
         List<FloatingSymbolCardData> visibleCards = offline ? new ArrayList<>() : collectVisibleCards();
-        renderSummaryHeader(palette, visibleCards, offline);
+        boolean hasActivePositions = hasActivePositions(visibleCards);
+        renderSummaryHeader(palette, visibleCards, offline, hasActivePositions);
         applyWindowAlpha();
         int renderedCount = renderSymbolCards(visibleCards, palette);
         boolean hasItems = renderedCount > 0;
@@ -249,7 +251,8 @@ public class FloatingWindowManager {
 
     private void renderSummaryHeader(UiPaletteManager.Palette palette,
                                      List<FloatingSymbolCardData> visibleCards,
-                                     boolean offline) {
+                                     boolean offline,
+                                     boolean hasActivePositions) {
         boolean masked = SensitiveDisplayMasker.isEnabled(context);
         double totalPnl = 0d;
         for (FloatingSymbolCardData card : visibleCards) {
@@ -257,22 +260,31 @@ public class FloatingWindowManager {
                 totalPnl += card.getTotalPnl();
             }
         }
-        boolean hasCard = !visibleCards.isEmpty();
-        String text = offline
-                ? "离线"
-                : FloatingWindowTextFormatter.formatPnlAmount(hasCard ? totalPnl : 0d, masked);
+        String text;
+        if (offline) {
+            text = "离线";
+        } else if (!hasActivePositions) {
+            text = "无持仓";
+        } else {
+            text = FloatingWindowTextFormatter.formatPnlAmount(totalPnl, masked);
+        }
         binding.tvOverlayStatus.setText(text);
         int pnlColor = offline
                 ? palette.textSecondary
-                : (masked ? palette.textPrimary : resolvePnlColor(totalPnl, hasCard));
+                : (masked ? palette.textPrimary : resolvePnlColor(totalPnl, hasActivePositions));
         binding.tvOverlayStatus.setTextColor(pnlColor);
-        binding.tvOverlayStatus.setTextSize(hasCard ? 12f : 11f);
-        binding.tvOverlayStatus.setTypeface(null, android.graphics.Typeface.BOLD);
+        binding.tvOverlayStatus.setTextSize(hasActivePositions ? 12f : 11f);
+        binding.tvOverlayStatus.setTypeface(null, Typeface.BOLD);
         binding.btnMinimize.setTextColor(palette.textPrimary);
         binding.btnMinimize.setBackground(UiPaletteManager.createOutlinedDrawable(context, palette.control, palette.stroke));
-        binding.viewMiniSquare.setText(text);
+        binding.viewMiniSquare.setText(FloatingWindowTextFormatter.formatMiniStatusText(
+                offline,
+                hasActivePositions,
+                totalPnl,
+                masked
+        ));
         binding.viewMiniSquare.setTextColor(pnlColor);
-        binding.viewMiniSquare.setTypeface(null, android.graphics.Typeface.BOLD);
+        binding.viewMiniSquare.setTypeface(null, Typeface.BOLD);
         binding.viewMiniSquare.setBackground(UiPaletteManager.createOutlinedDrawable(
                 context,
                 applyAlpha(palette.card, 238),
@@ -331,6 +343,7 @@ public class FloatingWindowManager {
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
         titleView.setText(buildStyledCardTitle(card, palette, masked));
+        titleView.setTypeface(null, android.graphics.Typeface.BOLD);
         titleView.setTextColor(palette.textPrimary);
         titleView.setTextSize(9f);
         titleView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
@@ -350,6 +363,7 @@ public class FloatingWindowManager {
         priceView.setText(card.hasLatestPrice()
                 ? FloatingWindowTextFormatter.formatPriceText(card.getLatestPrice(), masked)
                 : "--");
+        priceView.setTypeface(null, android.graphics.Typeface.BOLD);
         priceView.setTextColor(palette.textPrimary);
         priceView.setTextSize(11f);
         priceView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
@@ -551,6 +565,18 @@ public class FloatingWindowManager {
             return "XAU";
         }
         return "BTC";
+    }
+
+    private boolean hasActivePositions(List<FloatingSymbolCardData> cards) {
+        if (cards == null || cards.isEmpty()) {
+            return false;
+        }
+        for (FloatingSymbolCardData card : cards) {
+            if (card != null && card.hasPosition()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void startMiniBlink() {

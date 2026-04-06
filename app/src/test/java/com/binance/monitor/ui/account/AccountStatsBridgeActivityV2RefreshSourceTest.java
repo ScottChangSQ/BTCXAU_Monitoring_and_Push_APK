@@ -49,7 +49,9 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
         for (String candidate : candidates) {
             Path path = workingDir.resolve(candidate).normalize();
             if (Files.exists(path)) {
-                return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+                return new String(Files.readAllBytes(path), StandardCharsets.UTF_8)
+                        .replace("\r\n", "\n")
+                        .replace('\r', '\n');
             }
         }
         throw new IllegalStateException("找不到 AccountStatsBridgeActivity.java");

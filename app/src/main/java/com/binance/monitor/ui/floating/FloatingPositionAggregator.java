@@ -94,6 +94,7 @@ public class FloatingPositionAggregator {
             double volume = kline == null ? 0d : kline.getVolume();
             double amount = kline == null ? 0d : kline.getQuoteAssetVolume();
             long updatedAt = kline == null ? 0L : Math.max(kline.getCloseTime(), kline.getOpenTime());
+            boolean hasPosition = pnlItem != null;
             result.add(new FloatingSymbolCardData(
                     symbol,
                     label,
@@ -102,7 +103,8 @@ public class FloatingPositionAggregator {
                     hasPrice,
                     volume,
                     amount,
-                    updatedAt
+                    updatedAt,
+                    hasPosition
             ));
         }
         return result;

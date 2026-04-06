@@ -39,12 +39,14 @@ public class AccountStatsBridgeSnapshotSourceTest {
     }
 
     @Test
-    public void pageShouldNotRequestImmediatelyWhenFreshPreloadedCacheAlreadyExists() throws Exception {
+    public void pageShouldRequestImmediatelyEvenWhenFreshPreloadedCacheAlreadyExists() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
 
-        assertTrue(source.contains("if (hasFreshPreloadedCache()) {"));
-        assertTrue(source.contains("scheduleNextSnapshot(dynamicRefreshDelayMs);"));
+        assertTrue(source.contains("private void requestForegroundEntrySnapshot()"));
+        assertTrue(!source.contains("if (hasFreshPreloadedCache()) {\n                    scheduleNextSnapshot(dynamicRefreshDelayMs);"));
     }
 
     @Test
@@ -63,6 +65,14 @@ public class AccountStatsBridgeSnapshotSourceTest {
 
         assertTrue(source.contains("AccountSnapshotDisplayResolver.resolve("));
         assertTrue(source.contains("resolveOverviewPositionsFromDisplaySnapshot("));
+    }
+
+    @Test
+    public void applySnapshotShouldNotRebuildPendingOrderDetailsFromPositionSummaryFields() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(!source.contains("basePendingOrders = buildPendingOrders(basePositions);"));
     }
 
     @Test

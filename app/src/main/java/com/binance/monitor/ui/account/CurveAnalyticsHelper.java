@@ -238,24 +238,31 @@ public final class CurveAnalyticsHelper {
         if (points.isEmpty()) {
             return null;
         }
-        CurvePoint worstPoint = null;
+        CurvePoint currentPeakPoint = points.get(0);
+        CurvePoint worstPeakPoint = null;
+        CurvePoint worstValleyPoint = null;
         double maxDrawdownRate = 0d;
         for (CurvePoint point : points) {
-            // 当前区间回撤改为逐时点比较“净值相对结余的水下幅度”，盈利时不记正值。
-            double drawdownRate = Math.min(0d, safeDivide(point.getEquity() - point.getBalance(), point.getBalance()));
+            if (point.getEquity() > currentPeakPoint.getEquity()) {
+                currentPeakPoint = point;
+            }
+            // 回撤统一按“历史净值峰值 -> 当前净值谷值”的 running peak 口径计算。
+            double drawdownRate = Math.min(0d,
+                    safeDivide(point.getEquity() - currentPeakPoint.getEquity(), currentPeakPoint.getEquity()));
             if (drawdownRate < maxDrawdownRate) {
                 maxDrawdownRate = drawdownRate;
-                worstPoint = point;
+                worstPeakPoint = currentPeakPoint;
+                worstValleyPoint = point;
             }
         }
-        if (worstPoint == null) {
+        if (worstPeakPoint == null || worstValleyPoint == null) {
             return null;
         }
         return new DrawdownSegment(
-                worstPoint.getTimestamp(),
-                worstPoint.getTimestamp(),
-                worstPoint.getBalance(),
-                worstPoint.getEquity(),
+                worstPeakPoint.getTimestamp(),
+                worstValleyPoint.getTimestamp(),
+                worstPeakPoint.getEquity(),
+                worstValleyPoint.getEquity(),
                 maxDrawdownRate
         );
     }
@@ -266,9 +273,11 @@ public final class CurveAnalyticsHelper {
         if (points.isEmpty()) {
             return result;
         }
+        double runningPeakEquity = Math.max(0d, points.get(0).getEquity());
         for (CurvePoint point : points) {
-            // 每个时间点都直接按“净值 - 结余”相对结余的比例计算回撤。
-            double drawdownRate = Math.min(0d, safeDivide(point.getEquity() - point.getBalance(), point.getBalance()));
+            runningPeakEquity = Math.max(runningPeakEquity, point.getEquity());
+            // 每个时间点都按历史峰值净值计算水下比例，盈利区间固定钳到 0。
+            double drawdownRate = Math.min(0d, safeDivide(point.getEquity() - runningPeakEquity, runningPeakEquity));
             result.add(new DrawdownPoint(point.getTimestamp(), drawdownRate));
         }
         return result;

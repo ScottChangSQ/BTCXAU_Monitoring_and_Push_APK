@@ -28,7 +28,24 @@ final class FloatingWindowTextFormatter {
     // 统一格式化悬浮窗产品价格，改为一位小数并保留隐私遮罩行为。
     static String formatPriceText(double price, boolean masked) {
         String visibleText = FormatUtils.formatPriceOneDecimalWithUnit(price);
+        if (visibleText.startsWith("$")) {
+            visibleText = "$ " + visibleText.substring(1);
+        }
         return SensitiveDisplayMasker.maskPrice(visibleText, masked);
+    }
+
+    // 最小化悬浮窗优先显示离线，其次区分“无持仓”和真实盈亏。
+    static String formatMiniStatusText(boolean offline,
+                                       boolean hasActivePosition,
+                                       double totalPnl,
+                                       boolean masked) {
+        if (offline) {
+            return "离线";
+        }
+        if (!hasActivePosition) {
+            return "无持仓";
+        }
+        return formatPnlAmount(totalPnl, masked);
     }
 
     // 判断盈亏是否应按中性色展示，避免 0 值仍被误显示成涨色或跌色。

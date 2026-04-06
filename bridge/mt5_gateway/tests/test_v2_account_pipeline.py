@@ -89,6 +89,46 @@ class V2AccountPipelineTests(unittest.TestCase):
         self.assertEqual(201, trade["positionId"])
         self.assertEqual(1, trade["entryType"])
 
+    def test_build_account_snapshot_model_keeps_position_and_order_identifiers(self):
+        payload = v2_account.build_account_snapshot_model(
+            {
+                "positions": [{
+                    "symbol": "BTCUSD",
+                    "positionTicket": 101,
+                    "orderId": 202,
+                    "quantity": 0.1,
+                    "costPrice": 100.0,
+                    "latestPrice": 105.0,
+                    "takeProfit": 120.0,
+                    "stopLoss": 90.0,
+                    "storageFee": -1.5,
+                }],
+                "orders": [{
+                    "symbol": "XAUUSD",
+                    "orderId": 303,
+                    "pendingLots": 0.2,
+                    "pendingPrice": 2050.0,
+                    "latestPrice": 2051.0,
+                    "takeProfit": 2070.0,
+                    "stopLoss": 2030.0,
+                    "pendingCount": 1,
+                }],
+            }
+        )
+
+        position = payload["positions"][0]
+        order = payload["orders"][0]
+        self.assertEqual(101, position["positionTicket"])
+        self.assertEqual(202, position["orderId"])
+        self.assertEqual(120.0, position["takeProfit"])
+        self.assertEqual(90.0, position["stopLoss"])
+        self.assertEqual(-1.5, position["storageFee"])
+        self.assertEqual(303, order["orderId"])
+        self.assertEqual(2051.0, order["latestPrice"])
+        self.assertEqual(2070.0, order["takeProfit"])
+        self.assertEqual(2030.0, order["stopLoss"])
+        self.assertEqual(1, order["pendingCount"])
+
     def test_build_account_snapshot_response_keeps_meta(self):
         payload = v2_account.build_account_snapshot_response(
             {"balance": 1000.0, "positions": [], "orders": []},

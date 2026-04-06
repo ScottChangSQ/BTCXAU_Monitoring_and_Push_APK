@@ -115,7 +115,7 @@ MT5 网关 Python 侧常用验证：
 ```bash
 .\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response -v
 .\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_admin_panel -v
-.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_admin_panel_bundle_parity -v
+.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_gateway_bundle_parity -v
 .\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py
 .\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/admin_panel.py
 ```
@@ -123,9 +123,14 @@ MT5 网关 Python 侧常用验证：
 ## 部署方法和命令
 
 - 服务器部署说明见 [deploy/tencent/README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/README.md)
-- Windows 服务器精简上传包见 [deploy/tencent/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle)
-- Windows 部署根目录现统一为 `C:\mt5_bundle`
-- 上传方式改为：整体替换 `deploy/tencent/windows_server_bundle` 对应内容，不再手工挑单个文件补传
+- Windows 服务器上传目录改为构建产物 [dist/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist/windows_server_bundle)
+- 日常只维护两处服务器源码：
+  - [bridge/mt5_gateway](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway)
+  - [deploy/tencent/windows](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows)
+- 每次准备上传服务器前，先在仓库根目录执行：
+  - `python scripts/build_windows_server_bundle.py`
+- Windows 部署根目录现统一为 `C:\mt5_bundle\windows_server_bundle`
+- 上传方式改为：把整个 `dist/windows_server_bundle` 文件夹直接复制到服务器 `C:\mt5_bundle` 下，不再手工拆开 `mt5_gateway` 和 `windows`
 - 当前默认公网入口为 `http://43.155.214.62`
 - 统一控制台默认入口为 `http://43.155.214.62/admin/`
 - 管理面板直连端口入口仍可用：`http://43.155.214.62:8788`
@@ -135,10 +140,16 @@ MT5 网关 Python 侧常用验证：
   - `Binance REST /binance-rest/*`
   - `Binance WebSocket /binance-ws/*`
 - 如果需要让管理面板开机自启，可执行：
-  - `.\deploy\tencent\windows\04_register_admin_panel_task.ps1 -RepoRoot "<仓库路径>" -Force`
+  - `cd C:\mt5_bundle\windows_server_bundle`
+  - `.\windows\04_register_admin_panel_task.ps1 -BundleRoot "C:\mt5_bundle\windows_server_bundle" -Force`
+- 部署包根目录已内置双击入口：
+  - `deploy_bundle.cmd`
+  - `deploy_bundle.ps1`
+- `deploy_bundle.cmd` 会隐藏启动 Caddy，不再弹出独立的 `caddy.exe` 命令窗口
+- `caddy.exe` 可放在 `C:\mt5_bundle\windows_server_bundle\windows`，也可放在 `C:\mt5_bundle`；部署脚本会自动优先查找这两类位置
 - 如果服务器地址变化，可直接在 App 设置页修改“MT5 网关地址”
-- 本轮网关新增 `SNAPSHOT_RANGE_ALL_DAYS` 配置；若服务器内存偏高，可在 `bridge/mt5_gateway/.env` 里调低 `all` 区间历史回看天数后重启网关
-- 如果 MT5 返回的成交时间比北京时间固定慢若干分钟，可在 `bridge/mt5_gateway/.env` 里设置 `MT5_TIME_OFFSET_MINUTES`；例如慢 8 小时就填 `480`，这样交易记录、历史成交点和账户曲线会一起按同一口径修正
+- 本轮网关新增 `SNAPSHOT_RANGE_ALL_DAYS` 配置；若服务器内存偏高，可在 `C:\mt5_bundle\windows_server_bundle\mt5_gateway\.env` 里调低 `all` 区间历史回看天数后重启网关
+- 如果 MT5 返回的成交时间比北京时间固定慢若干分钟，可在 `C:\mt5_bundle\windows_server_bundle\mt5_gateway\.env` 里设置 `MT5_TIME_OFFSET_MINUTES`；例如慢 8 小时就填 `480`，这样交易记录、历史成交点和账户曲线会一起按同一口径修正
 
 ## 目录说明
 

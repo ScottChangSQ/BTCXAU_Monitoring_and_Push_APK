@@ -166,6 +166,28 @@ class AbnormalGatewayTests(unittest.TestCase):
         self.assertEqual("r1", response["records"][0]["id"])
         self.assertIn("warning", response["abnormalMeta"])
 
+    def test_refresh_abnormal_state_should_expand_fetch_limit_when_last_close_is_stale(self):
+        original_fetch = server_v2._fetch_recent_closed_binance_klines
+        captured_limits = {}
+
+        def fake_fetch(symbol, limit):
+            captured_limits[symbol] = limit
+            return []
+
+        server_v2._fetch_recent_closed_binance_klines = fake_fetch
+        stale_close = server_v2._now_ms() - 180 * 60 * 1000
+        with server_v2.abnormal_state_lock:
+            server_v2.abnormal_last_close_time_by_symbol["BTCUSDT"] = stale_close
+            server_v2.abnormal_last_close_time_by_symbol["XAUUSD"] = stale_close
+
+        try:
+            server_v2._refresh_abnormal_state()
+        finally:
+            server_v2._fetch_recent_closed_binance_klines = original_fetch
+
+        self.assertGreater(captured_limits.get("BTCUSDT", 0), server_v2.ABNORMAL_KLINE_LIMIT)
+        self.assertGreater(captured_limits.get("XAUUSD", 0), server_v2.ABNORMAL_KLINE_LIMIT)
+
     def _reset_state(self):
         with server_v2.abnormal_state_lock:
             server_v2.abnormal_config_state.clear()

@@ -16,6 +16,12 @@ import java.util.List;
 final class AccountCurveRebuildHelper {
 
     private static final double VALUE_EPSILON = 0.01d;
+    private static final double SOURCE_SPREAD_MIN_RATIO = 0.35d;
+    private static final double SOURCE_SPREAD_DEVIATION_MIN = 8d;
+    private static final double SOURCE_SPREAD_DEVIATION_RATIO = 2d;
+    private static final double SOURCE_SPREAD_OUTLIER_BASE = 100d;
+    private static final double SOURCE_SPREAD_OUTLIER_RATIO = 8d;
+    private static final double SOURCE_SPREAD_OUTLIER_PADDING = 20d;
 
     private AccountCurveRebuildHelper() {
     }
@@ -49,11 +55,11 @@ final class AccountCurveRebuildHelper {
             CurvePoint point = normalized.get(index);
             long timestamp = point.getTimestamp();
             double rebuiltBalance = startingBalance + sumClosedTradeDelta(sortedTrades, firstTimestamp, timestamp);
-            double activePositionPnl = sumActivePositionPnl(sortedTrades, timestamp);
-            double rebuiltEquity = rebuiltBalance + activePositionPnl;
+            FloatingState floatingState = resolveFloatingState(sortedTrades, timestamp);
+            double sourceEquity = resolveSourceEquity(normalized, index, point, rebuiltBalance, floatingState);
             rebuilt.add(new CurvePoint(
                     timestamp,
-                    rebuiltEquity,
+                    sourceEquity,
                     rebuiltBalance,
                     point.getPositionRatio()
             ));
@@ -75,8 +81,9 @@ final class AccountCurveRebuildHelper {
     }
 
     // 汇总当前时刻仍在持仓中的每一单历史盈亏，净值曲线按“结余 + 持仓盈亏”构建。
-    private static double sumActivePositionPnl(List<TradeRecordItem> trades, long timestamp) {
+    private static FloatingState resolveFloatingState(List<TradeRecordItem> trades, long timestamp) {
         double total = 0d;
+        int activeCount = 0;
         for (TradeRecordItem trade : trades) {
             long openTime = resolveOpenTime(trade);
             long closeTime = resolveCloseTime(trade);
@@ -87,9 +94,77 @@ final class AccountCurveRebuildHelper {
                 double quantity = Math.abs(trade.getQuantity());
                 double price = resolveHistoricalPrice(trade, timestamp, openTime, closeTime);
                 total += resolveDirectionalFloatingPnl(trade, quantity, price);
+                activeCount++;
             }
         }
-        return total;
+        return new FloatingState(total, activeCount);
+    }
+
+    // 当服务端原始净值曲线已经是平滑且可信的真实轨迹时，优先保留它，避免客户端线性重放把回撤抹平。
+    private static double resolveSourceEquity(List<CurvePoint> sourcePoints,
+                                              int sourceIndex,
+                                              CurvePoint sourcePoint,
+                                              double rebuiltBalance,
+                                              FloatingState floatingState) {
+        if (sourcePoint == null) {
+            return rebuiltBalance + floatingState.floatingPnl;
+        }
+        if (floatingState.activeCount <= 0) {
+            return rebuiltBalance;
+        }
+        double sourceSpread = sourcePoint.getEquity() - sourcePoint.getBalance();
+        double simulatedSpread = floatingState.floatingPnl;
+        if (!isReasonableSourceSpread(sourcePoints, sourceIndex, sourceSpread, simulatedSpread)) {
+            return rebuiltBalance + simulatedSpread;
+        }
+        return rebuiltBalance + sourceSpread;
+    }
+
+    // 原始净值差值为 0 或严重偏离时，认为它是不完整或异常数据，回退到客户端重放值。
+    private static boolean isReasonableSourceSpread(List<CurvePoint> sourcePoints,
+                                                    int sourceIndex,
+                                                    double sourceSpread,
+                                                    double simulatedSpread) {
+        double absSource = Math.abs(sourceSpread);
+        double absSimulated = Math.abs(simulatedSpread);
+        if (absSource <= VALUE_EPSILON) {
+            return absSimulated <= VALUE_EPSILON || hasMeaningfulNeighborSpread(sourcePoints, sourceIndex);
+        }
+        if (absSimulated > VALUE_EPSILON && absSource < absSimulated * SOURCE_SPREAD_MIN_RATIO) {
+            return false;
+        }
+        double maxAllowedDeviation = Math.max(
+                SOURCE_SPREAD_DEVIATION_MIN,
+                absSimulated * SOURCE_SPREAD_DEVIATION_RATIO
+        );
+        if (Math.abs(sourceSpread - simulatedSpread) > maxAllowedDeviation) {
+            return false;
+        }
+        double maxAllowedAbsolute = Math.max(
+                SOURCE_SPREAD_OUTLIER_BASE,
+                absSimulated * SOURCE_SPREAD_OUTLIER_RATIO + SOURCE_SPREAD_OUTLIER_PADDING
+        );
+        return absSource <= maxAllowedAbsolute;
+    }
+
+    // 当前点若刚好落在真实浮盈回到 0 的位置，只要前后源曲线仍有明显浮动，就继续信任服务端原始曲线。
+    private static boolean hasMeaningfulNeighborSpread(List<CurvePoint> sourcePoints, int sourceIndex) {
+        if (sourcePoints == null || sourceIndex < 0 || sourceIndex >= sourcePoints.size()) {
+            return false;
+        }
+        if (sourceIndex > 0) {
+            CurvePoint previous = sourcePoints.get(sourceIndex - 1);
+            if (previous != null && Math.abs(previous.getEquity() - previous.getBalance()) > VALUE_EPSILON) {
+                return true;
+            }
+        }
+        if (sourceIndex + 1 < sourcePoints.size()) {
+            CurvePoint next = sourcePoints.get(sourceIndex + 1);
+            if (next != null && Math.abs(next.getEquity() - next.getBalance()) > VALUE_EPSILON) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // 统一解析单笔成交对应的已实现盈亏。
@@ -196,5 +271,15 @@ final class AccountCurveRebuildHelper {
         }
         String side = trade.getSide().trim().toLowerCase();
         return side.contains("sell") || side.contains("short") || side.contains("卖");
+    }
+
+    private static final class FloatingState {
+        private final double floatingPnl;
+        private final int activeCount;
+
+        private FloatingState(double floatingPnl, int activeCount) {
+            this.floatingPnl = floatingPnl;
+            this.activeCount = activeCount;
+        }
     }
 }

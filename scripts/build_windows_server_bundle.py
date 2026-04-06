@@ -1,0 +1,204 @@
+"""生成唯一的 Windows 服务器部署包，避免仓库内长期维护重复副本。"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_GATEWAY_DIR = ROOT / "bridge" / "mt5_gateway"
+SOURCE_WINDOWS_DIR = ROOT / "deploy" / "tencent" / "windows"
+DEFAULT_OUTPUT_DIR = ROOT / "dist" / "windows_server_bundle"
+
+GATEWAY_FILES = (
+    ".env.example",
+    "admin_panel.py",
+    "API.md",
+    "README.md",
+    "requirements.txt",
+    "server_v2.py",
+    "start_admin_panel.ps1",
+    "start_gateway.ps1",
+    "v2_account.py",
+    "v2_market.py",
+    "v2_trade.py",
+    "v2_trade_models.py",
+)
+GATEWAY_DIRS = ("ea", "static")
+
+WINDOWS_FILES = (
+    ".env.example",
+    "01_bootstrap_gateway.ps1",
+    "02_register_startup_task.ps1",
+    "03_run_healthcheck.ps1",
+    "04_register_admin_panel_task.ps1",
+    "Caddyfile",
+    "Caddyfile.example",
+    "deploy_bundle.cmd",
+    "deploy_bundle.ps1",
+    "run_admin_panel.ps1",
+    "run_gateway.ps1",
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="构建 Windows 服务器部署包。")
+    parser.add_argument(
+        "--output",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help="部署包输出目录，默认生成到 dist/windows_server_bundle",
+    )
+    return parser.parse_args()
+
+
+def ensure_exists(path: Path) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"required source path not found: {path}")
+
+
+def reset_dir(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def copy_file(source: Path, destination: Path) -> None:
+    ensure_exists(source)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+
+
+def normalize_windows_newlines(content: str) -> str:
+    """统一转换成 Windows 兼容的 CRLF 换行。"""
+    return content.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
+
+
+def normalize_batch_file(destination: Path) -> None:
+    """确保批处理文件使用 Windows 兼容的 CRLF 换行。"""
+    content = destination.read_text(encoding="utf-8")
+    normalized = normalize_windows_newlines(content)
+    with destination.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(normalized)
+
+
+def normalize_powershell_file(destination: Path) -> None:
+    """确保 PowerShell 脚本使用 Windows PowerShell 兼容的 UTF-8 BOM + CRLF。"""
+    content = destination.read_text(encoding="utf-8-sig")
+    normalized = normalize_windows_newlines(content)
+    destination.write_text(normalized, encoding="utf-8-sig", newline="")
+
+
+def copy_tree(source: Path, destination: Path) -> None:
+    ensure_exists(source)
+    shutil.copytree(
+        source,
+        destination,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+    )
+
+
+def write_bundle_readme(bundle_dir: Path) -> None:
+    readme = """# Windows 服务器部署包
+
+这个目录就是要复制到服务器上的唯一部署目录，不需要再上传整个仓库。
+
+## 目录说明
+
+- `mt5_gateway/`
+  - MT5 网关主程序、轻量管理面板、静态页面、依赖清单、环境示例、EA 文件
+- `windows/`
+  - Windows 部署脚本、Caddy 反向代理配置、自启脚本
+
+## 推荐上传路径
+
+```text
+C:\\mt5_bundle\\windows_server_bundle
+```
+
+上传后目录应类似：
+
+```text
+C:\\mt5_bundle
+└─ windows_server_bundle
+   ├─ mt5_gateway
+   ├─ windows
+   ├─ deploy_bundle.cmd
+   └─ deploy_bundle.ps1
+```
+
+## 一键部署
+
+```powershell
+双击 deploy_bundle.cmd
+```
+
+它会自动完成：
+
+- 检查脚本语法
+- 补齐 Python 依赖
+- 重新注册网关与管理面板计划任务
+- 隐藏启动 Caddy
+- 自动验收 `8787 / 8788 / 80 / /admin/`
+
+## 手动启动检查
+
+```powershell
+cd C:\\mt5_bundle\\windows_server_bundle\\mt5_gateway
+.\\start_gateway.ps1
+.\\start_admin_panel.ps1
+```
+
+```powershell
+cd C:\\mt5_bundle\\windows_server_bundle
+.\\windows\\03_run_healthcheck.ps1
+Invoke-WebRequest http://127.0.0.1/admin/ -UseBasicParsing
+```
+"""
+    (bundle_dir / "README.md").write_text(readme, encoding="utf-8")
+
+
+def build_bundle(output_dir: Path) -> Path:
+    gateway_dir = output_dir / "mt5_gateway"
+    windows_dir = output_dir / "windows"
+    reset_dir(output_dir)
+
+    for file_name in GATEWAY_FILES:
+        copy_file(SOURCE_GATEWAY_DIR / file_name, gateway_dir / file_name)
+    for dir_name in GATEWAY_DIRS:
+        copy_tree(SOURCE_GATEWAY_DIR / dir_name, gateway_dir / dir_name)
+
+    for file_name in WINDOWS_FILES:
+        source = SOURCE_WINDOWS_DIR / file_name
+        if file_name.endswith(".cmd") or file_name.endswith(".ps1") and file_name.startswith("deploy_bundle"):
+            destination = output_dir / file_name
+            copy_file(source, destination)
+        else:
+            destination = windows_dir / file_name
+            copy_file(source, destination)
+        if file_name.endswith(".cmd"):
+            normalize_batch_file(destination)
+        if file_name.endswith(".ps1"):
+            normalize_powershell_file(destination)
+
+    for script in gateway_dir.rglob("*.ps1"):
+        normalize_powershell_file(script)
+    for script in windows_dir.rglob("*.ps1"):
+        normalize_powershell_file(script)
+
+    write_bundle_readme(output_dir)
+    return output_dir
+
+
+def main() -> int:
+    args = parse_args()
+    output_dir = Path(args.output).resolve()
+    build_bundle(output_dir)
+    print(f"built windows server bundle: {output_dir}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

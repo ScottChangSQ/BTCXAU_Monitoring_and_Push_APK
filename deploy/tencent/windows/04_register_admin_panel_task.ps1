@@ -1,20 +1,59 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$RepoRoot,
+    [string]$RepoRoot = "",
+    [string]$BundleRoot = "",
     [string]$TaskName = "MT5AdminPanelAutoStart",
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $RepoRoot)) {
-    throw "RepoRoot not found: $RepoRoot"
+# 解析脚本运行根目录，兼容“完整仓库根目录”和“部署包根目录”。
+function Resolve-TaskLayout {
+    param(
+        [string]$RepoRootValue,
+        [string]$BundleRootValue
+    )
+
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($BundleRootValue)) {
+        $candidates += [PSCustomObject]@{ Type = "bundle"; Root = $BundleRootValue }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RepoRootValue)) {
+        $candidates += [PSCustomObject]@{ Type = "repo"; Root = $RepoRootValue }
+    }
+    if ($candidates.Count -eq 0) {
+        $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+        $bundleCandidate = Split-Path -Parent $scriptDir
+        $candidates += [PSCustomObject]@{ Type = "bundle"; Root = $bundleCandidate }
+        $repoCandidate = (Resolve-Path (Join-Path $scriptDir "..\..\..")).Path
+        $candidates += [PSCustomObject]@{ Type = "repo"; Root = $repoCandidate }
+    }
+
+    foreach ($candidate in $candidates) {
+        if (-not (Test-Path $candidate.Root)) {
+            continue
+        }
+        $resolvedRoot = (Resolve-Path $candidate.Root).Path
+        if ($candidate.Type -eq "bundle") {
+            $runner = Join-Path $resolvedRoot "windows\run_admin_panel.ps1"
+        }
+        else {
+            $runner = Join-Path $resolvedRoot "deploy\tencent\windows\run_admin_panel.ps1"
+        }
+        if (Test-Path $runner) {
+            return [PSCustomObject]@{
+                Root = $resolvedRoot
+                Runner = $runner
+                Layout = $candidate.Type
+            }
+        }
+    }
+
+    throw "Runner script not found. Provide -RepoRoot <repo> or -BundleRoot <bundle>."
 }
-$repo = (Resolve-Path $RepoRoot).Path
-$runner = Join-Path $repo "deploy\tencent\windows\run_admin_panel.ps1"
-if (-not (Test-Path $runner)) {
-    throw "Runner script not found: $runner"
-}
+
+$layout = Resolve-TaskLayout -RepoRootValue $RepoRoot -BundleRootValue $BundleRoot
+$runner = $layout.Runner
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($existing) {
@@ -24,7 +63,11 @@ if ($existing) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
-$args = "-NoProfile -ExecutionPolicy Bypass -File `"$runner`" -RepoRoot `"$repo`""
+$rootArgName = "RepoRoot"
+if ($layout.Layout -eq "bundle") {
+    $rootArgName = "BundleRoot"
+}
+$args = "-NoProfile -ExecutionPolicy Bypass -File `"$runner`" -" + $rootArgName + " `"" + $layout.Root + "`""
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $args
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
