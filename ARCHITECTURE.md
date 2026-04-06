@@ -89,9 +89,15 @@
 - [app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java)
   图表历史仓库，负责把上层已经整理好的 K 线窗口直接写入 Room，不再重复回读整段旧历史再合并。
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
-  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出，并提供运行时缓存清理接口。
+  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出，以及远程账号会话接口与运行时缓存清理。
+- [bridge/mt5_gateway/v2_session_crypto.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_crypto.py)
+  远程账号会话加密模块，负责登录信封公钥生成、`rsa-oaep+aes-gcm` 解密、时间戳校验和 nonce 去重。
+- [bridge/mt5_gateway/v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py)
+  远程账号会话管理器，负责新账号登录、已保存账号切换、退出、异常回滚、审计记录和强一致刷新收口。
+- [bridge/mt5_gateway/v2_session_store.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_store.py)
+  远程账号会话存储层，负责当前激活账号摘要和已保存账号密文档案的文件读写。
 - [bridge/mt5_gateway/admin_panel.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py)
-  统一服务器控制台服务，负责聚合总览状态、输出中文诊断、提供配置 schema / 变更影响、读取日志、编辑 `.env`、代理异常规则配置，并管理网关 / MT5 / Caddy / Nginx。
+  统一服务器控制台服务，负责聚合总览状态、输出中文诊断、提供配置 schema / 变更影响、读取日志、编辑 `.env`、代理异常规则配置，并管理网关 / MT5 / Caddy / Nginx；当前也会透传账号会话摘要。
 - [bridge/mt5_gateway/admin_panel_state.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel_state.py)
   控制台总览状态构造器，负责把首页卡片、主动作、最近日志和旧字段兼容收口成统一响应。
 - [bridge/mt5_gateway/admin_panel_diagnostics.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel_diagnostics.py)
@@ -173,6 +179,12 @@
   读取主监控页当前展示所需的最新价格/K 线快照，而不是参与图表真值计算。
 - `admin_panel.py` -> `server_v2.py /health`、`/v1/source`、`/v1/abnormal`、`/v1/abnormal/config`、`/internal/admin/cache/clear`
   统一控制台通过本机 HTTP 读取网关状态、诊断输入、异常规则配置，并触发缓存清理。
+- `server_v2.py /v2/session/*` -> `v2_session_manager.py` -> `v2_session_store.py` / `v2_session_crypto.py`
+  远程账号会话链路先解密登录信封或读取已保存账号档案，再切换 MT5 运行态，并把结果落盘到当前激活账号摘要。
+- `v2_session_manager.py` -> `server_v2.py` 会话网关适配器
+  会话管理器通过适配器执行 `login_mt5/switch_mt5_account/logout_mt5/clear_account_caches/force_account_resync`，把运行态切换和缓存收口统一封装在网关层。
+- `admin_panel.py` -> `server_v2.py /health`、`/v1/source`
+  控制台总览页从网关聚合结果中透传 `session.activeAccount` 和 `session.savedAccountCount`，用于展示当前激活账号与已保存账号数量。
 - `admin_panel.py` -> PowerShell / Windows 计划任务 / 进程控制
   统一控制台直接管理网关、MT5 客户端、Caddy、Nginx 的启停与重启。
 
@@ -201,6 +213,9 @@
 - Windows 部署现收口为“源码两处 + 产物一处”：源码只维护 `bridge/mt5_gateway` 和 `deploy/tencent/windows`，部署时统一由 `scripts/build_windows_server_bundle.py` 生成 `dist/windows_server_bundle`；原因是仓库里长期保留静态部署副本会导致改动位置漂移、文件不同步和现场排障困难。
 - Windows 部署包现要求闭合为单根目录 `C:\mt5_bundle\windows_server_bundle`；原因是用户明确要求把整个 `dist/windows_server_bundle` 文件夹一次性复制到服务器，而不是拆成两个子目录分别处理。
 - Windows 部署脚本对 `caddy.exe` 采用兼容查找：优先 `windows_server_bundle\windows\caddy.exe`，其次 `windows_server_bundle\caddy.exe`，最后 `C:\mt5_bundle\caddy.exe` 这类上级目录；原因是服务器现场已存在历史安装位置，部署脚本需要兼容而不是强迫用户重新搬动二进制文件。
+- 远程账号会话当前采用“单用户、多账号、任意时刻一个激活账号”的服务端模型；原因是这样能在现有 MT5 网关结构内用最小正确改动闭合安全、切换和同步链路。
+- 远程登录链路当前采用 `cryptography` 实现 `rsa-oaep+aes-gcm`，账号落盘仍用 Windows DPAPI；原因是标准库无法完整提供设计要求的公钥信封解密，而本机密文档案仍应交给 Windows 本机保护能力处理。
+- nonce 去重当前只做进程内内存态；原因是本阶段先收口单机单进程的最小安全闭环，多实例共享去重留到后续阶段再做集中存储。
 - 账户预加载节奏从管理器内联常量改成 `AccountPreloadPolicyHelper` 统一计算；原因是这样更容易和前后台策略保持一致，也便于后续继续压缩账户页相关资源消耗。
 - 悬浮窗改为“统一快照 + 产品卡片”模型，解决不同字段更新时间不一致的问题。
 - 悬浮窗拖动增加长按触发、位移阈值和帧节流，减少拖动卡顿和误触。

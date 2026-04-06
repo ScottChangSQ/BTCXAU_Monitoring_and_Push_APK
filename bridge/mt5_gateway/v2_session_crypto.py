@@ -2,14 +2,32 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import os
 import platform
 import sys
+import threading
 import uuid
+from datetime import datetime, timezone
 from typing import Iterable
 
 _IS_WINDOWS = sys.platform.startswith("win")
+
+try:
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    _HAS_CRYPTOGRAPHY = True
+except Exception:  # pragma: no cover - 依赖缺失时由调用方感知
+    hashes = None  # type: ignore[assignment]
+    serialization = None  # type: ignore[assignment]
+    padding = None  # type: ignore[assignment]
+    rsa = None  # type: ignore[assignment]
+    AESGCM = None  # type: ignore[assignment]
+    _HAS_CRYPTOGRAPHY = False
 
 
 if _IS_WINDOWS:
@@ -80,6 +98,189 @@ def _normalize_bytes(value: bytes | bytearray) -> bytes:
     if isinstance(value, bytes):
         return value
     raise TypeError("secret must be bytes or bytearray")
+
+
+def _now_ms() -> int:
+    """返回当前 UTC 毫秒时间戳。"""
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _decode_b64_field(value: str, field_name: str) -> bytes:
+    """把 base64 字段解码成字节串。"""
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"{field_name} is required")
+    try:
+        return base64.b64decode(text, validate=True)
+    except Exception as exc:
+        raise ValueError(f"{field_name} is not valid base64") from exc
+
+
+class LoginEnvelopeCrypto:
+    """管理登录信封公钥与解密流程。"""
+
+    def __init__(
+        self,
+        now_ms_provider=None,
+        key_ttl_ms: int = 10 * 60 * 1000,
+        allowed_skew_ms: int = 5 * 60 * 1000,
+    ):
+        """初始化密钥轮换与时间窗口配置。"""
+        if not _HAS_CRYPTOGRAPHY:
+            raise RuntimeError("cryptography is required for rsa-oaep+aes-gcm")
+        self._now_ms_provider = now_ms_provider or _now_ms
+        self._key_ttl_ms = max(60_000, int(key_ttl_ms or 0))
+        self._allowed_skew_ms = max(0, int(allowed_skew_ms or 0))
+        self._algorithm = "rsa-oaep+aes-gcm"
+        self._key_id = ""
+        self._expires_at_ms = 0
+        self._private_key = None
+        self._public_key_pem = ""
+        # 记录已处理 nonce，阻断时间窗内重放。
+        self._nonce_seen_at: dict[str, int] = {}
+        self._state_lock = threading.RLock()
+
+    def _now_ms(self) -> int:
+        """读取当前毫秒时间。"""
+        return int(self._now_ms_provider())
+
+    def _rotate_keypair(self) -> None:
+        """生成新的 RSA 密钥对并刷新过期时间。"""
+        with self._state_lock:
+            private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            public_key = private_key.public_key()
+            public_pem = public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            ).decode("utf-8")
+            now_ms = self._now_ms()
+            self._private_key = private_key
+            self._public_key_pem = public_pem
+            self._expires_at_ms = now_ms + self._key_ttl_ms
+            self._key_id = f"key-{now_ms}-{fingerprint_public_key(public_pem)[:12]}"
+
+    def _ensure_key_for_public_read(self) -> None:
+        """确保 public-key 接口总能拿到可用密钥。"""
+        with self._state_lock:
+            if self._private_key is None:
+                self._rotate_keypair()
+                return
+            if self._now_ms() >= int(self._expires_at_ms or 0):
+                self._rotate_keypair()
+
+    def _resolve_private_key_for_decrypt(self, key_id: str):
+        """校验 keyId 与密钥有效期，并返回私钥快照。"""
+        with self._state_lock:
+            if self._private_key is None:
+                raise ValueError("keyId invalid")
+            if self._now_ms() >= int(self._expires_at_ms or 0):
+                raise ValueError("keyId expired")
+            if str(key_id or "").strip() != str(self._key_id or ""):
+                raise ValueError("keyId invalid")
+            return self._private_key
+
+    def _nonce_window_ms(self) -> int:
+        """返回 nonce 去重窗口，至少 1 分钟。"""
+        return max(60_000, int(self._allowed_skew_ms or 0))
+
+    def _prune_nonce_cache(self, now_ms: int) -> None:
+        """清理过期 nonce，控制内存占用。"""
+        window_ms = self._nonce_window_ms()
+        expired_keys = [key for key, seen_at in self._nonce_seen_at.items() if (now_ms - int(seen_at or 0)) > window_ms]
+        for key in expired_keys:
+            self._nonce_seen_at.pop(key, None)
+        if len(self._nonce_seen_at) <= 4096:
+            return
+        keep_items = sorted(self._nonce_seen_at.items(), key=lambda item: int(item[1] or 0), reverse=True)[:2048]
+        self._nonce_seen_at = {str(key): int(value) for key, value in keep_items}
+
+    def _assert_and_register_nonce(self, nonce: str, now_ms: int) -> None:
+        """校验 nonce 未重放并注册当前请求。"""
+        nonce_text = str(nonce or "").strip()
+        if not nonce_text:
+            raise ValueError("nonce is required")
+        with self._state_lock:
+            self._prune_nonce_cache(now_ms)
+            if nonce_text in self._nonce_seen_at:
+                raise ValueError("nonce replay detected")
+            self._nonce_seen_at[nonce_text] = int(now_ms)
+
+    def build_public_key_payload(
+        self,
+        active_account: dict | None = None,
+        saved_accounts: list | None = None,
+    ) -> dict:
+        """构建 public-key 接口的稳定返回结构。"""
+        self._ensure_key_for_public_read()
+        safe_saved_accounts = [dict(item or {}) for item in (saved_accounts or [])]
+        with self._state_lock:
+            key_id = str(self._key_id or "")
+            algorithm = str(self._algorithm)
+            public_key_pem = str(self._public_key_pem or "")
+            expires_at = int(self._expires_at_ms or 0)
+        return {
+            "ok": True,
+            "keyId": key_id,
+            "algorithm": algorithm,
+            "publicKeyPem": public_key_pem,
+            "expiresAt": expires_at,
+            "activeAccount": None if not active_account else dict(active_account or {}),
+            "savedAccounts": safe_saved_accounts,
+            "savedAccountCount": len(safe_saved_accounts),
+        }
+
+    def decrypt_login_envelope(self, payload: dict) -> dict:
+        """解密登录信封并返回业务载荷。"""
+        safe_payload = dict(payload or {})
+        key_id = str(safe_payload.get("keyId") or "").strip()
+        algorithm = str(safe_payload.get("algorithm") or "").strip().lower()
+        if algorithm != self._algorithm:
+            raise ValueError("algorithm not supported")
+        private_key = self._resolve_private_key_for_decrypt(key_id)
+
+        iv = _decode_b64_field(str(safe_payload.get("iv") or ""), "iv")
+        encrypted_key = _decode_b64_field(str(safe_payload.get("encryptedKey") or ""), "encryptedKey")
+        encrypted_payload = _decode_b64_field(str(safe_payload.get("encryptedPayload") or ""), "encryptedPayload")
+        try:
+            aes_key = private_key.decrypt(
+                encrypted_key,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None,
+                ),
+            )
+            plain_bytes = AESGCM(aes_key).decrypt(iv, encrypted_payload, None)
+            plain_payload = json.loads(plain_bytes.decode("utf-8"))
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise ValueError("decrypt envelope failed") from exc
+
+        login = str(plain_payload.get("login") or "").strip()
+        password = str(plain_payload.get("password") or "")
+        server = str(plain_payload.get("server") or "").strip()
+        remember = bool(plain_payload.get("remember", safe_payload.get("saveAccount")))
+        nonce = str(plain_payload.get("nonce") or "")
+        client_time = int(plain_payload.get("clientTime") or 0)
+        if not login:
+            raise ValueError("login is required")
+        if not password:
+            raise ValueError("password is required")
+        if not server:
+            raise ValueError("server is required")
+        now_ms = self._now_ms()
+        validate_request_time(client_time, now_ms, self._allowed_skew_ms)
+        self._assert_and_register_nonce(nonce, now_ms)
+        return {
+            "requestId": str(safe_payload.get("requestId") or ""),
+            "login": login,
+            "password": password,
+            "server": server,
+            "remember": remember,
+            "nonce": nonce,
+            "clientTime": client_time,
+        }
 
 
 _DEV_FALLBACK_KEY: bytes | None = None

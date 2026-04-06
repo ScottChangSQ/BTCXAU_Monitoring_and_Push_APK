@@ -2,7 +2,7 @@
 
 ## 当前正在做什么
 - 正在执行“App 远程驱动服务器切换 MT5 账号”的实现计划。
-- 已完成 Task 2 收口，当前准备进入 Task 3：服务端补公钥接口、登录信封解密与切换后强一致收口。
+- 已完成 Task 3 实现与复核，当前准备收口提交，并进入后续 App 侧任务。
 - 唯一网关源码目录固定为 `bridge/mt5_gateway`，唯一 Windows 部署脚本源码目录固定为 `deploy/tencent/windows`。
 - 唯一服务器上传目录固定为 `dist/windows_server_bundle`，由 `python scripts/build_windows_server_bundle.py` 生成，并直接对应服务器目录 `C:\mt5_bundle\windows_server_bundle`。
 
@@ -20,6 +20,9 @@
 - 已完成 Task 2 收口：补齐了 `v2_session_store.py`、`v2_session_manager.py`、`server_v2.py` 的最小会话闭环，并完成两轮异常路径修复。
 - Task 2 当前已覆盖的关键边界包括：运行时凭据优先于 `.env`、远程 logout 不回退默认账号、登录写盘失败回滚、logout 文件态/运行态双向一致性保护、回滚时主动触发缓存失效。
 - 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts -v`，结果为 `Ran 18 tests ... OK`。
+- 已完成 Task 3 收口候选版本：补上了 `/v2/session/public-key`、`/v2/session/login`、`/v2/session/switch`、登录信封解密、已保存账号切换、切换后缓存清理/强制刷新、管理面板 session 摘要透传。
+- Task 3 额外补齐的关键边界包括：错误 `keyId` 失败、过期时间戳失败、重复 `nonce` 拒绝、并发同 `nonce` 只允许一个成功、切换失败恢复旧账号或安全收口到登出态、切换提交阶段失败时回滚旧账号。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 44 tests ... OK`。
 
 ## 近期关键决定和原因
 - 不再把 `deploy/tencent/windows_server_bundle` 作为仓库里的长期维护目录；原因是它和真实源码长期双份并存，已经多次导致修改位置漂移、部署文件不一致、服务器现场排查困难。
@@ -30,3 +33,5 @@
 - `caddy.exe` 位置由部署脚本自动兼容历史目录；原因是服务器现场已有 `C:\mt5_bundle\caddy.exe` 这种旧布局，迁移成本高，部署脚本应直接消化这种差异。
 - 账号远程切换设计保持“单用户、多账号、任意时刻一个激活账号”；原因是它最贴合现有网关与交易架构，能用最小正确改动闭合安全、状态和同步链路。
 - Task 2 先收口再进入 Task 3；原因是登录/退出异常路径如果不先闭合，后面叠加公钥登录包和 saved-account switch 会把状态一致性问题继续放大。
+- Task 3 采用 `cryptography` 实现 `rsa-oaep+aes-gcm`；原因是 Python 标准库无法安全完整提供设计要求的公钥解密链路。
+- Task 3 的 `nonce` 去重目前只做进程内内存态；原因是当前阶段只要求单机单进程最小安全闭环，多实例共享去重留到后续阶段再做集中存储。

@@ -20,6 +20,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 import websockets
 import v2_account
 import v2_market
+import v2_session_crypto
 import v2_session_manager
 import v2_session_store
 import v2_trade
@@ -1556,6 +1557,15 @@ def _clear_session_related_runtime_state() -> None:
         trade_request_store.clear()
 
 
+def _build_session_summary() -> Dict[str, Any]:
+    """抽取会话摘要，供健康和管理面板统一展示。"""
+    status = session_manager.build_status_payload()
+    return {
+        "activeAccount": status.get("activeAccount"),
+        "savedAccountCount": int(status.get("savedAccountCount") or 0),
+    }
+
+
 def _on_session_changed(action: str, profile: Optional[Dict[str, Any]]) -> None:
     """会话变化回调，统一清理缓存并维护运行态。"""
     _clear_session_related_runtime_state()
@@ -1589,6 +1599,18 @@ class _SessionGatewayAdapter:
             "server": server_value,
         }
 
+    def switch_mt5_account(self, login: str, password: str, server: str) -> Dict[str, Any]:
+        """按已保存账号执行 MT5 切换。"""
+        return self.login_mt5(login=login, password=password, server=server)
+
+    def clear_account_caches(self) -> None:
+        """清理会话切换后的运行时缓存。"""
+        _clear_session_related_runtime_state()
+
+    def force_account_resync(self) -> None:
+        """触发强一致刷新（通过重置同步状态强制下游全量拉取）。"""
+        _clear_session_related_runtime_state()
+
     def logout_mt5(self) -> None:
         """执行 MT5 退出。"""
         _shutdown_mt5()
@@ -1606,6 +1628,7 @@ def _build_session_manager() -> v2_session_manager.AccountSessionManager:
 
 
 session_manager = _build_session_manager()
+session_envelope_crypto = v2_session_crypto.LoginEnvelopeCrypto(now_ms_provider=_now_ms)
 
 
 def _deal_profit(deal) -> float:
@@ -4225,6 +4248,7 @@ def health():
             "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
             "healthCached": False,
             "healthCacheAgeMs": 0,
+            "session": _build_session_summary(),
         }
         if mt5 is None:
             return info
@@ -4289,6 +4313,7 @@ def source_status():
         "snapshotDeltaEnabled": SNAPSHOT_DELTA_ENABLED,
         "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
         "healthCacheMs": HEALTH_CACHE_MS,
+        "session": _build_session_summary(),
     }
 
 
@@ -4296,6 +4321,49 @@ def source_status():
 def v2_session_status():
     """返回当前会话状态。"""
     return session_manager.build_status_payload()
+
+
+@app.get("/v2/session/public-key")
+def v2_session_public_key():
+    """返回登录信封公钥和当前会话摘要。"""
+    status = session_manager.build_status_payload()
+    return session_envelope_crypto.build_public_key_payload(
+        active_account=status.get("activeAccount"),
+        saved_accounts=status.get("savedAccounts"),
+    )
+
+
+@app.post("/v2/session/login")
+def v2_session_login(payload: Dict[str, Any]):
+    """接收加密登录信封并登录新账号。"""
+    safe_payload = dict(payload or {})
+    try:
+        plain = session_envelope_crypto.decrypt_login_envelope(safe_payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    request_id = str(plain.get("requestId") or safe_payload.get("requestId") or "")
+    remember = bool(safe_payload.get("saveAccount", plain.get("remember")))
+    return session_manager.login_new_account(
+        login=str(plain.get("login") or ""),
+        password=str(plain.get("password") or ""),
+        server=str(plain.get("server") or ""),
+        remember=remember,
+        request_id=request_id,
+    )
+
+
+@app.post("/v2/session/switch")
+def v2_session_switch(payload: Dict[str, Any]):
+    """切换到已保存账号。"""
+    safe_payload = dict(payload or {})
+    request_id = str(safe_payload.get("requestId") or "")
+    profile_id = str(safe_payload.get("accountProfileId") or safe_payload.get("profileId") or "").strip()
+    if not profile_id:
+        raise HTTPException(status_code=400, detail="accountProfileId is required")
+    try:
+        return session_manager.switch_saved_account(profile_id, request_id=request_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/v2/session/logout")

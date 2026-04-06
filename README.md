@@ -13,6 +13,7 @@
 - 新架构切换中：图表页本地缓存已收口为 `ChartHistoryRepository + 内存窗口`，不再保留旧文件 K 线缓存，也不再把图表序列混写进 `V2SnapshotStore`
 - 新架构切换中：K 线链路已继续收口为“闭合历史快照 + 最新 1 条 patch”；闭合历史才会持久化到 Room，未收盘最新 K 线只留在内存与界面，且分钟实时 patch 只允许覆盖 `1d` 及以下周期
 - 服务端已新增统一 Web 服务器控制台，可在服务器本机 `localhost` 或公网访问，用来查看总览、组件控制、配置中心、诊断中心、日志与历史，并控制网关 / MT5 / Caddy / Nginx
+- 服务端已新增远程 MT5 账号会话最小闭环：支持读取公钥、加密登录新账号、切换已保存账号、退出当前账号，并把当前激活账号摘要透传到管理面板
 - 主监控页与图表页的 Binance 行情统一走韩国服务器转发，手机不再直接访问 Binance 官方地址
 - MT5 账户支持轻量摘要、轻实时持仓、挂单增量、交易增量和权益曲线追加
 - 悬浮窗支持显示连接状态、合并盈亏、分产品盈亏、最新价格、成交量、成交额
@@ -30,11 +31,13 @@
 - 本地存储：Room + SharedPreferences
 - 网络：OkHttp + WebSocket
 - 图表与账户：自定义 View + `GatewayV2Client` / `GatewayV2StreamClient` + MT5 网关接口 + 服务端净值曲线重放
+- 网关会话安全：Python `cryptography` + Windows DPAPI，本机保存密文账号档案，远程登录走 `rsa-oaep+aes-gcm`
 - 构建：Gradle Kotlin DSL，`compileSdk / targetSdk 34`，`minSdk 24`
 
 ## 已完成功能列表
 
 - 服务端已新增 `v2/market/snapshot`、`v2/market/candles`、`v2/account/snapshot`、`v2/account/history`、`v2/sync/delta`、`v2/stream` 的最小可用链路
+- 服务端已新增 `v2/session/public-key`、`v2/session/login`、`v2/session/switch`、`v2/session/logout`、`v2/session/status` 的最小可用链路
 - APP 已新增 `GatewayV2Client`、`V2SnapshotStore` 和 `v2` 载荷模型，图表页已切到服务端 `candles + latestPatch` 口径
 - 图表页左滑历史分页和增量补尾也已切到 `v2/market/candles?startTime/endTime`，不再走旧 `BinanceApiClient` 图表历史接口
 - 服务端 `v2/market/candles` 已开始把最后一根未闭合 REST K 线拆成 `latestPatch`，不再把它伪装成闭合历史
@@ -115,6 +118,7 @@ MT5 网关 Python 侧常用验证：
 ```bash
 .\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response -v
 .\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_admin_panel -v
+.\\.venv\\Scripts\\python.exe -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v
 .\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_gateway_bundle_parity -v
 .\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py
 .\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/admin_panel.py
@@ -186,9 +190,15 @@ MT5 网关 Python 侧常用验证：
 - [app/src/main/java/com/binance/monitor/data/local/db/](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db)
   Room 数据库层。
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
-  MT5 网关服务。
+  MT5 网关服务，同时承载行情、账户、同步流和远程账号会话接口。
+- [bridge/mt5_gateway/v2_session_crypto.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_crypto.py)
+  远程账号会话加密工具，负责公钥生成、登录信封解密、时间戳校验和 nonce 去重。
+- [bridge/mt5_gateway/v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py)
+  远程账号会话管理器，负责登录、切换、退出、异常回滚和强一致收口。
+- [bridge/mt5_gateway/v2_session_store.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_store.py)
+  远程账号会话存储层，负责 `active_session.json` 与已保存账号密文档案读写。
 - [bridge/mt5_gateway/admin_panel.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py)
-  轻量 Web 管理面板服务，负责状态聚合、日志、`.env` 编辑、异常规则代理、缓存清理和本机组件管理。
+  轻量 Web 管理面板服务，负责状态聚合、日志、`.env` 编辑、异常规则代理、缓存清理、本机组件管理和当前账号会话摘要展示。
 
 ## 搜索记录（2026-03-29）
 

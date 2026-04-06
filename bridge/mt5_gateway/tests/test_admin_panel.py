@@ -161,6 +161,21 @@ class AdminPanelTests(unittest.TestCase):
         self.assertIn("timed out", state["gatewayHealth"]["warning"])
         self.assertIn("180", state["gatewaySource"]["mt5TimeOffsetWarning"])
 
+    def test_decorate_gateway_payload_should_surface_session_summary_fields(self):
+        payload = admin_panel.decorate_gateway_payload(
+            {
+                "ok": True,
+                "session": {
+                    "activeAccount": {"profileId": "acct_1", "loginMasked": "****5678"},
+                    "savedAccountCount": 2,
+                },
+            }
+        )
+
+        self.assertIn("session", payload)
+        self.assertEqual("acct_1", payload["session"]["activeAccount"]["profileId"])
+        self.assertEqual(2, payload["session"]["savedAccountCount"])
+
     def test_start_admin_panel_script_should_skip_noisy_pip_install_when_requirements_unchanged(self):
         script_path = ROOT / "start_admin_panel.ps1"
         content = script_path.read_text(encoding="utf-8")

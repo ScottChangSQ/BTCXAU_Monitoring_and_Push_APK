@@ -560,6 +560,11 @@ def inspect_component(target: str, spec: Dict[str, Any], gateway_url: str) -> Di
 
 def decorate_gateway_payload(payload: Dict[str, Any], fallback_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     safe_payload = dict(payload or {})
+    session_state = safe_payload.get("session") or {}
+    safe_payload["session"] = {
+        "activeAccount": dict(session_state.get("activeAccount") or {}),
+        "savedAccountCount": int(session_state.get("savedAccountCount") or 0),
+    }
     offset_minutes = int(safe_payload.get("mt5TimeOffsetMinutes", 0) or 0)
     if offset_minutes != 0:
         safe_payload["mt5TimeOffsetWarning"] = (

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from bridge.mt5_gateway import v2_session_crypto
 from bridge.mt5_gateway import v2_session_manager
 from bridge.mt5_gateway import v2_session_store
 
@@ -207,6 +209,156 @@ class V2SessionManagerTests(unittest.TestCase):
         fake_store.clear_active_session.assert_called_once_with()
         fake_store.save_active_session.assert_called_once_with(active_profile)
         fake_hook.assert_not_called()
+
+    def test_switch_saved_account_should_clear_gateway_caches_before_refresh(self):
+        """切换已保存账号成功后应先清缓存，再触发强制刷新。"""
+        fake_store = mock.Mock()
+        fake_gateway = mock.Mock()
+        profile = {
+            "profileId": "acct_87654321_icmarketssc-mt5-6",
+            "login": "87654321",
+            "loginMasked": "****4321",
+            "server": "ICMarketsSC-MT5-6",
+            "displayName": "IC 4321",
+        }
+        cipher = v2_session_crypto.protect_secret_for_machine(b"secret")
+        fake_store.load_profile.return_value = {
+            "profile": profile,
+            "encryptedPassword": base64.b64encode(cipher).decode("ascii"),
+        }
+        fake_gateway.switch_mt5_account.return_value = {
+            "login": "87654321",
+            "server": "ICMarketsSC-MT5-6",
+        }
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        receipt = manager.switch_saved_account("acct_87654321_icmarketssc-mt5-6", request_id="req-switch-1")
+
+        self.assertEqual(True, receipt["ok"])
+        self.assertEqual("activated", receipt["state"])
+        fake_gateway.switch_mt5_account.assert_called_once_with(
+            login="87654321",
+            password="secret",
+            server="ICMarketsSC-MT5-6",
+        )
+        fake_gateway.clear_account_caches.assert_called_once_with()
+        fake_gateway.force_account_resync.assert_called_once_with()
+
+    def test_switch_saved_account_should_restore_previous_account_when_target_switch_failed(self):
+        """切换目标账号失败时，应尝试恢复旧账号运行态。"""
+        fake_store = mock.Mock()
+        fake_gateway = mock.Mock()
+        old_profile = {
+            "profileId": "acct_old",
+            "login": "12345678",
+            "loginMasked": "****5678",
+            "server": "ICMarketsSC-MT5-6",
+            "displayName": "IC old",
+        }
+        target_profile = {
+            "profileId": "acct_new",
+            "login": "87654321",
+            "loginMasked": "****4321",
+            "server": "Pepperstone-MT5-Live01",
+            "displayName": "Pepper new",
+        }
+        old_cipher = v2_session_crypto.protect_secret_for_machine(b"old-secret")
+        new_cipher = v2_session_crypto.protect_secret_for_machine(b"new-secret")
+        profile_records = {
+            "acct_old": {"profile": old_profile, "encryptedPassword": base64.b64encode(old_cipher).decode("ascii")},
+            "acct_new": {"profile": target_profile, "encryptedPassword": base64.b64encode(new_cipher).decode("ascii")},
+        }
+        fake_store.load_profile.side_effect = lambda profile_id: profile_records.get(profile_id)
+        fake_store.load_active_session.return_value = old_profile
+        fake_gateway.switch_mt5_account.side_effect = [
+            RuntimeError("target login failed"),
+            {"login": "12345678", "server": "ICMarketsSC-MT5-6"},
+        ]
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        with self.assertRaises(RuntimeError):
+            manager.switch_saved_account("acct_new", request_id="req-switch-fail-1")
+
+        self.assertEqual(2, fake_gateway.switch_mt5_account.call_count)
+        restore_call = fake_gateway.switch_mt5_account.call_args_list[1]
+        self.assertEqual("12345678", restore_call.kwargs["login"])
+        self.assertEqual("old-secret", restore_call.kwargs["password"])
+        self.assertEqual("ICMarketsSC-MT5-6", restore_call.kwargs["server"])
+        fake_store.clear_active_session.assert_not_called()
+
+    def test_switch_saved_account_should_clear_active_session_when_restore_is_unavailable(self):
+        """切换失败且无法恢复旧账号时，应清空会话避免伪旧状态。"""
+        fake_store = mock.Mock()
+        fake_gateway = mock.Mock()
+        old_profile = {
+            "profileId": "acct_old_tmp",
+            "login": "12345678",
+            "loginMasked": "****5678",
+            "server": "ICMarketsSC-MT5-6",
+            "displayName": "IC old",
+        }
+        target_profile = {
+            "profileId": "acct_new",
+            "login": "87654321",
+            "loginMasked": "****4321",
+            "server": "Pepperstone-MT5-Live01",
+            "displayName": "Pepper new",
+        }
+        new_cipher = v2_session_crypto.protect_secret_for_machine(b"new-secret")
+        fake_store.load_profile.side_effect = lambda profile_id: (
+            {"profile": target_profile, "encryptedPassword": base64.b64encode(new_cipher).decode("ascii")}
+            if profile_id == "acct_new"
+            else None
+        )
+        fake_store.load_active_session.return_value = old_profile
+        fake_gateway.switch_mt5_account.side_effect = RuntimeError("target login failed")
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        with self.assertRaises(RuntimeError):
+            manager.switch_saved_account("acct_new", request_id="req-switch-fail-2")
+
+        fake_store.clear_active_session.assert_called_once_with()
+        fake_gateway.logout_mt5.assert_called_once_with()
+
+    def test_switch_saved_account_should_rollback_when_commit_after_switch_failed(self):
+        """切换成功后若持久化失败，应回滚到旧账号。"""
+        fake_store = mock.Mock()
+        fake_gateway = mock.Mock()
+        old_profile = {
+            "profileId": "acct_old",
+            "login": "12345678",
+            "loginMasked": "****5678",
+            "server": "ICMarketsSC-MT5-6",
+            "displayName": "IC old",
+        }
+        target_profile = {
+            "profileId": "acct_new",
+            "login": "87654321",
+            "loginMasked": "****4321",
+            "server": "Pepperstone-MT5-Live01",
+            "displayName": "Pepper new",
+        }
+        old_cipher = v2_session_crypto.protect_secret_for_machine(b"old-secret")
+        new_cipher = v2_session_crypto.protect_secret_for_machine(b"new-secret")
+        profile_records = {
+            "acct_old": {"profile": old_profile, "encryptedPassword": base64.b64encode(old_cipher).decode("ascii")},
+            "acct_new": {"profile": target_profile, "encryptedPassword": base64.b64encode(new_cipher).decode("ascii")},
+        }
+        fake_store.load_profile.side_effect = lambda profile_id: profile_records.get(profile_id)
+        fake_store.load_active_session.return_value = old_profile
+        fake_store.save_active_session.side_effect = [RuntimeError("disk full"), None]
+        fake_gateway.switch_mt5_account.side_effect = [
+            {"login": "87654321", "server": "Pepperstone-MT5-Live01"},
+            {"login": "12345678", "server": "ICMarketsSC-MT5-6"},
+        ]
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        with self.assertRaises(RuntimeError):
+            manager.switch_saved_account("acct_new", request_id="req-switch-fail-3")
+
+        self.assertEqual(2, fake_gateway.switch_mt5_account.call_count)
+        self.assertEqual(2, fake_store.save_active_session.call_count)
+        fake_gateway.logout_mt5.assert_not_called()
 
 
 class V2SessionStoreTests(unittest.TestCase):
