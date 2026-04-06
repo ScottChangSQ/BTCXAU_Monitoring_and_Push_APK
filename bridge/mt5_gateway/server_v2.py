@@ -1,3 +1,4 @@
+# MT5 网关主入口，统一承载行情、交易与会话接口。
 import hashlib
 import json
 import math
@@ -19,6 +20,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 import websockets
 import v2_account
 import v2_market
+import v2_session_manager
+import v2_session_store
 import v2_trade
 import v2_trade_models
 
@@ -92,6 +95,9 @@ ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "60")))
 ABNORMAL_FETCH_CACHE_MS = max(1000, int(os.getenv("ABNORMAL_FETCH_CACHE_MS", "4000")))
 ABNORMAL_DELTA_ENABLED = os.getenv("ABNORMAL_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 ABNORMAL_SYMBOLS = ("BTCUSDT", "XAUUSD")
+SESSION_DATA_DIR = os.getenv("MT5_SESSION_DATA_DIR", "").strip()
+if not SESSION_DATA_DIR:
+    SESSION_DATA_DIR = str(Path(__file__).resolve().parent / "data" / "session")
 
 app = FastAPI(title="MT5 Bridge Gateway", version="1.1.0")
 app.add_middleware(GZipMiddleware, minimum_size=512)
@@ -116,6 +122,13 @@ abnormal_kline_cache: Dict[str, Dict[str, Any]] = {}
 abnormal_sync_state: Dict[str, Any] = {}
 trade_request_lock = Lock()
 trade_request_store: Dict[str, Dict[str, Any]] = {}
+session_store = v2_session_store.FileSessionStore(session_root=Path(SESSION_DATA_DIR))
+session_runtime_credentials: Dict[str, Any] = {
+    "mode": "env_default",
+    "login": 0,
+    "password": "",
+    "server": "",
+}
 
 
 def _now_ms() -> int:
@@ -1246,8 +1259,89 @@ def _mt5_history_window(range_key: str) -> Tuple[datetime, datetime]:
     return from_time, to_time
 
 
+def _parse_login_value(raw_login: Any) -> int:
+    """把账号值转换成 int，失败时返回 0。"""
+    try:
+        return int(str(raw_login or "").strip())
+    except Exception:
+        return 0
+
+
+def _set_runtime_session_credentials(login: Any, password: Any, server: Any) -> None:
+    """更新当前会话的运行时凭据（仅内存）。"""
+    with state_lock:
+        session_runtime_credentials.clear()
+        session_runtime_credentials.update(
+            {
+                "mode": "remote_active",
+                "login": _parse_login_value(login),
+                "password": str(password or ""),
+                "server": str(server or "").strip(),
+            }
+        )
+
+
+def _clear_runtime_session_credentials() -> None:
+    """清理当前会话的运行时凭据（仅内存）。"""
+    with state_lock:
+        session_runtime_credentials.clear()
+        session_runtime_credentials.update(
+            {
+                "mode": "remote_logged_out",
+                "login": 0,
+                "password": "",
+                "server": "",
+            }
+        )
+
+
+def _runtime_session_credentials_snapshot() -> Dict[str, Any]:
+    """读取运行时凭据快照。"""
+    with state_lock:
+        return dict(session_runtime_credentials)
+
+
+def _current_mt5_credentials() -> Dict[str, Any]:
+    """读取当前 MT5 凭据，统一处理 env 与远程会话模式。"""
+    env_login = _parse_login_value(LOGIN)
+    env_password = str(PASSWORD or "")
+    env_server = str(SERVER or "").strip()
+    runtime = _runtime_session_credentials_snapshot()
+    mode = str(runtime.get("mode") or "env_default")
+    runtime_login = _parse_login_value(runtime.get("login"))
+    runtime_password = str(runtime.get("password") or "")
+    runtime_server = str(runtime.get("server") or "").strip()
+
+    if mode == "remote_active":
+        return {
+            "login": runtime_login,
+            "password": runtime_password,
+            "server": runtime_server,
+            "mode": "remote_active",
+            "source": "remote_active",
+        }
+
+    if mode == "remote_logged_out":
+        return {
+            "login": 0,
+            "password": "",
+            "server": "",
+            "mode": "remote_logged_out",
+            "source": "remote_logged_out",
+        }
+
+    return {
+        "login": env_login,
+        "password": env_password,
+        "server": env_server,
+        "mode": "env_default",
+        "source": "env_default",
+    }
+
+
 def _is_mt5_configured() -> bool:
-    return LOGIN > 0 and bool(PASSWORD) and bool(SERVER)
+    credentials = _current_mt5_credentials()
+    return int(credentials.get("login") or 0) > 0 and bool(credentials.get("password")) and bool(credentials.get("server"))
 
 
 def _normalize_path(raw: str) -> str:
@@ -1316,9 +1410,15 @@ MT5_TERMINAL_CANDIDATES = _discover_terminal_candidates()
 
 
 def _server_candidates() -> List[str]:
+    credentials = _current_mt5_credentials()
+    mode = str(credentials.get("mode") or "env_default")
     values: List[str] = []
     seen = set()
-    for raw in [SERVER] + SERVER_ALIASES_RAW.split(","):
+    primary_server = str(credentials.get("server") or "").strip()
+    base_values = [primary_server] + SERVER_ALIASES_RAW.split(",")
+    if mode == "env_default":
+        base_values = [primary_server, SERVER] + SERVER_ALIASES_RAW.split(",")
+    for raw in base_values:
         server = (raw or "").strip()
         if not server:
             continue
@@ -1363,9 +1463,14 @@ def _mt5_initialize(
 
 
 def _mt5_login() -> Tuple[bool, str]:
+    credentials = _current_mt5_credentials()
+    login_value = int(credentials.get("login") or 0)
+    password_value = str(credentials.get("password") or "")
     account = mt5.account_info()
     server_candidates = _server_candidates()
-    if account is not None and int(getattr(account, "login", 0)) == LOGIN:
+    if login_value <= 0 or not password_value:
+        return False, "resolved credentials missing login/password"
+    if account is not None and int(getattr(account, "login", 0)) == login_value:
         account_server = str(getattr(account, "server", "")).strip().lower()
         if not account_server or account_server in [candidate.lower() for candidate in server_candidates]:
             return True, "already-logged-in"
@@ -1373,9 +1478,9 @@ def _mt5_login() -> Tuple[bool, str]:
     errors = []
     for server_name in server_candidates:
         try:
-            ok = bool(mt5.login(LOGIN, password=PASSWORD, server=server_name, timeout=MT5_INIT_TIMEOUT_MS))
+            ok = bool(mt5.login(login_value, password=password_value, server=server_name, timeout=MT5_INIT_TIMEOUT_MS))
         except TypeError:
-            ok = bool(mt5.login(LOGIN, password=PASSWORD, server=server_name))
+            ok = bool(mt5.login(login_value, password=password_value, server=server_name))
         except Exception as exc:
             errors.append(f"{server_name}: {exc}")
             continue
@@ -1387,6 +1492,9 @@ def _mt5_login() -> Tuple[bool, str]:
 
 def _ensure_mt5() -> None:
     global mt5_last_connected_path
+    credentials = _current_mt5_credentials()
+    resolved_login = int(credentials.get("login") or 0)
+    resolved_password = str(credentials.get("password") or "")
     if mt5 is None:
         raise RuntimeError("MetaTrader5 python package is not installed in gateway environment.")
     if not _is_mt5_configured():
@@ -1415,8 +1523,8 @@ def _ensure_mt5() -> None:
             _shutdown_mt5()
             initialized, init_message = _mt5_initialize(
                 path_value,
-                login=LOGIN,
-                password=PASSWORD,
+                login=resolved_login,
+                password=resolved_password,
                 server_name=server_name,
             )
             if initialized:
@@ -1428,13 +1536,76 @@ def _ensure_mt5() -> None:
     raise RuntimeError(
         "MT5 login failed. "
         + " | ".join(errors[-6:])
-        + f" | configured_server={SERVER} | discovered_terminal_candidates={discovered_hint}"
+        + f" | configured_server={credentials.get('server')} | credential_source={credentials.get('source')} | discovered_terminal_candidates={discovered_hint}"
     )
 
 
 def _shutdown_mt5() -> None:
     if mt5 is not None:
         mt5.shutdown()
+
+
+def _clear_session_related_runtime_state() -> None:
+    """清理会话切换后最相关的运行时缓存。"""
+    with snapshot_cache_lock:
+        snapshot_build_cache.clear()
+        snapshot_sync_cache.clear()
+        v2_sync_state.clear()
+        health_status_cache.clear()
+    with trade_request_lock:
+        trade_request_store.clear()
+
+
+def _on_session_changed(action: str, profile: Optional[Dict[str, Any]]) -> None:
+    """会话变化回调，统一清理缓存并维护运行态。"""
+    _clear_session_related_runtime_state()
+    if str(action or "") == "logout":
+        _clear_runtime_session_credentials()
+
+
+class _SessionGatewayAdapter:
+    """会话管理器使用的最小 MT5 网关适配器。"""
+
+    def login_mt5(self, login: str, password: str, server: str) -> Dict[str, Any]:
+        """按给定账号参数执行 MT5 登录。"""
+        if mt5 is None:
+            raise RuntimeError("MetaTrader5 package is unavailable")
+        login_value = int(str(login or "").strip())
+        password_value = str(password or "")
+        server_value = str(server or "").strip()
+        _shutdown_mt5()
+        initialized, message = _mt5_initialize(PATH)
+        if not initialized:
+            raise RuntimeError(f"MT5 initialize failed: {message}")
+        try:
+            logged_in = bool(mt5.login(login_value, password=password_value, server=server_value, timeout=MT5_INIT_TIMEOUT_MS))
+        except TypeError:
+            logged_in = bool(mt5.login(login_value, password=password_value, server=server_value))
+        if not logged_in:
+            raise RuntimeError(f"MT5 login failed: {mt5.last_error()}")
+        _set_runtime_session_credentials(login_value, password_value, server_value)
+        return {
+            "login": str(login_value),
+            "server": server_value,
+        }
+
+    def logout_mt5(self) -> None:
+        """执行 MT5 退出。"""
+        _shutdown_mt5()
+        _clear_runtime_session_credentials()
+
+
+def _build_session_manager() -> v2_session_manager.AccountSessionManager:
+    """构建全局会话管理器实例。"""
+    gateway = _SessionGatewayAdapter()
+    return v2_session_manager.AccountSessionManager(
+        store=session_store,
+        gateway=gateway,
+        on_session_changed=_on_session_changed,
+    )
+
+
+session_manager = _build_session_manager()
 
 
 def _deal_profit(deal) -> float:
@@ -4119,6 +4290,19 @@ def source_status():
         "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
         "healthCacheMs": HEALTH_CACHE_MS,
     }
+
+
+@app.get("/v2/session/status")
+def v2_session_status():
+    """返回当前会话状态。"""
+    return session_manager.build_status_payload()
+
+
+@app.post("/v2/session/logout")
+def v2_session_logout(payload: Dict[str, Any]):
+    """退出当前激活账号。"""
+    request_id = str((payload or {}).get("requestId") or "")
+    return session_manager.logout_current_session(request_id=request_id)
 
 
 @app.get("/v2/market/snapshot")
