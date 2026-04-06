@@ -1,6 +1,18 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 正在对 `codex-live-trading-phase1` 的 Task 3 交易闭环代码做质量复核，范围只看 `TradeCommandStateMachine`、`TradeExecutionCoordinator`、`TradeConfirmDialogController` 和对应交易单测，不改业务代码。
+- 已完成的最新复核结论是：当前主链上的异常抛出已基本收口，但仍有一个高风险边界是“`ACCEPTED` 回执缺少 `order/deal` 标识时，会退回到同品种结构变化判定，可能把无关变化误报成 `SETTLED`”；另一个中风险边界是“`FAILED + idempotent + TRADE_DUPLICATE_SUBMISSION` 仍会被当成 `ACCEPTED`”，且单测没有锁这条契约。
+- 当前停点：代码复核已完成，下一步若继续推进，应优先补“accepted 回执无引用 ID 不能 settled”和“failed duplicate 不应直接 accepted（除非后端契约明确）”两组回归测试，再决定是否修实现。
+- 本轮关键决定：这次只做代码质量复核，不顺手修改实现；原因是用户明确要求只报问题。
+- 正在对 Task 3 当前修复做独立代码审查，范围只看 `TradeExecutionCoordinator`、`TradeCommandStateMachine` 及对应单测，不改业务代码。
+- 已完成的最新审查结论是：`check()/submit()/fetchForUi()` 直接抛异常时，当前实现不会把状态收口成 `RESULT_UNCONFIRMED` 或 `REJECTED`；其中提交异常会把状态机卡在 `SUBMITTING`，刷新异常会在订单已 `ACCEPTED` 后直接把异常抛给上层，UI 拿不到明确语义。
+- 当前停点：审查已完成，下一步若继续推进，应优先补“check/submit/refresh 直接抛异常”的回归测试，以及“prepare 已 REJECTED/TIMEOUT 后再次误触 submit 不能被压成 RESULT_UNCONFIRMED”的测试，再决定是否修实现。
+- 本轮关键决定：这次只做独立审查，不顺手修代码；原因是用户明确要求只报真实问题。
+- 正在复核 Task 3 最新修复的交易状态判定质量，范围只看 `TradeExecutionCoordinator`、`TradeCommandStateMachine` 及对应单测，不改业务代码。
+- 已完成的复核结论是：当前实现仍有两类主要残余风险，一是检查阶段把非空但未确认的结果直接压成 `REJECTED`，二是结算收敛判定对列表顺序和展示字符串过敏，存在把“无语义变化的刷新”误判成 `SETTLED` 的可能；`baseline` 为空时一律不 settled 属于保守设计，方向可接受，但会放大 `RESULT_UNCONFIRMED`。
+- 当前停点：代码复核已完成，下一步若继续推进，应优先补“检查阶段 TIMEOUT/UNKNOWN 对应未确认”和“刷新重排/格式变化不应 settled”两组回归测试，再决定是否修实现。
+- 本轮关键决定：这次只做质量复核，不顺手改实现；原因是用户明确要求先看误判风险、边界遗漏和测试缺口。
 - 正在把“实盘终端升级”从口头阶段拆成项目内可执行文档。本轮已新增总实施计划 `docs/superpowers/plans/2026-04-06-live-trading-terminal-rollout.md`，把这件事固定拆成四阶段：第一阶段最小交易闭环，第二阶段可用交易终端，第三阶段批量与复杂交易，第四阶段专业级体验。
 - 已完成的细化结论是：第一阶段只做服务端交易网关、APP 交易领域模型与状态机、统一确认、交易后强一致刷新、最小安全审计和最小测试门槛；图表直接交易、批量交易、DOM 和高级风控全部后置。
 - 当前停点：方案文档已经落库，下一步如果继续推进，应该只先开第一阶段，不要并行开启图表交易、批量交易或 DOM。
