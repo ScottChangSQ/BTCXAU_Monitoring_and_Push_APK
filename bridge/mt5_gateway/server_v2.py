@@ -19,6 +19,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 import websockets
 import v2_account
 import v2_market
+import v2_trade
+import v2_trade_models
 
 try:
     import MetaTrader5 as mt5
@@ -76,6 +78,7 @@ SNAPSHOT_SYNC_CACHE_MAX_ENTRIES = max(1, int(os.getenv("SNAPSHOT_SYNC_CACHE_MAX_
 SNAPSHOT_RANGE_ALL_DAYS = max(30, int(os.getenv("SNAPSHOT_RANGE_ALL_DAYS", "730")))
 MT5_HISTORY_LOOKAHEAD_HOURS = max(0, int(os.getenv("MT5_HISTORY_LOOKAHEAD_HOURS", "24")))
 TRADE_HISTORY_TARGET_ITEMS = max(200, int(os.getenv("TRADE_HISTORY_TARGET_ITEMS", "1000")))
+TRADE_REQUEST_STORE_MAX_ENTRIES = max(100, int(os.getenv("TRADE_REQUEST_STORE_MAX_ENTRIES", "2000")))
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
 HEALTH_CACHE_MS = max(1000, int(os.getenv("HEALTH_CACHE_MS", "5000")))
@@ -111,6 +114,8 @@ abnormal_last_close_time_by_symbol: Dict[str, int] = {}
 abnormal_last_notify_at: Dict[str, int] = {}
 abnormal_kline_cache: Dict[str, Dict[str, Any]] = {}
 abnormal_sync_state: Dict[str, Any] = {}
+trade_request_lock = Lock()
+trade_request_store: Dict[str, Dict[str, Any]] = {}
 
 
 def _now_ms() -> int:
@@ -125,6 +130,124 @@ def _build_sync_token(server_time_ms: int, revision: str) -> str:
 
 def _clone_json_value(value: Any) -> Any:
     return json.loads(json.dumps(value, ensure_ascii=False))
+
+
+# 生成交易命令摘要，用于 requestId 幂等的内容一致性校验。
+def _trade_command_digest(command: Dict[str, Any]) -> str:
+    payload = json.dumps(command or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+# 识别账户模式，避免 netting/hedging 下平仓语义混乱。
+def _detect_account_mode() -> str:
+    if mt5 is None:
+        return "unknown"
+    try:
+        account = mt5.account_info()
+    except Exception:
+        account = None
+    return v2_trade.detect_account_mode(mt5, account)
+
+
+# 统一读取交易请求里对应的持仓，便于平仓和改单动作复用。
+def _lookup_trade_position(params: Dict[str, Any], account_mode: str) -> Optional[Dict[str, Any]]:
+    if account_mode not in {"netting", "hedging"}:
+        return None
+    if mt5 is None:
+        return None
+    try:
+        positions = mt5.positions_get() or []
+    except Exception:
+        return None
+    target_ticket = int(float(params.get("positionTicket") or params.get("positionId") or 0))
+    target_symbol = str(params.get("symbol") or "").strip().upper()
+    if target_ticket > 0:
+        for position in positions:
+            ticket = int(getattr(position, "ticket", 0) or 0)
+            identifier = int(getattr(position, "identifier", 0) or 0)
+            if ticket == target_ticket or identifier == target_ticket:
+                side = "buy" if int(getattr(position, "type", 0) or 0) == 0 else "sell"
+                return {"ticket": ticket, "positionTicket": ticket, "symbol": str(getattr(position, "symbol", "") or ""), "side": side}
+        if account_mode == "hedging":
+            # hedging 下显式 ticket 未命中时，禁止按 symbol 回退到其他仓位。
+            return None
+    if target_symbol:
+        matches: List[Dict[str, Any]] = []
+        for position in positions:
+            symbol = str(getattr(position, "symbol", "") or "").upper()
+            if symbol != target_symbol:
+                continue
+            side = "buy" if int(getattr(position, "type", 0) or 0) == 0 else "sell"
+            ticket = int(getattr(position, "ticket", 0) or 0)
+            matches.append({"ticket": ticket, "positionTicket": ticket, "symbol": symbol, "side": side})
+        if account_mode == "netting" and len(matches) == 1:
+            return matches[0]
+        if account_mode == "hedging" and target_ticket > 0 and matches:
+            return matches[0]
+    return None
+
+
+# 统一构建交易命令和 MT5 请求，校验失败时直接返回标准错误。
+def _prepare_trade_command(payload: Dict[str, Any], account_mode: str) -> Dict[str, Any]:
+    return v2_trade.prepare_trade_request(
+        payload,
+        account_mode=account_mode,
+        mt5_module=mt5,
+        position_lookup=_lookup_trade_position,
+        symbol_info_lookup=(lambda symbol: mt5.symbol_info(symbol)) if mt5 is not None else None,
+    )
+
+
+# 调用 MT5 order_check，统一由服务端判定可执行性。
+def _trade_check_request(mt5_request: Dict[str, Any]) -> Any:
+    if mt5 is None:
+        raise RuntimeError("MetaTrader5 package is unavailable")
+    _ensure_mt5()
+    return mt5.order_check(mt5_request)
+
+
+# 调用 MT5 order_send，统一由服务端发起真实交易动作。
+def _trade_send_request(mt5_request: Dict[str, Any]) -> Any:
+    if mt5 is None:
+        raise RuntimeError("MetaTrader5 package is unavailable")
+    _ensure_mt5()
+    return mt5.order_send(mt5_request)
+
+
+# 保存提交结果并维护固定大小的幂等缓存。
+def _store_trade_request_result(request_id: str, payload_digest: str, result_payload: Dict[str, Any]) -> None:
+    request_id = str(request_id or "")
+    if not request_id:
+        return
+    with trade_request_lock:
+        trade_request_store[request_id] = {
+            "payloadDigest": str(payload_digest or ""),
+            "response": _clone_json_value(result_payload),
+        }
+        while len(trade_request_store) > TRADE_REQUEST_STORE_MAX_ENTRIES:
+            oldest_key = next(iter(trade_request_store))
+            trade_request_store.pop(oldest_key, None)
+
+
+# 读取历史请求结果，供幂等和结果查询复用。
+def _get_trade_request_entry(request_id: str) -> Optional[Dict[str, Any]]:
+    key = str(request_id or "")
+    if not key:
+        return None
+    with trade_request_lock:
+        cached = trade_request_store.get(key)
+        return None if cached is None else _clone_json_value(cached)
+
+
+# 只返回对外响应体，供 result 接口复用。
+def _get_trade_request_result(request_id: str) -> Optional[Dict[str, Any]]:
+    entry = _get_trade_request_entry(request_id)
+    if entry is None:
+        return None
+    response = entry.get("response")
+    if not isinstance(response, dict):
+        return None
+    return dict(response)
 
 
 # 构建 v2 行情总快照返回体，统一保留市场区和账户区。
@@ -4090,6 +4213,204 @@ def v2_account_history(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/v2/trade/check")
+def v2_trade_check(payload: Dict[str, Any]):
+    try:
+        now_ms = _now_ms()
+        account_mode = _detect_account_mode()
+        prepared = _prepare_trade_command(payload or {}, account_mode)
+        command = prepared.get("command") or v2_trade.normalize_trade_payload(payload or {})
+        request_id = str(command.get("requestId") or "")
+        action = str(command.get("action") or "")
+        prepare_error = prepared.get("error")
+        if prepare_error is not None:
+            return v2_trade_models.build_trade_check_response(
+                request_id=request_id,
+                action=action,
+                account_mode=account_mode,
+                status=v2_trade_models.STATUS_NOT_EXECUTABLE,
+                error=prepare_error,
+                check=None,
+                server_time=now_ms,
+            )
+
+        check_result = v2_trade_models.mt5_result_to_dict(_trade_check_request(prepared.get("request") or {}))
+        check_error = v2_trade_models.error_from_retcode(
+            check_result.get("retcode", -1),
+            check_result.get("comment", ""),
+        )
+        return v2_trade_models.build_trade_check_response(
+            request_id=request_id,
+            action=action,
+            account_mode=account_mode,
+            status=v2_trade_models.STATUS_EXECUTABLE if check_error is None else v2_trade_models.STATUS_NOT_EXECUTABLE,
+            error=check_error,
+            check=check_result,
+            server_time=now_ms,
+        )
+    except Exception as exc:
+        now_ms = _now_ms()
+        command = v2_trade.normalize_trade_payload(payload or {})
+        return v2_trade_models.build_trade_check_response(
+            request_id=str(command.get("requestId") or ""),
+            action=str(command.get("action") or ""),
+            account_mode=_detect_account_mode(),
+            status=v2_trade_models.STATUS_NOT_EXECUTABLE,
+            error=v2_trade_models.build_error(v2_trade_models.ERROR_TIMEOUT, str(exc)),
+            check=None,
+            server_time=now_ms,
+        )
+
+
+@app.post("/v2/trade/submit")
+def v2_trade_submit(payload: Dict[str, Any]):
+    now_ms = _now_ms()
+    account_mode = _detect_account_mode()
+    prepared = _prepare_trade_command(payload or {}, account_mode)
+    command = prepared.get("command") or v2_trade.normalize_trade_payload(payload or {})
+    request_id = str(command.get("requestId") or "")
+    action = str(command.get("action") or "")
+    command_digest = _trade_command_digest(command)
+
+    existing_entry = _get_trade_request_entry(request_id)
+    if existing_entry is not None:
+        existing_digest = str(existing_entry.get("payloadDigest") or "")
+        existing_response = existing_entry.get("response") if isinstance(existing_entry.get("response"), dict) else {}
+        if existing_digest and existing_digest != command_digest:
+            return v2_trade_models.build_trade_submit_response(
+                request_id=request_id,
+                action=action,
+                account_mode=str(existing_response.get("accountMode") or account_mode),
+                status=v2_trade_models.STATUS_FAILED,
+                error=v2_trade_models.build_error(
+                    v2_trade_models.ERROR_DUPLICATE_PAYLOAD_MISMATCH,
+                    "相同 requestId 的 payload 不一致",
+                ),
+                check=existing_response.get("check"),
+                result=existing_response.get("result"),
+                server_time=now_ms,
+                idempotent=True,
+            )
+        return v2_trade_models.build_trade_submit_response(
+            request_id=request_id,
+            action=action,
+            account_mode=str(existing_response.get("accountMode") or account_mode),
+            status=v2_trade_models.STATUS_DUPLICATE,
+            error=v2_trade_models.build_error(
+                v2_trade_models.ERROR_DUPLICATE,
+                "重复 requestId，已按幂等返回",
+            ),
+            check=existing_response.get("check"),
+            result=existing_response.get("result"),
+            server_time=now_ms,
+            idempotent=True,
+        )
+
+    prepare_error = prepared.get("error")
+    if prepare_error is not None:
+        response = v2_trade_models.build_trade_submit_response(
+            request_id=request_id,
+            action=action,
+            account_mode=account_mode,
+            status=v2_trade_models.STATUS_FAILED,
+            error=prepare_error,
+            check=None,
+            result=None,
+            server_time=now_ms,
+            idempotent=False,
+        )
+        _store_trade_request_result(request_id, command_digest, response)
+        return response
+
+    try:
+        check_result = v2_trade_models.mt5_result_to_dict(_trade_check_request(prepared.get("request") or {}))
+    except Exception as exc:
+        response = v2_trade_models.build_trade_submit_response(
+            request_id=request_id,
+            action=action,
+            account_mode=account_mode,
+            status=v2_trade_models.STATUS_FAILED,
+            error=v2_trade_models.build_error(v2_trade_models.ERROR_TIMEOUT, str(exc)),
+            check=None,
+            result=None,
+            server_time=now_ms,
+            idempotent=False,
+        )
+        _store_trade_request_result(request_id, command_digest, response)
+        return response
+
+    check_error = v2_trade_models.error_from_retcode(
+        check_result.get("retcode", -1),
+        check_result.get("comment", ""),
+    )
+    if check_error is not None:
+        response = v2_trade_models.build_trade_submit_response(
+            request_id=request_id,
+            action=action,
+            account_mode=account_mode,
+            status=v2_trade_models.STATUS_FAILED,
+            error=check_error,
+            check=check_result,
+            result=None,
+            server_time=now_ms,
+            idempotent=False,
+        )
+        _store_trade_request_result(request_id, command_digest, response)
+        return response
+
+    try:
+        send_result = v2_trade_models.mt5_result_to_dict(_trade_send_request(prepared.get("request") or {}))
+    except Exception as exc:
+        response = v2_trade_models.build_trade_submit_response(
+            request_id=request_id,
+            action=action,
+            account_mode=account_mode,
+            status=v2_trade_models.STATUS_ACCEPTED,
+            error=v2_trade_models.build_error(v2_trade_models.ERROR_RESULT_UNKNOWN, str(exc)),
+            check=check_result,
+            result=None,
+            server_time=now_ms,
+            idempotent=False,
+        )
+        _store_trade_request_result(request_id, command_digest, response)
+        return response
+
+    send_error = v2_trade_models.error_from_retcode(
+        send_result.get("retcode", -1),
+        send_result.get("comment", ""),
+    )
+    response = v2_trade_models.build_trade_submit_response(
+        request_id=request_id,
+        action=action,
+        account_mode=account_mode,
+        status=v2_trade_models.STATUS_ACCEPTED if send_error is None else v2_trade_models.STATUS_FAILED,
+        error=send_error,
+        check=check_result,
+        result=send_result,
+        server_time=now_ms,
+        idempotent=False,
+    )
+    _store_trade_request_result(request_id, command_digest, response)
+    return response
+
+
+@app.get("/v2/trade/result")
+def v2_trade_result(requestId: str = Query(default="")):
+    request_id = str(requestId or "").strip()
+    if not request_id:
+        raise HTTPException(
+            status_code=400,
+            detail=v2_trade_models.build_error(v2_trade_models.ERROR_INVALID_PARAMS, "requestId 不能为空"),
+        )
+    payload = _get_trade_request_result(request_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=404,
+            detail=v2_trade_models.build_error(v2_trade_models.ERROR_REQUEST_NOT_FOUND, "未找到对应 requestId"),
+        )
+    return payload
+
+
 @app.get("/v2/sync/delta")
 def v2_sync_delta(syncToken: str = Query(default="")):
     try:
@@ -4229,12 +4550,14 @@ def admin_cache_clear():
             "marketCandlesCache": len(market_candles_cache),
             "v2SyncState": 1 if v2_sync_state else 0,
             "abnormalSyncState": 1 if abnormal_sync_state else 0,
+            "tradeRequestStore": len(trade_request_store),
         }
         snapshot_build_cache.clear()
         snapshot_sync_cache.clear()
         market_candles_cache.clear()
         v2_sync_state.clear()
         abnormal_sync_state.clear()
+        trade_request_store.clear()
     return {"ok": True, "cleared": cleared}
 
 
