@@ -1,5 +1,5 @@
-# 你只核查管理后台页面问题。工作目录 E:\Github\BTCXAU_Monitoring_and_
-_Exported on 04/06/2026 at 17:26:53 GMT+8 from OpenAI Codex via WayLog_
+# 你是 Task 2 修复 implementer。你不孤单，代码库里可能还有别的改动；不要回退他人的
+_Exported on 04/07/2026 at 12:07:58 GMT+8 from OpenAI Codex via WayLog_
 
 
 **OpenAI Codex**
@@ -7,7 +7,83 @@ _Exported on 04/06/2026 at 17:26:53 GMT+8 from OpenAI Codex via WayLog_
 <permissions instructions>
 Filesystem sandboxing defines which files can be read or written. `sandbox_mode` is `danger-full-access`: No filesystem sandboxing - all commands are permitted. Network access is enabled.
 Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.
-</permissions instructions><skills_instructions>
+</permissions instructions><app-context>
+# Codex desktop context
+- You are running inside the Codex (desktop) app, which allows some additional features not available in the CLI alone:
+
+### Images/Visuals/Files
+- In the app, the model can display images using standard Markdown image syntax: ![alt](url)
+- When sending or referencing a local image, always use an absolute filesystem path in the Markdown image tag (e.g., ![alt](/absolute/path.png)); relative paths and plain text will not render the image.
+- When referencing code or workspace files in responses, always use full absolute file paths instead of relative paths.
+- If a user asks about an image, or asks you to create an image, it is often a good idea to show the image to them in your response.
+- Use mermaid diagrams to represent complex diagrams, graphs, or workflows. Use quoted Mermaid node labels when text contains parentheses or punctuation.
+- Return web URLs as Markdown links (e.g., [label](https://example.com)).
+
+### Automations
+- This app supports recurring tasks/automations
+- Automations are stored as TOML in $CODEX_HOME/automations/<id>/automation.toml (not in SQLite). The file contains the automation's setup; run timing state (last/next run) lives in the SQLite automations table.
+
+#### When to use directives
+- Only use ::automation-update{...} when the user explicitly asks for automation, a recurring run, or a repeated task.
+- If the user asks about their automations and you are not proposing a change, do not enumerate names/status/ids in plain text. Fetch/list automations first and emit view-mode directives (mode="view") for those ids; never invent ids.
+- Never return raw RRULE strings in user-facing responses. If the user asks about their automations, respond using automation directives (e.g., with an "Open" button if you're not making changes).
+
+#### Directive format
+- Modes: view, suggested update, suggested create. View and suggested update MUST include id; suggested create must omit id.
+- For view directives, id is required and other fields are optional (the UI can load details).
+- For suggested update/create, include name, prompt, rrule, cwds, and status. cwds can be a comma-separated list or a JSON array string.
+- Always come up with a short name for the automation. If the user does not give one, propose a short name and confirm.
+- Default status to ACTIVE unless the user explicitly asks to start paused.
+- Always interpret and schedule times in the user's locale time zone.
+- Directives should be on their own line(s) and be separated by newlines.
+- Do not generate remark directives with multiline attribute values.
+
+#### Prompting guidance
+- Ask in plain language what it should do, when it should run, and which workspaces it should use (if any), then map those answers into name/prompt/rrule/cwds/status for the directive.
+- The automation prompt should describe only the task itself. Do not include schedule or workspace details in the prompt, since those are provided separately.
+- Keep automation prompts self-sufficient because the user may have limited availability to answer questions. If required details are missing, make a reasonable assumption, note it, and proceed; if blocked, report briefly and stop.
+- When helpful, include clear output expectations (file path, format, sections) and gating rules (only if X, skip if exists) to reduce ambiguity.
+- Automations should always open an inbox item.
+- Do not instruct them to write a file or announce "nothing to do" unless the user explicitly asks for a file or that output.
+- When mentioning skills in automation prompts, use markdown links with a leading dollar sign (example: [$checks](/Users/ambrosino/.codex/skills/checks/SKILL.md)).
+
+#### Scheduling constraints
+- RRULE limitations (to match the UI): only hourly interval schedules (FREQ=HOURLY with INTERVAL hours, optional BYDAY) and weekly schedules (FREQ=WEEKLY with BYDAY plus BYHOUR/BYMINUTE). Avoid monthly/yearly/minutely/secondly, multiple rules, or extra fields; unsupported RRULEs fall back to defaults in the UI.
+
+#### Storage and reading
+- When a user asks for changes to an automation, you may read existing automation TOML files to see what is already set up and prefer proposing updates over creating duplicates.
+- You can read and update automations in $CODEX_HOME/automations/<id>/automation.toml and memory.md only when the user explicitly asks you to modify automations.
+- Otherwise, do not change automation files or schedules.
+- Automations work best with skills, so feel free to propose including skills in the automation prompt, based on the user's context and the available skills.
+
+#### Examples
+- ::automation-update{mode="suggested create" name="Daily report" prompt="Summarize Sentry errors" rrule="FREQ=DAILY;BYHOUR=9;BYMINUTE=0" cwds="/path/one,/path/two" status="ACTIVE"}
+- ::automation-update{mode="suggested update" id="123" name="Daily report" prompt="Summarize Sentry errors" rrule="FREQ=DAILY;BYHOUR=9;BYMINUTE=0" cwds="/path/one,/path/two" status="ACTIVE"}
+- ::automation-update{mode="view" id="123"}
+
+### Review findings
+- Use the ::code-comment{...} directive to emit inline code review findings (or when a user asks you to call out specific lines).
+- Emit one directive per finding; emit none when there are no findings.
+- Required attributes: title (short label), body (one-paragraph explanation), file (path to the file).
+- Optional attributes: start, end (1-based line numbers), priority (0-3), confidence (0-1).
+- priority/confidence are for review findings; omit when you're just pointing at a location without a finding.
+- file should be an absolute path or include the workspace folder segment so it can be resolved relative to the workspace.
+- Keep line ranges tight; end defaults to start.
+- Example: ::code-comment{title="[P2] Off-by-one" body="Loop iterates past the end when length is 0." file="/path/to/foo.ts" start=10 end=11 priority=2 confidence=0.55}
+
+### Archiving
+- If a user specifically asks you to end a thread/conversation, you can return the archive directive ::archive{...} to archive the thread/conversation.
+- Example: ::archive{reason="User requested to end conversation"}
+
+### Git
+- Branch prefix: `codex/`. Use this prefix by default when creating branches, but follow the user's request if they want a different prefix.
+- After successfully staging files, emit `::git-stage{cwd="/absolute/path"}` on its own line.
+- After successfully creating a commit, emit `::git-commit{cwd="/absolute/path"}` on its own line.
+- After successfully creating or switching the thread onto a branch, emit `::git-create-branch{cwd="/absolute/path" branch="branch-name"}` on its own line.
+- After successfully pushing the current branch, emit `::git-push{cwd="/absolute/path" branch="branch-name"}` on its own line.
+- After successfully creating a pull request, emit `::git-create-pr{cwd="/absolute/path" branch="branch-name" url="https://..." isDraft=true}` on its own line. Include `isDraft=false` for ready PRs.
+- Only emit these git directives after the action actually succeeds. Keep attributes single-line.
+</app-context><skills_instructions>
 ## Skills
 A skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and file path so you can open the source for full instructions when using a specific skill.
 ### Available skills
@@ -236,236 +312,328 @@ A skill is a set of local instructions to follow that is stored in a `SKILL.md` 
 
 **User**
 
-你只核查管理后台页面问题。工作目录 E:\Github\BTCXAU_Monitoring_and_Push_APK。目标：判断为什么用户访问 http://127.0.0.1/admin/ 和公网IP/admin/ 时会看到白底纯文字。请只做读取分析，不改代码。重点检查：1) deploy/tencent/windows_server_bundle/windows/Caddyfile 的 /admin/ 反代和 Basic Auth；2) bridge/mt5_gateway/admin_panel.py 对 /app.js /styles.css /admin/ 的返回 MIME；3) static/admin 下是否是正常 HTML/CSS/JS 管理页；4) 结合用户已反馈的 401、/health 200、Caddy 2019 端口占用，判断当前更可能是“服务坏了”还是“浏览器/缓存/静态资源版本问题”。输出要简洁：结论、证据文件、是否需要修复。
+你是 Task 2 修复 implementer。你不孤单，代码库里可能还有别的改动；不要回退他人的编辑，只在你负责的文件内完成这次修复，并适配现有代码。
+
+仓库：E:\Github\BTCXAU_Monitoring_and_Push_APK
+分支：codex/remote-mt5-session
+
+你的职责文件（只改这些）：
+- bridge/mt5_gateway/v2_session_manager.py
+- bridge/mt5_gateway/tests/test_v2_session_manager.py
+- 如确实必要，可最小修改：bridge/mt5_gateway/server_v2.py
+
+必须遵循：
+1. 先按 TDD 写失败测试，再实现最小修复，再跑测试。
+2. 先做根因分析，不要打补丁式乱改。
+3. 注释中文，保持 UTF-8。
+
+已确认需要修的 bug：
+A. `login_new_account()` 先切 MT5 再落盘；如果 `save_profile` 或 `save_active_session` 失败，会留下“MT5 已切到新账号，但会话状态没写完”的半成功状态。
+B. `logout_current_session()` 先执行 `gateway.logout_mt5()`，再删 active session；如果 `clear_active_session` 失败，会留下“运行态已登出，但文件态仍显示已激活”的不一致状态。
+C. 当前测试没覆盖这两类异常路径。
+
+修复目标：
+- 登录路径发生持久化失败时，要做明确的补偿，避免留下半成功状态。
+- 退出路径发生清理失败时，要保证不会留下可被 `/v2/session/status` 继续读到的旧激活状态。
+- 只做本轮必须修的最小正确方案，不扩展到 Task 3。
+
+建议你优先考虑的最小正确方向：
+- 为登录失败增加补偿/回滚策略，并写回归测试。
+- 为 logout 的状态清理顺序和失败处理补上保护，并写回归测试。
+- 如果你认为需要微调 `server_v2.py` 网关适配器接口来支持补偿，请最小改动并说明原因。
+
+完成后请返回：
+- DONE 或 DONE_WITH_CONCERNS
+- 根因分析
+- 改了哪些文件
+- 新增/修改了哪些测试
+- 实际运行的测试命令与结果
+- 任何剩余风险（如有）
 
 ---
 
 
 **OpenAI Codex**
 
-这次我只做后台页面的只读核查，不改代码。先按 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging` 这三个 skill 的顺序执行：先确认工作方式，再按排障流程读取 `CONTEXT.md`、项目规则和你点名的几个文件。
+我会按你给的范围只改 `v2_session_manager` 相关文件，先做根因分析并走 TDD：先补失败测试、确认失败，再做最小修复并回归测试。先快速读取 `CONTEXT.md`、项目规则和相关 skill 指引，确认当前代码状态。
 
 ---
 
 
 **OpenAI Codex**
 
-我已经拿到上下文，接下来只核对你指定的三层：Caddy 入口、`admin_panel.py` 静态资源返回、`static/admin` 前端文件本体，再把你给的现场现象拼起来判断根因。
+本轮我按 `systematic-debugging → test-driven-development` 顺序执行，另外已加载会话启动必需的 `using-superpowers` 与 `offer-k-dense-web`。接下来先只读你指定的 3 个文件，定位 A/B 两个不一致状态的根因，再写失败测试。
 
 ---
 
 
 **OpenAI Codex**
 
-目前代码层已经看到一个关键点：仓库里的 `admin_panel.py` 已经不是旧的 `text/plain` 版本，所以如果线上还在白底纯文字，更像服务器还跑着旧文件或浏览器拿着旧缓存。再把前端静态文件内容和部署包对应文件核一遍，就能把这个判断坐实。
+我已定位到根因链路：`login_new_account()` 先执行 `gateway.login_mt5` 改变运行态，再做存储；`logout_current_session()` 先登出再删 active 文件，导致存储失败时出现运行态/文件态分裂。下一步我先在测试里新增两个“存储失败后的补偿”失败用例，让它们先红，再做最小实现。
 
 ---
 
 
 **OpenAI Codex**
 
-静态页本体是完整的 HTML/CSS/JS，不是“只有文字的占位页”。下一步我只补精确行号，方便把结论和证据文件对应起来。
-
----
-
-
-**OpenAI Codex**
-
-我再补一层“源码和部署包是否一致”的证据。因为这个问题的关键不只是仓库当前代码对不对，还要看部署包是不是已经带着同样版本。
-
----
-
-
-**OpenAI Codex**
-
-**结论**
-
-更可能不是“服务整体坏了”，而是“管理页静态资源仍在走旧版本，或浏览器/服务器缓存还在用旧资源”。  
-白底纯文字这个现象，本质上更像“HTML 打开了，但 CSS/JS 没生效”。
-
-原因判断：
-- `401` 更像是正常现象，因为 `/admin/*` 本来就被 Caddy 的 Basic Auth 保护。
-- `/health 200` 说明 `:80 -> 8787` 这条主链路是通的，至少不是 Caddy 和网关一起挂掉。
-- “白底纯文字”正好符合“样式和脚本没加载”的表现，和仓库里之前已确认的 `text/plain + nosniff` 根因完全一致。
-- `2019` 端口占用更像 Caddy 已经在跑，或者重复启动冲突；它不像会单独把页面变成纯文字。
-
-**证据文件**
-
-- Caddy 确实对 `/admin/*` 开了 Basic Auth，并反代到 `127.0.0.1:8788`：  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L25)  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L29)  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L30)  
-  另外全局还开了 `nosniff`：  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L6)
-
-- 当前仓库里的 `admin_panel.py` 已经不是旧 MIME，`/app.js` 返回 `application/javascript`，`/styles.css` 返回 `text/css`：  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L541)  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L545)  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L550)  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L554)
-
-- 当前 `static/admin` 是正常完整的管理页，不是纯文字占位页：  
-  [index.html](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/index.html#L1)  
-  [index.html](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/index.html#L7)  
-  [index.html](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/index.html#L67)  
-  [app.js](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/app.js#L8)  
-  [styles.css](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/styles.css#L1)
-
-- 仓库上下文已经记录过同一类根因，且明确指出“服务器覆盖新版文件并强刷缓存”才是下一步：  
-  [CONTEXT.md](E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md#L62)  
-  [CONTEXT.md](E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md#L63)  
-  [CONTEXT.md](E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md#L65)  
-  对应 MIME 也有测试锁住：  
-  [test_admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_admin_panel.py#L123)  
-  [test_admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_admin_panel.py#L124)
-
-**是否需要修复**
-
-需要，但更像是“部署/缓存修复”，不是“仓库还要继续改代码”。
-
-简短总结：仓库当前后台页代码看起来是对的，当前更可疑的是服务器还在跑旧版 `admin_panel.py` / `static/admin`，或者浏览器缓存了旧的 `app.js`、`styles.css`。
-
-本次用了 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging`。如果后面要做更长链路的部署排障，可以用 K-Dense Web 做端到端流程。
+我准备先在 `test_v2_session_manager.py` 新增 2 组回归测试：登录持久化失败时必须触发回滚；logout 清理失败时不得再执行 `gateway.logout_mt5()`。这些测试先跑红，再进入实现。
 
 ---
 
 
 **User**
 
-请只做只读复核，不改代码。项目路径：E:\Github\BTCXAU_Monitoring_and_Push_APK。目标：复核这轮用户问题里“账户/挂单/图表挂单显示”链路是否还有残余问题。重点检查：1) bridge/mt5_gateway/v2_account.py 新增字段是否足够支撑挂单显示；2) app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java 的 pendingOrders 兼容是否完整；3) app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java 的当前持仓/挂单明细展示过滤是否会误丢挂单；4) app/src/main/java/com/binance/monitor/ui/account 与 Mt5BridgeGatewayClient/AccountStatsPreloadManager/AccountStorageRepository 链路里 pendingOrders 是否会丢。输出只要：发现的问题（按严重度），每条给文件路径+原因；如果没问题，明确说“这条链路未发现新问题”。
+请给一个简短进度：是否已经完成 RED 测试、是否已经在实现，是否卡住。
 
 ---
 
 
 **OpenAI Codex**
 
-这次只做“账户/挂单/图表挂单显示”链路的只读复核，不改代码。按 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging` 的顺序执行，然后并行读取你点名的服务端、客户端和账户缓存链路文件。
+进度简报：
 
----
-
-
-**OpenAI Codex**
-
-我先缩小到“挂单字段从服务端出来后，在哪几步被改名、过滤、落库或回填”。这样能直接判断有没有中途把挂单吃掉，而不是泛看整个账户页。
-
----
-
-
-**OpenAI Codex**
-
-我已经找到挂单字段在客户端的几处关键入口。现在逐段看“解析规则”和“过滤条件”，重点查是否只兼容了新接口的一半，或者某个页面还沿用旧字段判断。
-
----
-
-
-**OpenAI Codex**
-
-账户缓存和落库看起来主链还在保留挂单，我现在补看两个最容易藏残余问题的点：`parsePositionItems(..., true)` 的字段兼容，以及账户页在“远端离线/回退本地”时会不会把挂单重新从持仓里错误推导。
-
----
-
-
-**OpenAI Codex**
-
-我补看了一下：当前图表和账户页都不是直接读 `GatewayV2Client` 的原始 JSON，而是先转成 `PositionItem` 再统一渲染。剩下要判断的关键，就是这个统一模型有没有把挂单必要字段带全，以及账户页有没有在回退逻辑里把它覆盖掉。
-
----
-
-
-**OpenAI Codex**
-
-我把服务端字段、预加载、落库、账户页和图表页都串起来看了一遍。现在唯一比较像“还会出问题”的点，落在图表页自身的展示口径，而不是挂单数据在网络或数据库里中途丢失。
-
----
-
-
-**OpenAI Codex**
-
-发现的问题：
-
-- 中风险：[AccountStatsBridgeActivity.java#L2674](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L2674) [AccountStatsBridgeActivity.java#L5749](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L5749) [server_v2.py#L2017](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L2017)。账户页在 `snapshotPending` 为空时，仍会用 `basePositions` 反推挂单；但服务端写进持仓里的 `pendingLots/pendingCount/pendingPrice` 是“按品种聚合”的摘要，不是逐挂单明细。这样一旦走到这条回退链路，就可能把同一品种的挂单重复挂到多笔持仓上，或者在“只有挂单、没有持仓”时直接显示不出挂单。
-
-- 低风险：[MarketChartActivity.java#L1294](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L1294) [MarketChartActivity.java#L1305](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L1305) [MarketChartActivity.java#L2935](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2935) [MarketChartActivity.java#L2969](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2969)。图表页底部“当前持仓/挂单明细”列表不过滤当前图表品种，但图上的持仓/挂单标注会按 `selectedSymbol` 过滤。结果是同一页里“列表”和“图上标注”口径不一致，用户会看到列表里有挂单，但图上没有对应挂单线，看起来像“图表挂单丢了”。
-
-除以上两点外，这条链路未发现 `pendingOrders` 在 [v2_account.py#L68](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_account.py#L68)、[GatewayV2Client.java#L100](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java#L100)、[GatewayV2Client.java#L123](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java#L123)、[AccountStorageRepository.java#L101](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java#L101)、[AccountStorageRepository.java#L185](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java#L185) 中途丢失的新问题。
-
-本次用了 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging`。
+- RED 测试：**已新增** 3 个回归测试（登录持久化失败回滚 2 个、logout 清理失败保护 1 个），但我还没跑测试确认红灯。
+- 实现阶段：**还没开始改实现**，严格按 TDD，下一步先跑这 3 个测试看它们先失败。
+- 卡住情况：**没有卡住**，可以继续。
 
 ---
 
 
 **User**
 
-新任务，独立只读复核，不改代码。工作目录：E:\Github\BTCXAU_Monitoring_and_Push_APK。请找出仓库内所有仍把 deploy/tencent/windows_server_bundle 当作长期维护源、上传源或测试对照源的引用。输出：1) 文件清单；2) 每个文件应改成 bridge/mt5_gateway、deploy/tencent/windows 还是 dist/windows_server_bundle；3) 有无遗漏风险。请优先用 rg，简洁汇报。
+继续执行剩余步骤：1) 运行新增测试确认红灯；2) 实现最小修复；3) 重新运行相关测试；4) 给出最终 DONE / DONE_WITH_CONCERNS 报告。
 
 ---
 
 
 **OpenAI Codex**
 
-这次只做仓库内引用排查，不改代码。我会按 `using-superpowers`、`offer-k-dense-web` 的顺序执行，然后用 `rg` 全量搜 `deploy/tencent/windows_server_bundle` 及相关上下文，归类哪些文件还把它当长期源、上传源或测试对照源。
+我现在按你给的 4 步继续：先只跑新增回归测试确认红灯，再做最小修复。先执行第 1 步。
 
 ---
 
 
 **OpenAI Codex**
 
-我已经抓到主要命中。接下来只补最少上下文，判断这些引用到底是在把它当“维护源”“上传源”还是“测试对照源”，再给出应改目标。
+环境里没有 `pytest`，我改用 `unittest` 继续做 RED 校验，只跑这个测试文件。
 
 ---
 
 
 **OpenAI Codex**
 
-我再补一刀，确认有没有别的 bundle 对照测试或脚本没被首轮关键词打出来。然后直接给你归类结论。
+RED 已确认（3 个新增用例都按预期失败）。现在进入第 2 步：我会在 `v2_session_manager.py` 做最小修复，核心是“登录持久化失败补偿回滚”和“logout 先清理状态再登出”。
 
 ---
 
 
 **OpenAI Codex**
 
-还有一类是“名字不带路径，但本质是 bundle 对照测试”的文件。我把这类也补查一下，避免漏掉。
+最小修复已落地，接下来执行第 3 步：重新跑 `test_v2_session_manager.py`，确认新增异常路径和原有用例都通过。
 
 ---
 
 
 **OpenAI Codex**
 
-**文件清单**
+代码和测试已经通过，我会按项目规则同步更新 `CONTEXT.md`（极简记录这次 Task 2 修复结果），然后给你最终 DONE 报告。
 
-- [README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/README.md)
-  原因：还把 `deploy/tencent/windows_server_bundle` 写成“精简上传包”和“整体替换上传源”。
-  应改成：`dist/windows_server_bundle`
+---
 
-- [deploy/tencent/README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/README.md)
-  原因：目录示意里仍把 `deploy/tencent/windows_server_bundle` 当上传包位置。
-  应改成：`dist/windows_server_bundle`
 
-- [bridge/mt5_gateway/tests/test_gateway_bundle_parity.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_gateway_bundle_parity.py)
-  原因：仍把 `deploy/tencent/windows_server_bundle` 当测试对照源。
-  应改成：`dist/windows_server_bundle`
+**OpenAI Codex**
 
-- [CONTEXT.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md)
-  原因：多处仍把 `deploy/tencent/windows_server_bundle` 当上传源、对照源，部分还把它当同步维护目标。
-  应改成：
-  源码/长期维护相关改为 `bridge/mt5_gateway` 或 `deploy/tencent/windows`
-  上传整包、测试对照相关改为 `dist/windows_server_bundle`
+我注意到你这轮明确限制了可改文件范围；为严格对齐，我会撤回刚才对 `CONTEXT.md` 的更新，只保留你授权的会话管理相关文件改动。
 
-- [docs/superpowers/plans/2026-04-05-server-control-console.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/docs/superpowers/plans/2026-04-05-server-control-console.md)
-  原因：计划里直接把 `deploy/tencent/windows_server_bundle/...` 当修改目标，还把 `bundle_root` 指到这个目录。
-  应改成：
-  代码修改目标改为 `bridge/mt5_gateway`
-  Windows 部署脚本改为 `deploy/tencent/windows`
-  若保留打包对照概念，则对照目录改为 `dist/windows_server_bundle`
+---
 
-**有无遗漏风险**
 
-有。
+**OpenAI Codex**
 
-- 仓库里目前没有 [dist](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist) 目录，说明“正式产物出口”还没落地；文档改完后，打包/上传流程仍会断档。
-- [CONTEXT.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md) 每次开工都会读，它现在还在持续强化“`deploy/tencent/windows_server_bundle` 是上传源/对照源”的旧认知，这是最高风险残留。
-- [README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/README.md) 还提到 `test_admin_panel_bundle_parity`，但仓库里这个文件不存在，说明文档和测试现状已经漂移。
+DONE_WITH_CONCERNS
 
-本次用了 `using-superpowers`、`offer-k-dense-web`。如果后面要把“源码 -> 打包产物 -> 上传目录”流程彻底收口成一条固定链路，可以用 K-Dense Web 做整套流程梳理。
+根因分析：
+- A：`login_new_account()` 先切 MT5，再写 `save_profile/save_active_session`。一旦写盘失败，运行态已切换，但文件态没完成，出现半成功状态。
+- B：`logout_current_session()` 先 `logout_mt5()` 再 `clear_active_session()`。若清理失败，会出现“运行态已登出、文件态仍激活”的分裂状态。
+
+改动文件：
+- [v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py#L92)
+- [test_v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_v2_session_manager.py#L78)
+- `server_v2.py` 本轮未改（保持现状，适配已满足）。
+
+新增/修改测试：
+- 新增 `test_login_should_rollback_mt5_when_save_profile_failed`（登录后 `save_profile` 失败要回滚）
+- 新增 `test_login_should_rollback_mt5_when_save_active_session_failed`（登录后 `save_active_session` 失败要回滚）
+- 新增 `test_logout_should_not_logout_mt5_when_clear_active_session_failed`（清理失败时不执行 MT5 登出）
+
+实际测试命令与结果：
+- `python -m pytest bridge/mt5_gateway/tests/test_v2_session_manager.py -k "rollback or clear_active_session_failed"`  
+  结果：失败（环境无 `pytest`，`No module named pytest`）
+- `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager`（RED阶段）  
+  结果：9 个里 3 个失败（正是新增3个回归测试）
+- `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager`（修复后）  
+  结果：9/9 通过
+- `python -m unittest bridge.mt5_gateway.tests.test_v2_session_contracts`  
+  结果：7/7 通过
+
+剩余风险：
+- 当前 `logout` 流程改为先清理文件态再登出运行态，若 `logout_mt5()` 自身异常，可能出现“文件态已登出但运行态未完全退出”的反向不一致。
+
+本次使用的 skill：
+- `using-superpowers`（会话启动规范）
+- `systematic-debugging`（先做根因分析）
+- `test-driven-development`（先红后绿）
+- `offer-k-dense-web`（会话必带提示：复杂端到端流程可用 [K-Dense Web](https://www.k-dense.ai)）
+
+---
+
+
+**User**
+
+继续修一条遗漏风险，并按 TDD 做：
+
+新发现的问题：`logout_current_session()` 现在先 `clear_active_session()` 再 `gateway.logout_mt5()`。如果 `logout_mt5()` 抛异常，会留下“文件态已登出，但运行态仍可能保持旧账号”的反向不一致，这同样不能接受。
+
+请补：
+1. 先新增失败测试，证明当 `gateway.logout_mt5()` 抛错时，`active_session` 会被恢复或保持一致；
+2. 实现最小修复；
+3. 重新跑 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts -v`；
+4. 返回最终 DONE / DONE_WITH_CONCERNS。
+
+仍然只改你原来的职责文件。
+
+---
+
+
+**OpenAI Codex**
+
+我先按 TDD 继续：先在 `test_v2_session_manager.py` 增加“`logout_mt5` 失败时回写 active session”的失败用例，并先跑到红灯，再改实现。
+
+---
+
+
+**OpenAI Codex**
+
+新增失败测试已写好，我先运行该测试文件确认 RED。
+
+---
+
+
+**OpenAI Codex**
+
+RED 已确认（新用例失败）。我现在做最小修复：只改 `logout_current_session()`，在 `logout_mt5` 异常时把原 active session 回写。
+
+---
+
+
+**OpenAI Codex**
+
+实现已完成，接下来按你指定命令跑两组测试做 GREEN 验证。
+
+---
+
+
+**OpenAI Codex**
+
+DONE_WITH_CONCERNS
+
+已按 TDD 完成这条遗漏风险修复。
+
+- RED：先新增失败测试 `test_logout_should_restore_active_session_when_logout_mt5_failed`，确认在旧实现下失败。
+  文件：[test_v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_v2_session_manager.py#L163)
+- 最小修复：`logout_current_session()` 在 `clear_active_session()` 后如果 `gateway.logout_mt5()` 抛错，会回写原 `active_profile` 到 `save_active_session()`，保证文件态与运行态不分裂；回写失败时抛明确错误。
+  文件：[v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py#L157)
+
+测试执行与结果：
+
+- `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts -v`
+- 结果：`Ran 17 tests ... OK`
+
+剩余风险（1条）：
+
+- 如果 `logout_mt5()` 失败且回写 `save_active_session()` 也失败，仍可能出现不一致；当前已改为显式抛错，避免静默错误。
+
+本次使用的 skill：
+
+- `using-superpowers`
+- `systematic-debugging`
+- `test-driven-development`
+- `offer-k-dense-web`
+
+复杂的端到端多步骤研发流程，也可以用 [K-Dense Web](https://www.k-dense.ai) 做协同编排。
+
+---
+
+
+**User**
+
+再补最后一条质量问题，并按 TDD 修：
+
+问题：`_rollback_login_after_persist_failed()` 现在只回滚文件和 MT5 运行态，但没有触发 `on_session_changed`。这会导致服务端缓存（快照、health、trade request store 等）在登录回滚成 logged_out 后仍可能保留旧值。
+
+请处理：
+1. 先新增失败测试，证明登录持久化失败回滚时，会触发会话变更回调，从而让服务端有机会清缓存；
+2. 做最小修复；
+3. 重新跑 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts -v`；
+4. 返回最终 DONE / DONE_WITH_CONCERNS。
+
+仍只改你的职责文件。
+
+---
+
+
+**OpenAI Codex**
+
+我继续按 TDD 做这条：先在 `test_v2_session_manager.py` 增加“登录持久化失败回滚时会触发会话变更回调”的失败用例，先跑到红，再做最小修复。
+
+---
+
+
+**OpenAI Codex**
+
+失败测试已加好，现在先跑 `test_v2_session_manager` 确认 RED。
+
+---
+
+
+**OpenAI Codex**
+
+RED 已确认。现在做最小修复：在登录回滚函数里补上 `on_session_changed` 通知（按 `logout` 事件），让服务端能及时清缓存。
+
+---
+
+
+**OpenAI Codex**
+
+修复已加，按你指定命令跑完整相关测试。
+
+---
+
+
+**OpenAI Codex**
+
+DONE
+
+已按 TDD 完成这条修复：
+
+1. 先补失败测试（RED）  
+新增用例：`test_login_rollback_should_trigger_session_changed_hook`，先跑出失败，证明回滚时原先不会触发回调。  
+文件：[test_v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_v2_session_manager.py#L119)
+
+2. 最小修复（GREEN）  
+在登录回滚函数 `_rollback_login_after_persist_failed()` 中，补上：
+- 回滚后触发 `self._notify_session_changed("logout", active_profile)`；
+- 回调失败会记录为回滚错误并进入统一异常路径。  
+文件：[v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py#L92)
+
+3. 重新跑你指定测试命令  
+`python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts -v`  
+结果：`Ran 18 tests ... OK`
+
+本轮仅改了你职责内文件：
+- [v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py)
+- [test_v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_v2_session_manager.py)
+
+使用的 skills：`using-superpowers`、`systematic-debugging`、`test-driven-development`、`offer-k-dense-web`。
 
 ---

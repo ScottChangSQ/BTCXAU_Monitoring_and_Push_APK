@@ -1,5 +1,5 @@
-# 你只核查管理后台页面问题。工作目录 E:\Github\BTCXAU_Monitoring_and_
-_Exported on 04/06/2026 at 17:26:53 GMT+8 from OpenAI Codex via WayLog_
+# 你是 Task 3 的代码质量 reviewer。只审查当前工作区中 Task 3 改动的正确性、边
+_Exported on 04/07/2026 at 12:07:58 GMT+8 from OpenAI Codex via WayLog_
 
 
 **OpenAI Codex**
@@ -236,236 +236,164 @@ A skill is a set of local instructions to follow that is stored in a `SKILL.md` 
 
 **User**
 
-你只核查管理后台页面问题。工作目录 E:\Github\BTCXAU_Monitoring_and_Push_APK。目标：判断为什么用户访问 http://127.0.0.1/admin/ 和公网IP/admin/ 时会看到白底纯文字。请只做读取分析，不改代码。重点检查：1) deploy/tencent/windows_server_bundle/windows/Caddyfile 的 /admin/ 反代和 Basic Auth；2) bridge/mt5_gateway/admin_panel.py 对 /app.js /styles.css /admin/ 的返回 MIME；3) static/admin 下是否是正常 HTML/CSS/JS 管理页；4) 结合用户已反馈的 401、/health 200、Caddy 2019 端口占用，判断当前更可能是“服务坏了”还是“浏览器/缓存/静态资源版本问题”。输出要简洁：结论、证据文件、是否需要修复。
+你是 Task 3 的代码质量 reviewer。只审查当前工作区中 Task 3 改动的正确性、边界条件、状态一致性和集成风险，不做无关风格建议。
+
+仓库：E:\Github\BTCXAU_Monitoring_and_Push_APK
+分支：codex/remote-mt5-session
+基线提交：d3bd8b4（Task 2 已完成）
+
+只关注这些文件：
+- bridge/mt5_gateway/v2_session_crypto.py
+- bridge/mt5_gateway/v2_session_manager.py
+- bridge/mt5_gateway/server_v2.py
+- bridge/mt5_gateway/admin_panel.py
+- bridge/mt5_gateway/tests/test_admin_panel.py
+- bridge/mt5_gateway/tests/test_v2_session_manager.py
+- bridge/mt5_gateway/tests/test_v2_session_contracts.py
+- bridge/mt5_gateway/requirements.txt
+
+Task 3 目标已通过规格复核，当前重点只看质量风险：
+1. 公钥/登录信封解密是否有明显安全或状态一致性问题。
+2. `switch_saved_account()` 是否可能留下“运行态、文件态、缓存态”分裂。
+3. `server_v2.py` 的 login/switch/public-key/admin summary 接线是否有隐藏回退或串号风险。
+4. 新增依赖是否是最小必要，测试是否覆盖关键回归边界。
+
+我已本地验证：
+`python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`
+结果：Ran 39 tests, OK。
+
+请输出：
+- APPROVED 或 CHANGES_NEEDED
+- 如果有问题，只列真正需要现在修的 bug / 集成风险，按严重度排序，附文件和行号
+- 最后一句说明是否可以进入提交收口
+不要修改代码。
 
 ---
 
 
 **OpenAI Codex**
 
-这次我只做后台页面的只读核查，不改代码。先按 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging` 这三个 skill 的顺序执行：先确认工作方式，再按排障流程读取 `CONTEXT.md`、项目规则和你点名的几个文件。
+这次我按 `using-superpowers`、`offer-k-dense-web` 和“代码审查”流程来做。先读 `CONTEXT.md` 和当前 Task 3 的差异，再只围绕你指定的文件检查正确性、状态一致性、边界条件和集成风险。
 
 ---
 
 
 **OpenAI Codex**
 
-我已经拿到上下文，接下来只核对你指定的三层：Caddy 入口、`admin_panel.py` 静态资源返回、`static/admin` 前端文件本体，再把你给的现场现象拼起来判断根因。
+我已经拿到当前上下文，下一步会把基线 `d3bd8b4` 到当前分支在指定文件上的差异、现有实现和测试一起对照看，重点盯住解密链路、切换链路、接口接线和回归边界。
 
 ---
 
 
 **OpenAI Codex**
 
-目前代码层已经看到一个关键点：仓库里的 `admin_panel.py` 已经不是旧的 `text/plain` 版本，所以如果线上还在白底纯文字，更像服务器还跑着旧文件或浏览器拿着旧缓存。再把前端静态文件内容和部署包对应文件核一遍，就能把这个判断坐实。
-
----
-
-
-**OpenAI Codex**
-
-静态页本体是完整的 HTML/CSS/JS，不是“只有文字的占位页”。下一步我只补精确行号，方便把结论和证据文件对应起来。
-
----
-
-
-**OpenAI Codex**
-
-我再补一层“源码和部署包是否一致”的证据。因为这个问题的关键不只是仓库当前代码对不对，还要看部署包是不是已经带着同样版本。
-
----
-
-
-**OpenAI Codex**
-
-**结论**
-
-更可能不是“服务整体坏了”，而是“管理页静态资源仍在走旧版本，或浏览器/服务器缓存还在用旧资源”。  
-白底纯文字这个现象，本质上更像“HTML 打开了，但 CSS/JS 没生效”。
-
-原因判断：
-- `401` 更像是正常现象，因为 `/admin/*` 本来就被 Caddy 的 Basic Auth 保护。
-- `/health 200` 说明 `:80 -> 8787` 这条主链路是通的，至少不是 Caddy 和网关一起挂掉。
-- “白底纯文字”正好符合“样式和脚本没加载”的表现，和仓库里之前已确认的 `text/plain + nosniff` 根因完全一致。
-- `2019` 端口占用更像 Caddy 已经在跑，或者重复启动冲突；它不像会单独把页面变成纯文字。
-
-**证据文件**
-
-- Caddy 确实对 `/admin/*` 开了 Basic Auth，并反代到 `127.0.0.1:8788`：  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L25)  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L29)  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L30)  
-  另外全局还开了 `nosniff`：  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L6)
-
-- 当前仓库里的 `admin_panel.py` 已经不是旧 MIME，`/app.js` 返回 `application/javascript`，`/styles.css` 返回 `text/css`：  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L541)  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L545)  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L550)  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L554)
-
-- 当前 `static/admin` 是正常完整的管理页，不是纯文字占位页：  
-  [index.html](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/index.html#L1)  
-  [index.html](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/index.html#L7)  
-  [index.html](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/index.html#L67)  
-  [app.js](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/app.js#L8)  
-  [styles.css](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/styles.css#L1)
-
-- 仓库上下文已经记录过同一类根因，且明确指出“服务器覆盖新版文件并强刷缓存”才是下一步：  
-  [CONTEXT.md](E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md#L62)  
-  [CONTEXT.md](E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md#L63)  
-  [CONTEXT.md](E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md#L65)  
-  对应 MIME 也有测试锁住：  
-  [test_admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_admin_panel.py#L123)  
-  [test_admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_admin_panel.py#L124)
-
-**是否需要修复**
-
-需要，但更像是“部署/缓存修复”，不是“仓库还要继续改代码”。
-
-简短总结：仓库当前后台页代码看起来是对的，当前更可疑的是服务器还在跑旧版 `admin_panel.py` / `static/admin`，或者浏览器缓存了旧的 `app.js`、`styles.css`。
-
-本次用了 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging`。如果后面要做更长链路的部署排障，可以用 K-Dense Web 做端到端流程。
+我已经拿到差异，接下来会逐段核对实际实现和测试，不只看“能跑通”，而是看失败时会不会把运行态、文件态和接口返回拆开。
 
 ---
 
 
 **User**
 
-请只做只读复核，不改代码。项目路径：E:\Github\BTCXAU_Monitoring_and_Push_APK。目标：复核这轮用户问题里“账户/挂单/图表挂单显示”链路是否还有残余问题。重点检查：1) bridge/mt5_gateway/v2_account.py 新增字段是否足够支撑挂单显示；2) app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java 的 pendingOrders 兼容是否完整；3) app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java 的当前持仓/挂单明细展示过滤是否会误丢挂单；4) app/src/main/java/com/binance/monitor/ui/account 与 Mt5BridgeGatewayClient/AccountStatsPreloadManager/AccountStorageRepository 链路里 pendingOrders 是否会丢。输出只要：发现的问题（按严重度），每条给文件路径+原因；如果没问题，明确说“这条链路未发现新问题”。
-
----
-
-
-**OpenAI Codex**
-
-这次只做“账户/挂单/图表挂单显示”链路的只读复核，不改代码。按 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging` 的顺序执行，然后并行读取你点名的服务端、客户端和账户缓存链路文件。
-
----
-
-
-**OpenAI Codex**
-
-我先缩小到“挂单字段从服务端出来后，在哪几步被改名、过滤、落库或回填”。这样能直接判断有没有中途把挂单吃掉，而不是泛看整个账户页。
-
----
-
-
-**OpenAI Codex**
-
-我已经找到挂单字段在客户端的几处关键入口。现在逐段看“解析规则”和“过滤条件”，重点查是否只兼容了新接口的一半，或者某个页面还沿用旧字段判断。
-
----
-
-
-**OpenAI Codex**
-
-账户缓存和落库看起来主链还在保留挂单，我现在补看两个最容易藏残余问题的点：`parsePositionItems(..., true)` 的字段兼容，以及账户页在“远端离线/回退本地”时会不会把挂单重新从持仓里错误推导。
-
----
-
-
-**OpenAI Codex**
-
-我补看了一下：当前图表和账户页都不是直接读 `GatewayV2Client` 的原始 JSON，而是先转成 `PositionItem` 再统一渲染。剩下要判断的关键，就是这个统一模型有没有把挂单必要字段带全，以及账户页有没有在回退逻辑里把它覆盖掉。
-
----
-
-
-**OpenAI Codex**
-
-我把服务端字段、预加载、落库、账户页和图表页都串起来看了一遍。现在唯一比较像“还会出问题”的点，落在图表页自身的展示口径，而不是挂单数据在网络或数据库里中途丢失。
-
----
-
-
-**OpenAI Codex**
-
-发现的问题：
-
-- 中风险：[AccountStatsBridgeActivity.java#L2674](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L2674) [AccountStatsBridgeActivity.java#L5749](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L5749) [server_v2.py#L2017](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L2017)。账户页在 `snapshotPending` 为空时，仍会用 `basePositions` 反推挂单；但服务端写进持仓里的 `pendingLots/pendingCount/pendingPrice` 是“按品种聚合”的摘要，不是逐挂单明细。这样一旦走到这条回退链路，就可能把同一品种的挂单重复挂到多笔持仓上，或者在“只有挂单、没有持仓”时直接显示不出挂单。
-
-- 低风险：[MarketChartActivity.java#L1294](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L1294) [MarketChartActivity.java#L1305](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L1305) [MarketChartActivity.java#L2935](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2935) [MarketChartActivity.java#L2969](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2969)。图表页底部“当前持仓/挂单明细”列表不过滤当前图表品种，但图上的持仓/挂单标注会按 `selectedSymbol` 过滤。结果是同一页里“列表”和“图上标注”口径不一致，用户会看到列表里有挂单，但图上没有对应挂单线，看起来像“图表挂单丢了”。
-
-除以上两点外，这条链路未发现 `pendingOrders` 在 [v2_account.py#L68](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_account.py#L68)、[GatewayV2Client.java#L100](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java#L100)、[GatewayV2Client.java#L123](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java#L123)、[AccountStorageRepository.java#L101](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java#L101)、[AccountStorageRepository.java#L185](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java#L185) 中途丢失的新问题。
-
-本次用了 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging`。
+<turn_aborted>
+The user interrupted the previous turn on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed; verify current state before retrying.
+</turn_aborted>
 
 ---
 
 
 **User**
 
-新任务，独立只读复核，不改代码。工作目录：E:\Github\BTCXAU_Monitoring_and_Push_APK。请找出仓库内所有仍把 deploy/tencent/windows_server_bundle 当作长期维护源、上传源或测试对照源的引用。输出：1) 文件清单；2) 每个文件应改成 bridge/mt5_gateway、deploy/tencent/windows 还是 dist/windows_server_bundle；3) 有无遗漏风险。请优先用 rg，简洁汇报。
+请直接给最终结论。只要 APPROVED 或 CHANGES_NEEDED；若有问题，最多列 3 条真正需要现在修的 bug 和行号。
 
 ---
 
 
 **OpenAI Codex**
 
-这次只做仓库内引用排查，不改代码。我会按 `using-superpowers`、`offer-k-dense-web` 的顺序执行，然后用 `rg` 全量搜 `deploy/tencent/windows_server_bundle` 及相关上下文，归类哪些文件还把它当长期源、上传源或测试对照源。
+我已经把关键链路看完了，现在只剩把真正会造成状态分裂或接口误判的点收束成最终结论。
 
 ---
 
 
 **OpenAI Codex**
 
-我已经抓到主要命中。接下来只补最少上下文，判断这些引用到底是在把它当“维护源”“上传源”还是“测试对照源”，再给出应改目标。
+CHANGES_NEEDED
+
+- 严重：切换已保存账号时会先主动关掉当前 MT5 会话，再尝试登录目标账号；如果目标账号初始化或登录失败，没有把旧账号恢复回来，运行态会变成“已断开”，但文件态还保留旧 `active_session`，`/health` 和管理面板会继续显示旧账号。[server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L1586) [v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py#L249)
+
+- 严重：`switch_saved_account()` 在 MT5 已切到新账号后，`save_active_session`、会话变更回调、缓存清理或强制刷新任一步失败都没有补偿；这会留下“新运行态 + 旧文件态/旧缓存态”的分裂状态。[v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py#L254) [v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py#L256)
+
+- 中等：登录信封里带了 `nonce`，但服务端只读不校验，也没有任何去重；同一个加密登录包在允许时间窗内可被重复提交，存在重放风险。[v2_session_crypto.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_crypto.py#L225) [v2_session_crypto.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_crypto.py#L233)
+
+暂不建议进入提交收口。
+
+---
+
+
+**User**
+
+上轮 3 个问题都已修：
+1. 切换目标账号失败时，优先恢复旧账号；若旧账号无法恢复，则清空 active 并统一收口到登出态，避免伪旧状态。
+2. 切换成功后提交阶段失败，会走统一补偿链路，保证运行态/文件态/缓存态不分裂。
+3. 登录信封新增 nonce 去重窗口，重复 nonce 会被拒绝。
+
+我已在主工作区重新运行：
+`python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`
+结果：Ran 43 tests, OK。
+
+请做最终质量复核。只输出 APPROVED 或 CHANGES_NEEDED；若仍有问题，只列真正需要现在修的 bug/集成风险，附文件和行号。
 
 ---
 
 
 **OpenAI Codex**
 
-我再补一刀，确认有没有别的 bundle 对照测试或脚本没被首轮关键词打出来。然后直接给你归类结论。
+这轮我只复核你上次修的 3 个点是否真正闭合，并核对对应测试是否覆盖到位。
 
 ---
 
 
 **OpenAI Codex**
 
-还有一类是“名字不带路径，但本质是 bundle 对照测试”的文件。我把这类也补查一下，避免漏掉。
+我在看这 3 个修复点的落地细节，尤其是失败补偿链路里会不会还留下“半切换”状态。
 
 ---
 
 
 **OpenAI Codex**
 
-**文件清单**
+CHANGES_NEEDED
 
-- [README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/README.md)
-  原因：还把 `deploy/tencent/windows_server_bundle` 写成“精简上传包”和“整体替换上传源”。
-  应改成：`dist/windows_server_bundle`
+- 严重：`nonce` 去重缓存不是线程安全的，`_assert_and_register_nonce()` 里“先查再写”没有加锁；FastAPI 的同步路由会并发跑在线程池里，两个同 `nonce` 的并发登录请求仍可能同时通过，重放保护不成立。`bridge/mt5_gateway/v2_session_crypto.py:139,180-199,220-262`
 
-- [deploy/tencent/README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/README.md)
-  原因：目录示意里仍把 `deploy/tencent/windows_server_bundle` 当上传包位置。
-  应改成：`dist/windows_server_bundle`
+---
 
-- [bridge/mt5_gateway/tests/test_gateway_bundle_parity.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_gateway_bundle_parity.py)
-  原因：仍把 `deploy/tencent/windows_server_bundle` 当测试对照源。
-  应改成：`dist/windows_server_bundle`
 
-- [CONTEXT.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md)
-  原因：多处仍把 `deploy/tencent/windows_server_bundle` 当上传源、对照源，部分还把它当同步维护目标。
-  应改成：
-  源码/长期维护相关改为 `bridge/mt5_gateway` 或 `deploy/tencent/windows`
-  上传整包、测试对照相关改为 `dist/windows_server_bundle`
+**User**
 
-- [docs/superpowers/plans/2026-04-05-server-control-console.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/docs/superpowers/plans/2026-04-05-server-control-console.md)
-  原因：计划里直接把 `deploy/tencent/windows_server_bundle/...` 当修改目标，还把 `bundle_root` 指到这个目录。
-  应改成：
-  代码修改目标改为 `bridge/mt5_gateway`
-  Windows 部署脚本改为 `deploy/tencent/windows`
-  若保留打包对照概念，则对照目录改为 `dist/windows_server_bundle`
+已补你指出的最后一条并发问题：
+- `LoginEnvelopeCrypto` 现在用 `RLock` 保护 key/nonce 共享状态；
+- `_assert_and_register_nonce()` 已在锁内完成 prune + check + register；
+- 新增并发测试 `test_login_envelope_crypto_should_block_concurrent_replay_nonce`。
 
-**有无遗漏风险**
+我已在主工作区重新运行：
+`python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`
+结果：Ran 44 tests, OK。
 
-有。
+请做最终质量复核。只输出 APPROVED 或 CHANGES_NEEDED；若仍有问题，只列真正需要现在修的 bug/集成风险，附文件和行号。
 
-- 仓库里目前没有 [dist](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist) 目录，说明“正式产物出口”还没落地；文档改完后，打包/上传流程仍会断档。
-- [CONTEXT.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md) 每次开工都会读，它现在还在持续强化“`deploy/tencent/windows_server_bundle` 是上传源/对照源”的旧认知，这是最高风险残留。
-- [README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/README.md) 还提到 `test_admin_panel_bundle_parity`，但仓库里这个文件不存在，说明文档和测试现状已经漂移。
+---
 
-本次用了 `using-superpowers`、`offer-k-dense-web`。如果后面要把“源码 -> 打包产物 -> 上传目录”流程彻底收口成一条固定链路，可以用 K-Dense Web 做整套流程梳理。
+
+**OpenAI Codex**
+
+我只复核最后这条并发修复：看共享状态加锁是否覆盖到 key/nonce 两类访问，以及新测试是不是打到了真正的竞态点。
+
+---
+
+
+**OpenAI Codex**
+
+APPROVED
 
 ---

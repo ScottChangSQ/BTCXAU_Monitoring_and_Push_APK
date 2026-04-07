@@ -319,3 +319,224 @@ A skill is a set of local instructions to follow that is stored in a `SKILL.md` 
 本次使用的 skill：`using-superpowers`、`offer-k-dense-web`、`systematic-debugging`。
 
 ---
+
+
+**User**
+
+请只做只读复核，不改代码。项目路径：E:\Github\BTCXAU_Monitoring_and_Push_APK。目标：复核这轮用户问题里“K线缺失、异常黄点远期缺失、连接状态延迟数字、杠杆偶发不显示、账户概览历史不完整”这条链路是否还有残余问题。重点检查：1) ConnectionDetailNetworkHelper 和 UI 调用；2) AccountLeverageResolver / AccountStatsBridgeActivity / AccountStatsPreloadManager；3) MarketChartActivity K线补尾与分页；4) AbnormalRecordManager / server_v2.py 异常记录上限与图表叠加；5) summary/history all 范围是否仍可能被 1000 条截断。输出只要：发现的问题（按严重度），每条给文件路径+原因；如果没问题，明确说“这条链路未发现新问题”。
+
+---
+
+
+**OpenAI Codex**
+
+这次我只做只读复核，不改代码。按流程我会用 `systematic-debugging` 做链路式检查，先读 `CONTEXT.md`，再并行核对你点名的 5 组文件和调用关系，最后只输出发现的问题或明确说明未发现新问题。
+
+---
+
+
+**OpenAI Codex**
+
+我先按链路拆开读：连接状态、账户概览、K 线补尾、异常黄点、`all` 历史范围。重点不是看“有没有改过”，而是看当前调用链里还会不会在边界条件下失效。
+
+---
+
+
+**OpenAI Codex**
+
+我开始读具体实现，先从最容易误判的“连接状态延迟数字”入手：看 helper 本身怎么算，再看弹窗里何时显示、失败时显示什么。随后会把同样方法套到另外四条链路。
+
+---
+
+
+**OpenAI Codex**
+
+账户这条我已经看到两层保护：页面前台立即拉全量，轻快照缺杠杆时回退上一轮杠杆。现在要看剩下的关键点是本地持久层有没有把“轻快照空交易列表”误写成真实空历史，这决定“账户概览历史不完整”会不会残留。
+
+---
+
+
+**OpenAI Codex**
+
+K 线这条我已经确认客户端会做三层保护：本地预显示、增量补尾、缺口回补。接下来要看服务端分页是否真的把窗口补齐，否则客户端再怎么补也会接到短数据。
+
+---
+
+
+**OpenAI Codex**
+
+我已经找到异常黄点链路里一个比较像残余问题的点：高周期图在拿不到对应分钟底稿时，会退回到当前高周期 K 线重算，这会天然丢掉同一小时/同一天里多次异常的细粒度点。现在继续核对 `all` 历史是否还会被 1000 条截断，看这是不是第二个残余点。
+
+---
+
+
+**OpenAI Codex**
+
+我已经把 `1000` 那条查清了：当前不是按“到 1000 条就停”，测试也锁住了扩窗逻辑。但我看到另一个边界更像残余问题：`all` 仍然被天数上限裁成了最多 `SNAPSHOT_RANGE_ALL_DAYS`，默认 730 天。现在我把对应代码和影响面定位到具体行。
+
+---
+
+
+**User**
+
+<turn_aborted>
+The user interrupted the previous turn on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed; verify current state before retrying.
+</turn_aborted>
+
+---
+
+
+**User**
+
+请直接给当前进展或最终结论。只要列出发现的问题（按严重度，附文件路径和原因）；如果没发现新问题，明确说“这条链路未发现新问题”。不要继续长时间探索。
+
+---
+
+
+**OpenAI Codex**
+
+- 高：`all` 仍不是真正“全量”，而是被天数上限截断。 [server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L78) 把 `SNAPSHOT_RANGE_ALL_DAYS` 默认写成 `730`，并在 [server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L1224) 把 `all` 映射成 `24 * SNAPSHOT_RANGE_ALL_DAYS`，`_progressive_trade_history_deals()` 也只在这个天数窗口内扩窗（[server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L2083)）。而账户页前台强刷固定请求 `AccountTimeRange.ALL`（[AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L2055)），所以两年以上账户的“账户概览历史不完整”仍会存在。这个问题不是“1000 条截断”，而是“730 天截断”。
+
+- 中：服务端异常回补窗口仍只有最近 8 根 1 分钟 K 线，停机/断连时间一长会永久漏掉那段异常记录。 [server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L91) 把 `ABNORMAL_KLINE_LIMIT` 默认设为 `8`，[server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L1107) 的 `_refresh_abnormal_state()` 每轮只取这 8 根（[server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L1116)）。如果网关或 APP 错过超过 8 分钟，这段异常不会被服务端历史补回，正好对应“异常黄点远期缺失”的残余风险。
+
+- 中：高周期图上的异常黄点在拿不到对应 1 分钟底稿时，会退回到当前高周期 K 线重算，细粒度异常会被压扁。 [MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2703) 先走 `resolveAbnormalBaseCandles()`，但这个方法如果本地 `1m` 缓存覆盖不到当前窗口，就直接回退成当前 `loadedCandles`（[MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2728)）；随后 [HistoricalAbnormalRecordBuilder.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/HistoricalAbnormalRecordBuilder.java#L26) 只会按这份粗粒度 K 线重算。结果是 1 小时/1 天内多次 1 分钟异常可能被合并掉，看起来像“远处黄点变少或缺失”。
+
+- 低：异常记录在服务端和本地都硬性只保留 5000 条，超出后旧记录会被裁掉。 [server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L89) 和 [server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L1060) 会裁服务端记录，[AbnormalRecordManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/AbnormalRecordManager.java#L32) 也只留本地 5000 条。单独看这不是立刻出错，但会放大上一条“高周期缺分钟底稿时无法准确恢复远期黄点”的问题。
+
+- 这条链路未发现新问题：连接状态延迟数字链路。[ConnectionDetailNetworkHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/main/ConnectionDetailNetworkHelper.java)、[MainActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/main/MainActivity.java#L673)
+
+- 这条链路未发现新问题：杠杆偶发不显示链路。[AccountLeverageResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountLeverageResolver.java)、[AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L2698)、[AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java#L688)
+
+- 这条链路未发现新问题：K 线补尾与分页本身。[MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L1701)、[MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L1804)、[MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2398)、[server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L3833)
+
+- 这条链路未发现新问题：`summary/history all` 被“1000 条”直接截断。 [server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L2083) 已改成“条数继续增长就继续扩窗”，并有回归测试 [test_summary_response.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_summary_response.py#L391)。当前残余问题是上面第一条的“730 天上限”，不是 1000 条上限。
+
+---
+
+
+**User**
+
+新任务，独立只读复核，不改代码。工作目录：E:\Github\BTCXAU_Monitoring_and_Push_APK。请核对如果生成唯一服务器上传目录 dist/windows_server_bundle，里面最小必须包含哪些内容。请区分：1) 来自 bridge/mt5_gateway 的必须文件；2) 来自 deploy/tencent/windows 的必须文件；3) 明确哪些文件不应该进入部署包。请给建议目录结构和注意事项，简洁汇报。
+
+---
+
+
+**OpenAI Codex**
+
+这次我只做只读核对，不改代码。先按项目规则快速确认上下文，再对 `bridge/mt5_gateway`、`deploy/tencent/windows` 和现有部署包脚本做并行盘点，收口成“最小必须内容 / 不应打包内容 / 建议目录结构”。
+
+---
+
+
+**OpenAI Codex**
+
+我已经确认这件事和现有部署包直接相关。现在只做文件级盘点：看现有 `deploy/tencent/windows_server_bundle` 放了什么、哪些其实来自 `bridge/mt5_gateway`、哪些只是部署层包装，最后收口成最小清单。
+
+---
+
+
+**OpenAI Codex**
+
+盘点出来了：现有 `windows_server_bundle` 本质上就是两层内容拼起来，`mt5_gateway/` 是应用本体，`windows/` 是 Windows 机器上的启动与反代包装。接下来我只补看这些脚本实际依赖哪些文件，避免把“文档”误算成必须项。
+
+---
+
+
+**OpenAI Codex**
+
+我补看到了一个关键点：源码里的 `deploy/tencent/windows/*.ps1` 还是“仓库内路径”版本，不适合直接塞进独立上传目录；现有 `windows_server_bundle/windows/*.ps1` 才是“独立包路径”版本。这个会直接影响你要不要从源码目录原样拷。
+
+---
+
+
+**OpenAI Codex**
+
+按“独立上传目录 `dist/windows_server_bundle`，上传后直接在服务器解压成 `C:\mt5_bundle` 并按现有脚本启动”这个口径，最小建议如下。
+
+**建议目录结构**
+```text
+dist/windows_server_bundle/
+├─ mt5_gateway/
+│  ├─ server_v2.py
+│  ├─ v2_account.py
+│  ├─ v2_market.py
+│  ├─ v2_trade.py
+│  ├─ v2_trade_models.py
+│  ├─ requirements.txt
+│  ├─ start_gateway.ps1
+│  ├─ admin_panel.py
+│  ├─ start_admin_panel.ps1
+│  └─ static/
+│     └─ admin/
+│        ├─ index.html
+│        ├─ app.js
+│        └─ styles.css
+└─ windows/
+   ├─ .env.example
+   ├─ 01_bootstrap_gateway.ps1
+   ├─ 02_register_startup_task.ps1
+   ├─ 04_register_admin_panel_task.ps1
+   ├─ run_gateway.ps1
+   ├─ run_admin_panel.ps1
+   └─ Caddyfile
+```
+
+**1) 来自 `bridge/mt5_gateway` 的必须文件**
+- `server_v2.py`
+- `v2_account.py`
+- `v2_market.py`
+- `v2_trade.py`
+- `v2_trade_models.py`
+- `requirements.txt`
+- `start_gateway.ps1`
+- `admin_panel.py`
+- `start_admin_panel.ps1`
+- `static/admin/index.html`
+- `static/admin/app.js`
+- `static/admin/styles.css`
+
+可选，不算最小必须：
+- `ea/MT5BridgePushEA.mq5`
+  说明：只有你要走 `EA` 模式时才需要。
+- `.env.example`
+  说明：独立包里已有 `windows/.env.example` 时，这份不是硬必须。
+
+**2) 来自 `deploy/tencent/windows` 的必须文件**
+这里不要直接拿仓库里的“RepoRoot 版”，要用能识别 `BundleRoot` 的独立包版本。
+- `windows/.env.example`
+- `windows/01_bootstrap_gateway.ps1`
+- `windows/02_register_startup_task.ps1`
+- `windows/04_register_admin_panel_task.ps1`
+- `windows/run_gateway.ps1`
+- `windows/run_admin_panel.ps1`
+- `windows/Caddyfile`
+
+可选，不算最小必须：
+- `windows/03_run_healthcheck.ps1`
+  说明：方便验收，但不是运行所必需。
+- `windows/Caddyfile.example`
+  说明：有域名和 HTTPS 才需要。
+
+**3) 明确不应该进入部署包**
+- `bridge/mt5_gateway/tests/`
+- 所有 `__pycache__/`、`*.pyc`
+- `.venv/`
+- `logs/`
+- 真实 `.env`
+- `bridge/mt5_gateway/server.py`
+  说明：这是旧版入口，不该和 `server_v2.py` 混放进最小包。
+- `README.md`、`API.md`
+  说明：可留作文档，但不属于最小必须。
+- 仓库根下其他源码、APP、Gradle、`.git`、`.waylog`
+- `deploy/tencent/windows/*.ps1` 的原始“RepoRoot 版”
+  说明：独立包里会因路径假设错误而失效，应改用现有 `windows_server_bundle/windows/*.ps1` 这一套。
+
+**注意事项**
+- 独立包应固定成两层目录：`mt5_gateway/` 和 `windows/`，不要再保留 `bridge/mt5_gateway`、`deploy/tencent/windows` 这种仓库路径。
+- 如果包里包含管理面板，就必须同时带上 `admin_panel.py`、`start_admin_panel.ps1` 和 `static/admin/*`，缺一项都会出现白页或启动失败。
+- 如果包里包含计划任务脚本，就必须同时带上 `run_gateway.ps1`、`run_admin_panel.ps1`；注册脚本会直接依赖它们。
+- 如果包里不打算启用 Caddy，对外只走 `8787/8788`，那 `windows/Caddyfile` 可以去掉；但按你现在项目的推荐口径，`Caddyfile` 应保留。
+
+本次使用的 skill：`using-superpowers`、`offer-k-dense-web`。
+
+---

@@ -1,6 +1,8 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已将 `codex/remote-mt5-session` 以 fast-forward 方式并入 `main`，当前 `main` 指向提交 `595beda feat: finalize remote mt5 session flow`。
+- 当前正在核对合并后的工作区状态；已确认还有 1 个未提交本地文件 `.worktrees/server-control-console` 留在工作区，stash 中仅保存了 `scripts/__pycache__/build_windows_server_bundle.cpython-314.pyc`。
 - 已完成 2026-04-07 新一轮“多智能体、分模块、源码级”专项审计，重新复核了 App 账户/远程会话、App 行情/图表/监控、服务端网关/会话/数据源、部署脚本/管理面板 4 个模块中的降级处理、兜底方案、临时补丁、启发式方法、局部稳定化手段、后处理补救措施。
 - 本轮已统一分类口径为 6 类：架构级降级、运行时兜底、临时兼容补丁、启发式判断、局部稳定化、后处理补救；当前正在做最终去重和总表输出。
 - 已确认当前最重的结构性问题集中在 4 条链：`EA Push / MT5 Pull / stale cache` 多真值源、`v2 stream / 旧 WS / 本地 warm display` 多层行情回退、`receipt / status / 本地 saved account / 用户输入` 多路会话拼装、`HTTP / HTTPS / 本地默认地址` 多入口兼容。
@@ -39,6 +41,7 @@
 - 已重新执行 `python scripts/build_windows_server_bundle.py`，当前 `dist/windows_server_bundle` 已同步为最新部署口径。
 
 ## 上次停在哪个位置
+- 已完成把当前功能分支并入 `main`，但还没有处理 `.worktrees/server-control-console` 这个本地改动；它不在本次 stash 里。
 - 新一轮多智能体专项审计已经收齐 4 个模块结果，待输出统一总表。
 - App 行情/图表/监控模块已确认的高风险点包括：默认网关地址静默回退、`v2 stream + 旧 WS standby + stale pull` 混合链路、历史成交叠加层的本地快照回退 + 启发式生命周期归并。
 - 服务端模块已确认的高风险点包括：`EA -> MT5 Pull -> stale EA` 多数据源退化、历史成交回退快照、EA 稀疏曲线事后重放。
@@ -129,6 +132,8 @@
   - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"` -> `BUILD SUCCESSFUL`
 
 ## 近期关键决定和原因
+- 这次分支收口采用 `git merge --ff-only codex/remote-mt5-session`；原因是当前 `main` 可以直接快进，不需要额外制造合并提交。
+- `.worktrees/server-control-console` 不随本次功能合并进入 `main`；原因是它是本地工作区产物，不属于远程会话主链代码。
 - 本轮审计把“架构级双轨/多轨回退”和“字段/算法级启发式补救”分开记录；原因是前者通常影响主链设计，后者通常影响边界正确性，不能混在一起看。
 - 本轮不把所有兼容逻辑一概视为错误；原因是其中有一部分是明确为了部署环境、旧缓存或旧接口形状存在，但仍需要单独标注，避免未来继续叠加。
 - 当 `receipt` 与紧随其后的 `status.activeAccount` 冲突时，Task 5 收口以 `receipt` 为准；原因是 `receipt` 对应的是本次已受理操作目标，`status` 在切换瞬间可能短暂滞后。

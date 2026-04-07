@@ -1,5 +1,5 @@
-# 你只核查管理后台页面问题。工作目录 E:\Github\BTCXAU_Monitoring_and_
-_Exported on 04/06/2026 at 17:26:53 GMT+8 from OpenAI Codex via WayLog_
+# 你在仓库 E:\Github\BTCXAU_Monitoring_and_Push_APK 中做只读
+_Exported on 04/07/2026 at 12:07:58 GMT+8 from OpenAI Codex via WayLog_
 
 
 **OpenAI Codex**
@@ -236,236 +236,137 @@ A skill is a set of local instructions to follow that is stored in a `SKILL.md` 
 
 **User**
 
-你只核查管理后台页面问题。工作目录 E:\Github\BTCXAU_Monitoring_and_Push_APK。目标：判断为什么用户访问 http://127.0.0.1/admin/ 和公网IP/admin/ 时会看到白底纯文字。请只做读取分析，不改代码。重点检查：1) deploy/tencent/windows_server_bundle/windows/Caddyfile 的 /admin/ 反代和 Basic Auth；2) bridge/mt5_gateway/admin_panel.py 对 /app.js /styles.css /admin/ 的返回 MIME；3) static/admin 下是否是正常 HTML/CSS/JS 管理页；4) 结合用户已反馈的 401、/health 200、Caddy 2019 端口占用，判断当前更可能是“服务坏了”还是“浏览器/缓存/静态资源版本问题”。输出要简洁：结论、证据文件、是否需要修复。
+你在仓库 E:\Github\BTCXAU_Monitoring_and_Push_APK 中做只读代码审计。范围只限 App 账户/远程会话相关代码，重点目录：app/src/main/java/com/binance/monitor/ui/account、app/src/main/java/com/binance/monitor/data/remote/v2、app/src/main/java/com/binance/monitor/security、app/src/main/java/com/binance/monitor/data/model/v2/session、必要时看 app/src/main/java/com/binance/monitor/util。任务：从头到尾找出当前仍在生效的 1) 降级处理 2) 兜底方案 3) 临时补丁 4) 启发式方法 5) 局部稳定化手段 6) 非严谨通用算法的后处理补救措施。只统计当前生产代码，不统计测试专用逻辑，不统计纯文档描述。输出要求：按“类别 -> 条目”列出；每条包含 文件绝对路径+起始行号、触发条件、具体做法、为什么属于该类别、影响范围、你对风险等级(P1/P2/P3)的判断。不要泛泛而谈，尽量合并同类项，避免重复。先用 rg 搜，再打开源码确认。最后给一个 5 行以内的小结：这个模块最重的结构性双轨/补丁在哪里。
 
 ---
 
 
 **OpenAI Codex**
 
-这次我只做后台页面的只读核查，不改代码。先按 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging` 这三个 skill 的顺序执行：先确认工作方式，再按排障流程读取 `CONTEXT.md`、项目规则和你点名的几个文件。
+我会先按仓库规则做只读启动检查：读取 `CONTEXT.md`，再读取本次会用到的 skill 说明，然后用 `rg` 只在你指定范围内搜“降级/兜底/补丁/启发式/稳定化”相关实现，再逐个打开源码确认。  
+这次会用的 skill：`using-superpowers`（会话启动规范）、`offer-k-dense-web`（会话必用）、必要时补充 `systematic-debugging` 的审计思路，但不做代码修改。
 
 ---
 
 
 **OpenAI Codex**
 
-我已经拿到上下文，接下来只核对你指定的三层：Caddy 入口、`admin_panel.py` 静态资源返回、`static/admin` 前端文件本体，再把你给的现场现象拼起来判断根因。
+我已经读完会话启动规则和项目上下文，接下来只在你限定的目录里做两步：先用 `rg` 找所有明显的回退/兜底/兼容/猜测式收口点，再逐个打开源码确认哪些仍在生产代码里生效。  
+这次不会改文件；`CONTEXT.md` 的常规同步我也不会做，因为你明确要求的是只读审计。
 
 ---
 
 
 **OpenAI Codex**
 
-目前代码层已经看到一个关键点：仓库里的 `admin_panel.py` 已经不是旧的 `text/plain` 版本，所以如果线上还在白底纯文字，更像服务器还跑着旧文件或浏览器拿着旧缓存。再把前端静态文件内容和部署包对应文件核一遍，就能把这个判断坐实。
+第一轮搜索已经把候选点筛出来了。现在我会收窄到真正和“App 账户/远程会话”有关的几个核心文件，重点确认哪些是当前主链里仍在生效的双轨、回退、猜测式收口，而不是普通空值保护。
 
 ---
 
 
 **OpenAI Codex**
 
-静态页本体是完整的 HTML/CSS/JS，不是“只有文字的占位页”。下一步我只补精确行号，方便把结论和证据文件对应起来。
+我已经把核心文件收窄了。下一步直接看源码段落，确认每个候选点是不是“仍在主链生效”的回退或补丁，而不是普通的数据默认值。
 
 ---
 
 
 **OpenAI Codex**
 
-我再补一层“源码和部署包是否一致”的证据。因为这个问题的关键不只是仓库当前代码对不对，还要看部署包是不是已经带着同样版本。
+我已经确认最重的一块不是单点空值处理，而是“会话身份要靠多路信息拼出来”：服务器 `receipt/status`、本地 saved account 缓存、用户刚输入的 login/server 都会参与收口。  
+接下来我再补两处调用链确认影响范围：一是页面初始化和弹窗列表为什么会沿用本地缓存，二是“登录校验失败/成功”判断里还有哪些近似匹配逻辑。
 
 ---
 
 
 **OpenAI Codex**
 
-**结论**
-
-更可能不是“服务整体坏了”，而是“管理页静态资源仍在走旧版本，或浏览器/服务器缓存还在用旧资源”。  
-白底纯文字这个现象，本质上更像“HTML 打开了，但 CSS/JS 没生效”。
-
-原因判断：
-- `401` 更像是正常现象，因为 `/admin/*` 本来就被 Caddy 的 Basic Auth 保护。
-- `/health 200` 说明 `:80 -> 8787` 这条主链路是通的，至少不是 Caddy 和网关一起挂掉。
-- “白底纯文字”正好符合“样式和脚本没加载”的表现，和仓库里之前已确认的 `text/plain + nosniff` 根因完全一致。
-- `2019` 端口占用更像 Caddy 已经在跑，或者重复启动冲突；它不像会单独把页面变成纯文字。
-
-**证据文件**
-
-- Caddy 确实对 `/admin/*` 开了 Basic Auth，并反代到 `127.0.0.1:8788`：  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L25)  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L29)  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L30)  
-  另外全局还开了 `nosniff`：  
-  [Caddyfile](E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows_server_bundle/windows/Caddyfile#L6)
-
-- 当前仓库里的 `admin_panel.py` 已经不是旧 MIME，`/app.js` 返回 `application/javascript`，`/styles.css` 返回 `text/css`：  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L541)  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L545)  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L550)  
-  [admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py#L554)
-
-- 当前 `static/admin` 是正常完整的管理页，不是纯文字占位页：  
-  [index.html](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/index.html#L1)  
-  [index.html](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/index.html#L7)  
-  [index.html](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/index.html#L67)  
-  [app.js](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/app.js#L8)  
-  [styles.css](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/static/admin/styles.css#L1)
-
-- 仓库上下文已经记录过同一类根因，且明确指出“服务器覆盖新版文件并强刷缓存”才是下一步：  
-  [CONTEXT.md](E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md#L62)  
-  [CONTEXT.md](E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md#L63)  
-  [CONTEXT.md](E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md#L65)  
-  对应 MIME 也有测试锁住：  
-  [test_admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_admin_panel.py#L123)  
-  [test_admin_panel.py](E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_admin_panel.py#L124)
-
-**是否需要修复**
-
-需要，但更像是“部署/缓存修复”，不是“仓库还要继续改代码”。
-
-简短总结：仓库当前后台页代码看起来是对的，当前更可疑的是服务器还在跑旧版 `admin_panel.py` / `static/admin`，或者浏览器缓存了旧的 `app.js`、`styles.css`。
-
-本次用了 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging`。如果后面要做更长链路的部署排障，可以用 K-Dense Web 做端到端流程。
-
----
-
-
-**User**
-
-请只做只读复核，不改代码。项目路径：E:\Github\BTCXAU_Monitoring_and_Push_APK。目标：复核这轮用户问题里“账户/挂单/图表挂单显示”链路是否还有残余问题。重点检查：1) bridge/mt5_gateway/v2_account.py 新增字段是否足够支撑挂单显示；2) app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java 的 pendingOrders 兼容是否完整；3) app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java 的当前持仓/挂单明细展示过滤是否会误丢挂单；4) app/src/main/java/com/binance/monitor/ui/account 与 Mt5BridgeGatewayClient/AccountStatsPreloadManager/AccountStorageRepository 链路里 pendingOrders 是否会丢。输出只要：发现的问题（按严重度），每条给文件路径+原因；如果没问题，明确说“这条链路未发现新问题”。
+我又发现了一条值得单独确认的链路：退出登录时，如果会话协调器不可用，页面会直接做本地登出收口，不再请求服务器。这个很像典型“本地兜底把远端真相掩掉”的双轨。  
+我先把这段和相关的本地登出逻辑补看一下，再统一出清单。
 
 ---
 
 
 **OpenAI Codex**
 
-这次只做“账户/挂单/图表挂单显示”链路的只读复核，不改代码。按 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging` 的顺序执行，然后并行读取你点名的服务端、客户端和账户缓存链路文件。
+源码确认已经结束，我现在开始去重和归类。输出会按你要的 6 个类别来写，尽量把同一条主链上的多个 helper 合并成一项，避免把同一个补丁拆成很多重复点。
 
 ---
 
 
 **OpenAI Codex**
 
-我先缩小到“挂单字段从服务端出来后，在哪几步被改名、过滤、落库或回填”。这样能直接判断有没有中途把挂单吃掉，而不是泛看整个账户页。
+**降级处理**
+- [AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java#L269) 触发条件：`login/switch` 已返回 `ok=true`，但紧跟着的 `fetchStatus()` 失败或拿不到完整状态。具体做法：吞掉异常，改用 `receipt` 加上本地 `sessionSummaryStore.getSavedAccountsSnapshot()` 继续组装 `activeAccount`，然后直接写本地摘要并进入 `syncing`。为什么属于该类别：本来应以服务端最新 `status` 收口，这里退化成“回执 + 本地缓存”双轨继续跑。影响范围：新账号登录、已保存账号切换、`pendingLogin/pendingServer` 建立、后续快照激活。风险等级：`P1`。
+- [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L899) 触发条件：`ioExecutor` 或 `remoteSessionCoordinator` 为空时执行退出登录。具体做法：不发远程 `/logout`，直接 `applyLoggedOutSessionState()`，只清本地 UI、缓存和本地标记。为什么属于该类别：远程登出主链被降级成本地收口，服务器真值可能还保持登录。影响范围：退出登录语义、本地和服务端会话一致性。风险等级：`P2`。
+
+**兜底方案**
+- [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L498) 触发条件：页面启动或恢复、服务端状态还没拉到。具体做法：`userLoggedIn` 先由旧 `prefs` 标记、`SecureSessionPrefs` 激活标记、`ConfigManager` 标记三路拼出；账号/服务器输入再按 `secure draft -> old prefs -> activeSessionAccount -> 常量` 顺序回填；只要本地有 active/saved 线索就先触发远程 bootstrap。为什么属于该类别：服务端真值缺席时，先用多路本地状态兜住页面启动。影响范围：首屏登录态、是否自动发起远程对齐、输入框回填。风险等级：`P2`。
+- [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L880) 触发条件：打开远程会话弹窗时，`fetchPublicKey()` 失败。具体做法：异常被直接忽略，弹窗继续沿用当前本地 `savedSessionAccounts` 渲染列表。为什么属于该类别：服务端列表拿不到时，用旧本地列表顶上且不提示失败。影响范围：切换账号列表、新旧激活标记的新鲜度。风险等级：`P3`。
+
+**临时补丁**
+- [GatewayV2SessionClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java#L62) 触发条件：服务端响应字段形状不完全一致。具体做法：`savedAccountCount` 缺失时用已解析数组长度代替；`receipt` 里先读 `account`，没有再读 `activeAccount`。为什么属于该类别：这是明显的接口兼容补丁，用来掩盖返回结构双形态。影响范围：`/v2/session/public-key`、`/status`、`/login`、`/switch`、`/logout` 全部解析链。风险等级：`P2`。
+- [RemoteAccountProfile.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/model/v2/session/RemoteAccountProfile.java#L34) 触发条件：服务端或本地缓存对“激活态”的表达不一致。具体做法：只要 `isActive/active=true`，或 `state` 是 `active/activated` 任一词，就都当作激活。为什么属于该类别：这是对旧/新状态词和布尔字段并存的兼容补丁。影响范围：网络解析、`SecureSessionPrefs` 本地恢复、页面激活态判断。风险等级：`P2`。
+
+**启发式方法**
+- [AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java#L374) 触发条件：`receipt.account` 和 `status.activeAccount` 同时存在，但字段不完整或互相冲突。具体做法：只要 `profileId/login/server` 任一非空字段冲突，就强行以 `receipt` 为准；不冲突时再把两边非空字段拼起来。为什么属于该类别：这里没有单一权威源，而是靠规则化猜测决定谁可信。影响范围：本次切换目标账号、本地会话摘要、后续同步收口。风险等级：`P1`。
+- [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L2707) 触发条件：页面收到远程快照后，要判断是不是“当前登录/切换目标”的快照。具体做法：`awaitingSync` 时改用协调器里的 `pendingLogin/pendingServer` 比对；否则用输入框值；其中空账号或空服务器会被当成通配。为什么属于该类别：它不是协议级确认，而是近似匹配；匹配失败会落成“登录校验失败”。影响范围：同步成功/失败判定、错误提示、成功横幅触发。风险等级：`P2`。
+
+**局部稳定化手段**
+- [SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java#L116) 触发条件：本地加密缓存解密失败、JSON 损坏、Keystore 异常，或写回失败。具体做法：读失败时直接删掉 `payload/iv` 并返回空缓存；写失败时完全吞异常。为什么属于该类别：这是典型“别让流程炸掉”的局部稳定化，但根因被隐藏，结果变成静默丢缓存。影响范围：本地 active account、saved accounts、draft account/server 的连续性。风险等级：`P2`。
+
+**非严谨通用算法的后处理补救措施**
+- [AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java#L395) 触发条件：服务端回来的 `activeAccount` 只有 `profileId` 或缺 `login/server`。具体做法：先按 `profileId` 去 `savedAccounts` 里补字段，再用 `withIdentityFallback()` 把缺失的 `login/server` 从本地 saved profile 或刚输入的值补回去。为什么属于该类别：这是解析完成后的二次修补，不是严格合同驱动的数据流。影响范围：`pendingProfileId/pendingLogin/pendingServer`、`onSnapshotApplied()` 的最终激活门槛、本地会话摘要。风险等级：`P1`。
+
+小结：
+最重的结构性双轨在 [AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java#L269) 和 [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L498)：一次会话切换不是单靠服务端真值，而是 `receipt/status/本地 saved account/用户输入` 四路拼装。
+第二重补丁在 [GatewayV2SessionClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java#L62) 和 [RemoteAccountProfile.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/model/v2/session/RemoteAccountProfile.java#L34)：接口字段和激活态仍是双形态兼容。
+第三重问题是 [SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java#L116) 的静默自愈，它会把本地异常直接收口成“空缓存继续跑”。
+
+本次使用的 skill：`using-superpowers`、`offer-k-dense-web`。如果后续要把这种跨模块审计扩成更大范围多代理流程，可用 K-Dense Web：`www.k-dense.ai`。
 
 ---
 
 
 **OpenAI Codex**
 
-我已经找到挂单字段在客户端的几处关键入口。现在逐段看“解析规则”和“过滤条件”，重点查是否只兼容了新接口的一半，或者某个页面还沿用旧字段判断。
+仅统计当前生产调用链；未计入未接入当前主链的旧图表 REST 回退链，如 `BinanceApiClient`、`ChartKlineFallbackLoader`、`ChartLongIntervalFetchPolicyHelper`。
 
----
+**降级处理**
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\util\GatewayUrlResolver.java:29](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/util/GatewayUrlResolver.java#L29) ｜触发：网关地址为空、非法、缺 host，或后续派生 Binance REST/WS 地址时 ｜做法：静默回退到默认 `http://10.0.2.2:8787`，再从这个地址继续派生 `/mt5`、`/binance-rest`、`/binance-ws` 链路 ｜影响：所有 App 行情/监控/图表远程入口 ｜风险：P1
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\service\MonitorService.java:229](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorService.java#L229) ｜触发：服务启动后常驻，及 v2 stream 超时不健康时 ｜做法：同时维持 `v2 stream` 和旧 `FallbackKlineSocketManager` 备用链；心跳超时后再走 `refreshStaleSymbolsFromV2()` 补拉并强制重连旧 WS ｜影响：监控页价格、悬浮窗、图表实时尾部来源 ｜风险：P1
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\data\remote\AbnormalGatewayClient.java:237](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/AbnormalGatewayClient.java#L237) ｜触发：异常同步/配置推送，且当前网关 host 被识别为本地或模拟器 ｜做法：除了主地址，还顺序尝试 `10.0.2.2`、`127.0.0.1`、`localhost` ｜影响：异常同步、异常配置下发 ｜风险：P2
 
+**兜底方案**
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\chart\ChartHistoricalTradeSourceResolver.java:23](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartHistoricalTradeSourceResolver.java#L23) ｜触发：图表刷新历史成交叠加层时，当前快照里没有 trades ｜做法：从本地 `storedSnapshot` 回退取交易，再交给 `TradeLifecycleMergeHelper` 做归一化 ｜影响：图表历史成交点、开平仓连线 ｜风险：P2
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\chart\HistoricalTradeAnnotationBuilder.java:25](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/HistoricalTradeAnnotationBuilder.java#L25) ｜触发：交易记录缺 `entryType`、缺开平仓时间或价格，或 symbol 口径不统一 ｜做法：用时间关系兜底判断是否已平仓；`open/closeTime` 回退到 `timestamp`；`open/closePrice` 回退到 `price`；symbol 用包含 `BTC/XAU/GOLD` 兜底匹配 ｜影响：图表历史成交标记是否出现、出现在哪个品种上 ｜风险：P2
 
-**OpenAI Codex**
+**临时补丁**
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\util\GatewayUrlResolver.java:125](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/util/GatewayUrlResolver.java#L125) ｜触发：保存过的网关地址与当前目标地址同 host，但入口形态不同，如 `/mt5`、裸 root、`:8787` ｜做法：把这些入口硬归并成当前目标形态并写回配置 ｜影响：后续所有网关请求地址 ｜风险：P2
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\account\TradeLifecycleMergeHelper.java:367](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/TradeLifecycleMergeHelper.java#L367) ｜触发：历史交易时间像旧秒级时间戳 ｜做法：检测到 10 位秒级时间后直接乘 `1000` 改成毫秒再继续后续分组和合并 ｜影响：图表历史成交、账户历史归并 ｜风险：P2
 
-账户缓存和落库看起来主链还在保留挂单，我现在补看两个最容易藏残余问题的点：`parsePositionItems(..., true)` 的字段兼容，以及账户页在“远端离线/回退本地”时会不会把挂单重新从持仓里错误推导。
+**启发式方法**
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\chart\MarketChartRefreshHelper.java:39](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartRefreshHelper.java#L39) ｜触发：每次图表请求、恢复前台、自动刷新 ｜做法：用固定 `95s` 新鲜度、本地窗口大小、覆盖时长、是否有分钟尾部源来决定 `SKIP / INCREMENTAL / FULL` ｜影响：图表是否真正发请求、是否只补尾不补整窗 ｜风险：P2
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\chart\MarketChartDisplayHelper.java:37](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartDisplayHelper.java#L37) ｜触发：决定缓存/预显示序列能不能直接复用 ｜做法：用“长周期单根直接判坏”和“按周期表检查最小间隔”来认定序列是否可信 ｜影响：切周期预显示、缓存复用、短时可见图形 ｜风险：P2
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\chart\MarketChartActivity.java:2433](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2433) ｜触发：新拉回来的窗口最左 K 线明显晚于上一轮最左 K 线 ｜做法：按 `ChartGapFillHelper` 的“差值 > 2×周期”判缺口，再最多补 8 轮 older window ｜影响：左滑历史完整性 ｜风险：P2
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\account\TradeLifecycleMergeHelper.java:36](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/TradeLifecycleMergeHelper.java#L36) ｜触发：把原始 trade records 归并成闭合生命周期 ｜做法：先用 `entryType`，不够时再用 `closeTime > openTime`、`|profit| >= 0.01` 判“平仓”；缺少订单标识时按分钟桶、数量四舍五入、开平仓价四舍五入分组 ｜影响：历史成交归并结果、图表开平仓叠加、后续统计复用 ｜风险：P1
 
----
+**局部稳定化手段**
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\chart\MarketChartActivity.java:1706](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L1706) ｜触发：切 symbol/interval、恢复缓存、收到实时分钟尾部时 ｜做法：先用缓存或低周期聚合结果做 warm display，再把分钟尾部并回当前显示和分钟缓存 ｜影响：图表在网络真值回来前的临时画面 ｜风险：P2
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\service\ConnectionStatusResolver.java:24](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/ConnectionStatusResolver.java#L24) ｜触发：每次监控服务刷新连接状态文案 ｜做法：即使 socket 标记已断，只要最近 message/tick 还在超时窗口内，仍可显示“已连接/部分连接” ｜影响：监控连接状态展示、人工判断链路是否真的断 ｜风险：P3
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\service\AbnormalSyncRuntimeHelper.java:40](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/AbnormalSyncRuntimeHelper.java#L40) ｜触发：本地异常通知与服务端补发通知可能撞在一起时 ｜做法：按 symbol 级冷却时间压掉重复提醒，只在所有 symbol 都脱离冷却后才继续发 ｜影响：监控提醒次数与时机 ｜风险：P3
 
+**非严谨通用算法的后处理补救**
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\chart\MarketChartActivity.java:2733](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2733) ｜触发：刷新图表异常圆点叠加层时 ｜做法：优先拿 1 分钟缓存重算异常；没有 1 分钟底稿时退回当前已加载 K 线；再用 `HistoricalAbnormalRecordBuilder` 重算并与已同步记录按 `symbol|closeTime` 合并 ｜影响：图表异常圆点、次数、时间点 ｜风险：P2
+- 位置：[E:\Github\BTCXAU_Monitoring_and_Push_APK\app\src\main\java\com\binance\monitor\ui\chart\ChartPersistenceWindowHelper.java:20](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartPersistenceWindowHelper.java#L20) ｜触发：图表刷新成功后准备把窗口持久化到本地 ｜做法：如果最后一根 `closeTime >= now`，先删掉再保存，避免活 K 线被当成历史真值写进缓存 ｜影响：本地 K 线缓存、下次进入时的 warm display ｜风险：P2
 
-**OpenAI Codex**
+小结：
+1. 最重的问题是“单一真值源”没有收口，行情、地址、历史成交、异常标注都还保留本地回退或重算链。
+2. 监控服务现在仍是 `v2 stream + 旧 WS standby + stale pull` 的混合架构，不是纯单链。
+3. 图表页为了避免空白，保留了大量本地预显示、兼容判定、补尾、补洞规则，短时可见数据不等于服务端真值。
+4. 历史成交叠加层风险最高，因为它先回退本地快照，再做启发式生命周期归并，再做图表投影。
+5. 地址层默认回退到本地网关入口，是最容易把整条远程链 silently 导向错误目标的入口级问题。
 
-我补看了一下：当前图表和账户页都不是直接读 `GatewayV2Client` 的原始 JSON，而是先转成 `PositionItem` 再统一渲染。剩下要判断的关键，就是这个统一模型有没有把挂单必要字段带全，以及账户页有没有在回退逻辑里把它覆盖掉。
-
----
-
-
-**OpenAI Codex**
-
-我把服务端字段、预加载、落库、账户页和图表页都串起来看了一遍。现在唯一比较像“还会出问题”的点，落在图表页自身的展示口径，而不是挂单数据在网络或数据库里中途丢失。
-
----
-
-
-**OpenAI Codex**
-
-发现的问题：
-
-- 中风险：[AccountStatsBridgeActivity.java#L2674](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L2674) [AccountStatsBridgeActivity.java#L5749](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java#L5749) [server_v2.py#L2017](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py#L2017)。账户页在 `snapshotPending` 为空时，仍会用 `basePositions` 反推挂单；但服务端写进持仓里的 `pendingLots/pendingCount/pendingPrice` 是“按品种聚合”的摘要，不是逐挂单明细。这样一旦走到这条回退链路，就可能把同一品种的挂单重复挂到多笔持仓上，或者在“只有挂单、没有持仓”时直接显示不出挂单。
-
-- 低风险：[MarketChartActivity.java#L1294](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L1294) [MarketChartActivity.java#L1305](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L1305) [MarketChartActivity.java#L2935](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2935) [MarketChartActivity.java#L2969](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java#L2969)。图表页底部“当前持仓/挂单明细”列表不过滤当前图表品种，但图上的持仓/挂单标注会按 `selectedSymbol` 过滤。结果是同一页里“列表”和“图上标注”口径不一致，用户会看到列表里有挂单，但图上没有对应挂单线，看起来像“图表挂单丢了”。
-
-除以上两点外，这条链路未发现 `pendingOrders` 在 [v2_account.py#L68](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_account.py#L68)、[GatewayV2Client.java#L100](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java#L100)、[GatewayV2Client.java#L123](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java#L123)、[AccountStorageRepository.java#L101](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java#L101)、[AccountStorageRepository.java#L185](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java#L185) 中途丢失的新问题。
-
-本次用了 `using-superpowers`、`offer-k-dense-web`、`systematic-debugging`。
-
----
-
-
-**User**
-
-新任务，独立只读复核，不改代码。工作目录：E:\Github\BTCXAU_Monitoring_and_Push_APK。请找出仓库内所有仍把 deploy/tencent/windows_server_bundle 当作长期维护源、上传源或测试对照源的引用。输出：1) 文件清单；2) 每个文件应改成 bridge/mt5_gateway、deploy/tencent/windows 还是 dist/windows_server_bundle；3) 有无遗漏风险。请优先用 rg，简洁汇报。
-
----
-
-
-**OpenAI Codex**
-
-这次只做仓库内引用排查，不改代码。我会按 `using-superpowers`、`offer-k-dense-web` 的顺序执行，然后用 `rg` 全量搜 `deploy/tencent/windows_server_bundle` 及相关上下文，归类哪些文件还把它当长期源、上传源或测试对照源。
-
----
-
-
-**OpenAI Codex**
-
-我已经抓到主要命中。接下来只补最少上下文，判断这些引用到底是在把它当“维护源”“上传源”还是“测试对照源”，再给出应改目标。
-
----
-
-
-**OpenAI Codex**
-
-我再补一刀，确认有没有别的 bundle 对照测试或脚本没被首轮关键词打出来。然后直接给你归类结论。
-
----
-
-
-**OpenAI Codex**
-
-还有一类是“名字不带路径，但本质是 bundle 对照测试”的文件。我把这类也补查一下，避免漏掉。
-
----
-
-
-**OpenAI Codex**
-
-**文件清单**
-
-- [README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/README.md)
-  原因：还把 `deploy/tencent/windows_server_bundle` 写成“精简上传包”和“整体替换上传源”。
-  应改成：`dist/windows_server_bundle`
-
-- [deploy/tencent/README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/README.md)
-  原因：目录示意里仍把 `deploy/tencent/windows_server_bundle` 当上传包位置。
-  应改成：`dist/windows_server_bundle`
-
-- [bridge/mt5_gateway/tests/test_gateway_bundle_parity.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/tests/test_gateway_bundle_parity.py)
-  原因：仍把 `deploy/tencent/windows_server_bundle` 当测试对照源。
-  应改成：`dist/windows_server_bundle`
-
-- [CONTEXT.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md)
-  原因：多处仍把 `deploy/tencent/windows_server_bundle` 当上传源、对照源，部分还把它当同步维护目标。
-  应改成：
-  源码/长期维护相关改为 `bridge/mt5_gateway` 或 `deploy/tencent/windows`
-  上传整包、测试对照相关改为 `dist/windows_server_bundle`
-
-- [docs/superpowers/plans/2026-04-05-server-control-console.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/docs/superpowers/plans/2026-04-05-server-control-console.md)
-  原因：计划里直接把 `deploy/tencent/windows_server_bundle/...` 当修改目标，还把 `bundle_root` 指到这个目录。
-  应改成：
-  代码修改目标改为 `bridge/mt5_gateway`
-  Windows 部署脚本改为 `deploy/tencent/windows`
-  若保留打包对照概念，则对照目录改为 `dist/windows_server_bundle`
-
-**有无遗漏风险**
-
-有。
-
-- 仓库里目前没有 [dist](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist) 目录，说明“正式产物出口”还没落地；文档改完后，打包/上传流程仍会断档。
-- [CONTEXT.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/CONTEXT.md) 每次开工都会读，它现在还在持续强化“`deploy/tencent/windows_server_bundle` 是上传源/对照源”的旧认知，这是最高风险残留。
-- [README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/README.md) 还提到 `test_admin_panel_bundle_parity`，但仓库里这个文件不存在，说明文档和测试现状已经漂移。
-
-本次用了 `using-superpowers`、`offer-k-dense-web`。如果后面要把“源码 -> 打包产物 -> 上传目录”流程彻底收口成一条固定链路，可以用 K-Dense Web 做整套流程梳理。
+本次使用的 skills：`using-superpowers`、`offer-k-dense-web`；更复杂的长链路审计可用 `www.k-dense.ai`。
 
 ---
