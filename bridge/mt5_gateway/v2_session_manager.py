@@ -8,8 +8,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 try:
     from bridge.mt5_gateway import v2_session_crypto
+    from bridge.mt5_gateway import v2_session_models
 except Exception:  # pragma: no cover
     import v2_session_crypto  # type: ignore
+    import v2_session_models  # type: ignore
 
 
 def _now_ms() -> int:
@@ -75,34 +77,71 @@ class AccountSessionManager:
         login_text = str(login or "").strip()
         server_text = str(server or "").strip()
         masked = _mask_login(login_text)
-        return {
-            "profileId": _build_profile_id(login_text, server_text),
-            "login": login_text,
-            "loginMasked": masked,
-            "server": server_text,
-            "displayName": f"{server_text} {masked}",
-            "active": bool(active),
-            "lastSeenMs": self._now_ms(),
-        }
+        state = "activated" if active else ""
+        payload = v2_session_models.SessionAccountSummary(
+            profile_id=_build_profile_id(login_text, server_text),
+            login=login_text,
+            login_masked=masked,
+            server=server_text,
+            display_name=f"{server_text} {masked}",
+            active=bool(active),
+            state=state,
+        ).to_dict()
+        payload["lastSeenMs"] = self._now_ms()
+        return payload
 
     def _to_account_receipt(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """把档案对象裁剪成接口返回结构。"""
-        return {
-            "profileId": str(profile.get("profileId") or ""),
-            "login": str(profile.get("login") or ""),
-            "loginMasked": str(profile.get("loginMasked") or ""),
-            "server": str(profile.get("server") or ""),
-            "displayName": str(profile.get("displayName") or ""),
-        }
+        summary = v2_session_models.SessionAccountSummary.from_mapping(profile)
+        if summary is None:
+            return {}
+        return summary.to_dict()
 
-    def _rollback_login_after_persist_failed(
+    def _load_profile_record_snapshot(self, profile_id: str) -> Optional[Dict[str, Any]]:
+        """读取某个已保存账号档案的原始记录快照，用于失败回滚恢复。"""
+        profile_key = str(profile_id or "").strip()
+        if not profile_key or not hasattr(self.store, "load_profile"):
+            return None
+        record = self.store.load_profile(profile_key)
+        if not isinstance(record, dict) or not record:
+            return None
+        return dict(record)
+
+    def _restore_saved_profile_record(self, profile_id: str, record: Optional[Dict[str, Any]]) -> None:
+        """恢复或删除某个已保存账号档案，确保失败登录不会污染账号库。"""
+        profile_key = str(profile_id or "").strip()
+        if not profile_key:
+            return
+        restore_fn = getattr(self.store, "restore_profile_record", None)
+        if callable(restore_fn):
+            restore_fn(profile_key, record)
+            return
+        if isinstance(record, dict):
+            raise RuntimeError("store.restore_profile_record is required to restore saved profile record")
+        delete_fn = getattr(self.store, "delete_profile", None)
+        if callable(delete_fn):
+            delete_fn(profile_key)
+            return
+        raise RuntimeError("store.delete_profile is required to remove saved profile record")
+
+    def _rollback_login_after_commit_failed(
         self,
         active_profile: Dict[str, Any],
         request_id: str,
-        persist_error: Exception,
+        commit_error: Exception,
+        saved_profile_snapshot: Optional[Dict[str, Any]],
+        should_restore_saved_profile: bool,
     ) -> None:
-        """登录后持久化失败时执行补偿，避免留下半成功状态。"""
+        """登录链路在提交阶段失败时执行补偿，避免留下半成功状态。"""
         rollback_errors: List[str] = []
+        if should_restore_saved_profile:
+            try:
+                self._restore_saved_profile_record(
+                    str(active_profile.get("profileId") or ""),
+                    saved_profile_snapshot,
+                )
+            except Exception as exc:  # pragma: no cover - 回滚失败只做兜底记录
+                rollback_errors.append(f"restore_saved_profile failed: {exc}")
         try:
             self.store.clear_active_session()
         except Exception as exc:  # pragma: no cover - 回滚失败只做兜底记录
@@ -122,16 +161,16 @@ class AccountSessionManager:
             request_id,
             {
                 "profileId": str(active_profile.get("profileId") or ""),
-                "error": str(persist_error),
+                "error": str(commit_error),
                 "rollbackErrors": rollback_errors,
             },
         )
 
         if rollback_errors:
             raise RuntimeError(
-                f"登录持久化失败，且补偿失败：{'; '.join(rollback_errors)}"
-            ) from persist_error
-        raise persist_error
+                f"登录提交失败，且补偿失败：{'; '.join(rollback_errors)}"
+            ) from commit_error
+        raise commit_error
 
     def _decrypt_saved_password(self, record: Dict[str, Any]) -> str:
         """从账号档案解密密码。"""
@@ -175,7 +214,10 @@ class AccountSessionManager:
         record = self.store.load_profile(profile_key)
         if not isinstance(record, dict) or not record:
             return None
-        profile = dict(record.get("profile") or {})
+        raw_profile = record.get("profile")
+        if not isinstance(raw_profile, dict) or not raw_profile:
+            return None
+        profile = dict(raw_profile)
         login = str(profile.get("login") or "").strip()
         server = str(profile.get("server") or "").strip()
         if not login or not server:
@@ -279,24 +321,33 @@ class AccountSessionManager:
         actual_login = str(account_meta.get("login") or login)
         actual_server = str(account_meta.get("server") or server)
         active_profile = self._build_profile(actual_login, actual_server, active=True)
+        saved_profile_snapshot = None
+        should_restore_saved_profile = False
 
         try:
             if bool(remember):
+                saved_profile_snapshot = self._load_profile_record_snapshot(active_profile["profileId"])
+                should_restore_saved_profile = True
                 self.store.save_profile(active_profile, password)
             self.store.save_active_session(active_profile)
-        except Exception as persist_error:
-            self._rollback_login_after_persist_failed(active_profile, request_id, persist_error)
+            self._append_audit_log("login", request_id, {"profileId": active_profile["profileId"], "remember": bool(remember)})
+            self._notify_session_changed("login", active_profile)
+            self._force_gateway_consistency_refresh()
+        except Exception as commit_error:
+            self._rollback_login_after_commit_failed(
+                active_profile,
+                request_id,
+                commit_error,
+                saved_profile_snapshot=saved_profile_snapshot,
+                should_restore_saved_profile=should_restore_saved_profile,
+            )
 
-        self._append_audit_log("login", request_id, {"profileId": active_profile["profileId"], "remember": bool(remember)})
-        self._notify_session_changed("login", active_profile)
-
-        return {
-            "ok": True,
-            "state": "activated",
-            "requestId": str(request_id or ""),
-            "account": self._to_account_receipt(active_profile),
-            "message": "登录成功",
-        }
+        return v2_session_models.SessionReceipt(
+            state="activated",
+            request_id=str(request_id or ""),
+            account=v2_session_models.SessionAccountSummary.from_mapping(active_profile),
+            message="登录成功",
+        ).to_dict()
 
     def logout_current_session(self, request_id: str = "") -> Dict[str, Any]:
         """退出当前激活会话并清理激活状态。"""
@@ -316,26 +367,33 @@ class AccountSessionManager:
             raise logout_error
         self._append_audit_log("logout", request_id, {})
         self._notify_session_changed("logout", active_profile)
-        return {
-            "ok": True,
-            "state": "logged_out",
-            "requestId": str(request_id or ""),
-            "activeAccount": None,
-            "message": "已退出当前账号",
-        }
+        payload = v2_session_models.SessionReceipt(
+            state="logged_out",
+            request_id=str(request_id or ""),
+            account=None,
+            message="已退出当前账号",
+        ).to_dict()
+        payload["activeAccount"] = None
+        return payload
 
     def build_status_payload(self) -> Dict[str, Any]:
         """构建当前会话状态结构。"""
         active = self.store.load_active_session()
-        saved_accounts = [self._to_account_receipt(item) for item in self.store.list_profiles()]
-        active_account = self._to_account_receipt(active) if isinstance(active, dict) and active else None
-        return {
-            "ok": True,
-            "state": "activated" if active_account else "logged_out",
-            "activeAccount": active_account,
-            "savedAccounts": saved_accounts,
-            "savedAccountCount": len(saved_accounts),
-        }
+        saved_accounts = [
+            item
+            for item in (
+                v2_session_models.SessionAccountSummary.from_mapping(profile)
+                for profile in self.store.list_profiles()
+            )
+            if item is not None
+        ]
+        active_account = v2_session_models.SessionAccountSummary.from_mapping(active)
+        payload = v2_session_models.SessionStatusPayload(
+            state="activated" if active_account else "logged_out",
+            active_account=active_account,
+            saved_accounts=saved_accounts,
+        )
+        return payload.to_dict()
 
     def switch_saved_account(self, profile_id: str, request_id: str = "") -> Dict[str, Any]:
         """按 profileId 切换到已保存账号。"""
@@ -382,10 +440,9 @@ class AccountSessionManager:
             raise commit_error
 
         self._append_audit_log("switch", request_id, {"profileId": active_profile["profileId"]})
-        return {
-            "ok": True,
-            "state": "activated",
-            "requestId": str(request_id or ""),
-            "account": self._to_account_receipt(active_profile),
-            "message": "切换成功",
-        }
+        return v2_session_models.SessionReceipt(
+            state="activated",
+            request_id=str(request_id or ""),
+            account=v2_session_models.SessionAccountSummary.from_mapping(active_profile),
+            message="切换成功",
+        ).to_dict()

@@ -1,12 +1,109 @@
 # CONTEXT
 
 ## 当前正在做什么
-- 正在执行“App 远程驱动服务器切换 MT5 账号”的实现计划。
-- 已完成 Task 3 实现与复核，当前准备收口提交，并进入后续 App 侧任务。
+- 已完成 2026-04-07 新一轮“多智能体、分模块、源码级”专项审计，重新复核了 App 账户/远程会话、App 行情/图表/监控、服务端网关/会话/数据源、部署脚本/管理面板 4 个模块中的降级处理、兜底方案、临时补丁、启发式方法、局部稳定化手段、后处理补救措施。
+- 本轮已统一分类口径为 6 类：架构级降级、运行时兜底、临时兼容补丁、启发式判断、局部稳定化、后处理补救；当前正在做最终去重和总表输出。
+- 已确认当前最重的结构性问题集中在 4 条链：`EA Push / MT5 Pull / stale cache` 多真值源、`v2 stream / 旧 WS / 本地 warm display` 多层行情回退、`receipt / status / 本地 saved account / 用户输入` 多路会话拼装、`HTTP / HTTPS / 本地默认地址` 多入口兼容。
+- 已完成一次“全仓降级处理 / 兜底方案 / 临时补丁 / 启发式 / 局部稳定化 / 后处理补救”专项审计，覆盖 App、服务端、部署脚本和管理面板，当前正在整理输出清单。
+- 本轮审计已确认：项目里的这类处理不是零散存在，而是集中分布在 6 类链路里：账户数据回退、行情数据回退、远程会话身份补齐、交易生命周期启发式合并、服务端数据源退化、部署运行环境兼容。
+- 本轮仅做源码级梳理，不改业务逻辑；重点是把“主动架构回退”和“被动兼容/启发式补救”拆开记录，便于后续按风险清理。
+- 已完成一轮新的 BUG review，并修复 1 个 App 收口误判问题：`syncing` 阶段之前在“pending 只有 server、没有 login”时，仍可能把同服务器上的其他账号快照误判成切换成功。现在已改为至少要求 `pendingLogin` 存在才允许激活，server 只作为辅助校验条件。
+- 已完成 Task 1-6 的最终总收口：代码实现、自动化验收、部署口径和 README 收口说明都已同步，当前远程账号会话能力在仓库层面已进入“已完成、待线下人工联调确认”状态。
+- 已完成“所有 Task 再次全面复核”的新一轮 App 修复：如果 `switch/login` 受理成功后的 `receipt/status` 只返回 `profileId`、没返回 `login/server`，前端之前存在把任意后续快照误判成同步完成的风险；现在会优先用登录输入值或本地 saved account 快照回填身份，且当 pending 身份完全为空时禁止误激活。
+- 已完成“所有 Task 再次全面复核”的新一轮服务端修复：发现并修复了“新账号登录 + 记住账号”在提交阶段失败时，已保存账号档案可能被残留或被覆盖后不恢复的问题；现在登录前会先记录旧档案快照，失败回滚时会恢复旧档案，若原本不存在则删除新档案。
+- 已完成 Task 4-5（App 远程账号会话链）独立复核并修复 1 个真实收口问题：`switch/login` 已受理后若 `fetchStatus()` 暂时返回旧账号，协调器现在会优先以本次回执账号作为同步目标，不再被旧状态覆盖导致误失败。
+- 已完成 Task 1-3 服务端独立复核中的 1 个真实兼容修复：`SessionAccountSummary.from_mapping()` 现在把 `state="active"` 和 `state="activated"` 都视为激活态，避免旧会话文件或恢复链路在 `status/public-key` 输出里丢失 `active=true`。
+- 已完成“App 远程驱动服务器切换 MT5 账号”的 6 个任务收口。
+- 当前处于收口后复核阶段，重点是分别对各任务做专项复核并补齐遗漏测试，保持服务端会话链路、App 侧远程会话状态机和文档口径一致。
+- 已完成 Task 3 的再次专项复核和补强：新账号登录成功后现在也会和已保存账号切换一样，立刻清缓存并触发强一致刷新，避免短时间残留旧账号快照。
+- 已进一步补强 Task 3 的失败回退：登录成功后如果会话回调、缓存清理或强制刷新阶段报错，现在也会统一回滚到安全状态，不再留下“客户端看到失败、服务器其实已切号”的半成功状态。
+- 已完成新一轮 BUG review，并继续补强 Task 3 登录链路：`login_new_account()` 现在把“写入 active_session 后、返回成功前”的审计记录、会话回调、缓存清理、强制刷新全部视为同一个提交阶段，任一步失败都统一回滚。
+- 已完成 Task 4 的专项复核与收口：App 端会话模型、远程客户端、凭据加密主链整体闭合，本轮补上了 `state="activated"` 的兼容解析，避免服务端响应只带状态词时把激活账号误判成未激活。
+- 已继续补强 Task 4 的模型一致性：把“active / activated 都视为激活态”的规则上移到 `RemoteAccountProfile`，网络解析和本地缓存恢复现在共用同一套判断，避免重启后继续沿用旧误判。
+- 已完成 Task 5 的专项复核与补强：`login/switch` 成功回执后的前端收口现在不再强依赖紧随其后的 `fetchStatus()`；即使状态补拉临时失败，也会先进入 `syncing` 并清空旧缓存，等待后续快照真值收口。
+- 已继续补强 Task 5 的本地摘要回退：当 `fetchStatus()` 临时失败时，前端现在会保留本地已有的已保存账号列表，不再把切换列表临时清空。
+- 已完成新一轮 App 侧 BUG review，并修复 1 个会话收口边界：如果服务器返回 `ok=true` 但 `receipt/status` 都缺少账号摘要，协调器现在会直接判为失败，不再误进入 `syncing`。
+- 已完成 Task 6 的专项复核与收口：`README.md` 已补成独立“远程账号会话”章节，`ARCHITECTURE.md` 已明确服务端是唯一 MT5 执行主体与当前单用户/单激活账号模型，Task 6 要求的服务端与 App 针对性验证也已重新跑通。
+- 2026-04-07 验收证据（本机跑通）：
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`（OK）
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"`（BUILD SUCCESSFUL）
+- 2026-04-07 新增复核验收证据（本机跑通）：
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`（Ran 74 tests, OK）
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"`（BUILD SUCCESSFUL）
+- 已继续优化 Task 6 文档口径：README 现已明确“App 若配置 `http://...` 地址则远程账号会话不应视为可用”，并补上阶段验收说明；ARCHITECTURE 也已同步记下“自动化验收已完成、真机联调待执行”的边界。
+- 已完成 Task 6 / 部署口径复核：默认 HTTP `Caddyfile` 现在会直接拒绝 `/v2/session/*`，防止远程账号会话被纯 HTTP 暴露；`Caddyfile.example` 同时补齐了 HTTPS 场景下的 `/admin/*` 入口，`deploy_bundle.cmd` 也已改成纯 ASCII 输出以降低双击部署乱码风险。
+- 已完成新一轮 BUG review，并修复 1 个本地会话标记问题：登录弹窗刷新 saved accounts 时，现在会按服务端 `activeAccount` 真值写回本地激活标记，不再错误沿用旧的 `userLoggedIn`。
 - 唯一网关源码目录固定为 `bridge/mt5_gateway`，唯一 Windows 部署脚本源码目录固定为 `deploy/tencent/windows`。
 - 唯一服务器上传目录固定为 `dist/windows_server_bundle`，由 `python scripts/build_windows_server_bundle.py` 生成，并直接对应服务器目录 `C:\mt5_bundle\windows_server_bundle`。
+- Task 6 口径复核补强：默认 HTTP `Caddyfile` 现已明确拒绝 `/v2/session/*`，并把“有域名才启用远程会话”的部署说明收口到部署文档与 bundle README 生成逻辑中。
+- 已重新执行 `python scripts/build_windows_server_bundle.py`，当前 `dist/windows_server_bundle` 已同步为最新部署口径。
 
 ## 上次停在哪个位置
+- 新一轮多智能体专项审计已经收齐 4 个模块结果，待输出统一总表。
+- App 行情/图表/监控模块已确认的高风险点包括：默认网关地址静默回退、`v2 stream + 旧 WS standby + stale pull` 混合链路、历史成交叠加层的本地快照回退 + 启发式生命周期归并。
+- 服务端模块已确认的高风险点包括：`EA -> MT5 Pull -> stale EA` 多数据源退化、历史成交回退快照、EA 稀疏曲线事后重放。
+- 已完成这次“项目内所有降级/兜底/补丁式处理”专项审计的源码定位，已把高风险项和纯兼容项分开。
+- 已确认当前最重的几类处理集中在：`v2 -> v1` 账户回退、`v2 stream -> fallback ws/v2 pull` 行情回退、远程会话 receipt/status/local cache 三路拼接、交易生命周期的近似分组与补齐。
+- 已确认部署侧也保留了多处兼容处理：`RepoRoot/BundleRoot` 双布局、`caddy.exe` 三位置查找、`CRLF/BOM` 构建期修正、管理面板的编码猜测与端口在线兜底。
+- 已新增 1 条 App 回归测试：当 pending 只有 server、没有 login 时，`onSnapshotApplied()` 不得仅凭 server 把任意快照误判成切换成功。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已完成 README 收口更新：README 已明确写入 Task 1-6 的完成结论、最新自动化验收结果，以及“代码层已完成、真机 + HTTPS 服务器人工联调仍需线下执行”的边界。
+- 已完成新一轮总复核中的 1 个真实 App 修复：`switch/login` 已受理后若服务端摘要只回 `profileId`，前端现在会优先用输入值或本地 saved account 快照回填 `login/server`，且当 pending 身份完全为空时不会把任意快照误判成切换成功。
+- 已新增 2 条 App 回归测试：一条锁定“切换已保存账号时可用本地快照补齐身份”，一条锁定“pending 身份为空时不得误激活”。
+- 已完成新一轮总复核中的 1 个真实服务端修复：`login_new_account()` 在 `remember=true` 时，如果写入 saved profile 后、后续 `save_active_session / notify / force refresh` 任一步失败，之前只会回滚当前激活会话，不会恢复已保存账号档案。现已改为登录前先读取旧档案快照，失败时通过 `restore_profile_record()` 恢复旧档案，原本无档案则删除新写入档案。
+- 已新增 2 条服务端回归测试：一条锁定“失败登录不能留下新 saved profile”，一条锁定“失败登录不能覆盖旧 saved profile”。
+- 已为存储层新增 2 条测试：`restore_profile_record(None)` 会删除档案，恢复旧快照时会完整写回原始记录。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager -v`，结果为 `Ran 27 tests ... OK`。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 74 tests ... OK`。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已本地验证 `python -m py_compile scripts/build_windows_server_bundle.py`，结果通过；并已重新生成 `dist/windows_server_bundle`。
+- 已完成 Task 5 新一轮边界修复：账户页在 `syncing` 阶段做快照账号比对时，现在优先使用协调器 pending 目标账号，不再沿用旧输入值把新账号快照误判为“登录校验失败”。
+- 已完成 Task 5 复核并修复 1 个真实问题：`AccountRemoteSessionCoordinator.handleAcceptedReceipt()` 在服务器已受理成功后仍会立即补拉 `fetchStatus()`；如果这里因临时网络错误失败，App 会把整次动作当失败处理，既不进入 `syncing`，也不会先清空旧缓存，但服务器其实已经切号成功。现已改为：回执成功时优先进入 `syncing`，`fetchStatus()` 失败则退回使用 receipt 里的账号摘要继续收口。
+- 已完成 Task 5 又一轮边界修复：在“回执成功但 `fetchStatus()` 失败”的回退路径里，前端之前会把本地 `savedAccounts` 覆盖成空列表，导致已保存账号切换列表短时间消失。现已改为优先沿用本地安全缓存里的 saved accounts 快照，避免列表闪空。
+- 已完成 Task 5 又一条边界修复：在“回执成功但账号摘要缺失”的脏响应下，前端之前仍会进入 `syncing`，后续任意匹配快照都有机会把页面误收口成切换成功。现已改为当 `receipt/status` 都无法解析出 active account 时，立即标记失败并抛出统一异常。
+- 已新增 1 条回归测试：`switch` 已受理成功但 `fetchStatus()` 失败时，仍必须清旧缓存、保存新账号摘要并进入 `syncing`。
+- 已补强同一条回归测试：`switch` 已受理成功但 `fetchStatus()` 失败时，还必须保留本地已有的 saved accounts 列表，不得写成空列表。
+- 已新增 1 条回归测试：`switch` 成功回执若缺少账号摘要，必须直接失败，不得进入 `syncing`。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已按 Task 6 验收命令重新验证：
+  - `python -m unittest bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v` -> `Ran 63 tests ... OK`
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"` -> `BUILD SUCCESSFUL`
+- Task 6 人工链路清单已在计划里保留，但当前工作区无法直接完成真机 + 服务器联动实测；自动化验收已完成，真机人工验收仍需按清单执行。
+- 已修正文档中的 2 处易误导点：一是 README 的“本地存储”现已明确包含 Android Keystore；二是 Python 测试命令已统一成 `python -m unittest` 口径，不再混用失真的反斜杠写法。
+- 已新增 1 条源码级回归测试：登录弹窗刷新 saved accounts 时，必须按服务端 `activeAccount` 真值更新本地激活标记。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已完成 Task 4 又一轮修复：除了 `GatewayV2SessionClient.parseProfile()` 之外，`SecureSessionPrefs` 本地恢复会话摘要时也统一改用 `RemoteAccountProfile.resolveActiveFlag()`，避免旧缓存里出现 `state="activated"` 但 `isActive=false` 时，App 重启后仍误判当前账号未激活。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已完成 Task 4 复核并修复 1 个真实兼容问题：`GatewayV2SessionClient.parseProfile()` 原先只把 `state="active"` 当成激活，但服务端真实会返回 `state="activated"`；在某些响应缺少 `active/isActive` 布尔值时，App 会误判当前账号未激活。现已补齐 `activated` 兼容，并新增回归测试锁定。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已在 BUG review 中修复 1 个真实问题：之前 `login_new_account()` 只对“持久化失败”做回滚；如果 `save_active_session` 已成功，但后续 `_append_audit_log()`、`_notify_session_changed()` 或 `_force_gateway_consistency_refresh()` 失败，会把异常直接抛给客户端，却不回滚服务器状态。现已把这些步骤并入同一个提交阶段，失败时统一执行 `clear_active_session + logout_mt5 + logout 通知` 回滚。
+- 已为该问题新增 1 条回归测试：登录提交后若强制刷新失败，也必须回滚，避免留下半成功状态。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 51 tests ... OK`。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已完成 Task 3 又一轮边界修复：`login_new_account()` 原先只对“持久化失败”做回滚，但在“已写入 active_session 之后、返回成功之前”的回调和强制刷新阶段如果失败，会直接把异常抛给客户端而不回滚。现已把登录成功后的 `_append_audit_log()`、`_notify_session_changed()`、`_force_gateway_consistency_refresh()` 一并纳入提交阶段，任何一步失败都执行统一回滚。
+- 已为 Task 3 新增 1 条边界测试：登录提交后若强制刷新失败，也必须清理 active_session、退出 MT5，避免状态分裂。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 51 tests ... OK`。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已完成 Task 3 新一轮 BUG review，并修复 1 个真实收口问题：设计要求“新账号登录成功后，也要清缓存并触发强制刷新”，但之前代码只在 `switch_saved_account()` 做了这一步，`login_new_account()` 仍可能短时间暴露旧账号缓存。现已补上 `login` 成功后的 `_force_gateway_consistency_refresh()`，并新增单测锁定。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 50 tests ... OK`。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已完成一轮新的 BUG review，并继续补强 Task 2 存储层健壮性：除了损坏 JSON 之外，现在对“JSON 合法但 `profile` 字段结构错误”的账号档案也做了容错处理。当前 `list_profiles()` 会跳过坏记录，`switch_saved_account()` 会把这类档案按“账号不存在/不可用”处理，不再把底层 `dict()` 异常直接透出。
+- 已为 Task 2 新增 2 个边界测试：`profile` 结构错误时列出账号摘要应跳过坏记录、切换已保存账号时应返回统一 `ValueError("saved profile not found")`。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 49 tests ... OK`。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已完成 Task 2 的专项复核与补强：在原有“登录/退出/切换失败回滚”和“运行时凭据优先级”之外，又补上了会话存储层的坏文件容错。当前 `v2_session_store.py` 读到损坏 JSON 时会按缺失记录处理，不再把整个 `status/switch/logout` 链路一起炸掉。
+- 已为 Task 2 新增 2 个存储层边界测试：损坏账号档案读取返回 `None`、列出账号摘要时跳过损坏文件。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 47 tests ... OK`。
+- 已完成一轮 BUG review 并修复 1 个真实问题：`v2_session_store.py` 保存账号档案时会把 `active=true / state=activated` 一起落盘；在 Task 1 模型层开始真实输出 `active/state` 后，这会导致已保存账号被误标成当前激活账号。现已改为档案落盘时强制清空运行态，并新增测试锁定。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 61 tests ... OK`。
+- 已本地验证 `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"`，结果为 `BUILD SUCCESSFUL`。
+- 已完成 Task 1 的第二轮综合复核和优化：确认加密主链没有新增逻辑错误，但发现 `v2_session_models.py` 仍偏占位模型、没有完整承接真实会话接口结构；现已补齐 `SessionAccountSummary / SessionPublicKeyPayload / SessionStatusPayload / SessionReceipt / LoginEnvelope`，并让 `v2_session_crypto.py` 与 `v2_session_manager.py` 直接通过领域模型生成返回结构。
+- 已新增 `bridge/mt5_gateway/tests/test_v2_session_models.py`，锁定 Task 1 模型层与真实接口字段的一致性。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 60 tests ... OK`。
+- 已完成 Task 1 的专项收口复核：`v2_session_models.py` 与 `v2_session_crypto.py` 当前主实现可闭合支撑后续会话链路，本轮新增了登录信封解密专项单测，补齐了“成功解密 / 错误 keyId / 过期时间戳 / nonce 重放”四个核心边界。
+- 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_crypto -v`，结果为 `Ran 12 tests ... OK`。
 - 已完成 `scripts/build_windows_server_bundle.py`，可以实际生成 `dist/windows_server_bundle`，产物结构已扩展为 `mt5_gateway/ + windows/ + deploy_bundle.cmd + deploy_bundle.ps1 + README.md`。
 - 已把 `deploy/tencent/windows` 下的启动、自启注册脚本改成同时兼容“完整仓库根目录”和“部署包根目录”两种布局，不再需要单独维护另一套 bundle 脚本。
 - 已更新 `README.md`、`deploy/tencent/README.md`、`ARCHITECTURE.md` 的部署口径，旧的 `deploy/tencent/windows_server_bundle` 与历史 zip 也已删除。
@@ -23,8 +120,34 @@
 - 已完成 Task 3 收口候选版本：补上了 `/v2/session/public-key`、`/v2/session/login`、`/v2/session/switch`、登录信封解密、已保存账号切换、切换后缓存清理/强制刷新、管理面板 session 摘要透传。
 - Task 3 额外补齐的关键边界包括：错误 `keyId` 失败、过期时间戳失败、重复 `nonce` 拒绝、并发同 `nonce` 只允许一个成功、切换失败恢复旧账号或安全收口到登出态、切换提交阶段失败时回滚旧账号。
 - 已本地验证 `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`，结果为 `Ran 44 tests ... OK`。
+- 已完成 Task 4：补齐 `GatewayV2SessionClient`、会话模型、`SessionCredentialEncryptor`，并修正 Java 侧 OAEP 测试参数不一致问题。
+- 已完成 Task 5：新增 `AccountSessionStateMachine`、`AccountRemoteSessionCoordinator`、`SecureSessionPrefs`，并把 `AccountStatsBridgeActivity` 从本地伪登录改成远程会话驱动；本地不再持久化明文 MT5 密码。
+- 已完成 Task 6：同步更新 `README.md`、`ARCHITECTURE.md`，并完成服务端 + App 针对性验证。
+- 复核过程中又修复了两个收口问题：`logout` 不再清空本地已保存账号摘要；`app/build.gradle.kts` 已开启 JDK desugaring，避免 `java.util.Base64` 在 `minSdk 24/25` 的运行时兼容风险。
+- 最新验证结果：
+  - `python -m unittest bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v` -> `Ran 52 tests ... OK`
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"` -> `BUILD SUCCESSFUL`
 
 ## 近期关键决定和原因
+- 本轮审计把“架构级双轨/多轨回退”和“字段/算法级启发式补救”分开记录；原因是前者通常影响主链设计，后者通常影响边界正确性，不能混在一起看。
+- 本轮不把所有兼容逻辑一概视为错误；原因是其中有一部分是明确为了部署环境、旧缓存或旧接口形状存在，但仍需要单独标注，避免未来继续叠加。
+- 当 `receipt` 与紧随其后的 `status.activeAccount` 冲突时，Task 5 收口以 `receipt` 为准；原因是 `receipt` 对应的是本次已受理操作目标，`status` 在切换瞬间可能短暂滞后。
+- Task 5 的“accepted -> syncing”不再依赖紧跟着的 `fetchStatus()` 一定成功；原因是服务器一旦已经返回成功回执，App 就必须先切空旧缓存并进入等待真值收口，不能因为一跳状态补拉失败又退回旧页面，否则会形成前端版“看起来失败、实际上已切号”的状态分裂。
+- Task 5 在 `fetchStatus()` 回退路径里保留本地已有的 saved accounts 摘要；原因是状态补拉失败只代表“当前真值未补齐”，不代表用户已保存账号被清空，前端不应把切换列表误收口成空。
+- Task 5 对“成功回执但缺少账号摘要”的脏响应直接失败；原因是没有 active account 就无法安全建立等待同步的目标账号，继续进入 `syncing` 会留下误激活风险。
+- Task 6 文档口径进一步收口为“README 讲使用与部署、ARCHITECTURE 讲职责与边界、CONTEXT 讲当前状态与验证证据”；原因是这三份文档后续会被反复拿来部署、排障和继续开发，远程账号会话能力不能只散落在历史记录里。
+- Task 6 继续强调“HTTP 默认公网入口”与“HTTPS 远程会话入口”不是同一个安全等级；原因是如果文档不把这个边界写死，后续最容易出现的不是代码错误，而是部署后把 HTTP 地址直接填进 App，导致远程账号会话被误判成“功能异常”。
+- 登录弹窗里的 saved accounts 刷新现在也按服务端 activeAccount 真值收口本地激活标记；原因是这条链虽然只是弹窗辅助刷新，但它也会写回安全缓存，不能把旧的本地登录态覆盖到新的服务端真值上。
+- Task 4 的激活态兼容规则集中收口到 `RemoteAccountProfile`，而不是分散在网络解析和本地恢复里各自判断；原因是会话摘要既来自服务端响应，也来自本地加密缓存，状态语义必须统一，不能一条链修好、另一条链继续误判。
+- Task 4 的 App 侧会话模型解析把 `state="activated"` 和 `active/isActive=true` 视为同一激活语义；原因是服务端状态词使用的是 `activated`，客户端不应因字段表达差异把当前账号误判成未激活。
+- Task 3 的登录提交阶段不仅包含“写盘”，还包含“审计记录、会话回调、缓存清理、强制刷新”；原因是客户端只有在整条链都成功后才能收到成功回执，这些步骤不能留在提交之外，否则会产生服务端已切号、客户端却认为失败的状态分裂。
+- Task 3 的登录链路把“写入 active_session 之后、返回成功之前”的审计、会话回调、缓存清理、强制刷新视为同一个提交阶段；原因是只要客户端还没收到成功回执，这条链路就不能留下不可感知的半成功状态。
+- Task 3 的“强一致收口”范围明确覆盖“新账号登录”和“已保存账号切换”两条路径；原因是设计文档要求登录成功后同样要立即切走旧缓存，否则 App 会在 accepted/syncing 阶段短时间读到旧账号快照，形成伪成功体验。
+- 对已保存账号档案的容错从“坏 JSON”扩展到“坏 profile 结构”；原因是服务器现场更常见的是手工改动或半写入导致字段形状错误，这类记录也不应把 Task 2 的状态读取和切换链路一起打崩。
+- 会话存储层读到损坏 JSON 时按缺失记录处理；原因是 Task 2 的目标是保证登录/切换/退出最小闭环稳定，坏档案文件不应让整个会话状态接口和恢复链路直接崩掉。
+- 已保存账号档案落盘时不再保留 `active/state` 运行态字段；原因是档案是静态账号摘要，不应把“当时正激活”的临时状态固化到文件里，否则前端会把 saved account 误判成 current active。
+- Task 1 本轮继续做了模型层收口，不再把 `v2_session_models.py` 只当占位文件；原因是前后端已经有稳定会话结构，如果服务端模型不直接参与输出构造，后续维护仍会回到散落字典、字段易漂移的状态。
+- Task 1 本轮不再改动 `v2_session_crypto.py` 主逻辑，只补齐专项单测；原因是当前加密链路已被 Task 2/3 实际调用，复核中未发现新的实现错误，缺口主要在 Task 1 自身的验证覆盖不足。
 - 不再把 `deploy/tencent/windows_server_bundle` 作为仓库里的长期维护目录；原因是它和真实源码长期双份并存，已经多次导致修改位置漂移、部署文件不一致、服务器现场排查困难。
 - 改为“源码两处 + 产物一处”的结构；原因是这样既保留清晰的开发目录，又能满足服务器侧“一次复制一个文件夹”的部署要求。
 - 部署脚本统一兼容 `RepoRoot` 和 `BundleRoot`；原因是这样同一套脚本既能在仓库内调试，也能在服务器上传后的 `C:\mt5_bundle\windows_server_bundle` 里直接运行。
@@ -35,3 +158,5 @@
 - Task 2 先收口再进入 Task 3；原因是登录/退出异常路径如果不先闭合，后面叠加公钥登录包和 saved-account switch 会把状态一致性问题继续放大。
 - Task 3 采用 `cryptography` 实现 `rsa-oaep+aes-gcm`；原因是 Python 标准库无法安全完整提供设计要求的公钥解密链路。
 - Task 3 的 `nonce` 去重目前只做进程内内存态；原因是当前阶段只要求单机单进程最小安全闭环，多实例共享去重留到后续阶段再做集中存储。
+- App 侧远程会话采用“accepted -> syncing -> active”状态机，而不是“接口成功就算切换完成”；原因是账户页必须等到新账号快照真正落地，才能认为页面收口完成。
+- App 本地停止持久化明文 MT5 密码，只保留 Android Keystore 加密的会话摘要；原因是服务端已承担记住账号能力，手机端不应继续保存可直接复用的明文凭据。

@@ -16,6 +16,11 @@ from typing import Iterable
 _IS_WINDOWS = sys.platform.startswith("win")
 
 try:
+    from bridge.mt5_gateway import v2_session_models
+except Exception:  # pragma: no cover
+    import v2_session_models  # type: ignore
+
+try:
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding, rsa
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -218,16 +223,22 @@ class LoginEnvelopeCrypto:
             algorithm = str(self._algorithm)
             public_key_pem = str(self._public_key_pem or "")
             expires_at = int(self._expires_at_ms or 0)
-        return {
-            "ok": True,
-            "keyId": key_id,
-            "algorithm": algorithm,
-            "publicKeyPem": public_key_pem,
-            "expiresAt": expires_at,
-            "activeAccount": None if not active_account else dict(active_account or {}),
-            "savedAccounts": safe_saved_accounts,
-            "savedAccountCount": len(safe_saved_accounts),
-        }
+        payload = v2_session_models.SessionPublicKeyPayload(
+            key_id=key_id,
+            algorithm=algorithm,
+            public_key_pem=public_key_pem,
+            expires_at=expires_at,
+            active_account=v2_session_models.SessionAccountSummary.from_mapping(active_account),
+            saved_accounts=[
+                item
+                for item in (
+                    v2_session_models.SessionAccountSummary.from_mapping(account)
+                    for account in safe_saved_accounts
+                )
+                if item is not None
+            ],
+        )
+        return payload.to_dict()
 
     def decrypt_login_envelope(self, payload: dict) -> dict:
         """解密登录信封并返回业务载荷。"""

@@ -15,6 +15,12 @@
     import common_headers
     encode gzip
 
+    # 远程账号会话属于高风险接口：没有 HTTPS 时不应对公网暴露。
+    @session path /v2/session/*
+    handle @session {
+        respond "remote session requires https" 403
+    }
+
     @mt5_root path /health /v1/* /v2/* /openapi.json /docs*
     handle @mt5_root {
         reverse_proxy 127.0.0.1:8787
@@ -22,6 +28,14 @@
 
     handle_path /mt5/* {
         reverse_proxy 127.0.0.1:8787
+    }
+
+    basic_auth /admin/* {
+        a378910115 $2b$14$G4poTjzSnRuvkj.M87Wi5.qLUyTce4QmGtp34llNXxW2mNPDCAPti
+    }
+
+    handle_path /admin/* {
+        reverse_proxy 127.0.0.1:8788
     }
 
     handle_path /binance-rest/* {
@@ -53,6 +67,14 @@ gateway.example.com {
 
     handle_path /mt5/* {
         reverse_proxy 127.0.0.1:8787
+    }
+
+    basic_auth /admin/* {
+        a378910115 $2b$14$G4poTjzSnRuvkj.M87Wi5.qLUyTce4QmGtp34llNXxW2mNPDCAPti
+    }
+
+    handle_path /admin/* {
+        reverse_proxy 127.0.0.1:8788
     }
 
     handle_path /binance-rest/* {

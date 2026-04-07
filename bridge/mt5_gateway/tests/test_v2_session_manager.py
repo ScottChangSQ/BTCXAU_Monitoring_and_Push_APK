@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,26 @@ class V2SessionManagerTests(unittest.TestCase):
         args = fake_hook.call_args[0]
         self.assertEqual("login", args[0])
         self.assertEqual("12345678", args[1]["login"])
+
+    def test_login_should_clear_gateway_caches_before_refresh(self):
+        """新账号登录成功后也应清缓存并触发强制刷新。"""
+        fake_store = mock.Mock()
+        fake_gateway = mock.Mock()
+        fake_gateway.login_mt5.return_value = {"login": "12345678", "server": "ICMarketsSC-MT5-6"}
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        receipt = manager.login_new_account(
+            login="12345678",
+            password="secret",
+            server="ICMarketsSC-MT5-6",
+            remember=False,
+            request_id="req-login-refresh",
+        )
+
+        self.assertEqual(True, receipt["ok"])
+        self.assertEqual("activated", receipt["state"])
+        fake_gateway.clear_account_caches.assert_called_once_with()
+        fake_gateway.force_account_resync.assert_called_once_with()
 
     def test_login_with_remember_should_persist_profile(self):
         """remember=true 时应保存账号档案。"""
@@ -145,6 +166,89 @@ class V2SessionManagerTests(unittest.TestCase):
         self.assertEqual("logout", args[0])
         self.assertEqual("12345678", args[1]["login"])
 
+    def test_login_should_rollback_when_refresh_after_commit_failed(self):
+        """登录提交后若强制刷新失败，也应回滚，避免留下半成功状态。"""
+        fake_store = mock.Mock()
+        fake_gateway = mock.Mock()
+        fake_gateway.login_mt5.return_value = {"login": "12345678", "server": "ICMarketsSC-MT5-6"}
+        fake_gateway.force_account_resync.side_effect = RuntimeError("refresh failed")
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        with self.assertRaises(RuntimeError):
+            manager.login_new_account(
+                login="12345678",
+                password="secret",
+                server="ICMarketsSC-MT5-6",
+                remember=False,
+                request_id="req-login-refresh-failed",
+            )
+
+        fake_store.save_active_session.assert_called_once()
+        fake_gateway.clear_account_caches.assert_called_once_with()
+        fake_store.clear_active_session.assert_called_once_with()
+        fake_gateway.logout_mt5.assert_called_once_with()
+
+    def test_login_should_remove_new_saved_profile_when_commit_failed(self):
+        """记住账号的新登录若提交失败，不应留下新的已保存账号档案。"""
+        fake_store = mock.Mock()
+        fake_store.load_profile.return_value = None
+        fake_gateway = mock.Mock()
+        fake_gateway.login_mt5.return_value = {"login": "12345678", "server": "ICMarketsSC-MT5-6"}
+        fake_gateway.force_account_resync.side_effect = RuntimeError("refresh failed")
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        with self.assertRaises(RuntimeError):
+            manager.login_new_account(
+                login="12345678",
+                password="secret",
+                server="ICMarketsSC-MT5-6",
+                remember=True,
+                request_id="req-login-rollback-new-profile",
+            )
+
+        fake_store.restore_profile_record.assert_called_once_with(
+            "acct_12345678_icmarketssc-mt5-6",
+            None,
+        )
+        fake_gateway.logout_mt5.assert_called_once_with()
+
+    def test_login_should_restore_previous_saved_profile_when_commit_failed(self):
+        """记住账号覆盖旧档案后若提交失败，应恢复旧档案内容。"""
+        fake_store = mock.Mock()
+        previous_record = {
+            "profile": {
+                "profileId": "acct_12345678_icmarketssc-mt5-6",
+                "login": "12345678",
+                "loginMasked": "****5678",
+                "server": "ICMarketsSC-MT5-6",
+                "displayName": "ICMarketsSC-MT5-6 ****5678",
+                "active": False,
+                "state": "",
+            },
+            "encryptedPassword": "old-password-cipher",
+            "updatedAtMs": 1,
+        }
+        fake_store.load_profile.return_value = previous_record
+        fake_gateway = mock.Mock()
+        fake_gateway.login_mt5.return_value = {"login": "12345678", "server": "ICMarketsSC-MT5-6"}
+        fake_gateway.force_account_resync.side_effect = RuntimeError("refresh failed")
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        with self.assertRaises(RuntimeError):
+            manager.login_new_account(
+                login="12345678",
+                password="new-secret",
+                server="ICMarketsSC-MT5-6",
+                remember=True,
+                request_id="req-login-rollback-restore-profile",
+            )
+
+        fake_store.restore_profile_record.assert_called_once_with(
+            "acct_12345678_icmarketssc-mt5-6",
+            previous_record,
+        )
+        fake_gateway.logout_mt5.assert_called_once_with()
+
     def test_logout_should_clear_active_session(self):
         """logout 后应清理当前激活账号。"""
         fake_store = mock.Mock()
@@ -175,6 +279,27 @@ class V2SessionManagerTests(unittest.TestCase):
         args = fake_hook.call_args[0]
         self.assertEqual("logout", args[0])
         self.assertEqual("acct_1", args[1]["profileId"])
+
+    def test_build_status_payload_should_keep_active_flag_when_active_session_only_has_activated_state(self):
+        """旧会话文件只剩 state=activated 时，状态接口也不应丢失激活标记。"""
+        fake_store = mock.Mock()
+        fake_store.load_active_session.return_value = {
+            "profileId": "acct_12345678_icmarketssc-mt5-6",
+            "login": "12345678",
+            "loginMasked": "****5678",
+            "server": "ICMarketsSC-MT5-6",
+            "displayName": "ICMarketsSC-MT5-6 ****5678",
+            "state": "activated",
+        }
+        fake_store.list_profiles.return_value = []
+        fake_gateway = mock.Mock()
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        payload = manager.build_status_payload()
+
+        self.assertEqual("activated", payload["state"])
+        self.assertEqual(True, payload["activeAccount"]["active"])
+        self.assertEqual("activated", payload["activeAccount"]["state"])
 
     def test_logout_should_not_logout_mt5_when_clear_active_session_failed(self):
         """清理激活会话失败时不应继续执行 MT5 登出。"""
@@ -364,6 +489,25 @@ class V2SessionManagerTests(unittest.TestCase):
 class V2SessionStoreTests(unittest.TestCase):
     """验证会话存储层最小读写行为。"""
 
+    def test_save_profile_should_clear_active_flag_before_persist(self):
+        """已保存账号档案不应把当前激活态直接落盘。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = v2_session_store.FileSessionStore(Path(temp_dir) / "session")
+            profile = {
+                "profileId": "acct_123",
+                "login": "12345678",
+                "loginMasked": "****5678",
+                "server": "ICMarketsSC-MT5-6",
+                "displayName": "IC 5678",
+                "active": True,
+                "state": "activated",
+            }
+
+            saved = store.save_profile(profile, "secret")
+
+        self.assertEqual(False, saved["profile"]["active"])
+        self.assertEqual("", saved["profile"]["state"])
+
     def test_load_profile_should_return_full_record(self):
         """按 profileId 应能读回完整档案。"""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -382,6 +526,135 @@ class V2SessionStoreTests(unittest.TestCase):
         self.assertIsNotNone(loaded)
         self.assertEqual(saved["encryptedPassword"], loaded["encryptedPassword"])
         self.assertEqual("12345678", loaded["profile"]["login"])
+
+    def test_restore_profile_record_should_delete_file_when_record_is_none(self):
+        """恢复空档案快照时应删除现有账号文件。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_root = Path(temp_dir) / "session"
+            store = v2_session_store.FileSessionStore(session_root)
+            store.save_profile(
+                {
+                    "profileId": "acct_123",
+                    "login": "12345678",
+                    "loginMasked": "****5678",
+                    "server": "ICMarketsSC-MT5-6",
+                    "displayName": "IC 5678",
+                },
+                "secret",
+            )
+
+            store.restore_profile_record("acct_123", None)
+
+            self.assertIsNone(store.load_profile("acct_123"))
+
+    def test_restore_profile_record_should_write_snapshot_back(self):
+        """恢复旧档案快照时应完整写回原始记录。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_root = Path(temp_dir) / "session"
+            store = v2_session_store.FileSessionStore(session_root)
+            snapshot = {
+                "profile": {
+                    "profileId": "acct_123",
+                    "login": "12345678",
+                    "loginMasked": "****5678",
+                    "server": "ICMarketsSC-MT5-6",
+                    "displayName": "IC 5678",
+                    "active": False,
+                    "state": "",
+                },
+                "encryptedPassword": "cipher-1",
+                "updatedAtMs": 123,
+            }
+
+            store.restore_profile_record("acct_123", snapshot)
+            loaded = store.load_profile("acct_123")
+
+            self.assertEqual(snapshot, loaded)
+
+    def test_load_profile_should_return_none_when_record_json_invalid(self):
+        """账号档案 JSON 损坏时应按缺失处理，而不是直接抛异常。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_root = Path(temp_dir) / "session"
+            accounts_dir = session_root / "accounts"
+            accounts_dir.mkdir(parents=True, exist_ok=True)
+            (accounts_dir / "acct_bad.json").write_text("{bad json", encoding="utf-8")
+            store = v2_session_store.FileSessionStore(session_root)
+
+            loaded = store.load_profile("acct_bad")
+
+        self.assertIsNone(loaded)
+
+    def test_list_profiles_should_skip_invalid_json_record(self):
+        """列出账号摘要时应跳过损坏的档案文件。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_root = Path(temp_dir) / "session"
+            accounts_dir = session_root / "accounts"
+            accounts_dir.mkdir(parents=True, exist_ok=True)
+            (accounts_dir / "acct_bad.json").write_text("{bad json", encoding="utf-8")
+            good_record = {
+                "profile": {
+                    "profileId": "acct_good",
+                    "login": "12345678",
+                    "loginMasked": "****5678",
+                    "server": "ICMarketsSC-MT5-6",
+                    "displayName": "IC 5678",
+                }
+            }
+            (accounts_dir / "acct_good.json").write_text(
+                json.dumps(good_record, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            store = v2_session_store.FileSessionStore(session_root)
+
+            profiles = store.list_profiles()
+
+        self.assertEqual(1, len(profiles))
+        self.assertEqual("acct_good", profiles[0]["profileId"])
+
+    def test_list_profiles_should_skip_record_with_non_object_profile(self):
+        """列出账号摘要时应跳过 profile 结构错误的记录。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_root = Path(temp_dir) / "session"
+            accounts_dir = session_root / "accounts"
+            accounts_dir.mkdir(parents=True, exist_ok=True)
+            bad_record = {"profile": ["wrong-shape"]}
+            good_record = {
+                "profile": {
+                    "profileId": "acct_good",
+                    "login": "12345678",
+                    "loginMasked": "****5678",
+                    "server": "ICMarketsSC-MT5-6",
+                    "displayName": "IC 5678",
+                }
+            }
+            (accounts_dir / "acct_bad.json").write_text(
+                json.dumps(bad_record, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (accounts_dir / "acct_good.json").write_text(
+                json.dumps(good_record, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            store = v2_session_store.FileSessionStore(session_root)
+
+            profiles = store.list_profiles()
+
+        self.assertEqual(1, len(profiles))
+        self.assertEqual("acct_good", profiles[0]["profileId"])
+
+    def test_switch_saved_account_should_raise_value_error_when_profile_shape_invalid(self):
+        """已保存账号档案 profile 结构错误时，应按不可用账号处理。"""
+        fake_store = mock.Mock()
+        fake_gateway = mock.Mock()
+        fake_store.load_profile.return_value = {
+            "profile": ["wrong-shape"],
+            "encryptedPassword": "c2VjcmV0",
+        }
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        with self.assertRaises(ValueError) as error_ctx:
+            manager.switch_saved_account("acct_bad", request_id="req-switch-bad-shape")
+        self.assertIn("saved profile not found", str(error_ctx.exception))
 
 
 if __name__ == "__main__":

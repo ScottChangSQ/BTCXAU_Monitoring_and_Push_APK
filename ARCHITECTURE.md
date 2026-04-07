@@ -16,8 +16,14 @@
   Binance 回退 K 线流管理器，负责通过韩国服务器的 `/binance-ws` 订阅 `@kline_1m`，仅在 `v2 stream` 不健康时补最新展示快照。
 - [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java)
   v2 网关客户端，负责请求 `market/account/sync` 新接口，并把响应解析成 APP 侧统一载荷；当前也承接图表页按 `startTime/endTime` 的分页与增量补尾。
+- [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java)
+  v2 会话客户端，负责请求 `/v2/session/*` 并解析 public-key、status、login/switch/logout 回执。
 - [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java)
   v2 同步流客户端，负责连接 `/v2/stream` 并把统一同步消息解析成 APP 可消费的结构。
+- [app/src/main/java/com/binance/monitor/security/SessionCredentialEncryptor.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SessionCredentialEncryptor.java)
+  APP 会话加密器，负责把账号、密码、服务器封装成 `rsa-oaep+aes-gcm` 登录信封。
+- [app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java)
+  APP 安全会话偏好，负责用 Android Keystore 加密保存最近一次远程会话摘要和已保存账号列表缓存；logout 时只清当前激活账号，不清已保存账号摘要。
 - [app/src/main/java/com/binance/monitor/data/local/V2SnapshotStore.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/V2SnapshotStore.java)
   v2 快照本地存储，负责保存市场快照和账户快照原始 JSON，用于页面快速恢复，不再混存图表各周期序列。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
@@ -33,7 +39,11 @@
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java)
   缩放方向判定工具，负责把双指手势分成横向、纵向和斜向整体缩放。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
-  账户统计页入口，负责账户概览、收益统计、净值/结余主图、附图、交易分布、交易记录、隐私小眼睛和登录成功提示动画；当前主动刷新已统一改走 `AccountStatsPreloadManager.fetchForUi(...)`。
+  账户统计页入口，负责账户概览、收益统计、净值/结余主图、附图、交易分布、交易记录、隐私小眼睛和登录成功提示动画；当前主动刷新已统一改走 `AccountStatsPreloadManager.fetchForUi(...)`，并已接入远程账号会话面板。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java)
+  远程账号会话协调器，负责把公钥获取、加密登录、已保存账号切换、退出和切换后缓存清理串成单条主链。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountSessionStateMachine.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountSessionStateMachine.java)
+  远程账号会话状态机，负责明确区分 `encrypting/submitting/switching/syncing/active/failed`。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountCurvePointNormalizer.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountCurvePointNormalizer.java)
   账户曲线归一化工具，负责修正空净值/结余、补齐最少两点，并保留历史仓位比例。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountCurveHighlightHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountCurveHighlightHelper.java)
@@ -92,6 +102,8 @@
   MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出，以及远程账号会话接口与运行时缓存清理。
 - [bridge/mt5_gateway/v2_session_crypto.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_crypto.py)
   远程账号会话加密模块，负责登录信封公钥生成、`rsa-oaep+aes-gcm` 解密、时间戳校验和 nonce 去重。
+- [bridge/mt5_gateway/v2_session_models.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_models.py)
+  远程账号会话领域模型，负责统一定义账号摘要、公钥载荷、状态载荷、动作回执和登录信封结构，避免服务端继续散落裸字典。
 - [bridge/mt5_gateway/v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py)
   远程账号会话管理器，负责新账号登录、已保存账号切换、退出、异常回滚、审计记录和强一致刷新收口。
 - [bridge/mt5_gateway/v2_session_store.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_store.py)
@@ -155,6 +167,17 @@
   统一把应用前后台状态转换成账户预加载节奏，避免旧常量分散在多个入口里。
 - `AccountStatsBridgeActivity` -> `AccountStatsPreloadManager`
   主动刷新时统一复用 `v2` 优先抓取逻辑，不再由页面自己直连旧网关。
+- `AccountStatsBridgeActivity` -> `AccountRemoteSessionCoordinator` -> `GatewayV2SessionClient`
+  账户页远程会话入口统一先拉公钥或读取状态，再执行登录、切换、退出，避免页面自己拼会话接口。
+- `AccountRemoteSessionCoordinator` -> `SessionCredentialEncryptor`
+  登录新账号时先在 APP 本地生成 `rsa-oaep+aes-gcm` 登录信封，再把密文提交给服务端。
+- `AccountRemoteSessionCoordinator` -> `SecureSessionPrefs`
+  会话链路每次切换后都会把当前激活账号和已保存账号列表缓存到 Android Keystore 加密存储，避免重新启动页面时只剩明文偏好。
+- `GatewayV2SessionClient` -> `server_v2.py /v2/session/*` -> `v2_session_manager.py`
+  远程账号会话统一由服务端作为唯一 MT5 执行主体，APP 不直接连接 MT5 服务器，也不直接保存可复用的 MT5 明文密码。
+- `ConfigManager` / App 设置页 -> `GatewayV2SessionClient`
+  远程账号会话是否可用，取决于用户在 App 里配置的网关基础地址；如果这里仍是 `http://...`，则只能视为只读入口，不应把远程账号登录 / 切换当成可用能力。
+  另外，`/v2/session/public-key` 也必须走 HTTPS，否则公钥可能被替换，App 侧加密会失去意义。
 - `MonitorService` -> `AccountStatsPreloadManager`
   当 `v2 stream` 带账户变化时，统一走 `fetchForUi(...)` 刷新本地账户真值，避免服务层再单独拼账户接口。
 - `AccountStatsBridgeActivity` -> `AccountCurvePointNormalizer` -> `CurvePoint`
@@ -181,6 +204,8 @@
   统一控制台通过本机 HTTP 读取网关状态、诊断输入、异常规则配置，并触发缓存清理。
 - `server_v2.py /v2/session/*` -> `v2_session_manager.py` -> `v2_session_store.py` / `v2_session_crypto.py`
   远程账号会话链路先解密登录信封或读取已保存账号档案，再切换 MT5 运行态，并把结果落盘到当前激活账号摘要。
+- `v2_session_crypto.py` / `v2_session_manager.py` -> `v2_session_models.py`
+  会话加密层和会话管理层都统一通过领域模型生成公钥、状态和回执结构，确保服务端输出口径和 APP 解析模型一致。
 - `v2_session_manager.py` -> `server_v2.py` 会话网关适配器
   会话管理器通过适配器执行 `login_mt5/switch_mt5_account/logout_mt5/clear_account_caches/force_account_resync`，把运行态切换和缓存收口统一封装在网关层。
 - `admin_panel.py` -> `server_v2.py /health`、`/v1/source`
@@ -215,6 +240,12 @@
 - Windows 部署脚本对 `caddy.exe` 采用兼容查找：优先 `windows_server_bundle\windows\caddy.exe`，其次 `windows_server_bundle\caddy.exe`，最后 `C:\mt5_bundle\caddy.exe` 这类上级目录；原因是服务器现场已存在历史安装位置，部署脚本需要兼容而不是强迫用户重新搬动二进制文件。
 - 远程账号会话当前采用“单用户、多账号、任意时刻一个激活账号”的服务端模型；原因是这样能在现有 MT5 网关结构内用最小正确改动闭合安全、切换和同步链路。
 - 远程登录链路当前采用 `cryptography` 实现 `rsa-oaep+aes-gcm`，账号落盘仍用 Windows DPAPI；原因是标准库无法完整提供设计要求的公钥信封解密，而本机密文档案仍应交给 Windows 本机保护能力处理。
+- Task 1 的会话模型当前已从“占位 dataclass”收口成真实接口模型，并由加密层与会话管理层直接复用；原因是如果模型只存在文件里、不参与返回结构生成，后续维护仍会继续依赖散落字典，容易再次出现前后端字段漂移。
+- APP 侧远程会话当前采用“accepted 进入 syncing，只有新账号快照真正落地后才进入 active”的状态机；原因是账户切换不能只靠接口受理结果判断成功，否则会出现伪成功状态。
+- APP 本地已停止持久化明文 MT5 密码，只保留 Android Keystore 加密后的会话摘要；原因是服务端已经承担加密记住账号能力，手机端继续留明文密码会破坏安全边界。
+- 远程账号登录 / 切换必须走 HTTPS 公网入口；原因是公钥信封只解决应用层敏感字段保护，不应在纯 HTTP 下开放会话控制接口。
+- Task 6 当前只完成了自动化验收与文档收口，真机人工联调仍需按验收清单单独执行；原因是“已部署服务器 + App 实际 HTTPS 入口 + 真机页面收口”不属于仓库内可完全替代的验证范围。
+- 远程账号会话当前只收口“单用户、多账号、单激活账号”的最小正确模型；原因是这一阶段目标是先闭合安全登录、切换、退出和页面强一致收口，多用户隔离与后台公钥轮换留到后续阶段。
 - nonce 去重当前只做进程内内存态；原因是本阶段先收口单机单进程的最小安全闭环，多实例共享去重留到后续阶段再做集中存储。
 - 账户预加载节奏从管理器内联常量改成 `AccountPreloadPolicyHelper` 统一计算；原因是这样更容易和前后台策略保持一致，也便于后续继续压缩账户页相关资源消耗。
 - 悬浮窗改为“统一快照 + 产品卡片”模型，解决不同字段更新时间不一致的问题。

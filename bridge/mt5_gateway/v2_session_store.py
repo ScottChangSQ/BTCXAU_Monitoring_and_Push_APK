@@ -36,14 +36,29 @@ class FileSessionStore:
         """读取 JSON 文件，不存在时返回 None。"""
         if not file_path.exists():
             return None
-        with file_path.open("r", encoding="utf-8") as fh:
-            return json.load(fh)
+        try:
+            with file_path.open("r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return payload
 
     def _write_json_file(self, file_path: Path, payload: Dict[str, Any]) -> None:
         """按 UTF-8 写 JSON 文件。"""
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with file_path.open("w", encoding="utf-8") as fh:
             json.dump(payload, fh, ensure_ascii=False, indent=2)
+
+    def _extract_profile_payload(self, record: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """从完整档案中提取 profile 字段，结构非法时返回 None。"""
+        if not isinstance(record, dict):
+            return None
+        profile = record.get("profile")
+        if not isinstance(profile, dict) or not profile:
+            return None
+        return dict(profile)
 
     def save_active_session(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """保存当前激活账号摘要。"""
@@ -70,13 +85,30 @@ class FileSessionStore:
             raise ValueError("profileId is required")
         self._ensure_dirs()
         cipher = v2_session_crypto.protect_secret_for_machine(str(password or "").encode("utf-8"))
+        # 已保存账号档案只保存静态摘要，不把当前运行态直接落盘。
+        safe_profile = dict(profile or {})
+        safe_profile["active"] = False
+        safe_profile["state"] = ""
         record = {
-            "profile": dict(profile or {}),
+            "profile": safe_profile,
             "encryptedPassword": base64.b64encode(cipher).decode("ascii"),
             "updatedAtMs": _now_ms(),
         }
         self._write_json_file(self.accounts_dir / f"{profile_id}.json", record)
         return record
+
+    def restore_profile_record(self, profile_id: str, record: Optional[Dict[str, Any]]) -> None:
+        """按原始记录恢复账号档案；record 为空时删除档案。"""
+        profile_key = str(profile_id or "").strip()
+        if not profile_key:
+            raise ValueError("profileId is required")
+        record_path = self.accounts_dir / f"{profile_key}.json"
+        if not isinstance(record, dict):
+            if record_path.exists():
+                record_path.unlink()
+            return
+        self._ensure_dirs()
+        self._write_json_file(record_path, dict(record))
 
     def load_profile(self, profile_id: str) -> Optional[Dict[str, Any]]:
         """按 profileId 读取完整账号档案。"""
@@ -102,8 +134,8 @@ class FileSessionStore:
             return []
         profiles: List[Dict[str, Any]] = []
         for record_path in sorted(self.accounts_dir.glob("*.json")):
-            record = self._read_json_file(record_path) or {}
-            profile = dict(record.get("profile") or {})
-            if profile:
+            record = self._read_json_file(record_path)
+            profile = self._extract_profile_payload(record)
+            if profile is not None:
                 profiles.append(profile)
         return profiles

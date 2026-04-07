@@ -14,6 +14,8 @@
 - 新架构切换中：K 线链路已继续收口为“闭合历史快照 + 最新 1 条 patch”；闭合历史才会持久化到 Room，未收盘最新 K 线只留在内存与界面，且分钟实时 patch 只允许覆盖 `1d` 及以下周期
 - 服务端已新增统一 Web 服务器控制台，可在服务器本机 `localhost` 或公网访问，用来查看总览、组件控制、配置中心、诊断中心、日志与历史，并控制网关 / MT5 / Caddy / Nginx
 - 服务端已新增远程 MT5 账号会话最小闭环：支持读取公钥、加密登录新账号、切换已保存账号、退出当前账号，并把当前激活账号摘要透传到管理面板
+- APP 已补齐远程账号会话闭环：账户页支持拉取公钥、安全加密登录、切换已保存账号、退出当前账号，并用状态机区分“提交中 / 同步中 / 已激活 / 失败”
+- APP 本地不再持久化明文 MT5 密码，只缓存最近一次会话摘要与已保存账号列表，且这些本地摘要已改为 Android Keystore 加密保存
 - 主监控页与图表页的 Binance 行情统一走韩国服务器转发，手机不再直接访问 Binance 官方地址
 - MT5 账户支持轻量摘要、轻实时持仓、挂单增量、交易增量和权益曲线追加
 - 悬浮窗支持显示连接状态、合并盈亏、分产品盈亏、最新价格、成交量、成交额
@@ -28,16 +30,39 @@
 
 - Android：Java + XML + ViewBinding
 - 架构：MVVM + Repository
-- 本地存储：Room + SharedPreferences
+- 本地存储：Room + SharedPreferences + Android Keystore
 - 网络：OkHttp + WebSocket
 - 图表与账户：自定义 View + `GatewayV2Client` / `GatewayV2StreamClient` + MT5 网关接口 + 服务端净值曲线重放
-- 网关会话安全：Python `cryptography` + Windows DPAPI，本机保存密文账号档案，远程登录走 `rsa-oaep+aes-gcm`
-- 构建：Gradle Kotlin DSL，`compileSdk / targetSdk 34`，`minSdk 24`
+- 网关会话安全：Python `cryptography` + Windows DPAPI + Android Keystore；服务器本机保存密文账号档案，APP 远程登录走 `rsa-oaep+aes-gcm`，本地只保存加密会话摘要
+- 构建：Gradle Kotlin DSL，`compileSdk / targetSdk 34`，`minSdk 24`，已开启 JDK desugaring 保障 Java 运行时兼容
+
+## 远程账号会话
+
+- App 远程登录、切换、退出 MT5 账号，当前都通过服务端 `/v2/session/*` 闭环完成
+- 远程账号切换只允许“任意时刻一个当前激活账号”，不支持多账号同时在线
+- App 端不会再保存明文 MT5 密码；手机本地只缓存 Android Keystore 加密后的会话摘要
+- 勾选“记住此账号”后，服务器保存的是 Windows DPAPI 加密后的账号档案，不是明文密码
+- 远程账号会话必须通过 HTTPS 暴露（包含 `/v2/session/public-key`、`/v2/session/login`、`/v2/session/switch`、`/v2/session/logout`、`/v2/session/status`）；纯 HTTP 入口只适合健康检查、管理面板或只读接口
+- 如果 App 里填的是 `http://...` 网关地址，远程账号登录、切换能力不应视为可用；要使用这条能力，App 里必须配置已经完成证书与反向代理的 `https://...` 入口
+- 当前已完成最小闭环：获取公钥、加密登录新账号、切换已保存账号、退出当前账号、切换后清旧缓存并等待新快照收口
+- 当前还没有做：后台自动公钥轮换、多用户隔离、多实例共享 nonce 去重
+
+## Task 1-6 收口结论
+
+- Task 1 已完成：服务端会话领域模型、公钥能力、登录信封解密、时间戳校验、nonce 去重、DPAPI 密文能力已闭合，并补齐了模型与加密专项测试
+- Task 2 已完成：服务端登录、切换、退出、已保存账号档案存储已闭合；运行时凭据优先级、坏档案容错、失败回滚、档案恢复都已补齐
+- Task 3 已完成：`/v2/session/public-key`、`/v2/session/login`、`/v2/session/switch`、`/v2/session/logout`、`/v2/session/status` 已打通；登录和切换后的缓存清理、强一致刷新、管理面板会话摘要透传已闭合
+- Task 4 已完成：App 侧会话模型、远程会话客户端、登录信封加密、本地加密会话摘要存储已闭合；`active / activated` 兼容口径已统一
+- Task 5 已完成：账户页远程会话状态机、协调器、切换后旧缓存清理、`accepted -> syncing -> active` 收口链已闭合；回执与状态短暂不一致时，前端会以本次操作目标账号为准
+- Task 6 已完成：README、ARCHITECTURE、CONTEXT、部署文档和 Windows bundle 口径已同步；默认 HTTP 入口已明确拒绝 `/v2/session/*`，避免远程账号会话被纯 HTTP 暴露
+- 当前代码与自动化验收层面的结论是：远程账号会话这 6 个 Task 已完成收口
+- 当前仍保留 1 个线下边界：真机 + 已部署 HTTPS 服务器的人工联调，需要按文末验收清单再做一次现场确认
 
 ## 已完成功能列表
 
 - 服务端已新增 `v2/market/snapshot`、`v2/market/candles`、`v2/account/snapshot`、`v2/account/history`、`v2/sync/delta`、`v2/stream` 的最小可用链路
 - 服务端已新增 `v2/session/public-key`、`v2/session/login`、`v2/session/switch`、`v2/session/logout`、`v2/session/status` 的最小可用链路
+- APP 已新增 `GatewayV2SessionClient`、`SessionCredentialEncryptor`、`SecureSessionPrefs`、`AccountRemoteSessionCoordinator`、`AccountSessionStateMachine`，账户页远程会话已闭合
 - APP 已新增 `GatewayV2Client`、`V2SnapshotStore` 和 `v2` 载荷模型，图表页已切到服务端 `candles + latestPatch` 口径
 - 图表页左滑历史分页和增量补尾也已切到 `v2/market/candles?startTime/endTime`，不再走旧 `BinanceApiClient` 图表历史接口
 - 服务端 `v2/market/candles` 已开始把最后一根未闭合 REST K 线拆成 `latestPatch`，不再把它伪装成闭合历史
@@ -111,17 +136,21 @@
 .\gradlew.bat :app:compileDebugJavaWithJavac
 .\gradlew.bat :app:testDebugUnitTest
 .\gradlew.bat :app:assembleDebug -x lint
+.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"
 ```
 
 MT5 网关 Python 侧常用验证：
 
 ```bash
-.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_summary_response -v
-.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_admin_panel -v
-.\\.venv\\Scripts\\python.exe -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v
-.\.venv\Scripts\python.exe -m unittest bridge.mt5_gateway.tests.test_gateway_bundle_parity -v
-.\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/server_v2.py
-.\.venv\Scripts\python.exe -m py_compile bridge/mt5_gateway/admin_panel.py
+python -m unittest bridge.mt5_gateway.tests.test_summary_response -v
+python -m unittest bridge.mt5_gateway.tests.test_admin_panel -v
+python -m unittest bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v
+python -m unittest bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v
+python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v
+python -m unittest bridge.mt5_gateway.tests.test_gateway_bundle_parity -v
+python -m py_compile bridge/mt5_gateway/server_v2.py
+python -m py_compile bridge/mt5_gateway/admin_panel.py
+python -m py_compile scripts/build_windows_server_bundle.py
 ```
 
 ## 部署方法和命令
@@ -138,8 +167,12 @@ MT5 网关 Python 侧常用验证：
 - 当前默认公网入口为 `http://43.155.214.62`
 - 统一控制台默认入口为 `http://43.155.214.62/admin/`
 - 管理面板直连端口入口仍可用：`http://43.155.214.62:8788`
+- 远程 MT5 账号会话必须通过 HTTPS 公网入口开放；纯 HTTP 入口不应直接暴露 `/v2/session/*`（包括 `public-key/login/switch/logout/status`）
+- 上面这组 `http://...` 地址只适合管理面板、健康检查和只读接口演示；如果要让 App 使用远程账号会话，App 设置页里必须改填实际可用的 `https://` 公网入口
+- 启用 HTTPS 的最短路径是“先有域名，再启用 Caddy TLS”：在服务器使用 [deploy/tencent/windows/Caddyfile.example](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows/Caddyfile.example) 的域名站点块（包含 `tls`），放行 443，并把 App 的网关地址改为 `https://你的域名`
 - 统一承接：
   - `MT5 /v1/*`
+  - `Gateway /v2/*`
   - `Admin /admin/*`
   - `Binance REST /binance-rest/*`
   - `Binance WebSocket /binance-ws/*`
@@ -171,6 +204,16 @@ MT5 网关 Python 侧常用验证：
   K 线缩放手势方向判定工具。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
   账户统计页入口。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java)
+  账户页远程会话协调器，负责安全登录、已保存账号切换、退出和切换后缓存收口。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountSessionStateMachine.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountSessionStateMachine.java)
+  账户页远程会话状态机，负责区分 `idle/encrypting/submitting/switching/syncing/active/failed`。
+- [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java)
+  APP 侧会话接口客户端，负责请求 `/v2/session/*` 并解析返回结构。
+- [app/src/main/java/com/binance/monitor/security/SessionCredentialEncryptor.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SessionCredentialEncryptor.java)
+  APP 侧登录信封加密器，负责把账号、密码、服务器封装成 `rsa-oaep+aes-gcm` 登录包。
+- [app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java)
+  APP 本地安全会话摘要存储，负责用 Android Keystore 加密保存最近激活账号和已保存账号列表缓存。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountConnectionTransitionHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountConnectionTransitionHelper.java)
   登录成功提示动画触发条件工具。
 - [app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java)
@@ -215,6 +258,7 @@ MT5 网关 Python 侧常用验证：
 
 ## 待办事项
 
+- 远程账号会话后续项：后台自动公钥轮换、多用户隔离、多实例共享 nonce 去重
 - 实盘版第一阶段（必须先做）：服务端交易网关、交易命令状态机、统一确认弹窗、交易后强一致刷新、单笔开仓/平仓/挂单/改单闭环
 - 实盘版第二阶段（必须先做）：图表交易交互、拒单原因回执、手数与保证金预演、一键交易开关和安全模式/快速模式边界
 - 实盘版第三阶段（可以后做）：批量开仓、批量平仓、批量改 TP/SL、Close By、netting/hedging 完整兼容
@@ -222,3 +266,20 @@ MT5 网关 Python 侧常用验证：
 - 资源占用优化、流量进一步压缩、CPU 与内存整理
 - 更大范围的代码规范化整理与注释补齐
 - 评估是否把异常交易判断迁移到服务器端
+
+## 阶段验收说明
+
+- Task 6 的自动化验收已经完成：服务端远程会话测试与 App 侧远程会话测试都已通过
+- 2026-04-07 再次总复核后的最新自动化结果：
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v` 已通过，结果 `Ran 74 tests ... OK`
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` 已通过，结果 `BUILD SUCCESSFUL`
+  - 部署脚本：`python -m py_compile scripts/build_windows_server_bundle.py` 已通过，且 `python scripts/build_windows_server_bundle.py` 已重新生成最新 `dist/windows_server_bundle`
+- 当前还没有在这份仓库里直接完成“真机 + 已部署服务器”的人工联调记录
+- 真机人工验收时，至少需要确认这 7 条：
+  - App 获取公钥成功
+  - 新账号“仅本次使用”登录成功
+  - 退出登录后页面回到未登录态
+  - 新账号“记住此账号”登录成功
+  - 从已保存账号列表切换成功
+  - 切换后旧仓位、旧挂单、旧图表线不再显示
+  - 删除当前账号时先退出，再删除档案

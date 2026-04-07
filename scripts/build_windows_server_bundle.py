@@ -77,7 +77,8 @@ def normalize_windows_newlines(content: str) -> str:
 
 def normalize_batch_file(destination: Path) -> None:
     """确保批处理文件使用 Windows 兼容的 CRLF 换行。"""
-    content = destination.read_text(encoding="utf-8")
+    # 兼容历史上误写入 UTF-8 BOM 的情况，避免 cmd.exe 把首行命令识别异常。
+    content = destination.read_text(encoding="utf-8-sig").lstrip("\ufeff")
     normalized = normalize_windows_newlines(content)
     with destination.open("w", encoding="utf-8", newline="") as handle:
         handle.write(normalized)
@@ -142,6 +143,30 @@ C:\\mt5_bundle
 - 重新注册网关与管理面板计划任务
 - 隐藏启动 Caddy
 - 自动验收 `8787 / 8788 / 80 / /admin/`
+
+## caddy.exe 位置说明
+
+部署包默认不内置 `caddy.exe`，你可以把它放在下列任一位置：
+
+```text
+C:\\mt5_bundle\\windows_server_bundle\\windows\\caddy.exe
+```
+
+或：
+
+```text
+C:\\mt5_bundle\\windows_server_bundle\\caddy.exe
+```
+
+或（兼容历史位置）：
+
+```text
+C:\\mt5_bundle\\caddy.exe
+```
+
+## 重要安全边界
+
+远程账号会话 `/v2/session/*` 必须通过 HTTPS 公网入口开放；默认 HTTP 的 `Caddyfile` 会直接拒绝这些接口。
 
 ## 手动启动检查
 

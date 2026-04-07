@@ -8,6 +8,12 @@
 
 **Tech Stack:** Python、FastAPI、MetaTrader5 Python API、Windows DPAPI、Java、Android ViewBinding、OkHttp、Android Keystore、JUnit4、Python unittest、PowerShell
 
+## 收口状态
+
+- Task 1-6 的代码实现与自动化验收已完成收口
+- 当前仓库内仍保留 1 个线下边界：真机 + 已部署 HTTPS 服务器的人工联调记录未写回仓库
+- 因此本计划当前状态为：开发完成，自动化验收完成，待线下人工验收
+
 ---
 
 ## 文件结构预案
@@ -530,7 +536,7 @@ git commit -m "feat: add account remote session flow"
 - Modify: `ARCHITECTURE.md`
 - Modify: `CONTEXT.md`
 
-- [ ] **Step 1: 先写 README 中“必须启用 HTTPS 才允许远程账号切换”的补充段落**
+- [x] **Step 1: 先写 README 中“必须启用 HTTPS 才允许远程账号切换”的补充段落**
 
 ```md
 ## 远程账号会话
@@ -541,7 +547,7 @@ git commit -m "feat: add account remote session flow"
 - 勾选“记住此账号”后，服务器保存的是加密档案，不是明文密码
 ```
 
-- [ ] **Step 2: 运行针对性测试和人工验收**
+- [x] **Step 2: 运行针对性测试和人工验收**
 
 Run: `python -m unittest bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v`
 
@@ -561,7 +567,7 @@ Expected: PASS
 7. 删除当前账号时先退出，再删除档案
 ```
 
-- [ ] **Step 4: 更新 `CONTEXT.md`、`README.md`、`ARCHITECTURE.md`**
+- [x] **Step 4: 更新 `CONTEXT.md`、`README.md`、`ARCHITECTURE.md`**
 
 ```md
 - 当前已完成：远程账号会话最小闭环
@@ -589,4 +595,3 @@ git commit -m "docs: document remote mt5 session flow"
   - `SessionCredentialEncryptor`
   - `AccountRemoteSessionCoordinator`
   - `AccountSessionUiState`
-

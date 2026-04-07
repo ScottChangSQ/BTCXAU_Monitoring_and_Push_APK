@@ -38,8 +38,9 @@ python scripts\build_windows_server_bundle.py
 
 ```text
 C:\mt5_bundle\windows_server_bundle
+```
 
-6. `caddy.exe` 可以放在下面任一位置：
+6. `caddy.exe` 可以放在下面任一位置（部署脚本会自动查找，不需要手工改脚本路径）：
 
 ```text
 C:\mt5_bundle\windows_server_bundle\windows\caddy.exe
@@ -48,15 +49,18 @@ C:\mt5_bundle\windows_server_bundle\windows\caddy.exe
 或：
 
 ```text
+C:\mt5_bundle\windows_server_bundle\caddy.exe
+```
+
+或（兼容历史位置）：
+
+```text
 C:\mt5_bundle\caddy.exe
 ```
 
-部署脚本会自动查找，不需要手工改脚本路径。
-```
-
-6. 可选：
-   - 有域名：后面直接上 HTTPS / WSS
-   - 没域名：先用公网 IP + HTTP / WS 跑通
+7. 可选：
+   - 有域名：后面直接上 HTTPS / WSS，远程账号会话 `/v2/session/*` 才可用
+   - 没域名：先用公网 IP + HTTP / WS 跑通只读/监控链路（默认 Caddyfile 会拒绝 `/v2/session/*`）
 
 现在不再长期维护 `windows_server_bundle` 静态副本。服务器真正需要的脚本、网关程序、EA 文件和 Caddy 样例，都从下面两处源码生成：
 
