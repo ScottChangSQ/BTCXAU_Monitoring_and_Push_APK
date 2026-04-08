@@ -87,7 +87,7 @@ PORT = int(os.getenv("GATEWAY_PORT", "8787"))
 GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull | ea
 EA_SNAPSHOT_TTL_SEC = int(os.getenv("EA_SNAPSHOT_TTL_SEC", "35"))
 EA_INGEST_TOKEN = os.getenv("EA_INGEST_TOKEN", "").strip()
-SNAPSHOT_BUILD_CACHE_MS = int(os.getenv("SNAPSHOT_BUILD_CACHE_MS", "8000"))
+SNAPSHOT_BUILD_CACHE_MS = int(os.getenv("SNAPSHOT_BUILD_CACHE_MS", "1000"))
 SNAPSHOT_BUILD_MAX_STALE_MS = max(
     SNAPSHOT_BUILD_CACHE_MS,
     int(os.getenv("SNAPSHOT_BUILD_MAX_STALE_MS", "30000"))
@@ -103,10 +103,16 @@ TRADE_REQUEST_STORE_MAX_ENTRIES = max(100, int(os.getenv("TRADE_REQUEST_STORE_MA
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
 HEALTH_CACHE_MS = max(1000, int(os.getenv("HEALTH_CACHE_MS", "5000")))
-MARKET_CANDLES_CACHE_MS = max(1000, int(os.getenv("MARKET_CANDLES_CACHE_MS", "8000")))
+MARKET_CANDLES_CACHE_MS = max(1000, int(os.getenv("MARKET_CANDLES_CACHE_MS", "1000")))
 MARKET_CANDLES_CACHE_MAX_ENTRIES = max(8, int(os.getenv("MARKET_CANDLES_CACHE_MAX_ENTRIES", "120")))
 MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT = max(100, min(1000, int(os.getenv("MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT", "500"))))
 MARKET_CANDLES_UPSTREAM_RETRY = max(0, int(os.getenv("MARKET_CANDLES_UPSTREAM_RETRY", "1")))
+V2_STREAM_PUSH_INTERVAL_MS = _read_bounded_env_int(
+    "V2_STREAM_PUSH_INTERVAL_MS",
+    default=1000,
+    minimum=200,
+    maximum=10000,
+)
 ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "5000")))
 ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
 ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "60")))
@@ -151,6 +157,7 @@ session_runtime_credentials: Dict[str, Any] = {
 }
 light_snapshot_build_condition = Condition(snapshot_cache_lock)
 light_snapshot_building = False
+session_snapshot_epoch = 0
 
 
 def _load_bundle_runtime_info() -> Dict[str, str]:
@@ -426,6 +433,12 @@ def _normalize_v2_account_meta(account_meta: Dict[str, Any]) -> Dict[str, Any]:
         "leverage": int(account_meta.get("leverage", 0) or 0),
         "name": str(account_meta.get("name", "")),
         "company": str(account_meta.get("company", "")),
+        "tradeCount": int(account_meta.get("tradeCount", 0) or 0),
+        "positionCount": int(account_meta.get("positionCount", 0) or 0),
+        "pendingOrderCount": int(account_meta.get("pendingOrderCount", 0) or 0),
+        "curvePointCount": int(account_meta.get("curvePointCount", 0) or 0),
+        "historyRevision": str(account_meta.get("historyRevision", "")),
+        "accountRevision": str(account_meta.get("accountRevision", "")),
     }
 
 
@@ -444,6 +457,7 @@ def _sanitize_diff_payload(diff_payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def _build_logged_out_account_snapshot() -> Dict[str, Any]:
     """构建未激活远程会话时的空账户快照，避免监控链误触发 MT5。"""
+    history_revision = _build_history_revision_from_trades([])
     return {
         "accountMeta": {
             "login": "",
@@ -458,6 +472,7 @@ def _build_logged_out_account_snapshot() -> Dict[str, Any]:
             "positionCount": 0,
             "pendingOrderCount": 0,
             "curvePointCount": 0,
+            "historyRevision": history_revision,
         },
         "positions": [],
         "pendingOrders": [],
@@ -472,10 +487,13 @@ def _build_v2_sync_runtime_snapshot(server_time: int) -> Dict[str, Any]:
         snapshot = _build_account_light_snapshot_with_cache()
     else:
         snapshot = _build_logged_out_account_snapshot()
-    market_section = _build_v2_market_section()
+    market_section = _build_v2_market_section(server_time)
     account_section = _build_v2_account_section_from_snapshot(snapshot)
+    history_revision = str((account_section.get("accountMeta") or {}).get("historyRevision", ""))
     normalized_account = {
         "accountMeta": _normalize_v2_account_meta(account_section.get("accountMeta") or {}),
+        "overviewMetrics": [dict(item) for item in (account_section.get("overviewMetrics") or [])],
+        "statsMetrics": [dict(item) for item in (account_section.get("statsMetrics") or [])],
         "positions": [dict(item) for item in (account_section.get("positions") or [])],
         "orders": [dict(item) for item in (account_section.get("orders") or [])],
     }
@@ -494,6 +512,7 @@ def _build_v2_sync_runtime_snapshot(server_time: int) -> Dict[str, Any]:
         "marketDigest": market_digest,
         "accountDigest": account_digest,
         "accountRevision": account_revision,
+        "historyRevision": history_revision,
         "digest": state_digest,
         "tradeCount": int((account_section.get("accountMeta") or {}).get("tradeCount", 0) or 0),
         "curvePointCount": int((account_section.get("accountMeta") or {}).get("curvePointCount", 0) or 0),
@@ -508,6 +527,7 @@ def _build_v2_sync_summary(runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
         "marketDigest": str(runtime_snapshot.get("marketDigest", "")),
         "accountDigest": str(runtime_snapshot.get("accountDigest", "")),
         "accountRevision": str(runtime_snapshot.get("accountRevision", "")),
+        "historyRevision": str(runtime_snapshot.get("historyRevision", "")),
         "marketSymbolCount": len(market_symbols),
         "positionCount": len(((runtime_snapshot.get("account") or {}).get("positions") or [])),
         "orderCount": len(((runtime_snapshot.get("account") or {}).get("orders") or [])),
@@ -534,7 +554,9 @@ def _build_v2_sync_delta_events(previous_snapshot: Dict[str, Any], current_snaps
     if market_changed_keys:
         market_delta.append({
             "type": "marketSnapshotChanged",
+            "action": "market.snapshot",
             "digest": str(current_snapshot.get("marketDigest", "")),
+            "revision": str(current_snapshot.get("marketDigest", "")),
             "changedKeys": market_changed_keys,
             "snapshot": dict(current_market),
         })
@@ -543,7 +565,14 @@ def _build_v2_sync_delta_events(previous_snapshot: Dict[str, Any], current_snaps
     current_account = current_snapshot.get("account") or {}
     previous_meta = previous_account.get("accountMeta") or {}
     current_meta = current_account.get("accountMeta") or {}
-    meta_changed = previous_meta != current_meta
+    meta_compare_exclude_keys = {"historyRevision", "accountRevision"}
+    previous_meta_for_compare = {
+        key: value for key, value in previous_meta.items() if key not in meta_compare_exclude_keys
+    }
+    current_meta_for_compare = {
+        key: value for key, value in current_meta.items() if key not in meta_compare_exclude_keys
+    }
+    meta_changed = previous_meta_for_compare != current_meta_for_compare
     positions_diff = _sanitize_diff_payload(_diff_entities(
         previous_account.get("positions") or [],
         current_account.get("positions") or [],
@@ -557,19 +586,22 @@ def _build_v2_sync_delta_events(previous_snapshot: Dict[str, Any], current_snaps
     has_positions_delta = bool(positions_diff["upsert"] or positions_diff["remove"])
     has_orders_delta = bool(orders_diff["upsert"] or orders_diff["remove"])
     account_revision_changed = str(previous_snapshot.get("accountRevision", "")) != str(current_snapshot.get("accountRevision", ""))
-    if meta_changed or has_positions_delta or has_orders_delta or account_revision_changed:
+    history_revision_changed = str(previous_snapshot.get("historyRevision", "")) != str(current_snapshot.get("historyRevision", ""))
+    if meta_changed or has_positions_delta or has_orders_delta or account_revision_changed or history_revision_changed:
         account_event: Dict[str, Any] = {
             "type": "accountSnapshotChanged",
+            "action": "account.snapshot",
             "digest": str(current_snapshot.get("accountDigest", "")),
             "revision": str(current_snapshot.get("accountRevision", "")),
+            "historyRevision": str(current_snapshot.get("historyRevision", "")),
             "accountMetaChanged": meta_changed,
             "positions": positions_diff,
             "orders": orders_diff,
+            "snapshot": dict(current_account),
+            "historyRevisionChanged": history_revision_changed,
         }
         if meta_changed:
             account_event["accountMeta"] = dict(current_meta)
-        if account_revision_changed and not (meta_changed or has_positions_delta or has_orders_delta):
-            account_event["refreshHint"] = "accountHistoryChanged"
         account_delta.append(account_event)
 
     return market_delta, account_delta
@@ -836,6 +868,28 @@ def _normalize_market_symbol(symbol: str) -> str:
     if value in {"XAU", "XAUUSD", MARKET_SYMBOL_XAU, "GOLD"}:
         return MARKET_SYMBOL_XAU
     return value
+
+
+def _resolve_symbol_descriptor(symbol: str) -> Dict[str, str]:
+    normalized_market_symbol = _normalize_market_symbol(symbol)
+    if normalized_market_symbol == MARKET_SYMBOL_BTC:
+        return {
+            "productId": "BTC",
+            "marketSymbol": MARKET_SYMBOL_BTC,
+            "tradeSymbol": "BTCUSD",
+        }
+    if normalized_market_symbol == MARKET_SYMBOL_XAU:
+        return {
+            "productId": "XAU",
+            "marketSymbol": MARKET_SYMBOL_XAU,
+            "tradeSymbol": "XAUUSD",
+        }
+    raw_symbol = str(symbol or "").strip().upper()
+    return {
+        "productId": raw_symbol,
+        "marketSymbol": normalized_market_symbol,
+        "tradeSymbol": raw_symbol,
+    }
 
 
 def _normalize_abnormal_symbol(symbol: str) -> str:
@@ -1361,9 +1415,18 @@ def _mt5_history_window(range_key: str) -> Tuple[datetime, datetime]:
 
 def _light_snapshot_trade_count() -> int:
     """按全量历史同口径计算轻快照成交数，保证和 history 接口真值一致。"""
+    trade_state = _light_snapshot_trade_state()
+    return int(trade_state.get("tradeCount", 0) or 0)
+
+
+def _light_snapshot_trade_state() -> Dict[str, Any]:
+    """按全量历史同口径生成轻快照成交状态，避免轻/全量口径分叉。"""
     raw_deals = _progressive_trade_history_deals("all")
     trades = _map_trade_deals(raw_deals)
-    return len(trades)
+    return {
+        "tradeCount": len(trades),
+        "historyRevision": _build_history_revision_from_trades(trades),
+    }
 
 
 def _parse_login_value(raw_login: Any) -> int:
@@ -1658,11 +1721,14 @@ def _shutdown_mt5() -> None:
 
 def _clear_session_related_runtime_state() -> None:
     """清理会话切换后最相关的运行时缓存。"""
+    global session_snapshot_epoch
     with snapshot_cache_lock:
+        session_snapshot_epoch += 1
         snapshot_build_cache.clear()
         snapshot_sync_cache.clear()
         v2_sync_state.clear()
         health_status_cache.clear()
+        light_snapshot_build_condition.notify_all()
     with trade_request_lock:
         trade_request_store.clear()
 
@@ -2454,6 +2520,7 @@ def _map_positions() -> List[Dict]:
     mapped = []
     for position in positions:
         symbol = getattr(position, "symbol", "--")
+        symbol_descriptor = _resolve_symbol_descriptor(symbol)
         position_type = int(getattr(position, "type", 0))
         side = "Buy" if position_type == 0 else "Sell"
         volume = float(getattr(position, "volume", 0.0))
@@ -2472,8 +2539,11 @@ def _map_positions() -> List[Dict]:
 
         mapped.append(
             {
-                "productName": symbol,
-                "code": symbol,
+                "productId": symbol_descriptor["productId"],
+                "marketSymbol": symbol_descriptor["marketSymbol"],
+                "tradeSymbol": symbol_descriptor["tradeSymbol"],
+                "productName": symbol_descriptor["tradeSymbol"],
+                "code": symbol_descriptor["tradeSymbol"],
                 "side": side,
                 "positionId": int(getattr(position, "identifier", 0) or getattr(position, "ticket", 0)),
                 "positionTicket": int(getattr(position, "ticket", 0)),
@@ -2510,6 +2580,7 @@ def _map_pending_orders() -> List[Dict]:
         symbol = getattr(order, "symbol", "")
         if not symbol:
             continue
+        symbol_descriptor = _resolve_symbol_descriptor(symbol)
 
         order_type = int(getattr(order, "type", 0))
         side = _order_side(order_type)
@@ -2526,8 +2597,11 @@ def _map_pending_orders() -> List[Dict]:
 
         mapped.append(
             {
-                "productName": symbol,
-                "code": symbol,
+                "productId": symbol_descriptor["productId"],
+                "marketSymbol": symbol_descriptor["marketSymbol"],
+                "tradeSymbol": symbol_descriptor["tradeSymbol"],
+                "productName": symbol_descriptor["tradeSymbol"],
+                "code": symbol_descriptor["tradeSymbol"],
                 "side": side,
                 "orderId": int(getattr(order, "ticket", 0)),
                 "quantity": 0.0,
@@ -2670,14 +2744,18 @@ def _map_trade_deals(deals: List[Any]) -> List[Dict]:
                             remark: str) -> None:
         if close_volume <= volume_epsilon or total_volume <= volume_epsilon:
             return
+        symbol_descriptor = _resolve_symbol_descriptor(symbol)
         ratio = close_volume / total_volume
         storage_fee = (total_commission + total_swap) * ratio
         amount = abs(close_volume * close_price * contract_size_of(symbol))
         mapped.append(
             {
                 "timestamp": close_time,
-                "productName": symbol,
-                "code": symbol,
+                "productId": symbol_descriptor["productId"],
+                "marketSymbol": symbol_descriptor["marketSymbol"],
+                "tradeSymbol": symbol_descriptor["tradeSymbol"],
+                "productName": symbol_descriptor["tradeSymbol"],
+                "code": symbol_descriptor["tradeSymbol"],
                 "side": side,
                 "price": close_price,
                 "quantity": close_volume,
@@ -3011,7 +3089,11 @@ def _snapshot_from_mt5_light() -> Dict:
                 raise RuntimeError("account_info is None")
             positions = _map_positions()
             pending_orders = _map_pending_orders()
-            trade_count = _light_snapshot_trade_count()
+            trade_state = _light_snapshot_trade_state()
+            trade_count = int(trade_state.get("tradeCount", 0) or 0)
+            history_revision = str(trade_state.get("historyRevision", "") or "")
+            if not history_revision:
+                raise RuntimeError("light snapshot missing historyRevision")
             overview = _build_overview(positions, [])
             return {
                 "accountMeta": {
@@ -3032,6 +3114,7 @@ def _snapshot_from_mt5_light() -> Dict:
                     "range": "light",
                     # 轻快照只读取历史成交总数，供客户端判断是否需要补拉全量历史。
                     "tradeCount": trade_count,
+                    "historyRevision": history_revision,
                     "positionCount": len(positions),
                     "pendingOrderCount": len(pending_orders),
                     "curvePointCount": 0,
@@ -3407,6 +3490,60 @@ def _rebuild_sparse_ea_curve_points(account_meta: Dict[str, Any],
     return rebuilt if rebuilt else curve_points
 
 
+def _enrich_position_symbol_fields(item: Dict[str, Any]) -> Dict[str, Any]:
+    symbol_descriptor = _resolve_symbol_descriptor(
+        str(item.get("tradeSymbol") or item.get("code") or item.get("symbol") or item.get("productName") or "")
+    )
+    enriched = dict(item)
+    enriched["productId"] = str(item.get("productId") or symbol_descriptor["productId"])
+    enriched["marketSymbol"] = str(item.get("marketSymbol") or symbol_descriptor["marketSymbol"])
+    enriched["tradeSymbol"] = str(item.get("tradeSymbol") or symbol_descriptor["tradeSymbol"])
+    enriched["code"] = str(item.get("code") or enriched["tradeSymbol"])
+    enriched["productName"] = str(item.get("productName") or enriched["tradeSymbol"])
+    return enriched
+
+
+def _enrich_trade_symbol_fields(item: Dict[str, Any]) -> Dict[str, Any]:
+    symbol_descriptor = _resolve_symbol_descriptor(
+        str(item.get("tradeSymbol") or item.get("code") or item.get("symbol") or item.get("productName") or "")
+    )
+    enriched = dict(item)
+    enriched["productId"] = str(item.get("productId") or symbol_descriptor["productId"])
+    enriched["marketSymbol"] = str(item.get("marketSymbol") or symbol_descriptor["marketSymbol"])
+    enriched["tradeSymbol"] = str(item.get("tradeSymbol") or symbol_descriptor["tradeSymbol"])
+    enriched["code"] = str(item.get("code") or enriched["tradeSymbol"])
+    enriched["productName"] = str(item.get("productName") or enriched["tradeSymbol"])
+    return enriched
+
+
+def _build_history_revision_from_snapshot(snapshot: Dict[str, Any]) -> str:
+    return _build_history_revision_from_trades(snapshot.get("trades") or [])
+
+
+def _build_history_revision_from_trades(trades: List[Dict[str, Any]]) -> str:
+    normalized_trades: List[Dict[str, Any]] = []
+    for item in trades:
+        if not isinstance(item, dict):
+            continue
+        normalized_trades.append(dict(item))
+    normalized_trades.sort(
+        key=lambda item: (
+            int(item.get("closeTime", 0) or 0),
+            int(item.get("openTime", 0) or 0),
+            int(item.get("dealTicket", 0) or 0),
+            int(item.get("positionId", 0) or 0),
+            int(item.get("orderId", 0) or 0),
+        )
+    )
+    payload = json.dumps(
+        {"trades": normalized_trades},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
 def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     data = payload or {}
     account_meta = data.get("accountMeta") or {}
@@ -3418,10 +3555,11 @@ def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     data["overviewMetrics"] = data.get("overviewMetrics") or []
     data["curvePoints"] = data.get("curvePoints") or []
     data["curveIndicators"] = data.get("curveIndicators") or []
-    data["positions"] = data.get("positions") or []
-    data["pendingOrders"] = data.get("pendingOrders") or []
-    data["trades"] = data.get("trades") or []
+    data["positions"] = [_enrich_position_symbol_fields(dict(item)) for item in (data.get("positions") or [])]
+    data["pendingOrders"] = [_enrich_position_symbol_fields(dict(item)) for item in (data.get("pendingOrders") or [])]
+    data["trades"] = [_enrich_trade_symbol_fields(dict(item)) for item in (data.get("trades") or [])]
     data["statsMetrics"] = data.get("statsMetrics") or []
+    account_meta["historyRevision"] = _build_history_revision_from_snapshot(data)
     return data
 
 
@@ -3683,9 +3821,10 @@ def _build_snapshot_with_cache(range_key: str) -> Dict:
 
     snapshot = _normalize_snapshot(_select_snapshot(range_key), "MT5 Gateway")
     with snapshot_cache_lock:
+        built_at = _now_ms()
         _remember_cache_entry_locked(snapshot_build_cache, range_key, {
-            "builtAt": now_ms,
-            "lastAccessAt": now_ms,
+            "builtAt": built_at,
+            "lastAccessAt": built_at,
             "snapshot": snapshot,
         }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
     return snapshot
@@ -3695,23 +3834,9 @@ def _build_snapshot_with_cache(range_key: str) -> Dict:
 def _build_account_light_snapshot_with_cache() -> Dict:
     global light_snapshot_building
     cache_key = "account-light"
-    now_ms = _now_ms()
-    with light_snapshot_build_condition:
-        cached = snapshot_build_cache.get(cache_key)
-        if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
-            cached_snapshot = cached.get("snapshot")
-            if _is_mt5_pull_account_snapshot(cached_snapshot):
-                cached["lastAccessAt"] = now_ms
-                _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-                return cached_snapshot
-            snapshot_build_cache.pop(cache_key, None)
-        if _should_slide_snapshot_build_cache(cached, now_ms):
-            cached["builtAt"] = now_ms
-            cached["lastAccessAt"] = now_ms
-            _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-            return cached.get("snapshot")
-        while light_snapshot_building:
-            light_snapshot_build_condition.wait()
+    while True:
+        now_ms = _now_ms()
+        with light_snapshot_build_condition:
             cached = snapshot_build_cache.get(cache_key)
             if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
                 cached_snapshot = cached.get("snapshot")
@@ -3720,25 +3845,51 @@ def _build_account_light_snapshot_with_cache() -> Dict:
                     _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
                     return cached_snapshot
                 snapshot_build_cache.pop(cache_key, None)
-        light_snapshot_building = True
+            if _should_slide_snapshot_build_cache(cached, now_ms):
+                cached["builtAt"] = now_ms
+                cached["lastAccessAt"] = now_ms
+                _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+                return cached.get("snapshot")
+            while light_snapshot_building:
+                light_snapshot_build_condition.wait()
+                now_ms = _now_ms()
+                cached = snapshot_build_cache.get(cache_key)
+                if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+                    cached_snapshot = cached.get("snapshot")
+                    if _is_mt5_pull_account_snapshot(cached_snapshot):
+                        cached["lastAccessAt"] = now_ms
+                        _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+                        return cached_snapshot
+                    snapshot_build_cache.pop(cache_key, None)
+            build_epoch = int(session_snapshot_epoch)
+            light_snapshot_building = True
 
-    try:
-        snapshot = _build_account_light_snapshot()
-    except Exception:
+        try:
+            snapshot = _build_account_light_snapshot()
+        except Exception:
+            with light_snapshot_build_condition:
+                light_snapshot_building = False
+                light_snapshot_build_condition.notify_all()
+            raise
+
+        should_retry = False
         with light_snapshot_build_condition:
-            light_snapshot_building = False
-            light_snapshot_build_condition.notify_all()
-        raise
-
-    with light_snapshot_build_condition:
-        _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
-            "builtAt": now_ms,
-            "lastAccessAt": now_ms,
-            "snapshot": snapshot,
-        }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-        light_snapshot_building = False
-        light_snapshot_build_condition.notify_all()
-    return snapshot
+            if build_epoch != int(session_snapshot_epoch):
+                light_snapshot_building = False
+                light_snapshot_build_condition.notify_all()
+                should_retry = True
+            else:
+                built_at = _now_ms()
+                _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
+                    "builtAt": built_at,
+                    "lastAccessAt": built_at,
+                    "snapshot": snapshot,
+                }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+                light_snapshot_building = False
+                light_snapshot_build_condition.notify_all()
+                return snapshot
+        if should_retry:
+            continue
 
 
 def _snapshot_trades_from_mt5(range_key: str) -> List[Dict[str, Any]]:
@@ -3770,9 +3921,10 @@ def _build_trade_history_with_cache(range_key: str, fallback_snapshot: Optional[
         trades = [dict(item) for item in (_snapshot_trades_from_mt5(range_key) or [])]
 
     with snapshot_cache_lock:
+        built_at = _now_ms()
         _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
-            "builtAt": now_ms,
-            "lastAccessAt": now_ms,
+            "builtAt": built_at,
+            "lastAccessAt": built_at,
             "source": "MT5 Python Pull",
             "trades": trades,
         }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
@@ -4134,21 +4286,107 @@ def _proxy_binance_rest(path_value: str, request: Request) -> Response:
         raise HTTPException(status_code=502, detail=f"Binance REST proxy failed: {exc}")
 
 
-# 基于现有快照构建 v2 账户区最小返回体，后续会替换为独立账户真值模块。
+# 基于现有快照构建 v2 账户区返回体，统一附带账号与历史修订号。
 def _build_v2_account_section_from_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     meta = dict(snapshot.get("accountMeta") or {})
+    positions = [_enrich_position_symbol_fields(dict(item)) for item in (snapshot.get("positions") or [])]
+    orders = [_enrich_position_symbol_fields(dict(item)) for item in (snapshot.get("pendingOrders") or [])]
+    history_revision = str(meta.get("historyRevision") or "").strip()
+    if not history_revision:
+        raise RuntimeError("account snapshot missing historyRevision")
+    account_meta_for_revision = {
+        "login": str(meta.get("login", "")),
+        "server": str(meta.get("server", "")),
+        "source": str(meta.get("source", "")),
+        "currency": str(meta.get("currency", "")),
+        "leverage": int(meta.get("leverage", 0) or 0),
+        "name": str(meta.get("name", "")),
+        "company": str(meta.get("company", "")),
+        "tradeCount": int(meta.get("tradeCount", 0) or 0),
+        "positionCount": len(positions),
+        "pendingOrderCount": len(orders),
+        "curvePointCount": int(meta.get("curvePointCount", 0) or 0),
+        "historyRevision": history_revision,
+    }
+    account_revision_payload = {
+        "accountMeta": account_meta_for_revision,
+        "positions": positions,
+        "orders": orders,
+    }
+    account_revision = _stable_payload_digest(account_revision_payload)
+    meta["historyRevision"] = history_revision
+    meta["accountRevision"] = account_revision
     return {
         "accountMeta": meta,
-        "positions": [dict(item) for item in (snapshot.get("positions") or [])],
-        "orders": [dict(item) for item in (snapshot.get("pendingOrders") or [])],
+        "overviewMetrics": [dict(item) for item in (snapshot.get("overviewMetrics") or [])],
+        "statsMetrics": [dict(item) for item in (snapshot.get("statsMetrics") or [])],
+        "positions": positions,
+        "orders": orders,
     }
 
 
-# 基于现有配置构建 v2 行情区最小返回体，后续会替换为 Binance 真值聚合结果。
-def _build_v2_market_section() -> Dict[str, Any]:
+# 构建单个产品的行情同步摘要，供 v2 stream 纯消费链直接落地。
+def _build_market_stream_symbol_state(symbol: str, server_time: int) -> Dict[str, Any]:
+    symbol_descriptor = _resolve_symbol_descriptor(symbol)
+    rows = _fetch_market_candle_rows_with_cache(
+        symbol_descriptor["marketSymbol"],
+        "1m",
+        2,
+        start_time_ms=0,
+        end_time_ms=0,
+    )
+    closed_rows, patch_row = v2_market.separate_closed_rest_rows(rows, server_time)
+    latest_closed_payload: Optional[Dict[str, Any]] = None
+    latest_patch_payload: Optional[Dict[str, Any]] = None
+    if closed_rows:
+        latest_closed_payload = v2_market.build_market_candle_payload(
+            symbol_descriptor["marketSymbol"],
+            "1m",
+            row=closed_rows[-1],
+            is_closed=True,
+            source="binance-rest",
+        )
+    if patch_row is not None:
+        latest_patch_payload = v2_market.build_market_candle_payload(
+            symbol_descriptor["marketSymbol"],
+            "1m",
+            row=patch_row,
+            is_closed=False,
+            source="binance-rest",
+        )
+    latest_price = 0.0
+    latest_open_time = 0
+    latest_close_time = 0
+    if latest_patch_payload is not None:
+        latest_price = float(latest_patch_payload.get("close", 0.0) or 0.0)
+        latest_open_time = int(latest_patch_payload.get("openTime", 0) or 0)
+        latest_close_time = int(latest_patch_payload.get("closeTime", 0) or 0)
+    elif latest_closed_payload is not None:
+        latest_price = float(latest_closed_payload.get("close", 0.0) or 0.0)
+        latest_open_time = int(latest_closed_payload.get("openTime", 0) or 0)
+        latest_close_time = int(latest_closed_payload.get("closeTime", 0) or 0)
+    return {
+        "productId": symbol_descriptor["productId"],
+        "marketSymbol": symbol_descriptor["marketSymbol"],
+        "tradeSymbol": symbol_descriptor["tradeSymbol"],
+        "interval": "1m",
+        "latestPrice": latest_price,
+        "latestOpenTime": latest_open_time,
+        "latestCloseTime": latest_close_time,
+        "latestClosedCandle": latest_closed_payload,
+        "latestPatch": latest_patch_payload,
+    }
+
+
+# 基于 Binance 数据构建 v2 行情区统一返回体。
+def _build_v2_market_section(server_time: int) -> Dict[str, Any]:
+    symbol_states: List[Dict[str, Any]] = []
+    for symbol in ABNORMAL_SYMBOLS:
+        symbol_states.append(_build_market_stream_symbol_state(symbol, server_time))
     return {
         "source": "binance",
-        "symbols": ["BTCUSDT", "XAUUSDT"],
+        "symbols": [MARKET_SYMBOL_BTC, MARKET_SYMBOL_XAU],
+        "symbolStates": symbol_states,
         "restUpstream": BINANCE_REST_UPSTREAM,
         "wsUpstream": BINANCE_WS_UPSTREAM,
     }
@@ -4245,7 +4483,7 @@ def _fetch_market_candle_rows_with_cache(symbol: str,
         start_time_ms=safe_start,
         end_time_ms=safe_end,
     )
-    _remember_market_candle_rows(cache_key, rows, now_ms)
+    _remember_market_candle_rows(cache_key, rows, _now_ms())
     return rows
 
 
@@ -4466,6 +4704,7 @@ def health():
             "eaSnapshotReceivedAt": ea_snapshot_received_at_ms,
             "snapshotDeltaEnabled": SNAPSHOT_DELTA_ENABLED,
             "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
+            "v2StreamPushIntervalMs": V2_STREAM_PUSH_INTERVAL_MS,
             "healthCached": False,
             "healthCacheAgeMs": 0,
             "session": _build_session_summary(),
@@ -4515,6 +4754,7 @@ def source_status():
         "eaSnapshotReceivedAt": ea_snapshot_received_at_ms,
         "snapshotDeltaEnabled": SNAPSHOT_DELTA_ENABLED,
         "snapshotBuildCacheMs": SNAPSHOT_BUILD_CACHE_MS,
+        "v2StreamPushIntervalMs": V2_STREAM_PUSH_INTERVAL_MS,
         "healthCacheMs": HEALTH_CACHE_MS,
         "session": _build_session_summary(),
     }
@@ -4582,7 +4822,7 @@ def v2_market_snapshot():
         now_ms = _now_ms()
         snapshot = _build_account_light_snapshot_with_cache()
         return _build_v2_market_snapshot_payload(
-            market=_build_v2_market_section(),
+            market=_build_v2_market_section(now_ms),
             account=_build_v2_account_section_from_snapshot(snapshot),
             server_time=now_ms,
         )
@@ -4622,7 +4862,12 @@ def v2_market_candles(symbol: str,
 def v2_account_snapshot():
     try:
         now_ms = _now_ms()
-        snapshot = _build_account_light_snapshot_with_cache()
+        session_status = session_manager.build_status_payload()
+        active_account = (session_status or {}).get("activeAccount") or None
+        if active_account:
+            snapshot = _build_account_light_snapshot_with_cache()
+        else:
+            snapshot = _build_logged_out_account_snapshot()
         account_section = _build_v2_account_section_from_snapshot(snapshot)
         snapshot_model = v2_account.build_account_snapshot_model(
             {
@@ -4641,7 +4886,7 @@ def v2_account_snapshot():
         snapshot_model["overviewMetrics"] = [dict(item) for item in (snapshot.get("overviewMetrics") or [])]
         snapshot_model["curveIndicators"] = [dict(item) for item in (snapshot.get("curveIndicators") or [])]
         snapshot_model["statsMetrics"] = [dict(item) for item in (snapshot.get("statsMetrics") or [])]
-        return v2_account.build_account_snapshot_response(
+        response = v2_account.build_account_snapshot_response(
             snapshot_model,
             account_meta={
                 **(account_section.get("accountMeta") or {}),
@@ -4649,6 +4894,16 @@ def v2_account_snapshot():
                 "syncToken": _build_sync_token(now_ms, "account-snapshot"),
             },
         )
+        response["account"] = {
+            "balance": snapshot_model.get("balance"),
+            "equity": snapshot_model.get("equity"),
+            "margin": snapshot_model.get("margin"),
+            "freeMargin": snapshot_model.get("freeMargin"),
+            "marginLevel": snapshot_model.get("marginLevel"),
+            "profit": snapshot_model.get("profit"),
+            "leverage": (snapshot.get("accountMeta") or {}).get("leverage"),
+        }
+        return response
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -5038,6 +5293,9 @@ async def binance_ws_proxy(client: WebSocket, path_value: str):
 async def v2_stream(client: WebSocket):
     await client.accept()
     current_sync_token = ""
+    push_interval_sec = float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0
+    loop = asyncio.get_running_loop()
+    next_tick = loop.time()
     try:
         while True:
             now_ms = _now_ms()
@@ -5058,7 +5316,12 @@ async def v2_stream(client: WebSocket):
                     server_time=now_ms,
                 )
             )
-            await asyncio.sleep(5)
+            next_tick += push_interval_sec
+            sleep_sec = next_tick - loop.time()
+            if sleep_sec > 0:
+                await asyncio.sleep(sleep_sec)
+            else:
+                next_tick = loop.time()
     except WebSocketDisconnect:
         return
     except Exception as exc:

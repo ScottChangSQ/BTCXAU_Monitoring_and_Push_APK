@@ -97,6 +97,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
@@ -279,6 +280,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String lastLoggedError = "";
     private String lastTradeVisibilitySnapshotSignature = "";
     private String lastTradeFilterVisibilitySignature = "";
+    private String lastAppliedSnapshotSignature = "";
     private long dynamicRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private long scheduledRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private int unchangedRefreshStreak = 0;
@@ -1050,7 +1052,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         latestOverviewMetrics = new ArrayList<>();
         latestCurveIndicators = new ArrayList<>();
         latestStatsMetrics = new ArrayList<>();
-        applySnapshot(buildEmptyAccountSnapshot(), false);
+        AccountSnapshot emptySnapshot = buildEmptyAccountSnapshot();
+        applySnapshot(emptySnapshot, false);
+        lastAppliedSnapshotSignature = buildRefreshSignature(
+                emptySnapshot,
+                "",
+                false,
+                connectedAccount,
+                connectedServer
+        );
         overviewAdapter.submitList(buildDisconnectedOverviewMetrics());
     }
 
@@ -2411,6 +2421,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedError = "";
         dataQualitySummary = "";
         gatewayConnected = false;
+        lastAppliedSnapshotSignature = "";
         setConnectionStatus(false);
         updateOverviewHeader();
     }
@@ -2450,6 +2461,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         updateOverviewHeader();
         logConnectionEvent(cache.isConnected());
         applySnapshot(cache.getSnapshot(), cache.isConnected());
+        lastAppliedSnapshotSignature = buildRefreshSignature(
+                cache.getSnapshot(),
+                cache.getHistoryRevision(),
+                cache.isConnected(),
+                connectedAccount,
+                connectedServer
+        );
     }
 
     // 只消费当前活动远程会话对应的预加载缓存，避免旧账号缓存短暂回灌到页面。
@@ -2655,12 +2673,20 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             final String finalGateway = gateway;
             final long finalUpdatedAt = updatedAt;
             final String finalError = error;
-            final boolean finalUnchanged = false;
+            final String finalHistoryRevision = remote == null ? "" : remote.getHistoryRevision();
+            final String finalSignature = buildRefreshSignature(
+                    finalSnapshot,
+                    finalHistoryRevision,
+                    finalConnected,
+                    finalAccount,
+                    finalServer
+            );
 
             runOnUiThread(() -> {
                 if (!snapshotRequestGuard.shouldApply(requestToken)) {
                     return;
                 }
+                final boolean finalUnchanged = finalSignature.equals(lastAppliedSnapshotSignature);
                 boolean previousConnected = gatewayConnected;
                 connectedAccount = finalAccount;
                 connectedAccountName = finalAccountName;
@@ -2697,6 +2723,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 if (finalSnapshot != null) {
                     applySnapshot(finalSnapshot, finalConnected);
                 }
+                lastAppliedSnapshotSignature = finalSignature;
                 adjustRefreshCadence(finalConnected, finalUnchanged);
                 loading = false;
                 if (shouldKeepRefreshLoop()) {
@@ -2745,6 +2772,110 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         dynamicRefreshDelayMs = Math.min(
                 ACCOUNT_REFRESH_MAX_MS,
                 ACCOUNT_REFRESH_MIN_MS + unchangedRefreshStreak * 2_000L);
+    }
+
+    // 构建当前账户展示快照签名，用于判断“本轮数据是否与上一轮一致”。
+    private String buildRefreshSignature(@Nullable AccountSnapshot snapshot,
+                                         @Nullable String historyRevision,
+                                         boolean connected,
+                                         @Nullable String account,
+                                         @Nullable String server) {
+        StringBuilder builder = new StringBuilder(512);
+        appendStringToken(builder, connected ? "1" : "0");
+        appendStringToken(builder, trim(account).toLowerCase(Locale.ROOT));
+        appendStringToken(builder, trim(server).toLowerCase(Locale.ROOT));
+        appendStringToken(builder, trim(historyRevision));
+        if (snapshot == null) {
+            return builder.toString();
+        }
+        appendMetricsSignature(builder, snapshot.getOverviewMetrics());
+        appendMetricsSignature(builder, snapshot.getCurveIndicators());
+        appendMetricsSignature(builder, snapshot.getStatsMetrics());
+        appendPositionSignature(builder, snapshot.getPositions());
+        appendPositionSignature(builder, snapshot.getPendingOrders());
+        return builder.toString();
+    }
+
+    // 追加指标签名，统一按 name/value 顺序编码。
+    private void appendMetricsSignature(StringBuilder builder, @Nullable List<AccountMetric> metrics) {
+        if (metrics == null) {
+            appendStringToken(builder, "metric:null");
+            return;
+        }
+        appendStringToken(builder, "metric:size:" + metrics.size());
+        List<String> entries = new ArrayList<>(metrics.size());
+        for (AccountMetric item : metrics) {
+            if (item == null) {
+                entries.add("metric:item:null");
+                continue;
+            }
+            StringBuilder entry = new StringBuilder(64);
+            appendStringToken(entry, item.getName());
+            appendStringToken(entry, item.getValue());
+            entries.add(entry.toString());
+        }
+        Collections.sort(entries);
+        for (String entry : entries) {
+            appendStringToken(builder, entry);
+        }
+    }
+
+    // 追加持仓/挂单签名，覆盖展示层核心字段。
+    private void appendPositionSignature(StringBuilder builder, @Nullable List<PositionItem> positions) {
+        if (positions == null) {
+            appendStringToken(builder, "position:null");
+            return;
+        }
+        appendStringToken(builder, "position:size:" + positions.size());
+        List<String> entries = new ArrayList<>(positions.size());
+        for (PositionItem item : positions) {
+            if (item == null) {
+                entries.add("position:item:null");
+                continue;
+            }
+            StringBuilder entry = new StringBuilder(192);
+            appendStringToken(entry, item.getProductName());
+            appendStringToken(entry, item.getCode());
+            appendStringToken(entry, item.getSide());
+            appendLongToken(entry, item.getPositionTicket());
+            appendLongToken(entry, item.getOrderId());
+            appendDoubleToken(entry, item.getQuantity());
+            appendDoubleToken(entry, item.getSellableQuantity());
+            appendDoubleToken(entry, item.getCostPrice());
+            appendDoubleToken(entry, item.getLatestPrice());
+            appendDoubleToken(entry, item.getMarketValue());
+            appendDoubleToken(entry, item.getPositionRatio());
+            appendDoubleToken(entry, item.getDayPnL());
+            appendDoubleToken(entry, item.getTotalPnL());
+            appendDoubleToken(entry, item.getReturnRate());
+            appendDoubleToken(entry, item.getPendingLots());
+            appendLongToken(entry, item.getPendingCount());
+            appendDoubleToken(entry, item.getPendingPrice());
+            appendDoubleToken(entry, item.getTakeProfit());
+            appendDoubleToken(entry, item.getStopLoss());
+            appendDoubleToken(entry, item.getStorageFee());
+            entries.add(entry.toString());
+        }
+        Collections.sort(entries);
+        for (String entry : entries) {
+            appendStringToken(builder, entry);
+        }
+    }
+
+    // 统一字符串 token 编码，避免分隔符歧义。
+    private void appendStringToken(StringBuilder builder, @Nullable String value) {
+        String safe = value == null ? "" : value;
+        builder.append(safe.length()).append('#').append(safe).append('|');
+    }
+
+    // 统一 long token 编码。
+    private void appendLongToken(StringBuilder builder, long value) {
+        builder.append(value).append('|');
+    }
+
+    // 统一 double token 编码，避免浮点格式化差异。
+    private void appendDoubleToken(StringBuilder builder, double value) {
+        builder.append(Double.doubleToLongBits(value)).append('|');
     }
 
     // 仅在页面处于活跃状态且用户保持登录时，才继续排队下一次刷新。

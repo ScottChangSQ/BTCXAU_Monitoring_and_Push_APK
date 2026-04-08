@@ -2961,9 +2961,9 @@ public class MarketChartActivity extends AppCompatActivity {
         long firstOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(0).getOpenTime();
         long lastOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
         long cacheUpdatedAt = cache == null ? 0L : cache.getUpdatedAt();
-        int cacheTradeCount = cache == null ? -1 : cache.getHistoryTradeCount();
+        String historyRevision = cache == null ? "" : cache.getHistoryRevision();
         return selectedSymbol + "|" + loadedCandles.size() + "|" + firstOpenTime + "|" + lastOpenTime
-                + "|" + cacheUpdatedAt + "|" + cacheTradeCount;
+                + "|" + cacheUpdatedAt + "|" + historyRevision;
     }
 
     private List<KlineChartView.PriceAnnotation> buildHistoricalTradeAnnotations(List<TradeRecordItem> trades) {

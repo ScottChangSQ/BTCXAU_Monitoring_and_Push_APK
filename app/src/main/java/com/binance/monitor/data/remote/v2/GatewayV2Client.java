@@ -103,7 +103,7 @@ public class GatewayV2Client {
         JSONObject accountMeta = json.optJSONObject("accountMeta");
         JSONObject account = json.optJSONObject("account");
         if (account == null) {
-            account = buildAccountObject(json);
+            throw new IllegalStateException("v2 account snapshot missing account object");
         }
         JSONArray orders = json.optJSONArray("orders");
         return new AccountSnapshotPayload(
@@ -128,6 +128,7 @@ public class GatewayV2Client {
         return new AccountHistoryPayload(
                 extractServerTime(json, accountMeta),
                 extractSyncToken(json, accountMeta),
+                accountMeta,
                 json.optJSONArray("overviewMetrics"),
                 json.optJSONArray("curveIndicators"),
                 json.optJSONArray("statsMetrics"),
@@ -234,24 +235,6 @@ public class GatewayV2Client {
 
     private static String safeBody(String body) {
         return body == null ? "{}" : body;
-    }
-
-    private static JSONObject buildAccountObject(JSONObject json) {
-        JSONObject account = new JSONObject();
-        if (json == null) {
-            return account;
-        }
-        String[] keys = {"balance", "equity", "margin", "freeMargin", "marginLevel", "profit", "leverage", "lever"};
-        for (String key : keys) {
-            if (!json.has(key)) {
-                continue;
-            }
-            try {
-                account.put(key, json.opt(key));
-            } catch (Exception ignored) {
-            }
-        }
-        return account;
     }
 
     private static long extractServerTime(JSONObject root, @Nullable JSONObject meta) {

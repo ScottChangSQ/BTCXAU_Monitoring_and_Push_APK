@@ -28,7 +28,21 @@ public class ConnectionStatusResolverTest {
     public void shouldIgnoreLegacyFallbackConnectionMetadataWhenV2StreamIsUnhealthy() {
         String status = ConnectionStatusResolver.resolveStatus(
                 false,
-                0L,
+                10_000L,
+                11_000L,
+                5_000L,
+                "已连接",
+                "连接中"
+        );
+
+        assertEquals("连接中", status);
+    }
+
+    @Test
+    public void shouldStayConnectingWhenDisconnectedEvenIfRecentMessageExists() {
+        String status = ConnectionStatusResolver.resolveStatus(
+                false,
+                10_900L,
                 11_000L,
                 5_000L,
                 "已连接",

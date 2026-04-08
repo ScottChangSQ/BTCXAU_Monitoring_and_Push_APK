@@ -37,9 +37,15 @@ def _derive_margin_level(equity: float, margin: float) -> Optional[float]:
 
 def _normalize_position(raw: Mapping[str, Any]) -> Dict[str, Any]:
     """统一处理持仓对象字段，保证数值类型和字段可预测。"""
+    trade_symbol = raw.get("tradeSymbol") or raw.get("code") or raw.get("symbol")
+    market_symbol = raw.get("marketSymbol") or raw.get("symbol") or raw.get("code")
+    product_id = raw.get("productId") or raw.get("asset") or trade_symbol
     return {
-        "productName": raw.get("productName") or raw.get("symbol") or raw.get("code"),
-        "code": raw.get("code") or raw.get("symbol"),
+        "productId": product_id,
+        "marketSymbol": market_symbol,
+        "tradeSymbol": trade_symbol,
+        "productName": raw.get("productName") or trade_symbol,
+        "code": trade_symbol,
         "side": str(raw.get("side") or raw.get("direction") or "").strip(),
         "positionTicket": _to_int(raw.get("positionTicket") or raw.get("positionId") or raw.get("ticket")),
         "orderId": _to_int(raw.get("orderId") or raw.get("order") or raw.get("ticket")),
@@ -58,9 +64,15 @@ def _normalize_position(raw: Mapping[str, Any]) -> Dict[str, Any]:
 
 def _normalize_order(raw: Mapping[str, Any]) -> Dict[str, Any]:
     """统一处理挂单对象字段，保持数值以浮点形式输出。"""
+    trade_symbol = raw.get("tradeSymbol") or raw.get("code") or raw.get("symbol")
+    market_symbol = raw.get("marketSymbol") or raw.get("symbol") or raw.get("code")
+    product_id = raw.get("productId") or raw.get("asset") or trade_symbol
     return {
-        "productName": raw.get("productName") or raw.get("symbol") or raw.get("code"),
-        "code": raw.get("code") or raw.get("symbol"),
+        "productId": product_id,
+        "marketSymbol": market_symbol,
+        "tradeSymbol": trade_symbol,
+        "productName": raw.get("productName") or trade_symbol,
+        "code": trade_symbol,
         "side": str(raw.get("side") or raw.get("direction") or "").strip(),
         "orderId": _to_int(raw.get("orderId") or raw.get("order") or raw.get("ticket")),
         "quantity": _to_float(raw.get("quantity") or raw.get("pendingLots") or raw.get("volume") or raw.get("pendingVolume")),
@@ -76,10 +88,16 @@ def _normalize_order(raw: Mapping[str, Any]) -> Dict[str, Any]:
 
 def _normalize_trade(raw: Mapping[str, Any]) -> Dict[str, Any]:
     """把 canonical 成交数据标准化为 V2 历史成交行。"""
+    trade_symbol = raw.get("tradeSymbol") or raw.get("code") or raw.get("symbol")
+    market_symbol = raw.get("marketSymbol") or raw.get("symbol") or raw.get("code")
+    product_id = raw.get("productId") or raw.get("asset") or trade_symbol
     return {
         "timestamp": _to_int(raw.get("timestamp")),
-        "productName": raw.get("productName"),
-        "code": raw.get("code"),
+        "productId": product_id,
+        "marketSymbol": market_symbol,
+        "tradeSymbol": trade_symbol,
+        "productName": raw.get("productName") or trade_symbol,
+        "code": trade_symbol,
         "side": str(raw.get("side") or "").strip(),
         "price": _to_float(raw.get("price")),
         "quantity": _to_float(raw.get("quantity")),

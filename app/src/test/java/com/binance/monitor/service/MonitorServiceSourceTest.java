@@ -1,5 +1,5 @@
 /*
- * 监控服务源码约束测试，确保进入应用和回到前台时会主动刷新账户与行情。
+ * 监控服务源码约束测试，确保进入应用和回到前台时走统一主链刷新。
  */
 package com.binance.monitor.service;
 
@@ -16,7 +16,7 @@ import java.nio.file.Paths;
 public class MonitorServiceSourceTest {
 
     @Test
-    public void foregroundEntryShouldRefreshAccountAndMarket() throws Exception {
+    public void foregroundEntryShouldRefreshAccountAndFloating() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
@@ -24,14 +24,16 @@ public class MonitorServiceSourceTest {
 
         assertTrue("前台切回时应走统一前台状态处理入口",
                 source.contains("foreground -> mainHandler.post(() -> handleForegroundStateChanged(foreground))"));
+        assertTrue("前台切回时应先重建 v2 stream 主链连接，避免息屏后僵死连接继续占位",
+                source.contains("restartV2Stream(\"foreground_resume\");"));
         assertTrue("前台切回时应主动刷新账户数据",
                 source.contains("requestAccountRefreshFromV2();"));
-        assertTrue("前台切回时应主动刷新行情数据",
-                source.contains("requestMarketRefreshFromV2();"));
+        assertTrue("前台切回时应主动刷新悬浮窗消费层",
+                source.contains("requestFloatingWindowRefresh(true);"));
     }
 
     @Test
-    public void bootstrapShouldRefreshAccountAndMarketOnce() throws Exception {
+    public void bootstrapShouldRefreshAccountOnce() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
@@ -39,6 +41,17 @@ public class MonitorServiceSourceTest {
 
         assertTrue("新进入 APP 时应主动触发一次全局刷新",
                 source.contains("requestForegroundEntryRefresh();"));
+    }
+
+    @Test
+    public void staleWatchdogShouldRestartV2StreamInsteadOfOnlyChangingStatusText() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertTrue("watchdog 发现 v2 stream 失活时，应直接重建主链连接",
+                source.contains("restartV2Stream(\"stale_watchdog\");"));
     }
 
     @Test
@@ -95,6 +108,32 @@ public class MonitorServiceSourceTest {
 
         assertTrue("闭合 1m K 线写入主链后，仍应触发本地异常判定",
                 source.contains("handleClosedKline(closedData);"));
+    }
+
+    @Test
+    public void accountRefreshShouldClearStreamSnapshotWhenSessionBecomesInactive() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertTrue("账户补拉返回空缓存时应清理 stream 持仓快照，避免悬浮窗残留旧仓位",
+                source.contains("if (cache == null) {\n                    clearStreamAccountSnapshot();"));
+    }
+
+    @Test
+    public void floatingSnapshotShouldKeepAllPositionsInsteadOfOverwritingByCode() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertTrue("stream 持仓快照应保留完整列表，避免同产品多笔仓位被覆盖",
+                source.contains("private final List<com.binance.monitor.ui.account.model.PositionItem> streamPositionSnapshot = new ArrayList<>();"));
+        assertTrue("stream 账户快照应用时应追加所有仓位，而不是按 code 覆盖",
+                source.contains("streamPositionSnapshot.add(item);"));
+        assertFalse("不应按 code 覆盖 stream 持仓快照",
+                source.contains("streamPositionSnapshot.put(item.getCode().trim().toUpperCase(), item);"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

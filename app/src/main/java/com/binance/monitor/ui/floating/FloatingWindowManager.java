@@ -54,7 +54,7 @@ public class FloatingWindowManager {
     private WindowManager.LayoutParams layoutParams;
     private boolean enabled;
     private int alphaPercent = 88;
-    private boolean showing;
+    private boolean windowAdded;
     private boolean minimized;
     private boolean draggingWindow;
     private boolean pendingRender;
@@ -131,46 +131,46 @@ public class FloatingWindowManager {
             handler.post(this::hide);
             return;
         }
-        if (!showing || binding == null) {
-            return;
-        }
         handler.removeCallbacks(miniBlinkRunnable);
         miniBlinkActive = false;
-        View root = binding.getRoot();
-        try {
-            windowManager.removeViewImmediate(root);
-        } catch (Exception ignored) {
+        miniBlinkDimmed = false;
+        if (!windowAdded || binding == null) {
+            minimized = false;
+            draggingWindow = false;
+            pendingRender = false;
+            return;
         }
-        binding = null;
-        layoutParams = null;
-        showing = false;
+        try {
+            windowManager.removeViewImmediate(binding.getRoot());
+            windowAdded = false;
+        } catch (Exception ignored) {
+            return;
+        }
         minimized = false;
         draggingWindow = false;
         pendingRender = false;
     }
 
     private void showIfPossible() {
-        if (!enabled || isBindingAttachedToWindow() || !PermissionHelper.canDrawOverlays(context)) {
+        if (!enabled || !PermissionHelper.canDrawOverlays(context)) {
             return;
         }
+        ensureBinding();
+        ensureLayoutParams();
+        if (windowAdded) {
+            return;
+        }
+        applyWindowAlpha();
+        windowManager.addView(binding.getRoot(), layoutParams);
+        windowAdded = true;
+    }
+
+    // 单个管理器只维护一份 root，避免在屏幕灭亮切换时重建第二个悬浮窗。
+    private void ensureBinding() {
         if (binding != null) {
-            binding = null;
-            layoutParams = null;
-            showing = false;
+            return;
         }
         binding = LayoutFloatingWindowBinding.inflate(LayoutInflater.from(context));
-        layoutParams = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                        : WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
-        );
-        layoutParams.gravity = Gravity.TOP | Gravity.END;
-        layoutParams.x = dp(12);
-        layoutParams.y = dp(120);
         ViewGroup.LayoutParams expandedParams = binding.layoutExpanded.getLayoutParams();
         expandedParams.width = dp(FloatingWindowLayoutHelper.resolveExpandedWidthDp());
         binding.layoutExpanded.setLayoutParams(expandedParams);
@@ -195,8 +195,6 @@ public class FloatingWindowManager {
                 (ViewGroup.MarginLayoutParams) binding.viewMiniSquare.getLayoutParams();
         miniParams.rightMargin = dp(FloatingWindowLayoutHelper.resolveMiniEndMarginDp());
         binding.viewMiniSquare.setLayoutParams(miniParams);
-        applyWindowAlpha();
-        binding.btnMinimize.setOnClickListener(v -> setMinimized(true));
         dragAndClickListener = new DragAndClickListener();
         bindDragSurface(binding.rootFloating);
         bindDragSurface(binding.layoutExpanded);
@@ -206,20 +204,26 @@ public class FloatingWindowManager {
         bindDragSurface(binding.layoutSymbolCards);
         bindDragSurface(binding.btnMinimize);
         bindDragSurface(binding.viewMiniSquare);
-        windowManager.addView(binding.getRoot(), layoutParams);
-        showing = true;
+        binding.btnMinimize.setOnClickListener(v -> setMinimized(true));
     }
 
-    // 悬浮窗唯一性以真实附着状态为准，避免布尔状态与系统窗口状态短暂分叉后重复 addView。
-    private boolean isBindingAttachedToWindow() {
-        if (binding == null) {
-            return false;
+    // 悬浮窗参数只初始化一次，后续复用同一份位置和尺寸状态。
+    private void ensureLayoutParams() {
+        if (layoutParams != null) {
+            return;
         }
-        View root = binding.getRoot();
-        if (root == null) {
-            return false;
-        }
-        return root.getParent() != null || root.isAttachedToWindow() || root.getWindowToken() != null;
+        layoutParams = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+        );
+        layoutParams.gravity = Gravity.TOP | Gravity.END;
+        layoutParams.x = dp(12);
+        layoutParams.y = dp(120);
     }
 
     private void render() {
@@ -228,7 +232,7 @@ public class FloatingWindowManager {
             return;
         }
         showIfPossible();
-        if (!showing || binding == null) {
+        if (!windowAdded || binding == null) {
             return;
         }
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
@@ -498,7 +502,7 @@ public class FloatingWindowManager {
 
     // 立即触发浮层重排，减少最小化时先出现在左侧再跳到右侧的闪动。
     private void requestImmediateWindowRelayout() {
-        if (!showing || binding == null || layoutParams == null) {
+        if (!windowAdded || binding == null || layoutParams == null) {
             return;
         }
         View root = binding.getRoot();
@@ -521,7 +525,7 @@ public class FloatingWindowManager {
         }
         layoutParams.alpha = 1f;
         applyFloatingBackgroundAlpha();
-        if (showing && binding != null) {
+        if (windowAdded && binding != null) {
             try {
                 windowManager.updateViewLayout(binding.getRoot(), layoutParams);
             } catch (Exception ignored) {

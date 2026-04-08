@@ -8,34 +8,33 @@ import org.junit.Test;
 public class AccountHistoryRefreshPolicyHelperTest {
 
     @Test
-    public void shouldRefreshAllHistoryWhenRemoteTradeCountChanges() {
-        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(11, 10, true));
-        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(9, 10, true));
+    public void shouldRefreshAllHistoryWhenRemoteRevisionChanges() {
+        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("rev-11", "rev-10", true));
+        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("rev-9", "rev-10", true));
     }
 
     @Test
-    public void shouldRefreshAllHistoryWhenHistoryMissingButRemoteAlreadyHasTrades() {
-        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(3, -1, false));
+    public void shouldRefreshAllHistoryWhenHistoryMissingButRemoteRevisionExists() {
+        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("rev-3", "", false));
     }
 
     @Test
-    public void shouldSkipAllHistoryWhenRemoteTradeCountUnchanged() {
-        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(5, 5, true));
+    public void shouldSkipAllHistoryWhenRemoteRevisionUnchanged() {
+        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("rev-5", "rev-5", true));
     }
 
     @Test
-    public void shouldSkipAllHistoryWhenRemoteTradeCountIsZeroAndLocalHistoryAlreadyMatchesZero() {
-        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(0, 0, true));
-        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(0, -1, false));
+    public void shouldRefreshAllHistoryWhenBothRevisionsAreEmptyAndHistoryMissing() {
+        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("", "", false));
     }
 
     @Test
-    public void shouldRefreshAllHistoryWhenRemoteTradeCountUnavailableButLocalHistoryMissing() {
-        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(-1, -1, false));
+    public void shouldRefreshAllHistoryWhenRemoteRevisionUnavailableButLocalHistoryMissing() {
+        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("", "", true));
     }
 
     @Test
-    public void shouldSkipAllHistoryWhenRemoteTradeCountUnavailableButLocalHistoryExists() {
-        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(-1, 12, true));
+    public void shouldSkipAllHistoryWhenRemoteRevisionUnavailableButCachedRevisionExists() {
+        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("", "rev-existing", true));
     }
 }

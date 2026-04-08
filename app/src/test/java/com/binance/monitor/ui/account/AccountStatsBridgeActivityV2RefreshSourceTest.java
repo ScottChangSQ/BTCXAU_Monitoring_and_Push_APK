@@ -44,6 +44,23 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
                 !source.contains("if (hasFreshPreloadedCache()) {\n                    scheduleNextSnapshot(dynamicRefreshDelayMs);"));
     }
 
+    @Test
+    public void refreshCadenceShouldUseSnapshotSignatureInsteadOfHardcodedUnchangedFalse() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        );
+
+        assertTrue("刷新节流应基于快照签名判断 unchanged",
+                source.contains("finalSignature.equals(lastAppliedSnapshotSignature)"));
+        assertTrue("不应再把 finalUnchanged 写死为 false",
+                !source.contains("final boolean finalUnchanged = false;"));
+        assertTrue("应存在统一快照签名构建方法",
+                source.contains("private String buildRefreshSignature("));
+        assertTrue("快照签名应做顺序无关排序，避免仅顺序变化导致误判",
+                source.contains("Collections.sort(entries);"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

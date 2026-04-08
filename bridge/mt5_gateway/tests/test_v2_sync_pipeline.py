@@ -127,6 +127,7 @@ class V2SyncPipelineTests(unittest.TestCase):
                 "login": "7400048",
                 "server": "ICMarketsSC-MT5-6",
                 "source": "MT5 Python Pull",
+                "historyRevision": f"stub-{position_count}-{order_count}",
             },
             "overviewMetrics": [],
             "curvePoints": [],
@@ -215,10 +216,10 @@ class V2SyncPipelineTests(unittest.TestCase):
 
         self.assertFalse(payload["fullRefresh"]["required"])
         self.assertFalse(payload["unchanged"])
-        self.assertEqual([], payload["marketDelta"])
         self.assertEqual(1, len(payload["accountDelta"]))
         self.assertEqual("accountSnapshotChanged", payload["accountDelta"][0]["type"])
         self.assertEqual(1, len(payload["accountDelta"][0]["positions"]["upsert"]))
+        self.assertNotIn("refreshHint", payload["accountDelta"][0])
 
     def test_runtime_snapshot_should_not_touch_mt5_when_session_logged_out(self):
         with mock.patch.object(

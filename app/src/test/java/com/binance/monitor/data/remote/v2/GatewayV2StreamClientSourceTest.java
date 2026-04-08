@@ -39,6 +39,21 @@ public class GatewayV2StreamClientSourceTest {
         assertTrue("断流后必须先通知 disconnected，再安排重连", disconnectedIndex < reconnectIndex);
     }
 
+    @Test
+    public void sourceShouldSupportExplicitLifecycleRestartAndIgnoreStaleSocketCallbacks() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java",
+                "src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java"
+        );
+
+        assertTrue("前后台恢复时，stream 客户端应支持显式重建连接",
+                source.contains("public synchronized void restart("));
+        assertTrue("显式重建时应立即取消旧 socket，避免僵死连接继续占位",
+                source.contains("current.cancel();"));
+        assertTrue("旧 socket 的迟到断连回调不应再污染当前连接状态",
+                source.contains("if (socket != terminatedSocket || activeConnectionId != connectionId) {"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

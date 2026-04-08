@@ -8,6 +8,27 @@ MarketCandleRow = Union[Sequence[Any], Mapping[str, Any]]
 MarketCandle = Dict[str, Any]
 
 
+def _symbol_descriptor(symbol: str) -> Dict[str, str]:
+    normalized = str(symbol or "").strip().upper()
+    if normalized in {"BTCUSDT", "BTCUSD", "BTC", "XBT"}:
+        return {
+            "productId": "BTC",
+            "marketSymbol": "BTCUSDT",
+            "tradeSymbol": "BTCUSD",
+        }
+    if normalized in {"XAUUSDT", "XAUUSD", "XAU", "GOLD"}:
+        return {
+            "productId": "XAU",
+            "marketSymbol": "XAUUSDT",
+            "tradeSymbol": "XAUUSD",
+        }
+    return {
+        "productId": normalized,
+        "marketSymbol": normalized,
+        "tradeSymbol": normalized,
+    }
+
+
 def build_market_candle_payload(symbol: str,
                                interval: str,
                                row: MarketCandleRow,
@@ -17,10 +38,14 @@ def build_market_candle_payload(symbol: str,
                                version: Optional[int] = None) -> MarketCandle:
     """把一条 Binance kline 行统一转换为标准的 v2 candle 结构。"""
     parsed = _parse_market_row(row)
-    payload_symbol = str(symbol or parsed.get("symbol") or "")
+    descriptor = _symbol_descriptor(str(symbol or parsed.get("symbol") or ""))
+    payload_symbol = descriptor["marketSymbol"]
     payload_interval = str(interval or parsed.get("interval") or "")
     payload_version = int(version if version is not None else parsed.get("openTime", 0))
     return {
+        "productId": descriptor["productId"],
+        "marketSymbol": descriptor["marketSymbol"],
+        "tradeSymbol": descriptor["tradeSymbol"],
         "symbol": payload_symbol,
         "interval": payload_interval,
         "openTime": parsed["openTime"],

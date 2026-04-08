@@ -126,6 +126,34 @@ public class MonitorRepository {
         return new HashMap<>(displayKlineCache);
     }
 
+    // 原子应用市场侧增量，统一更新最新价和K线快照。
+    public synchronized void applyMarketDelta(Map<String, KlineData> klineDelta, Map<String, Double> priceDelta) {
+        if (klineDelta != null && !klineDelta.isEmpty()) {
+            for (Map.Entry<String, KlineData> entry : klineDelta.entrySet()) {
+                String symbol = entry.getKey();
+                KlineData value = entry.getValue();
+                if (symbol == null || value == null) {
+                    continue;
+                }
+                displayKlineCache.put(symbol, value);
+                ChainLatencyTracer.markRepositoryKlinePublished(symbol, value.getCloseTime());
+            }
+            displayKlines.postValue(Collections.unmodifiableMap(new HashMap<>(displayKlineCache)));
+        }
+        if (priceDelta != null && !priceDelta.isEmpty()) {
+            for (Map.Entry<String, Double> entry : priceDelta.entrySet()) {
+                String symbol = entry.getKey();
+                Double value = entry.getValue();
+                if (symbol == null || value == null) {
+                    continue;
+                }
+                displayPriceCache.put(symbol, value);
+            }
+            displayPrices.postValue(Collections.unmodifiableMap(new HashMap<>(displayPriceCache)));
+        }
+        lastUpdateTime.postValue(System.currentTimeMillis());
+    }
+
     public void addRecord(AbnormalRecord record) {
         recordManager.addRecord(record);
     }

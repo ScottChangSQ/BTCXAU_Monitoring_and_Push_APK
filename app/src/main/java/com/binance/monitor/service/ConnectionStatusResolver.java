@@ -27,9 +27,6 @@ public final class ConnectionStatusResolver {
                                             long lastMessageAt,
                                             long nowMs,
                                             long freshnessTimeoutMs) {
-        if (connected) {
-            return true;
-        }
-        return lastMessageAt > 0L && nowMs - lastMessageAt <= freshnessTimeoutMs;
+        return connected;
     }
 }

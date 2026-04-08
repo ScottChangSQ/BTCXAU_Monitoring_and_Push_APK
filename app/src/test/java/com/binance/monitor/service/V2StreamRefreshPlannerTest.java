@@ -13,7 +13,11 @@ public class V2StreamRefreshPlannerTest {
     public void planShouldRefreshBothSidesWhenFullRefreshRequired() throws Exception {
         JSONObject payload = new JSONObject();
         payload.put("unchanged", false);
-        payload.put("fullRefresh", new JSONObject().put("required", true));
+        payload.put("fullRefresh", new JSONObject()
+                .put("required", true)
+                .put("snapshot", new JSONObject()
+                        .put("market", new JSONObject().put("symbols", new JSONArray()))
+                        .put("account", new JSONObject().put("positions", new JSONArray()))));
         payload.put("marketDelta", new JSONArray());
         payload.put("accountDelta", new JSONArray());
 
@@ -23,6 +27,7 @@ public class V2StreamRefreshPlannerTest {
         assertTrue(plan.shouldRefreshMarket());
         assertTrue(plan.shouldRefreshAccount());
         assertTrue(plan.shouldRefreshFloating());
+        assertTrue(plan.shouldPullAccountSnapshot());
     }
 
     @Test
@@ -31,7 +36,10 @@ public class V2StreamRefreshPlannerTest {
         payload.put("unchanged", false);
         payload.put("fullRefresh", new JSONObject().put("required", false));
         payload.put("marketDelta", new JSONArray());
-        payload.put("accountDelta", new JSONArray().put(new JSONObject().put("type", "accountSnapshotChanged")));
+        payload.put("accountDelta", new JSONArray().put(new JSONObject()
+                .put("type", "accountSnapshotChanged")
+                .put("action", "account.snapshot")
+                .put("snapshot", new JSONObject().put("positions", new JSONArray()))));
 
         V2StreamRefreshPlanner.RefreshPlan plan =
                 V2StreamRefreshPlanner.plan("syncDelta", payload);
@@ -39,6 +47,7 @@ public class V2StreamRefreshPlannerTest {
         assertFalse(plan.shouldRefreshMarket());
         assertTrue(plan.shouldRefreshAccount());
         assertTrue(plan.shouldRefreshFloating());
+        assertFalse(plan.shouldPullAccountSnapshot());
     }
 
     @Test
@@ -55,5 +64,25 @@ public class V2StreamRefreshPlannerTest {
         assertFalse(plan.shouldRefreshMarket());
         assertFalse(plan.shouldRefreshAccount());
         assertFalse(plan.shouldRefreshFloating());
+        assertFalse(plan.shouldPullAccountSnapshot());
+    }
+
+    @Test
+    public void planShouldRequestAccountPullWhenHistoryRevisionChanges() throws Exception {
+        JSONObject payload = new JSONObject();
+        payload.put("unchanged", false);
+        payload.put("fullRefresh", new JSONObject().put("required", false));
+        payload.put("marketDelta", new JSONArray());
+        payload.put("accountDelta", new JSONArray().put(new JSONObject()
+                .put("type", "accountSnapshotChanged")
+                .put("action", "account.snapshot")
+                .put("historyRevisionChanged", true)
+                .put("snapshot", new JSONObject().put("positions", new JSONArray()))));
+
+        V2StreamRefreshPlanner.RefreshPlan plan =
+                V2StreamRefreshPlanner.plan("syncDelta", payload);
+
+        assertTrue(plan.shouldRefreshAccount());
+        assertTrue(plan.shouldPullAccountSnapshot());
     }
 }

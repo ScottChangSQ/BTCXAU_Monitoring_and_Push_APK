@@ -285,14 +285,14 @@ public class AccountStatsPreloadManager {
             }
             AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();
             v2SnapshotStore.writeAccountSnapshot(snapshotPayload.getRawJson());
-            int remoteTradeCount = resolveRemoteTradeCount(snapshotPayload);
+            String remoteHistoryRevision = resolveRemoteHistoryRevision(snapshotPayload);
             Cache previous = latestCache;
+            String cachedHistoryRevision = previous == null ? "" : previous.getHistoryRevision();
             int storedTradeCount = accountStorageRepository.loadTrades().size();
-            int cachedTradeCount = previous == null ? storedTradeCount : previous.getHistoryTradeCount();
             boolean hasStoredTradeHistory = storedTradeCount > 0;
             boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
-                    remoteTradeCount,
-                    cachedTradeCount,
+                    remoteHistoryRevision,
+                    cachedHistoryRevision,
                     hasStoredTradeHistory
             );
             if (shouldRefreshAllHistory) {
@@ -300,7 +300,8 @@ public class AccountStatsPreloadManager {
                 AccountStorageRepository.StoredSnapshot storedSnapshot =
                         buildStoredSnapshotFromV2(snapshotPayload, historyPayload);
                 accountStorageRepository.persistV2Snapshot(storedSnapshot);
-                Cache cache = buildCache(storedSnapshot, storedSnapshot.getTrades().size());
+                String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, historyPayload);
+                Cache cache = buildCache(storedSnapshot, resolvedRevision);
                 nextDelayMs = resolveRefreshDelayMs();
                 updateLatestCache(cache);
                 return cache;
@@ -311,7 +312,8 @@ public class AccountStatsPreloadManager {
             accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
             AccountStorageRepository.StoredSnapshot cachedSnapshot =
                     accountStorageRepository.loadStoredSnapshot();
-            Cache cache = buildCache(cachedSnapshot, remoteTradeCount);
+            String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, null);
+            Cache cache = buildCache(cachedSnapshot, resolvedRevision);
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
             return cache;
@@ -323,7 +325,9 @@ public class AccountStatsPreloadManager {
                 updateLatestCache(cache);
                 return cache;
             }
-            return buildInitialFailureCache(exception.getMessage());
+            Cache cache = buildInitialFailureCache(exception.getMessage());
+            updateLatestCache(cache);
+            return cache;
         } finally {
             overlayFetchInFlight.set(false);
         }
@@ -342,14 +346,14 @@ public class AccountStatsPreloadManager {
         try {
             AccountSnapshotPayload v2Payload = gatewayV2Client.fetchAccountSnapshot();
             v2SnapshotStore.writeAccountSnapshot(v2Payload.getRawJson());
-            int remoteTradeCount = resolveRemoteTradeCount(v2Payload);
+            String remoteHistoryRevision = resolveRemoteHistoryRevision(v2Payload);
             Cache previous = latestCache;
+            String cachedHistoryRevision = previous == null ? "" : previous.getHistoryRevision();
             int storedTradeCount = accountStorageRepository.loadTrades().size();
-            int cachedTradeCount = previous == null ? storedTradeCount : previous.getHistoryTradeCount();
             boolean hasStoredTradeHistory = storedTradeCount > 0;
             boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
-                    remoteTradeCount,
-                    cachedTradeCount,
+                    remoteHistoryRevision,
+                    cachedHistoryRevision,
                     hasStoredTradeHistory
             );
 
@@ -359,14 +363,16 @@ public class AccountStatsPreloadManager {
                 AccountStorageRepository.StoredSnapshot storedSnapshot =
                         buildStoredSnapshotFromV2(v2Payload, historyPayload);
                 accountStorageRepository.persistV2Snapshot(storedSnapshot);
-                cache = buildCache(storedSnapshot, storedSnapshot.getTrades().size());
+                String resolvedRevision = resolveHistoryRevisionFromPayload(v2Payload, historyPayload);
+                cache = buildCache(storedSnapshot, resolvedRevision);
             } else {
                 AccountStorageRepository.StoredSnapshot storedSnapshot =
                         buildStoredSnapshotFromSnapshotOnly(v2Payload);
                 accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
                 AccountStorageRepository.StoredSnapshot cachedSnapshot =
                         accountStorageRepository.loadStoredSnapshot();
-                cache = buildCache(cachedSnapshot, remoteTradeCount);
+                String resolvedRevision = resolveHistoryRevisionFromPayload(v2Payload, null);
+                cache = buildCache(cachedSnapshot, resolvedRevision);
             }
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
@@ -379,7 +385,9 @@ public class AccountStatsPreloadManager {
                 updateLatestCache(cache);
                 return cache;
             }
-            return buildInitialFailureCache(exception.getMessage());
+            Cache cache = buildInitialFailureCache(exception.getMessage());
+            updateLatestCache(cache);
+            return cache;
         }
     }
 
@@ -455,7 +463,7 @@ public class AccountStatsPreloadManager {
     }
 
     // 统一把存储快照转成页面缓存，避免同一份字段在多处重复拼装。
-    private Cache buildCache(AccountStorageRepository.StoredSnapshot storedSnapshot, int historyTradeCount) {
+    private Cache buildCache(AccountStorageRepository.StoredSnapshot storedSnapshot, String historyRevision) {
         AccountSnapshot snapshot = new AccountSnapshot(
                 storedSnapshot.getOverviewMetrics(),
                 storedSnapshot.getCurvePoints(),
@@ -475,7 +483,7 @@ public class AccountStatsPreloadManager {
                 storedSnapshot.getUpdatedAt(),
                 "",
                 System.currentTimeMillis(),
-                historyTradeCount
+                historyRevision
         );
     }
 
@@ -499,7 +507,7 @@ public class AccountStatsPreloadManager {
                 previous.updatedAt,
                 errorMessage,
                 System.currentTimeMillis(),
-                previous.historyTradeCount
+                previous.historyRevision
         );
     }
 
@@ -518,10 +526,21 @@ public class AccountStatsPreloadManager {
         );
     }
 
-    // 读取服务端当前历史成交总数，用它判断是否需要补拉全量历史。
-    private int resolveRemoteTradeCount(AccountSnapshotPayload snapshotPayload) {
+    // 读取服务端当前历史修订号，用它判断是否需要补拉全量历史。
+    private String resolveRemoteHistoryRevision(AccountSnapshotPayload snapshotPayload) {
         JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
-        return (int) optLongAny(accountMeta, -1L, "tradeCount");
+        return optString(accountMeta, "historyRevision", "");
+    }
+
+    // 只接受服务端显式 historyRevision；缺失即视为协议断裂。
+    private String resolveHistoryRevisionFromPayload(AccountSnapshotPayload snapshotPayload,
+                                                     AccountHistoryPayload historyPayload) {
+        JSONObject snapshotMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
+        String snapshotRevision = optString(snapshotMeta, "historyRevision", "");
+        if (!snapshotRevision.trim().isEmpty()) {
+            return snapshotRevision.trim();
+        }
+        throw new IllegalStateException("v2 account snapshot missing historyRevision");
     }
 
     // 解析服务端直接返回的展示指标，不再本地补算账户真值。
@@ -555,8 +574,9 @@ public class AccountStatsPreloadManager {
                 continue;
             }
             items.add(new PositionItem(
-                    optString(item, "productName", ""),
-                    optString(item, "code", ""),
+                    optString(item, "productName",
+                            optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", "")))),
+                    optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", ""))),
                     optString(item, "side", ""),
                     optLong(item, "positionTicket", 0L),
                     optLong(item, "orderId", 0L),
@@ -593,8 +613,9 @@ public class AccountStatsPreloadManager {
             }
             items.add(new TradeRecordItem(
                     optLong(item, "timestamp", 0L),
-                    optString(item, "productName", ""),
-                    optString(item, "code", ""),
+                    optString(item, "productName",
+                            optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", "")))),
+                    optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", ""))),
                     optString(item, "side", ""),
                     optDouble(item, "price"),
                     optDouble(item, "quantity"),
@@ -770,7 +791,7 @@ public class AccountStatsPreloadManager {
         private final long updatedAt;
         private final String error;
         private final long fetchedAt;
-        private final int historyTradeCount;
+        private final String historyRevision;
 
         public Cache(boolean connected,
                      AccountSnapshot snapshot,
@@ -781,7 +802,7 @@ public class AccountStatsPreloadManager {
                      long updatedAt,
                      String error,
                      long fetchedAt) {
-            this(connected, snapshot, account, server, source, gateway, updatedAt, error, fetchedAt, -1);
+            this(connected, snapshot, account, server, source, gateway, updatedAt, error, fetchedAt, "");
         }
 
         public Cache(boolean connected,
@@ -793,7 +814,7 @@ public class AccountStatsPreloadManager {
                      long updatedAt,
                      String error,
                      long fetchedAt,
-                     int historyTradeCount) {
+                     String historyRevision) {
             this.connected = connected;
             this.snapshot = snapshot;
             this.account = account == null ? "" : account;
@@ -803,7 +824,7 @@ public class AccountStatsPreloadManager {
             this.updatedAt = updatedAt;
             this.error = error == null ? "" : error;
             this.fetchedAt = fetchedAt;
-            this.historyTradeCount = historyTradeCount;
+            this.historyRevision = historyRevision == null ? "" : historyRevision;
         }
 
         public boolean isConnected() {
@@ -842,8 +863,8 @@ public class AccountStatsPreloadManager {
             return fetchedAt;
         }
 
-        public int getHistoryTradeCount() {
-            return historyTradeCount;
+        public String getHistoryRevision() {
+            return historyRevision;
         }
     }
 

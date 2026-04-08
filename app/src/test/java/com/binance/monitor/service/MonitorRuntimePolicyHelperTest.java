@@ -16,14 +16,15 @@ public class MonitorRuntimePolicyHelperTest {
                 > MonitorRuntimePolicyHelper.resolveHeartbeatDelayMs(true));
         assertTrue(MonitorRuntimePolicyHelper.resolveAbnormalSyncDelayMs(false)
                 > MonitorRuntimePolicyHelper.resolveAbnormalSyncDelayMs(true));
-        assertTrue(MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(false)
-                > MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(true));
+        // 悬浮窗在前后台都保持 1s 刷新，保证后台可见行情与持仓盈亏实时性。
+        assertEquals(MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(true),
+                MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(false));
     }
 
     @Test
     public void foregroundIntervalsShouldMatchCurrentBaseline() {
         assertEquals(30_000L, MonitorRuntimePolicyHelper.resolveHeartbeatDelayMs(true));
         assertEquals(8_000L, MonitorRuntimePolicyHelper.resolveAbnormalSyncDelayMs(true));
-        assertEquals(350L, MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(true));
+        assertEquals(1_000L, MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(true));
     }
 }

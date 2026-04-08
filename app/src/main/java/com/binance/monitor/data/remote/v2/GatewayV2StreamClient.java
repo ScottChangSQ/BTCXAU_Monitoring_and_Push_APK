@@ -41,6 +41,7 @@ public class GatewayV2StreamClient {
     private volatile WebSocket socket;
     private volatile boolean reconnectScheduled;
     private volatile int reconnectAttempt;
+    private volatile long connectionId;
 
     public GatewayV2StreamClient(@Nullable Context context) {
         client = new OkHttpClient.Builder()
@@ -66,18 +67,37 @@ public class GatewayV2StreamClient {
         running = false;
         reconnectScheduled = false;
         reconnectAttempt = 0;
+        connectionId++;
         handler.removeCallbacksAndMessages(null);
         WebSocket current = socket;
         socket = null;
         if (current != null) {
-            current.close(1000, "disconnect");
+            current.cancel();
         }
+    }
+
+    // 在前后台切换或 watchdog 判定失活时，显式重建统一 stream 连接。
+    public synchronized void restart(String reason) {
+        if (!running) {
+            return;
+        }
+        reconnectScheduled = false;
+        reconnectAttempt = 0;
+        connectionId++;
+        handler.removeCallbacksAndMessages(null);
+        WebSocket current = socket;
+        socket = null;
+        if (current != null) {
+            current.cancel();
+        }
+        connectInternal(true);
     }
 
     private synchronized void connectInternal(boolean reconnecting) {
         if (!running || socket != null) {
             return;
         }
+        final long activeConnectionId = ++connectionId;
         notifyState(false, reconnecting ? "重连中" : "连接中");
         Request request = new Request.Builder()
                 .url(resolveStreamUrl())
@@ -86,6 +106,10 @@ public class GatewayV2StreamClient {
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
                 synchronized (GatewayV2StreamClient.this) {
+                    if (activeConnectionId != connectionId) {
+                        webSocket.cancel();
+                        return;
+                    }
                     socket = webSocket;
                     reconnectAttempt = 0;
                     reconnectScheduled = false;
@@ -95,6 +119,9 @@ public class GatewayV2StreamClient {
 
             @Override
             public void onMessage(WebSocket webSocket, String text) {
+                if (activeConnectionId != connectionId) {
+                    return;
+                }
                 try {
                     StreamMessage message = parseMessage(text);
                     Listener currentListener = listener;
@@ -108,21 +135,23 @@ public class GatewayV2StreamClient {
 
             @Override
             public void onClosed(WebSocket webSocket, int code, String reason) {
-                handleTermination(webSocket, "连接关闭: " + reason);
+                handleTermination(webSocket, activeConnectionId, "连接关闭: " + reason);
             }
 
             @Override
             public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-                handleTermination(webSocket, "连接失败: " + (t == null ? "未知错误" : t.getMessage()));
+                handleTermination(webSocket, activeConnectionId,
+                        "连接失败: " + (t == null ? "未知错误" : t.getMessage()));
             }
         });
     }
 
-    private void handleTermination(WebSocket terminatedSocket, String reason) {
+    private void handleTermination(WebSocket terminatedSocket, long activeConnectionId, String reason) {
         synchronized (this) {
-            if (socket == terminatedSocket) {
-                socket = null;
+            if (socket != terminatedSocket || activeConnectionId != connectionId) {
+                return;
             }
+            socket = null;
         }
         notifyState(false, reason);
         notifyError(reason);

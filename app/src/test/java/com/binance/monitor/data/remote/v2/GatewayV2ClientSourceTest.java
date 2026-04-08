@@ -21,4 +21,14 @@ public class GatewayV2ClientSourceTest {
         assertTrue(source.contains("endTime="));
         assertTrue(source.contains("startTime="));
     }
+
+    @Test
+    public void gatewayV2ClientShouldRequireCanonicalAccountObjectFromSnapshot() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("v2 account snapshot missing account object"));
+        assertTrue(source.contains("JSONObject account = json.optJSONObject(\"account\");"));
+        assertTrue(source.contains("if (account == null) {"));
+    }
 }

@@ -78,18 +78,18 @@ public class AccountStatsPreloadManagerSourceTest {
         ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue(source.contains("AccountStorageRepository.StoredSnapshot cachedSnapshot =\n                    accountStorageRepository.loadStoredSnapshot();"));
-        assertTrue(source.contains("Cache cache = buildCache(cachedSnapshot, remoteTradeCount);"));
+        assertTrue(source.contains("Cache cache = buildCache(cachedSnapshot, resolvedRevision);"));
     }
 
     @Test
-    public void overlayRefreshShouldUseStoredTradeCountWhenMemoryCacheIsMissing() throws Exception {
+    public void overlayRefreshShouldUseCachedHistoryRevisionFromMemoryCache() throws Exception {
         String source = new String(
                 Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue(source.contains("int storedTradeCount = accountStorageRepository.loadTrades().size();"));
-        assertTrue(source.contains("int cachedTradeCount = previous == null ? storedTradeCount : previous.getHistoryTradeCount();"));
+        assertTrue(source.contains("String cachedHistoryRevision = previous == null ? \"\" : previous.getHistoryRevision();"));
     }
 
     @Test
@@ -114,6 +114,17 @@ public class AccountStatsPreloadManagerSourceTest {
         assertFalse(source.contains("previous.snapshot"));
         assertFalse(source.contains("\"trade_count\""));
         assertTrue(source.contains("new AccountSnapshot("));
-        assertTrue(source.contains("optLongAny(accountMeta, -1L, \"tradeCount\")"));
+        assertTrue(source.contains("optString(accountMeta, \"historyRevision\", \"\")"));
+    }
+
+    @Test
+    public void preloadManagerShouldRequireHistoryRevisionFromSnapshotMetaOnly() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("String snapshotRevision = optString(snapshotMeta, \"historyRevision\", \"\")"));
+        assertFalse(source.contains("historyPayload.getAccountMeta()"));
     }
 }

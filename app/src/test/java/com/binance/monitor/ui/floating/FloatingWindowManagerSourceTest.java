@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.floating;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -37,15 +38,36 @@ public class FloatingWindowManagerSourceTest {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("windowManager.removeViewImmediate(root);"));
+        assertTrue(source.contains("windowManager.removeViewImmediate(binding.getRoot());"));
     }
 
     @Test
-    public void showPathShouldCheckRealWindowAttachmentInsteadOfOnlyShowingFlag() throws Exception {
+    public void showPathShouldUseExplicitWindowOwnershipInsteadOfAttachmentHeuristics() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("private boolean isBindingAttachedToWindow()"));
-        assertTrue(source.contains("if (!enabled || isBindingAttachedToWindow() || !PermissionHelper.canDrawOverlays(context))"));
+        assertTrue(source.contains("private boolean windowAdded;"));
+        assertTrue(source.contains("if (windowAdded) {"));
+        assertFalse(source.contains("isBindingAttachedToWindow()"));
+        assertFalse(source.contains("isViewAttachedToWindow("));
+    }
+
+    @Test
+    public void showPathShouldReuseSingleBindingInsteadOfRecreatingByAttachmentGuess() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("private void ensureBinding()"));
+        assertTrue(source.contains("ensureBinding();"));
+        assertFalse(source.contains("detachCurrentWindow()"));
+    }
+
+    @Test
+    public void hideShouldReleaseWindowOwnershipOnlyAfterExplicitRemove() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("if (!windowAdded || binding == null) {"));
+        assertTrue(source.contains("windowAdded = false;"));
     }
 }

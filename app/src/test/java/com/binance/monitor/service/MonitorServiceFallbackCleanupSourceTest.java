@@ -19,7 +19,9 @@ public class MonitorServiceFallbackCleanupSourceTest {
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         );
 
-        assertTrue("监控服务冷启动应通过 v2 市场序列建立展示快照",
+        assertTrue("监控服务应通过 v2 stream 市场快照建立展示真值",
+                source.contains("applyMarketSnapshotFromStream("));
+        assertFalse("监控服务主链不应再按 stream 消息触发市场 REST 补拉",
                 source.contains("gatewayV2Client.fetchMarketSeries("));
         assertFalse("监控服务不应再在冷启动阶段拉旧整窗 1m 历史",
                 source.contains("fetchChartKlineFullWindow("));

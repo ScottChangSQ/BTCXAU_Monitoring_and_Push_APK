@@ -8,13 +8,17 @@
 - App 的 Binance REST / WebSocket 默认入口也已经固定到 `https://tradeapp.ltd/binance-rest/*` 与 `wss://tradeapp.ltd/binance-ws/*`
 - 行情、账户、会话三条主链统一走服务端 `/v2/*`，客户端负责请求、展示和本地缓存
 - 服务端账户真值已经收口到 `MT5 Python Pull`，旧 EA 上报只保留原始存档，不再参与主链选源
-- 监控链已经收口为纯消费层，`v2/stream` 只负责发同步信号，断流会立即回到未连接状态
+- 监控链已经收口为纯消费层，`v2/stream` 默认 1s 推送一次，消息直接携带市场/账户快照增量，客户端不再按每条消息回源市场 REST
 - 账户展示链已经收口为纯消费层，只消费 canonical 字段，不再回读旧快照、不再本地猜测或补锚
 - 会话链已经收口为服务端单真值，当前激活账号只认 `status.activeAccount`
 - 历史、曲线、比例补算和启发式归并已经从主链移除，页面只基于服务端给出的标准数据做展示
-- 服务端轻快照主链不再展开全量历史，但会返回真实 `tradeCount`，供 App 只在新增成交时补拉全量历史；缓存 miss 也不再并发放大
+- 服务端轻快照主链不再展开全量历史，但会返回 `accountMeta.historyRevision`（由成交历史 canonical digest 生成），供 App 只在历史修订号变化时补拉全量历史；缓存 miss 也不再并发放大
+- 服务端轻快照增加会话代次保护（`session_snapshot_epoch`），会话切换期间构建出的旧快照不会写回新会话缓存
 - `/v2/account/snapshot` 现在直接走 MT5 轻快照，`/v2/account/history` 的曲线和交易列表会复用同一份 MT5 成交历史
 - `v2/stream` 在未激活远程会话时会直接返回市场数据和空账户摘要，不再主动拉起 MT5
+- `/v2/account/snapshot` 响应现在固定包含 `account` 对象；APP 端缺少该对象会直接按协议错误处理，不再本地拼装兜底
+- `v2 account delta` 已移除 `refreshHint`，账户刷新只按 canonical 字段（如 `historyRevision`、`positions/orders` 变化）驱动
+- APP 连接状态文案已收口为“仅看 v2 stream 连接态”，断流后不再因旧消息时间被误判为已连接
 - 服务端自带统一管理面板，可查看状态、日志、配置，并控制网关、MT5、Caddy、Nginx
 
 ## 技术架构
@@ -22,7 +26,7 @@
 - Android：Java + XML + ViewBinding + MVVM + Repository + Room
 - 服务端：Python MT5 Gateway + `server_v2.py` + `admin_panel.py`
 - 网络主链：App 固定访问 `https://tradeapp.ltd`，服务端统一承接 `/v2/*`、`/admin/*`、`/binance-rest/*`、`/binance-ws/*`
-- 账户主链：服务端只认 `MT5 Python Pull` 的快照、历史、曲线；App 只消费 `orders / trades / curvePoints / tradeCount` 等 canonical 字段
+- 账户主链：服务端只认 `MT5 Python Pull` 的快照、历史、曲线；App 只消费 `orders / trades / curvePoints / accountMeta.historyRevision` 等 canonical 字段
 - 会话主链：服务端负责远程账号登录、切换、退出和激活账号确认；App 只消费 `activeAccount / active` 这组 canonical 字段
 - 产品命名主链：市场侧统一为 `BTCUSDT / XAUUSDT`，交易侧统一为 `BTCUSD / XAUUSD`，跨层映射集中在 `ProductSymbolMapper`
 - 安全链路：远程登录使用 `rsa-oaep+aes-gcm`，服务器端账号档案使用 Windows DPAPI，客户端本地会话摘要使用 Android Keystore
@@ -49,7 +53,8 @@
 - 行情监控、异常提醒、悬浮窗、图表、账户总览、交易历史、收益曲线已经跑在统一的 `/v2/*` 主链上
 - `GatewayV2Client`、`GatewayV2StreamClient`、`GatewayV2SessionClient` 已经成为 App 主链入口
 - 账户页主动刷新与后台预加载已经统一到同一套 `v2` 数据链
-- 账户统计页高频刷新现在只更新账户概览、当前持仓和挂单；历史成交、曲线和历史统计只在 `tradeCount` 变化时补拉全量
+- 账户统计页高频刷新现在只更新账户概览、当前持仓和挂单；历史成交、曲线和历史统计只在 `historyRevision` 变化时补拉全量
+- 账户统计页刷新节流现在按“快照签名是否变化”自动调节：未变化时逐步降频，变化时立即回到最小刷新间隔
 - 图表页历史成交标注现在只认显式生命周期字段，不再本地猜品种和补锚点
 - 本地仓储已经停止把旧历史、旧曲线、轻量快照拼回当前真值；轻量快照刷新时只保留上一轮全量历史的展示结果，不再把历史区清空
 - 服务端 `v2/account/history` 已经停止旧别名兼容、价格回填和启发式成交归并
@@ -181,4 +186,5 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - 2026-04-08 新增验证：轻快照去全历史扫描、轻快照 single-flight、bundle 指纹校验、websocket 验收链均已通过
 - 2026-04-08 新增验证：`logged_out` 状态下 `v2/stream` 不再触发 MT5，同步链回归通过
 - 2026-04-08 新增验证：真实 `windows/run_gateway.ps1` 启动链已通过，`/health` 可返回最新 `bundleFingerprint`
+- 2026-04-08 最终复核新增验证：账户页刷新节流 BUG（`finalUnchanged` 写死）已修复为“快照签名 + historyRevision”判定，`.\gradlew.bat :app:testDebugUnitTest`、`python bridge/mt5_gateway/tests/test_v2_contracts.py`、`python bridge/mt5_gateway/tests/test_v2_sync_pipeline.py`、`python bridge/mt5_gateway/tests/test_summary_response.py` 均通过
 - 当前唯一未完成的是“真机 + 已部署 HTTPS 服务器”的人工联调记录

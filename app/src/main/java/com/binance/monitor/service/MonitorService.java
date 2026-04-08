@@ -9,7 +9,6 @@ import android.content.Intent;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
-import android.os.SystemClock;
 
 import androidx.annotation.Nullable;
 
@@ -18,19 +17,16 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
-import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.AbnormalAlertItem;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.remote.AbnormalGatewayClient;
 import com.binance.monitor.data.remote.FallbackKlineSocketManager;
-import com.binance.monitor.data.model.v2.MarketSeriesPayload;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.ui.account.AccountStatsPreloadManager;
-import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.ui.floating.FloatingPositionAggregator;
 import com.binance.monitor.ui.floating.FloatingSymbolCardData;
@@ -57,8 +53,6 @@ public class MonitorService extends Service {
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Map<String, Long> lastNotifyAt = new HashMap<>();
-    private final Map<String, Long> lastPricePublishAt = new HashMap<>();
-    private final Map<String, Double> lastPublishedPrice = new HashMap<>();
     private final AppForegroundTracker.ForegroundStateListener appForegroundListener =
             foreground -> mainHandler.post(() -> handleForegroundStateChanged(foreground));
     private final Runnable connectionWatchdogRunnable = new Runnable() {
@@ -108,10 +102,12 @@ public class MonitorService extends Service {
     private boolean abnormalEndpointUnsupported;
     private String lastAbnormalSyncError = "";
     private long lastAbnormalSyncErrorAt;
-    private volatile boolean v2MarketRefreshInFlight;
     private volatile boolean v2AccountRefreshInFlight;
     private volatile boolean v2StreamConnected;
     private volatile long lastV2StreamMessageAt;
+    private final List<com.binance.monitor.ui.account.model.PositionItem> streamPositionSnapshot = new ArrayList<>();
+    private volatile boolean streamAccountSnapshotReceived;
+    private volatile long streamPositionsUpdatedAt;
 
     @Override
     public void onCreate() {
@@ -283,7 +279,7 @@ public class MonitorService extends Service {
         logManager.info("行情流已启动");
     }
 
-    // 消费统一 v2 stream 消息，用它驱动账户与悬浮窗刷新。
+    // 消费统一 v2 stream 消息，主链直接应用增量快照，不再每次回源补拉。
     private void handleV2StreamMessage(@Nullable GatewayV2StreamClient.StreamMessage message) {
         if (message == null) {
             return;
@@ -293,14 +289,17 @@ public class MonitorService extends Service {
                 message.getPayload()
         );
         ChainLatencyTracer.markStreamMessage(message.getType(), plan.shouldRefreshMarket());
+        if (plan.shouldRefreshMarket()) {
+            applyMarketSnapshotFromStream(plan.getMarketSnapshot());
+        }
         if (plan.shouldRefreshAccount()) {
+            applyAccountSnapshotFromStream(plan.getAccountSnapshot());
+        }
+        if (plan.shouldPullAccountSnapshot()) {
             requestAccountRefreshFromV2();
         }
-        if (plan.shouldRefreshMarket()) {
-            requestMarketRefreshFromV2();
-        }
         if (plan.shouldRefreshFloating()) {
-            requestFloatingWindowRefresh(true);
+            requestFloatingWindowRefresh(false);
         }
     }
 
@@ -312,14 +311,26 @@ public class MonitorService extends Service {
         v2AccountRefreshInFlight = true;
         executorService.execute(() -> {
             try {
-                accountStatsPreloadManager.fetchForOverlay();
+                AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager.fetchForOverlay();
+                if (cache == null) {
+                    clearStreamAccountSnapshot();
+                }
             } catch (Exception exception) {
                 logManager.warn("v2 stream 账户补拉失败: " + exception.getMessage());
             } finally {
                 v2AccountRefreshInFlight = false;
-                mainHandler.post(() -> requestFloatingWindowRefresh(true));
+                mainHandler.post(() -> requestFloatingWindowRefresh(false));
             }
         });
+    }
+
+    // 会话清空后同步清掉 stream 持仓快照，避免悬浮窗短时显示旧仓位。
+    private void clearStreamAccountSnapshot() {
+        synchronized (streamPositionSnapshot) {
+            streamPositionSnapshot.clear();
+            streamAccountSnapshotReceived = false;
+            streamPositionsUpdatedAt = 0L;
+        }
     }
 
     // 启动时打印构建默认值和运行时解析值，便于直接确认 APP 实际在用哪个入口。
@@ -345,116 +356,116 @@ public class MonitorService extends Service {
         logManager.info("APP诊断 Runtime V2Stream=" + runtimeV2Stream);
     }
 
-    // 收到市场侧 delta 或 full refresh 时，补拉最新 1m 序列，修正最新价与最近收盘。
-    private void requestMarketRefreshFromV2() {
-        if (executorService == null || gatewayV2Client == null || v2MarketRefreshInFlight) {
+    // 应用 stream 市场快照，直接回写监控页/悬浮窗共用真值。
+    private void applyMarketSnapshotFromStream(@Nullable JSONObject marketSnapshot) {
+        if (marketSnapshot == null) {
             return;
         }
-        v2MarketRefreshInFlight = true;
-        executorService.execute(() -> {
-            try {
-                for (String symbol : AppConstants.MONITOR_SYMBOLS) {
-                    long triggerAtMs = ChainLatencyTracer.consumePendingMarketTriggerAt(symbol);
-                    long fetchStartAtMs = SystemClock.elapsedRealtime();
-                    ChainLatencyTracer.markMarketFetchStart(symbol, triggerAtMs, fetchStartAtMs);
-                    try {
-                        MarketSeriesPayload payload = gatewayV2Client.fetchMarketSeries(symbol, "1m", 2);
-                        long fetchDoneAtMs = SystemClock.elapsedRealtime();
-                        applyMarketSeriesPayload(symbol, payload, triggerAtMs, fetchStartAtMs, fetchDoneAtMs);
-                    } catch (Exception exception) {
-                        logManager.warn(symbol + " v2 市场补拉失败: " + exception.getMessage());
-                    }
-                }
-            } finally {
-                v2MarketRefreshInFlight = false;
-                mainHandler.post(() -> requestFloatingWindowRefresh(true));
+        JSONArray states = marketSnapshot.optJSONArray("symbolStates");
+        if (states == null || states.length() == 0) {
+            return;
+        }
+        Map<String, KlineData> klineDelta = new HashMap<>();
+        Map<String, Double> priceDelta = new HashMap<>();
+        for (int i = 0; i < states.length(); i++) {
+            JSONObject state = states.optJSONObject(i);
+            if (state == null) {
+                continue;
             }
-        });
+            String symbol = state.optString("marketSymbol", "").trim();
+            if (symbol.isEmpty()) {
+                continue;
+            }
+            JSONObject latestPatch = state.optJSONObject("latestPatch");
+            JSONObject latestClosed = state.optJSONObject("latestClosedCandle");
+            JSONObject effective = latestPatch != null ? latestPatch : latestClosed;
+            if (effective == null) {
+                continue;
+            }
+            boolean closed = effective.optBoolean("isClosed", latestPatch == null);
+            KlineData data = toKlineDataFromJson(symbol, effective, closed);
+            klineDelta.put(symbol, data);
+            priceDelta.put(symbol, data.getClosePrice());
+            ChainLatencyTracer.markMarketPayloadApplied(symbol, data.getCloseTime(), -1L, -1L, -1L);
+            if (latestClosed != null) {
+                KlineData closedData = toKlineDataFromJson(symbol, latestClosed, true);
+                handleClosedKline(closedData);
+            }
+        }
+        repository.applyMarketDelta(klineDelta, priceDelta);
     }
 
-    // 把 v2 市场补拉结果回写到最新价格与最近收盘快照，供悬浮窗和监控页复用。
-    @Nullable
-    private KlineData applyMarketSeriesPayload(String symbol, @Nullable MarketSeriesPayload payload) {
-        return applyMarketSeriesPayload(symbol, payload, -1L, -1L, -1L);
+    // 应用 stream 账户快照，仅更新悬浮窗消费层所需持仓数据。
+    private void applyAccountSnapshotFromStream(@Nullable JSONObject accountSnapshot) {
+        if (accountSnapshot == null) {
+            return;
+        }
+        JSONArray positions = accountSnapshot.optJSONArray("positions");
+        if (positions == null) {
+            return;
+        }
+        List<com.binance.monitor.ui.account.model.PositionItem> mappedPositions = new ArrayList<>();
+        for (int i = 0; i < positions.length(); i++) {
+            JSONObject item = positions.optJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            mappedPositions.add(new com.binance.monitor.ui.account.model.PositionItem(
+                    optString(item, "productName",
+                            optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", "")))),
+                    optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", ""))),
+                    optString(item, "side", ""),
+                    optLong(item, "positionTicket", 0L),
+                    optLong(item, "orderId", 0L),
+                    optDouble(item, "quantity"),
+                    optDouble(item, "sellableQuantity"),
+                    optDouble(item, "costPrice"),
+                    optDouble(item, "latestPrice"),
+                    optDouble(item, "marketValue"),
+                    optDouble(item, "positionRatio"),
+                    optDouble(item, "dayPnL"),
+                    optDouble(item, "totalPnL"),
+                    optDouble(item, "returnRate"),
+                    optDouble(item, "pendingLots"),
+                    item.optInt("pendingCount", 0),
+                    optDouble(item, "pendingPrice"),
+                    optDouble(item, "takeProfit"),
+                    optDouble(item, "stopLoss"),
+                    optDouble(item, "storageFee")
+            ));
+        }
+        synchronized (streamPositionSnapshot) {
+            streamPositionSnapshot.clear();
+            for (com.binance.monitor.ui.account.model.PositionItem item : mappedPositions) {
+                if (item == null || item.getCode() == null || item.getCode().trim().isEmpty()) {
+                    continue;
+                }
+                streamPositionSnapshot.add(item);
+            }
+            streamAccountSnapshotReceived = true;
+            streamPositionsUpdatedAt = System.currentTimeMillis();
+        }
     }
 
-    @Nullable
-    private KlineData applyMarketSeriesPayload(String symbol,
-                                               @Nullable MarketSeriesPayload payload,
-                                               long triggerAtMs,
-                                               long fetchStartAtMs,
-                                               long fetchDoneAtMs) {
-        if (payload == null) {
-            return null;
-        }
-        long now = System.currentTimeMillis();
-        CandleEntry latestClosed = null;
-        List<CandleEntry> candles = payload.getCandles();
-        if (candles != null && !candles.isEmpty()) {
-            latestClosed = candles.get(candles.size() - 1);
-        }
-        if (latestClosed != null) {
-            KlineData closedData = toKlineData(symbol, latestClosed, true);
-            ChainLatencyTracer.markMarketPayloadApplied(
-                    symbol,
-                    closedData.getCloseTime(),
-                    triggerAtMs,
-                    fetchStartAtMs,
-                    fetchDoneAtMs
-            );
-            repository.updateDisplayKline(closedData);
-            handleClosedKline(closedData);
-            maybePublishPrice(symbol, closedData, now, true);
-            return closedData;
-        }
-        CandleEntry latestPatch = payload.getLatestPatch();
-        if (latestPatch != null) {
-            KlineData patchData = toKlineData(symbol, latestPatch, false);
-            ChainLatencyTracer.markMarketPayloadApplied(
-                    symbol,
-                    patchData.getCloseTime(),
-                    triggerAtMs,
-                    fetchStartAtMs,
-                    fetchDoneAtMs
-            );
-            repository.updateDisplayKline(patchData);
-            maybePublishPrice(symbol, patchData, now, true);
-            return patchData;
-        }
-        return null;
-    }
-
-    // 把 v2 返回的 candle 统一转成当前服务层使用的 KlineData。
-    private KlineData toKlineData(String symbol, CandleEntry candle, boolean closed) {
+    // 把 stream candle JSON 直接转换为服务层统一 KlineData。
+    private KlineData toKlineDataFromJson(String symbol, JSONObject candle, boolean closed) {
         return new KlineData(
                 symbol,
-                candle.getOpen(),
-                candle.getHigh(),
-                candle.getLow(),
-                candle.getClose(),
-                candle.getVolume(),
-                candle.getQuoteVolume(),
-                candle.getOpenTime(),
-                candle.getCloseTime(),
+                optDouble(candle, "open"),
+                optDouble(candle, "high"),
+                optDouble(candle, "low"),
+                optDouble(candle, "close"),
+                optDouble(candle, "volume"),
+                optDouble(candle, "quoteVolume"),
+                optLong(candle, "openTime", 0L),
+                optLong(candle, "closeTime", 0L),
                 closed
         );
     }
 
     private void fetchBootstrapData() {
-        executorService.execute(() -> {
-            for (String symbol : AppConstants.MONITOR_SYMBOLS) {
-                try {
-                    MarketSeriesPayload payload = gatewayV2Client.fetchMarketSeries(symbol, "1m", 2);
-                    KlineData data = applyMarketSeriesPayload(symbol, payload);
-                    if (data != null) {
-                        logManager.info(symbol + " 初始化成功，最近收盘时间(本地时区) " + FormatUtils.formatDateTime(data.getCloseTime()));
-                    }
-                } catch (Exception exception) {
-                    logManager.error(symbol + " 初始化失败: " + exception.getMessage());
-                }
-            }
-            mainHandler.post(() -> requestFloatingWindowRefresh(true));
-        });
+        requestAccountRefreshFromV2();
+        requestFloatingWindowRefresh(true);
     }
 
     // 按固定节奏向网关拉取异常记录，首轮只落历史数据，不补发旧提醒。
@@ -569,13 +580,23 @@ public class MonitorService extends Service {
         if (!foreground || !pipelineStarted) {
             return;
         }
+        restartV2Stream("foreground_resume");
         requestForegroundEntryRefresh();
+    }
+
+    // 统一收口 v2 stream 重建，避免息屏或后台切回后继续占用僵死连接。
+    private void restartV2Stream(String reason) {
+        if (v2StreamClient == null || !pipelineStarted) {
+            return;
+        }
+        v2StreamConnected = false;
+        lastV2StreamMessageAt = 0L;
+        v2StreamClient.restart(reason);
     }
 
     // 统一处理“新进入 APP / 后台回前台”的一次性刷新，避免不同入口刷新不一致。
     private void requestForegroundEntryRefresh() {
         requestAccountRefreshFromV2();
-        requestMarketRefreshFromV2();
         requestFloatingWindowRefresh(true);
     }
 
@@ -738,7 +759,7 @@ public class MonitorService extends Service {
         );
         repository.setConnectionStatus(status);
         suppressForegroundNotification();
-        requestFloatingWindowRefresh(true);
+        requestFloatingWindowRefresh(false);
     }
 
     private void applyFloatingPreferences() {
@@ -753,23 +774,6 @@ public class MonitorService extends Service {
                 configManager.isShowXau()
         );
         requestFloatingWindowRefresh(true);
-    }
-
-    private void maybePublishPrice(String symbol, KlineData data, long now, boolean force) {
-        if (data == null) {
-            return;
-        }
-        double price = data.getClosePrice();
-        long lastAt = lastPricePublishAt.getOrDefault(symbol, 0L);
-        Double lastPrice = lastPublishedPrice.get(symbol);
-        boolean intervalReached = now - lastAt >= AppConstants.PRICE_UPDATE_THROTTLE_MS;
-        boolean priceChanged = lastPrice == null || Double.compare(price, lastPrice) != 0;
-        if (!force && !priceChanged && !intervalReached) {
-            return;
-        }
-        repository.updateDisplayPrice(symbol, price);
-        lastPricePublishAt.put(symbol, now);
-        lastPublishedPrice.put(symbol, price);
     }
 
     private void requestFloatingWindowRefresh(boolean immediate) {
@@ -821,6 +825,7 @@ public class MonitorService extends Service {
         if (isV2StreamHealthy(now)) {
             return;
         }
+        restartV2Stream("stale_watchdog");
         updateConnectionStatus();
     }
 
@@ -854,10 +859,17 @@ public class MonitorService extends Service {
         AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
                 ? null
                 : accountStatsPreloadManager.getLatestCache();
-        List<com.binance.monitor.ui.account.model.PositionItem> positions =
-                cache == null || cache.getSnapshot() == null || cache.getSnapshot().getPositions() == null
-                        ? new ArrayList<>()
-                        : cache.getSnapshot().getPositions();
+        List<com.binance.monitor.ui.account.model.PositionItem> positions = new ArrayList<>();
+        synchronized (streamPositionSnapshot) {
+            if (!streamPositionSnapshot.isEmpty()) {
+                positions.addAll(streamPositionSnapshot);
+            }
+        }
+        if (!streamAccountSnapshotReceived && positions.isEmpty()) {
+            positions = cache == null || cache.getSnapshot() == null || cache.getSnapshot().getPositions() == null
+                    ? new ArrayList<>()
+                    : cache.getSnapshot().getPositions();
+        }
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 positions,
                 repository.getDisplayKlineSnapshot(),
@@ -867,7 +879,7 @@ public class MonitorService extends Service {
         );
         return new FloatingWindowSnapshot(
                 repository.getConnectionStatus().getValue(),
-                resolveFloatingUpdatedAt(cards),
+                Math.max(resolveFloatingUpdatedAt(cards), streamPositionsUpdatedAt),
                 cards
         );
     }
@@ -884,6 +896,53 @@ public class MonitorService extends Service {
             }
         }
         return updatedAt;
+    }
+
+    // 读取字符串字段，空值时使用默认值。
+    private String optString(JSONObject item, String key, String fallback) {
+        if (item == null || key == null || key.trim().isEmpty() || !item.has(key)) {
+            return fallback;
+        }
+        String value = item.optString(key, "").trim();
+        return value.isEmpty() ? fallback : value;
+    }
+
+    // 读取浮点字段，缺失或异常时返回 0。
+    private double optDouble(JSONObject item, String key) {
+        if (item == null || key == null || key.trim().isEmpty() || !item.has(key)) {
+            return 0d;
+        }
+        Object value = item.opt(key);
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Double.parseDouble(((String) value).trim());
+            } catch (Exception ignored) {
+                return 0d;
+            }
+        }
+        return 0d;
+    }
+
+    // 读取长整型字段，缺失或异常时返回默认值。
+    private long optLong(JSONObject item, String key, long fallback) {
+        if (item == null || key == null || key.trim().isEmpty() || !item.has(key)) {
+            return fallback;
+        }
+        Object value = item.opt(key);
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Long.parseLong(((String) value).trim());
+            } catch (Exception ignored) {
+                return fallback;
+            }
+        }
+        return fallback;
     }
 
     // 统一整理异常同步错误文案，避免空串和空白内容破坏节流判断。

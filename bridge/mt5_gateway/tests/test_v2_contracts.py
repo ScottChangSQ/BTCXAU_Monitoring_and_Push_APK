@@ -188,7 +188,7 @@ class V2ContractTests(unittest.TestCase):
         rows = [
             [1000, "1.0", "2.0", "0.5", "1.5", "10.0", 1999, "20.0", 3],
         ]
-        with mock.patch.object(server_v2, "_now_ms", side_effect=[5_000, 5_000, 5_100, 5_100]), mock.patch.object(
+        with mock.patch.object(server_v2, "_now_ms", side_effect=[5_000, 5_000, 5_000, 5_100, 5_100, 5_100]), mock.patch.object(
             server_v2,
             "_fetch_binance_kline_rows",
             return_value=rows,
@@ -233,7 +233,11 @@ class V2ContractTests(unittest.TestCase):
 
     def test_v2_account_snapshot_uses_light_snapshot_builder(self):
         light_snapshot = {
-            "accountMeta": {"login": "7400048", "balance": 1000.0},
+            "accountMeta": {
+                "login": "7400048",
+                "balance": 1000.0,
+                "historyRevision": "stub-history-rev",
+            },
             "overviewMetrics": [{"name": "总资产", "value": "$1000.00"}],
             "curveIndicators": [{"name": "当日收益", "value": "+1.2%"}],
             "statsMetrics": [{"name": "交易笔数", "value": "2"}],
@@ -241,6 +245,15 @@ class V2ContractTests(unittest.TestCase):
             "pendingOrders": [{"symbol": "XAUUSD"}],
         }
         with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "activated",
+                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
             server_v2, "_build_account_light_snapshot_with_cache", return_value=light_snapshot
         ) as light_mock, mock.patch.object(
             server_v2, "_build_snapshot_with_cache", side_effect=AssertionError("不应走重快照")
@@ -253,10 +266,34 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual([{"name": "总资产", "value": "$1000.00"}], payload["overviewMetrics"])
         self.assertEqual([{"name": "当日收益", "value": "+1.2%"}], payload["curveIndicators"])
         self.assertEqual([{"name": "交易笔数", "value": "2"}], payload["statsMetrics"])
+        self.assertEqual(1000.0, payload["account"]["balance"])
+
+    def test_v2_account_snapshot_should_use_logged_out_snapshot_when_no_active_session(self):
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "logged_out",
+                "activeAccount": None,
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
+            server_v2,
+            "_build_account_light_snapshot_with_cache",
+            side_effect=AssertionError("logged_out 不应触发 MT5 轻快照构建"),
+        ):
+            payload = server_v2.v2_account_snapshot()
+
+        self.assertEqual("", payload["accountMeta"]["login"])
+        self.assertEqual("", payload["accountMeta"]["server"])
+        self.assertEqual("remote_logged_out", payload["accountMeta"]["source"])
+        self.assertEqual([], payload["positions"])
+        self.assertEqual([], payload["orders"])
 
     def test_v2_market_snapshot_uses_light_snapshot_builder(self):
         light_snapshot = {
-            "accountMeta": {"login": "7400048"},
+            "accountMeta": {"login": "7400048", "historyRevision": "stub-history-rev"},
             "positions": [{"symbol": "BTCUSD"}],
             "pendingOrders": [{"symbol": "XAUUSD"}],
         }
@@ -264,12 +301,24 @@ class V2ContractTests(unittest.TestCase):
             server_v2, "_build_account_light_snapshot_with_cache", return_value=light_snapshot
         ) as light_mock, mock.patch.object(
             server_v2, "_build_snapshot_with_cache", side_effect=AssertionError("不应走重快照")
+        ), mock.patch.object(
+            server_v2,
+            "_build_v2_market_section",
+            return_value={
+                "source": "binance",
+                "symbols": ["BTCUSDT", "XAUUSDT"],
+                "symbolStates": [],
+                "restUpstream": "https://fapi.binance.com",
+                "wsUpstream": "wss://fstream.binance.com",
+            },
         ):
             payload = server_v2.v2_market_snapshot()
 
         light_mock.assert_called_once_with()
-        self.assertEqual([{"symbol": "BTCUSD"}], payload["account"]["positions"])
-        self.assertEqual([{"symbol": "XAUUSD"}], payload["account"]["orders"])
+        self.assertEqual("BTCUSD", payload["account"]["positions"][0]["code"])
+        self.assertEqual("BTCUSDT", payload["account"]["positions"][0]["marketSymbol"])
+        self.assertEqual("XAUUSD", payload["account"]["orders"][0]["code"])
+        self.assertEqual("XAUUSDT", payload["account"]["orders"][0]["marketSymbol"])
 
     def test_admin_cache_clear_should_flush_runtime_caches(self):
         server_v2.snapshot_build_cache = {"build": {"snapshot": 1}}

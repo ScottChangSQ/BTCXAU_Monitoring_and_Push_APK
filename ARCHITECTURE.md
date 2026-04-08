@@ -15,7 +15,7 @@
 - [app/src/main/java/com/binance/monitor/data/remote/FallbackKlineSocketManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/FallbackKlineSocketManager.java)
   Binance 回退 K 线流管理器，负责通过韩国服务器的 `/binance-ws` 订阅 `@kline_1m`，仅在 `v2 stream` 不健康时补最新展示快照。
 - [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java)
-  v2 网关客户端，负责请求 `market/account/sync` 新接口，并把响应解析成 APP 侧统一载荷；当前也承接图表页按 `startTime/endTime` 的分页与增量补尾。
+  v2 网关客户端，负责请求 `market/account/sync` 新接口，并把响应解析成 APP 侧统一载荷；当前也承接图表页按 `startTime/endTime` 的分页与增量补尾。`/v2/account/snapshot` 解析已改为严格契约：缺失 `account` 对象直接报错，不再本地拼字段兜底。
 - [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java)
   v2 会话客户端，负责请求 `/v2/session/*` 并解析 public-key、status、login/switch/logout 回执。
 - [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java)
@@ -63,7 +63,7 @@
 - [app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java)
   持仓时间分布图控件，负责绘制不同持仓时长桶的交易数量。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java)
-  账户预加载管理器，负责后台轻量同步和前台页面进入时的条件补齐；当前高频链只消费 `v2/account/snapshot` 的账户概览、持仓、挂单和真实 `tradeCount`，只有在 `tradeCount` 变化时才补拉 `v2/account/history` 全量历史，不再本地回填 `open/close time`、`open/close price` 或秒级时间戳。
+  账户预加载管理器，负责后台轻量同步和前台页面进入时的条件补齐；当前高频链只消费 `v2/account/snapshot` 的账户概览、持仓、挂单和 `accountMeta.historyRevision`，只有在 `historyRevision` 变化时才补拉 `v2/account/history` 全量历史，不再本地回填 `open/close time`、`open/close price` 或秒级时间戳。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountPreloadPolicyHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPreloadPolicyHelper.java)
   账户预加载节奏辅助工具，负责把前后台状态和全量/轻量模式转换成统一刷新间隔。
 - [app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java)
@@ -97,7 +97,7 @@
 - [app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java)
   图表历史仓库，负责把上层已经整理好的 K 线窗口直接写入 Room，不再重复回读整段旧历史再合并。
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
-  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出，以及远程账号会话接口与运行时缓存清理。轻快照主链现在只读取账户概览、持仓、挂单和真实 `tradeCount`，不再展开完整历史对象，并增加 single-flight，避免高频消费链并发放大；`/v2/account/snapshot` 直接走 MT5 轻快照，`/v2/account/history` 的曲线和交易列表继续复用同一份 MT5 成交历史；`v2/stream` 在 `logged_out` 状态下不会再主动触发 MT5。
+  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出，以及远程账号会话接口与运行时缓存清理。轻快照主链现在只读取账户概览、持仓、挂单和 `accountMeta.historyRevision`（成交历史 canonical digest），不再展开完整历史对象，并增加 single-flight + 会话代次保护（`session_snapshot_epoch`），避免高频消费链并发放大或旧会话结果回写；`/v2/account/snapshot` 直接走 MT5 轻快照，且在 `logged_out` 状态下直接返回标准空账户快照；`/v2/account/history` 的曲线和交易列表继续复用同一份 MT5 成交历史；轻快照/历史缓存 `builtAt` 统一按“构建完成时刻”写入，轻快照缓存默认 1s，`v2/stream` 默认按 `V2_STREAM_PUSH_INTERVAL_MS=1000` 固定节拍推送，并且账户 delta 不再输出 `refreshHint`。
 - [bridge/mt5_gateway/v2_session_crypto.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_crypto.py)
   远程账号会话加密模块，负责登录信封公钥生成、`rsa-oaep+aes-gcm` 解密、时间戳校验和 nonce 去重。
 - [bridge/mt5_gateway/v2_session_models.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_models.py)
@@ -224,7 +224,7 @@
 - 图表本地缓存当前只保留 `ChartHistoryRepository` 这一层，已删除旧 `KlineCacheStore` 文件缓存，并禁止把图表序列写进 `V2SnapshotStore`；原因是旧设计会形成“图表缓存清理误伤账户快照”和“同一份 K 线被多处重复存储”的结构性问题。
 - 图表历史仓库当前不再负责“读旧历史再合并”，而只负责写入上层已整理好的窗口；原因是图表页内存窗口已经是本轮展示真值，仓库层重复再读一次只会增加 IO 和复杂度。
 - `MonitorService` 不再承担“预热图表 1m 底稿”的职责，冷启动和 stale 回退都统一改成 `GatewayV2Client.fetchMarketSeries(...)`；原因是服务层现在只负责展示快照和悬浮窗，不应再反向参与图表历史真值。
-- 账户预加载改成“高频轻快照 + 历史按真实 `tradeCount` 条件补拉”；原因是账户页平时只需要账户概览、当前持仓和挂单，继续每轮都拉全量历史会浪费流量并拖慢刷新。
+- 账户预加载改成“高频轻快照 + 历史按 `historyRevision` 条件补拉”；原因是账户页平时只需要账户概览、当前持仓和挂单，继续每轮都拉全量历史会浪费流量并拖慢刷新。
 - 仓库内已失联的 `AccountStatsLiveActivity + Mt5GatewayClient` 旧账户页链路已直接删除；原因是它们不再属于任何业务入口，却仍保留 `/v1` 账户快照与本地补位逻辑，继续保留只会制造维护误导。
 - 账户展示链当前收口成“服务端指标直出 + 页面纯消费”；原因是 `overviewMetrics / curveIndicators / statsMetrics` 已由服务端给出，页面层继续本地补算只会重新制造第二套口径。
 - 账户历史与曲线主链当前只接受服务端标准时间和价格字段；原因是客户端再做秒转毫秒、`timestamp -> open/close time`、`price -> open/close price` 这类补位，会把纯消费链重新拉回本地拼装。
@@ -239,7 +239,7 @@
 - 服务器管理 UI 独立为 `admin_panel.py` 控制台服务，而不是塞进 `server_v2.py` 本体；原因是这样即便主网关被停止或重启，控制台仍可继续提供浏览器入口，才能真正完成“启动 / 停止 / 重启网关”这类操作。
 - Windows 部署现收口为“源码两处 + 产物一处”：源码只维护 `bridge/mt5_gateway` 和 `deploy/tencent/windows`，部署时统一由 `scripts/build_windows_server_bundle.py` 生成 `dist/windows_server_bundle`；原因是仓库里长期保留静态部署副本会导致改动位置漂移、文件不同步和现场排障困难。
 - 线上部署验收现在必须同时满足“健康接口来自当前 bundle 指纹”和“`wss://tradeapp.ltd/v2/stream` 能收到首条消息”；原因是过去只看 `200` 无法证明公网实际运行的是哪一版网关，也无法证明 websocket 主链真的可用。
-- 轻快照主链当前只负责账户摘要、持仓、挂单和真实 `tradeCount`，不再在高频链里展开全量历史对象；原因是账户页需要服务端真值来判断“是否新增成交”，但不能为了这个条件判断重新回到每轮全量历史重建。
+- 轻快照主链当前只负责账户摘要、持仓、挂单和 `historyRevision`，不再在高频链里展开全量历史对象；原因是账户页需要服务端真值来判断“是否需要刷新历史”，但不能为了这个条件判断重新回到每轮全量历史重建。
 - `/v2/account/snapshot` 当前直接使用 MT5 轻快照，并只保留当前概览指标、持仓和挂单；原因是账户页和同步链需要的是当前账户真值，不应再被完整历史、曲线和成交重建拖慢。
 - 完整账户快照当前只拉一次 MT5 成交历史，再同时供曲线与交易列表复用；原因是之前曲线和交易映射各扫一次历史，会在 `state_lock` 内重复放大耗时。
 - `v2/stream` 当前先看会话真值，再决定是否读取 MT5 账户快照；原因是未激活远程会话时，监控链只需要市场真值和空账户摘要，不应把 websocket 首包建立建立在 MT5 初始化之上。

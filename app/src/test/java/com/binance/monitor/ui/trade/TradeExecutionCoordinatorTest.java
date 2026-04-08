@@ -1041,7 +1041,7 @@ public class TradeExecutionCoordinatorTest {
                 updatedAt,
                 connected ? "" : "refresh failed",
                 System.currentTimeMillis(),
-                trades.size()
+                "rev-" + trades.size()
         );
     }
 
@@ -1220,7 +1220,7 @@ public class TradeExecutionCoordinatorTest {
                     cache.getUpdatedAt(),
                     cache.getError(),
                     System.currentTimeMillis(),
-                    cache.getHistoryTradeCount()
+                    cache.getHistoryRevision()
             );
         }
     }

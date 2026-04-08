@@ -1850,6 +1850,42 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(1, build_calls["count"])
         self.assertEqual(2, len(results))
 
+    def test_build_account_light_snapshot_with_cache_should_drop_stale_result_after_session_epoch_changed(self):
+        original_cache = dict(server_v2.snapshot_build_cache)
+        original_builder = server_v2._build_account_light_snapshot
+        original_epoch = int(getattr(server_v2, "session_snapshot_epoch", 0))
+
+        build_calls = {"count": 0}
+
+        def fake_builder():
+            build_calls["count"] += 1
+            if build_calls["count"] == 1:
+                with server_v2.snapshot_cache_lock:
+                    server_v2.session_snapshot_epoch += 1
+                return {
+                    "accountMeta": {"source": "MT5 Python Pull", "login": "old"},
+                    "positions": [],
+                    "pendingOrders": [],
+                }
+            return {
+                "accountMeta": {"source": "MT5 Python Pull", "login": "new"},
+                "positions": [],
+                "pendingOrders": [],
+            }
+
+        try:
+            server_v2.snapshot_build_cache.clear()
+            server_v2._build_account_light_snapshot = fake_builder
+            snapshot = server_v2._build_account_light_snapshot_with_cache()
+        finally:
+            server_v2.snapshot_build_cache.clear()
+            server_v2.snapshot_build_cache.update(original_cache)
+            server_v2._build_account_light_snapshot = original_builder
+            server_v2.session_snapshot_epoch = original_epoch
+
+        self.assertEqual(2, build_calls["count"])
+        self.assertEqual("new", (snapshot.get("accountMeta") or {}).get("login"))
+
     def test_curve_point_digest_includes_position_ratio(self):
         helper = getattr(server_v2, "_normalize_digest_curve_points", None)
         self.assertIsNotNone(helper, "缺少 _normalize_digest_curve_points，无法验证曲线摘要")

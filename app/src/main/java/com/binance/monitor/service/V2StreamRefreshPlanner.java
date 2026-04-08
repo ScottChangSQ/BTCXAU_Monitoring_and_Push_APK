@@ -18,18 +18,80 @@ public final class V2StreamRefreshPlanner {
     public static RefreshPlan plan(@Nullable String messageType, @Nullable JSONObject payload) {
         JSONObject safePayload = payload == null ? new JSONObject() : payload;
         boolean unchanged = safePayload.optBoolean("unchanged", false);
-        boolean fullRefreshRequired = safePayload.optJSONObject("fullRefresh") != null
-                && safePayload.optJSONObject("fullRefresh").optBoolean("required", false);
-        boolean hasMarketDelta = hasItems(safePayload.optJSONArray("marketDelta"));
-        boolean hasAccountDelta = hasItems(safePayload.optJSONArray("accountDelta"));
+        JSONObject fullRefresh = safePayload.optJSONObject("fullRefresh");
+        boolean fullRefreshRequired = fullRefresh != null && fullRefresh.optBoolean("required", false);
+        JSONObject fullRefreshSnapshot = fullRefresh == null ? null : fullRefresh.optJSONObject("snapshot");
+        JSONObject fullMarketSnapshot = fullRefreshSnapshot == null ? null : fullRefreshSnapshot.optJSONObject("market");
+        JSONObject fullAccountSnapshot = fullRefreshSnapshot == null ? null : fullRefreshSnapshot.optJSONObject("account");
 
-        if (unchanged && !fullRefreshRequired && !hasMarketDelta && !hasAccountDelta) {
-            return new RefreshPlan(false, false, false, messageType == null ? "" : messageType);
+        JSONArray marketDelta = safePayload.optJSONArray("marketDelta");
+        JSONArray accountDelta = safePayload.optJSONArray("accountDelta");
+        JSONObject marketSnapshot = extractSnapshot(marketDelta, "market.snapshot");
+        JSONObject accountSnapshot = extractSnapshot(accountDelta, "account.snapshot");
+        boolean historyRevisionChanged = hasHistoryRevisionChanged(accountDelta);
+
+        if (unchanged && !fullRefreshRequired && marketSnapshot == null && accountSnapshot == null) {
+            return new RefreshPlan(
+                    false,
+                    false,
+                    false,
+                    false,
+                    null,
+                    null,
+                    messageType == null ? "" : messageType
+            );
         }
-        boolean refreshMarket = fullRefreshRequired || hasMarketDelta;
-        boolean refreshAccount = fullRefreshRequired || hasAccountDelta;
+        boolean refreshMarket = fullRefreshRequired || marketSnapshot != null || hasItems(marketDelta);
+        boolean refreshAccount = fullRefreshRequired || accountSnapshot != null || hasItems(accountDelta);
         boolean refreshFloating = refreshMarket || refreshAccount;
-        return new RefreshPlan(refreshMarket, refreshAccount, refreshFloating, messageType == null ? "" : messageType);
+        boolean pullAccountSnapshot = fullRefreshRequired || historyRevisionChanged;
+        return new RefreshPlan(
+                refreshMarket,
+                refreshAccount,
+                refreshFloating,
+                pullAccountSnapshot,
+                fullRefreshRequired ? fullMarketSnapshot : marketSnapshot,
+                fullRefreshRequired ? fullAccountSnapshot : accountSnapshot,
+                messageType == null ? "" : messageType
+        );
+    }
+
+    @Nullable
+    private static JSONObject extractSnapshot(@Nullable JSONArray events, String expectedAction) {
+        if (events == null || events.length() == 0) {
+            return null;
+        }
+        for (int i = 0; i < events.length(); i++) {
+            JSONObject event = events.optJSONObject(i);
+            if (event == null) {
+                continue;
+            }
+            String action = event.optString("action", "");
+            if (!expectedAction.equals(action)) {
+                continue;
+            }
+            JSONObject snapshot = event.optJSONObject("snapshot");
+            if (snapshot != null) {
+                return snapshot;
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasHistoryRevisionChanged(@Nullable JSONArray events) {
+        if (events == null || events.length() == 0) {
+            return false;
+        }
+        for (int i = 0; i < events.length(); i++) {
+            JSONObject event = events.optJSONObject(i);
+            if (event == null) {
+                continue;
+            }
+            if (event.optBoolean("historyRevisionChanged", false)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasItems(@Nullable JSONArray array) {
@@ -40,15 +102,26 @@ public final class V2StreamRefreshPlanner {
         private final boolean refreshMarket;
         private final boolean refreshAccount;
         private final boolean refreshFloating;
+        private final boolean pullAccountSnapshot;
+        @Nullable
+        private final JSONObject marketSnapshot;
+        @Nullable
+        private final JSONObject accountSnapshot;
         private final String messageType;
 
         RefreshPlan(boolean refreshMarket,
                     boolean refreshAccount,
                     boolean refreshFloating,
+                    boolean pullAccountSnapshot,
+                    @Nullable JSONObject marketSnapshot,
+                    @Nullable JSONObject accountSnapshot,
                     String messageType) {
             this.refreshMarket = refreshMarket;
             this.refreshAccount = refreshAccount;
             this.refreshFloating = refreshFloating;
+            this.pullAccountSnapshot = pullAccountSnapshot;
+            this.marketSnapshot = marketSnapshot;
+            this.accountSnapshot = accountSnapshot;
             this.messageType = messageType == null ? "" : messageType;
         }
 
@@ -62,6 +135,20 @@ public final class V2StreamRefreshPlanner {
 
         public boolean shouldRefreshFloating() {
             return refreshFloating;
+        }
+
+        public boolean shouldPullAccountSnapshot() {
+            return pullAccountSnapshot;
+        }
+
+        @Nullable
+        public JSONObject getMarketSnapshot() {
+            return marketSnapshot;
+        }
+
+        @Nullable
+        public JSONObject getAccountSnapshot() {
+            return accountSnapshot;
         }
 
         public String getMessageType() {

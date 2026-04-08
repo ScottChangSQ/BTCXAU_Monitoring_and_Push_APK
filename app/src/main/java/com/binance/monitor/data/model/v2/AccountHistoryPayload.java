@@ -5,11 +5,13 @@
 package com.binance.monitor.data.model.v2;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class AccountHistoryPayload {
 
     private final long serverTime;
     private final String syncToken;
+    private final JSONObject accountMeta;
     private final JSONArray overviewMetrics;
     private final JSONArray curveIndicators;
     private final JSONArray statsMetrics;
@@ -21,6 +23,7 @@ public class AccountHistoryPayload {
 
     public AccountHistoryPayload(long serverTime,
                                  String syncToken,
+                                 JSONObject accountMeta,
                                  JSONArray overviewMetrics,
                                  JSONArray curveIndicators,
                                  JSONArray statsMetrics,
@@ -31,6 +34,7 @@ public class AccountHistoryPayload {
                                  String rawJson) {
         this.serverTime = serverTime;
         this.syncToken = syncToken == null ? "" : syncToken;
+        this.accountMeta = accountMeta == null ? new JSONObject() : accountMeta;
         this.overviewMetrics = overviewMetrics == null ? new JSONArray() : overviewMetrics;
         this.curveIndicators = curveIndicators == null ? new JSONArray() : curveIndicators;
         this.statsMetrics = statsMetrics == null ? new JSONArray() : statsMetrics;
@@ -47,6 +51,10 @@ public class AccountHistoryPayload {
 
     public String getSyncToken() {
         return syncToken;
+    }
+
+    public JSONObject getAccountMeta() {
+        return accountMeta;
     }
 
     public JSONArray getOverviewMetrics() {

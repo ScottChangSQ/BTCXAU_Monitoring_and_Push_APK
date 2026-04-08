@@ -2,6 +2,7 @@ package com.binance.monitor.data.remote.v2;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import com.binance.monitor.data.model.v2.AccountHistoryPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
@@ -25,13 +26,7 @@ public class GatewayV2ClientTest {
     public void parseAccountSnapshotShouldSupportV2TopLevelAccountFields() throws Exception {
         String body = "{"
                 + "\"accountMeta\":{\"serverTime\":123456789,\"syncToken\":\"snap-sync\"},"
-                + "\"balance\":1000.5,"
-                + "\"equity\":1001.5,"
-                + "\"leverage\":400,"
-                + "\"margin\":12.3,"
-                + "\"freeMargin\":989.2,"
-                + "\"marginLevel\":8130.1,"
-                + "\"profit\":1.0,"
+                + "\"account\":{\"balance\":1000.5,\"equity\":1001.5,\"leverage\":400,\"margin\":12.3,\"freeMargin\":989.2,\"marginLevel\":8130.1,\"profit\":1.0},"
                 + "\"overviewMetrics\":[{\"name\":\"总资产\",\"value\":\"$1001.50\"}],"
                 + "\"statsMetrics\":[{\"name\":\"交易笔数\",\"value\":\"2\"}],"
                 + "\"curveIndicators\":[{\"name\":\"当日收益\",\"value\":\"+1.2%\"}],"
@@ -84,13 +79,28 @@ public class GatewayV2ClientTest {
     public void parseAccountSnapshotShouldIgnorePendingOrdersAlias() throws Exception {
         String body = "{"
                 + "\"accountMeta\":{\"serverTime\":3333},"
-                + "\"balance\":1000.0,"
+                + "\"account\":{\"balance\":1000.0},"
                 + "\"pendingOrders\":[{\"orderId\":22,\"code\":\"XAUUSD\"}]"
                 + "}";
 
         AccountSnapshotPayload payload = GatewayV2Client.parseAccountSnapshot(body);
 
         assertEquals(0, payload.getOrders().length());
+    }
+
+    @Test
+    public void parseAccountSnapshotShouldRejectMissingAccountObject() throws Exception {
+        String body = "{"
+                + "\"accountMeta\":{\"serverTime\":3333},"
+                + "\"balance\":1000.0"
+                + "}";
+
+        try {
+            GatewayV2Client.parseAccountSnapshot(body);
+            fail("expected missing account object error");
+        } catch (IllegalStateException expected) {
+            assertEquals("v2 account snapshot missing account object", expected.getMessage());
+        }
     }
 
     @Test
