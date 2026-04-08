@@ -62,7 +62,7 @@ public class GatewayV2SessionClientTest {
                 + "\"ok\":true,"
                 + "\"state\":\"activated\","
                 + "\"requestId\":\"req-login\","
-                + "\"account\":{\"profileId\":\"acc-1\",\"state\":\"activated\",\"loginMasked\":\"****1234\"},"
+                + "\"activeAccount\":{\"profileId\":\"acc-1\",\"active\":true,\"state\":\"activated\",\"loginMasked\":\"****1234\"},"
                 + "\"message\":\"登录成功\""
                 + "}";
 
@@ -70,7 +70,7 @@ public class GatewayV2SessionClientTest {
 
         assertTrue(receipt.isOk());
         assertEquals("activated", receipt.getState());
-        assertTrue(receipt.getAccount().isActive());
+        assertTrue(receipt.getActiveAccount().isActive());
     }
 
     @Test
@@ -79,7 +79,7 @@ public class GatewayV2SessionClientTest {
                 + "\"ok\":true,"
                 + "\"state\":\"activated\","
                 + "\"requestId\":\"req-switch\","
-                + "\"account\":{\"profileId\":\"acc-3\",\"loginMasked\":\"****3333\"},"
+                + "\"activeAccount\":{\"profileId\":\"acc-3\",\"active\":true,\"loginMasked\":\"****3333\"},"
                 + "\"message\":\"切换成功\""
                 + "}";
         String logoutBody = "{"
@@ -96,13 +96,44 @@ public class GatewayV2SessionClientTest {
         assertTrue(switchReceipt.isOk());
         assertEquals("activated", switchReceipt.getState());
         assertEquals("req-switch", switchReceipt.getRequestId());
-        assertEquals("acc-3", switchReceipt.getAccount().getProfileId());
+        assertEquals("acc-3", switchReceipt.getActiveAccount().getProfileId());
         assertEquals("切换成功", switchReceipt.getMessage());
 
         assertTrue(logoutReceipt.isOk());
         assertEquals("logged_out", logoutReceipt.getState());
         assertEquals("req-logout", logoutReceipt.getRequestId());
-        assertNull(logoutReceipt.getAccount());
+        assertNull(logoutReceipt.getActiveAccount());
         assertFalse(logoutReceipt.isFailed());
+    }
+
+    @Test
+    public void parseSessionReceiptShouldIgnoreLegacyAccountField() throws Exception {
+        String body = "{"
+                + "\"ok\":true,"
+                + "\"state\":\"activated\","
+                + "\"requestId\":\"req-legacy\","
+                + "\"account\":{\"profileId\":\"acc-legacy\",\"loginMasked\":\"****9999\"},"
+                + "\"message\":\"登录成功\""
+                + "}";
+
+        SessionReceipt receipt = GatewayV2SessionClient.parseSessionReceipt(body);
+
+        assertTrue(receipt.isOk());
+        assertNull(receipt.getActiveAccount());
+    }
+
+    @Test
+    public void parseSessionStatusShouldIgnoreLegacyIsActiveField() throws Exception {
+        String body = "{"
+                + "\"ok\":true,"
+                + "\"state\":\"activated\","
+                + "\"activeAccount\":{\"profileId\":\"acc-2\",\"isActive\":true,\"loginMasked\":\"****1111\",\"server\":\"IC\"},"
+                + "\"savedAccounts\":[]"
+                + "}";
+
+        SessionStatusPayload payload = GatewayV2SessionClient.parseSessionStatus(body);
+
+        assertTrue(payload.isOk());
+        assertFalse(payload.getActiveAccount().isActive());
     }
 }

@@ -146,11 +146,11 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         }
         if (item.getOrderId() > 0L || item.getPositionId() > 0L) {
             return "trade:" + item.getOrderId() + "|" + item.getPositionId() + "|" + item.getEntryType()
-                    + "|" + resolveTime(item.getOpenTime(), item.getTimestamp())
-                    + "|" + resolveTime(item.getCloseTime(), item.getTimestamp());
+                    + "|" + item.getOpenTime()
+                    + "|" + item.getCloseTime();
         }
-        long openTime = resolveTime(item.getOpenTime(), item.getTimestamp());
-        long closeTime = resolveTime(item.getCloseTime(), item.getTimestamp());
+        long openTime = item.getOpenTime();
+        long closeTime = item.getCloseTime();
         long qtyKey = Math.round(Math.abs(item.getQuantity()) * 10_000d);
         return safe(item.getCode()) + "|" + safe(item.getSide()) + "|" + openTime + "|" + closeTime + "|" + qtyKey;
     }
@@ -169,10 +169,6 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         return identityKeyOf(item) + "|" + safe(item.getProductName()) + "|" + priceKey + "|" + amountKey
                 + "|" + profitKey + "|" + feeKey + "|" + storageKey + "|" + openPriceKey
                 + "|" + closePriceKey + "|" + safe(item.getRemark());
-    }
-
-    private long resolveTime(long value, long fallback) {
-        return value > 0L ? value : fallback;
     }
 
     private boolean hasPayload(List<Object> payloads, String expected) {
@@ -277,8 +273,8 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             binding.tvSummary.setText(span);
             updateExpandState(expanded, animateExpand);
 
-            long openTime = item.getOpenTime() > 0L ? item.getOpenTime() : item.getTimestamp();
-            long closeTime = item.getCloseTime() > 0L ? item.getCloseTime() : item.getTimestamp();
+            long openTime = item.getOpenTime();
+            long closeTime = item.getCloseTime();
             binding.tvTime.setText("开仓时间: " + FormatUtils.formatDateTime(openTime));
             binding.tvProduct.setText("平仓时间: " + FormatUtils.formatDateTime(closeTime));
             binding.tvSide.setText(String.format(Locale.getDefault(),

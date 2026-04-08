@@ -10,7 +10,9 @@ import android.os.Looper;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
+import com.binance.monitor.util.GatewayUrlResolver;
 
 import org.json.JSONObject;
 
@@ -122,6 +124,7 @@ public class GatewayV2StreamClient {
                 socket = null;
             }
         }
+        notifyState(false, reason);
         notifyError(reason);
         scheduleReconnect();
     }
@@ -176,21 +179,23 @@ public class GatewayV2StreamClient {
     }
 
     private String resolveStreamUrl() {
-        String baseUrl = configManager == null ? "" : configManager.getMt5GatewayBaseUrl();
-        String normalized = baseUrl == null ? "" : baseUrl.trim();
-        if (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
+        String baseUrl = configManager == null
+                ? AppConstants.MT5_GATEWAY_BASE_URL
+                : configManager.getMt5GatewayBaseUrl();
+        String gatewayRoot = GatewayUrlResolver.resolveGatewayRootBaseUrl(
+                baseUrl,
+                AppConstants.MT5_GATEWAY_BASE_URL
+        );
+        if (gatewayRoot.endsWith("/")) {
+            gatewayRoot = gatewayRoot.substring(0, gatewayRoot.length() - 1);
         }
-        if (normalized.startsWith("https://")) {
-            return "wss://" + normalized.substring("https://".length()) + "/v2/stream";
+        if (gatewayRoot.startsWith("https://")) {
+            return "wss://" + gatewayRoot.substring("https://".length()) + "/v2/stream";
         }
-        if (normalized.startsWith("http://")) {
-            return "ws://" + normalized.substring("http://".length()) + "/v2/stream";
+        if (gatewayRoot.startsWith("http://")) {
+            return "ws://" + gatewayRoot.substring("http://".length()) + "/v2/stream";
         }
-        if (normalized.startsWith("wss://") || normalized.startsWith("ws://")) {
-            return normalized + "/v2/stream";
-        }
-        return "ws://127.0.0.1:8787/v2/stream";
+        return gatewayRoot + "/v2/stream";
     }
 
     public static class StreamMessage {

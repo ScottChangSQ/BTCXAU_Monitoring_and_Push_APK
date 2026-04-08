@@ -39,9 +39,22 @@ class V2AccountPipelineTests(unittest.TestCase):
     def test_build_account_history_model_exposes_curve_and_trades(self):
         payload = v2_account.build_account_history_model(
             {
-                "trades": [{"time": 1, "symbol": "BTCUSD", "price": 10, "volume": 0.1}],
-                "orders": [{"symbol": "XAUUSD", "price": 20, "volume": 0.2}],
-                "curvePoints": [{"timestamp": 3, "equity": 1100.0, "balance": 1000.0}],
+                "trades": [{
+                    "timestamp": 1,
+                    "productName": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Buy",
+                    "price": 10,
+                    "quantity": 0.1,
+                }],
+                "orders": [{
+                    "productName": "XAUUSD",
+                    "code": "XAUUSD",
+                    "side": "Sell",
+                    "pendingPrice": 20,
+                    "pendingLots": 0.2,
+                }],
+                "curvePoints": [{"timestamp": 3, "equity": 1100.0, "balance": 1000.0, "positionRatio": 0.1}],
             }
         )
         self.assertIn("trades", payload)
@@ -50,6 +63,9 @@ class V2AccountPipelineTests(unittest.TestCase):
         self.assertEqual(1, len(payload["trades"]))
         self.assertEqual(1, len(payload["orders"]))
         self.assertEqual(1, len(payload["curvePoints"]))
+        self.assertEqual("BTCUSD", payload["trades"][0]["code"])
+        self.assertEqual("XAUUSD", payload["orders"][0]["code"])
+        self.assertEqual(0.1, payload["curvePoints"][0]["positionRatio"])
 
     def test_build_account_history_model_keeps_trade_lifecycle_fields(self):
         payload = v2_account.build_account_history_model(
@@ -88,6 +104,64 @@ class V2AccountPipelineTests(unittest.TestCase):
         self.assertEqual(102, trade["orderId"])
         self.assertEqual(201, trade["positionId"])
         self.assertEqual(1, trade["entryType"])
+
+    def test_build_account_history_model_should_not_backfill_trade_fields(self):
+        payload = v2_account.build_account_history_model(
+            {
+                "trades": [{
+                    "timestamp": 200,
+                    "symbol": "BTCUSD",
+                    "price": 120.0,
+                    "quantity": 0.1,
+                }],
+                "orders": [],
+                "curvePoints": [{"timestamp": 3, "equity": 1100.0, "balance": 1000.0}],
+            }
+        )
+
+        trade = payload["trades"][0]
+        curve_point = payload["curvePoints"][0]
+        self.assertEqual(0, trade["openTime"])
+        self.assertEqual(0, trade["closeTime"])
+        self.assertEqual(0.0, trade["openPrice"])
+        self.assertEqual(0.0, trade["closePrice"])
+        self.assertEqual(0.0, curve_point["positionRatio"])
+
+    def test_build_account_history_model_should_ignore_legacy_history_aliases(self):
+        payload = v2_account.build_account_history_model(
+            {
+                "dealHistory": [{"time": 1, "symbol": "BTCUSD", "price": 10.0, "volume": 0.1}],
+                "orderHistory": [{"symbol": "XAUUSD", "price": 20.0, "volume": 0.2}],
+                "equityCurve": [{"time": 3, "equity": 1100.0, "balance": 1000.0, "positionRatio": 0.1}],
+            }
+        )
+
+        self.assertEqual([], payload["trades"])
+        self.assertEqual([], payload["orders"])
+        self.assertEqual([], payload["curvePoints"])
+
+    def test_build_account_history_model_should_not_backfill_trade_price_from_lifecycle_fields(self):
+        payload = v2_account.build_account_history_model(
+            {
+                "trades": [{
+                    "timestamp": 200,
+                    "productName": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Sell",
+                    "openPrice": 100.0,
+                    "closePrice": 120.0,
+                    "openTime": 100,
+                    "closeTime": 200,
+                }],
+                "orders": [],
+                "curvePoints": [],
+            }
+        )
+
+        trade = payload["trades"][0]
+        self.assertEqual(0.0, trade["price"])
+        self.assertEqual(100.0, trade["openPrice"])
+        self.assertEqual(120.0, trade["closePrice"])
 
     def test_build_account_snapshot_model_keeps_position_and_order_identifiers(self):
         payload = v2_account.build_account_snapshot_model(
@@ -129,25 +203,58 @@ class V2AccountPipelineTests(unittest.TestCase):
         self.assertEqual(2030.0, order["stopLoss"])
         self.assertEqual(1, order["pendingCount"])
 
+    def test_build_account_snapshot_model_should_ignore_legacy_snapshot_aliases(self):
+        payload = v2_account.build_account_snapshot_model(
+            {
+                "openPositions": [{"symbol": "BTCUSD", "quantity": 0.1}],
+                "accountPositions": [{"symbol": "XAUUSD", "quantity": 0.2}],
+                "pendingOrders": [{"symbol": "BTCUSD", "pendingLots": 0.1}],
+                "pending": [{"symbol": "XAUUSD", "pendingLots": 0.2}],
+            }
+        )
+
+        self.assertEqual([], payload["positions"])
+        self.assertEqual([], payload["orders"])
+
     def test_build_account_snapshot_response_keeps_meta(self):
         payload = v2_account.build_account_snapshot_response(
-            {"balance": 1000.0, "positions": [], "orders": []},
+            {
+                "balance": 1000.0,
+                "positions": [],
+                "orders": [],
+                "overviewMetrics": [{"name": "总资产", "value": "$1000.00"}],
+                "curveIndicators": [{"name": "当日收益", "value": "+1.2%"}],
+                "statsMetrics": [{"name": "交易笔数", "value": "2"}],
+            },
             {"login": "1"},
             sync_seq=7,
         )
         self.assertEqual("1", payload["accountMeta"]["login"])
         self.assertEqual(7, payload["accountMeta"]["syncSeq"])
         self.assertEqual(1000.0, payload["balance"])
+        self.assertEqual([{"name": "总资产", "value": "$1000.00"}], payload["overviewMetrics"])
+        self.assertEqual([{"name": "当日收益", "value": "+1.2%"}], payload["curveIndicators"])
+        self.assertEqual([{"name": "交易笔数", "value": "2"}], payload["statsMetrics"])
 
     def test_build_account_history_response_keeps_meta(self):
         payload = v2_account.build_account_history_response(
-            {"trades": [], "orders": [], "curvePoints": []},
+            {
+                "trades": [],
+                "orders": [],
+                "curvePoints": [],
+                "overviewMetrics": [{"name": "总资产", "value": "$1000.00"}],
+                "curveIndicators": [{"name": "当日收益", "value": "+1.2%"}],
+                "statsMetrics": [{"name": "交易笔数", "value": "2"}],
+            },
             {"server": "demo"},
             sync_seq=8,
         )
         self.assertEqual("demo", payload["accountMeta"]["server"])
         self.assertEqual(8, payload["accountMeta"]["syncSeq"])
         self.assertEqual([], payload["curvePoints"])
+        self.assertEqual([{"name": "总资产", "value": "$1000.00"}], payload["overviewMetrics"])
+        self.assertEqual([{"name": "当日收益", "value": "+1.2%"}], payload["curveIndicators"])
+        self.assertEqual([{"name": "交易笔数", "value": "2"}], payload["statsMetrics"])
 
 
 if __name__ == "__main__":

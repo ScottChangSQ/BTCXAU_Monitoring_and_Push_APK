@@ -116,6 +116,22 @@ class V2SessionCryptoTests(unittest.TestCase):
         self.assertEqual("nonce-roundtrip-1", payload["nonce"])
         self.assertEqual(now_ms, payload["clientTime"])
 
+    def test_decrypt_login_envelope_should_treat_string_false_remember_as_false(self):
+        """明文 remember='false' 时，不得被误判成 True。"""
+        now_ms = int(time.time() * 1000)
+        login_crypto = crypto.LoginEnvelopeCrypto(now_ms_provider=lambda: now_ms)
+        envelope = self._build_login_envelope(
+            login_crypto,
+            client_time=now_ms,
+            nonce="nonce-remember-false-1",
+            remember="false",
+            save_account=False,
+        )
+
+        payload = login_crypto.decrypt_login_envelope(envelope)
+
+        self.assertEqual(False, payload["remember"])
+
     def test_build_public_key_payload_should_keep_active_flag_for_activated_state(self):
         """public-key 返回里，state=activated 的当前账号也应保留激活标记。"""
         now_ms = int(time.time() * 1000)

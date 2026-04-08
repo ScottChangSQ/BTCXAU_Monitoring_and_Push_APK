@@ -18,6 +18,14 @@ public class GatewayUrlResolverTest {
     }
 
     @Test
+    public void resolveBaseUrlShouldUseHttpsSchemeWhenHostOnlyInputTargetsSecureGateway() {
+        assertEquals(
+                "https://tradeapp.ltd",
+                GatewayUrlResolver.resolveBaseUrl("tradeapp.ltd", "https://tradeapp.ltd")
+        );
+    }
+
+    @Test
     public void resolveBaseUrlStripsHealthAndApiPath() {
         assertEquals(
                 "http://43.155.214.62:8787",

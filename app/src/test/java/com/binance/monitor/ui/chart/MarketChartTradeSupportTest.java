@@ -16,8 +16,8 @@ public class MarketChartTradeSupportTest {
     public void toTradeSymbolShouldMapBinanceSymbolsToMt5Symbols() {
         assertEquals("BTCUSD", MarketChartTradeSupport.toTradeSymbol("BTCUSDT"));
         assertEquals("XAUUSD", MarketChartTradeSupport.toTradeSymbol("XAUUSDT"));
-        assertEquals("ETHUSD", MarketChartTradeSupport.toTradeSymbol("ethusdt"));
         assertEquals("BTCUSD", MarketChartTradeSupport.toTradeSymbol("BTCUSD"));
+        assertEquals("ETHUSDT", MarketChartTradeSupport.toTradeSymbol("ethusdt"));
     }
 
     @Test

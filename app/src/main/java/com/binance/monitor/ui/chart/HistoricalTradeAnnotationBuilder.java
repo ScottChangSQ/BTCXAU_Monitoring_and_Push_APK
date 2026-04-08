@@ -31,7 +31,12 @@ final class HistoricalTradeAnnotationBuilder {
             return result;
         }
         for (TradeRecordItem trade : trades) {
-            if (!isClosedTrade(trade) || !matchesSelectedSymbol(selectedSymbol, trade)) {
+            String groupId = buildGroupId(trade);
+            String normalizedSide = normalizeTradeSide(trade == null ? null : trade.getSide());
+            if (groupId.isEmpty()
+                    || normalizedSide.isEmpty()
+                    || !isClosedTrade(trade)
+                    || !matchesSelectedSymbol(selectedSymbol, trade)) {
                 continue;
             }
             long closeTime = resolveCloseTime(trade);
@@ -51,7 +56,7 @@ final class HistoricalTradeAnnotationBuilder {
                     openPrice,
                     exitAnchorTime,
                     closePrice,
-                    normalizeTradeSide(trade.getSide()),
+                    normalizedSide,
                     Math.abs(trade.getQuantity()),
                     trade.getProfit() + trade.getStorageFee(),
                     resolveProductName(trade),
@@ -60,7 +65,7 @@ final class HistoricalTradeAnnotationBuilder {
                     closeTime,
                     trade.getOrderId(),
                     trade.getPositionId(),
-                    buildGroupId(trade, exitAnchorTime, closePrice)
+                    groupId
             ));
         }
         result.sort(Comparator
@@ -69,7 +74,7 @@ final class HistoricalTradeAnnotationBuilder {
         return result;
     }
 
-    // 仅展示已经结束的历史成交，优先按 MT5 entryType 识别平仓/反手成交，旧数据再用时间字段兜底。
+    // 仅展示服务端已明确标记为平仓/反手的历史成交。
     private static boolean isClosedTrade(@Nullable TradeRecordItem trade) {
         if (trade == null) {
             return false;
@@ -80,14 +85,7 @@ final class HistoricalTradeAnnotationBuilder {
             return false;
         }
         int entryType = trade.getEntryType();
-        if (entryType == 1 || entryType == 2 || entryType == 3) {
-            return true;
-        }
-        if (entryType == 0) {
-            // 开仓成交不画到历史成交层；旧快照若缺少 entryType，但 open/close 时间明显不同，仍保留。
-            return closeTime > openTime;
-        }
-        return closeTime >= openTime;
+        return entryType == 1 || entryType == 2 || entryType == 3;
     }
 
     // 只校验成交时间是否落在当前图表窗口允许的时间范围内；一旦可见，就保留真实时间。
@@ -146,63 +144,33 @@ final class HistoricalTradeAnnotationBuilder {
         if (trade == null) {
             return false;
         }
-        String normalizedSelected = normalizeSymbol(selectedSymbol);
+        String normalizedSelected = normalizeTradeSymbol(selectedSymbol);
         if (normalizedSelected.isEmpty()) {
             return false;
         }
-        return normalizedSelected.equals(normalizeSymbol(trade.getCode()))
-                || normalizedSelected.equals(normalizeSymbol(trade.getProductName()));
+        return normalizedSelected.equals(normalizeTradeSymbol(trade.getCode()))
+                || normalizedSelected.equals(normalizeTradeSymbol(trade.getProductName()));
     }
 
-    private static String normalizeSymbol(@Nullable String rawSymbol) {
-        String value = rawSymbol == null ? "" : rawSymbol.trim().toUpperCase(Locale.ROOT);
-        if (value.isEmpty()) {
-            return "";
-        }
-        if (value.contains("BTC")) {
-            return "BTCUSDT";
-        }
-        if (value.contains("XAU") || value.contains("GOLD")) {
-            return "XAUUSDT";
-        }
-        return value;
+    private static String normalizeTradeSymbol(@Nullable String rawSymbol) {
+        String normalized = MarketChartTradeSupport.toTradeSymbol(rawSymbol);
+        return normalized == null ? "" : normalized.trim().toUpperCase(Locale.ROOT);
     }
 
     private static long resolveOpenTime(TradeRecordItem trade) {
-        if (trade == null) {
-            return 0L;
-        }
-        return trade.getOpenTime() > 0L ? trade.getOpenTime() : trade.getTimestamp();
+        return trade == null ? 0L : trade.getOpenTime();
     }
 
     private static long resolveCloseTime(TradeRecordItem trade) {
-        if (trade == null) {
-            return 0L;
-        }
-        if (trade.getCloseTime() > 0L) {
-            return trade.getCloseTime();
-        }
-        return trade.getTimestamp();
+        return trade == null ? 0L : trade.getCloseTime();
     }
 
     private static double resolveClosePrice(TradeRecordItem trade) {
-        if (trade == null) {
-            return 0d;
-        }
-        if (trade.getClosePrice() > 0d) {
-            return trade.getClosePrice();
-        }
-        return trade.getPrice();
+        return trade == null ? 0d : trade.getClosePrice();
     }
 
     private static double resolveOpenPrice(TradeRecordItem trade) {
-        if (trade == null) {
-            return 0d;
-        }
-        if (trade.getOpenPrice() > 0d) {
-            return trade.getOpenPrice();
-        }
-        return trade.getPrice();
+        return trade == null ? 0d : trade.getOpenPrice();
     }
 
     private static String resolveProductName(@Nullable TradeRecordItem trade) {
@@ -218,15 +186,18 @@ final class HistoricalTradeAnnotationBuilder {
 
     private static String normalizeTradeSide(@Nullable String side) {
         String normalized = side == null ? "" : side.trim().toLowerCase(Locale.ROOT);
-        if (normalized.contains("sell") || normalized.contains("卖")) {
+        if ("sell".equals(normalized)) {
             return "SELL";
         }
-        return "BUY";
+        if ("buy".equals(normalized)) {
+            return "BUY";
+        }
+        return "";
     }
 
-    private static String buildGroupId(TradeRecordItem trade, long anchorTime, double closePrice) {
+    private static String buildGroupId(@Nullable TradeRecordItem trade) {
         if (trade == null) {
-            return "tradehist|na|" + anchorTime;
+            return "";
         }
         long quantityKey = Math.round(Math.abs(trade.getQuantity()) * 10_000d);
         if (trade.getDealTicket() > 0L) {
@@ -247,17 +218,7 @@ final class HistoricalTradeAnnotationBuilder {
                     + "|"
                     + resolveCloseTime(trade);
         }
-        long priceKey = Math.round(Math.abs(closePrice) * 100d);
-        return "tradehist|fallback|"
-                + normalizeSymbol(trade.getCode())
-                + "|"
-                + normalizeTradeSide(trade.getSide())
-                + "|"
-                + anchorTime
-                + "|"
-                + quantityKey
-                + "|"
-                + priceKey;
+        return "";
     }
 
     static final class TradeAnnotation {

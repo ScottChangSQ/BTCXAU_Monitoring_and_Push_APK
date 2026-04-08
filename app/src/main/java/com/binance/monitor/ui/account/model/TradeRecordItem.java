@@ -102,8 +102,8 @@ public class TradeRecordItem {
         this.openTime = openTime;
         this.closeTime = closeTime;
         this.storageFee = storageFee;
-        this.openPrice = openPrice > 0d ? openPrice : price;
-        this.closePrice = closePrice > 0d ? closePrice : price;
+        this.openPrice = openPrice;
+        this.closePrice = closePrice;
         this.dealTicket = dealTicket;
         this.orderId = orderId;
         this.positionId = positionId;

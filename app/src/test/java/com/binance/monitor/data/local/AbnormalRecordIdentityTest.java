@@ -14,7 +14,7 @@ public class AbnormalRecordIdentityTest {
     @Test
     public void buildStableRecordIdShouldTreatLocalAndGatewayXauSymbolAsSameRecord() {
         String localId = AbnormalRecordManager.buildStableRecordId(AppConstants.SYMBOL_XAU, 1234L, "价格变化");
-        String gatewayId = AbnormalRecordManager.buildStableRecordId("XAUUSD", 1234L, "价格变化");
+        String gatewayId = AbnormalRecordManager.buildStableRecordId("XAUUSDT", 1234L, "价格变化");
 
         assertEquals(gatewayId, localId);
     }

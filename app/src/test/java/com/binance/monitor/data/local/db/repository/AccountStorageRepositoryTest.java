@@ -1,6 +1,5 @@
 /*
- * 验证账户持久层在合并交易历史和权益曲线时，会保留旧历史并按稳定键去重，
- * 避免每次刷新后把已拉到的历史记录覆盖掉或重复堆叠。
+ * 验证账户持久层只保存服务端最新真值，避免把旧历史或旧曲线重新拼回主链。
  */
 package com.binance.monitor.data.local.db.repository;
 
@@ -45,25 +44,22 @@ public class AccountStorageRepositoryTest {
         assertEquals(1000L, merged.get(2).getCloseTime());
     }
 
-    // 权益曲线合并后，应保留旧点位，并按 timestamp 用最新值覆盖。
     @Test
-    public void mergeCurvePointsKeepsHistoryAndDeduplicatesByTimestamp() {
-        List<CurvePoint> existing = Arrays.asList(
-                new CurvePoint(1000L, 100d, 90d, 0.10d),
-                new CurvePoint(2000L, 101d, 91d, 0.20d)
+    public void mergeTradesShouldDropItemsWithoutStableIdentity() {
+        List<TradeRecordItem> existing = Arrays.asList(
+                trade(1000L, 101L, 201L, 301L, -10d),
+                tradeWithoutStableIdentity(2000L, -20d)
         );
-        List<CurvePoint> incoming = Arrays.asList(
-                new CurvePoint(2000L, 110d, 95d, 0.55d),
-                new CurvePoint(3000L, 120d, 100d, 0.80d)
+        List<TradeRecordItem> incoming = Arrays.asList(
+                tradeWithoutStableIdentity(3000L, 12d),
+                trade(4000L, 104L, 204L, 304L, 6d)
         );
 
-        List<CurvePoint> merged = AccountStorageRepository.mergeCurvePoints(existing, incoming);
+        List<TradeRecordItem> merged = AccountStorageRepository.mergeTrades(existing, incoming);
 
-        assertEquals(3, merged.size());
-        assertEquals(1000L, merged.get(0).getTimestamp());
-        assertEquals(110d, merged.get(1).getEquity(), 0.0001d);
-        assertEquals(0.55d, merged.get(1).getPositionRatio(), 0.0001d);
-        assertEquals(3000L, merged.get(2).getTimestamp());
+        assertEquals(2, merged.size());
+        assertEquals(4000L, merged.get(0).getCloseTime());
+        assertEquals(1000L, merged.get(1).getCloseTime());
     }
 
     // 曲线点写入本地缓存后，历史仓位比例也必须能完整恢复。
@@ -97,9 +93,44 @@ public class AccountStorageRepositoryTest {
         assertEquals(0.32d, restored.getCurvePoints().get(0).getPositionRatio(), 0.0001d);
     }
 
-    // 旧缓存里如果还残留秒级曲线时间戳，读取时也必须升成毫秒，避免回撤计算匹配失败。
+    // 摘要快照更新时，应直接覆盖旧曲线，不能把本地旧点位继续拼回去。
     @Test
-    public void loadStoredSnapshotShouldNormalizeSecondBasedCurvePointTimestamp() {
+    public void persistMetaSnapshotShouldReplaceCurvePointsInsteadOfMergingLocalHistory() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        snapshotDao.meta = metaEntity();
+        snapshotDao.meta.curvePointsJson = "[{\"timestamp\":1000,\"equity\":100,\"balance\":90,\"positionRatio\":0.1}]";
+
+        repository.persistMetaSnapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "MT5网关",
+                "http://gateway",
+                2000L,
+                "",
+                2100L,
+                Arrays.asList(new AccountMetric("Total Asset", "$1,000.00")),
+                Arrays.asList(new CurvePoint(2000L, 120d, 110d, 0.32d)),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>()
+        ));
+
+        AccountStorageRepository.StoredSnapshot restored = repository.loadStoredSnapshot();
+
+        assertEquals(1, restored.getCurvePoints().size());
+        assertEquals(2000L, restored.getCurvePoints().get(0).getTimestamp());
+        assertEquals(120d, restored.getCurvePoints().get(0).getEquity(), 0.0001d);
+    }
+
+    // 本地缓存层只消费已标准化的曲线时间戳，不再偷偷把秒级口径升成毫秒。
+    @Test
+    public void loadStoredSnapshotShouldKeepRawCurvePointTimestamp() {
         FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
         FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
         AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
@@ -110,7 +141,7 @@ public class AccountStorageRepositoryTest {
         AccountStorageRepository.StoredSnapshot restored = repository.loadStoredSnapshot();
 
         assertEquals(1, restored.getCurvePoints().size());
-        assertEquals(1_704_067_200_000L, restored.getCurvePoints().get(0).getTimestamp());
+        assertEquals(1_704_067_200L, restored.getCurvePoints().get(0).getTimestamp());
     }
 
     // 轻实时快照只应刷新持仓和摘要，不应清空已有挂单与历史交易。
@@ -151,14 +182,46 @@ public class AccountStorageRepositoryTest {
         assertEquals("deal|1", tradeDao.items.get(0).tradeKey);
     }
 
-    // 轻量复合快照应把新增交易写入本地，同时保留既有历史记录。
+    // 轻实时快照如果没有曲线，就必须显式清空旧曲线，不能继续把历史曲线伪装成当前运行态。
     @Test
-    public void persistIncrementalSnapshotShouldAppendAndRefreshTradeHistory() {
+    public void persistLiveSnapshotShouldClearLegacyCurvePointsWhenIncomingCurveIsEmpty() {
         FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
         FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
         AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
 
         snapshotDao.meta = metaEntity();
+        snapshotDao.meta.curvePointsJson = "[{\"timestamp\":1000,\"equity\":100,\"balance\":90,\"positionRatio\":0.1}]";
+
+        repository.persistLiveSnapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "MT5网关",
+                "http://gateway",
+                2000L,
+                "",
+                2100L,
+                Arrays.asList(new AccountMetric("Total Asset", "$1,000.00")),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(position("BTCUSD", 0.05d, 22d)),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(new AccountMetric("Cumulative Profit", "+$10.00"))
+        ));
+
+        assertEquals("[]", snapshotDao.meta.curvePointsJson);
+    }
+
+    // 轻量运行态快照只刷新当前持仓/挂单与摘要，不应再写入历史交易或保留旧曲线。
+    @Test
+    public void persistIncrementalSnapshotShouldOnlyRefreshRuntimeState() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        snapshotDao.meta = metaEntity();
+        snapshotDao.meta.curvePointsJson = "[{\"timestamp\":1000,\"equity\":100,\"balance\":90,\"positionRatio\":0.1}]";
         tradeDao.items.add(tradeEntity("deal|1", 1000L, 11d));
 
         repository.persistIncrementalSnapshot(new AccountStorageRepository.StoredSnapshot(
@@ -203,14 +266,11 @@ public class AccountStorageRepositoryTest {
                 Arrays.asList(new AccountMetric("Cumulative Profit", "+$10.00"))
         ));
 
-        assertEquals(2, tradeDao.items.size());
-        assertEquals(15d, tradeDao.items.stream()
-                .filter(item -> "deal|1".equals(item.tradeKey))
-                .findFirst()
-                .orElseThrow(IllegalStateException::new)
-                .profit, 0.0001d);
+        assertEquals(1, tradeDao.items.size());
+        assertEquals(11d, tradeDao.items.get(0).profit, 0.0001d);
         assertEquals(1, snapshotDao.positions.size());
         assertEquals(1, snapshotDao.pendingOrders.size());
+        assertEquals("[]", snapshotDao.meta.curvePointsJson);
     }
 
     // 全量快照应覆盖旧交易历史，避免修正后的交易时间仍被本地旧错记录残留污染。
@@ -391,6 +451,30 @@ public class AccountStorageRepositoryTest {
                 dealTicket,
                 orderId,
                 positionId,
+                1
+        );
+    }
+
+    private TradeRecordItem tradeWithoutStableIdentity(long closeTime, double profit) {
+        return new TradeRecordItem(
+                closeTime,
+                "BTCUSD",
+                "BTCUSD",
+                "Sell",
+                60000d,
+                0.05d,
+                3000d,
+                0d,
+                "",
+                profit,
+                closeTime - 1000L,
+                closeTime,
+                0d,
+                59000d,
+                60000d,
+                0L,
+                0L,
+                0L,
                 1
         );
     }

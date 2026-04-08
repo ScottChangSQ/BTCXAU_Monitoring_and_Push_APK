@@ -233,6 +233,40 @@ class V2SessionContractsTests(unittest.TestCase):
         manager = server_v2._build_session_manager()
         self.assertIs(manager._on_session_changed, server_v2._on_session_changed)
 
+    def test_build_session_manager_should_clear_stale_active_session_when_runtime_not_remote_active(self):
+        """服务端重启后若只剩磁盘 active_session，不应继续对外宣称 activated。"""
+        stale_active = {
+            "profileId": "acct_12345678_icmarketssc-mt5-6",
+            "login": "12345678",
+            "loginMasked": "****5678",
+            "server": "ICMarketsSC-MT5-6",
+            "displayName": "ICMarketsSC-MT5-6 ****5678",
+            "active": True,
+            "state": "activated",
+        }
+        original_runtime = dict(getattr(server_v2, "session_runtime_credentials", {}))
+        try:
+            server_v2.session_runtime_credentials.clear()
+            server_v2.session_runtime_credentials.update(
+                {
+                    "mode": "env_default",
+                    "login": 7400048,
+                    "password": "env-secret",
+                    "server": "ENV-SERVER",
+                }
+            )
+            with mock.patch.object(server_v2.session_store, "load_active_session", side_effect=[stale_active, None]), \
+                    mock.patch.object(server_v2.session_store, "clear_active_session") as clear_mock:
+                manager = server_v2._build_session_manager()
+                payload = manager.build_status_payload()
+        finally:
+            server_v2.session_runtime_credentials.clear()
+            server_v2.session_runtime_credentials.update(original_runtime)
+
+        clear_mock.assert_called_once_with()
+        self.assertEqual("logged_out", payload["state"])
+        self.assertIsNone(payload["activeAccount"])
+
     def test_session_public_key_should_return_stable_shape(self):
         """public-key 接口应返回稳定结构。"""
         payload = server_v2.v2_session_public_key()
@@ -294,6 +328,28 @@ class V2SessionContractsTests(unittest.TestCase):
             password="secret",
             server="ICMarketsSC-MT5-6",
             remember=True,
+            request_id="req-login-1",
+        )
+        self.assertEqual(expected, payload)
+
+    def test_session_login_should_treat_string_false_save_account_as_false(self):
+        """login 接口里的 saveAccount='false' 不得被当成 True。"""
+        key_payload = server_v2.v2_session_public_key()
+        envelope = self._build_login_envelope(
+            key_payload,
+            key_id=str(key_payload.get("keyId") or ""),
+            client_time=int(time.time() * 1000),
+        )
+        envelope["saveAccount"] = "false"
+        expected = {"ok": True, "state": "activated", "requestId": "req-login-1"}
+        with mock.patch.object(server_v2.session_manager, "login_new_account", return_value=expected) as login_mock:
+            payload = server_v2.v2_session_login(envelope)
+
+        login_mock.assert_called_once_with(
+            login="12345678",
+            password="secret",
+            server="ICMarketsSC-MT5-6",
+            remember=False,
             request_id="req-login-1",
         )
         self.assertEqual(expected, payload)

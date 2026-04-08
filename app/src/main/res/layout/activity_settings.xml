@@ -89,7 +89,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="网关地址"
+                    android:text="@string/mt5_gateway_section_title"
                     android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 

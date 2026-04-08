@@ -29,12 +29,12 @@ public class AbnormalGatewayClientTest {
                 + "{\"id\":\"r1\",\"symbol\":\"BTCUSDT\",\"timestamp\":1001,\"closeTime\":1000,"
                 + "\"openPrice\":10,\"closePrice\":12,\"volume\":3,\"amount\":4,"
                 + "\"priceChange\":2,\"percentChange\":0.2,\"triggerSummary\":\"成交量\"},"
-                + "{\"id\":\"r2\",\"symbol\":\"XAUUSD\",\"timestamp\":2001,\"closeTime\":2000,"
+                + "{\"id\":\"r2\",\"symbol\":\"XAUUSDT\",\"timestamp\":2001,\"closeTime\":2000,"
                 + "\"openPrice\":20,\"closePrice\":21,\"volume\":5,\"amount\":6,"
                 + "\"priceChange\":1,\"percentChange\":0.1,\"triggerSummary\":\"价格变化\"}"
                 + "],"
                 + "\"alerts\":[{"
-                + "\"id\":\"a1\",\"symbols\":[\"BTCUSDT\",\"XAUUSD\"],"
+                + "\"id\":\"a1\",\"symbols\":[\"BTCUSDT\",\"XAUUSDT\"],"
                 + "\"title\":\"异常提醒\",\"content\":\"test\",\"closeTime\":2000,\"createdAt\":3000"
                 + "}]"
                 + "}";
@@ -58,12 +58,12 @@ public class AbnormalGatewayClientTest {
                 + "\"isDelta\":true,"
                 + "\"delta\":{"
                 + "\"records\":[{"
-                + "\"id\":\"r3\",\"symbol\":\"XAUUSD\",\"timestamp\":4001,\"closeTime\":4000,"
+                + "\"id\":\"r3\",\"symbol\":\"XAUUSDT\",\"timestamp\":4001,\"closeTime\":4000,"
                 + "\"openPrice\":30,\"closePrice\":32,\"volume\":7,\"amount\":8,"
                 + "\"priceChange\":2,\"percentChange\":0.2,\"triggerSummary\":\"成交额\""
                 + "}],"
                 + "\"alerts\":[{"
-                + "\"id\":\"a2\",\"symbols\":[\"XAUUSD\"],"
+                + "\"id\":\"a2\",\"symbols\":[\"XAUUSDT\"],"
                 + "\"title\":\"异常提醒\",\"content\":\"gold\",\"closeTime\":4000,\"createdAt\":5000"
                 + "}]"
                 + "}"
@@ -92,7 +92,7 @@ public class AbnormalGatewayClientTest {
         assertFalse(payload.getBoolean("logicAnd"));
         assertEquals(2, payload.getJSONArray("configs").length());
         assertEquals("BTCUSDT", payload.getJSONArray("configs").getJSONObject(0).getString("symbol"));
-        assertEquals("XAUUSD", payload.getJSONArray("configs").getJSONObject(1).getString("symbol"));
+        assertEquals("XAUUSDT", payload.getJSONArray("configs").getJSONObject(1).getString("symbol"));
     }
 
     @Test
@@ -104,12 +104,10 @@ public class AbnormalGatewayClientTest {
     }
 
     @Test
-    public void resolveCandidateBaseUrlsShouldKeepLocalFallbacksForLocalHost() {
+    public void resolveCandidateBaseUrlsShouldKeepSingleConfiguredEntryForLoopbackInput() {
         List<String> urls = AbnormalGatewayClient.resolveCandidateBaseUrls("http://127.0.0.1:8787");
 
-        assertEquals(3, urls.size());
+        assertEquals(1, urls.size());
         assertEquals("http://127.0.0.1:8787", urls.get(0));
-        assertEquals("http://10.0.2.2:8787", urls.get(1));
-        assertEquals("http://localhost:8787", urls.get(2));
     }
 }

@@ -13,6 +13,9 @@ public class AccountSnapshotPayload {
     private final String syncToken;
     private final JSONObject accountMeta;
     private final JSONObject account;
+    private final JSONArray overviewMetrics;
+    private final JSONArray curveIndicators;
+    private final JSONArray statsMetrics;
     private final JSONArray positions;
     private final JSONArray orders;
     private final String rawJson;
@@ -21,6 +24,9 @@ public class AccountSnapshotPayload {
                                   String syncToken,
                                   JSONObject accountMeta,
                                   JSONObject account,
+                                  JSONArray overviewMetrics,
+                                  JSONArray curveIndicators,
+                                  JSONArray statsMetrics,
                                   JSONArray positions,
                                   JSONArray orders,
                                   String rawJson) {
@@ -28,6 +34,9 @@ public class AccountSnapshotPayload {
         this.syncToken = syncToken == null ? "" : syncToken;
         this.accountMeta = accountMeta == null ? new JSONObject() : accountMeta;
         this.account = account == null ? new JSONObject() : account;
+        this.overviewMetrics = overviewMetrics == null ? new JSONArray() : overviewMetrics;
+        this.curveIndicators = curveIndicators == null ? new JSONArray() : curveIndicators;
+        this.statsMetrics = statsMetrics == null ? new JSONArray() : statsMetrics;
         this.positions = positions == null ? new JSONArray() : positions;
         this.orders = orders == null ? new JSONArray() : orders;
         this.rawJson = rawJson == null ? "" : rawJson;
@@ -47,6 +56,18 @@ public class AccountSnapshotPayload {
 
     public JSONObject getAccount() {
         return account;
+    }
+
+    public JSONArray getOverviewMetrics() {
+        return overviewMetrics;
+    }
+
+    public JSONArray getCurveIndicators() {
+        return curveIndicators;
+    }
+
+    public JSONArray getStatsMetrics() {
+        return statsMetrics;
     }
 
     public JSONArray getPositions() {

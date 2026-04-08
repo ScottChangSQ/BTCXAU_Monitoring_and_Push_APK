@@ -5,8 +5,6 @@ import android.content.SharedPreferences;
 
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.model.SymbolConfig;
-import com.binance.monitor.util.GatewayUrlResolver;
-
 public class ConfigManager {
 
     private static final String PREF_NAME = "binance_monitor_prefs";
@@ -115,35 +113,24 @@ public class ConfigManager {
 
     public String getMt5GatewayBaseUrl() {
         String stored = preferences.getString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL);
-        String resolved = GatewayUrlResolver.resolveBaseUrl(stored, AppConstants.MT5_GATEWAY_BASE_URL);
-        String migrated = GatewayUrlResolver.alignGatewayBaseUrlToTarget(resolved, AppConstants.MT5_GATEWAY_BASE_URL);
-        if (!migrated.equals(resolved)) {
-            preferences.edit().putString(KEY_MT5_GATEWAY_URL, migrated).apply();
+        if (!AppConstants.MT5_GATEWAY_BASE_URL.equals(stored)) {
+            preferences.edit().putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL).apply();
         }
-        return migrated;
+        return AppConstants.MT5_GATEWAY_BASE_URL;
     }
 
     public void setMt5GatewayBaseUrl(String baseUrl) {
-        String resolved = GatewayUrlResolver.resolveBaseUrl(baseUrl, AppConstants.MT5_GATEWAY_BASE_URL);
         preferences.edit()
-                .putString(KEY_MT5_GATEWAY_URL, GatewayUrlResolver.alignGatewayBaseUrlToTarget(resolved, AppConstants.MT5_GATEWAY_BASE_URL))
+                .putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL)
                 .apply();
     }
 
     public String getBinanceRestBaseUrl() {
-        return GatewayUrlResolver.resolveBinanceRestBaseUrl(
-                getMt5GatewayBaseUrl(),
-                AppConstants.BASE_REST_URL,
-                AppConstants.MT5_GATEWAY_BASE_URL
-        );
+        return AppConstants.BASE_REST_URL;
     }
 
     public String getBinanceWebSocketBaseUrl() {
-        return GatewayUrlResolver.resolveBinanceWebSocketBaseUrl(
-                getMt5GatewayBaseUrl(),
-                AppConstants.BASE_WS_URL,
-                AppConstants.MT5_GATEWAY_BASE_URL
-        );
+        return AppConstants.BASE_WS_URL;
     }
 
     public int getColorPalette() {

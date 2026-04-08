@@ -181,7 +181,7 @@ public final class AccountRemoteSessionCoordinator {
         );
         stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SUBMITTING, "正在提交登录");
         SessionReceipt receipt = sessionGateway.login(envelope, request.isRemember());
-        return handleAcceptedReceipt(receipt, "正在同步账户数据", request.getLogin(), request.getServer());
+        return handleAcceptedReceipt(receipt, "正在同步账户数据");
     }
 
     // 切换到服务器已保存账号，成功后立即清理旧缓存并进入同步中。
@@ -190,15 +190,9 @@ public final class AccountRemoteSessionCoordinator {
         if (safeProfileId.isEmpty()) {
             throw new IllegalArgumentException("profileId 不能为空");
         }
-        RemoteAccountProfile fallbackProfile = findSavedProfileById(safeProfileId, sessionSummaryStore.getSavedAccountsSnapshot());
         stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SWITCHING, "正在切换账户");
         SessionReceipt receipt = sessionGateway.switchAccount(safeProfileId, requestIdGenerator.nextRequestId());
-        return handleAcceptedReceipt(
-                receipt,
-                "正在同步账户数据",
-                fallbackProfile == null ? "" : fallbackProfile.getLogin(),
-                fallbackProfile == null ? "" : fallbackProfile.getServer()
-        );
+        return handleAcceptedReceipt(receipt, "正在同步账户数据");
     }
 
     // 退出当前远程账号，并同步清理本地缓存和状态。
@@ -267,29 +261,34 @@ public final class AccountRemoteSessionCoordinator {
     }
 
     private SessionActionResult handleAcceptedReceipt(@Nullable SessionReceipt receipt,
-                                                      @NonNull String syncingMessage,
-                                                      @Nullable String fallbackLogin,
-                                                      @Nullable String fallbackServer) throws Exception {
+                                                      @NonNull String syncingMessage) throws Exception {
         if (receipt == null || !receipt.isOk()) {
             stateMachine.markFailed(resolveFailureMessage(receipt, "会话请求失败"));
             return new SessionActionResult(receipt, null, Collections.emptyList());
         }
-        SessionStatusPayload status = null;
+        SessionStatusPayload status;
         try {
             status = sessionGateway.fetchStatus();
-        } catch (Exception ignored) {
-            // 接口已受理成功时，状态补拉失败不应把整次切换判成失败。
-            // 这里先用 receipt 里的账号摘要进入 syncing，等待后续快照真值收口。
+        } catch (Exception fetchError) {
+            awaitingSync = false;
+            stateMachine.markFailed("会话状态确认失败");
+            throw new IllegalStateException("会话状态确认失败", fetchError);
         }
-        List<RemoteAccountProfile> savedAccounts = status == null
-                ? new ArrayList<>(sessionSummaryStore.getSavedAccountsSnapshot())
-                : new ArrayList<>(status.getSavedAccounts());
-        RemoteAccountProfile activeAccount = hydrateActiveAccountFromSavedAccounts(
-                resolveActiveAccount(receipt, status),
-                savedAccounts
-        );
-        activeAccount = withIdentityFallback(activeAccount, fallbackLogin, fallbackServer);
-        if (activeAccount == null) {
+        if (status == null || !status.isOk()) {
+            awaitingSync = false;
+            stateMachine.markFailed("会话状态缺失");
+            throw new IllegalStateException("会话状态缺失");
+        }
+        List<RemoteAccountProfile> savedAccounts = new ArrayList<>(status.getSavedAccounts());
+        RemoteAccountProfile activeAccount;
+        try {
+            activeAccount = resolveCanonicalActiveAccount(receipt, status);
+        } catch (IllegalStateException conflictError) {
+            awaitingSync = false;
+            stateMachine.markFailed(conflictError.getMessage());
+            throw conflictError;
+        }
+        if (!isCanonicalActiveAccountComplete(activeAccount)) {
             awaitingSync = false;
             stateMachine.markFailed("会话账号摘要缺失");
             throw new IllegalStateException("会话账号摘要缺失");
@@ -302,24 +301,6 @@ public final class AccountRemoteSessionCoordinator {
         awaitingSync = true;
         stateMachine.markSyncing(pendingProfileId, syncingMessage);
         return new SessionActionResult(receipt, activeAccount, savedAccounts);
-    }
-
-    @Nullable
-    private static RemoteAccountProfile withIdentityFallback(@Nullable RemoteAccountProfile profile,
-                                                             @Nullable String fallbackLogin,
-                                                             @Nullable String fallbackServer) {
-        if (profile == null) {
-            return null;
-        }
-        return new RemoteAccountProfile(
-                profile.getProfileId(),
-                emptyToFallback(profile.getLogin(), fallbackLogin),
-                profile.getLoginMasked(),
-                emptyToFallback(profile.getServer(), fallbackServer),
-                profile.getDisplayName(),
-                profile.isActive(),
-                profile.getState()
-        );
     }
 
     private void clearCachesForAccountChange() {
@@ -371,83 +352,17 @@ public final class AccountRemoteSessionCoordinator {
     }
 
     @Nullable
-    private static RemoteAccountProfile resolveActiveAccount(@Nullable SessionReceipt receipt,
-                                                             @Nullable SessionStatusPayload status) {
+    private static RemoteAccountProfile resolveCanonicalActiveAccount(@Nullable SessionReceipt receipt,
+                                                                      @Nullable SessionStatusPayload status) {
         RemoteAccountProfile statusAccount = status == null ? null : status.getActiveAccount();
-        RemoteAccountProfile receiptAccount = receipt == null ? null : receipt.getAccount();
-        if (statusAccount != null && receiptAccount != null) {
-            // 会话操作已被服务器受理时，receipt 才是本次动作目标账号，不能被短暂旧 status 覆盖。
-            if (isAccountIdentityConflict(statusAccount, receiptAccount)) {
-                return receiptAccount;
-            }
-            return mergeProfile(receiptAccount, statusAccount);
-        }
-        if (receiptAccount != null) {
-            return receiptAccount;
-        }
-        if (statusAccount != null) {
-            return statusAccount;
-        }
-        return null;
-    }
-
-    @Nullable
-    private static RemoteAccountProfile hydrateActiveAccountFromSavedAccounts(@Nullable RemoteAccountProfile activeAccount,
-                                                                              @Nullable List<RemoteAccountProfile> savedAccounts) {
-        if (activeAccount == null || savedAccounts == null || savedAccounts.isEmpty()) {
-            return activeAccount;
-        }
-        String activeProfileId = safeTrim(activeAccount.getProfileId());
-        if (activeProfileId.isEmpty()) {
-            return activeAccount;
-        }
-        for (RemoteAccountProfile candidate : savedAccounts) {
-            if (candidate == null) {
-                continue;
-            }
-            if (equalsIgnoreCase(activeProfileId, candidate.getProfileId())) {
-                return mergeProfile(activeAccount, candidate);
-            }
-        }
-        return activeAccount;
-    }
-
-    @Nullable
-    private static RemoteAccountProfile findSavedProfileById(@Nullable String profileId,
-                                                             @Nullable List<RemoteAccountProfile> savedAccounts) {
-        String safeProfileId = safeTrim(profileId);
-        if (safeProfileId.isEmpty() || savedAccounts == null || savedAccounts.isEmpty()) {
+        RemoteAccountProfile receiptAccount = receipt == null ? null : receipt.getActiveAccount();
+        if (statusAccount == null) {
             return null;
         }
-        for (RemoteAccountProfile candidate : savedAccounts) {
-            if (candidate == null) {
-                continue;
-            }
-            if (equalsIgnoreCase(safeProfileId, candidate.getProfileId())) {
-                return candidate;
-            }
+        if (receiptAccount != null && isAccountIdentityConflict(statusAccount, receiptAccount)) {
+            throw new IllegalStateException("会话账号摘要不一致");
         }
-        return null;
-    }
-
-    @Nullable
-    private static RemoteAccountProfile mergeProfile(@Nullable RemoteAccountProfile primary,
-                                                     @Nullable RemoteAccountProfile fallback) {
-        if (primary == null) {
-            return fallback;
-        }
-        if (fallback == null) {
-            return primary;
-        }
-        return new RemoteAccountProfile(
-                emptyToFallback(primary.getProfileId(), fallback.getProfileId()),
-                emptyToFallback(primary.getLogin(), fallback.getLogin()),
-                emptyToFallback(primary.getLoginMasked(), fallback.getLoginMasked()),
-                emptyToFallback(primary.getServer(), fallback.getServer()),
-                emptyToFallback(primary.getDisplayName(), fallback.getDisplayName()),
-                primary.isActive() || fallback.isActive(),
-                emptyToFallback(primary.getState(), fallback.getState())
-        );
+        return statusAccount;
     }
 
     private static boolean isAccountIdentityConflict(@NonNull RemoteAccountProfile first,
@@ -467,17 +382,16 @@ public final class AccountRemoteSessionCoordinator {
         return safeTrim(first).equalsIgnoreCase(safeTrim(second));
     }
 
+    private static boolean isCanonicalActiveAccountComplete(@Nullable RemoteAccountProfile account) {
+        return account != null
+                && !safeTrim(account.getProfileId()).isEmpty()
+                && !safeTrim(account.getLogin()).isEmpty()
+                && !safeTrim(account.getServer()).isEmpty();
+    }
+
     @NonNull
     private static String safeTrim(@Nullable String value) {
         return value == null ? "" : value.trim();
     }
 
-    @NonNull
-    private static String emptyToFallback(@Nullable String primary, @Nullable String fallback) {
-        String safePrimary = safeTrim(primary);
-        if (!safePrimary.isEmpty()) {
-            return safePrimary;
-        }
-        return safeTrim(fallback);
-    }
 }

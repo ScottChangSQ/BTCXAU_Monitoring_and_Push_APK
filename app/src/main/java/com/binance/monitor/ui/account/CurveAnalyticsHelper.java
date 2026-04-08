@@ -8,6 +8,7 @@ import androidx.annotation.Nullable;
 
 import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.util.ProductSymbolMapper;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -19,7 +20,6 @@ import java.util.TreeMap;
 
 public final class CurveAnalyticsHelper {
 
-    private static final long LEGACY_DURATION_SENTINEL_MS = 946684800000L;
     private static final long HALF_HOUR_MS = 30L * 60L * 1000L;
     private static final long FOUR_HOURS_MS = 4L * 60L * 60L * 1000L;
     private static final long TWELVE_HOURS_MS = 12L * 60L * 60L * 1000L;
@@ -401,8 +401,8 @@ public final class CurveAnalyticsHelper {
     }
 
     private static double resolveTradeContractMultiplier(TradeRecordItem item) {
-        String code = safeLabel(item);
-        if (code.startsWith("XAU")) {
+        String tradeSymbol = ProductSymbolMapper.toTradeSymbol(safeLabel(item));
+        if (ProductSymbolMapper.TRADE_SYMBOL_XAU.equals(tradeSymbol)) {
             return 100d;
         }
         return 1d;
@@ -471,53 +471,20 @@ public final class CurveAnalyticsHelper {
     }
 
     private static long resolveOpenTime(TradeRecordItem item) {
-        long openTime = normalizePossibleEpochMs(item.getOpenTime());
-        if (openTime > 0L) {
-            return openTime;
-        }
-        return normalizePossibleEpochMs(item.getTimestamp());
+        return item.getOpenTime();
     }
 
     private static long resolveCloseTime(TradeRecordItem item) {
-        long closeTime = normalizePossibleEpochMs(item.getCloseTime());
-        if (closeTime > 0L) {
-            return closeTime;
-        }
-        return normalizePossibleEpochMs(item.getTimestamp());
+        return item.getCloseTime();
     }
 
     private static long resolveHoldingDuration(TradeRecordItem item) {
-        long openTime = normalizePossibleEpochMs(item.getOpenTime());
-        long closeTime = normalizePossibleEpochMs(item.getCloseTime());
-        long timestamp = normalizePossibleEpochMs(item.getTimestamp());
+        long openTime = item.getOpenTime();
+        long closeTime = item.getCloseTime();
         if (openTime > 0L && closeTime > 0L && closeTime >= openTime) {
             return closeTime - openTime;
         }
-        if (openTime > 0L && timestamp > openTime) {
-            return timestamp - openTime;
-        }
-        if (openTime > 0L && closeTime <= 0L && timestamp >= openTime) {
-            return timestamp - openTime;
-        }
-        // 兼容旧测试数据与本地样例：当时间值明显不是 epoch 毫秒时，按“已持有时长”处理。
-        if (timestamp > 0L && timestamp < LEGACY_DURATION_SENTINEL_MS) {
-            if (closeTime > 0L && closeTime < LEGACY_DURATION_SENTINEL_MS && closeTime >= openTime) {
-                return Math.max(timestamp, closeTime - Math.max(0L, openTime));
-            }
-            return timestamp;
-        }
-        if (closeTime > 0L && closeTime >= Math.max(0L, openTime)) {
-            return closeTime - Math.max(0L, openTime);
-        }
         return 0L;
-    }
-
-    // 历史成交在不同链路里可能混入秒级时间戳，这里统一升成毫秒；较小的旧样例时长值保持原样。
-    private static long normalizePossibleEpochMs(long value) {
-        if (value >= 1_000_000_000L && value < 10_000_000_000L) {
-            return value * 1000L;
-        }
-        return value;
     }
 
     private static String safeLabel(TradeRecordItem item) {

@@ -175,7 +175,22 @@ cd C:\mt5_bundle\windows_server_bundle
 C:\mt5_bundle\windows_server_bundle\deploy_bundle.cmd
 ```
 
-这个脚本会自动隐藏启动 Caddy，不会再弹出独立命令窗口。
+也可以在命令行里直接执行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\mt5_bundle\windows_server_bundle\deploy_bundle.ps1 -Mode Gui -BundleRoot "C:\mt5_bundle\windows_server_bundle"
+```
+
+这套脚本会一次性完成下面这些动作：
+
+- 停掉旧计划任务、旧网关、旧管理面板、旧 Caddy / Nginx
+- 强制释放 `80 / 443 / 2019 / 8787 / 8788`
+- 重新初始化 Python 环境
+- 重新注册网关与管理面板开机自启
+- 隐藏启动网关、管理面板和 Caddy
+- 自动验证 `127.0.0.1:8787/health`、`127.0.0.1:8788/`、`127.0.0.1/health`、`127.0.0.1/admin/`
+
+服务器端只会出现一个状态窗口。这个窗口会显示每一步是否成功、当前步骤和日志；窗口可以关闭，关闭后不会影响后台服务继续运行。
 
 这样服务器重启后会自动拉起网关和管理面板。
 
@@ -212,28 +227,20 @@ C:\mt5_bundle\windows_server_bundle\deploy_bundle.cmd
 
 - `deploy/tencent/nginx/mt5_gateway.conf`
 
-## 8. 第六步：把 APK 指到这台服务器
+## 8. 第六步：重新打包 APK
 
-项目已经支持通过 `gradle.properties` 改这 3 个入口：
+App 正式入口现在已经固定为 `https://tradeapp.ltd`，不再通过 `gradle.properties` 在构建时改网关地址。
 
-```properties
-MT5_GATEWAY_BASE_URL=http://43.155.214.62
-BINANCE_REST_BASE_URL=http://43.155.214.62/binance-rest/fapi/v1/klines
-BINANCE_WS_BASE_URL=ws://43.155.214.62/binance-ws/ws/
-```
-
-如果你后面有域名并启用 HTTPS，就改成：
-
-```properties
-MT5_GATEWAY_BASE_URL=https://gateway.example.com
-BINANCE_REST_BASE_URL=https://gateway.example.com/binance-rest/fapi/v1/klines
-BINANCE_WS_BASE_URL=wss://gateway.example.com/binance-ws/ws/
-```
-
-然后重新打包：
+如果正式域名变化，需要先修改 App 源码里的正式入口定义，再重新打包 APK：
 
 ```powershell
 .\gradlew.bat :app:assembleDebug -x lint
+```
+
+当前调试包默认输出位置：
+
+```text
+app\build\outputs\apk\debug\app-debug.apk
 ```
 
 ## 9. 第七步：公网联调
@@ -255,7 +262,7 @@ Invoke-RestMethod http://43.155.214.62/v1/curve?range=all
 Invoke-RestMethod "http://43.155.214.62/binance-rest/fapi/v1/klines?symbol=BTCUSDT&interval=1m&limit=2"
 ```
 
-如果这两个都能返回内容，APK 侧基本就可以切过去了。
+如果这两个都能返回内容，说明公网代理链基本可用。
 
 如果 `curl -I` 只有响应头、`curl` 正文为空，说明服务器上的 Caddy 还没换成这里这份根路径配置。
 
@@ -282,4 +289,4 @@ bridge\mt5_gateway\logs
 
 ## 11. 一个重要说明
 
-当前版本里，Binance 主入口可以先走你这台服务器，但应用内部仍保留官方地址安全回退；这样做是为了代理异常时行情不至于完全中断。
+当前 App 已经按“入口唯一化”收口到 `https://tradeapp.ltd`，不再保留官方地址安全回退，也不再允许本地改正式入口。服务器侧公网入口、Caddy 路由和证书配置必须和这个正式域名保持一致。

@@ -78,6 +78,7 @@ import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.util.ProductSymbolMapper;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.main.MainActivity;
@@ -233,6 +234,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private List<CurveAnalyticsHelper.DrawdownPoint> displayedDrawdownPoints = new ArrayList<>();
     private List<CurveAnalyticsHelper.DailyReturnPoint> displayedDailyReturnPoints = new ArrayList<>();
     private List<AccountMetric> latestOverviewMetrics = new ArrayList<>();
+    private List<AccountMetric> latestCurveIndicators = new ArrayList<>();
+    private List<AccountMetric> latestStatsMetrics = new ArrayList<>();
     private String defaultCurveMeta = "--";
     private double curveBaseBalance = ACCOUNT_INITIAL_BALANCE;
     private boolean syncingCurveHighlight;
@@ -253,11 +256,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String loginServerInput = SERVER;
     private RemoteAccountProfile activeSessionAccount;
     private List<RemoteAccountProfile> savedSessionAccounts = new ArrayList<>();
-    private final Map<Long, CurvePoint> curveHistory = new TreeMap<>();
-    private final Map<String, TradeRecordItem> tradeHistory = new LinkedHashMap<>();
+    private final List<CurvePoint> curveHistory = new ArrayList<>();
+    private final List<TradeRecordItem> tradeHistory = new ArrayList<>();
     private List<PositionItem> connectedPositionCache = new ArrayList<>();
     private List<PositionItem> connectedPendingCache = new ArrayList<>();
-    private List<AccountMetric> connectedOverviewCache = new ArrayList<>();
     private final Map<String, PositionLogState> lastPositionLogStates = new HashMap<>();
     private final Map<String, PendingLogState> lastPendingLogStates = new HashMap<>();
     private final Set<String> knownTradeOpenLogKeys = new HashSet<>();
@@ -958,9 +960,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         allCurvePoints = new ArrayList<>();
         displayedCurvePoints = new ArrayList<>();
         latestOverviewMetrics = new ArrayList<>();
+        latestCurveIndicators = new ArrayList<>();
+        latestStatsMetrics = new ArrayList<>();
         connectedPositionCache = new ArrayList<>();
         connectedPendingCache = new ArrayList<>();
-        connectedOverviewCache = new ArrayList<>();
         curveHistory.clear();
         tradeHistory.clear();
         lastPositionLogStates.clear();
@@ -1000,7 +1003,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     // 登出后立即切回彻底空态，避免列表或图表继续残留上一账户数据。
     private void applyLoggedOutEmptyState() {
         latestOverviewMetrics = new ArrayList<>();
-        connectedOverviewCache = new ArrayList<>();
+        latestCurveIndicators = new ArrayList<>();
+        latestStatsMetrics = new ArrayList<>();
         applySnapshot(buildEmptyAccountSnapshot(), false);
         overviewAdapter.submitList(buildDisconnectedOverviewMetrics());
     }
@@ -1116,10 +1120,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 用服务端返回的 active/saved accounts 覆盖本地会话摘要缓存。
     private void applyRemoteSessionStatus(@Nullable SessionStatusPayload status, boolean requestSnapshotAfter) {
-        if (status == null) {
+        if (status == null || !status.isOk()) {
             return;
         }
-        RemoteAccountProfile activeAccount = status.getActiveAccount();
+        RemoteAccountProfile activeAccount = sanitizeRemoteSessionProfile(status.getActiveAccount());
         updateSessionProfiles(activeAccount, status.getSavedAccounts(), activeAccount != null);
         if (activeAccount != null) {
             userLoggedIn = true;
@@ -1140,6 +1144,20 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         updateOverviewHeader();
+    }
+
+    // 普通状态刷新也只接受完整的远程会话身份，避免把缺字段脏状态恢复成本地激活态。
+    @Nullable
+    private RemoteAccountProfile sanitizeRemoteSessionProfile(@Nullable RemoteAccountProfile profile) {
+        return isCompleteRemoteSessionProfile(profile) ? profile : null;
+    }
+
+    // 会话主链只认 profileId/login/server 完整的账号摘要。
+    private boolean isCompleteRemoteSessionProfile(@Nullable RemoteAccountProfile profile) {
+        return profile != null
+                && !trim(profile.getProfileId()).isEmpty()
+                && !trim(profile.getLogin()).isEmpty()
+                && !trim(profile.getServer()).isEmpty();
     }
 
     // 提交新账号远程登录。
@@ -2339,20 +2357,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             applyLoggedOutEmptyState();
             return;
         }
-        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository == null
-                ? null
-                : accountStorageRepository.loadStoredSnapshot();
         if (preloadManager == null) {
-            applyStoredSnapshotIfAvailable();
             return;
         }
         AccountStatsPreloadManager.Cache cache = preloadManager.getLatestCache();
         if (cache == null || cache.getSnapshot() == null) {
-            applyStoredSnapshotIfAvailable();
+            return;
+        }
+        if (!isPreloadedCacheForCurrentSession(cache)) {
             return;
         }
         if (System.currentTimeMillis() - cache.getFetchedAt() > AppConstants.ACCOUNT_REFRESH_INTERVAL_MS * 3L) {
-            applyStoredSnapshotIfAvailable();
             return;
         }
         long updateAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
@@ -2371,70 +2386,35 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setConnectionStatus(cache.isConnected());
         updateOverviewHeader();
         logConnectionEvent(cache.isConnected());
-        AccountSnapshot mergedSnapshot = AccountSnapshotRestoreHelper.mergeMissingTrades(
-                cache.getSnapshot(),
-                storedSnapshot
-        );
-        applySnapshot(mergedSnapshot, cache.isConnected());
-        persistSnapshotToStorage(
-                mergedSnapshot,
-                cache.isConnected(),
-                connectedAccount,
-                connectedServer,
-                connectedSource,
-                connectedGateway,
-                connectedUpdateAtMs,
-                connectedError,
-                cache.getFetchedAt()
-        );
+        applySnapshot(cache.getSnapshot(), cache.isConnected());
     }
 
-    private void applyStoredSnapshotIfAvailable() {
-        if (accountStorageRepository == null || !isAccountSessionReady()) {
-            return;
-        }
-        AccountStorageRepository.StoredSnapshot snapshot = accountStorageRepository.loadStoredSnapshot();
-        if (snapshot.getPositions().isEmpty()
-                && snapshot.getPendingOrders().isEmpty()
-                && snapshot.getTrades().isEmpty()
-                && snapshot.getCurvePoints().isEmpty()) {
-            return;
-        }
-        connectedAccount = snapshot.getAccount().isEmpty() ? ACCOUNT : snapshot.getAccount();
-        connectedAccountName = connectedAccount;
-        connectedServer = snapshot.getServer().isEmpty() ? SERVER : snapshot.getServer();
-        connectedSource = snapshot.getSource().isEmpty() ? "历史数据（本地恢复）" : snapshot.getSource();
-        connectedGateway = snapshot.getGateway().isEmpty() ? "--" : snapshot.getGateway();
-        long updateAt = snapshot.getUpdatedAt() > 0L ? snapshot.getUpdatedAt() : snapshot.getFetchedAt();
-        connectedUpdateAtMs = updateAt > 0L ? updateAt : System.currentTimeMillis();
-        connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
-        connectedError = snapshot.getError();
-        setConnectionStatus(snapshot.isConnected());
-        updateOverviewHeader();
-        applySnapshot(buildAccountSnapshot(snapshot), snapshot.isConnected());
-    }
-
-    private boolean hasFreshPreloadedCache() {
-        if (preloadManager == null) {
+    // 只消费当前活动远程会话对应的预加载缓存，避免旧账号缓存短暂回灌到页面。
+    private boolean isPreloadedCacheForCurrentSession(@Nullable AccountStatsPreloadManager.Cache cache) {
+        if (cache == null) {
             return false;
         }
-        AccountStatsPreloadManager.Cache cache = preloadManager.getLatestCache();
-        if (cache == null || cache.getSnapshot() == null) {
+        String expectedAccount = "";
+        String expectedServer = "";
+        if (remoteSessionCoordinator != null && remoteSessionCoordinator.isAwaitingSync()) {
+            expectedAccount = trim(remoteSessionCoordinator.getPendingLogin());
+            expectedServer = trim(remoteSessionCoordinator.getPendingServer());
+        } else if (activeSessionAccount != null) {
+            expectedAccount = trim(activeSessionAccount.getLogin());
+            expectedServer = trim(activeSessionAccount.getServer());
+        } else if (userLoggedIn) {
+            expectedAccount = trim(loginAccountInput);
+            expectedServer = trim(loginServerInput);
+        }
+        String cachedAccount = trim(cache.getAccount());
+        String cachedServer = trim(cache.getServer());
+        if (!expectedAccount.isEmpty() && !expectedAccount.equalsIgnoreCase(cachedAccount)) {
             return false;
         }
-        return System.currentTimeMillis() - cache.getFetchedAt() <= AppConstants.ACCOUNT_REFRESH_INTERVAL_MS * 3L;
-    }
-
-    private AccountSnapshot buildAccountSnapshot(AccountStorageRepository.StoredSnapshot snapshot) {
-        return new AccountSnapshot(
-                snapshot.getOverviewMetrics(),
-                snapshot.getCurvePoints(),
-                snapshot.getCurveIndicators(),
-                snapshot.getPositions(),
-                snapshot.getPendingOrders(),
-                snapshot.getTrades(),
-                snapshot.getStatsMetrics()
-        );
+        if (!expectedServer.isEmpty() && !expectedServer.equalsIgnoreCase(cachedServer)) {
+            return false;
+        }
+        return true;
     }
 
     private void updateOverviewHeader() {
@@ -2585,8 +2565,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     error = "登录账户或服务器与网关返回不一致";
                 }
             } else {
-                // 断线时保持当前界面数据，不回落到演示/备用数据。
-                snapshot = null;
+                // 断线时直接进入空快照态，不再把旧数据伪装成当前真值。
+                snapshot = buildEmptyAccountSnapshot();
                 connected = false;
                 account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
                 accountName = account;
@@ -2671,37 +2651,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return false;
         }
         return incomingUpdatedAt < connectedUpdateAtMs;
-    }
-
-    private void persistSnapshotToStorage(AccountSnapshot snapshot,
-                                          boolean connected,
-                                          String account,
-                                          String server,
-                                          String source,
-                                          String gateway,
-                                          long updatedAt,
-                                          String error,
-                                          long fetchedAt) {
-        if (accountStorageRepository == null || snapshot == null) {
-            return;
-        }
-        accountStorageRepository.persistSnapshot(new AccountStorageRepository.StoredSnapshot(
-                connected,
-                account,
-                server,
-                source,
-                gateway,
-                updatedAt,
-                error,
-                fetchedAt,
-                snapshot.getOverviewMetrics(),
-                snapshot.getCurvePoints(),
-                snapshot.getCurveIndicators(),
-                snapshot.getPositions(),
-                snapshot.getPendingOrders(),
-                snapshot.getTrades(),
-                snapshot.getStatsMetrics()
-        ));
     }
 
     private boolean isLoginCredentialMatched(String remoteAccount, String remoteServer) {
@@ -3156,67 +3105,39 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? new ArrayList<>()
                 : new ArrayList<>(snapshot.getCurvePoints());
 
+        replaceTradeHistory(snapshotTrades);
+        replaceCurveHistory(snapshotCurves);
+        latestOverviewMetrics = snapshot.getOverviewMetrics() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(snapshot.getOverviewMetrics());
+        latestCurveIndicators = snapshot.getCurveIndicators() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(snapshot.getCurveIndicators());
+        latestStatsMetrics = snapshot.getStatsMetrics() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(snapshot.getStatsMetrics());
         if (remoteConnected) {
-            replaceTradeHistory(snapshotTrades);
-        } else {
-            mergeTradeHistory(snapshotTrades);
-        }
-        if (remoteConnected) {
-            replaceCurveHistory(snapshotCurves);
             connectedPositionCache = new ArrayList<>(snapshotPositions);
             connectedPendingCache = new ArrayList<>(snapshotPending);
-            connectedOverviewCache = snapshot.getOverviewMetrics() == null
-                    ? new ArrayList<>()
-                    : new ArrayList<>(snapshot.getOverviewMetrics());
         }
 
-        if (!remoteConnected && !connectedPositionCache.isEmpty()) {
-            basePositions = new ArrayList<>(connectedPositionCache);
-        } else {
-            basePositions = snapshotPositions;
-        }
-        if (snapshotPending.isEmpty()) {
-            if (!remoteConnected && !connectedPendingCache.isEmpty()) {
-                basePendingOrders = new ArrayList<>(connectedPendingCache);
-            } else {
-                basePendingOrders = new ArrayList<>();
-            }
-        } else {
-            basePendingOrders = snapshotPending;
-        }
+        basePositions = snapshotPositions;
+        basePendingOrders = snapshotPending;
 
-        List<TradeRecordItem> effectiveTrades = tradeHistory.isEmpty()
-                ? snapshotTrades
-                : new ArrayList<>(tradeHistory.values());
-        List<CurvePoint> effectiveCurves = curveHistory.isEmpty()
-                ? snapshotCurves
-                : new ArrayList<>(curveHistory.values());
+        List<TradeRecordItem> effectiveTrades = new ArrayList<>(tradeHistory);
+        List<CurvePoint> effectiveCurves = new ArrayList<>(curveHistory);
         dataQualitySummary = buildDataQualitySummary(effectiveTrades, effectiveCurves, basePositions);
 
-        if (!remoteConnected && !connectedOverviewCache.isEmpty()) {
-            latestOverviewMetrics = new ArrayList<>(connectedOverviewCache);
-        } else {
-            latestOverviewMetrics = snapshot.getOverviewMetrics() == null
-                    ? new ArrayList<>()
-                    : new ArrayList<>(snapshot.getOverviewMetrics());
-            if (!AccountLeverageResolver.hasDisplayLeverage(latestOverviewMetrics)
-                    && AccountLeverageResolver.hasDisplayLeverage(connectedOverviewCache)) {
-                latestOverviewMetrics = mergeMissingLeverageMetric(latestOverviewMetrics, connectedOverviewCache);
-            }
-        }
-        baseTrades = TradeLifecycleMergeHelper.merge(effectiveTrades, TRADE_PNL_ZERO_THRESHOLD);
+        baseTrades = new ArrayList<>(effectiveTrades);
         baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
-        allCurvePoints = normalizeCurvePoints(effectiveCurves, baseTrades, basePositions, latestOverviewMetrics);
+        allCurvePoints = normalizeCurvePoints(effectiveCurves);
         logTradeVisibilitySnapshot(snapshotTrades, effectiveTrades, baseTrades);
         logAccountSnapshotEvents(basePositions, basePendingOrders, baseTrades, remoteConnected);
         ensureReturnStatsAnchor();
         connectedLeverageText = extractLeverageText(latestOverviewMetrics);
         updateOverviewHeader();
 
-        List<AccountMetric> overview = buildOverviewMetrics(
-                latestOverviewMetrics,
-                buildPositionListWithNaturalDayPnl(basePositions, baseTrades)
-        );
+        List<AccountMetric> overview = buildOverviewMetrics(latestOverviewMetrics);
 
         overviewAdapter.submitList(overview);
         updateTradeProductOptions();
@@ -3227,85 +3148,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         refreshTrades(false);
     }
 
-    private void mergeCurveHistory(List<CurvePoint> source) {
-        if (source == null || source.isEmpty()) {
-            return;
-        }
-        for (CurvePoint point : source) {
-            if (point == null) {
-                continue;
-            }
-            long ts = point.getTimestamp();
-            if (ts <= 0L) {
-                continue;
-            }
-            curveHistory.put(ts, point);
-        }
-        while (curveHistory.size() > 100_000) {
-            Long firstKey = curveHistory.keySet().iterator().next();
-            curveHistory.remove(firstKey);
-        }
-    }
-
-    // 轻快照偶发不带杠杆时，只补回上一轮已知杠杆，不回退整套账户数字。
-    private List<AccountMetric> mergeMissingLeverageMetric(List<AccountMetric> current,
-                                                           List<AccountMetric> fallback) {
-        List<AccountMetric> merged = current == null ? new ArrayList<>() : new ArrayList<>(current);
-        if (AccountLeverageResolver.hasDisplayLeverage(merged)
-                || !AccountLeverageResolver.hasDisplayLeverage(fallback)) {
-            return merged;
-        }
-        for (AccountMetric metric : fallback) {
-            if (metric == null) {
-                continue;
-            }
-            if (AccountLeverageResolver.hasDisplayLeverage(java.util.Collections.singletonList(metric))) {
-                merged.add(metric);
-                return merged;
-            }
-        }
-        return merged;
-    }
-
     private void replaceCurveHistory(List<CurvePoint> source) {
         curveHistory.clear();
-        mergeCurveHistory(source);
-    }
-
-    private void mergeTradeHistory(List<TradeRecordItem> source) {
-        if (source == null || source.isEmpty()) {
-            return;
-        }
-        for (TradeRecordItem item : source) {
-            if (item == null) {
-                continue;
-            }
-            String key = buildTradeHistoryKey(item);
-            tradeHistory.put(key, item);
-        }
-        while (tradeHistory.size() > 20_000) {
-            String firstKey = tradeHistory.keySet().iterator().next();
-            tradeHistory.remove(firstKey);
+        if (source != null && !source.isEmpty()) {
+            curveHistory.addAll(source);
         }
     }
 
     private void replaceTradeHistory(List<TradeRecordItem> source) {
         tradeHistory.clear();
-        mergeTradeHistory(source);
-    }
-
-    private String buildTradeHistoryKey(TradeRecordItem item) {
-        if (item.getDealTicket() > 0L) {
-            return "deal|" + item.getDealTicket();
+        if (source != null && !source.isEmpty()) {
+            tradeHistory.addAll(source);
         }
-        if (item.getOrderId() > 0L || item.getPositionId() > 0L) {
-            return "trade|" + item.getOrderId() + "|" + item.getPositionId()
-                    + "|" + item.getEntryType()
-                    + "|" + resolveOpenTime(item)
-                    + "|" + resolveCloseTime(item)
-                    + "|" + Math.round(Math.abs(item.getQuantity()) * 10_000d);
-        }
-        return buildTradeDedupeKey(item);
     }
 
     private String buildDataQualitySummary(List<TradeRecordItem> trades,
@@ -3357,110 +3211,20 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 + "条, 持仓缺止损" + missingSl + "条" + capHint;
     }
 
-    private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source,
-                                                  List<TradeRecordItem> trades,
-                                                  List<PositionItem> positions,
-                                                  List<AccountMetric> overviewMetrics) {
-        List<CurvePoint> normalized = AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);
-        List<CurvePoint> rebuilt = AccountCurveRebuildHelper.rebuild(
-                normalized,
-                trades,
-                ACCOUNT_INITIAL_BALANCE
-        );
-        return AccountCurvePositionRatioHelper.ensureVisibleRatios(
-                rebuilt,
-                positions,
-                trades,
-                resolveCurveLeverage(overviewMetrics)
-        );
+    private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source) {
+        return AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);
     }
 
-    private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview,
-                                                     List<PositionItem> currentPositions) {
-        List<AccountMetric> result = new ArrayList<>();
-        if (allCurvePoints.isEmpty()) {
-            latestCumulativePnl = 0d;
-            if (!userLoggedIn && !gatewayConnected) {
-                return buildDisconnectedOverviewMetrics();
-            }
-            result.add(new AccountMetric("总资产", "$" + FormatUtils.formatPrice(ACCOUNT_INITIAL_BALANCE)));
-            result.add(new AccountMetric("净资产", "$" + FormatUtils.formatPrice(ACCOUNT_INITIAL_BALANCE)));
-            result.add(new AccountMetric("可用预付款", "$0.00"));
-            result.add(new AccountMetric("预付款", "$0.00"));
-            result.add(new AccountMetric("仓位占比", "0.00%"));
-            result.add(new AccountMetric("持仓市值", "$0.00"));
-            result.add(new AccountMetric("持仓盈亏", "$0.00"));
-            result.add(new AccountMetric("持仓收益率", "0.00%"));
-            result.add(new AccountMetric("当日盈亏", "$0.00"));
-            result.add(new AccountMetric("当日收益率", "0.00%"));
-            result.add(new AccountMetric("累计盈亏", "$0.00"));
-            result.add(new AccountMetric("累计收益率", "0.00%"));
-            return result;
+    private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview) {
+        if (snapshotOverview != null && !snapshotOverview.isEmpty()) {
+            latestCumulativePnl = metricValue(snapshotOverview, "累计盈亏");
+            return new ArrayList<>(snapshotOverview);
         }
-
-        CurvePoint last = allCurvePoints.get(allCurvePoints.size() - 1);
-        double totalAsset = Math.max(0d, last.getBalance());
-        double netAsset = Math.max(0d, last.getEquity());
-        List<PositionItem> metricsPositions = resolveOverviewPositionsFromDisplaySnapshot(currentPositions);
-        AccountOverviewMetricsCalculator.OverviewValues overviewValues = AccountOverviewMetricsCalculator.calculate(
-                totalAsset,
-                netAsset,
-                snapshotOverview,
-                metricsPositions
-        );
-
-        double dayClosedPnl = calcTodayClosedPnl(baseTrades);
-        double dayStartAsset = calcTodayStartAsset(totalAsset, dayClosedPnl, allCurvePoints);
-        double dayReturn = safeDivide(dayClosedPnl, Math.max(1d, dayStartAsset));
-
-        double initialAsset = Math.max(1d, allCurvePoints.get(0).getBalance());
-        double cumulativePnl = totalAsset - initialAsset;
-        double cumulativeRate = safeDivide(cumulativePnl, initialAsset);
-        latestCumulativePnl = cumulativePnl;
-
-        result.add(new AccountMetric("总资产", "$" + FormatUtils.formatPrice(totalAsset)));
-        result.add(new AccountMetric("净资产", "$" + FormatUtils.formatPrice(netAsset)));
-        result.add(new AccountMetric("可用预付款", "$" + FormatUtils.formatPrice(overviewValues.getFreePrepayment())));
-        result.add(new AccountMetric("预付款", "$" + FormatUtils.formatPrice(overviewValues.getPrepayment())));
-        result.add(new AccountMetric("仓位占比", percent(overviewValues.getPositionRatio())));
-        result.add(new AccountMetric("持仓市值", "$" + FormatUtils.formatPrice(overviewValues.getMarketValue())));
-        result.add(new AccountMetric("持仓盈亏", signedMoney(overviewValues.getPositionPnl())));
-        result.add(new AccountMetric("持仓收益率", percent(overviewValues.getPositionPnlRate())));
-        result.add(new AccountMetric("当日盈亏", signedMoney(dayClosedPnl)));
-        result.add(new AccountMetric("当日收益率", percent(dayReturn)));
-        result.add(new AccountMetric("累计盈亏", signedMoney(cumulativePnl)));
-        result.add(new AccountMetric("累计收益率", percent(cumulativeRate)));
-        return result;
-    }
-
-    // 账户概览持仓口径改成与图表页一致，优先使用页面展示解析器选出的快照。
-    private List<PositionItem> resolveOverviewPositionsFromDisplaySnapshot(List<PositionItem> fallbackPositions) {
-        AccountStatsPreloadManager.Cache cache = preloadManager == null
-                ? null
-                : preloadManager.getLatestCache();
-        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository == null
-                ? null
-                : accountStorageRepository.loadStoredSnapshot();
-        AccountSnapshot displaySnapshot = AccountSnapshotDisplayResolver.resolve(
-                cache,
-                storedSnapshot,
-                System.currentTimeMillis(),
-                isAccountSessionReady()
-        );
-        List<PositionItem> source = displaySnapshot == null || displaySnapshot.getPositions() == null
-                ? fallbackPositions
-                : displaySnapshot.getPositions();
-        List<PositionItem> result = new ArrayList<>();
-        if (source == null || source.isEmpty()) {
-            return result;
+        latestCumulativePnl = 0d;
+        if (!userLoggedIn && !gatewayConnected) {
+            return buildDisconnectedOverviewMetrics();
         }
-        for (PositionItem item : source) {
-            if (item == null || Math.abs(item.getQuantity()) <= 1e-9) {
-                continue;
-            }
-            result.add(item);
-        }
-        return result;
+        return new ArrayList<>();
     }
 
     // 退出登录后账户概览统一显示为空值，避免误把默认值当成真实账户数据。
@@ -3489,7 +3253,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         long end = endOfToday();
         double sum = 0d;
         for (TradeRecordItem item : trades) {
-            long closeTime = item.getCloseTime() > 0L ? item.getCloseTime() : item.getTimestamp();
+            long closeTime = resolveCloseTime(item);
             if (closeTime >= start && closeTime <= end) {
                 sum += item.getProfit() + item.getStorageFee();
             }
@@ -3553,11 +3317,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return AccountLeverageResolver.formatDisplayLeverage(metrics);
     }
 
-    // 从账户概览里提取曲线重算需要的杠杆值，缺失时回退到 1。
-    private double resolveCurveLeverage(List<AccountMetric> metrics) {
-        return AccountLeverageResolver.resolveCurveLeverage(metrics);
-    }
-
     private double parseNumber(String raw) {
         if (raw == null || raw.trim().isEmpty()) {
             return 0d;
@@ -3588,56 +3347,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-    private List<AccountMetric> buildStatsFallbackMetrics() {
-        List<AccountMetric> result = new ArrayList<>();
-
-        double totalPnl = 0d;
-        double maxPos = 0d;
-        for (PositionItem item : basePositions) {
-            totalPnl += item.getTotalPnL();
-            maxPos = Math.max(maxPos, item.getPositionRatio());
-        }
-
-        int buy = 0;
-        int sell = 0;
-        int win = 0;
-        int loss = 0;
-        for (TradeRecordItem item : baseTrades) {
-            if ("BUY".equalsIgnoreCase(item.getSide()) || "Buy".equalsIgnoreCase(item.getSide())) {
-                buy++;
-            } else {
-                sell++;
-            }
-            if (item.getProfit() >= 0d) {
-                win++;
-            } else {
-                loss++;
-            }
-        }
-
-        double maxDd = 0d;
-        if (displayedCurvePoints.size() > 1) {
-            double peak = displayedCurvePoints.get(0).getEquity();
-            for (CurvePoint point : displayedCurvePoints) {
-                peak = Math.max(peak, point.getEquity());
-                maxDd = Math.max(maxDd, safeDivide(peak - point.getEquity(), peak));
-            }
-        }
-
-        result.add(new AccountMetric("累计收益额", signedMoney(totalPnl)));
-        result.add(new AccountMetric("总交易次数", String.valueOf(baseTrades.size())));
-        result.add(new AccountMetric("买入次数", String.valueOf(buy)));
-        result.add(new AccountMetric("卖出次数", String.valueOf(sell)));
-        result.add(new AccountMetric("胜率", percent(safeDivide(win, Math.max(1d, win + loss)))));
-        result.add(new AccountMetric("盈利交易数/亏损交易数", win + " / " + loss));
-        result.add(new AccountMetric("最大回撤", percent(maxDd)));
-        result.add(new AccountMetric("单一持仓最大占比", percent(maxPos)));
-        return result;
-    }
-
     private void refreshTradeStats() {
         boolean masked = isPrivacyMasked();
-        statsAdapter.submitList(buildTradeStatsMetrics(baseTrades, allCurvePoints));
+        statsAdapter.submitList(buildTradeStatsMetrics(latestStatsMetrics));
         List<TradePnlBarChartView.Entry> entries = buildTradePnlChartEntries(baseTrades, tradePnlSideMode);
         binding.tradePnlBarChart.setEntries(entries);
         List<TradeRecordItem> scopedTrades = filterTradesBySideMode(baseTrades, tradePnlSideMode);
@@ -3697,146 +3409,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.tradeWeekdayBarChart.setEntries(TradeWeekdayBarChartHelper.buildEntries(rows));
     }
 
-    private List<AccountMetric> buildTradeStatsMetrics(List<TradeRecordItem> trades, List<CurvePoint> curvePoints) {
-        List<AccountMetric> result = new ArrayList<>();
-        if (trades == null || trades.isEmpty()) {
-            result.add(new AccountMetric("最近交易", "--"));
-            result.add(new AccountMetric("交易次数", "0"));
-            result.add(new AccountMetric("盈利交易", "0次\n0.00%"));
-            result.add(new AccountMetric("亏损交易", "0次\n0.00%"));
-            result.add(new AccountMetric("最好交易", "--"));
-            result.add(new AccountMetric("最差交易", "--"));
-            result.add(new AccountMetric("毛利", "--"));
-            result.add(new AccountMetric("毛损", "--"));
-            result.add(new AccountMetric("最大连续盈利", "0次\n--"));
-            result.add(new AccountMetric("最大连续亏损", "0次\n--"));
-            result.add(new AccountMetric("利润因子", "--"));
-            result.add(new AccountMetric("夏普比率", "--"));
-            result.add(new AccountMetric("每周交易次数", "--"));
-            result.add(new AccountMetric("平均持仓时间", "--"));
-            return result;
-        }
-
-        List<TradeRecordItem> ordered = new ArrayList<>(trades);
-        ordered.sort(Comparator.comparingLong(this::resolveCloseTime));
-
-        int winCount = 0;
-        int lossCount = 0;
-        double grossProfit = 0d;
-        double grossLoss = 0d;
-        double bestTrade = -Double.MAX_VALUE;
-        double worstTrade = Double.MAX_VALUE;
-        boolean hasBestTrade = false;
-        boolean hasWorstTrade = false;
-
-        long durationSumMs = 0L;
-        int durationCount = 0;
-        long firstClose = Long.MAX_VALUE;
-        long lastClose = 0L;
-
-        int currentWinStreak = 0;
-        int maxWinStreak = 0;
-        double currentWinAmount = 0d;
-        double maxWinAmount = 0d;
-
-        int currentLossStreak = 0;
-        int maxLossStreak = 0;
-        double currentLossAmount = 0d;
-        double maxLossAmount = 0d;
-
-        for (TradeRecordItem item : ordered) {
-            double profit = item.getProfit();
-            double profitWithStorage = profit + item.getStorageFee();
-            long openTime = resolveOpenTime(item);
-            long closeTime = resolveCloseTime(item);
-
-            firstClose = Math.min(firstClose, closeTime);
-            lastClose = Math.max(lastClose, closeTime);
-
-            if (closeTime >= openTime) {
-                durationSumMs += (closeTime - openTime);
-                durationCount++;
-            }
-
-            if (profit > 0d) {
-                winCount++;
-                currentWinStreak++;
-                currentWinAmount += profit;
-                if (currentWinStreak > maxWinStreak
-                        || (currentWinStreak == maxWinStreak && currentWinAmount > maxWinAmount)) {
-                    maxWinStreak = currentWinStreak;
-                    maxWinAmount = currentWinAmount;
-                }
-                currentLossStreak = 0;
-                currentLossAmount = 0d;
-                bestTrade = Math.max(bestTrade, profit);
-                worstTrade = Math.min(worstTrade, profit);
-                hasBestTrade = true;
-                hasWorstTrade = true;
-            } else if (profit < 0d) {
-                lossCount++;
-                currentLossStreak++;
-                currentLossAmount += profit;
-                if (currentLossStreak > maxLossStreak
-                        || (currentLossStreak == maxLossStreak && currentLossAmount < maxLossAmount)) {
-                    maxLossStreak = currentLossStreak;
-                    maxLossAmount = currentLossAmount;
-                }
-                currentWinStreak = 0;
-                currentWinAmount = 0d;
-                bestTrade = Math.max(bestTrade, profit);
-                worstTrade = Math.min(worstTrade, profit);
-                hasBestTrade = true;
-                hasWorstTrade = true;
-            } else {
-                currentWinStreak = 0;
-                currentWinAmount = 0d;
-                currentLossStreak = 0;
-                currentLossAmount = 0d;
-            }
-
-            if (profitWithStorage > 0d) {
-                grossProfit += profitWithStorage;
-            } else if (profitWithStorage < 0d) {
-                grossLoss += profitWithStorage;
-            }
-        }
-
-        int totalTrades = ordered.size();
-        double winRate = safeDivide(winCount, Math.max(1d, totalTrades));
-        double lossRate = safeDivide(lossCount, Math.max(1d, totalTrades));
-        double profitFactor = Math.abs(grossLoss) < 1e-9
-                ? (grossProfit > 0d ? Double.POSITIVE_INFINITY : 0d)
-                : grossProfit / Math.abs(grossLoss);
-
-        String sharpe = calcEquityCurveSharpe(curvePoints);
-        long avgDurationMs = durationCount <= 0 ? 0L : durationSumMs / durationCount;
-        String avgDurationText = durationCount <= 0 ? "--" : formatDuration(avgDurationMs);
-
-        double weeks = 1d;
-        if (firstClose < Long.MAX_VALUE && lastClose > firstClose) {
-            weeks = Math.max(1d, (lastClose - firstClose) / (7d * 24d * 60d * 60d * 1000d));
-        }
-        String perWeek = Math.round(totalTrades / weeks) + " 次/周";
-
-        result.add(new AccountMetric("最近交易", formatRelativeTime(lastClose)));
-        result.add(new AccountMetric("交易次数", totalTrades + " 次"));
-        result.add(new AccountMetric("盈利交易", formatTradeRatioMetric(winCount, winRate)));
-        result.add(new AccountMetric("亏损交易", formatTradeRatioMetric(lossCount, lossRate)));
-        result.add(new AccountMetric("最好交易", hasBestTrade ? signedMoney(bestTrade) : "--"));
-        result.add(new AccountMetric("最差交易", hasWorstTrade ? signedMoney(worstTrade) : "--"));
-        result.add(new AccountMetric("毛利/毛损", TradeStatsTextFormatter.formatGrossPair(grossProfit, grossLoss)));
-        result.add(new AccountMetric("最大连续盈利", formatStreak(maxWinStreak, maxWinAmount)));
-        result.add(new AccountMetric("最大连续亏损", formatStreak(maxLossStreak, maxLossAmount)));
-        result.add(new AccountMetric("利润因子", Double.isInfinite(profitFactor)
-                ? "∞"
-                : String.format(Locale.getDefault(), "%.2f", profitFactor)));
-        result.add(new AccountMetric("夏普比率", sharpe));
-        result.add(new AccountMetric("每周交易次数", perWeek));
-        result.add(new AccountMetric("平均持仓时间", avgDurationText));
-        return result;
-    }
-
     private List<TradePnlBarChartView.Entry> buildTradePnlChartEntries(List<TradeRecordItem> trades,
                                                                         TradePnlSideMode sideMode) {
         List<TradePnlBarChartView.Entry> result = new ArrayList<>();
@@ -3892,103 +3464,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private long resolveOpenTime(TradeRecordItem item) {
-        long open = normalizePossibleEpochMs(item.getOpenTime());
-        return open > 0L ? open : normalizePossibleEpochMs(item.getTimestamp());
+        return item.getOpenTime();
     }
 
     private long resolveCloseTime(TradeRecordItem item) {
-        long close = normalizePossibleEpochMs(item.getCloseTime());
-        return close > 0L ? close : normalizePossibleEpochMs(item.getTimestamp());
-    }
-
-    // 兼容旧缓存残留的秒级成交时间，避免统计页按 1970 年时间轴计算。
-    private long normalizePossibleEpochMs(long value) {
-        if (value >= 1_000_000_000L && value < 10_000_000_000L) {
-            return value * 1000L;
-        }
-        return value;
-    }
-
-    private String calcBalanceSharpe(List<CurvePoint> points) {
-        if (points == null || points.size() < 3) {
-            return "--";
-        }
-        List<Double> returns = new ArrayList<>();
-        for (int i = 1; i < points.size(); i++) {
-            double prev = points.get(i - 1).getBalance();
-            double current = points.get(i).getBalance();
-            if (prev <= 0d) {
-                continue;
-            }
-            returns.add((current - prev) / prev);
-        }
-        if (returns.size() < 2) {
-            return "--";
-        }
-        double mean = returns.stream().mapToDouble(v -> v).average().orElse(0d);
-        double vol = calcStd(returns);
-        if (vol <= 1e-9) {
-            return "--";
-        }
-        double sharpe = (mean * Math.sqrt(365d)) / vol;
-        return String.format(Locale.getDefault(), "%.2f", sharpe);
-    }
-
-    private String formatRelativeTime(long timestampMs) {
-        if (timestampMs <= 0L) {
-            return "--";
-        }
-        long diff = Math.max(0L, System.currentTimeMillis() - timestampMs);
-        long minuteMs = 60L * 1000L;
-        long hourMs = 60L * minuteMs;
-        long dayMs = 24L * hourMs;
-        long monthMs = 30L * dayMs;
-        if (diff < minuteMs) {
-            return "刚刚";
-        }
-        if (diff < hourMs) {
-            return (diff / minuteMs) + " 分前";
-        }
-        if (diff < dayMs) {
-            return (diff / hourMs) + " 小时前";
-        }
-        if (diff < monthMs) {
-            return (diff / dayMs) + " 天前";
-        }
-        return (diff / monthMs) + " 月前";
-    }
-
-    private String formatDuration(long durationMs) {
-        if (durationMs <= 0L) {
-            return "--";
-        }
-        long minuteMs = 60L * 1000L;
-        long hourMs = 60L * minuteMs;
-        long dayMs = 24L * hourMs;
-
-        long days = durationMs / dayMs;
-        long hours = (durationMs % dayMs) / hourMs;
-        long minutes = (durationMs % hourMs) / minuteMs;
-
-        if (days > 0) {
-            return String.format(Locale.getDefault(), "%d天%d小时", days, hours);
-        }
-        if (hours > 0) {
-            return String.format(Locale.getDefault(), "%d小时%d分", hours, minutes);
-        }
-        return Math.max(1L, minutes) + " 分钟";
+        return item.getCloseTime();
     }
 
     private String percentRaw(double ratio) {
         return String.format(Locale.getDefault(), "%.2f%%", ratio * 100d);
-    }
-
-    private String formatStreak(int count, double amount) {
-        return TradeStatsTextFormatter.formatStreakMetric(count, amount);
-    }
-
-    private String formatTradeRatioMetric(int count, double ratio) {
-        return TradeStatsTextFormatter.formatTradeRatioMetric(count, ratio);
     }
 
     private void applyCurrentCurveRangeFromAllPoints() {
@@ -4123,7 +3607,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
                 : defaultCurveMeta);
         clearSharedCurveHighlight();
-        indicatorAdapter.submitList(buildCurveIndicators(effectivePoints));
+        indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));
     }
 
     // 把任一子图的时间点同步成多联图共享十字光标。
@@ -4346,114 +3830,25 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         );
     }
 
-    private List<AccountMetric> buildCurveIndicators(List<CurvePoint> points) {
-        List<AccountMetric> result = new ArrayList<>();
-        if (points == null || points.size() < 2) {
-            result.add(new AccountMetric("近1日收益", "--"));
-            result.add(new AccountMetric("近7日收益", "--"));
-            result.add(new AccountMetric("近30日收益", "--"));
-            result.add(new AccountMetric("累计收益", "--"));
-            result.add(new AccountMetric("最大回撤", "--"));
-            result.add(new AccountMetric("夏普比率", "--"));
-            return result;
+    private List<AccountMetric> buildCurveIndicators(List<AccountMetric> snapshotIndicators) {
+        if (snapshotIndicators != null && !snapshotIndicators.isEmpty()) {
+            return new ArrayList<>(snapshotIndicators);
         }
-
-        List<CurvePoint> sorted = new ArrayList<>(points);
-        sorted.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
-
-        CurvePoint latest = sorted.get(sorted.size() - 1);
-        double latestEquity = Math.max(1e-9, latest.getEquity());
-        long latestTs = latest.getTimestamp();
-
-        double r1 = calcLookbackEquityReturn(sorted, latestTs, latestEquity, 1);
-        double r7 = calcLookbackEquityReturn(sorted, latestTs, latestEquity, 7);
-        double r30 = calcLookbackEquityReturn(sorted, latestTs, latestEquity, 30);
-
-        double startEquity = Math.max(1e-9, sorted.get(0).getEquity());
-        double cumulative = safeDivide(latestEquity - startEquity, startEquity);
-
-        CurveAnalyticsHelper.DrawdownSegment drawdownSegment = CurveAnalyticsHelper.resolveMaxDrawdownSegment(sorted);
-        String maxDrawdownText = drawdownSegment == null
-                ? "--"
-                : String.format(Locale.getDefault(), "%.2f%%", drawdownSegment.getDrawdownRate() * 100d);
-        String sharpe = calcEquityCurveSharpe(sorted);
-
-        result.add(new AccountMetric("近1日收益", percent(r1)));
-        result.add(new AccountMetric("近7日收益", percent(r7)));
-        result.add(new AccountMetric("近30日收益", percent(r30)));
-        result.add(new AccountMetric("累计收益", percent(cumulative)));
-        result.add(new AccountMetric("最大回撤", maxDrawdownText));
-        result.add(new AccountMetric("夏普比率", sharpe));
+        List<AccountMetric> result = new ArrayList<>();
+        result.add(new AccountMetric("近1日收益", "--"));
+        result.add(new AccountMetric("近7日收益", "--"));
+        result.add(new AccountMetric("近30日收益", "--"));
+        result.add(new AccountMetric("累计收益", "--"));
+        result.add(new AccountMetric("最大回撤", "--"));
+        result.add(new AccountMetric("夏普比率", "--"));
         return result;
     }
 
-    private double calcLookbackEquityReturn(List<CurvePoint> points, long latestTs, double latestEquity, int days) {
-        long lookbackMs = days * 24L * 60L * 60L * 1000L;
-        long targetTs = latestTs - lookbackMs;
-        CurvePoint startPoint = findNearestPointAtOrBefore(points, targetTs);
-        if (startPoint == null) {
-            startPoint = points.get(0);
+    private List<AccountMetric> buildTradeStatsMetrics(List<AccountMetric> snapshotStats) {
+        if (snapshotStats != null && !snapshotStats.isEmpty()) {
+            return new ArrayList<>(snapshotStats);
         }
-        double startEquity = Math.max(1e-9, startPoint.getEquity());
-        return safeDivide(latestEquity - startEquity, startEquity);
-    }
-
-    @Nullable
-    private CurvePoint findNearestPointAtOrBefore(List<CurvePoint> points, long targetTs) {
-        CurvePoint candidate = null;
-        for (CurvePoint point : points) {
-            if (point.getTimestamp() <= targetTs) {
-                candidate = point;
-            } else {
-                break;
-            }
-        }
-        return candidate;
-    }
-
-    private double calcMaxDrawdownRate(List<CurvePoint> points) {
-        double peak = Math.max(1e-9, points.get(0).getBalance());
-        double maxDrawdown = 0d;
-        for (CurvePoint point : points) {
-            double balance = Math.max(1e-9, point.getBalance());
-            if (balance > peak) {
-                peak = balance;
-            }
-            double drawdown = safeDivide(balance - peak, peak);
-            maxDrawdown = Math.min(maxDrawdown, drawdown);
-        }
-        return maxDrawdown;
-    }
-
-    private String calcCurveSharpe(List<CurvePoint> points) {
-        Map<Integer, Double> dailyClose = new TreeMap<>();
-        Calendar calendar = Calendar.getInstance();
-        for (CurvePoint point : points) {
-            calendar.setTimeInMillis(point.getTimestamp());
-            int key = calendar.get(Calendar.YEAR) * 10_000
-                    + (calendar.get(Calendar.MONTH) + 1) * 100
-                    + calendar.get(Calendar.DAY_OF_MONTH);
-            dailyClose.put(key, point.getBalance());
-        }
-        if (dailyClose.size() < 2) {
-            return "--";
-        }
-        List<Double> closes = new ArrayList<>(dailyClose.values());
-        List<Double> returns = new ArrayList<>();
-        for (int i = 1; i < closes.size(); i++) {
-            double prev = Math.max(1e-9, closes.get(i - 1));
-            returns.add(safeDivide(closes.get(i) - prev, prev));
-        }
-        if (returns.size() < 2) {
-            return "--";
-        }
-        double mean = returns.stream().mapToDouble(v -> v).average().orElse(0d);
-        double std = calcStd(returns);
-        if (std <= 1e-12) {
-            return "0.00";
-        }
-        double sharpe = mean / std * Math.sqrt(365d);
-        return String.format(Locale.getDefault(), "%.2f", sharpe);
+        return new ArrayList<>();
     }
 
     private void renderReturnStatsTable(List<CurvePoint> source) {
@@ -6046,7 +5441,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void refreshPositions() {
         boolean masked = isPrivacyMasked();
-        List<PositionItem> list = buildPositionListWithNaturalDayPnl(basePositions, baseTrades);
+        List<PositionItem> list = new ArrayList<>(basePositions);
         list.sort(Comparator.comparing(PositionItem::getProductName));
 
         positionAggregateAdapter.setMasked(masked);
@@ -6072,121 +5467,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             totalMarketValue += Math.max(0d, Math.abs(item.getMarketValue()));
         }
         double ratio = safeDivide(totalPnl, Math.max(1d, totalMarketValue));
-        overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics, list));
+        overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics));
         binding.tvPositionPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
         if (masked) {
             binding.tvPositionPnlSummary.setText("全周期总计盈亏（持仓）: **** | 持仓收益率: ****");
         } else {
             binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(totalPnl, ratio));
         }
-    }
-
-    private List<PositionItem> buildPositionListWithNaturalDayPnl(List<PositionItem> source,
-                                                                   List<TradeRecordItem> trades) {
-        List<PositionItem> result = new ArrayList<>();
-        if (source == null || source.isEmpty()) {
-            return result;
-        }
-        List<PositionItem> normalizedSource = deduplicatePositionItems(source);
-        long start = startOfToday();
-        long end = endOfToday();
-        Map<String, Double> todayClosedByKey = new HashMap<>();
-        if (trades != null) {
-            for (TradeRecordItem trade : trades) {
-                if (trade == null) {
-                    continue;
-                }
-                long closeTime = resolveCloseTime(trade);
-                if (closeTime < start || closeTime > end) {
-                    continue;
-                }
-                String key = buildPositionSideKey(trade.getCode(), trade.getProductName(), trade.getSide());
-                double sum = todayClosedByKey.getOrDefault(key, 0d);
-                todayClosedByKey.put(key, sum + trade.getProfit() + trade.getStorageFee());
-            }
-        }
-
-        Map<String, Double> totalQtyByKey = new HashMap<>();
-        for (PositionItem item : normalizedSource) {
-            if (item == null) {
-                continue;
-            }
-            String key = buildPositionSideKey(item.getCode(), item.getProductName(), item.getSide());
-            double qty = Math.max(0d, Math.abs(item.getQuantity()));
-            totalQtyByKey.put(key, totalQtyByKey.getOrDefault(key, 0d) + qty);
-        }
-
-        for (PositionItem item : normalizedSource) {
-            if (item == null) {
-                continue;
-            }
-            String key = buildPositionSideKey(item.getCode(), item.getProductName(), item.getSide());
-            double todayClosed = todayClosedByKey.getOrDefault(key, 0d);
-            double totalQty = totalQtyByKey.getOrDefault(key, 0d);
-            double qty = Math.max(0d, Math.abs(item.getQuantity()));
-            double shareClosed = totalQty > 1e-9 ? todayClosed * (qty / totalQty) : todayClosed;
-            double naturalDayPnL = item.getDayPnL() + shareClosed;
-
-            result.add(new PositionItem(
-                    item.getProductName(),
-                    item.getCode(),
-                    item.getSide(),
-                    item.getPositionTicket(),
-                    item.getOrderId(),
-                    item.getQuantity(),
-                    item.getSellableQuantity(),
-                    item.getCostPrice(),
-                    item.getLatestPrice(),
-                    item.getMarketValue(),
-                    item.getPositionRatio(),
-                    naturalDayPnL,
-                    item.getTotalPnL(),
-                    item.getReturnRate(),
-                    item.getPendingLots(),
-                    item.getPendingCount(),
-                    item.getPendingPrice(),
-                    item.getTakeProfit(),
-                    item.getStopLoss(),
-                    item.getStorageFee()
-            ));
-        }
-        return result;
-    }
-
-    private List<PositionItem> deduplicatePositionItems(List<PositionItem> source) {
-        LinkedHashMap<String, PositionItem> unique = new LinkedHashMap<>();
-        for (PositionItem item : source) {
-            if (item == null) {
-                continue;
-            }
-            unique.put(buildPositionUniqueKey(item), item);
-        }
-        return new ArrayList<>(unique.values());
-    }
-
-    private String buildPositionUniqueKey(PositionItem item) {
-        if (item.getPositionTicket() > 0L) {
-            return "position|" + item.getPositionTicket();
-        }
-        if (item.getOrderId() > 0L) {
-            return "order|" + item.getOrderId();
-        }
-        long qty = Math.round(Math.abs(item.getQuantity()) * 10_000d);
-        long cost = Math.round(item.getCostPrice() * 10000d);
-        long latest = Math.round(item.getLatestPrice() * 10000d);
-        long total = Math.round(item.getTotalPnL() * 100d);
-        long day = Math.round(item.getDayPnL() * 100d);
-        long storage = Math.round(item.getStorageFee() * 100d);
-        return trim(item.getCode()).toUpperCase(Locale.ROOT)
-                + "|" + normalizeSide(trim(item.getSide())).toUpperCase(Locale.ROOT)
-                + "|" + qty + "|" + cost + "|" + latest
-                + "|" + total + "|" + day + "|" + storage;
-    }
-
-    private String buildPositionSideKey(String code, String productName, String side) {
-        String symbol = symbolForLog(code, productName);
-        String normalizedSide = sideForLog(side);
-        return symbol + "|" + normalizedSide;
     }
 
     private List<PositionAggregateAdapter.AggregateItem> buildPositionAggregates(List<PositionItem> list) {
@@ -6261,84 +5548,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return pending;
     }
 
-    private List<TradeRecordItem> mergeOpenCloseTrades(List<TradeRecordItem> source) {
-        List<TradeRecordItem> merged = new ArrayList<>();
-        if (source == null || source.isEmpty()) {
-            return merged;
-        }
-
-        int nearZeroCount = 0;
-        for (TradeRecordItem item : source) {
-            if (item != null && Math.abs(item.getProfit()) < TRADE_PNL_ZERO_THRESHOLD) {
-                nearZeroCount++;
-            }
-        }
-        // If upstream has already returned lifecycle-level records, skip aggressive regrouping.
-        if (nearZeroCount == 0) {
-            for (TradeRecordItem item : source) {
-                if (item != null) {
-                    merged.add(item);
-                }
-            }
-            merged.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
-            return merged;
-        }
-
-        java.util.Set<String> dedupeSet = new java.util.LinkedHashSet<>();
-        Map<String, List<TradeRecordItem>> grouped = new LinkedHashMap<>();
-        for (TradeRecordItem item : source) {
-            if (item == null) {
-                continue;
-            }
-            String dedupeKey = buildTradeDedupeKey(item);
-            if (dedupeSet.contains(dedupeKey)) {
-                continue;
-            }
-            dedupeSet.add(dedupeKey);
-
-            String key = buildTradeMergeKey(item);
-            grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(item);
-        }
-
-        for (List<TradeRecordItem> group : grouped.values()) {
-            if (group == null || group.isEmpty()) {
-                continue;
-            }
-
-            group.sort(Comparator.comparingLong(this::resolveCloseTime));
-            List<TradeRecordItem> nonZero = new ArrayList<>();
-            for (TradeRecordItem item : group) {
-                if (Math.abs(item.getProfit()) >= TRADE_PNL_ZERO_THRESHOLD) {
-                    nonZero.add(item);
-                }
-            }
-
-            if (nonZero.size() == 1) {
-                merged.add(buildMergedTradeFromGroup(nonZero.get(0), group));
-                continue;
-            }
-            if (nonZero.size() > 1) {
-                merged.addAll(nonZero);
-                continue;
-            }
-
-            TradeRecordItem latest = chooseLatestTradeRecord(group);
-            if (latest == null) {
-                continue;
-            }
-            long openTime = resolveOpenTime(latest);
-            long closeTime = resolveCloseTime(latest);
-            boolean likelyNoise = Math.abs(latest.getProfit()) < TRADE_PNL_ZERO_THRESHOLD
-                    && closeTime <= openTime + 1_000L;
-            if (!likelyNoise) {
-                merged.add(latest);
-            }
-        }
-
-        merged.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
-        return merged;
-    }
-
     private String buildTradeDedupeKey(TradeRecordItem item) {
         if (item.getDealTicket() > 0L) {
             return "deal|" + item.getDealTicket();
@@ -6358,188 +5567,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         long profit = Math.round(item.getProfit() * 100d);
         String side = normalizeSide(trim(item.getSide())).toLowerCase(Locale.ROOT);
         return code + "|" + side + "|" + open + "|" + close + "|" + qty + "|" + price + "|" + profit;
-    }
-
-    private String buildTradeMergeKey(TradeRecordItem item) {
-        String code = trim(item.getCode()).toUpperCase(Locale.ROOT);
-        long openBucket = resolveOpenTime(item) / 60_000L;
-        long closeBucket = resolveCloseTime(item) / 60_000L;
-        long quantityKey = Math.round(Math.abs(item.getQuantity()) * 10_000d);
-        long openPriceKey = Math.round(Math.abs(item.getOpenPrice()) * 100d);
-        long closePriceKey = Math.round(Math.abs(item.getClosePrice()) * 100d);
-        String side = normalizeSide(trim(item.getSide())).toLowerCase(Locale.ROOT);
-        return code + "|" + side + "|" + openBucket + "|" + closeBucket + "|"
-                + quantityKey + "|" + openPriceKey + "|" + closePriceKey;
-    }
-
-    private List<TradeRecordItem> pruneZeroProfitTrades(List<TradeRecordItem> source) {
-        List<TradeRecordItem> result = new ArrayList<>();
-        if (source == null || source.isEmpty()) {
-            return result;
-        }
-        for (TradeRecordItem item : source) {
-            if (Math.abs(item.getProfit()) >= TRADE_PNL_ZERO_THRESHOLD) {
-                result.add(item);
-            }
-        }
-
-        result.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
-        return result;
-    }
-
-    private boolean isMeaningfulZeroProfitTrade(TradeRecordItem item) {
-        if (item == null) {
-            return false;
-        }
-        long open = resolveOpenTime(item);
-        long close = resolveCloseTime(item);
-        if (close <= open + 60_000L) {
-            return false;
-        }
-        return Math.abs(item.getQuantity()) > 1e-9;
-    }
-
-    private boolean hasMatchingNonZeroTrade(TradeRecordItem zero, List<TradeRecordItem> nonZero) {
-        if (zero == null || nonZero == null || nonZero.isEmpty()) {
-            return false;
-        }
-        String code = trim(zero.getCode()).toUpperCase(Locale.ROOT);
-        if (code.isEmpty()) {
-            code = trim(zero.getProductName()).toUpperCase(Locale.ROOT);
-        }
-        long open = resolveOpenTime(zero);
-        double qty = Math.abs(zero.getQuantity());
-        for (TradeRecordItem item : nonZero) {
-            String otherCode = trim(item.getCode()).toUpperCase(Locale.ROOT);
-            if (otherCode.isEmpty()) {
-                otherCode = trim(item.getProductName()).toUpperCase(Locale.ROOT);
-            }
-            if (!code.equals(otherCode)) {
-                continue;
-            }
-            double otherQty = Math.abs(item.getQuantity());
-            if (qty > 1e-9 && otherQty > 1e-9) {
-                double diff = Math.abs(qty - otherQty);
-                if (diff > Math.max(0.01d, qty * 0.25d)) {
-                    continue;
-                }
-            }
-            long otherClose = resolveCloseTime(item);
-            if (otherClose >= open - 12L * 60L * 60L * 1000L
-                    && otherClose <= open + 30L * 24L * 60L * 60L * 1000L) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private TradeRecordItem chooseLatestTradeRecord(List<TradeRecordItem> group) {
-        TradeRecordItem latest = null;
-        for (TradeRecordItem item : group) {
-            if (latest == null || resolveCloseTime(item) > resolveCloseTime(latest)) {
-                latest = item;
-            }
-        }
-        return latest;
-    }
-
-    private TradeRecordItem buildMergedTradeFromGroup(TradeRecordItem closeRecord, List<TradeRecordItem> group) {
-        double feeSum = 0d;
-        double storageFeeSum = 0d;
-        double maxQuantity = Math.max(0d, closeRecord.getQuantity());
-        double maxAmount = Math.max(0d, closeRecord.getAmount());
-        double mergedOpenPrice = closeRecord.getOpenPrice() > 0d ? closeRecord.getOpenPrice() : closeRecord.getPrice();
-        double mergedClosePrice = closeRecord.getClosePrice() > 0d ? closeRecord.getClosePrice() : closeRecord.getPrice();
-        long minOpenTime = Long.MAX_VALUE;
-        long maxCloseTime = 0L;
-
-        for (TradeRecordItem item : group) {
-            feeSum += item.getFee();
-            storageFeeSum += item.getStorageFee();
-            maxQuantity = Math.max(maxQuantity, item.getQuantity());
-            maxAmount = Math.max(maxAmount, item.getAmount());
-            long openTime = resolveOpenTime(item);
-            long closeTime = resolveCloseTime(item);
-            double openPrice = item.getOpenPrice() > 0d ? item.getOpenPrice() : item.getPrice();
-            double closePrice = item.getClosePrice() > 0d ? item.getClosePrice() : item.getPrice();
-            if (openTime > 0L) {
-                if (openTime < minOpenTime) {
-                    minOpenTime = openTime;
-                    mergedOpenPrice = openPrice;
-                }
-            }
-            if (closeTime > 0L) {
-                if (closeTime >= maxCloseTime) {
-                    maxCloseTime = closeTime;
-                    mergedClosePrice = closePrice;
-                }
-            }
-        }
-        if (minOpenTime == Long.MAX_VALUE) {
-            minOpenTime = resolveOpenTime(closeRecord);
-        }
-        if (maxCloseTime <= 0L) {
-            maxCloseTime = resolveCloseTime(closeRecord);
-        }
-
-        String remark = collectMergedRemarks(group, closeRecord.getRemark());
-        String side = resolveMergedSide(closeRecord, group);
-        if (side.isEmpty()) {
-            side = closeRecord.getSide();
-        }
-        return new TradeRecordItem(
-                maxCloseTime,
-                closeRecord.getProductName(),
-                closeRecord.getCode(),
-                side,
-                closeRecord.getPrice(),
-                maxQuantity > 0d ? maxQuantity : closeRecord.getQuantity(),
-                maxAmount > 0d ? maxAmount : closeRecord.getAmount(),
-                feeSum,
-                remark,
-                closeRecord.getProfit(),
-                minOpenTime,
-                maxCloseTime,
-                storageFeeSum,
-                mergedOpenPrice,
-                mergedClosePrice
-        );
-    }
-
-    private String resolveMergedSide(TradeRecordItem closeRecord, List<TradeRecordItem> group) {
-        if (group != null) {
-            for (TradeRecordItem item : group) {
-                if (Math.abs(item.getProfit()) < TRADE_PNL_ZERO_THRESHOLD) {
-                    String side = normalizeSide(trim(item.getSide()));
-                    if (!side.isEmpty()) {
-                        return side;
-                    }
-                }
-            }
-        }
-        return normalizeSide(trim(closeRecord.getSide()));
-    }
-
-    private String collectMergedRemarks(List<TradeRecordItem> group, String fallback) {
-        StringBuilder builder = new StringBuilder();
-        for (TradeRecordItem item : group) {
-            String remark = trim(item.getRemark());
-            if (remark.isEmpty()) {
-                continue;
-            }
-            String current = builder.toString();
-            if (current.contains(remark)) {
-                continue;
-            }
-            if (builder.length() > 0) {
-                builder.append(" | ");
-            }
-            builder.append(remark);
-        }
-        if (builder.length() > 0) {
-            return builder.toString();
-        }
-        return fallback == null ? "" : fallback;
     }
 
     private void refreshTrades() {
@@ -6585,15 +5612,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             filtered.add(item);
         }
         if (SORT_OPEN_TIME.equals(normalizedSort)) {
-            filtered.sort((a, b) -> Long.compare(
-                    a.getOpenTime() > 0L ? a.getOpenTime() : a.getTimestamp(),
-                    b.getOpenTime() > 0L ? b.getOpenTime() : b.getTimestamp()));
+            filtered.sort((a, b) -> Long.compare(resolveOpenTime(a), resolveOpenTime(b)));
         } else if (SORT_PROFIT.equals(normalizedSort)) {
             filtered.sort((a, b) -> Double.compare(a.getProfit(), b.getProfit()));
         } else {
-            filtered.sort((a, b) -> Long.compare(
-                    a.getCloseTime() > 0L ? a.getCloseTime() : a.getTimestamp(),
-                    b.getCloseTime() > 0L ? b.getCloseTime() : b.getTimestamp()));
+            filtered.sort((a, b) -> Long.compare(resolveCloseTime(a), resolveCloseTime(b)));
         }
         if (tradeSortDescending) {
             java.util.Collections.reverse(filtered);
@@ -6617,8 +5640,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 continue;
             }
             String code = trim(item.getCode()).toUpperCase(Locale.ROOT);
-            if ("BTCUSDT".equals(code) || "BTCUSD".equals(code)
-                    || "XAUUSDT".equals(code) || "XAUUSD".equals(code)) {
+            if (ProductSymbolMapper.isSupportedProduct(code)) {
                 filtered.add(item);
             }
         }
@@ -6719,13 +5741,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-
-    private List<TradeRecordItem> collapseZeroProfitForDisplay(List<TradeRecordItem> source) {
-        if (source == null || source.isEmpty()) {
-            return new ArrayList<>();
-        }
-        return new ArrayList<>(source);
-    }
 
     private void updateTradePnlSummary(List<TradeRecordItem> trades,
                                        String productFilter,
@@ -7027,24 +6042,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 flattenCardSections(group.getChildAt(i), palette);
             }
         }
-    }
-
-    private String calcEquityCurveSharpe(List<CurvePoint> points) {
-        List<CurveAnalyticsHelper.DailyReturnPoint> dailyReturns = CurveAnalyticsHelper.buildDailyReturnSeries(points);
-        if (dailyReturns.size() < 2) {
-            return "--";
-        }
-        List<Double> returns = new ArrayList<>();
-        for (CurveAnalyticsHelper.DailyReturnPoint point : dailyReturns) {
-            returns.add(point.getReturnRate());
-        }
-        double mean = returns.stream().mapToDouble(v -> v).average().orElse(0d);
-        double std = calcStd(returns);
-        if (std <= 1e-12) {
-            return "0.00";
-        }
-        double sharpe = mean / std * Math.sqrt(365d);
-        return String.format(Locale.getDefault(), "%.2f", sharpe);
     }
 
     private String percent(double ratio) {

@@ -63,9 +63,6 @@ public class AccountStorageRepository {
         }
         accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
         accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
-
-        StoredSnapshot existing = loadStoredSnapshot();
-        List<CurvePoint> mergedCurvePoints = mergeCurvePoints(existing.getCurvePoints(), snapshot.getCurvePoints());
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
         metaEntity.id = 1;
         metaEntity.connected = snapshot.isConnected();
@@ -79,7 +76,7 @@ public class AccountStorageRepository {
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
         metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
         metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
-        metaEntity.curvePointsJson = curvePointsToJsonString(mergedCurvePoints);
+        metaEntity.curvePointsJson = curvePointsToJsonString(snapshot.getCurvePoints());
         accountSnapshotDao.upsertMeta(metaEntity);
     }
 
@@ -123,8 +120,6 @@ public class AccountStorageRepository {
         if (snapshot == null || accountSnapshotDao == null) {
             return;
         }
-        StoredSnapshot existing = loadStoredSnapshot();
-        List<CurvePoint> mergedCurvePoints = mergeCurvePoints(existing.getCurvePoints(), snapshot.getCurvePoints());
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
         metaEntity.id = 1;
         metaEntity.connected = snapshot.isConnected();
@@ -138,7 +133,7 @@ public class AccountStorageRepository {
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
         metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
         metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
-        metaEntity.curvePointsJson = curvePointsToJsonString(mergedCurvePoints);
+        metaEntity.curvePointsJson = curvePointsToJsonString(snapshot.getCurvePoints());
         accountSnapshotDao.upsertMeta(metaEntity);
     }
 
@@ -147,8 +142,6 @@ public class AccountStorageRepository {
         if (snapshot == null || accountSnapshotDao == null) {
             return;
         }
-        StoredSnapshot existing = loadStoredSnapshot();
-        List<CurvePoint> mergedCurvePoints = mergeCurvePoints(existing.getCurvePoints(), snapshot.getCurvePoints());
         accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
 
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
@@ -164,29 +157,18 @@ public class AccountStorageRepository {
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
         metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
         metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
-        metaEntity.curvePointsJson = curvePointsToJsonString(mergedCurvePoints);
+        metaEntity.curvePointsJson = curvePointsToJsonString(snapshot.getCurvePoints());
         accountSnapshotDao.upsertMeta(metaEntity);
     }
 
-    // 轻量复合快照需要同步持仓、挂单、交易和摘要，但不清空整张历史交易表。
+    // 轻量运行态快照只更新持仓、挂单和摘要，不再拼装历史交易或曲线。
     public void persistIncrementalSnapshot(StoredSnapshot snapshot) {
-        if (snapshot == null) {
-            return;
-        }
-        if (tradeHistoryDao != null) {
-            List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades());
-            if (!trades.isEmpty()) {
-                tradeHistoryDao.upsertAll(trades);
-            }
-        }
-        if (accountSnapshotDao == null) {
+        if (snapshot == null || accountSnapshotDao == null) {
             return;
         }
         accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
         accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
 
-        StoredSnapshot existing = loadStoredSnapshot();
-        List<CurvePoint> mergedCurvePoints = mergeCurvePoints(existing.getCurvePoints(), snapshot.getCurvePoints());
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
         metaEntity.id = 1;
         metaEntity.connected = snapshot.isConnected();
@@ -200,7 +182,7 @@ public class AccountStorageRepository {
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
         metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
         metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
-        metaEntity.curvePointsJson = curvePointsToJsonString(mergedCurvePoints);
+        metaEntity.curvePointsJson = curvePointsToJsonString(snapshot.getCurvePoints());
         accountSnapshotDao.upsertMeta(metaEntity);
     }
 
@@ -324,14 +306,20 @@ public class AccountStorageRepository {
         if (existing != null) {
             for (TradeRecordItem item : existing) {
                 if (item != null) {
-                    merged.put(buildTradeKey(item), item);
+                    String tradeKey = buildTradeKey(item);
+                    if (!tradeKey.isEmpty()) {
+                        merged.put(tradeKey, item);
+                    }
                 }
             }
         }
         if (incoming != null) {
             for (TradeRecordItem item : incoming) {
                 if (item != null) {
-                    merged.put(buildTradeKey(item), item);
+                    String tradeKey = buildTradeKey(item);
+                    if (!tradeKey.isEmpty()) {
+                        merged.put(tradeKey, item);
+                    }
                 }
             }
         }
@@ -340,30 +328,7 @@ public class AccountStorageRepository {
         return result;
     }
 
-    // 合并旧权益曲线和新曲线，并按 timestamp 去重。
-    public static List<CurvePoint> mergeCurvePoints(List<CurvePoint> existing,
-                                                    List<CurvePoint> incoming) {
-        Map<Long, CurvePoint> merged = new LinkedHashMap<>();
-        if (existing != null) {
-            for (CurvePoint item : existing) {
-                if (item != null) {
-                    merged.put(item.getTimestamp(), item);
-                }
-            }
-        }
-        if (incoming != null) {
-            for (CurvePoint item : incoming) {
-                if (item != null) {
-                    merged.put(item.getTimestamp(), item);
-                }
-            }
-        }
-        List<CurvePoint> result = new ArrayList<>(merged.values());
-        result.sort((left, right) -> Long.compare(left.getTimestamp(), right.getTimestamp()));
-        return result;
-    }
-
-    // 生成交易稳定键，优先使用 dealTicket。
+    // 生成交易稳定键；没有稳定身份的记录不进入主链。
     public static String buildTradeKey(TradeRecordItem item) {
         if (item == null) {
             return "";
@@ -380,11 +345,7 @@ public class AccountStorageRepository {
                     + item.getCloseTime() + "|"
                     + Math.round(Math.abs(item.getQuantity()) * 10_000d);
         }
-        return "fallback|"
-                + safe(item.getCode()) + "|"
-                + item.getCloseTime() + "|"
-                + Math.round(Math.abs(item.getQuantity()) * 10_000d) + "|"
-                + Math.round(item.getPrice() * 100d);
+        return "";
     }
 
     private List<TradeHistoryEntity> toTradeEntities(List<TradeRecordItem> trades) {
@@ -396,8 +357,12 @@ public class AccountStorageRepository {
             if (item == null) {
                 continue;
             }
+            String tradeKey = buildTradeKey(item);
+            if (tradeKey.isEmpty()) {
+                continue;
+            }
             TradeHistoryEntity entity = new TradeHistoryEntity();
-            entity.tradeKey = buildTradeKey(item);
+            entity.tradeKey = tradeKey;
             entity.timestamp = item.getTimestamp();
             entity.productName = safe(item.getProductName());
             entity.code = safe(item.getCode());
@@ -665,7 +630,7 @@ public class AccountStorageRepository {
                 JSONObject item = array.optJSONObject(i);
                 if (item != null) {
                     result.add(new CurvePoint(
-                            normalizeEpochMs(item.optLong("timestamp", 0L)),
+                            item.optLong("timestamp", 0L),
                             item.optDouble("equity", 0d),
                             item.optDouble("balance", 0d),
                             item.optDouble("positionRatio", 0d)
@@ -730,14 +695,6 @@ public class AccountStorageRepository {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
-    }
-
-    // 统一把秒级时间戳修正为毫秒，兼容旧缓存残留的历史曲线口径。
-    private long normalizeEpochMs(long value) {
-        if (value <= 0L) {
-            return 0L;
-        }
-        return value < 10_000_000_000L ? value * 1000L : value;
     }
 
     public static class StoredSnapshot {

@@ -100,16 +100,59 @@ function Invoke-NativeCommandSafely {
     }
     $commandLine = ($commandParts -join " ")
 
-    $previousErrorPreference = $ErrorActionPreference
-    try {
-        # PowerShell 会把原生命令写到 stderr 的普通日志也包装成错误记录，这里临时放宽，只按退出码判断成败。
-        $ErrorActionPreference = "Continue"
-        & $FilePath @Arguments
-        $exitCode = $LASTEXITCODE
+    # 用 C# 进程泵送器直接透传 stdout/stderr，避免 PowerShell 回调线程缺少 runspace。
+    if (-not ("NativeCommandRunner" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Diagnostics;
+
+public static class NativeCommandRunner
+{
+    public static int Run(string filePath, string argumentsLine, string workingDirectory)
+    {
+        var startInfo = new ProcessStartInfo(filePath, argumentsLine)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = workingDirectory
+        };
+
+        using (var process = new Process())
+        {
+            process.StartInfo = startInfo;
+            process.OutputDataReceived += (sender, eventArgs) =>
+            {
+                if (eventArgs.Data != null)
+                {
+                    Console.WriteLine(eventArgs.Data);
+                }
+            };
+            process.ErrorDataReceived += (sender, eventArgs) =>
+            {
+                if (eventArgs.Data != null)
+                {
+                    Console.WriteLine(eventArgs.Data);
+                }
+            };
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            process.WaitForExit();
+            return process.ExitCode;
+        }
     }
-    finally {
-        $ErrorActionPreference = $previousErrorPreference
+}
+"@
     }
+
+    $escapedArguments = @()
+    foreach ($argument in $Arguments) {
+        $escapedArguments += '"' + $argument.Replace('"', '\"') + '"'
+    }
+    $argumentsLine = ($escapedArguments -join " ")
+    $exitCode = [NativeCommandRunner]::Run($FilePath, $argumentsLine, $scriptDir)
 
     if ($exitCode -ne 0) {
         throw "Native command failed: $commandLine (exit code $exitCode)"

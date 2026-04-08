@@ -13,6 +13,7 @@ import com.binance.monitor.data.model.AbnormalAlertItem;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.util.GatewayUrlResolver;
+import com.binance.monitor.util.ProductSymbolMapper;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -233,16 +234,11 @@ public class AbnormalGatewayClient {
         return resolveCandidateBaseUrls(configuredBaseUrl);
     }
 
-    // 远端网关地址只请求自身，只有本地地址才附带模拟器/localhost 回退。
+    // 入口唯一化后，异常链只能请求单一配置入口。
     static List<String> resolveCandidateBaseUrls(@Nullable String configuredBaseUrl) {
         Set<String> urls = new LinkedHashSet<>();
         String primary = GatewayUrlResolver.normalizeBaseUrl(configuredBaseUrl, AppConstants.MT5_GATEWAY_BASE_URL);
         urls.add(primary);
-        if (shouldAppendLocalFallbacks(primary)) {
-            urls.add("http://10.0.2.2:8787");
-            urls.add("http://127.0.0.1:8787");
-            urls.add("http://localhost:8787");
-        }
         List<String> result = new ArrayList<>();
         for (String url : urls) {
             result.add(GatewayUrlResolver.normalizeBaseUrl(url, AppConstants.MT5_GATEWAY_BASE_URL));
@@ -250,42 +246,12 @@ public class AbnormalGatewayClient {
         return result;
     }
 
-    private static boolean shouldAppendLocalFallbacks(String baseUrl) {
-        try {
-            URI uri = new URI(GatewayUrlResolver.normalizeBaseUrl(baseUrl, AppConstants.MT5_GATEWAY_BASE_URL));
-            String host = uri.getHost();
-            if (host == null || host.trim().isEmpty()) {
-                return false;
-            }
-            String normalizedHost = host.trim().toLowerCase(Locale.ROOT);
-            return "127.0.0.1".equals(normalizedHost)
-                    || "localhost".equals(normalizedHost)
-                    || "10.0.2.2".equals(normalizedHost);
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
     static String toLocalSymbol(String symbol) {
-        String normalized = symbol == null ? "" : symbol.trim().toUpperCase();
-        if ("XAUUSD".equals(normalized) || "XAU".equals(normalized) || "GOLD".equals(normalized)) {
-            return AppConstants.SYMBOL_XAU;
-        }
-        if ("BTCUSD".equals(normalized) || "BTC".equals(normalized) || "XBT".equals(normalized)) {
-            return AppConstants.SYMBOL_BTC;
-        }
-        return normalized;
+        return ProductSymbolMapper.toMarketSymbol(symbol);
     }
 
     static String toGatewaySymbol(String symbol) {
-        String normalized = symbol == null ? "" : symbol.trim().toUpperCase();
-        if (AppConstants.SYMBOL_XAU.equals(normalized) || "XAU".equals(normalized) || "GOLD".equals(normalized)) {
-            return "XAUUSD";
-        }
-        if (AppConstants.SYMBOL_BTC.equals(normalized) || "BTC".equals(normalized) || "XBT".equals(normalized)) {
-            return "BTCUSDT";
-        }
-        return normalized;
+        return ProductSymbolMapper.toMarketSymbol(symbol);
     }
 
     public static class SyncResult {

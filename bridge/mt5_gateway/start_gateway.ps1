@@ -7,6 +7,17 @@ param(
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
+$requirementsStampPath = Join-Path $scriptDir ".requirements.sha256"
+
+# 强制当前脚本使用 UTF-8 输出，减少日志中的乱码前缀。
+function Set-Utf8Console {
+    chcp 65001 > $null
+    $utf8 = [System.Text.UTF8Encoding]::new($false)
+    [Console]::InputEncoding = $utf8
+    [Console]::OutputEncoding = $utf8
+    $global:OutputEncoding = $utf8
+    $env:PYTHONIOENCODING = "utf-8"
+}
 
 # Resolves the absolute path of the env file.
 function Resolve-EnvFilePath {
@@ -64,7 +75,19 @@ function Import-EnvFile {
     }
 }
 
-# Runs a native command through cmd.exe so stderr becomes regular log output while exit codes stay intact.
+# 计算文件内容哈希，用来判断依赖是否真的发生变化。
+function Get-FileSha256 {
+    param(
+        [string]$PathValue
+    )
+
+    if (-not (Test-Path $PathValue)) {
+        return ""
+    }
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $PathValue).Hash
+}
+
+# Runs a native command and preserves exit code.
 function Invoke-NativeCommandSafely {
     param(
         [string]$FilePath,
@@ -75,15 +98,68 @@ function Invoke-NativeCommandSafely {
     foreach ($argument in $Arguments) {
         $commandParts += '"' + $argument.Replace('"', '""') + '"'
     }
-    $commandLine = ($commandParts -join " ") + " 2>&1"
+    $commandLine = ($commandParts -join " ")
 
-    & cmd.exe /d /s /c $commandLine | ForEach-Object { $_ }
-    $exitCode = $LASTEXITCODE
+    # 用 C# 进程泵送器直接透传 stdout/stderr，避免 PowerShell 回调线程缺少 runspace。
+    if (-not ("NativeCommandRunner" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Diagnostics;
+
+public static class NativeCommandRunner
+{
+    public static int Run(string filePath, string argumentsLine, string workingDirectory)
+    {
+        var startInfo = new ProcessStartInfo(filePath, argumentsLine)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = workingDirectory
+        };
+
+        using (var process = new Process())
+        {
+            process.StartInfo = startInfo;
+            process.OutputDataReceived += (sender, eventArgs) =>
+            {
+                if (eventArgs.Data != null)
+                {
+                    Console.WriteLine(eventArgs.Data);
+                }
+            };
+            process.ErrorDataReceived += (sender, eventArgs) =>
+            {
+                if (eventArgs.Data != null)
+                {
+                    Console.WriteLine(eventArgs.Data);
+                }
+            };
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            process.WaitForExit();
+            return process.ExitCode;
+        }
+    }
+}
+"@
+    }
+
+    $escapedArguments = @()
+    foreach ($argument in $Arguments) {
+        $escapedArguments += '"' + $argument.Replace('"', '\"') + '"'
+    }
+    $argumentsLine = ($escapedArguments -join " ")
+    $exitCode = [NativeCommandRunner]::Run($FilePath, $argumentsLine, $scriptDir)
 
     if ($exitCode -ne 0) {
         throw "Native command failed: $commandLine (exit code $exitCode)"
     }
 }
+
+Set-Utf8Console
 
 if (-not (Test-Path ".venv")) {
     Invoke-NativeCommandSafely -FilePath "python" -Arguments @("-m", "venv", ".venv")
@@ -94,7 +170,18 @@ if (-not (Test-Path $venvPython)) {
     throw "venv python not found: $venvPython"
 }
 
-Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt")
+$requirementsHash = Get-FileSha256 -PathValue (Join-Path $scriptDir "requirements.txt")
+$cachedRequirementsHash = ""
+if (Test-Path $requirementsStampPath) {
+    $cachedRequirementsHash = (Get-Content -LiteralPath $requirementsStampPath -ErrorAction SilentlyContinue | Select-Object -First 1).ToString().Trim()
+}
+if ($requirementsHash -ne $cachedRequirementsHash) {
+    Write-Host "Installing Python dependencies..."
+    Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @(
+        "-m", "pip", "install", "--disable-pip-version-check", "--quiet", "-r", "requirements.txt"
+    )
+    Set-Content -LiteralPath $requirementsStampPath -Value $requirementsHash -Encoding UTF8
+}
 
 $resolvedEnvFile = Resolve-EnvFilePath -PathValue $EnvFile
 $defaultEnvFile = Join-Path $scriptDir ".env"

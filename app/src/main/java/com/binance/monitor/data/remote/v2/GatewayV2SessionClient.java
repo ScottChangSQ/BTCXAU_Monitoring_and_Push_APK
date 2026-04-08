@@ -8,6 +8,7 @@ import android.content.Context;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
@@ -98,10 +99,7 @@ public class GatewayV2SessionClient {
     // 解析 login/switch/logout 的统一回执响应。
     public static SessionReceipt parseSessionReceipt(String body) throws Exception {
         JSONObject json = new JSONObject(safeBody(body));
-        RemoteAccountProfile account = parseProfile(json.optJSONObject("account"));
-        if (account == null) {
-            account = parseProfile(json.optJSONObject("activeAccount"));
-        }
+        RemoteAccountProfile account = parseProfile(json.optJSONObject("activeAccount"));
         return new SessionReceipt(
                 json.optBoolean("ok", false),
                 json.optString("state", ""),
@@ -184,12 +182,11 @@ public class GatewayV2SessionClient {
 
     // 解析网关基础地址。
     private String resolveBaseUrl() {
-        if (configManager == null) {
-            return "";
-        }
-        String baseUrl = configManager.getMt5GatewayBaseUrl();
+        String baseUrl = configManager == null
+                ? AppConstants.MT5_GATEWAY_BASE_URL
+                : configManager.getMt5GatewayBaseUrl();
         if (baseUrl == null) {
-            return "";
+            return AppConstants.MT5_GATEWAY_BASE_URL;
         }
         return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
@@ -207,7 +204,7 @@ public class GatewayV2SessionClient {
         }
         String state = object.optString("state", "");
         boolean active = RemoteAccountProfile.resolveActiveFlag(
-                object.optBoolean("isActive", false) || object.optBoolean("active", false),
+                object.optBoolean("active", false),
                 state
         );
         return new RemoteAccountProfile(

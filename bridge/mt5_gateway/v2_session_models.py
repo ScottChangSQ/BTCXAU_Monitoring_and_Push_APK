@@ -17,10 +17,18 @@ def _safe_text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
-def _is_activated_state(state: str) -> bool:
-    """统一判定账号摘要里的激活态状态词。"""
-    normalized = _safe_text(state).strip().lower()
-    return normalized in {"active", "activated"}
+def _safe_bool(value: Any) -> bool:
+    """严格解析布尔值，避免把 'false' 这类字符串当成 True。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = _safe_text(value).strip().lower()
+    if normalized in {"true", "1", "yes", "y", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "n", "off", ""}:
+        return False
+    return False
 
 
 @dataclass
@@ -41,9 +49,7 @@ class SessionAccountSummary:
         if not isinstance(payload, dict) or not payload:
             return None
         state = _safe_text(payload.get("state") or default_state)
-        active = bool(payload.get("active", payload.get("isActive", False)))
-        if _is_activated_state(state):
-            active = True
+        active = _safe_bool(payload.get("active"))
         return cls(
             profile_id=_safe_text(payload.get("profileId")),
             login=_safe_text(payload.get("login")),
@@ -121,7 +127,7 @@ class SessionReceipt:
 
     state: str
     request_id: str = ""
-    account: Optional[SessionAccountSummary] = None
+    active_account: Optional[SessionAccountSummary] = None
     message: str = ""
     error_code: str = ""
     retryable: bool = False
@@ -133,7 +139,7 @@ class SessionReceipt:
             "ok": bool(self.ok),
             "state": _safe_text(self.state),
             "requestId": _safe_text(self.request_id),
-            "account": None if self.account is None else self.account.to_dict(),
+            "activeAccount": None if self.active_account is None else self.active_account.to_dict(),
             "message": _safe_text(self.message),
             "errorCode": _safe_text(self.error_code),
             "retryable": bool(self.retryable),

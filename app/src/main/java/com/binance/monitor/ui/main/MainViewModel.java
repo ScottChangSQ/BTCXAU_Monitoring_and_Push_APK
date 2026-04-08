@@ -115,6 +115,14 @@ public class MainViewModel extends AndroidViewModel {
         repository.getConfigManager().setMt5GatewayBaseUrl(baseUrl);
     }
 
+    public String getBinanceRestBaseUrl() {
+        return repository.getConfigManager().getBinanceRestBaseUrl();
+    }
+
+    public String getBinanceWebSocketBaseUrl() {
+        return repository.getConfigManager().getBinanceWebSocketBaseUrl();
+    }
+
     public boolean isTabMarketMonitorVisible() {
         return repository.getConfigManager().isTabMarketMonitorVisible();
     }

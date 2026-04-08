@@ -9,8 +9,8 @@ import android.content.Context;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
-import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.model.AbnormalRecord;
+import com.binance.monitor.util.ProductSymbolMapper;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -186,14 +186,7 @@ public class AbnormalRecordManager {
     }
 
     private static String normalizeStableRecordSymbol(String symbol) {
-        String normalized = symbol == null ? "" : symbol.trim().toUpperCase();
-        if (AppConstants.SYMBOL_XAU.equals(normalized) || "XAU".equals(normalized) || "GOLD".equals(normalized)) {
-            return "XAUUSD";
-        }
-        if (AppConstants.SYMBOL_BTC.equals(normalized) || "BTC".equals(normalized) || "BTCUSD".equals(normalized) || "XBT".equals(normalized)) {
-            return "BTCUSDT";
-        }
-        return normalized;
+        return ProductSymbolMapper.toMarketSymbol(symbol);
     }
 
     private static String sha1(String value) {

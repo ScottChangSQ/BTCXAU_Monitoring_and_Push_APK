@@ -9,7 +9,8 @@ function New-GatewayTestFixture {
     $fixtureRoot = Join-Path $env:TEMP ("mt5-gateway-test-" + [Guid]::NewGuid().ToString())
     New-Item -Path $fixtureRoot -ItemType Directory -Force | Out-Null
 
-    Copy-Item -Path "E:\Github\BTCXAU_Monitoring_and_Push_APK\bridge\mt5_gateway\start_gateway.ps1" -Destination (Join-Path $fixtureRoot "start_gateway.ps1")
+    $sourceStartScript = Get-Content -Path "E:\Github\BTCXAU_Monitoring_and_Push_APK\bridge\mt5_gateway\start_gateway.ps1" -Raw -Encoding UTF8
+    Set-Content -Path (Join-Path $fixtureRoot "start_gateway.ps1") -Value $sourceStartScript -Encoding UTF8
     Set-Content -Path (Join-Path $fixtureRoot "requirements.txt") -Value "" -Encoding UTF8
     Set-Content -Path (Join-Path $fixtureRoot ".env") -Value "GATEWAY_HOST=127.0.0.1" -Encoding UTF8
     Set-Content -Path (Join-Path $fixtureRoot "server_v2.py") -Value $ServerScript -Encoding UTF8

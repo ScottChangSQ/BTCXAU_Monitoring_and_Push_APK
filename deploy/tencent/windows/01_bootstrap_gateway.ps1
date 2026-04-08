@@ -58,6 +58,19 @@ function Resolve-DeploymentLayout {
 
 $layout = Resolve-DeploymentLayout -RepoRootValue $RepoRoot -BundleRootValue $BundleRoot
 $gatewayDir = $layout.GatewayDir
+$requirementsStampPath = Join-Path $gatewayDir ".requirements.sha256"
+
+# 计算 requirements 哈希，并与启动脚本共用同一份依赖标记文件。
+function Get-FileSha256 {
+    param(
+        [string]$PathValue
+    )
+
+    if (-not (Test-Path $PathValue)) {
+        return ""
+    }
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $PathValue).Hash
+}
 
 $pythonCmd = Get-Command $PythonExe -ErrorAction SilentlyContinue
 if (-not $pythonCmd) {
@@ -81,6 +94,9 @@ if (-not (Test-Path $venvPython)) {
 
 & $venvPython -m pip install --upgrade pip
 & $venvPython -m pip install -r requirements.txt
+
+$requirementsHash = Get-FileSha256 -PathValue (Join-Path $gatewayDir "requirements.txt")
+Set-Content -LiteralPath $requirementsStampPath -Value $requirementsHash -Encoding UTF8
 
 $envFile = Join-Path $gatewayDir ".env"
 if (-not (Test-Path $envFile)) {

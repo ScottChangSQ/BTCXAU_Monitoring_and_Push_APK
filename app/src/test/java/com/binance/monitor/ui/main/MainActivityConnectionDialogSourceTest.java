@@ -27,6 +27,23 @@ public class MainActivityConnectionDialogSourceTest {
                 source.contains("createConnectionDetailRowHolder(\"服务器延迟\""));
     }
 
+    @Test
+    public void connectionDialogShouldUseRuntimeBinanceAddressesFromConfigManager() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/main/MainActivity.java",
+                "src/main/java/com/binance/monitor/ui/main/MainActivity.java"
+        );
+
+        assertTrue("连接状态弹窗应读取运行时 Binance REST 地址",
+                source.contains("String binanceRest = viewModel.getBinanceRestBaseUrl();"));
+        assertTrue("连接状态弹窗应读取运行时 Binance WS 地址",
+                source.contains("String binanceWs = viewModel.getBinanceWebSocketBaseUrl();"));
+        assertFalse("连接状态弹窗不应再本地重建 Binance REST 地址",
+                source.contains("GatewayUrlResolver.buildBinanceRestBaseUrl("));
+        assertFalse("连接状态弹窗不应再本地重建 Binance WS 地址",
+                source.contains("GatewayUrlResolver.buildBinanceWebSocketBaseUrl("));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

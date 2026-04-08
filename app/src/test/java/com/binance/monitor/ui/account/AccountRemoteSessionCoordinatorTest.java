@@ -80,7 +80,7 @@ public class AccountRemoteSessionCoordinatorTest {
     }
 
     @Test
-    public void switchAcceptedShouldPreferReceiptAccountWhenStatusStillOld() throws Exception {
+    public void switchAcceptedShouldFailWhenStatusDoesNotConfirmTargetAccount() {
         FakeCacheResetter resetter = new FakeCacheResetter();
         FakeSessionStore store = new FakeSessionStore();
         AccountSessionStateMachine machine = new AccountSessionStateMachine();
@@ -113,18 +113,19 @@ public class AccountRemoteSessionCoordinatorTest {
                 () -> "req-local"
         );
 
-        AccountRemoteSessionCoordinator.SessionActionResult result = coordinator.switchSavedAccount("acc-new");
+        boolean thrown = false;
+        try {
+            coordinator.switchSavedAccount("acc-new");
+        } catch (IllegalStateException expected) {
+            thrown = true;
+            assertEquals("会话账号摘要不一致", expected.getMessage());
+        } catch (Exception other) {
+            throw new AssertionError("unexpected exception", other);
+        }
 
-        assertNotNull(result);
-        assertNotNull(result.getActiveAccount());
-        assertEquals("acc-new", result.getActiveAccount().getProfileId());
-        assertEquals("87654321", coordinator.getPendingLogin());
-        assertEquals("IC-NEW", coordinator.getPendingServer());
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.SYNCING, machine.snapshot().getState());
-
-        boolean activated = coordinator.onSnapshotApplied("87654321", "IC-NEW");
-        assertTrue(activated);
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.ACTIVE, machine.snapshot().getState());
+        assertTrue(thrown);
+        assertFalse(coordinator.isAwaitingSync());
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
     }
 
     @Test
@@ -165,7 +166,7 @@ public class AccountRemoteSessionCoordinatorTest {
     }
 
     @Test
-    public void switchAcceptedShouldStillEnterSyncingWhenStatusFetchFails() throws Exception {
+    public void switchAcceptedShouldFailWhenStatusFetchFails() {
         FakeCacheResetter resetter = new FakeCacheResetter();
         FakeSessionStore store = new FakeSessionStore();
         store.savedAccounts = Collections.singletonList(
@@ -194,17 +195,113 @@ public class AccountRemoteSessionCoordinatorTest {
                 () -> "req-local"
         );
 
-        AccountRemoteSessionCoordinator.SessionActionResult result = coordinator.switchSavedAccount("acc-7");
+        boolean thrown = false;
+        try {
+            coordinator.switchSavedAccount("acc-7");
+        } catch (IllegalStateException expected) {
+            thrown = true;
+            assertEquals("会话状态确认失败", expected.getMessage());
+        } catch (Exception other) {
+            throw new AssertionError("unexpected exception", other);
+        }
 
-        assertNotNull(result);
-        assertNotNull(result.getActiveAccount());
-        assertEquals("acc-7", result.getActiveAccount().getProfileId());
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.SYNCING, machine.snapshot().getState());
-        assertTrue(coordinator.isAwaitingSync());
-        assertTrue(resetter.accountSnapshotCleared);
-        assertEquals("acc-7", store.activeAccount == null ? "" : store.activeAccount.getProfileId());
-        assertEquals(1, store.savedAccounts.size());
-        assertEquals("acc-old", store.savedAccounts.get(0).getProfileId());
+        assertTrue(thrown);
+        assertFalse(coordinator.isAwaitingSync());
+        assertFalse(resetter.accountSnapshotCleared);
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
+    }
+
+    @Test
+    public void switchAcceptedShouldFailWhenStatusPayloadIsMissing() {
+        FakeCacheResetter resetter = new FakeCacheResetter();
+        FakeSessionStore store = new FakeSessionStore();
+        AccountSessionStateMachine machine = new AccountSessionStateMachine();
+        FakeGateway gateway = new FakeGateway();
+        gateway.switchReceipt = new SessionReceipt(
+                true,
+                "activated",
+                "req-switch",
+                new RemoteAccountProfile("acc-9", "99887766", "****7766", "IC", "IC 7766", true, "activated"),
+                "切换成功",
+                "",
+                false,
+                "{}"
+        );
+        gateway.statusPayload = null;
+
+        AccountRemoteSessionCoordinator coordinator = new AccountRemoteSessionCoordinator(
+                machine,
+                gateway,
+                new FakeEncryptor(),
+                resetter,
+                store,
+                () -> "req-local"
+        );
+
+        boolean thrown = false;
+        try {
+            coordinator.switchSavedAccount("acc-9");
+        } catch (IllegalStateException expected) {
+            thrown = true;
+            assertEquals("会话状态缺失", expected.getMessage());
+        } catch (Exception other) {
+            throw new AssertionError("unexpected exception", other);
+        }
+
+        assertTrue(thrown);
+        assertFalse(coordinator.isAwaitingSync());
+        assertFalse(resetter.accountSnapshotCleared);
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
+    }
+
+    @Test
+    public void switchAcceptedShouldFailWhenStatusResponseIsNotOk() {
+        FakeCacheResetter resetter = new FakeCacheResetter();
+        FakeSessionStore store = new FakeSessionStore();
+        AccountSessionStateMachine machine = new AccountSessionStateMachine();
+        FakeGateway gateway = new FakeGateway();
+        gateway.switchReceipt = new SessionReceipt(
+                true,
+                "activated",
+                "req-switch",
+                new RemoteAccountProfile("acc-10", "10000001", "****0001", "IC", "IC 0001", true, "activated"),
+                "切换成功",
+                "",
+                false,
+                "{}"
+        );
+        gateway.statusPayload = new SessionStatusPayload(
+                false,
+                "activated",
+                new RemoteAccountProfile("acc-10", "10000001", "****0001", "IC", "IC 0001", true, "activated"),
+                Collections.singletonList(new RemoteAccountProfile("acc-10", "10000001", "****0001", "IC", "IC 0001", true, "activated")),
+                1,
+                "{}"
+        );
+
+        AccountRemoteSessionCoordinator coordinator = new AccountRemoteSessionCoordinator(
+                machine,
+                gateway,
+                new FakeEncryptor(),
+                resetter,
+                store,
+                () -> "req-local"
+        );
+
+        boolean thrown = false;
+        try {
+            coordinator.switchSavedAccount("acc-10");
+        } catch (IllegalStateException expected) {
+            thrown = true;
+            assertEquals("会话状态缺失", expected.getMessage());
+        } catch (Exception other) {
+            throw new AssertionError("unexpected exception", other);
+        }
+
+        assertTrue(thrown);
+        assertFalse(coordinator.isAwaitingSync());
+        assertFalse(resetter.accountSnapshotCleared);
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
     }
 
     @Test
@@ -258,7 +355,57 @@ public class AccountRemoteSessionCoordinatorTest {
     }
 
     @Test
-    public void switchShouldHydrateMissingIdentityFromSavedAccountSnapshot() throws Exception {
+    public void switchShouldFailWhenStatusMissingCanonicalServer() {
+        FakeCacheResetter resetter = new FakeCacheResetter();
+        FakeSessionStore store = new FakeSessionStore();
+        AccountSessionStateMachine machine = new AccountSessionStateMachine();
+        FakeGateway gateway = new FakeGateway();
+        gateway.switchReceipt = new SessionReceipt(
+                true,
+                "activated",
+                "req-switch",
+                new RemoteAccountProfile("acc-12", "12000000", "****0000", "IC", "IC 0000", true, "activated"),
+                "切换成功",
+                "",
+                false,
+                "{}"
+        );
+        gateway.statusPayload = new SessionStatusPayload(
+                true,
+                "activated",
+                new RemoteAccountProfile("acc-12", "12000000", "****0000", "", "IC 0000", true, "activated"),
+                Collections.singletonList(new RemoteAccountProfile("acc-12", "12000000", "****0000", "", "IC 0000", true, "activated")),
+                1,
+                "{}"
+        );
+
+        AccountRemoteSessionCoordinator coordinator = new AccountRemoteSessionCoordinator(
+                machine,
+                gateway,
+                new FakeEncryptor(),
+                resetter,
+                store,
+                () -> "req-local"
+        );
+
+        boolean thrown = false;
+        try {
+            coordinator.switchSavedAccount("acc-12");
+        } catch (IllegalStateException expected) {
+            thrown = true;
+            assertEquals("会话账号摘要缺失", expected.getMessage());
+        } catch (Exception other) {
+            throw new AssertionError("unexpected exception", other);
+        }
+
+        assertTrue(thrown);
+        assertFalse(coordinator.isAwaitingSync());
+        assertFalse(resetter.accountSnapshotCleared);
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
+    }
+
+    @Test
+    public void switchShouldFailWhenStatusMissingCanonicalIdentity() {
         FakeCacheResetter resetter = new FakeCacheResetter();
         FakeSessionStore store = new FakeSessionStore();
         store.savedAccounts = Collections.singletonList(
@@ -294,61 +441,19 @@ public class AccountRemoteSessionCoordinatorTest {
                 () -> "req-local"
         );
 
-        AccountRemoteSessionCoordinator.SessionActionResult result = coordinator.switchSavedAccount("acc-11");
+        boolean thrown = false;
+        try {
+            coordinator.switchSavedAccount("acc-11");
+        } catch (IllegalStateException expected) {
+            thrown = true;
+            assertEquals("会话账号摘要缺失", expected.getMessage());
+        } catch (Exception other) {
+            throw new AssertionError("unexpected exception", other);
+        }
 
-        assertNotNull(result.getActiveAccount());
-        assertEquals("11223344", coordinator.getPendingLogin());
-        assertEquals("IC-HYDRATE", coordinator.getPendingServer());
-        assertTrue(coordinator.isAwaitingSync());
-
-        boolean activated = coordinator.onSnapshotApplied("11223344", "IC-HYDRATE");
-        assertTrue(activated);
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.ACTIVE, machine.snapshot().getState());
-    }
-
-    @Test
-    public void onSnapshotAppliedShouldNotActivateWhenNoPendingIdentity() throws Exception {
-        FakeCacheResetter resetter = new FakeCacheResetter();
-        FakeSessionStore store = new FakeSessionStore();
-        AccountSessionStateMachine machine = new AccountSessionStateMachine();
-        FakeGateway gateway = new FakeGateway();
-        gateway.switchReceipt = new SessionReceipt(
-                true,
-                "activated",
-                "req-switch",
-                new RemoteAccountProfile("acc-12", "", "****0012", "", "IC 0012", true, "activated"),
-                "切换成功",
-                "",
-                false,
-                "{}"
-        );
-        gateway.statusPayload = new SessionStatusPayload(
-                true,
-                "activated",
-                new RemoteAccountProfile("acc-12", "", "****0012", "", "IC 0012", true, "activated"),
-                Collections.singletonList(new RemoteAccountProfile("acc-12", "", "****0012", "", "IC 0012", true, "activated")),
-                1,
-                "{}"
-        );
-
-        AccountRemoteSessionCoordinator coordinator = new AccountRemoteSessionCoordinator(
-                machine,
-                gateway,
-                new FakeEncryptor(),
-                resetter,
-                store,
-                () -> "req-local"
-        );
-
-        coordinator.switchSavedAccount("acc-12");
-        assertTrue(coordinator.isAwaitingSync());
-        assertEquals("", coordinator.getPendingLogin());
-        assertEquals("", coordinator.getPendingServer());
-
-        boolean activated = coordinator.onSnapshotApplied("99887766", "IC-ANY");
-        assertFalse(activated);
-        assertTrue(coordinator.isAwaitingSync());
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.SYNCING, machine.snapshot().getState());
+        assertTrue(thrown);
+        assertFalse(coordinator.isAwaitingSync());
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
     }
 
     @Test
@@ -388,15 +493,19 @@ public class AccountRemoteSessionCoordinatorTest {
                 () -> "req-local"
         );
 
-        coordinator.switchSavedAccount("acc-13");
-        assertTrue(coordinator.isAwaitingSync());
-        assertEquals("", coordinator.getPendingLogin());
-        assertEquals("IC-SHARED", coordinator.getPendingServer());
+        boolean thrown = false;
+        try {
+            coordinator.switchSavedAccount("acc-13");
+        } catch (IllegalStateException expected) {
+            thrown = true;
+            assertEquals("会话账号摘要缺失", expected.getMessage());
+        } catch (Exception other) {
+            throw new AssertionError("unexpected exception", other);
+        }
 
-        boolean activated = coordinator.onSnapshotApplied("99887766", "IC-SHARED");
-        assertFalse(activated);
-        assertTrue(coordinator.isAwaitingSync());
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.SYNCING, machine.snapshot().getState());
+        assertTrue(thrown);
+        assertFalse(coordinator.isAwaitingSync());
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
     }
 
     private static final class FakeGateway implements AccountRemoteSessionCoordinator.SessionGateway {

@@ -31,8 +31,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.BinanceMonitor"
-        android:usesCleartextTraffic="true">
+        android:theme="@style/Theme.BinanceMonitor">
 
         <activity
             android:name=".ui.log.LogActivity"

@@ -30,13 +30,9 @@ public class RemoteAccountProfile {
         this.state = state == null ? "" : state;
     }
 
-    // 统一判断远程会话是否处于激活态，兼容 active / activated 两种状态词。
+    // 统一判断远程会话是否处于激活态，只认 canonical active 字段。
     public static boolean resolveActiveFlag(boolean active, String state) {
-        if (active) {
-            return true;
-        }
-        String safeState = state == null ? "" : state.trim();
-        return "active".equalsIgnoreCase(safeState) || "activated".equalsIgnoreCase(safeState);
+        return active;
     }
 
     // 返回账号档案标识。

@@ -121,6 +121,22 @@ def _decode_b64_field(value: str, field_name: str) -> bytes:
         raise ValueError(f"{field_name} is not valid base64") from exc
 
 
+def _parse_bool_flag(value: object, default: bool = False) -> bool:
+    """严格解析布尔值，避免字符串 'false' 被当成真值。"""
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "y", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "n", "off", ""}:
+        return False
+    return bool(default)
+
+
 class LoginEnvelopeCrypto:
     """管理登录信封公钥与解密流程。"""
 
@@ -271,7 +287,10 @@ class LoginEnvelopeCrypto:
         login = str(plain_payload.get("login") or "").strip()
         password = str(plain_payload.get("password") or "")
         server = str(plain_payload.get("server") or "").strip()
-        remember = bool(plain_payload.get("remember", safe_payload.get("saveAccount")))
+        remember = _parse_bool_flag(
+            plain_payload.get("remember"),
+            default=_parse_bool_flag(safe_payload.get("saveAccount")),
+        )
         nonce = str(plain_payload.get("nonce") or "")
         client_time = int(plain_payload.get("clientTime") or 0)
         if not login:

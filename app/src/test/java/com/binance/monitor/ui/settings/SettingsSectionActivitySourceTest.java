@@ -4,6 +4,7 @@
 package com.binance.monitor.ui.settings;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -22,6 +23,23 @@ public class SettingsSectionActivitySourceTest {
         );
         assertFalse("清理缓存时不应再直接清空异常记录历史",
                 source.contains("AbnormalRecordManager.getInstance(getApplicationContext()).clearAll();"));
+    }
+
+    @Test
+    public void gatewaySectionShouldExposeCanonicalEntryAsReadOnly() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
+        );
+
+        assertTrue("设置页应把固定入口写回展示框",
+                source.contains("binding.etMt5GatewayUrl.setText(AppConstants.MT5_GATEWAY_BASE_URL);"));
+        assertTrue("设置页不应再允许手工编辑入口",
+                source.contains("binding.etMt5GatewayUrl.setEnabled(false);"));
+        assertTrue("设置页不应再显示保存入口按钮",
+                source.contains("binding.btnSaveMt5GatewayUrl.setVisibility(View.GONE);"));
+        assertFalse("设置页不应继续按用户输入保存入口",
+                source.contains("viewModel.setMt5GatewayBaseUrl(input);"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

@@ -36,6 +36,7 @@ import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.PermissionHelper;
+import com.binance.monitor.util.ProductSymbolMapper;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
@@ -559,9 +560,8 @@ public class FloatingWindowManager {
     // 统一把产品代码收敛到悬浮窗需要展示的成交量单位。
     private String resolveVolumeUnit(FloatingSymbolCardData card) {
         String code = card == null ? "" : card.getCode();
-        String label = card == null ? "" : card.getLabel();
-        String normalized = (code + " " + label).toUpperCase();
-        if (normalized.contains("XAU")) {
+        String tradeSymbol = ProductSymbolMapper.toTradeSymbol(code);
+        if (ProductSymbolMapper.TRADE_SYMBOL_XAU.equals(tradeSymbol)) {
             return "XAU";
         }
         return "BTC";

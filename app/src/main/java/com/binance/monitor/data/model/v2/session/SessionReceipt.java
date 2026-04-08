@@ -8,7 +8,7 @@ public class SessionReceipt {
     private final boolean ok;
     private final String state;
     private final String requestId;
-    private final RemoteAccountProfile account;
+    private final RemoteAccountProfile activeAccount;
     private final String message;
     private final String errorCode;
     private final boolean retryable;
@@ -18,7 +18,7 @@ public class SessionReceipt {
     public SessionReceipt(boolean ok,
                           String state,
                           String requestId,
-                          RemoteAccountProfile account,
+                          RemoteAccountProfile activeAccount,
                           String message,
                           String errorCode,
                           boolean retryable,
@@ -26,7 +26,7 @@ public class SessionReceipt {
         this.ok = ok;
         this.state = state == null ? "" : state;
         this.requestId = requestId == null ? "" : requestId;
-        this.account = account;
+        this.activeAccount = activeAccount;
         this.message = message == null ? "" : message;
         this.errorCode = errorCode == null ? "" : errorCode;
         this.retryable = retryable;
@@ -48,9 +48,9 @@ public class SessionReceipt {
         return requestId;
     }
 
-    // 返回账号摘要。
-    public RemoteAccountProfile getAccount() {
-        return account;
+    // 返回当前激活账号摘要。
+    public RemoteAccountProfile getActiveAccount() {
+        return activeAccount;
     }
 
     // 返回提示消息。

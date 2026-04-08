@@ -1,285 +1,176 @@
 # BTC/XAU 异常交易监控 Android App
 
-一个基于 Java、XML、ViewBinding、MVVM + Repository + Room 的 Android Studio 工程，用来监控 BTC / XAU 行情、接收异常交易提醒，并展示 MT5 账户、持仓、挂单、交易记录和统计信息。
+一个用于监控 BTC / XAU 行情、展示 MT5 账户状态、接收异常提醒的 Android App + Python 网关项目。当前本次 1-6 步主链收口已完成，App 与服务端已经统一到单入口、单真值、纯消费展示的结构。
 
 ## 项目功能简介
 
-- 当前仍以“行情监控 + 账户展示 + 历史分析”为主，尚未进入可直接实盘下单的阶段
-- 新架构切换中：`BTCUSDT / XAUUSDT` 的行情、K 线、成交量和指标逐步统一改为只认服务端 `v2` 输出的 Binance 真值，APP 主要负责展示和本地快照
-- 新架构切换中：账户页后台预加载已优先改走 `v2/account/snapshot + v2/account/history`，成功时直接原子替换本地交易、曲线、持仓和挂单
-- 新架构切换中：账户统计页主动刷新也已收口到 `v2` 优先链路，不再由页面自己直接请求旧 `/v1/*` 快照
-- 新架构切换中：监控服务已接入 `v2/stream` 作为统一同步信号入口，旧 Binance `kline` WebSocket 暂时只保留为行情 tick 回退
-- 新架构切换中：`MonitorService` 收到 `v2 stream` 的 `market/account` 变化后，已经会主动补拉最新市场/账户数据，不再只做被动提示
-- 新架构切换中：图表页本地缓存已收口为 `ChartHistoryRepository + 内存窗口`，不再保留旧文件 K 线缓存，也不再把图表序列混写进 `V2SnapshotStore`
-- 新架构切换中：K 线链路已继续收口为“闭合历史快照 + 最新 1 条 patch”；闭合历史才会持久化到 Room，未收盘最新 K 线只留在内存与界面，且分钟实时 patch 只允许覆盖 `1d` 及以下周期
-- 服务端已新增统一 Web 服务器控制台，可在服务器本机 `localhost` 或公网访问，用来查看总览、组件控制、配置中心、诊断中心、日志与历史，并控制网关 / MT5 / Caddy / Nginx
-- 服务端已新增远程 MT5 账号会话最小闭环：支持读取公钥、加密登录新账号、切换已保存账号、退出当前账号，并把当前激活账号摘要透传到管理面板
-- APP 已补齐远程账号会话闭环：账户页支持拉取公钥、安全加密登录、切换已保存账号、退出当前账号，并用状态机区分“提交中 / 同步中 / 已激活 / 失败”
-- APP 本地不再持久化明文 MT5 密码，只缓存最近一次会话摘要与已保存账号列表，且这些本地摘要已改为 Android Keystore 加密保存
-- 主监控页与图表页的 Binance 行情统一走韩国服务器转发，手机不再直接访问 Binance 官方地址
-- MT5 账户支持轻量摘要、轻实时持仓、挂单增量、交易增量和权益曲线追加
-- 悬浮窗支持显示连接状态、合并盈亏、分产品盈亏、最新价格、成交量、成交额
-- 悬浮窗支持整块长按拖动、最小化、点击还原、透明度调节
-- 设置页支持运行时修改 MT5 网关地址，不用重新打包 APK
-- 设置页支持 5 套主题即时切换，并同步图表、悬浮窗和桌面图标
-- 隐私显示统一改为账户统计页“小眼睛”入口，隐藏时账户统计图表显示 `****` 占位，行情持仓页只打码当前持仓模块并隐藏持仓叠加线
-- 图表历史、交易历史、账户摘要、持仓快照统一写入 Room，已拉取过的数据会长期保留
-- 账户统计页支持收益统计、月收益表、净值/结余曲线、回撤曲线、日收益率曲线、交易分布图、持仓时间分布图和交易记录筛选排序
+- App 主入口已经固定为 `https://tradeapp.ltd`，设置页只读展示，不再允许本地改入口
+- App 的 Binance REST / WebSocket 默认入口也已经固定到 `https://tradeapp.ltd/binance-rest/*` 与 `wss://tradeapp.ltd/binance-ws/*`
+- 行情、账户、会话三条主链统一走服务端 `/v2/*`，客户端负责请求、展示和本地缓存
+- 服务端账户真值已经收口到 `MT5 Python Pull`，旧 EA 上报只保留原始存档，不再参与主链选源
+- 监控链已经收口为纯消费层，`v2/stream` 只负责发同步信号，断流会立即回到未连接状态
+- 账户展示链已经收口为纯消费层，只消费 canonical 字段，不再回读旧快照、不再本地猜测或补锚
+- 会话链已经收口为服务端单真值，当前激活账号只认 `status.activeAccount`
+- 历史、曲线、比例补算和启发式归并已经从主链移除，页面只基于服务端给出的标准数据做展示
+- 服务端自带统一管理面板，可查看状态、日志、配置，并控制网关、MT5、Caddy、Nginx
 
 ## 技术架构
 
-- Android：Java + XML + ViewBinding
-- 架构：MVVM + Repository
-- 本地存储：Room + SharedPreferences + Android Keystore
-- 网络：OkHttp + WebSocket
-- 图表与账户：自定义 View + `GatewayV2Client` / `GatewayV2StreamClient` + MT5 网关接口 + 服务端净值曲线重放
-- 网关会话安全：Python `cryptography` + Windows DPAPI + Android Keystore；服务器本机保存密文账号档案，APP 远程登录走 `rsa-oaep+aes-gcm`，本地只保存加密会话摘要
-- 构建：Gradle Kotlin DSL，`compileSdk / targetSdk 34`，`minSdk 24`，已开启 JDK desugaring 保障 Java 运行时兼容
+- Android：Java + XML + ViewBinding + MVVM + Repository + Room
+- 服务端：Python MT5 Gateway + `server_v2.py` + `admin_panel.py`
+- 网络主链：App 固定访问 `https://tradeapp.ltd`，服务端统一承接 `/v2/*`、`/admin/*`、`/binance-rest/*`、`/binance-ws/*`
+- 账户主链：服务端只认 `MT5 Python Pull` 的快照、历史、曲线；App 只消费 `orders / trades / curvePoints / tradeCount` 等 canonical 字段
+- 会话主链：服务端负责远程账号登录、切换、退出和激活账号确认；App 只消费 `activeAccount / active` 这组 canonical 字段
+- 产品命名主链：市场侧统一为 `BTCUSDT / XAUUSDT`，交易侧统一为 `BTCUSD / XAUUSD`，跨层映射集中在 `ProductSymbolMapper`
+- 安全链路：远程登录使用 `rsa-oaep+aes-gcm`，服务器端账号档案使用 Windows DPAPI，客户端本地会话摘要使用 Android Keystore
 
 ## 远程账号会话
 
-- App 远程登录、切换、退出 MT5 账号，当前都通过服务端 `/v2/session/*` 闭环完成
-- 远程账号切换只允许“任意时刻一个当前激活账号”，不支持多账号同时在线
-- App 端不会再保存明文 MT5 密码；手机本地只缓存 Android Keystore 加密后的会话摘要
-- 勾选“记住此账号”后，服务器保存的是 Windows DPAPI 加密后的账号档案，不是明文密码
-- 远程账号会话必须通过 HTTPS 暴露（包含 `/v2/session/public-key`、`/v2/session/login`、`/v2/session/switch`、`/v2/session/logout`、`/v2/session/status`）；纯 HTTP 入口只适合健康检查、管理面板或只读接口
-- 如果 App 里填的是 `http://...` 网关地址，远程账号登录、切换能力不应视为可用；要使用这条能力，App 里必须配置已经完成证书与反向代理的 `https://...` 入口
-- 当前已完成最小闭环：获取公钥、加密登录新账号、切换已保存账号、退出当前账号、切换后清旧缓存并等待新快照收口
-- 当前还没有做：后台自动公钥轮换、多用户隔离、多实例共享 nonce 去重
+- App 已支持获取公钥、加密登录新账号、切换已保存账号、退出当前账号
+- 服务端任何时刻只允许一个当前激活账号，不再保留前端本地拼装的账号身份
+- 手机端不再保存明文 MT5 密码，只保存 Keystore 加密后的会话摘要和已保存账号列表缓存
+- 勾选“记住此账号”后，服务器保存的是 DPAPI 加密账号档案，不是明文密码
+- 远程账号会话必须走 HTTPS 暴露，纯 HTTP 入口不应直接开放 `/v2/session/*`
 
-## Task 1-6 收口结论
+## 1-6 步最终收口结论
 
-- Task 1 已完成：服务端会话领域模型、公钥能力、登录信封解密、时间戳校验、nonce 去重、DPAPI 密文能力已闭合，并补齐了模型与加密专项测试
-- Task 2 已完成：服务端登录、切换、退出、已保存账号档案存储已闭合；运行时凭据优先级、坏档案容错、失败回滚、档案恢复都已补齐
-- Task 3 已完成：`/v2/session/public-key`、`/v2/session/login`、`/v2/session/switch`、`/v2/session/logout`、`/v2/session/status` 已打通；登录和切换后的缓存清理、强一致刷新、管理面板会话摘要透传已闭合
-- Task 4 已完成：App 侧会话模型、远程会话客户端、登录信封加密、本地加密会话摘要存储已闭合；`active / activated` 兼容口径已统一
-- Task 5 已完成：账户页远程会话状态机、协调器、切换后旧缓存清理、`accepted -> syncing -> active` 收口链已闭合；回执与状态短暂不一致时，前端会以本次操作目标账号为准
-- Task 6 已完成：README、ARCHITECTURE、CONTEXT、部署文档和 Windows bundle 口径已同步；默认 HTTP 入口已明确拒绝 `/v2/session/*`，避免远程账号会话被纯 HTTP 暴露
-- 当前代码与自动化验收层面的结论是：远程账号会话这 6 个 Task 已完成收口
-- 当前仍保留 1 个线下边界：真机 + 已部署 HTTPS 服务器的人工联调，需要按文末验收清单再做一次现场确认
+- 第 1 步入口唯一化：已完成。构建期、运行期、设置页都已固定到 `https://tradeapp.ltd`，不再保留第二套正式入口
+- 第 2 步服务端账户真值唯一化：已完成。账户主链只认 `MT5 Python Pull`，旧 EA 快照不再干扰缓存、增量状态和主接口输出
+- 第 3 步监控链降成纯消费层：已完成。`v2/stream` 只发同步信号，监控页和服务状态只消费它的结果，断流会立即下线
+- 第 4 步账户展示链降成纯消费层：已完成。账户页、预加载、图表标注、失败缓存都只消费服务端标准字段，不再重用旧快照或旧别名字段
+- 第 5 步收掉会话拼装：已完成。客户端只认 `status.ok=true` 且 `status.activeAccount` 完整身份，服务端只认网关确认后的完整账号身份
+- 第 6 步清掉历史、曲线、比例补算和启发式归并：已完成。主链不再做本地重建、旧曲线回灌、symbol+side 归并、时间价格补位和补锚画线
 
 ## 已完成功能列表
 
-- 服务端已新增 `v2/market/snapshot`、`v2/market/candles`、`v2/account/snapshot`、`v2/account/history`、`v2/sync/delta`、`v2/stream` 的最小可用链路
-- 服务端已新增 `v2/session/public-key`、`v2/session/login`、`v2/session/switch`、`v2/session/logout`、`v2/session/status` 的最小可用链路
-- APP 已新增 `GatewayV2SessionClient`、`SessionCredentialEncryptor`、`SecureSessionPrefs`、`AccountRemoteSessionCoordinator`、`AccountSessionStateMachine`，账户页远程会话已闭合
-- APP 已新增 `GatewayV2Client`、`V2SnapshotStore` 和 `v2` 载荷模型，图表页已切到服务端 `candles + latestPatch` 口径
-- 图表页左滑历史分页和增量补尾也已切到 `v2/market/candles?startTime/endTime`，不再走旧 `BinanceApiClient` 图表历史接口
-- 服务端 `v2/market/candles` 已开始把最后一根未闭合 REST K 线拆成 `latestPatch`，不再把它伪装成闭合历史
-- 图表页已删除本地分钟底稿对最终真值的旧覆盖链路，旧缓存版本升级为 `2` 并会在启动时一次性清旧
-- 图表页已删除 `KlineCacheStore` 这层废弃文件缓存，`V2SnapshotStore` 也已收口到只保存 `market/account` 快照，避免图表清缓存误删账户恢复数据
-- 图表页最新窗口落库前会自动剔除未闭合 patch，Room 里只保留闭合历史快照
-- 账户预加载已改成 v2 优先，成功时走 `persistV2Snapshot(...)` 原子替换本地账户数据
-- 账户统计页主动刷新已统一改走 `AccountStatsPreloadManager.fetchForUi(...)`，与后台预加载共用同一套 `v2` 优先抓取逻辑
-- 监控服务已新增 `GatewayV2StreamClient`，开始消费 `/v2/stream` 的统一同步消息
-- 监控服务已新增 `V2StreamRefreshPlanner`，并会在 `v2 stream` 出现 `marketDelta/accountDelta/fullRefresh` 时补拉最新真值
-- 监控服务冷启动与实时回退已统一改成读取 `v2/market/candles` 最近序列，不再在服务层写旧图表 1m 底稿
-- WebSocket 实时接收 `BTCUSDT` 与 `XAUUSDT` 的 1m K 线更新
-- 主监控页与图表页的 Binance REST / WebSocket 已统一切到韩国服务器转发
-- OR / AND 异常判断
-- 前台服务常驻运行
-- 单标通知、同轮合并通知、5 分钟冷却
-- 异常交易提醒已升级为更强的系统通知样式
-- 悬浮窗已改为统一快照刷新：顶部显示合并盈亏和最小化按钮，第二行显示连接状态，下方按产品显示分产品盈亏、最新价格、成交量、成交额
-- 悬浮窗支持整块长按拖动，最小化后也可拖动并点击还原
-- SharedPreferences 持久化配置
-- 本地文件持久化日志与异常记录
-- 主页面与日志页面
-- 行情图表页支持 `MA / EMA / SRA / AVL / RSI / KDJ` 指标，其中 `MA / EMA` 默认关闭
-- 指标按钮支持长按参数设置
-- 图表页在启动进入、切回图表页、切换时间周期时都会主动刷新
-- 图表刷新前不再先清空历史，已拉取过的历史 K 线会持续保留
-- 图表页已开始把未收盘 `1m` K 线先并入本地分钟底稿，再同步覆盖到 `1d` 及以下周期的最新尾部，1 分钟图不再缺当前这根 K 线，切周期也更少等待网络
-- 图表页左下角已新增“历史成交 开 / 关”按钮，可直接控制 K 线上的历史买卖点、平仓点和连线是否显示
-- K 线右侧留白改为固定绘图区 `1/7`
-- 行情图表页底部“当前持仓”模块与图表持仓标注共用账户快照数据
-- 行情持仓页关闭隐私显示时，会保留 K 线走势和异常提示，只隐藏持仓/挂单/止盈止损/成本线，并把当前持仓模块数据改成 `****`
-- 行情持仓页 K 线支持横向缩放、纵向缩放和斜向双指整体缩放
-- 行情持仓页右上角倒计时会显示最近一次成功拉取数据的延迟 `ms`
-- 图表历史、历史交易、账户摘要、持仓快照已统一接入 Room 持久层
-- 账户统计页“账户总览”顶部格式改为“账户-账号名称-杠杆”
-- 账户统计页已补上概览区持仓盈亏同步刷新
-- 账户统计页净值/结余曲线支持最大回撤区间高亮
-- 账户统计页顶部隐私入口已改为小眼睛，隐藏时文本数据改成 `****`，图表改为 `****` 占位态
-- 账户统计页月收益表改为“左侧年份块 + 右侧三行月份”的分组布局，年份与月份行重新对齐
-- MT5 网关已改为按历史成交、当前持仓和产品价格重算净值曲线，净值不再长期和结余重合
-- 账户统计页已补上回撤附图、日收益率附图、历史交易分布图、持仓时间分布图
-- 账户统计页净值 / 结余曲线、交易分布图、持仓时间分布图已统一收窄左右留白，图表横向显示更宽
-- 账户统计页交易统计区已改成左标题右数值的清单式布局
-- 账户统计页交易记录区已把产品、方向、排序收敛到同一行，说明文案已删除
-- 持仓时间分布图已显示“总数（盈利 / 亏损）”
-- 行情持仓页挂单信息增加回填逻辑，并改为“双源合并去重”展示
-- 底部 Tab 调整为微信风格
-- 行情持仓页底部 Tab 已与其他三个页面完全统一，当前持仓模块背景改为无边框
-- 行情监控页 OR / AND 与阈值启用控件已删除多余方框背景
-- 设置页已改成“微信式目录首页 -> 二级设置页”
-- 设置页支持 MT5 网关地址运行时修改
-- 设置二级页已移除重复隐私开关和 MT5 当前地址提示行
-- 设置页支持分项清理：历史行情、历史交易、运行时缓存
-- 设置页支持 5 套主题方案：金融专业风、复古风、币安风格、TradingView 风格、浅色风格
-- 主题切换会同步影响图表、页面卡片、悬浮窗和桌面图标，控件样式也统一改为更方正的视觉
-- 行情监控页已删除手动监控按钮，服务默认监控开启
-- 登录成功后会在账户统计页中央显示快速淡出的成功提示动画
-- 悬浮窗盈亏合计金额已加粗，桌面图标图案整体上移
-- 服务器侧已新增统一控制台服务 `admin_panel.py` 与配套静态页面 / 状态 helper / 诊断 helper / 配置 helper，可直接通过浏览器操作启动 / 停止 / 重启网关、MT5 客户端、Caddy、Nginx，并支持查看中文诊断、编辑 `.env`、查看配置变更影响、修改异常规则与清空运行时缓存
+- 行情监控、异常提醒、悬浮窗、图表、账户总览、交易历史、收益曲线已经跑在统一的 `/v2/*` 主链上
+- `GatewayV2Client`、`GatewayV2StreamClient`、`GatewayV2SessionClient` 已经成为 App 主链入口
+- 账户页主动刷新与后台预加载已经统一到同一套 `v2` 数据链
+- 图表页历史成交标注现在只认显式生命周期字段，不再本地猜品种和补锚点
+- 本地仓储已经停止把旧历史、旧曲线、轻量快照拼回当前真值
+- 服务端 `v2/account/history` 已经停止旧别名兼容、价格回填和启发式成交归并
+- 服务端 `v2/session/*` 已完成登录、切换、退出、状态查询、公钥获取的最小闭环
+- 会话字段名已经统一只认 `activeAccount / active`，不再消费 `account / isActive` 旧别名
+- BTC/XAU 产品映射已经统一收口，悬浮窗、图表、异常链、统计分析都不再靠字符串猜品种
+- 设置页网关项已经收口为只读正式入口展示，不再允许手工保存地址
+- 管理面板已经支持查看会话摘要、运行状态、日志、配置和常用控制操作
+- 自动化测试已经覆盖主入口、账户链、监控链、会话链、服务端账户模型和契约层
 
 ## 本地运行方法
 
 1. 用 Android Studio 打开仓库根目录。
 2. 确认本机已安装 Android SDK 34。
-3. 如果换到其他机器，请更新 `local.properties` 里的 `sdk.dir`。
-4. 直接运行 `app` 模块，或执行下面的 Gradle 命令。
+3. 如更换机器，先更新 `local.properties` 中的 `sdk.dir`。
+4. 直接运行 `app` 模块，或执行下方 Gradle 命令。
 
 ## 测试方法和常用命令
+
+Android 常用命令：
 
 ```bash
 .\gradlew.bat :app:compileDebugJavaWithJavac
 .\gradlew.bat :app:testDebugUnitTest
 .\gradlew.bat :app:assembleDebug -x lint
-.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"
 ```
 
-MT5 网关 Python 侧常用验证：
+App 最终总验收命令：
+
+```bash
+.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.build.AppBuildConfigSourceTest" --tests "com.binance.monitor.data.local.ConfigManagerSourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2ClientTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest" --tests "com.binance.monitor.util.GatewayUrlResolverTest" --tests "com.binance.monitor.ui.settings.SettingsSectionActivitySourceTest" --tests "com.binance.monitor.service.ConnectionStatusResolverTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.MonitorServiceFallbackCleanupSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshSourceTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest"
+```
+
+Python 服务端常用命令：
 
 ```bash
 python -m unittest bridge.mt5_gateway.tests.test_summary_response -v
-python -m unittest bridge.mt5_gateway.tests.test_admin_panel -v
-python -m unittest bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v
-python -m unittest bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v
-python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v
-python -m unittest bridge.mt5_gateway.tests.test_gateway_bundle_parity -v
+python -m unittest bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_contracts -v
+python -m unittest bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_models -v
 python -m py_compile bridge/mt5_gateway/server_v2.py
 python -m py_compile bridge/mt5_gateway/admin_panel.py
 python -m py_compile scripts/build_windows_server_bundle.py
 ```
 
+服务端最终总验收命令：
+
+```bash
+python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_not_rebuild_raw_ea_deals_into_trade_lifecycle bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_keep_sparse_ea_curve_points_from_payload bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_not_rebuild_ea_curve_points_when_source_curve_has_multiple_points bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_ingest_ea_snapshot_should_not_clear_snapshot_sync_cache_when_payload_changes bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_contracts -v
+```
+
 ## 部署方法和命令
 
 - 服务器部署说明见 [deploy/tencent/README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/README.md)
-- Windows 服务器上传目录改为构建产物 [dist/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist/windows_server_bundle)
+- Windows 服务器上传目录使用 [dist/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist/windows_server_bundle)
 - 日常只维护两处服务器源码：
-  - [bridge/mt5_gateway](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway)
-  - [deploy/tencent/windows](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows)
-- 每次准备上传服务器前，先在仓库根目录执行：
-  - `python scripts/build_windows_server_bundle.py`
-- Windows 部署根目录现统一为 `C:\mt5_bundle\windows_server_bundle`
-- 上传方式改为：把整个 `dist/windows_server_bundle` 文件夹直接复制到服务器 `C:\mt5_bundle` 下，不再手工拆开 `mt5_gateway` 和 `windows`
-- 当前默认公网入口为 `http://43.155.214.62`
+  [bridge/mt5_gateway](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway)
+  [deploy/tencent/windows](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows)
+- 准备上传前，在仓库根目录执行 `python scripts/build_windows_server_bundle.py`
+- Windows 部署根目录统一为 `C:\mt5_bundle\windows_server_bundle`
+- 服务器一键停旧服务并重部署命令：`C:\mt5_bundle\windows_server_bundle\deploy_bundle.cmd`
+- 命令行等价入口：`powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\mt5_bundle\windows_server_bundle\deploy_bundle.ps1 -Mode Gui -BundleRoot "C:\mt5_bundle\windows_server_bundle"`
+- 这套一键部署会先停掉旧计划任务、旧网关、旧管理面板、旧 Caddy/Nginx，并强制释放 `80 / 443 / 2019 / 8787 / 8788` 端口，再重新注册任务、启动后台服务并做健康检查
+- 部署脚本会把 443 验收拆成 `loopback SNI` 和 `public HTTPS` 两段，方便现场区分是本机 Caddy/网关链卡住，还是公网入口链卡住
+- 服务器端只会出现一个状态窗口，用来显示每一步是否成功、当前状态和日志；这个窗口可以直接关闭，关闭后不会影响已经启动的后台服务
 - 统一控制台默认入口为 `http://43.155.214.62/admin/`
-- 管理面板直连端口入口仍可用：`http://43.155.214.62:8788`
-- 远程 MT5 账号会话必须通过 HTTPS 公网入口开放；纯 HTTP 入口不应直接暴露 `/v2/session/*`（包括 `public-key/login/switch/logout/status`）
-- 上面这组 `http://...` 地址只适合管理面板、健康检查和只读接口演示；如果要让 App 使用远程账号会话，App 设置页里必须改填实际可用的 `https://` 公网入口
-- 启用 HTTPS 的最短路径是“先有域名，再启用 Caddy TLS”：在服务器使用 [deploy/tencent/windows/Caddyfile.example](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows/Caddyfile.example) 的域名站点块（包含 `tls`），放行 443，并把 App 的网关地址改为 `https://你的域名`
-- 统一承接：
-  - `MT5 /v1/*`
-  - `Gateway /v2/*`
-  - `Admin /admin/*`
-  - `Binance REST /binance-rest/*`
-  - `Binance WebSocket /binance-ws/*`
-- 如果需要让管理面板开机自启，可执行：
-  - `cd C:\mt5_bundle\windows_server_bundle`
-  - `.\windows\04_register_admin_panel_task.ps1 -BundleRoot "C:\mt5_bundle\windows_server_bundle" -Force`
-- 部署包根目录已内置双击入口：
-  - `deploy_bundle.cmd`
-  - `deploy_bundle.ps1`
-- `deploy_bundle.cmd` 会隐藏启动 Caddy，不再弹出独立的 `caddy.exe` 命令窗口
-- `caddy.exe` 可放在 `C:\mt5_bundle\windows_server_bundle\windows`，也可放在 `C:\mt5_bundle`；部署脚本会自动优先查找这两类位置
-- 如果服务器地址变化，可直接在 App 设置页修改“MT5 网关地址”
-- 本轮网关新增 `SNAPSHOT_RANGE_ALL_DAYS` 配置；若服务器内存偏高，可在 `C:\mt5_bundle\windows_server_bundle\mt5_gateway\.env` 里调低 `all` 区间历史回看天数后重启网关
-- 如果 MT5 返回的成交时间比北京时间固定慢若干分钟，可在 `C:\mt5_bundle\windows_server_bundle\mt5_gateway\.env` 里设置 `MT5_TIME_OFFSET_MINUTES`；例如慢 8 小时就填 `480`，这样交易记录、历史成交点和账户曲线会一起按同一口径修正
+- 管理面板直连端口入口为 `http://43.155.214.62:8788`
+- App 正式入口固定为 `https://tradeapp.ltd`，如果正式域名变化，需要修改构建配置并重新发版
+- 远程账号会话必须通过 HTTPS 暴露；纯 HTTP 入口只适合健康检查、管理面板和只读接口
+- 启用 HTTPS 时，优先使用 [deploy/tencent/windows/Caddyfile.example](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows/Caddyfile.example) 的域名站点配置，并放行 443
+- `caddy.exe` 可放在 `C:\mt5_bundle\windows_server_bundle\windows\caddy.exe`、`C:\mt5_bundle\windows_server_bundle\caddy.exe` 或 `C:\mt5_bundle\caddy.exe`
+- 管理面板如需开机自启，可在 `C:\mt5_bundle\windows_server_bundle` 下执行 `.\windows\04_register_admin_panel_task.ps1 -BundleRoot "C:\mt5_bundle\windows_server_bundle" -Force`
 
 ## 目录说明
 
-- [app/src/main/java/com/binance/monitor/service/MonitorService.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorService.java)
-  前台服务、异常判断、悬浮窗快照生成、通知调度。
-- [app/src/main/java/com/binance/monitor/ui/main/MainActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/main/MainActivity.java)
-  主监控页 UI 与交互。
-- [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
-  行情图表页入口。
-- [app/src/main/java/com/binance/monitor/ui/chart/ChartPersistenceWindowHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartPersistenceWindowHelper.java)
-  图表持久化窗口工具，负责在落库前剔除未闭合 latest patch。
-- [app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java)
-  行情图右上角倒计时与延迟文案格式化工具。
-- [app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java)
-  K 线缩放手势方向判定工具。
-- [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
-  账户统计页入口。
-- [app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java)
-  账户页远程会话协调器，负责安全登录、已保存账号切换、退出和切换后缓存收口。
-- [app/src/main/java/com/binance/monitor/ui/account/AccountSessionStateMachine.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountSessionStateMachine.java)
-  账户页远程会话状态机，负责区分 `idle/encrypting/submitting/switching/syncing/active/failed`。
+- [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java)
+  负责读取 `/v2/account/*`、`/v2/market/*` 的标准数据。
+- [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java)
+  负责读取 `/v2/stream` 同步信号。
 - [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java)
-  APP 侧会话接口客户端，负责请求 `/v2/session/*` 并解析返回结构。
-- [app/src/main/java/com/binance/monitor/security/SessionCredentialEncryptor.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SessionCredentialEncryptor.java)
-  APP 侧登录信封加密器，负责把账号、密码、服务器封装成 `rsa-oaep+aes-gcm` 登录包。
-- [app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java)
-  APP 本地安全会话摘要存储，负责用 Android Keystore 加密保存最近激活账号和已保存账号列表缓存。
-- [app/src/main/java/com/binance/monitor/ui/account/AccountConnectionTransitionHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountConnectionTransitionHelper.java)
-  登录成功提示动画触发条件工具。
-- [app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java)
-  账户统计分析工具，负责最大回撤、日收益、交易散点和持仓时间分布计算。
-- [app/src/main/java/com/binance/monitor/ui/account/TradeDistributionScatterView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/TradeDistributionScatterView.java)
-  历史交易分布图控件。
-- [app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java)
-  持仓时间分布图控件。
-- [app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java)
-  悬浮窗渲染与交互管理。
-- [app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java)
-  设置首页目录。
-- [app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java)
-  设置二级页。
-- [app/src/main/java/com/binance/monitor/ui/theme/UiPaletteManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/theme/UiPaletteManager.java)
-  主题与控件样式工具，负责页面底色、按钮、复选控件和方正风格资源。
-- [app/src/main/java/com/binance/monitor/data/local/db/](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db)
-  Room 数据库层。
+  负责读取 `/v2/session/*` 会话接口。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
+  账户页入口，负责消费账户快照、历史和会话状态。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java)
+  账户页预加载管理器，负责统一拉取和缓存账户数据。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java)
+  账户页远程会话协调器，负责登录、切换、退出和切换后收口。
+- [app/src/main/java/com/binance/monitor/service/MonitorService.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorService.java)
+  前台监控服务，负责同步、提醒和悬浮窗刷新。
+- [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
+  行情图表页入口，负责消费 K 线和历史成交标注。
+- [app/src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java)
+  本地账户仓储，负责保存快照、历史和曲线，但不再自行拼装真值。
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
-  MT5 网关服务，同时承载行情、账户、同步流和远程账号会话接口。
+  服务端主入口，负责行情、账户、同步流和会话接口。
+- [bridge/mt5_gateway/v2_account.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_account.py)
+  服务端账户模型与标准字段映射。
 - [bridge/mt5_gateway/v2_session_crypto.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_crypto.py)
-  远程账号会话加密工具，负责公钥生成、登录信封解密、时间戳校验和 nonce 去重。
+  会话加密工具，负责公钥、登录信封、时间戳和 nonce 校验。
 - [bridge/mt5_gateway/v2_session_manager.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_manager.py)
-  远程账号会话管理器，负责登录、切换、退出、异常回滚和强一致收口。
-- [bridge/mt5_gateway/v2_session_store.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_store.py)
-  远程账号会话存储层，负责 `active_session.json` 与已保存账号密文档案读写。
+  会话管理器，负责登录、切换、退出、回滚和激活态确认。
 - [bridge/mt5_gateway/admin_panel.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/admin_panel.py)
-  轻量 Web 管理面板服务，负责状态聚合、日志、`.env` 编辑、异常规则代理、缓存清理、本机组件管理和当前账号会话摘要展示。
+  管理面板入口，负责状态、日志、配置和组件控制。
 
-## 搜索记录（2026-03-29）
+## 搜索记录
 
-- `skills.sh` 检索：`android-design-guidelines`
+- `2026-03-29`：`skills.sh` 检索 `android-design-guidelines`
   结论：Tab、长按交互和设置入口布局可按 Android 一致性原则落地。
-- GitHub 检索：`liihuu/KLineChartAndroid`
-  结论：K 线常用指标组合包含 `MA/EMA/RSI/KDJ/BOLL/MACD`，本项目图表扩展采用同类思路。
-- 官方文档检索：MQL5 Python `history_deals_get`
-  结论：账户统计与交易历史继续以 MetaTrader5 Python 接口为主来源。
-- 官方文档检索：Android Room
-  结论：本地持久层统一采用 Room，更适合历史 K 线、交易历史与账户快照的结构化保存。
-- 本地实现检索：`bridge/mt5_gateway/server_v2.py` + `Mt5BridgeGatewayClient`
-  结论：在不改变页面模型的前提下，把 MT5 数据拆成摘要、轻实时持仓、挂单、成交、曲线几条链路，是当前最省流量的落地方式。
+- `2026-03-29`：GitHub 检索 `liihuu/KLineChartAndroid`
+  结论：K 线常用指标组合可参考 `MA / EMA / RSI / KDJ` 一类成熟做法。
+- `2026-03-29`：官方文档检索 MQL5 Python `history_deals_get`
+  结论：账户统计和交易历史继续以 MetaTrader5 Python 接口为主来源。
+- `2026-03-29`：官方文档检索 Android Room
+  结论：本地持久层适合统一承接历史 K 线、交易历史和账户快照。
+- `2026-04-07`：本轮为最终收口与文档同步，未新增外部搜索。
 
 ## 待办事项
 
-- 远程账号会话后续项：后台自动公钥轮换、多用户隔离、多实例共享 nonce 去重
-- 实盘版第一阶段（必须先做）：服务端交易网关、交易命令状态机、统一确认弹窗、交易后强一致刷新、单笔开仓/平仓/挂单/改单闭环
-- 实盘版第二阶段（必须先做）：图表交易交互、拒单原因回执、手数与保证金预演、一键交易开关和安全模式/快速模式边界
-- 实盘版第三阶段（可以后做）：批量开仓、批量平仓、批量改 TP/SL、Close By、netting/hedging 完整兼容
-- 实盘版第四阶段（可以后做）：DOM 交易、快捷模板、常用参数记忆、交易日志回放、高级风险控制
-- 资源占用优化、流量进一步压缩、CPU 与内存整理
-- 更大范围的代码规范化整理与注释补齐
-- 评估是否把异常交易判断迁移到服务器端
+- 真机 + 已部署 HTTPS 服务器的人工作业联调还需要做一次最终现场确认
+- 部署现场需要再次确认域名、证书、443 放行和 `/v2/session/*` 的 HTTPS 暴露状态
 
 ## 阶段验收说明
 
-- Task 6 的自动化验收已经完成：服务端远程会话测试与 App 侧远程会话测试都已通过
-- 2026-04-07 再次总复核后的最新自动化结果：
-  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_admin_panel -v` 已通过，结果 `Ran 74 tests ... OK`
-  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` 已通过，结果 `BUILD SUCCESSFUL`
-  - 部署脚本：`python -m py_compile scripts/build_windows_server_bundle.py` 已通过，且 `python scripts/build_windows_server_bundle.py` 已重新生成最新 `dist/windows_server_bundle`
-- 当前还没有在这份仓库里直接完成“真机 + 已部署服务器”的人工联调记录
-- 真机人工验收时，至少需要确认这 7 条：
-  - App 获取公钥成功
-  - 新账号“仅本次使用”登录成功
-  - 退出登录后页面回到未登录态
-  - 新账号“记住此账号”登录成功
-  - 从已保存账号列表切换成功
-  - 切换后旧仓位、旧挂单、旧图表线不再显示
-  - 删除当前账号时先退出，再删除档案
+- 当前 1-6 步代码收口已经完成，自动化验收已经通过
+- App 最终总验收已通过：执行上面的 App 总验收命令，结果为 `BUILD SUCCESSFUL`
+- 服务端最终总验收已通过：执行上面的服务端总验收命令，结果为 `Ran 101 tests ... OK`
+- 2026-04-08 新增验证：启动脚本去噪回归、Windows bundle 回归、App 入口固定回归均已通过
+- 本轮只更新了 `README.md` 与 `CONTEXT.md` 的最终口径，没有新增代码逻辑
+- 当前唯一未完成的是“真机 + 已部署 HTTPS 服务器”的人工联调记录

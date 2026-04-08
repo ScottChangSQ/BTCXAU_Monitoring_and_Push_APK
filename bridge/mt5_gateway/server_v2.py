@@ -95,7 +95,9 @@ ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
 ABNORMAL_KLINE_LIMIT = max(2, int(os.getenv("ABNORMAL_KLINE_LIMIT", "60")))
 ABNORMAL_FETCH_CACHE_MS = max(1000, int(os.getenv("ABNORMAL_FETCH_CACHE_MS", "4000")))
 ABNORMAL_DELTA_ENABLED = os.getenv("ABNORMAL_DELTA_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
-ABNORMAL_SYMBOLS = ("BTCUSDT", "XAUUSD")
+MARKET_SYMBOL_BTC = "BTCUSDT"
+MARKET_SYMBOL_XAU = "XAUUSDT"
+ABNORMAL_SYMBOLS = (MARKET_SYMBOL_BTC, MARKET_SYMBOL_XAU)
 SESSION_DATA_DIR = os.getenv("MT5_SESSION_DATA_DIR", "").strip()
 if not SESSION_DATA_DIR:
     SESSION_DATA_DIR = str(Path(__file__).resolve().parent / "data" / "session")
@@ -700,19 +702,30 @@ def _remember_market_candle_rows(cache_key: str, rows: List[Any], now_ms: int) -
         )
 
 
-# 仅在 EA 推送仍新鲜时延长快照缓存寿命，减少固定轮询下的一快一慢交替。
+# 账户真值唯一化后，只允许复用来自 MT5 Python Pull 的标准账户快照。
+def _is_mt5_pull_account_snapshot(snapshot: Optional[Dict[str, Any]]) -> bool:
+    source = str(((snapshot or {}).get("accountMeta") or {}).get("source", ""))
+    return source == "MT5 Python Pull"
+
+
+# 同步增量链也只允许承接 canonical MT5 快照，避免旧 EA 状态继续参与 seq/delta 计算。
+def _sanitize_mt5_pull_sync_state(state: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(state, dict):
+        return None
+    snapshot = state.get("snapshot")
+    if not _is_mt5_pull_account_snapshot(snapshot):
+        return None
+    sanitized = dict(state)
+    previous_snapshot = sanitized.get("previousSnapshot")
+    if previous_snapshot is not None and not _is_mt5_pull_account_snapshot(previous_snapshot):
+        sanitized["previousSnapshot"] = None
+        sanitized["previousSeq"] = 0
+    return sanitized
+
+
+# 第 2 步收口后不再滑动延长任何旧账户缓存寿命，超过 TTL 就必须重建。
 def _should_slide_snapshot_build_cache(cached: Optional[Dict[str, Any]], now_ms: int) -> bool:
-    if not cached:
-        return False
-    built_at = int(cached.get("builtAt", 0))
-    age = now_ms - built_at
-    if age <= SNAPSHOT_BUILD_CACHE_MS or age > SNAPSHOT_BUILD_MAX_STALE_MS:
-        return False
-    snapshot = cached.get("snapshot") or {}
-    source = str((snapshot.get("accountMeta") or {}).get("source", ""))
-    if "EA Push" not in source:
-        return False
-    return _is_ea_snapshot_fresh()
+    return False
 
 
 def _fmt_money(value: float) -> str:
@@ -734,18 +747,22 @@ def _safe_div(a: float, b: float) -> float:
     return a / b
 
 
-def _normalize_abnormal_symbol(symbol: str) -> str:
+def _normalize_market_symbol(symbol: str) -> str:
     value = str(symbol or "").strip().upper()
-    if value in {"BTC", "BTCUSD", "BTCUSDT", "XBT"}:
-        return "BTCUSDT"
-    if value in {"XAU", "XAUUSD", "GOLD"}:
-        return "XAUUSD"
+    if value in {"BTC", "BTCUSD", MARKET_SYMBOL_BTC, "XBT"}:
+        return MARKET_SYMBOL_BTC
+    if value in {"XAU", "XAUUSD", MARKET_SYMBOL_XAU, "GOLD"}:
+        return MARKET_SYMBOL_XAU
     return value
+
+
+def _normalize_abnormal_symbol(symbol: str) -> str:
+    return _normalize_market_symbol(symbol)
 
 
 def _default_abnormal_symbol_config(symbol: str) -> Dict[str, Any]:
     normalized = _normalize_abnormal_symbol(symbol)
-    if normalized == "XAUUSD":
+    if normalized == MARKET_SYMBOL_XAU:
         return {
             "symbol": normalized,
             "volumeThreshold": 3000.0,
@@ -756,7 +773,7 @@ def _default_abnormal_symbol_config(symbol: str) -> Dict[str, Any]:
             "priceChangeEnabled": True,
         }
     return {
-        "symbol": "BTCUSDT",
+        "symbol": MARKET_SYMBOL_BTC,
         "volumeThreshold": 1000.0,
         "amountThreshold": 70000000.0,
         "priceChangeThreshold": 200.0,
@@ -1042,31 +1059,31 @@ def _build_abnormal_alerts_locked(records: List[Dict[str, Any]]) -> List[Dict[st
     for close_time in sorted(grouped.keys()):
         current_group = grouped.get(close_time) or {}
         now_ms = _now_ms()
-        btc_record = current_group.get("BTCUSDT")
-        xau_record = current_group.get("XAUUSD")
+        btc_record = current_group.get(MARKET_SYMBOL_BTC)
+        xau_record = current_group.get(MARKET_SYMBOL_XAU)
         btc_eligible = _is_abnormal_alert_eligible_locked(btc_record, now_ms)
         xau_eligible = _is_abnormal_alert_eligible_locked(xau_record, now_ms)
         if btc_eligible and xau_eligible:
             content = _compose_abnormal_alert_line("BTC", str(btc_record.get("triggerSummary", "")))
             content += "\n" + _compose_abnormal_alert_line("XAU", str(xau_record.get("triggerSummary", "")))
-            created.append(_build_abnormal_alert(["BTCUSDT", "XAUUSD"], close_time, content))
-            abnormal_last_notify_at["BTCUSDT"] = now_ms
-            abnormal_last_notify_at["XAUUSD"] = now_ms
+            created.append(_build_abnormal_alert([MARKET_SYMBOL_BTC, MARKET_SYMBOL_XAU], close_time, content))
+            abnormal_last_notify_at[MARKET_SYMBOL_BTC] = now_ms
+            abnormal_last_notify_at[MARKET_SYMBOL_XAU] = now_ms
             continue
         if btc_eligible and btc_record:
             created.append(_build_abnormal_alert(
-                ["BTCUSDT"],
+                [MARKET_SYMBOL_BTC],
                 close_time,
                 _compose_abnormal_alert_line("BTC", str(btc_record.get("triggerSummary", ""))),
             ))
-            abnormal_last_notify_at["BTCUSDT"] = now_ms
+            abnormal_last_notify_at[MARKET_SYMBOL_BTC] = now_ms
         if xau_eligible and xau_record:
             created.append(_build_abnormal_alert(
-                ["XAUUSD"],
+                [MARKET_SYMBOL_XAU],
                 close_time,
                 _compose_abnormal_alert_line("XAU", str(xau_record.get("triggerSummary", ""))),
             ))
-            abnormal_last_notify_at["XAUUSD"] = now_ms
+            abnormal_last_notify_at[MARKET_SYMBOL_XAU] = now_ms
     return created
 
 
@@ -1340,6 +1357,22 @@ def _current_mt5_credentials() -> Dict[str, Any]:
     }
 
 
+def _parse_bool_flag(value: Any, default: bool = False) -> bool:
+    """严格解析布尔开关，避免字符串 'false' 被当成真值。"""
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "y", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "n", "off", ""}:
+        return False
+    return bool(default)
+
+
 def _is_mt5_configured() -> bool:
     credentials = _current_mt5_credentials()
     return int(credentials.get("login") or 0) > 0 and bool(credentials.get("password")) and bool(credentials.get("server"))
@@ -1593,10 +1626,17 @@ class _SessionGatewayAdapter:
             logged_in = bool(mt5.login(login_value, password=password_value, server=server_value))
         if not logged_in:
             raise RuntimeError(f"MT5 login failed: {mt5.last_error()}")
-        _set_runtime_session_credentials(login_value, password_value, server_value)
+        account = mt5.account_info()
+        canonical_login = str(getattr(account, "login", "") or "").strip()
+        canonical_server = str(getattr(account, "server", "") or "").strip()
+        if not canonical_login or not canonical_server:
+            _shutdown_mt5()
+            _clear_runtime_session_credentials()
+            raise ValueError("gateway canonical account identity missing after MT5 login")
+        _set_runtime_session_credentials(canonical_login, password_value, canonical_server)
         return {
-            "login": str(login_value),
-            "server": server_value,
+            "login": canonical_login,
+            "server": canonical_server,
         }
 
     def switch_mt5_account(self, login: str, password: str, server: str) -> Dict[str, Any]:
@@ -1620,11 +1660,28 @@ class _SessionGatewayAdapter:
 def _build_session_manager() -> v2_session_manager.AccountSessionManager:
     """构建全局会话管理器实例。"""
     gateway = _SessionGatewayAdapter()
-    return v2_session_manager.AccountSessionManager(
+    manager = v2_session_manager.AccountSessionManager(
         store=session_store,
         gateway=gateway,
         on_session_changed=_on_session_changed,
     )
+    active_session = session_store.load_active_session()
+    if isinstance(active_session, dict) and active_session:
+        credentials = _current_mt5_credentials()
+        active_login = str(active_session.get("login") or "").strip()
+        active_server = str(active_session.get("server") or "").strip()
+        runtime_login = str(credentials.get("login") or "").strip()
+        runtime_server = str(credentials.get("server") or "").strip()
+        runtime_mode = str(credentials.get("mode") or "")
+        if (
+            runtime_mode != "remote_active"
+            or not active_login
+            or not active_server
+            or active_login != runtime_login
+            or active_server.lower() != runtime_server.lower()
+        ):
+            session_store.clear_active_session()
+    return manager
 
 
 session_manager = _build_session_manager()
@@ -1835,12 +1892,7 @@ def _has_curve_exposure(exposures: Dict[Tuple[str, str], Dict[str, float]]) -> b
 
 
 def _normalize_curve_market_symbol(symbol: str) -> str:
-    value = str(symbol or "").strip().upper()
-    if value in {"BTC", "BTCUSD", "BTCUSDT", "XBT"}:
-        return "BTCUSDT"
-    if value in {"XAU", "XAUUSD", "XAUUSDT", "GOLD"}:
-        return "XAUUSDT"
-    return value
+    return _normalize_market_symbol(symbol)
 
 
 def _curve_sampling_interval(duration_ms: int) -> Tuple[str, int]:
@@ -2313,7 +2365,6 @@ def _progressive_trade_history_deals(range_key: str) -> List[Any]:
 def _map_trade_deals(deals: List[Any]) -> List[Dict]:
     mapped = []
     open_batches: Dict[str, List[Dict[str, Any]]] = {}
-    open_batches_by_symbol_side: Dict[str, List[Dict[str, Any]]] = {}
     contract_size_cache: Dict[str, float] = {}
     volume_epsilon = 1e-9
 
@@ -2338,9 +2389,6 @@ def _map_trade_deals(deals: List[Any]) -> List[Dict]:
     def infer_original_side(deal_type: int) -> str:
         return "Buy" if deal_type == 1 else "Sell"
 
-    def symbol_side_key(symbol: str, side: str) -> str:
-        return f"{symbol}:{side}"
-
     def append_open_batch(key: str,
                           symbol: str,
                           side: str,
@@ -2358,8 +2406,6 @@ def _map_trade_deals(deals: List[Any]) -> List[Dict]:
         }
         primary_queue = open_batches.setdefault(key, [])
         primary_queue.append(batch)
-        fallback_queue = open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), [])
-        fallback_queue.append(batch)
 
     def consume_queue(queue: List[Dict[str, Any]], close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
         matches: List[Tuple[Dict[str, Any], float]] = []
@@ -2383,12 +2429,6 @@ def _map_trade_deals(deals: List[Any]) -> List[Dict]:
 
     def consume_open_batches(key: str, close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
         queue = open_batches.setdefault(key, [])
-        return consume_queue(queue, close_volume)
-
-    def consume_open_batches_by_symbol_side(symbol: str,
-                                            side: str,
-                                            close_volume: float) -> Tuple[List[Tuple[Dict[str, Any], float]], float]:
-        queue = open_batches_by_symbol_side.setdefault(symbol_side_key(symbol, side), [])
         return consume_queue(queue, close_volume)
 
     def resolve_split_ticket(ticket: int, split_count: int, split_index: int) -> int:
@@ -2473,13 +2513,6 @@ def _map_trade_deals(deals: List[Any]) -> List[Dict]:
         if _is_entry_close(entry_type):
             original_side = infer_original_side(deal_type)
             matches, remaining_after_close = consume_open_batches(key, volume)
-            if remaining_after_close > volume_epsilon:
-                fallback_matches, remaining_after_close = consume_open_batches_by_symbol_side(
-                    symbol,
-                    original_side,
-                    remaining_after_close,
-                )
-                matches.extend(fallback_matches)
             if entry_type == 2 and matches:
                 synthetic_close_volume = 0.0
                 reverse_open_volume = remaining_after_close
@@ -2981,13 +3014,6 @@ def _rebuild_ea_trade_records(records: List[Dict[str, Any]]) -> List[Dict[str, A
         if _is_entry_close(entry_type):
             original_side = infer_original_side(deal_type)
             matches, remaining_after_close = consume_open_batches(key, volume)
-            if remaining_after_close > volume_epsilon:
-                fallback_matches, remaining_after_close = consume_open_batches_by_symbol_side(
-                    symbol,
-                    original_side,
-                    remaining_after_close,
-                )
-                matches.extend(fallback_matches)
 
             split_count = len(matches) if matches else 1
             if matches:
@@ -3181,15 +3207,7 @@ def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     data["curveIndicators"] = data.get("curveIndicators") or []
     data["positions"] = data.get("positions") or []
     data["pendingOrders"] = data.get("pendingOrders") or []
-    raw_trades = data.get("trades") or []
-    data["trades"] = _normalize_ea_snapshot_trades(account_meta, raw_trades)
-    data["curvePoints"] = _rebuild_sparse_ea_curve_points(
-        account_meta,
-        data["overviewMetrics"],
-        data["curvePoints"],
-        raw_trades,
-        data["positions"],
-    )
+    data["trades"] = data.get("trades") or []
     data["statsMetrics"] = data.get("statsMetrics") or []
     return data
 
@@ -3438,9 +3456,12 @@ def _build_snapshot_with_cache(range_key: str) -> Dict:
     with snapshot_cache_lock:
         cached = snapshot_build_cache.get(range_key)
         if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
-            cached["lastAccessAt"] = now_ms
-            _remember_cache_entry_locked(snapshot_build_cache, range_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-            return cached.get("snapshot")
+            cached_snapshot = cached.get("snapshot")
+            if _is_mt5_pull_account_snapshot(cached_snapshot):
+                cached["lastAccessAt"] = now_ms
+                _remember_cache_entry_locked(snapshot_build_cache, range_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+                return cached_snapshot
+            snapshot_build_cache.pop(range_key, None)
         if _should_slide_snapshot_build_cache(cached, now_ms):
             cached["builtAt"] = now_ms
             cached["lastAccessAt"] = now_ms
@@ -3464,9 +3485,12 @@ def _build_account_light_snapshot_with_cache() -> Dict:
     with snapshot_cache_lock:
         cached = snapshot_build_cache.get(cache_key)
         if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
-            cached["lastAccessAt"] = now_ms
-            _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-            return cached.get("snapshot")
+            cached_snapshot = cached.get("snapshot")
+            if _is_mt5_pull_account_snapshot(cached_snapshot):
+                cached["lastAccessAt"] = now_ms
+                _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+                return cached_snapshot
+            snapshot_build_cache.pop(cache_key, None)
         if _should_slide_snapshot_build_cache(cached, now_ms):
             cached["builtAt"] = now_ms
             cached["lastAccessAt"] = now_ms
@@ -3498,22 +3522,24 @@ def _build_trade_history_with_cache(range_key: str, fallback_snapshot: Optional[
     with snapshot_cache_lock:
         cached = snapshot_build_cache.get(cache_key)
         if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
-            cached["lastAccessAt"] = now_ms
-            _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-            return [dict(item) for item in (cached.get("trades") or [])]
+            if str(cached.get("source") or "") == "MT5 Python Pull":
+                cached["lastAccessAt"] = now_ms
+                _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+                return [dict(item) for item in (cached.get("trades") or [])]
+            snapshot_build_cache.pop(cache_key, None)
 
-    if mt5 is not None and _is_mt5_configured():
-        try:
-            trades = _snapshot_trades_from_mt5(range_key)
-        except Exception:
-            trades = [dict(item) for item in ((fallback_snapshot or {}).get("trades") or [])]
-    else:
+    if _is_mt5_pull_account_snapshot(fallback_snapshot):
         trades = [dict(item) for item in ((fallback_snapshot or {}).get("trades") or [])]
+    else:
+        if mt5 is None or not _is_mt5_configured():
+            raise RuntimeError("MT5 Python Pull is not configured.")
+        trades = [dict(item) for item in (_snapshot_trades_from_mt5(range_key) or [])]
 
     with snapshot_cache_lock:
         _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
             "builtAt": now_ms,
             "lastAccessAt": now_ms,
+            "source": "MT5 Python Pull",
             "trades": trades,
         }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
     return [dict(item) for item in trades]
@@ -3629,7 +3655,9 @@ def _build_projected_snapshot_response(range_key: str, since_seq: int, delta: bo
     cache_key = f"{range_key}:{profile['cacheSuffix']}"
 
     with snapshot_cache_lock:
-        state = snapshot_sync_cache.get(cache_key)
+        state = _sanitize_mt5_pull_sync_state(snapshot_sync_cache.get(cache_key))
+        if state is None:
+            snapshot_sync_cache.pop(cache_key, None)
         previous_snapshot: Optional[Dict] = None
         previous_seq = 0
 
@@ -3720,7 +3748,9 @@ def _build_trades_snapshot_response(range_key: str, since_seq: int, delta: bool)
     cache_key = f"{range_key}:trades"
 
     with snapshot_cache_lock:
-        state = snapshot_sync_cache.get(cache_key)
+        state = _sanitize_mt5_pull_sync_state(snapshot_sync_cache.get(cache_key))
+        if state is None:
+            snapshot_sync_cache.pop(cache_key, None)
         previous_snapshot: Optional[Dict] = None
         previous_seq = 0
 
@@ -3787,35 +3817,10 @@ def _is_ea_snapshot_fresh() -> bool:
 
 
 def _select_snapshot(range_key: str) -> Dict:
-    mode = GATEWAY_MODE if GATEWAY_MODE in {"auto", "pull", "ea"} else "auto"
-
-    if mode == "ea":
-        if _is_ea_snapshot_fresh():
-            return _clone_snapshot_payload(ea_snapshot_cache)
-        raise RuntimeError("No fresh EA snapshot found. Please start MT5 EA push first.")
-
-    if mode == "pull":
-        return _snapshot_from_mt5(range_key)
-
-    # auto mode: 只要 EA 快照仍是新鲜的，就优先复用 EA。
-    # 否则高频账户接口会持续触发 MT5 Python Pull，把线程池和 MT5 拉取链路占满，
-    # 反过来又拖慢 EA push 的 POST /v1/ea/snapshot。
-    if _is_ea_snapshot_fresh():
-        return _clone_snapshot_payload(ea_snapshot_cache)
-
-    # 没有新鲜 EA 时，再退回 MT5 pull。
-    if mt5 is not None and _is_mt5_configured():
-        try:
-            return _snapshot_from_mt5(range_key)
-        except Exception:
-            pass
-
-    if ea_snapshot_cache is not None:
-        stale = _clone_snapshot_payload(ea_snapshot_cache)
-        stale["accountMeta"]["source"] = f"{stale['accountMeta'].get('source', 'MT5 EA Push')} (stale)"
-        return stale
-
-    raise RuntimeError("No available data source. Configure MT5 pull or start EA push.")
+    # 账户真值唯一化：主链只认 MT5 Python Pull，不再在 EA / stale cache 之间切源。
+    if mt5 is None or not _is_mt5_configured():
+        raise RuntimeError("MT5 Python Pull is not configured.")
+    return _snapshot_from_mt5(range_key)
 
 
 # 统一把完整快照裁成账户轻快照，供高频账户同步接口复用。
@@ -3823,38 +3828,17 @@ def _strip_account_light_snapshot(snapshot: Optional[Dict[str, Any]]) -> Dict[st
     safe_snapshot = snapshot or {}
     return {
         "accountMeta": dict(safe_snapshot.get("accountMeta") or {}),
+        "overviewMetrics": [dict(item) for item in (safe_snapshot.get("overviewMetrics") or [])],
+        "curveIndicators": [dict(item) for item in (safe_snapshot.get("curveIndicators") or [])],
+        "statsMetrics": [dict(item) for item in (safe_snapshot.get("statsMetrics") or [])],
         "positions": [dict(item) for item in (safe_snapshot.get("positions") or [])],
         "pendingOrders": [dict(item) for item in (safe_snapshot.get("pendingOrders") or [])],
     }
 
 
-# 轻快照数据源选择：高频接口只拿账户摘要、持仓和挂单，保留历史接口按需走重快照。
+# 轻快照是 canonical 全快照的纯投影，避免和历史链出现不同字段口径。
 def _build_account_light_snapshot() -> Dict[str, Any]:
-    mode = GATEWAY_MODE if GATEWAY_MODE in {"auto", "pull", "ea"} else "auto"
-
-    if mode == "ea":
-        if _is_ea_snapshot_fresh():
-            return _strip_account_light_snapshot(_clone_snapshot_payload(ea_snapshot_cache))
-        raise RuntimeError("No fresh EA snapshot found. Please start MT5 EA push first.")
-
-    if mode == "pull":
-        return _snapshot_from_mt5_light()
-
-    if _is_ea_snapshot_fresh():
-        return _strip_account_light_snapshot(_clone_snapshot_payload(ea_snapshot_cache))
-
-    if mt5 is not None and _is_mt5_configured():
-        try:
-            return _snapshot_from_mt5_light()
-        except Exception:
-            pass
-
-    if ea_snapshot_cache is not None:
-        stale = _clone_snapshot_payload(ea_snapshot_cache)
-        stale["accountMeta"]["source"] = f"{stale['accountMeta'].get('source', 'MT5 EA Push')} (stale)"
-        return _strip_account_light_snapshot(stale)
-
-    raise RuntimeError("No available data source. Configure MT5 pull or start EA push.")
+    return _strip_account_light_snapshot(_build_snapshot_with_cache("all"))
 
 
 def _join_query(params: Dict[str, Any]) -> str:
@@ -4249,31 +4233,12 @@ def health():
             "healthCached": False,
             "healthCacheAgeMs": 0,
             "session": _build_session_summary(),
+            "login": str(LOGIN),
+            "server": SERVER,
+            "mt5Connected": bool(mt5_last_connected_path) and _is_mt5_configured(),
+            "mt5ProbeDeferred": True,
+            "lastError": "",
         }
-        if mt5 is None:
-            return info
-        with state_lock:
-            if _is_mt5_configured():
-                try:
-                    _ensure_mt5()
-                    account = mt5.account_info()
-                    info["mt5Connected"] = account is not None
-                    info["login"] = str(getattr(account, "login", LOGIN)) if account else str(LOGIN)
-                    info["server"] = str(getattr(account, "server", SERVER)) if account else SERVER
-                    info["lastError"] = str(mt5.last_error())
-                except Exception as exc:
-                    if cached_payload:
-                        cached_payload["healthCached"] = True
-                        cached_payload["healthCacheAgeMs"] = max(0, now_ms - cached_built_at)
-                        cached_payload["warning"] = f"实时健康检查失败，暂时返回最近一次结果：{exc}"
-                        return cached_payload
-                    info["mt5Connected"] = False
-                    info["lastError"] = str(exc)
-                finally:
-                    _shutdown_mt5()
-            else:
-                info["mt5Connected"] = False
-                info["lastError"] = str(mt5.last_error())
         with snapshot_cache_lock:
             health_status_cache["payload"] = _clone_json_value(info)
             health_status_cache["builtAt"] = now_ms
@@ -4342,7 +4307,7 @@ def v2_session_login(payload: Dict[str, Any]):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     request_id = str(plain.get("requestId") or safe_payload.get("requestId") or "")
-    remember = bool(safe_payload.get("saveAccount", plain.get("remember")))
+    remember = _parse_bool_flag(safe_payload.get("saveAccount"), default=_parse_bool_flag(plain.get("remember")))
     return session_manager.login_new_account(
         login=str(plain.get("login") or ""),
         password=str(plain.get("password") or ""),
@@ -4435,6 +4400,9 @@ def v2_account_snapshot():
                 "orders": account_section.get("orders") or [],
             }
         )
+        snapshot_model["overviewMetrics"] = [dict(item) for item in (snapshot.get("overviewMetrics") or [])]
+        snapshot_model["curveIndicators"] = [dict(item) for item in (snapshot.get("curveIndicators") or [])]
+        snapshot_model["statsMetrics"] = [dict(item) for item in (snapshot.get("statsMetrics") or [])]
         return v2_account.build_account_snapshot_response(
             snapshot_model,
             account_meta={
@@ -4463,6 +4431,9 @@ def v2_account_history(
                 "curvePoints": snapshot.get("curvePoints") or [],
             }
         )
+        history_model["overviewMetrics"] = [dict(item) for item in (snapshot.get("overviewMetrics") or [])]
+        history_model["curveIndicators"] = [dict(item) for item in (snapshot.get("curveIndicators") or [])]
+        history_model["statsMetrics"] = [dict(item) for item in (snapshot.get("statsMetrics") or [])]
         payload = v2_account.build_account_history_response(
             history_model,
             account_meta={
@@ -4705,11 +4676,6 @@ def ingest_ea_snapshot(payload: Dict, x_bridge_token: Optional[str] = Header(def
         if changed:
             ea_snapshot_cache = normalized
             ea_snapshot_change_digest = change_digest
-    if changed:
-        with snapshot_cache_lock:
-            snapshot_build_cache.clear()
-            snapshot_sync_cache.clear()
-
     return {"ok": True, "receivedAt": ea_snapshot_received_at_ms, "changed": changed}
 
 
@@ -4838,7 +4804,13 @@ async def v2_stream(client: WebSocket):
         while True:
             now_ms = _now_ms()
             previous_sync_token = current_sync_token
-            delta_payload = _build_v2_sync_delta_response(sync_token=previous_sync_token, server_time=now_ms)
+            # MT5 快照构建链是同步阻塞的，必须移出事件循环线程，
+            # 否则一个 v2 stream 客户端就会把同进程的 /health、/v1/*、/v2/* 一起拖住。
+            delta_payload = await asyncio.to_thread(
+                _build_v2_sync_delta_response,
+                previous_sync_token,
+                now_ms,
+            )
             current_sync_token = str(delta_payload.get("nextSyncToken", ""))
             await client.send_json(
                 _build_v2_ws_message(

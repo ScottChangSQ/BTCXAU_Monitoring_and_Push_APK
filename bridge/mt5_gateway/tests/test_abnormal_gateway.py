@@ -132,8 +132,8 @@ class AbnormalGatewayTests(unittest.TestCase):
         first = server_v2._build_abnormal_response(since_seq=0, delta=True)
 
         with server_v2.abnormal_state_lock:
-            server_v2.abnormal_record_store.insert(0, self._build_record("r2", "XAUUSD", 2000, "价格变化"))
-            server_v2.abnormal_alert_store.insert(0, self._build_alert("a2", ["XAUUSD"], 2000, "XAU 的 价格变化 出现异常！"))
+            server_v2.abnormal_record_store.insert(0, self._build_record("r2", "XAUUSDT", 2000, "价格变化"))
+            server_v2.abnormal_alert_store.insert(0, self._build_alert("a2", ["XAUUSDT"], 2000, "XAU 的 价格变化 出现异常！"))
             server_v2._commit_abnormal_snapshot_locked()
 
         second = server_v2._build_abnormal_response(
@@ -178,7 +178,7 @@ class AbnormalGatewayTests(unittest.TestCase):
         stale_close = server_v2._now_ms() - 180 * 60 * 1000
         with server_v2.abnormal_state_lock:
             server_v2.abnormal_last_close_time_by_symbol["BTCUSDT"] = stale_close
-            server_v2.abnormal_last_close_time_by_symbol["XAUUSD"] = stale_close
+            server_v2.abnormal_last_close_time_by_symbol["XAUUSDT"] = stale_close
 
         try:
             server_v2._refresh_abnormal_state()
@@ -186,7 +186,7 @@ class AbnormalGatewayTests(unittest.TestCase):
             server_v2._fetch_recent_closed_binance_klines = original_fetch
 
         self.assertGreater(captured_limits.get("BTCUSDT", 0), server_v2.ABNORMAL_KLINE_LIMIT)
-        self.assertGreater(captured_limits.get("XAUUSD", 0), server_v2.ABNORMAL_KLINE_LIMIT)
+        self.assertGreater(captured_limits.get("XAUUSDT", 0), server_v2.ABNORMAL_KLINE_LIMIT)
 
     def _reset_state(self):
         with server_v2.abnormal_state_lock:

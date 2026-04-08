@@ -183,8 +183,28 @@ class AdminPanelTests(unittest.TestCase):
         self.assertIn(".requirements.sha256", content)
         self.assertIn("--quiet", content)
         self.assertIn("chcp 65001", content)
-        self.assertIn('$ErrorActionPreference = "Continue"', content)
-        self.assertNotIn('2>&1 | ForEach-Object', content)
+        self.assertIn("public static int Run(string filePath, string argumentsLine, string workingDirectory)", content)
+        self.assertIn("RedirectStandardError = true", content)
+
+    def test_start_gateway_script_should_skip_reinstall_when_requirements_unchanged(self):
+        script_path = ROOT / "start_gateway.ps1"
+        content = script_path.read_text(encoding="utf-8")
+
+        self.assertIn(".requirements.sha256", content)
+        self.assertIn("--quiet", content)
+        self.assertIn("--disable-pip-version-check", content)
+        self.assertIn("public static int Run(string filePath, string argumentsLine, string workingDirectory)", content)
+        self.assertIn("RedirectStandardError = true", content)
+
+    def test_health_endpoint_should_not_force_mt5_login_probe(self):
+        server_source = (ROOT / "server_v2.py").read_text(encoding="utf-8")
+        start = server_source.index('@app.get("/health")')
+        end = server_source.index('@app.get("/binance-rest/{path_value:path}")')
+        health_block = server_source[start:end]
+
+        self.assertNotIn("_ensure_mt5()", health_block)
+        self.assertNotIn("mt5.account_info()", health_block)
+        self.assertNotIn("mt5.last_error()", health_block)
 
 
 if __name__ == "__main__":

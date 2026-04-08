@@ -674,8 +674,8 @@ public class MainActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         String configuredBase = viewModel.getMt5GatewayBaseUrl();
         String gatewayRoot = GatewayUrlResolver.resolveGatewayRootBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
-        String binanceRest = GatewayUrlResolver.buildBinanceRestBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
-        String binanceWs = GatewayUrlResolver.buildBinanceWebSocketBaseUrl(configuredBase, AppConstants.MT5_GATEWAY_BASE_URL);
+        String binanceRest = viewModel.getBinanceRestBaseUrl();
+        String binanceWs = viewModel.getBinanceWebSocketBaseUrl();
 
         android.widget.LinearLayout content = new android.widget.LinearLayout(this);
         content.setOrientation(android.widget.LinearLayout.VERTICAL);

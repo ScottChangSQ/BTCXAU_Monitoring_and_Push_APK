@@ -35,15 +35,6 @@ def _derive_margin_level(equity: float, margin: float) -> Optional[float]:
     return (equity / margin) * 100
 
 
-def _derive_position_ratio(equity: float, balance: float) -> float:
-    """估算净值曲线点的仓位比例，作为兜底值。"""
-    if equity:
-        return (equity - balance) / equity
-    if balance:
-        return (equity - balance) / balance
-    return 0.0
-
-
 def _normalize_position(raw: Mapping[str, Any]) -> Dict[str, Any]:
     """统一处理持仓对象字段，保证数值类型和字段可预测。"""
     return {
@@ -84,63 +75,36 @@ def _normalize_order(raw: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def _normalize_trade(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    """把成交原始数据标准化为 V2 历史成交行。"""
-    timestamp = raw.get("timestamp") or raw.get("time") or 0
-    price = _to_float(raw.get("price") or raw.get("openPrice") or raw.get("closePrice"))
-    open_price = _to_float(
-        raw.get("openPrice")
-        or raw.get("open_price")
-        or raw.get("open")
-        or raw.get("priceOpen")
-        or raw.get("entryPrice")
-        or raw.get("entry_price"),
-        price,
-    )
-    close_price = _to_float(
-        raw.get("closePrice")
-        or raw.get("close_price")
-        or raw.get("close")
-        or raw.get("priceClose")
-        or raw.get("exitPrice")
-        or raw.get("exit_price"),
-        price,
-    )
-    open_time = int(raw.get("openTime") or raw.get("open_time") or raw.get("timeOpen") or raw.get("time_open") or timestamp)
-    close_time = int(raw.get("closeTime") or raw.get("close_time") or raw.get("timeClose") or raw.get("time_close") or timestamp)
+    """把 canonical 成交数据标准化为 V2 历史成交行。"""
     return {
-        "timestamp": int(timestamp),
-        "productName": raw.get("productName") or raw.get("symbol") or raw.get("code"),
-        "code": raw.get("code") or raw.get("symbol"),
-        "side": str(raw.get("side") or raw.get("direction") or raw.get("entry") or "").strip(),
-        "price": price,
-        "quantity": _to_float(raw.get("quantity") or raw.get("volume")),
-        "profit": _to_float(raw.get("profit") or raw.get("pnl")),
-        "fee": _to_float(raw.get("fee") or raw.get("commission")),
-        "storageFee": _to_float(raw.get("storageFee") or raw.get("storage_fee") or raw.get("swap")),
-        "openTime": open_time,
-        "closeTime": close_time,
-        "openPrice": open_price if open_price > 0.0 else price,
-        "closePrice": close_price if close_price > 0.0 else price,
-        "dealTicket": int(raw.get("dealTicket") or raw.get("deal_ticket") or 0),
-        "orderId": int(raw.get("orderId") or raw.get("order_id") or 0),
-        "positionId": int(raw.get("positionId") or raw.get("position_id") or 0),
-        "entryType": int(raw.get("entryType") or raw.get("entry_type") or 0),
-        "remark": raw.get("remark") or raw.get("comment") or "",
+        "timestamp": _to_int(raw.get("timestamp")),
+        "productName": raw.get("productName"),
+        "code": raw.get("code"),
+        "side": str(raw.get("side") or "").strip(),
+        "price": _to_float(raw.get("price")),
+        "quantity": _to_float(raw.get("quantity")),
+        "profit": _to_float(raw.get("profit")),
+        "fee": _to_float(raw.get("fee")),
+        "storageFee": _to_float(raw.get("storageFee")),
+        "openTime": _to_int(raw.get("openTime")),
+        "closeTime": _to_int(raw.get("closeTime")),
+        "openPrice": _to_float(raw.get("openPrice")),
+        "closePrice": _to_float(raw.get("closePrice")),
+        "dealTicket": _to_int(raw.get("dealTicket")),
+        "orderId": _to_int(raw.get("orderId")),
+        "positionId": _to_int(raw.get("positionId")),
+        "entryType": _to_int(raw.get("entryType")),
+        "remark": raw.get("remark") or "",
     }
 
 
 def _normalize_curve_point(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    """规范化曲线点，保证 equity/balance/positionRatio 始终存在。"""
-    timestamp = int(raw.get("timestamp") or raw.get("time") or 0)
-    equity = _to_float(raw.get("equity"))
-    balance = _to_float(raw.get("balance"))
-    ratio_source = raw.get("positionRatio")
-    position_ratio = _to_float(ratio_source) if ratio_source is not None else _derive_position_ratio(equity, balance)
+    """规范化 canonical 曲线点，保证 equity/balance/positionRatio 始终存在。"""
     return {
-        "timestamp": timestamp,
-        "equity": equity,
-        "balance": balance,
-        "positionRatio": position_ratio,
+        "timestamp": _to_int(raw.get("timestamp")),
+        "equity": _to_float(raw.get("equity")),
+        "balance": _to_float(raw.get("balance")),
+        "positionRatio": _to_float(raw.get("positionRatio")),
     }
 
 
@@ -171,8 +135,8 @@ def build_account_snapshot_model(raw_snapshot: Mapping[str, Any]) -> Dict[str, A
     profit_source = metrics.get("profit") or raw_snapshot.get("profit")
     profit = _to_float(profit_source if profit_source is not None else equity - balance)
 
-    positions_source = raw_snapshot.get("positions") or raw_snapshot.get("openPositions") or raw_snapshot.get("accountPositions")
-    orders_source = raw_snapshot.get("orders") or raw_snapshot.get("pendingOrders") or raw_snapshot.get("pending")
+    positions_source = raw_snapshot.get("positions")
+    orders_source = raw_snapshot.get("orders")
 
     return {
         "balance": balance,
@@ -187,10 +151,10 @@ def build_account_snapshot_model(raw_snapshot: Mapping[str, Any]) -> Dict[str, A
 
 
 def build_account_history_model(raw_history: Mapping[str, Any]) -> Dict[str, Any]:
-    """根据上游历史数据构造 V2 账户历史展示模型。"""
-    trades_source = raw_history.get("trades") or raw_history.get("dealHistory")
-    orders_source = raw_history.get("orders") or raw_history.get("pendingOrders") or raw_history.get("orderHistory")
-    curve_source = raw_history.get("curvePoints") or raw_history.get("curve") or raw_history.get("equityCurve")
+    """根据 canonical 历史数据构造 V2 账户历史展示模型。"""
+    trades_source = raw_history.get("trades")
+    orders_source = raw_history.get("orders")
+    curve_source = raw_history.get("curvePoints")
 
     trades = _normalize_sequence(trades_source, _normalize_trade)
     orders = _normalize_sequence(orders_source, _normalize_order)

@@ -4,6 +4,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def _install_test_stubs():
@@ -565,7 +566,7 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertAlmostEqual(20.0, ordered[0]["profit"])
         self.assertAlmostEqual(10.0, ordered[1]["profit"])
 
-    def test_map_trades_falls_back_to_symbol_side_when_lifecycle_key_changes(self):
+    def test_map_trades_should_not_fallback_to_symbol_side_when_lifecycle_key_changes(self):
         original_mt5 = server_v2.mt5
 
         class _FakeMt5:
@@ -617,9 +618,9 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(1, len(trades))
         trade = trades[0]
         self.assertEqual("Buy", trade["side"])
-        self.assertEqual(100000, trade["openTime"])
+        self.assertEqual(300000, trade["openTime"])
         self.assertEqual(300000, trade["closeTime"])
-        self.assertAlmostEqual(100.0, trade["openPrice"])
+        self.assertAlmostEqual(120.0, trade["openPrice"])
         self.assertAlmostEqual(120.0, trade["closePrice"])
         self.assertAlmostEqual(20.0, trade["profit"])
 
@@ -687,7 +688,7 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(1774794820000, trade["openTime"])
         self.assertEqual(1774813268000, trade["closeTime"])
 
-    def test_normalize_snapshot_rebuilds_raw_ea_deals_into_trade_lifecycle(self):
+    def test_normalize_snapshot_should_not_rebuild_raw_ea_deals_into_trade_lifecycle(self):
         payload = {
             "accountMeta": {
                 "login": "7400048",
@@ -749,17 +750,13 @@ class SummaryResponseTests(unittest.TestCase):
 
         snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
 
-        self.assertEqual(1, len(snapshot["trades"]))
-        trade = snapshot["trades"][0]
-        self.assertEqual(100000, trade["openTime"])
-        self.assertEqual(200000, trade["closeTime"])
-        self.assertAlmostEqual(100.0, trade["openPrice"])
-        self.assertAlmostEqual(120.0, trade["closePrice"])
-        self.assertAlmostEqual(8.0, trade["profit"])
-        self.assertAlmostEqual(2.0, trade["fee"])
-        self.assertAlmostEqual(-3.0, trade["storageFee"])
+        self.assertEqual(2, len(snapshot["trades"]))
+        self.assertEqual(100000, snapshot["trades"][0]["openTime"])
+        self.assertEqual(100000, snapshot["trades"][0]["closeTime"])
+        self.assertEqual(200000, snapshot["trades"][1]["openTime"])
+        self.assertEqual(200000, snapshot["trades"][1]["closeTime"])
 
-    def test_normalize_snapshot_rebuilds_sparse_ea_curve_points_from_raw_deals(self):
+    def test_normalize_snapshot_should_keep_sparse_ea_curve_points_from_payload(self):
         payload = {
             "accountMeta": {
                 "login": "7400048",
@@ -824,11 +821,12 @@ class SummaryResponseTests(unittest.TestCase):
 
         snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
 
-        self.assertGreaterEqual(len(snapshot["curvePoints"]), 2)
-        self.assertEqual(100000, snapshot["curvePoints"][0]["timestamp"])
-        self.assertGreaterEqual(snapshot["curvePoints"][-1]["timestamp"], 200000)
+        self.assertEqual(
+            [{"timestamp": 200000, "equity": 1008.0, "balance": 1008.0}],
+            snapshot["curvePoints"],
+        )
 
-    def test_normalize_snapshot_rebuilds_ea_curve_points_even_when_source_curve_has_multiple_points(self):
+    def test_normalize_snapshot_should_not_rebuild_ea_curve_points_when_source_curve_has_multiple_points(self):
         payload = {
             "accountMeta": {
                 "login": "7400048",
@@ -897,13 +895,13 @@ class SummaryResponseTests(unittest.TestCase):
 
         snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
 
-        self.assertGreaterEqual(len(snapshot["curvePoints"]), 2)
-        self.assertEqual(100000, snapshot["curvePoints"][0]["timestamp"])
-        self.assertAlmostEqual(1006.5, snapshot["curvePoints"][0]["balance"])
-        self.assertAlmostEqual(1006.5, snapshot["curvePoints"][0]["equity"])
-        self.assertNotEqual(9999.0, snapshot["curvePoints"][0]["equity"])
-        self.assertAlmostEqual(1008.0, snapshot["curvePoints"][-1]["equity"])
-        self.assertAlmostEqual(1008.0, snapshot["curvePoints"][-1]["balance"])
+        self.assertEqual(
+            [
+                {"timestamp": 100000, "equity": 9999.0, "balance": 9999.0},
+                {"timestamp": 200000, "equity": 8888.0, "balance": 8888.0},
+            ],
+            snapshot["curvePoints"],
+        )
 
     def test_trim_cache_entries_locked_keeps_newest_entries_only(self):
         helper = getattr(server_v2, "_trim_cache_entries_locked", None)
@@ -919,33 +917,97 @@ class SummaryResponseTests(unittest.TestCase):
 
         self.assertEqual(["7d:snapshot", "1m:curve"], list(cache.keys()))
 
-    def test_should_slide_snapshot_build_cache_only_for_fresh_ea_snapshot(self):
+    def test_should_slide_snapshot_build_cache_should_always_disable_cache_sliding(self):
         helper = getattr(server_v2, "_should_slide_snapshot_build_cache", None)
         self.assertIsNotNone(helper, "缺少 _should_slide_snapshot_build_cache，无法验证缓存平滑命中")
 
-        original_is_fresh = server_v2._is_ea_snapshot_fresh
-        try:
-            server_v2._is_ea_snapshot_fresh = lambda: True
-            self.assertTrue(helper({
-                "builtAt": 1000,
-                "snapshot": {"accountMeta": {"source": "MT5 EA Push"}},
-            }, 9500))
+        self.assertFalse(helper(None, 9500))
+        self.assertFalse(helper({
+            "builtAt": 1000,
+            "snapshot": {"accountMeta": {"source": "MT5 EA Push"}},
+        }, 9500))
+        self.assertFalse(helper({
+            "builtAt": 1000,
+            "snapshot": {"accountMeta": {"source": "MT5 Python Pull"}},
+        }, 9500))
 
-            server_v2._is_ea_snapshot_fresh = lambda: False
-            self.assertFalse(helper({
-                "builtAt": 1000,
-                "snapshot": {"accountMeta": {"source": "MT5 EA Push"}},
-            }, 9500))
+    def test_build_snapshot_response_should_drop_legacy_ea_sync_state(self):
+        server_v2.snapshot_sync_cache.clear()
+        server_v2.snapshot_sync_cache["all:snapshot"] = {
+            "seq": 9,
+            "digest": "legacy",
+            "snapshot": {
+                "accountMeta": {"source": "MT5 EA Push", "login": "7400048"},
+                "positions": [{"positionTicket": 1}],
+                "pendingOrders": [],
+                "trades": [],
+                "curvePoints": [],
+            },
+            "previousSeq": 8,
+            "previousSnapshot": {
+                "accountMeta": {"source": "MT5 EA Push", "login": "7400048"},
+                "positions": [{"positionTicket": 0}],
+                "pendingOrders": [],
+                "trades": [],
+                "curvePoints": [],
+            },
+        }
+        canonical_snapshot = {
+            "accountMeta": {"source": "MT5 Python Pull", "login": "7400048", "server": "demo"},
+            "overviewMetrics": [],
+            "curvePoints": [],
+            "curveIndicators": [],
+            "positions": [{"positionTicket": 2}],
+            "pendingOrders": [],
+            "trades": [],
+            "statsMetrics": [],
+        }
 
-            server_v2._is_ea_snapshot_fresh = lambda: True
-            self.assertFalse(helper({
-                "builtAt": 1000,
-                "snapshot": {"accountMeta": {"source": "MT5 Python Pull"}},
-            }, 9500))
-        finally:
-            server_v2._is_ea_snapshot_fresh = original_is_fresh
+        with mock.patch.object(server_v2, "_build_snapshot_with_cache", return_value=canonical_snapshot):
+            response = server_v2._build_snapshot_response("all", since_seq=9, delta=True)
 
-    def test_ingest_ea_snapshot_clears_snapshot_sync_cache_when_payload_changes(self):
+        self.assertFalse(response["isDelta"])
+        self.assertEqual("MT5 Python Pull", response["accountMeta"]["source"])
+        self.assertEqual(1, response["accountMeta"]["syncSeq"])
+        self.assertEqual([2], [item["positionTicket"] for item in response["positions"]])
+
+    def test_build_trades_snapshot_response_should_drop_legacy_ea_sync_state(self):
+        server_v2.snapshot_sync_cache.clear()
+        server_v2.snapshot_sync_cache["all:trades"] = {
+            "seq": 7,
+            "digest": "legacy",
+            "snapshot": {
+                "accountMeta": {"source": "MT5 EA Push", "login": "7400048"},
+                "trades": [{"dealTicket": 1}],
+            },
+            "previousSeq": 6,
+            "previousSnapshot": {
+                "accountMeta": {"source": "MT5 EA Push", "login": "7400048"},
+                "trades": [{"dealTicket": 0}],
+            },
+        }
+        canonical_snapshot = {
+            "accountMeta": {"source": "MT5 Python Pull", "login": "7400048", "server": "demo"},
+            "overviewMetrics": [],
+            "curvePoints": [],
+            "curveIndicators": [],
+            "positions": [],
+            "pendingOrders": [],
+            "trades": [{"dealTicket": 11}],
+            "statsMetrics": [],
+        }
+
+        with mock.patch.object(server_v2, "_build_snapshot_with_cache", return_value=canonical_snapshot), mock.patch.object(
+            server_v2, "_build_trade_history_with_cache", return_value=[{"dealTicket": 11}]
+        ):
+            response = server_v2._build_trades_snapshot_response("all", since_seq=7, delta=True)
+
+        self.assertFalse(response["isDelta"])
+        self.assertEqual("MT5 Python Pull", response["accountMeta"]["source"])
+        self.assertEqual(1, response["accountMeta"]["syncSeq"])
+        self.assertEqual([11], [item["dealTicket"] for item in response["trades"]])
+
+    def test_ingest_ea_snapshot_should_not_clear_snapshot_sync_cache_when_payload_changes(self):
         server_v2.snapshot_build_cache.clear()
         server_v2.snapshot_sync_cache.clear()
         server_v2.snapshot_build_cache["7d"] = {"builtAt": 1, "snapshot": {"accountMeta": {"source": "old"}}}
@@ -970,8 +1032,8 @@ class SummaryResponseTests(unittest.TestCase):
         response = server_v2.ingest_ea_snapshot(payload, x_bridge_token=None)
 
         self.assertTrue(response["changed"])
-        self.assertEqual({}, server_v2.snapshot_build_cache)
-        self.assertEqual({}, server_v2.snapshot_sync_cache)
+        self.assertIn("7d", server_v2.snapshot_build_cache)
+        self.assertIn("7d:snapshot", server_v2.snapshot_sync_cache)
 
     def test_build_summary_response_omits_heavy_collections(self):
         snapshot = {
@@ -1411,34 +1473,32 @@ class SummaryResponseTests(unittest.TestCase):
         original_cache = dict(server_v2.health_status_cache)
         original_cache_ms = getattr(server_v2, "HEALTH_CACHE_MS", 5000)
         original_now_ms = server_v2._now_ms
-        original_ensure_mt5 = server_v2._ensure_mt5
-        original_shutdown_mt5 = server_v2._shutdown_mt5
+        original_mt5_last_connected_path = getattr(server_v2, "mt5_last_connected_path", "")
 
         class _HealthyMt5:
             @staticmethod
             def account_info():
-                return types.SimpleNamespace(login=7400048, server="demo")
+                raise AssertionError("health should not call mt5.account_info()")
 
             @staticmethod
             def last_error():
-                return (0, "ok")
+                raise AssertionError("health should not call mt5.last_error()")
 
         class _BrokenMt5:
             @staticmethod
             def account_info():
-                raise RuntimeError("boom")
+                raise AssertionError("health should not call mt5.account_info()")
 
             @staticmethod
             def last_error():
-                return (500, "boom")
+                raise AssertionError("health should not call mt5.last_error()")
 
         try:
             server_v2.health_status_cache.clear()
             server_v2.HEALTH_CACHE_MS = 1
             values = iter([1_000, 1_005])
             server_v2._now_ms = lambda: next(values)
-            server_v2._ensure_mt5 = lambda: None
-            server_v2._shutdown_mt5 = lambda: None
+            server_v2.mt5_last_connected_path = "<auto>"
 
             server_v2.mt5 = _HealthyMt5()
             healthy = server_v2.health()
@@ -1451,13 +1511,14 @@ class SummaryResponseTests(unittest.TestCase):
             server_v2.health_status_cache.update(original_cache)
             server_v2.HEALTH_CACHE_MS = original_cache_ms
             server_v2._now_ms = original_now_ms
-            server_v2._ensure_mt5 = original_ensure_mt5
-            server_v2._shutdown_mt5 = original_shutdown_mt5
+            server_v2.mt5_last_connected_path = original_mt5_last_connected_path
 
         self.assertTrue(healthy["ok"])
         self.assertTrue(broken["ok"])
-        self.assertTrue(broken["healthCached"])
-        self.assertIn("warning", broken)
+        self.assertTrue(healthy["mt5ProbeDeferred"])
+        self.assertTrue(broken["mt5ProbeDeferred"])
+        self.assertTrue(healthy["mt5Connected"])
+        self.assertTrue(broken["mt5Connected"])
 
     def test_curve_point_digest_includes_position_ratio(self):
         helper = getattr(server_v2, "_normalize_digest_curve_points", None)
@@ -1467,6 +1528,79 @@ class SummaryResponseTests(unittest.TestCase):
         high_ratio = helper([{"timestamp": 1, "equity": 100.0, "balance": 100.0, "positionRatio": 0.60}])
 
         self.assertNotEqual(low_ratio, high_ratio)
+
+    def test_select_snapshot_should_use_mt5_pull_even_when_ea_snapshot_is_fresh(self):
+        original_mode = server_v2.GATEWAY_MODE
+        original_is_fresh = server_v2._is_ea_snapshot_fresh
+        original_snapshot_from_mt5 = server_v2._snapshot_from_mt5
+        original_mt5 = server_v2.mt5
+        original_is_mt5_configured = server_v2._is_mt5_configured
+        original_ea_snapshot_cache = server_v2.ea_snapshot_cache
+
+        server_v2.GATEWAY_MODE = "auto"
+        server_v2.ea_snapshot_cache = {
+            "accountMeta": {
+                "source": "MT5 EA Push",
+                "updatedAt": server_v2._now_ms(),
+            }
+        }
+        server_v2._is_ea_snapshot_fresh = lambda: True
+        server_v2.mt5 = object()
+        server_v2._is_mt5_configured = lambda: True
+        server_v2._snapshot_from_mt5 = lambda range_key: {
+            "accountMeta": {"source": "MT5 Python Pull", "range": range_key},
+            "positions": [],
+            "pendingOrders": [],
+            "trades": [],
+            "curvePoints": [],
+        }
+        try:
+            snapshot = server_v2._select_snapshot("all")
+        finally:
+            server_v2.GATEWAY_MODE = original_mode
+            server_v2._is_ea_snapshot_fresh = original_is_fresh
+            server_v2._snapshot_from_mt5 = original_snapshot_from_mt5
+            server_v2.mt5 = original_mt5
+            server_v2._is_mt5_configured = original_is_mt5_configured
+            server_v2.ea_snapshot_cache = original_ea_snapshot_cache
+
+        self.assertEqual("MT5 Python Pull", snapshot["accountMeta"]["source"])
+
+    def test_build_account_light_snapshot_should_not_return_stale_ea_snapshot(self):
+        original_mode = server_v2.GATEWAY_MODE
+        original_is_fresh = server_v2._is_ea_snapshot_fresh
+        original_snapshot_from_mt5_light = server_v2._snapshot_from_mt5_light
+        original_mt5 = server_v2.mt5
+        original_is_mt5_configured = server_v2._is_mt5_configured
+        original_ea_snapshot_cache = server_v2.ea_snapshot_cache
+
+        server_v2.GATEWAY_MODE = "auto"
+        server_v2.ea_snapshot_cache = {
+            "accountMeta": {
+                "source": "MT5 EA Push",
+                "updatedAt": server_v2._now_ms() - 999999,
+            },
+            "positions": [{"code": "BTCUSD"}],
+            "pendingOrders": [],
+        }
+        server_v2._is_ea_snapshot_fresh = lambda: False
+        server_v2.mt5 = None
+        server_v2._is_mt5_configured = lambda: False
+        server_v2._snapshot_from_mt5_light = lambda: {
+            "accountMeta": {"source": "MT5 Python Pull"},
+            "positions": [],
+            "pendingOrders": [],
+        }
+        try:
+            with self.assertRaises(RuntimeError):
+                server_v2._build_account_light_snapshot()
+        finally:
+            server_v2.GATEWAY_MODE = original_mode
+            server_v2._is_ea_snapshot_fresh = original_is_fresh
+            server_v2._snapshot_from_mt5_light = original_snapshot_from_mt5_light
+            server_v2.mt5 = original_mt5
+            server_v2._is_mt5_configured = original_is_mt5_configured
+            server_v2.ea_snapshot_cache = original_ea_snapshot_cache
 
 
 if __name__ == "__main__":

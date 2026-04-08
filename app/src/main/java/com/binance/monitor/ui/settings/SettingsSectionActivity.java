@@ -58,6 +58,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         setupBottomNav();
         setupThemeItems();
         setupActions();
+        lockGatewayEntrySection();
         applyVisibleSection();
     }
 
@@ -112,7 +113,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
     // 绑定各个设置控件行为。
     private void setupActions() {
         binding.btnClearCache.setOnClickListener(v -> confirmAndClearCache());
-        binding.btnSaveMt5GatewayUrl.setOnClickListener(v -> saveMt5GatewayAddress());
         binding.switchFloatingEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (applying) {
                 return;
@@ -308,8 +308,19 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.switchTabMarketMonitor.setChecked(viewModel.isTabMarketMonitorVisible());
         binding.switchTabMarketChart.setChecked(viewModel.isTabMarketChartVisible());
         binding.switchTabAccountStats.setChecked(viewModel.isTabAccountStatsVisible());
-        binding.etMt5GatewayUrl.setText(viewModel.getMt5GatewayBaseUrl());
+        lockGatewayEntrySection();
         applying = false;
+    }
+
+    // 第 1 步入口唯一化后，设置页只展示固定公网入口，不再允许本地改写主链。
+    private void lockGatewayEntrySection() {
+        binding.etMt5GatewayUrl.setText(AppConstants.MT5_GATEWAY_BASE_URL);
+        binding.etMt5GatewayUrl.setSelection(AppConstants.MT5_GATEWAY_BASE_URL.length());
+        binding.etMt5GatewayUrl.setEnabled(false);
+        binding.etMt5GatewayUrl.setFocusable(false);
+        binding.etMt5GatewayUrl.setFocusableInTouchMode(false);
+        binding.etMt5GatewayUrl.setClickable(false);
+        binding.btnSaveMt5GatewayUrl.setVisibility(View.GONE);
     }
 
     // 应用当前主题色。
@@ -393,16 +404,12 @@ public class SettingsSectionActivity extends AppCompatActivity {
 
     // 保存网关地址设置。
     private void saveMt5GatewayAddress() {
-        String input = binding.etMt5GatewayUrl.getText() == null
-                ? ""
-                : binding.etMt5GatewayUrl.getText().toString();
-        viewModel.setMt5GatewayBaseUrl(input);
-        String normalized = viewModel.getMt5GatewayBaseUrl();
-        binding.etMt5GatewayUrl.setText(normalized);
-        binding.etMt5GatewayUrl.setSelection(normalized.length());
+        viewModel.setMt5GatewayBaseUrl(AppConstants.MT5_GATEWAY_BASE_URL);
+        binding.etMt5GatewayUrl.setText(AppConstants.MT5_GATEWAY_BASE_URL);
+        binding.etMt5GatewayUrl.setSelection(AppConstants.MT5_GATEWAY_BASE_URL.length());
         AccountStatsPreloadManager.getInstance(getApplicationContext()).clearLatestCache();
         sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
-        Toast.makeText(this, getString(R.string.mt5_gateway_saved, normalized), Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.mt5_gateway_saved, AppConstants.MT5_GATEWAY_BASE_URL), Toast.LENGTH_SHORT).show();
     }
 
     // 让前台服务立即应用新配置。

@@ -40,6 +40,24 @@ public class AccountStatsBridgeActivitySessionSourceTest {
                 source.contains("expectedServer = trim(remoteSessionCoordinator.getPendingServer());"));
     }
 
+    @Test
+    public void applyRemoteSessionStatusShouldRequireOkAndCompleteIdentity() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        );
+
+        assertTrue("普通会话状态刷新也应先校验 status.ok，避免脏成功把本地会话重新写回",
+                source.contains("if (status == null || !status.isOk()) {"));
+        assertTrue("普通会话状态刷新应只接受完整 activeAccount，不能把缺字段账号恢复成激活态",
+                source.contains("RemoteAccountProfile activeAccount = sanitizeRemoteSessionProfile(status.getActiveAccount());"));
+        assertTrue("普通会话状态刷新应明确校验 profileId/login/server 完整性",
+                source.contains("return profile != null")
+                        && source.contains("&& !trim(profile.getProfileId()).isEmpty()")
+                        && source.contains("&& !trim(profile.getLogin()).isEmpty()")
+                        && source.contains("&& !trim(profile.getServer()).isEmpty();"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

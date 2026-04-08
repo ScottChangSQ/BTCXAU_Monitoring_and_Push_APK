@@ -236,7 +236,7 @@ public class SecureSessionPrefs implements AccountRemoteSessionCoordinator.Sessi
             object.put("loginMasked", profile.getLoginMasked());
             object.put("server", profile.getServer());
             object.put("displayName", profile.getDisplayName());
-            object.put("isActive", profile.isActive());
+            object.put("active", profile.isActive());
             object.put("state", profile.getState());
             return object;
         }
@@ -253,7 +253,7 @@ public class SecureSessionPrefs implements AccountRemoteSessionCoordinator.Sessi
                     object.optString("loginMasked", ""),
                     object.optString("server", ""),
                     object.optString("displayName", ""),
-                    RemoteAccountProfile.resolveActiveFlag(object.optBoolean("isActive", false), state),
+                    RemoteAccountProfile.resolveActiveFlag(object.optBoolean("active", false), state),
                     state
             );
         }

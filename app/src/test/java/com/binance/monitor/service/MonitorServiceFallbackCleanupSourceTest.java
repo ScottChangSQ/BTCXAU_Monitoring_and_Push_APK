@@ -31,6 +31,55 @@ public class MonitorServiceFallbackCleanupSourceTest {
                 source.contains("ChartHistoryRepository"));
     }
 
+    @Test
+    public void monitorServiceShouldNotRunLocalStaleRecoveryOrForceFallbackReconnect() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertFalse("v2 stream 失效后不应再本地补拉账户主链",
+                source.contains("refreshAccountFromV2IfStale(now);"));
+        assertFalse("v2 stream 失效后不应再按本地 stale 判断补拉市场主链",
+                source.contains("refreshStaleSymbolsFromV2(staleSymbols, now);"));
+        assertFalse("v2 stream 失效后不应再强制重连 fallback ws",
+                source.contains("fallbackKlineSocketManager.forceReconnect("));
+    }
+
+    @Test
+    public void fallbackKlineCallbackShouldNotWriteMainChainDisplayTruth() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertFalse("fallback ws 回调不应直接写入主链 K 线真值",
+                source.contains("repository.updateDisplayKline(data);"));
+        assertFalse("fallback ws 回调不应驱动主链异常判定",
+                source.contains("handleClosedKline(data);"));
+    }
+
+    @Test
+    public void connectionStatusShouldNotFallbackToLegacySocketOrTickMetadata() throws Exception {
+        String serviceSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+        String resolverSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/ConnectionStatusResolver.java",
+                "src/main/java/com/binance/monitor/service/ConnectionStatusResolver.java"
+        );
+
+        assertFalse("第3步收口后，MonitorService 不应再维护旧 socketStates 状态",
+                serviceSource.contains("socketStates"));
+        assertFalse("第3步收口后，MonitorService 不应再维护旧 reconnectCounts 状态",
+                serviceSource.contains("reconnectCounts"));
+        assertFalse("第3步收口后，MonitorService 不应再用最近 tick 时间替代 v2 stream 健康度",
+                serviceSource.contains("lastKlineTickAt"));
+        assertFalse("连接状态解析不应再按 symbol/socket 元数据兜底",
+                resolverSource.contains("isSymbolConnected("));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

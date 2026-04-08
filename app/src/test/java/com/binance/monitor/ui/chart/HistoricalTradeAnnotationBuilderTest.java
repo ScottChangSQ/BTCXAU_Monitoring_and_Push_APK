@@ -199,6 +199,92 @@ public class HistoricalTradeAnnotationBuilderTest {
         assertEquals(closeTime, annotations.get(0).exitAnchorTimeMs);
     }
 
+    @Test
+    public void shouldNotMatchUnrelatedSymbolsJustBecauseTheyContainBtcText() {
+        List<CandleEntry> candles = Collections.singletonList(buildCandle(BASE_TIME, BASE_TIME + 60_000L));
+        TradeRecordItem trade = buildTrade(
+                "LTCBTC",
+                "buy",
+                BASE_TIME,
+                BASE_TIME + 30_000L,
+                100d,
+                104d,
+                10d,
+                0d,
+                456L
+        );
+
+        List<HistoricalTradeAnnotationBuilder.TradeAnnotation> annotations =
+                HistoricalTradeAnnotationBuilder.build("BTCUSDT", Collections.singletonList(trade), candles);
+
+        assertTrue(annotations.isEmpty());
+    }
+
+    @Test
+    public void shouldIgnoreTradeWithoutExplicitLifecyclePrices() {
+        List<CandleEntry> candles = Arrays.asList(
+                buildCandle(BASE_TIME, BASE_TIME + 60_000L),
+                buildCandle(BASE_TIME + 60_000L, BASE_TIME + 120_000L)
+        );
+        TradeRecordItem trade = new TradeRecordItem(
+                BASE_TIME + 30_000L,
+                "BTCUSD",
+                "BTCUSD",
+                "buy",
+                104d,
+                1d,
+                100d,
+                0d,
+                "",
+                10d,
+                BASE_TIME,
+                BASE_TIME + 30_000L,
+                0d,
+                0d,
+                0d,
+                789L,
+                789L,
+                789L,
+                1
+        );
+
+        List<HistoricalTradeAnnotationBuilder.TradeAnnotation> annotations =
+                HistoricalTradeAnnotationBuilder.build("BTCUSDT", Collections.singletonList(trade), candles);
+
+        assertTrue(annotations.isEmpty());
+    }
+
+    @Test
+    public void shouldIgnoreTradeWithoutStableIdentity() {
+        List<CandleEntry> candles = Collections.singletonList(buildCandle(BASE_TIME, BASE_TIME + 60_000L));
+        TradeRecordItem trade = new TradeRecordItem(
+                BASE_TIME + 30_000L,
+                "BTCUSDT",
+                "BTCUSDT",
+                "buy",
+                104d,
+                1d,
+                100d,
+                0d,
+                "",
+                10d,
+                BASE_TIME,
+                BASE_TIME + 30_000L,
+                0d,
+                100d,
+                104d,
+                0L,
+                0L,
+                0L,
+                1
+        );
+
+        List<HistoricalTradeAnnotationBuilder.TradeAnnotation> annotations =
+                HistoricalTradeAnnotationBuilder.build("BTCUSDT", Collections.singletonList(trade), candles);
+
+        assertTrue(annotations.isEmpty());
+    }
+
     private CandleEntry buildCandle(long openTime, long closeTime) {
         return new CandleEntry("BTCUSDT", openTime, closeTime, 100d, 101d, 99d, 100d, 1d, 1d);
     }

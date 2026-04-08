@@ -33,7 +33,7 @@ class V2SessionManagerTests(unittest.TestCase):
         )
 
         self.assertEqual("activated", receipt["state"])
-        self.assertEqual("12345678", receipt["account"]["login"])
+        self.assertEqual("12345678", receipt["activeAccount"]["login"])
         fake_store.save_active_session.assert_called_once()
 
     def test_login_should_trigger_session_changed_hook(self):
@@ -118,6 +118,62 @@ class V2SessionManagerTests(unittest.TestCase):
         fake_gateway.logout_mt5.assert_called_once_with()
         fake_store.clear_active_session.assert_called_once_with()
         fake_store.save_active_session.assert_not_called()
+
+    def test_login_should_fail_when_gateway_account_meta_missing_server(self):
+        """登录成功后若网关未返回完整账号身份，不应回退输入值拼装 activeAccount。"""
+        fake_store = mock.Mock()
+        fake_gateway = mock.Mock()
+        fake_gateway.login_mt5.return_value = {"login": "12345678", "server": ""}
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        with self.assertRaises(ValueError) as error_ctx:
+            manager.login_new_account(
+                login="12345678",
+                password="secret",
+                server="ICMarketsSC-MT5-6",
+                remember=False,
+                request_id="req-login-missing-server",
+            )
+
+        self.assertIn("canonical account identity", str(error_ctx.exception))
+        fake_store.save_active_session.assert_not_called()
+        fake_gateway.logout_mt5.assert_not_called()
+
+    def test_login_should_clear_previous_active_session_when_gateway_identity_missing(self):
+        """新登录在运行态已切空后若拿不到 canonical identity，应把旧文件态收口到 logged_out。"""
+        fake_store = mock.Mock()
+        fake_store.load_active_session.return_value = {
+            "profileId": "acct_old",
+            "login": "87654321",
+            "loginMasked": "****4321",
+            "server": "Pepperstone-MT5-Live01",
+            "displayName": "Pepper old",
+            "active": True,
+            "state": "activated",
+        }
+        fake_gateway = mock.Mock()
+        fake_gateway.login_mt5.return_value = {"login": "12345678", "server": ""}
+        fake_hook = mock.Mock()
+        manager = v2_session_manager.AccountSessionManager(
+            store=fake_store,
+            gateway=fake_gateway,
+            on_session_changed=fake_hook,
+        )
+
+        with self.assertRaises(ValueError) as error_ctx:
+            manager.login_new_account(
+                login="12345678",
+                password="secret",
+                server="ICMarketsSC-MT5-6",
+                remember=False,
+                request_id="req-login-missing-server-clear-old",
+            )
+
+        self.assertIn("canonical account identity", str(error_ctx.exception))
+        fake_store.clear_active_session.assert_called_once_with()
+        fake_hook.assert_called_once_with("logout", fake_store.load_active_session.return_value)
+        fake_store.save_active_session.assert_not_called()
+        fake_gateway.logout_mt5.assert_not_called()
 
     def test_login_should_rollback_mt5_when_save_active_session_failed(self):
         """登录后保存激活会话失败时应回滚 MT5 会话。"""
@@ -301,6 +357,60 @@ class V2SessionManagerTests(unittest.TestCase):
         self.assertEqual(True, payload["activeAccount"]["active"])
         self.assertEqual("activated", payload["activeAccount"]["state"])
 
+    def test_build_status_payload_should_drop_incomplete_active_session_identity(self):
+        """active_session 缺关键身份时，不应继续对外宣称 activated。"""
+        fake_store = mock.Mock()
+        fake_store.load_active_session.return_value = {
+            "profileId": "acct_12345678_icmarketssc-mt5-6",
+            "login": "12345678",
+            "loginMasked": "****5678",
+            "server": "",
+            "displayName": "ICMarketsSC-MT5-6 ****5678",
+            "active": True,
+            "state": "activated",
+        }
+        fake_store.list_profiles.return_value = []
+        fake_gateway = mock.Mock()
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        payload = manager.build_status_payload()
+
+        self.assertEqual("logged_out", payload["state"])
+        self.assertIsNone(payload["activeAccount"])
+
+    def test_build_status_payload_should_strip_runtime_flags_from_saved_accounts(self):
+        """legacy saved profile 就算残留 active/state，也不能在 savedAccounts 里继续冒充激活态。"""
+        fake_store = mock.Mock()
+        fake_store.load_active_session.return_value = {
+            "profileId": "acct_active",
+            "login": "12345678",
+            "loginMasked": "****5678",
+            "server": "ICMarketsSC-MT5-6",
+            "displayName": "IC active",
+            "active": True,
+            "state": "activated",
+        }
+        fake_store.list_profiles.return_value = [
+            {
+                "profileId": "acct_saved",
+                "login": "87654321",
+                "loginMasked": "****4321",
+                "server": "Pepperstone-MT5-Live01",
+                "displayName": "Pepper saved",
+                "active": True,
+                "state": "activated",
+            }
+        ]
+        fake_gateway = mock.Mock()
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        payload = manager.build_status_payload()
+
+        self.assertEqual(True, payload["activeAccount"]["active"])
+        self.assertEqual("activated", payload["activeAccount"]["state"])
+        self.assertEqual(False, payload["savedAccounts"][0]["active"])
+        self.assertEqual("", payload["savedAccounts"][0]["state"])
+
     def test_logout_should_not_logout_mt5_when_clear_active_session_failed(self):
         """清理激活会话失败时不应继续执行 MT5 登出。"""
         fake_store = mock.Mock()
@@ -368,6 +478,34 @@ class V2SessionManagerTests(unittest.TestCase):
         )
         fake_gateway.clear_account_caches.assert_called_once_with()
         fake_gateway.force_account_resync.assert_called_once_with()
+
+    def test_switch_saved_account_should_fail_when_gateway_account_meta_missing_server(self):
+        """切换已保存账号后若网关未返回完整身份，不应回退已保存凭据拼装 activeAccount。"""
+        fake_store = mock.Mock()
+        fake_gateway = mock.Mock()
+        profile = {
+            "profileId": "acct_87654321_icmarketssc-mt5-6",
+            "login": "87654321",
+            "loginMasked": "****4321",
+            "server": "ICMarketsSC-MT5-6",
+            "displayName": "IC 4321",
+        }
+        cipher = v2_session_crypto.protect_secret_for_machine(b"secret")
+        fake_store.load_profile.return_value = {
+            "profile": profile,
+            "encryptedPassword": base64.b64encode(cipher).decode("ascii"),
+        }
+        fake_gateway.switch_mt5_account.return_value = {
+            "login": "87654321",
+            "server": "",
+        }
+        manager = v2_session_manager.AccountSessionManager(store=fake_store, gateway=fake_gateway)
+
+        with self.assertRaises(ValueError) as error_ctx:
+            manager.switch_saved_account("acct_87654321_icmarketssc-mt5-6", request_id="req-switch-missing-server")
+
+        self.assertIn("canonical account identity", str(error_ctx.exception))
+        fake_store.save_active_session.assert_not_called()
 
     def test_switch_saved_account_should_restore_previous_account_when_target_switch_failed(self):
         """切换目标账号失败时，应尝试恢复旧账号运行态。"""

@@ -1,6 +1,202 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 已完成 2026-04-08 一轮新的公网 443 主链超时修复：
+  - 根因已确认：App 真机上的 `timeout` 不是 Android DNS / TLS / 代理问题，而是 `bridge/mt5_gateway/server_v2.py` 的 `/v2/stream` 在事件循环线程里直接执行 `_build_v2_sync_delta_response()`；这条链会同步构建 MT5 轻快照，一旦 MT5 拉取阻塞，同进程的 `/health`、`/v1/abnormal`、`/v2/*` 都会一起被拖住，只剩 Caddy 直代 Binance 的 `/binance-rest/*` 还能正常返回。
+  - 现在已把 `v2_stream()` 的增量快照构建移到 `asyncio.to_thread(...)` 中执行，避免单个 WebSocket 客户端把 8787 网关主线程拖死。
+  - 已补充并跑通验证：`python -m unittest bridge.mt5_gateway.tests.test_v2_sync_pipeline -v`、`python -m unittest bridge.mt5_gateway.tests.test_admin_panel -v` 全部通过；`dist/windows_server_bundle` 也已重新生成，可直接重新部署到服务器。
+- 已完成 2026-04-08 一轮新的启动链去噪修复：
+  - 根因已确认：`bridge/mt5_gateway/start_gateway.ps1` 和 `start_admin_panel.ps1` 只要让 PowerShell 直接消费原生命令 stderr，Windows PowerShell 就会先把普通日志映射成 `NativeCommandError`；即使 `2>&1` 合流或临时放宽 `$ErrorActionPreference`，这条误报链仍可能触发。
+  - 现在已把 `Invoke-NativeCommandSafely()` 收口为 C# 进程泵送器：直接用 `ProcessStartInfo + BeginOutputReadLine/BeginErrorReadLine` 透传 stdout/stderr，并显式固定工作目录到脚本目录，只按退出码判失败。
+  - 已补充并跑通验证：`Invoke-Pester -Path bridge/mt5_gateway/tests/start_gateway.Tests.ps1 -EnableExit`、`python -m unittest bridge.mt5_gateway.tests.test_admin_panel.AdminPanelTests.test_start_admin_panel_script_should_skip_noisy_pip_install_when_requirements_unchanged bridge.mt5_gateway.tests.test_admin_panel.AdminPanelTests.test_start_gateway_script_should_skip_reinstall_when_requirements_unchanged -v` 全部通过。
+- 已完成 2026-04-08 一轮新的 App 行情入口收口：
+  - 根因已确认：虽然 MT5 主网关已经固定到 `https://tradeapp.ltd`，但 App 的 Binance REST / WebSocket 默认地址仍然指向 `fapi.binance.com` 和 `fstream.binance.com`，所以真机日志里仍会继续出现直连 Binance 失败。
+  - 现在已把 `app/build.gradle.kts` 与 `AppConstants` 统一切到 `https://tradeapp.ltd/binance-rest/fapi/v1/klines` 和 `wss://tradeapp.ltd/binance-ws/ws/`，让行情默认入口和 MT5 主入口保持同一正式域名。
+  - 已补充并跑通验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.build.AppBuildConfigSourceTest" --tests "com.binance.monitor.util.GatewayUrlResolverTest" --tests "com.binance.monitor.data.local.ConfigManagerSourceTest" --tests "com.binance.monitor.ui.main.MainActivityConnectionDialogSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest"` -> `BUILD SUCCESSFUL`
+- 已完成 2026-04-08 一轮新的部署 443 边界诊断收口：
+  - `deploy/tencent/windows/deploy_bundle.ps1` 已把 443 验收拆成两段：先做 `tradeapp.ltd` 的本机回环 SNI HTTPS 检查，再做公网 `https://tradeapp.ltd/health` 检查；部署窗口日志会逐条写出每个子检查的成功状态，便于现场区分“本机 Caddy/网关链”和“公网入口链”究竟卡在哪一层。
+  - `python -m unittest scripts.tests.test_windows_server_bundle -v` 已通过，新的部署包可重新生成覆盖。
+- 已完成 2026-04-08 一轮新的公网入口实测：
+  - 通过 `Test-NetConnection tradeapp.ltd -Port 443` 可确认 `43.155.214.62:443` 现在已经能建立 TCP 连接。
+  - 但通过当前环境实测，`curl.exe -m 20 -v https://tradeapp.ltd/health` 与 `curl.exe -m 20 -v https://tradeapp.ltd/v1/source` 都在 TLS 握手成功、请求已发出后 20 秒无响应超时；这说明问题已从“443 未监听”收缩为“443 业务响应链未真正返回”，后续服务器现场应优先看新的 loopback/public 分段健康检查结果。
+- 已完成 2026-04-08 一轮新的健康接口阻塞修复：
+  - 根因已确认：`bridge/mt5_gateway/server_v2.py` 的 `/health` 虽然已经不再调用 `_ensure_mt5()`，但仍会直接触发 `mt5.account_info()/mt5.last_error()`；在服务器现场只要 MT5 Python 桥本身卡住，这个轻量健康接口仍会被拖住，连管理面板里的 `/v1/source` 检查都会一起超时。
+  - 现在已把 `/health` 进一步收口为“零 MT5 调用”的纯轻量存活接口：只返回当前进程内可立即读取的配置、缓存与会话摘要，不再直接触碰 MT5 API。
+  - 已补充 `bridge/mt5_gateway/tests/test_admin_panel.py` 和 `bridge/mt5_gateway/tests/test_summary_response.py` 回归验证，防止 `/health` 再次回退到 `account_info/last_error` 的阻塞路径。
+  - 已重新生成 `dist/windows_server_bundle`，可直接覆盖服务器上的部署包。
+- 已完成 2026-04-08 一轮新的网关启动链慢启动修复：
+  - 根因已确认：`bridge/mt5_gateway/start_gateway.ps1` 之前每次启动都会无条件执行 `pip install -r requirements.txt`；即使部署前置的 `01_bootstrap_gateway.ps1` 已经装完依赖，计划任务首次启动网关时仍会重复安装，服务器现场容易把 `8787 /health` 健康检查拖到超时。
+  - 现在已把 `start_gateway.ps1` 收口到和 `start_admin_panel.ps1` 相同的依赖哈希模型：依赖未变时不再重复安装，同时保留 UTF-8 输出和“按退出码判失败”的日志行为。
+  - 已补充两条回归验证：`bridge/mt5_gateway/tests/test_admin_panel.py` 增加源码断言；`bridge/mt5_gateway/tests/start_gateway.Tests.ps1` 继续验证普通 stderr 日志不会误判失败、非零退出会明确报错。
+  - 已重新生成 `dist/windows_server_bundle`，可直接覆盖服务器上的部署包。
+- 已完成 2026-04-07 一轮新的部署健康检查超时修复：
+  - 根因已确认：`bridge/mt5_gateway/server_v2.py` 的 `/health` 之前会直接调用 `_ensure_mt5()`；这会触发 MT5 初始化与登录探测，默认可能阻塞几十秒，而部署脚本单次 HTTP 等待只有 5 秒，所以即使网关进程已启动，`http://127.0.0.1:8787/health` 仍会持续超时。
+  - 现在已把 `/health` 收口为“轻量存活检查 + 即时状态读取”：只读取当前进程内可立即获得的 `mt5.account_info()/last_error()`，不再在健康检查里触发 MT5 重初始化或重登录。
+  - 已补充 `bridge/mt5_gateway/tests/test_admin_panel.py` 回归断言，防止 `/health` 再次回退到 `_ensure_mt5()` 的慢探测路径。
+  - 已重新生成 `dist/windows_server_bundle`，可直接覆盖服务器上的部署包。
+- 已完成 2026-04-07 一轮新的部署现场文件锁冲突修复：
+  - 根因已确认：`deploy/tencent/windows/deploy_bundle.ps1` 的 GUI 进程每秒用 `Get-Content` 读取部署日志，而 worker 进程同时用 `Add-Content` 追加同一份 `deploy-*.log`；Windows 下这两个默认文件共享方式不兼容，所以会在“启动后台服务”步骤写日志时直接抛出“文件正由另一进程使用”。
+  - 现在已把 `deploy_bundle.ps1` 的日志与状态文件读写统一收口为共享句柄模式：新增 `Write-TextFileShared / Read-TextFileShared`，GUI 和 worker 都按 `FileShare.ReadWrite` 访问文件，不再互相锁死。
+  - 已补充 `scripts/tests/test_windows_server_bundle.py` 回归断言，防止部署脚本再次回退到 `Add-Content + Get-Content` 的互斥读写方式。
+  - 已重新生成 `dist/windows_server_bundle`，可直接覆盖服务器上的部署包。
+- 已完成 2026-04-07 一轮新的服务器部署超时修复：
+  - 根因已确认：`deploy/tencent/windows/01_bootstrap_gateway.ps1` 初始化依赖后没有写入 `.requirements.sha256`，导致计划任务首次启动 `start_gateway.ps1` 时又重复执行依赖安装；服务器上这一步超过 90 秒时，`deploy_bundle.ps1` 的 `http://127.0.0.1:8787/health` 健康检查就会超时失败。
+  - 现在已在 `01_bootstrap_gateway.ps1` 中补上 `requirements.txt` 哈希写盘，初始化完成后会直接生成 `.requirements.sha256`，首次启动不再重复装依赖。
+  - 已补充 `scripts/tests/test_windows_server_bundle.py` 回归断言，防止初始化脚本再次漏写依赖标记。
+  - 已同步修正 `bridge/mt5_gateway/tests/test_gateway_bundle_parity.py` 中两条落后的部署脚本断言，并重新生成 `dist/windows_server_bundle`，可直接拿新包覆盖服务器。
+- 已完成 2026-04-07 一轮部署现场 BUG 修复：
+  - `deploy/tencent/windows/deploy_bundle.ps1` 在释放占口时原先用了 PowerShell 只读自动变量名 `$pid` 作为 `foreach` 局部变量，导致脚本刚进入“停止旧服务”步骤就直接报错。
+  - 现在已改成普通局部变量 `$listenerPid`，并补了 `scripts/tests/test_windows_server_bundle.py` 回归断言，防止再次把保留变量名写回部署脚本。
+  - 已重新生成 `dist/windows_server_bundle`，可直接重新复制到服务器覆盖旧部署包。
+- 已完成 2026-04-07 本轮部署收口：
+  - 重新生成 `dist/windows_server_bundle`，并确认部署包已包含完整会话链文件：`v2_session_crypto.py / v2_session_manager.py / v2_session_models.py / v2_session_store.py`
+  - 已编译 APK，当前产物为 `app/build/outputs/apk/debug/app-debug.apk`
+  - 已把 README、部署文档和 bundle README 生成逻辑收口到同一口径：服务器统一执行 `C:\mt5_bundle\windows_server_bundle\deploy_bundle.cmd`，部署脚本会先停旧服务和释放关键端口，再以“唯一状态窗口 + 后台隐藏 worker”模式完成重部署
+- 已完成 2026-04-07 一轮“接口字段名 + 产品名映射”专项复核，并修复 4 个真实未收口问题：
+  - 服务端会话模型 `bridge/mt5_gateway/v2_session_models.py` 不再接受 `isActive` 旧字段，当前激活态只认 canonical `active`。
+  - App 会话链 `GatewayV2SessionClient / RemoteAccountProfile / SecureSessionPrefs / SessionReceipt` 已统一只认 `activeAccount / active`，不再消费 `account / isActive` 旧命名；回执内部命名也统一为 `activeAccount`。
+  - 悬浮窗 `FloatingWindowManager` 的 BTC/XAU 单位判断不再用 `contains("XAU")`，改为走 `ProductSymbolMapper` 的显式映射。
+  - 统计分析 `CurveAnalyticsHelper` 的合约乘数判断不再用 `startsWith("XAU")`，改为走 `ProductSymbolMapper` 的显式映射。
+- 已补充并跑通本轮专项验证：
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SecureSessionPrefsSourceTest" --tests "com.binance.monitor.ui.floating.FloatingWindowManagerSourceTest" --tests "com.binance.monitor.ui.account.CurveAnalyticsHelperSourceTest" --tests "com.binance.monitor.ui.account.CurveAnalyticsHelperTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.util.ProductSymbolMapperTest"` -> `BUILD SUCCESSFUL`
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_v2_session_manager -v` -> `Ran 55 tests ... OK`
+- 已完成 2026-04-07 一轮新的 BUG review，并修复 2 个真实未收口问题：
+  - 服务端账户模型层 `bridge/mt5_gateway/v2_account.py` 之前仍会在 `build_account_snapshot_model()` 中回退读取 `openPositions / accountPositions / pendingOrders / pending` 这些旧别名字段；现在已收成只认 canonical `positions / orders`。
+  - 服务端成交映射链 `bridge/mt5_gateway/server_v2.py` 之前仍保留 `symbol + side` 启发式平仓配对；现在已彻底移除，生命周期 key 对不上时不再跨仓位硬归并。
+- 已补充并跑通本轮 BUG review 验证：
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_contracts -v` -> `Ran 30 tests ... OK`
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_map_trades_should_not_fallback_to_symbol_side_when_lifecycle_key_changes bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_map_trades_pairs_partial_close_with_fifo_open_batches bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_map_trades_maps_mt5_sell_lifecycle_into_single_trade_record -v` -> `Ran 3 tests ... OK`
+- 已完成 2026-04-07 最终文档收口：`README.md` 已同步到本轮 1-6 步最终口径，去掉“切换中”表述，改为“已完成收口”，并补充最新总验收命令与唯一剩余事项（真机 + 已部署 HTTPS 人工联调）。
+- 已完成 2026-04-07 又一轮“多智能体、从头到尾、全面复核”并新增修复 4 个真实问题：
+  - 第 2 / 6 步 EA 旁路残留：`bridge/mt5_gateway/server_v2.py` 的 `ingest_ea_snapshot()` 不再清空 `snapshot_build_cache / snapshot_sync_cache`，`_normalize_snapshot()` 也不再对 EA 快照执行成交重建和曲线补算；旧 EA 上报现在只保留原始字段存档，不再干扰主链缓存和增量状态。
+  - 第 5 步会话加密链：`bridge/mt5_gateway/v2_session_crypto.py` 的 `decrypt_login_envelope()` 之前仍用 `bool(...)` 解析 `remember`，字符串 `"false"` 会被误判成真值；现在已收成严格布尔解析。
+  - 第 3 步图表叠加链：`app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java` 不再用 `contains` 猜品种，也不再按 `code+side` 或“最新 K 线时间”去猜持仓/挂单锚点；缺少显式锚点时现在直接不画该标记。
+  - 第 4 步账户展示链：`app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java` 的失败缓存不再携带上一轮快照，`resolveRemoteTradeCount()` 也只认 canonical `tradeCount`；`app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java` 断线时改为直接进入空快照态，不再复用旧持仓和旧挂单作为当前展示真值。
+- 已补充并跑通本轮新增验证：
+  - App：`./gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2ClientTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshSourceTest"` -> `BUILD SUCCESSFUL`
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_not_rebuild_raw_ea_deals_into_trade_lifecycle bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_keep_sparse_ea_curve_points_from_payload bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_not_rebuild_ea_curve_points_when_source_curve_has_multiple_points bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_ingest_ea_snapshot_should_not_clear_snapshot_sync_cache_when_payload_changes bridge.mt5_gateway.tests.test_v2_session_crypto bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_contracts -v` -> `Ran 101 tests ... OK`
+- 本轮全面复核结论：
+  - 第 1 步：本轮多智能体复核未发现新的真实问题。
+  - 第 2 步：修复 1 个真实问题，旧 EA 上报不再干扰主链缓存。
+  - 第 3 步：修复 1 个真实问题，图表页不再做启发式补锚和猜品种。
+  - 第 4 步：修复 2 个真实问题，失败缓存与断线展示不再沿用旧快照，历史总数判断只认 `tradeCount`。
+  - 第 5 步：修复 1 个真实问题，会话解密链的 `remember` 布尔解析已收紧。
+  - 第 6 步：与第 2 步共享同一条 EA 旁路残留，已一并收口。
+- 已完成 2026-04-07 新一轮“多智能体、分阶段、分模块”复核收口，并基于并行审计结论修复 3 个真实未收口问题：
+  - 第 3 步监控链：`app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java` 的 `handleTermination()` 之前只报错和重连，不发布 `disconnected` 状态；现在已补上 `notifyState(false, reason)`，避免 `MonitorService` 长时间保留“已连接”假状态。
+  - 第 1 步入口唯一化：`app/build.gradle.kts` 之前仍允许通过 `project.findProperty(...)` 覆盖 `MT5_GATEWAY_BASE_URL / BINANCE_REST_BASE_URL / BINANCE_WS_BASE_URL`；现在已改成固定常量，不再保留构建期可变主链入口。
+  - 第 4 步账户展示链：`app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java` 的 `parseAccountSnapshot()/parseAccountHistory()` 之前还会在 `orders` 缺失时回退读取 `pendingOrders`；现在已移除旧别名入口，只认 canonical `orders`。
+- 已补充并跑通这轮复核对应验证：
+  - App：`./gradlew.bat testDebugUnitTest --tests "com.binance.monitor.build.AppBuildConfigSourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2ClientTest" --tests "com.binance.monitor.data.local.ConfigManagerSourceTest" --tests "com.binance.monitor.util.GatewayUrlResolverTest" --tests "com.binance.monitor.ui.settings.SettingsSectionActivitySourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest" --tests "com.binance.monitor.service.ConnectionStatusResolverTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.MonitorServiceFallbackCleanupSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshSourceTest"` -> `BUILD SUCCESSFUL`
+- 本轮并行复核结论：
+  - 第 1 步：修复 1 个真实入口残留问题后收口完成。
+  - 第 2 步：本轮多智能体与主线程复核均未发现新的真实问题。
+  - 第 3 步：修复 1 个真实断流状态问题后收口完成。
+  - 第 4 步：修复 1 个旧别名消费问题后收口完成。
+  - 第 5-6 步：主线程复核未发现新的真实问题；此前收口结果保持有效。
+- 已完成一轮新的 BUG review，并修复 1 个真实服务端历史归并问题：
+  - `bridge/mt5_gateway/server_v2.py` 的 `_map_trade_deals()` 之前在生命周期 key 对不上的情况下，还会退回 `symbol + side` 队列继续配对；这会把不同仓位的成交启发式归并成同一笔主链历史。现在已移除这条 `symbol + side` fallback，未匹配到生命周期开仓批次的平仓只保留显式 close 记录，不再跨仓位硬配对。
+- 已补充并跑通本轮 BUG review 验证：
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_map_trades_pairs_partial_close_with_fifo_open_batches bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_map_trades_should_not_fallback_to_symbol_side_when_lifecycle_key_changes bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_map_trades_maps_mt5_sell_lifecycle_into_single_trade_record -v` -> `Ran 3 tests ... OK`
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_contracts -v` -> `Ran 29 tests ... OK`
+- 已完成一轮新的 BUG review，并修复 1 个真实预加载历史漏刷问题：
+  - `AccountStatsPreloadManager.fetchForOverlay()` 之前在判断是否补拉全量历史时，如果 `latestCache` 为空，只能看到“本地有历史”却拿不到真实本地历史条数；这样应用重启后，远端成交数已经变化时，预加载链可能仍误判为“不需要全量补拉”。现在已改成：`latestCache` 缺失时直接使用 `accountStorageRepository.loadTrades().size()` 作为 cached trade count，避免旧历史残留。
+- 已补充并跑通本轮 BUG review 验证：
+  - App：`./gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.account.AccountHistoryRefreshPolicyHelperTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` -> `BUILD SUCCESSFUL`
+- 已完成一轮新的 BUG review，并修复 1 个真实账户页会话串号风险：
+  - `AccountStatsBridgeActivity.applyPreloadedCacheIfAvailable()` 之前只判断“当前有会话”，不会校验 `preloadManager.latestCache` 是否属于当前活动账号；如果旧账号缓存仍留在内存里，页面会先短暂画出上一账号的数据。现在已新增当前会话身份校验：预加载缓存只有在 `active/pending/login+server` 与当前会话一致时才允许消费。
+- 已补充并跑通本轮 BUG review 验证：
+  - App：`./gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` -> `BUILD SUCCESSFUL`
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_contracts -v` -> `Ran 29 tests ... OK`
+- 已完成第 6 步本轮服务端历史模型收口：
+  - `bridge/mt5_gateway/v2_account.py` 里的 `build_account_history_model()` 及其 trade/curve normalizer 之前仍接受 `dealHistory/orderHistory/equityCurve` 这类旧别名字段，并会用 `openPrice/closePrice` 回填缺失的 `price`；现在已改成只认 canonical `trades/orders/curvePoints` 与显式标准字段，不再保留这条旧兼容入口，也不再回填成交价。
+- 已补充并跑通本轮服务端第 6 步防回退验证：
+  - `python -m unittest bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_contracts -v` -> `Ran 29 tests ... OK`
+- 已完成第 6 步的一轮新复核，并修复 1 条真实“旧曲线回灌”残留链：
+  - `AccountStorageRepository` 之前在 `persistMetaSnapshot()/persistLiveSnapshot()/persistIncrementalSnapshot()/persistSnapshot()` 中仍会保留或合并旧曲线；现在统一改成只写入本次快照自带的 `curvePoints`，轻量运行态没有曲线时会显式写空，不再把历史曲线伪装成当前主链数据。
+  - `AccountStatsBridgeActivity.applyPreloadedCacheIfAvailable()` 之前在消费 `preloadManager` 缓存后，还会把这份缓存再按页面快照重复落库；对 `snapshot-only` 预加载来说，这会把空历史与旧曲线重新回灌到本地仓储。现在已移除这条重复写库链，页面只消费预加载结果，不再二次改写仓储真值。
+- 已补充并跑通本轮第 6 步专项回归验证：
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.account.AccountCurvePointNormalizerTest" --tests "com.binance.monitor.ui.account.CurveSeriesInterpolationHelperTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest"` -> `BUILD SUCCESSFUL`
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_contracts -v` -> `Ran 27 tests ... OK`
+- 已完成一轮新的 BUG review，并修复 3 个第 5 步相关真实问题：
+  - `AccountStatsBridgeActivity.applyRemoteSessionStatus()` 之前在普通状态刷新链里仍会直接消费非空 `activeAccount`，没有复用“`ok=true` 且 `profileId/login/server` 完整”这条收口规则；现在已改成先校验 `status.ok`，再只接受完整账号摘要，避免页面把脏状态重新写回本地激活态。
+  - `AccountSessionManager.login_new_account()` 之前只对“提交阶段失败”做回滚；如果登录阶段已经把运行态切空，随后又因缺少 canonical identity 失败，旧 `active_session` 文件态会残留。现在登录阶段失败也会显式清理旧 `active_session`，并触发 logout 变更通知。
+  - 服务端现在会在构建 `session_manager` 时清掉“磁盘有 active_session、但运行时并非同一 remote_active 会话”的伪旧激活态；同时统一收紧布尔值解析，避免 `active=\"false\"`、`saveAccount=\"false\"` 这类字符串被误判成真值。
+- 已补充并跑通本轮 BUG review 回归验证：
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest"` -> `BUILD SUCCESSFUL`
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_contracts -v` -> `Ran 54 tests ... OK`
+- 已完成一轮新的第 5 步 BUG review，并修复 1 个真实页面会话收口问题：
+  - `AccountStatsBridgeActivity.applyRemoteSessionStatus()` 之前在普通状态刷新链里，仍会直接消费非空 `activeAccount`，没有复用第 5 步“`ok=true` 且 `profileId/login/server` 完整”这一收口规则；这样只要服务端返回不完整但非空的账号摘要，页面就可能把脏状态重新写回本地激活态。现在已改成先校验 `status.ok`，再只接受完整账号摘要。
+- 已补充并跑通本轮第 5 步 BUG review 验证：
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` -> `BUILD SUCCESSFUL`
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest"` -> `BUILD SUCCESSFUL`
+- 已完成第 5 步“收掉会话拼装”的本轮专项收口：
+  - App 侧 `AccountRemoteSessionCoordinator` 现在只接受 `ok=true` 且 `status.activeAccount.profileId/login/server` 完整的会话状态；`status` 缺失、`ok=false` 或账号摘要不完整时都会直接失败，不再进入 `syncing`。
+  - 服务端 `AccountSessionManager` 现在只按网关确认的完整 `login/server` 生成 `activeAccount`，不再用登录入参、saved profile 或回滚凭据补齐主链身份；`savedAccounts` 输出也统一剥离 `active/state` 运行态字段，只保留静态档案摘要。
+- 已补充并跑通第 5 步专项回归验证：
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` -> `BUILD SUCCESSFUL`
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_models bridge.mt5_gateway.tests.test_v2_session_contracts -v` -> `Ran 50 tests ... OK`
+- 已完成第 5 步的客户端、服务端两侧专项审计，并已把审计中发现的剩余问题全部实装修复，不再保留“仅输出结论、未落代码”的旧状态。
+- 已完成一轮新的第 4 步 BUG review，并修复 2 个真实问题：
+  - `AccountStorageRepository.persistIncrementalSnapshot()` 之前仍会把历史交易和曲线写回轻量运行态快照；现在已收成只更新持仓、挂单和摘要，不再拼装历史真值。
+  - `TradeRecordAdapterV2` 之前仍用 `timestamp` 兜底 `openTime/closeTime` 生成行身份；现在已改成只消费显式生命周期时间，不再把缺字段成交伪装成完整成交。
+- 已补充并跑通本轮 BUG review 验证：
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.TradeRecordAdapterV2SourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.ui.account.model.TradeRecordItemTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest"` -> `BUILD SUCCESSFUL`
+- 已完成第 4 步的补充收口：`AccountStorageRepository.persistIncrementalSnapshot()` 现在只更新轻量运行态持仓/挂单/摘要，不再写历史交易，也不再把旧曲线 merge 回轻量快照；这样轻快照缓存链不会再把“运行态刷新”和“历史缓存拼装”混成一条本地复合真值。
+- 已补充并跑通第 4 步仓储层回归验证：
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.ui.account.AccountCurvePointNormalizerTest" --tests "com.binance.monitor.ui.account.CurveSeriesInterpolationHelperTest" --tests "com.binance.monitor.ui.account.model.TradeRecordItemTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest"` -> `BUILD SUCCESSFUL`
+- 已完成第 4 步“账户展示链降成纯消费层”的本轮专项收口：`AccountStatsBridgeActivity` 不再本地重算持仓 `dayPnL`、不再在页面层去重持仓，也不再用 `replace` 包裹本地 `trade/curve history merge`；账户页当前直接消费服务端下发的持仓列表、成交列表和曲线列表。
+- 已完成第 4 步图表历史成交链收口：`HistoricalTradeAnnotationBuilder` 现在只接受服务端明确给出的 `openTime/closeTime/openPrice/closePrice`，并按 `MarketChartTradeSupport.toTradeSymbol()` 的确定性品种映射匹配；缺少生命周期字段或品种不精确匹配的成交不会再被本地补画。
+- 已完成第 4 步预加载轻快照收口：`AccountStatsPreloadManager` 的 `snapshot-only` 路径现在发布快照本体，不再回读 `loadStoredSnapshot()` 把本地合成历史重新拼回主链；同时账户展示解析器只读取 v2 规范字段，不再消费旧别名字段。
+- 已新增并跑通第 4 步专项验证：
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.ui.account.AccountCurvePointNormalizerTest" --tests "com.binance.monitor.ui.account.CurveSeriesInterpolationHelperTest" --tests "com.binance.monitor.ui.account.model.TradeRecordItemTest"` -> `BUILD SUCCESSFUL`
+- 已完成第 3 步“监控链降成纯消费层”的再次综合复核与回归验证：本轮重新检查了 `MonitorService / ConnectionStatusResolver / GatewayV2StreamClient / MarketChartActivity` 主链及对应源码测试，没有发现新的必须修复项；当前无需再改第 3 步实现。
+- 已重新确认第 3 步综合回归结果稳定：
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.service.ConnectionStatusResolverTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.MonitorServiceFallbackCleanupSourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshSourceTest"` -> `BUILD SUCCESSFUL`
+- 已完成第 3 步“监控链降成纯消费层”的再次综合复核：本轮继续检查了 `MonitorService / ConnectionStatusResolver / GatewayV2StreamClient / MarketChartActivity` 和相关源码测试，当前未再发现新的必须修复项；第 3 步主链保持“`v2 stream` 只发刷新信号、MonitorService 只补拉 v2 canonical 数据、fallback 只保留观测层”。
+- 已重新确认第 3 步专项验证结果稳定：
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.service.ConnectionStatusResolverTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.MonitorServiceFallbackCleanupSourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshSourceTest"` -> `BUILD SUCCESSFUL`
+- 已完成第 3 步“监控链降成纯消费层”的再次专项复核与收口：`ConnectionStatusResolver` 与 `MonitorService.updateConnectionStatus()` 现在都只按 `v2 stream` 健康度生成连接状态文案，fallback socket / 本地 tick 新鲜度 / 重连次数不再影响主链连接状态。
+- 已修复第 3 步里 1 个真实监控链问题：`MonitorService.applyMarketSeriesPayload()` 之前在写入闭合 1m K 线后，没有继续调用 `handleClosedKline()`，导致本地异常判定和本地异常提醒链实际失效；现在闭合 K 线写入后会继续触发本地异常评估，patch K 线仍只更新展示，不触发本地异常。
+- 已为第 3 步收口补上并重新跑通专项验证：
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.service.ConnectionStatusResolverTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.MonitorServiceFallbackCleanupSourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshSourceTest"` -> `BUILD SUCCESSFUL`
+- 已完成一次新的 BUG review，并修复 1 个真实 App 会话空指针问题：`AccountRemoteSessionCoordinator.handleAcceptedReceipt()` 之前默认假设 `fetchStatus()` 一定返回非空对象；如果服务器回执成功但状态接口解析结果是 `null`，这里会直接空指针，而不是按统一错误路径失败。现在已改成显式判空并返回“会话状态缺失”。
+- 已为这次 BUG 修复补上回归测试：`switchAcceptedShouldFailWhenStatusPayloadIsMissing`，锁定“状态对象缺失时必须明确失败，不得空指针崩溃”。
+- 已重新完成本轮 BUG review 验证：
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` -> `BUILD SUCCESSFUL`
+  - `python -m unittest bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_contracts -v` -> `Ran 47 tests ... OK`
+- 已完成第 2 步“服务端账户真值唯一化”的再次综合复核：本轮继续检查了账户 build cache、trade history cache、snapshot sync cache、`snapshot/summary/live/pending/trades/curve` 投影链；目前未发现新的多真值残留，不需要再改第 2 步实现。
+- 已补充第 2 步投影链专项验证：
+  - `python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_should_slide_snapshot_build_cache_should_always_disable_cache_sliding bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_build_snapshot_response_should_drop_legacy_ea_sync_state bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_build_trades_snapshot_response_should_drop_legacy_ea_sync_state bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_select_snapshot_should_use_mt5_pull_even_when_ea_snapshot_is_fresh bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_build_account_light_snapshot_should_not_return_stale_ea_snapshot -v` -> `Ran 5 tests ... OK`
+- 已完成第 2 步“服务端账户真值唯一化”的再次专项复核与收口：账户重快照缓存、轻快照缓存现在都只复用 `MT5 Python Pull` 快照；旧 `EA Push` 快照或缺少来源标记的历史缓存不会再进入 `/v2/account/snapshot`、`/v2/account/history`、`/v2/account/sync` 主链。
+- 已完成第 2 步历史成交链收口：`_build_trade_history_with_cache()` 现在优先直接消费同一份 canonical snapshot 的 `trades`，只有在没有 canonical snapshot 时才单独走 MT5 拉取；MT5 拉取失败时不再回退 EA snapshot trades，也不再复用缺少 canonical source 的旧成交缓存。
+- 已重新完成第 2 步专项验收：
+  - `python -m unittest bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_contracts -v` -> `Ran 26 tests ... OK`
+- 已完成一次新的 App BUG review，并修复 1 个真实问题：主界面“连接详情”弹窗里的 `Binance REST / Binance WS` 之前仍按旧规则本地推导，可能和 `ConfigManager` 当前实际运行时地址不一致；现在已改成直接读取运行时配置口径。
+- 已完成第 1 步“入口唯一化”的再次复核与补强：`ConfigManager` 现在固定只返回 `https://tradeapp.ltd`，设置页网关项也已改成只读展示，运行时不再允许改写任意 HTTPS 入口。
+- 已重新完成第 1 步专项验收：
+  - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.security.NetworkSecurityConfigSourceTest" --tests "com.binance.monitor.data.local.ConfigManagerSourceTest" --tests "com.binance.monitor.util.GatewayUrlResolverTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest" --tests "com.binance.monitor.ui.settings.SettingsSectionActivitySourceTest"` -> `BUILD SUCCESSFUL`
+- 已完成新一轮细查后的结构清理：删除失联旧页面 `AccountStatsLiveActivity`、旧 `/v1/snapshot` 账户客户端 `Mt5GatewayClient` 及其单测，仓库内不再保留这条旧账户展示回退链。
+- 已重新完成本轮扩展主链验收：
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_models -v` -> `Ran 53 tests ... OK`
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountCurvePointNormalizerTest" --tests "com.binance.monitor.ui.account.CurveSeriesInterpolationHelperTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" --tests "com.binance.monitor.service.MonitorServiceFallbackCleanupSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshSourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest" --tests "com.binance.monitor.security.NetworkSecurityConfigSourceTest" --tests "com.binance.monitor.util.GatewayUrlResolverTest"` -> `BUILD SUCCESSFUL`
+- 已完成“结构性主链 6 步”的最后复核收口：账户预加载层、账户页统计层和本地账户缓存层都不再做秒级时间戳升毫秒，也不再把 `timestamp/price` 本地补成 `open/close time/price`。
+- 已重新完成本轮主链验收：
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_account_pipeline bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_models -v` -> `Ran 53 tests ... OK`
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountCurvePointNormalizerTest" --tests "com.binance.monitor.ui.account.CurveSeriesInterpolationHelperTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" --tests "com.binance.monitor.service.MonitorServiceFallbackCleanupSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshSourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest"` -> `BUILD SUCCESSFUL`
+- 已完成“结构性主链 6 步”里第 3-6 步的最后收口：`AccountStatsBridgeActivity` 现在只消费服务端给出的 `latestOverviewMetrics / latestCurveIndicators / latestStatsMetrics`，并且只用 canonical `tradeHistory / curveHistory` 直接替换页面内存，不再在页面层做历史合并、曲线重建、仓位比例补算。
+- 已删除 `TradeLifecycleMergeHelper / AccountCurveRebuildHelper / AccountCurvePositionRatioHelper` 及其单测，账户展示链不再保留这三条旧补算 helper 作为死代码。
+- 已完成会话拼装收口最后一刀：`AccountRemoteSessionCoordinator` 在 `login/switch` 成功后必须 `fetchStatus()`，只认 `status.activeAccount`；`fetchStatus()` 失败、账号摘要缺失、或 `receipt.activeAccount` 与 `status.activeAccount` 冲突时都直接失败，不再用输入值或本地 saved account 补身份。
+- 已重新完成自动化验收：
+  - 服务端：`python -m unittest bridge.mt5_gateway.tests.test_v2_session_contracts bridge.mt5_gateway.tests.test_v2_session_manager bridge.mt5_gateway.tests.test_v2_session_models -v` -> `Ran 46 tests ... OK`
+  - App：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityTradeHistorySourceTest" --tests "com.binance.monitor.ui.account.AccountCurvePointNormalizerTest" --tests "com.binance.monitor.ui.account.CurveSeriesInterpolationHelperTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" --tests "com.binance.monitor.service.MonitorServiceFallbackCleanupSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshSourceTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2StreamClientSourceTest"` -> `BUILD SUCCESSFUL`
+- 第 4 步本轮又向下推进一层：账户页、悬浮窗、图表页都已收掉 `AccountSnapshotDisplayResolver / AccountSnapshotRestoreHelper` 这条“本地恢复旧快照”链，当前只消费预加载缓存或正式远端刷新结果，不再本地回填旧账户快照。
+- 本轮还同步删除了图表页 `ChartHistoricalTradeSourceResolver`，K 线叠加层不再在快照缺失时回退到本地留存成交。
+- 正在继续执行“结构性主链 6 步”中的第 3、4 步收口；本轮已完成监控链纯消费化，以及账户预加载链的 v2 真值直连。
+- 第 3 步本轮已落地：`MonitorService.java` 不再在 `v2 stream` 失效后本地做 stale 补拉、也不再强制 fallback ws 重连；fallback 回调只保留观测用途，不再写入主链展示真值。
+- 第 4 步本轮已推进到账户预加载层：`/v2/account/snapshot` 与 `/v2/account/history` 现在都会直接携带 `overviewMetrics / curveIndicators / statsMetrics`；App 侧 `GatewayV2Client`、`AccountSnapshotPayload`、`AccountHistoryPayload` 已同步承接；`AccountStatsPreloadManager` 已改成只消费这些服务端字段，不再回退 `Mt5BridgeGatewayClient`，也不再本地生成 overview/stats 指标。
+- 正在按“结构性主链 6 步”实施清理；第 1 步“入口唯一化”已完成，默认入口已切到 `https://tradeapp.ltd`，App 侧多入口候选、本地回退和 `127.0.0.1` 流回退已从主链移除。
+- 第 2 步“服务端账户真值唯一化”已开始并完成第一刀：`server_v2.py` 的 `_select_snapshot()` 与 `_build_account_light_snapshot()` 已改成只认 `MT5 Python Pull`，不再走 `EA fresh -> MT5 pull -> stale EA` 三轨选择。
 - 已将 `codex/remote-mt5-session` 以 fast-forward 方式并入 `main`，当前 `main` 指向提交 `595beda feat: finalize remote mt5 session flow`。
 - 当前正在核对合并后的工作区状态；已确认还有 1 个未提交本地文件 `.worktrees/server-control-console` 留在工作区，stash 中仅保存了 `scripts/__pycache__/build_windows_server_bundle.cpython-314.pyc`。
 - 已完成 2026-04-07 新一轮“多智能体、分模块、源码级”专项审计，重新复核了 App 账户/远程会话、App 行情/图表/监控、服务端网关/会话/数据源、部署脚本/管理面板 4 个模块中的降级处理、兜底方案、临时补丁、启发式方法、局部稳定化手段、后处理补救措施。
@@ -41,6 +237,21 @@
 - 已重新执行 `python scripts/build_windows_server_bundle.py`，当前 `dist/windows_server_bundle` 已同步为最新部署口径。
 
 ## 上次停在哪个位置
+- 当前停点已推进到“2026-04-07 又一轮多智能体从头全面复核完成”：本轮新增修掉 4 个真实问题，EA 旁路不再影响主链缓存或执行重建，图表页与账户页也继续收紧了旧快照和启发式锚点残留。
+- 当前停点已推进到“2026-04-07 新一轮多智能体复核完成并修掉 3 个真实未收口问题”：第 1、3、4 步本轮新增缺口均已落代码并验证通过，第 2、5、6 步本轮未发现新的真实问题。
+- 当前停点保持在“第 3 步监控链降成纯消费层综合复核完成”：本轮再次回归后仍未发现新的第 3 步缺口，当前无需继续修改监控链实现。
+- 当前停点已推进到“第 3 步监控链降成纯消费层综合复核完成”：专项修复与专项验证都已稳定，本轮没有再发现新的第 3 步收口缺口。
+- 当前停点已推进到“第 3 步监控链降成纯消费层再次收口并专项验证通过”：连接状态口径已收成只认 `v2 stream`，闭合 K 线的本地异常判定链也已恢复。
+- 当前停点已推进到“新一轮 BUG review 完成并修复 1 个 App 会话空状态崩溃问题”，当前远程会话收口链在“回执成功但状态对象缺失”这一脏响应下也能显式失败，不再空指针。
+- 当前停点已推进到“第 2 步服务端账户真值唯一化再次综合复核完成”：主链、投影链和 sync cache 链都已按单一 `MT5 Python Pull` 真值复核 through，没有发现新的第 2 步收口缺口。
+- 当前停点已推进到“第 2 步服务端账户真值唯一化再次收口并专项验证通过”：服务端账户缓存与成交历史链都只认 `MT5 Python Pull` 真值，不再接受旧 EA 缓存或非 canonical 历史缓存。
+- 当前停点已推进到“第 1 步入口链和连接详情诊断链口径一致并重新专项验证通过”，主界面展示不再和实际请求地址脱节。
+- 当前停点已经推进到“第 1 步入口唯一化完成最终收口并重新专项验证通过”，旧明文入口、旧本地入口、以及设置页自定义 HTTPS 入口都不再进入 App 主链。
+- 当前停点保持在“1-6 步全部复核完成并重新全绿验证通过”，本轮只是继续删除仓库内已经失联的旧账户页回退链。
+- 当前停点已经推进到“1-6 步全部复核完成并重新全绿验证通过”，剩余只有文档已同步、等待后续线下人工联调。
+- 当前停点已推进到“第 3-6 步收口完成并已重新验证通过”：监控链、账户预加载链、账户展示链、会话拼装链都已按细化方案切成纯消费或单真值链。
+- 本轮不再存在 `TradeLifecycleMergeHelper / AccountCurveRebuildHelper / AccountCurvePositionRatioHelper / AccountSnapshotDisplayResolver / AccountSnapshotRestoreHelper` 这些页面层补算或恢复阻塞点。
+- 第 1 步入口唯一化与第 2 步账户真值唯一化已在主链落地；本轮新增工作主要是把第 4-6 步从“预加载层已收口”推进到“页面层和会话层也彻底收口”。
 - 已完成把当前功能分支并入 `main`，但还没有处理 `.worktrees/server-control-console` 这个本地改动；它不在本次 stash 里。
 - 新一轮多智能体专项审计已经收齐 4 个模块结果，待输出统一总表。
 - App 行情/图表/监控模块已确认的高风险点包括：默认网关地址静默回退、`v2 stream + 旧 WS standby + stale pull` 混合链路、历史成交叠加层的本地快照回退 + 启发式生命周期归并。
@@ -132,13 +343,63 @@
   - `.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2SessionClientTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"` -> `BUILD SUCCESSFUL`
 
 ## 近期关键决定和原因
+- 本轮把 `/health` 进一步收口为“零 MT5 调用”的纯轻量接口，而不是只做到“不重新登录 MT5”；原因是服务器现场已经证明，哪怕只是 `account_info()` 这类轻探测，只要底层桥阻塞，健康检查和管理面板都会一起超时。
+- 本轮把网关启动脚本也收口到“依赖变化才安装”的模式，而不是靠延长健康检查等待时间兜住；原因是服务器现场的真实问题是启动链里做了重复依赖安装，继续拉长超时时间只是在掩盖结构性慢启动。
+- 本轮把 `/health` 收口为“网关进程轻量健康接口”，而不是在健康检查里顺带做 MT5 重连；原因是部署验收和管理面板首先需要的是快速、稳定地确认服务活着，MT5 深探测属于更重的业务诊断，不能绑在基础存活检查上。
+- 本轮把部署日志文件锁问题收口为“GUI 和 worker 必须显式共享同一份日志/状态文件句柄”，而不是简单延时重试；原因是这次失败来自脚本自身的并发读写冲突，正确修复应当消除互斥打开方式，而不是赌时序。
+- 本轮把部署超时根因收口为“初始化依赖后必须立即写入 `.requirements.sha256`”，而不是单纯延长健康检查等待时间；原因是这次失败不是服务真实变慢，而是启动链被重复依赖安装阻塞，延长超时只会掩盖根因。
+- 本轮部署现场报错按“根因修复 + 回归测试”收口，而不是只改服务器上的一份脚本；原因是这类 PowerShell 自动变量冲突属于确定性错误，必须在源码和部署包两边一起修掉。
+- 本轮部署文档把“服务器重部署入口”正式收口到 `C:\mt5_bundle\windows_server_bundle\deploy_bundle.cmd`；原因是用户要的是可直接复制整个文件夹后执行的最短正确路径，不能再要求现场手工拆步骤。
+- 本轮部署 UI 口径明确收口为“唯一状态窗口 + 后台隐藏 worker”；原因是用户要求除了这个窗口外服务器端不再出现其他前台窗口，同时关闭窗口也不能影响后台服务运行。
+- 本轮部署说明删除了“gradle.properties 改入口”和“App 仍保留官方回退”旧说法；原因是第 1 步入口唯一化已经完成，继续保留这些文档口径会误导实际部署。
+- 本轮把会话链剩余的 `account / isActive` 旧命名彻底收口为 `activeAccount / active`；原因是当前服务端与 App 都已在同一仓库内同步维护，没有继续保留双字段名兼容的必要，继续兼容只会让状态真值再次分叉。
+- 本轮把悬浮窗和统计分析里的 BTC/XAU 判断也统一切到 `ProductSymbolMapper`；原因是即使主链接口已经统一，展示链只要还保留 `contains / startsWith` 这类字符串猜测，就仍然存在第二套产品识别规则。
+- 本轮 BUG review 把服务端 `_map_trade_deals()` 的 `symbol + side` 兜底配对也纳入收口；原因是这条逻辑会在生命周期标识不一致时跨仓位拼接成交，属于明确的启发式归并，会直接污染 `/v2/account/history` 的 canonical 成交链。
+- 本轮 BUG review 把“latestCache 为空但本地已有旧历史”的冷启动场景也纳入预加载链；原因是只要 `fetchForOverlay()` 还只拿内存里的 history count 判定是否补拉全量历史，应用重启后就可能继续保留旧成交历史，违背单真值主链。
+- 本轮 BUG review 把“预加载缓存是否属于当前会话”也纳入账户页主链校验；原因是只要 `latestCache` 还能在切号后先被旧页面直接消费，用户就会先看到上一账号的持仓和曲线，随后再被新快照覆盖，这属于典型的跨会话真值串页。
+- 第 6 步本轮把服务端 `v2_account` 历史模型也纳入收口，而不是只看 `server_v2.py` 选源；原因是只要 `/v2/account/history` 的模型层还继续接受 `dealHistory/equityCurve` 旧别名，或者继续用 `openPrice/closePrice` 回填 `price`，主链出口就仍保留第二套字段口径与后处理补救。
+- 第 6 步本轮把“本地仓储是否继续保留旧曲线”也纳入主链复核；原因是只要 `snapshot-only` 或轻量运行态更新后还能把旧曲线继续留在 `AccountStorageRepository`，后续任一页面或恢复链都可能把历史曲线重新当成当前真值接回主链。
+- 第 6 步本轮移除了账户页消费预加载缓存后的重复落库；原因是预加载管理器本身已经负责按 full/incremental 规则更新仓储，页面层再写一次会把“展示消费层”和“仓储投影层”重新耦合，并把空历史/旧曲线回灌回去。
+- 本轮 BUG review 把“普通状态刷新链”和“启动期会话恢复链”也纳入第 5 步；原因是只要页面刷新或服务端重启后还能把不完整状态、旧磁盘态重新写回主链，第 5 步的“会话拼装已收口”就不成立。
+- 本轮把服务端 `saveAccount/active/isActive` 的布尔值解析统一收紧，不再使用 Python 的 `bool(raw)`；原因是字符串 `"false"` 在 Python 中会被当成真值，这会直接污染 saved account 持久化和激活态判断。
+- 第 5 步本轮把客户端 `fetchStatus()` 的验收条件从“有 activeAccount/login 即可”收紧为“`ok=true` 且 `profileId/login/server` 都完整”；原因是会话同步阶段实际靠 `login+server` 收口，任何缺字段状态都会重新引入会话身份拼装。
+- 第 5 步本轮把服务端 `activeAccount` 的来源收紧为“只认网关确认的完整账号身份”，同时把 `savedAccounts` 强制降回静态摘要；原因是只要 `login/switch` 还允许回退到输入值或 saved profile，或者 saved profile 还能带 `active/state` 冒充运行态，会话主链就仍不是单一真值。
+- 本轮第 5 步服务端专项审计只读取用户限定的 6 个文件，不扩读其他实现；原因是这次目标是确认“会话拼装”主链是否真正收口，而不是扩大成全仓复查。
+- 第 5 步本轮审计把“严格失败”进一步细分成“空状态失败”和“缺字段失败”两类；原因是当前客户端虽然已经不再拿本地 saved account 或用户输入去补主身份，但只要继续接受 `login` 之外字段残缺的 `status.activeAccount`，会话收口仍然不算完全闭合。
+- 本轮 BUG review 把交易列表 Adapter 的行身份也纳入第 4 步范围；原因是只要 Adapter 还继续用 `timestamp` 兜底 `openTime/closeTime`，展示末端仍会把缺生命周期字段的成交当成完整成交参与列表稳定性判断。
+- 第 4 步本轮继续把本地账户缓存边界收口到“轻快照只写运行态”；原因是只要 `persistIncrementalSnapshot()` 还允许把历史交易和曲线 merge 回去，客户端仓储层就仍保留本地复合真值语义，后续很容易被重新接回展示主链。
+- 第 4 步本轮把“页面不闪烁”放在“纯消费层”之后处理；原因是轻快照路径如果继续为避免闪烁去回读本地合成快照，就会重新把旧历史拼回账户展示主链。
+- 第 4 步本轮把图表历史成交匹配统一收口到 `MarketChartTradeSupport.toTradeSymbol()`；原因是 `contains("BTC"/"XAU"/"GOLD")` 这类子串猜测会误把非目标品种成交画到当前图表上，不属于严谨的一致映射。
+- 第 4 步本轮停止在 `TradeRecordItem` 中把显式 `openPrice/closePrice=0` 回填成 `price`；原因是服务端已经明确区分“真实 lifecycle 字段缺失”和“真实成交价存在”，客户端不能再把缺字段伪装成完整成交。
+- 第 4 步本轮停止页面层按本地 key 去重持仓、并把当日平仓盈亏按数量再分摊回持仓；原因是这些都属于展示层再次造数，会把服务端 `dayPnL` 真值改写成客户端二次结果。
+- 第 3 步本轮复核没有继续扩改 `MonitorService` 或 `GatewayV2StreamClient`；原因是当前发现的问题已经收口，继续为“看起来还像旧结构”的观测层对象做结构性删除，不属于这轮最小正确修复范围。
+- 第 3 步本轮综合复核继续保留 `fallbackKlineSocketManager`，但只接受它作为观测层存在，不再把“仍保留对象/连接”本身视为问题；原因是第 3 步目标是切断它对主链真值和状态的影响，而不是必须在这一阶段删掉所有旁路对象。
+- 第 3 步本轮把“连接状态文案”也纳入纯消费层收口，只允许 `v2 stream` 健康度决定“已连接/连接中”；原因是只要状态文案还继续参考 fallback socket 或本地 tick 新鲜度，监控主链在用户视角仍然不是单一来源。
+- 第 3 步本轮恢复了“闭合 1m K 线 -> 本地异常评估”这条调用，但仍只对闭合 K 线生效；原因是监控链纯消费化并不等于删除监控功能本身，本地异常判定仍应消费 canonical 市场序列结果，只是不再由 fallback/旧 WS 侧写主链。
+- 这次 BUG review 把“状态接口返回异常”和“状态接口返回空对象”分开处理；原因是二者在运行时表现不同，前者是请求失败，后者是脏成功响应，不能继续让空对象穿透成空指针。
+- 第 2 步本轮综合复核把 `snapshot_sync_cache` 及各类投影响应也纳入验收，而不是只看 `/v2/account/snapshot` 与 `/v2/account/history`；原因是只要 sync/projection 还允许旧 EA 状态留存，第 2 步在接口层仍然不算真正闭合。
+- 第 2 步本轮把“缓存是否可复用”的判断也纳入真值唯一化范围，只允许带 `source=\"MT5 Python Pull\"` 的账户快照与成交历史缓存继续进入主链；原因是如果缓存层还无条件接纳旧 EA 快照或缺来源旧缓存，`_select_snapshot()` 就算已经只认 MT5，真实返回链路仍然可能被旧真值污染。
+- 第 2 步本轮取消了账户快照缓存的滑动续命，并禁止 `trade history` 在 MT5 失败时退回 `EA snapshot`；原因是这两条都是典型的局部稳定化/失败回退，会重新把服务端账户主链拉回多真值状态。
+- 主界面连接详情弹窗里的 `Binance REST / Binance WS` 本轮改成直接读取 `ConfigManager` 运行时地址；原因是只要弹窗继续本地推导地址，就会和客户端实际请求口径脱节，诊断信息会误导排查。
+- `ConfigManager` 本轮改成固定只返回 `https://tradeapp.ltd`，并把持久化值统一回写为这个正式入口；原因是第 1 步要的是“入口唯一”，不是“拒绝 HTTP 但仍允许任意 HTTPS 域名”。
+- 设置页网关项本轮改成只读展示，不再允许用户手工保存入口；原因是只要 UI 仍暴露“可改入口”能力，运行时主链就仍然存在第二条入口配置路径。
+- `AndroidManifest.xml` 本轮移除了 `usesCleartextTraffic=\"true\"`；原因是正式入口已经收口到 HTTPS，继续声明全局明文流量会和第 1 步目标冲突。
+- 失联旧页面 `AccountStatsLiveActivity` 与旧 `Mt5GatewayClient` 本轮直接删除；原因是它们既不在 Manifest，也没有任何业务入口引用，却仍保留 `/v1` 账户快照和本地时间/价格补位逻辑，继续留在仓库里会误导后续维护。
+- 账户预加载层、账户页统计层和本地账户缓存层本轮全部停止做时间与价格补位；原因是第 6 步要求把历史、曲线、比例补算和本地启发式拼装从主链彻底清掉，客户端只允许消费服务端标准字段。
+- 账户页、悬浮窗、图表页本轮统一不再回读本地恢复快照；原因是只要页面层还允许“缓存缺失时本地补回旧快照”，账户展示链就仍有第二条本地主真值来源。
+- 图表页历史成交叠加本轮不再回退本地留存成交；原因是图表标注层也必须跟账户快照主链一致，不能在主链缺数据时单独恢复旧成交。
+- 第 3 步监控链本轮明确收口为“`v2 stream` 是唯一展示真值入口，fallback ws 只保留观测层”；原因是只要 fallback 回调还能直接写 K 线和异常主链，客户端就仍在本地造第二条行情真值链。
+- 第 4 步预加载层本轮明确收口为“服务端直接给 overview/stats/curve 指标，App 只做字段映射，不再本地补算”；原因是 `AccountStatsPreloadManager` 之前同时承担了拉取、选源、补算三种职责，会把账户展示链继续留在客户端本地拼装。
+- `test_v2_contracts.py` 里旧的“fresh EA 优先”契约本轮已同步改成“只认 MT5 Python Pull”；原因是测试口径必须和第 2 步的唯一真值源保持一致，不能继续保留旧三轨假设。
+- 第 1 步把 App 默认入口统一切到 `https://tradeapp.ltd`，并删除本地候选地址、局域网扫描和 `ws://127.0.0.1:8787/v2/stream` 静默回退；原因是“唯一入口地址”必须只有一条请求主链，不能再让客户端猜地址或改走本地入口。
+- 第 2 步先把服务端账户快照与轻快照的选源逻辑收成“只认 MT5 Python Pull”；原因是 `EA fresh / MT5 pull / stale EA` 三轨并存会直接制造账户真值分裂，必须先把主链砍成单源。
 - 这次分支收口采用 `git merge --ff-only codex/remote-mt5-session`；原因是当前 `main` 可以直接快进，不需要额外制造合并提交。
 - `.worktrees/server-control-console` 不随本次功能合并进入 `main`；原因是它是本地工作区产物，不属于远程会话主链代码。
 - 本轮审计把“架构级双轨/多轨回退”和“字段/算法级启发式补救”分开记录；原因是前者通常影响主链设计，后者通常影响边界正确性，不能混在一起看。
 - 本轮不把所有兼容逻辑一概视为错误；原因是其中有一部分是明确为了部署环境、旧缓存或旧接口形状存在，但仍需要单独标注，避免未来继续叠加。
-- 当 `receipt` 与紧随其后的 `status.activeAccount` 冲突时，Task 5 收口以 `receipt` 为准；原因是 `receipt` 对应的是本次已受理操作目标，`status` 在切换瞬间可能短暂滞后。
-- Task 5 的“accepted -> syncing”不再依赖紧跟着的 `fetchStatus()` 一定成功；原因是服务器一旦已经返回成功回执，App 就必须先切空旧缓存并进入等待真值收口，不能因为一跳状态补拉失败又退回旧页面，否则会形成前端版“看起来失败、实际上已切号”的状态分裂。
-- Task 5 在 `fetchStatus()` 回退路径里保留本地已有的 saved accounts 摘要；原因是状态补拉失败只代表“当前真值未补齐”，不代表用户已保存账号被清空，前端不应把切换列表误收口成空。
+- Task 5 当前收口规则已改成“成功受理后必须拿到 `fetchStatus()`，且只认 `status.activeAccount`”；原因是只要允许 `receipt/status/输入值/本地 saved account` 互相补位，账号身份就仍然不是单真值。
+- 当 `receipt.activeAccount` 与 `status.activeAccount` 冲突时直接失败；原因是这代表服务端会话真值还没闭合，前端不能自行裁决哪一个才是真目标账号。
+- `fetchStatus()` 失败或 `status.activeAccount` 缺失 login 时直接失败；原因是当前阶段优先保证单真值和错误显式化，而不是继续保留前端侧补身份链。
 - Task 5 对“成功回执但缺少账号摘要”的脏响应直接失败；原因是没有 active account 就无法安全建立等待同步的目标账号，继续进入 `syncing` 会留下误激活风险。
 - Task 6 文档口径进一步收口为“README 讲使用与部署、ARCHITECTURE 讲职责与边界、CONTEXT 讲当前状态与验证证据”；原因是这三份文档后续会被反复拿来部署、排障和继续开发，远程账号会话能力不能只散落在历史记录里。
 - Task 6 继续强调“HTTP 默认公网入口”与“HTTPS 远程会话入口”不是同一个安全等级；原因是如果文档不把这个边界写死，后续最容易出现的不是代码错误，而是部署后把 HTTP 地址直接填进 App，导致远程账号会话被误判成“功能异常”。

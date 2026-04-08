@@ -116,17 +116,17 @@ class GatewayBundleParityTests(unittest.TestCase):
         deploy_script = (bundle_dir / "deploy_bundle.ps1").read_text(encoding="utf-8-sig")
 
         self.assertIn('$bootstrapScript = Join-Path $windowsDir "01_bootstrap_gateway.ps1"', deploy_script)
-        self.assertIn('& $bootstrapScript -BundleRoot $bundleRoot', deploy_script)
-        self.assertIn('& $registerGatewayTaskScript -BundleRoot $bundleRoot -TaskName $gatewayTaskName -Force', deploy_script)
-        self.assertIn('& $registerAdminTaskScript -BundleRoot $bundleRoot -TaskName $adminTaskName -Force', deploy_script)
+        self.assertIn('& $bootstrapScript -BundleRoot $Context.BundleRoot', deploy_script)
+        self.assertIn('& $registerGatewayTaskScript -BundleRoot $Context.BundleRoot -TaskName $Context.GatewayTaskName -Force', deploy_script)
+        self.assertIn('& $registerAdminTaskScript -BundleRoot $Context.BundleRoot -TaskName $Context.AdminTaskName -Force', deploy_script)
 
     def test_root_deploy_ps1_should_support_parent_level_caddy_exe(self):
         bundle_dir = self._build_bundle()
         deploy_script = (bundle_dir / "deploy_bundle.ps1").read_text(encoding="utf-8-sig")
 
         self.assertIn("function Resolve-CaddyExecutablePath", deploy_script)
-        self.assertIn('(Join-Path $BundleParent "caddy.exe")', deploy_script)
-        self.assertIn('$caddyExe = Resolve-CaddyExecutablePath -WindowsDir $windowsDir -BundleRoot $bundleRoot -BundleParent $bundleParent', deploy_script)
+        self.assertIn('(Join-Path $Context.BundleParent "caddy.exe")', deploy_script)
+        self.assertIn('$caddyExe = Resolve-CaddyExecutablePath -Context $Context', deploy_script)
 
 
 if __name__ == "__main__":

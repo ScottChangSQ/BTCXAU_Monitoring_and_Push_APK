@@ -17,7 +17,6 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
-import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.AbnormalAlertItem;
 import com.binance.monitor.data.model.AbnormalRecord;
@@ -29,7 +28,6 @@ import com.binance.monitor.data.model.v2.MarketSeriesPayload;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
 import com.binance.monitor.data.repository.MonitorRepository;
-import com.binance.monitor.ui.account.AccountSnapshotDisplayResolver;
 import com.binance.monitor.ui.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.runtime.AppForegroundTracker;
@@ -56,10 +54,7 @@ public class MonitorService extends Service {
     private static final long ABNORMAL_SYNC_ERROR_LOG_COOLDOWN_MS = 60_000L;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final Map<String, Boolean> socketStates = new HashMap<>();
-    private final Map<String, Integer> reconnectCounts = new HashMap<>();
     private final Map<String, Long> lastNotifyAt = new HashMap<>();
-    private final Map<String, Long> lastKlineTickAt = new HashMap<>();
     private final Map<String, Long> lastPricePublishAt = new HashMap<>();
     private final Map<String, Double> lastPublishedPrice = new HashMap<>();
     private final AppForegroundTracker.ForegroundStateListener appForegroundListener =
@@ -93,7 +88,6 @@ public class MonitorService extends Service {
     private AbnormalRecordManager recordManager;
     private NotificationHelper notificationHelper;
     private FloatingWindowManager floatingWindowManager;
-    private AccountStorageRepository accountStorageRepository;
     private AbnormalGatewayClient abnormalGatewayClient;
     private FallbackKlineSocketManager fallbackKlineSocketManager;
     private GatewayV2Client gatewayV2Client;
@@ -104,10 +98,6 @@ public class MonitorService extends Service {
     private boolean foregroundStarted;
     private long lastFloatingRefreshAt;
     private boolean floatingRefreshScheduled;
-    private long lastForcedReconnectAt;
-    private long lastStaleRestRefreshAt;
-    private long lastStaleAccountRefreshAt;
-    private volatile boolean staleRestRefreshInFlight;
     private volatile boolean abnormalSyncInFlight;
     private long abnormalSyncSeq;
     private boolean abnormalBootstrapSynced;
@@ -130,7 +120,6 @@ public class MonitorService extends Service {
         recordManager = repository.getRecordManager();
         notificationHelper = new NotificationHelper(this);
         floatingWindowManager = new FloatingWindowManager(this);
-        accountStorageRepository = new AccountStorageRepository(this);
         abnormalGatewayClient = new AbnormalGatewayClient(this);
         fallbackKlineSocketManager = new FallbackKlineSocketManager(this);
         gatewayV2Client = new GatewayV2Client(this);
@@ -272,35 +261,20 @@ public class MonitorService extends Service {
         fallbackKlineSocketManager.connect(AppConstants.MONITOR_SYMBOLS, new FallbackKlineSocketManager.Listener() {
             @Override
             public void onFallbackStreamStateChanged(String symbol, boolean connected, int reconnectAttempt, String message) {
-                mainHandler.post(() -> {
-                    socketStates.put(symbol, connected);
-                    reconnectCounts.put(symbol,
-                            ConnectionStatusResolver.normalizeReconnectAttempt(connected, reconnectAttempt));
-                    updateConnectionStatus();
-                });
+                // fallback 仅作为观测层保留，不再参与主链状态或真值写入。
             }
 
             @Override
             public void onFallbackKlineUpdate(String symbol, KlineData data) {
-                mainHandler.post(() -> {
-                    long now = System.currentTimeMillis();
-                    lastKlineTickAt.put(symbol, now);
-                    repository.updateDisplayKline(data);
-                    if (data.isClosed()) {
-                        maybePublishPrice(symbol, data, now, true);
-                        handleClosedKline(data);
-                    } else {
-                        maybePublishPrice(symbol, data, now, false);
-                    }
-                    requestFloatingWindowRefresh(data.isClosed());
-                });
+                // fallback 仅作为观测层保留，不再写入主链展示真值。
             }
 
             @Override
             public void onFallbackStreamError(String symbol, String message) {
                 mainHandler.post(() -> {
-                    logManager.warn(symbol + " WebSocket: " + message);
-                    updateConnectionStatus();
+                    if (message != null && !message.trim().isEmpty()) {
+                        logManager.warn(symbol + " fallback WebSocket: " + message);
+                    }
                 });
             }
         });
@@ -405,15 +379,14 @@ public class MonitorService extends Service {
         }
         if (latestClosed != null) {
             KlineData closedData = toKlineData(symbol, latestClosed, true);
-            lastKlineTickAt.put(symbol, now);
             repository.updateDisplayKline(closedData);
+            handleClosedKline(closedData);
             maybePublishPrice(symbol, closedData, now, true);
             return closedData;
         }
         CandleEntry latestPatch = payload.getLatestPatch();
         if (latestPatch != null) {
             KlineData patchData = toKlineData(symbol, latestPatch, false);
-            lastKlineTickAt.put(symbol, now);
             repository.updateDisplayKline(patchData);
             maybePublishPrice(symbol, patchData, now, true);
             return patchData;
@@ -728,15 +701,9 @@ public class MonitorService extends Service {
         String status = ConnectionStatusResolver.resolveStatus(
                 v2StreamConnected,
                 lastV2StreamMessageAt,
-                AppConstants.MONITOR_SYMBOLS,
-                socketStates,
-                reconnectCounts,
-                lastKlineTickAt,
                 System.currentTimeMillis(),
                 AppConstants.SOCKET_STALE_TIMEOUT_MS,
-                AppConstants.MAX_RECONNECT_ATTEMPTS,
                 getString(R.string.connection_connected),
-                getString(R.string.connection_partial),
                 getString(R.string.connection_connecting)
         );
         repository.setConnectionStatus(status);
@@ -824,37 +791,7 @@ public class MonitorService extends Service {
         if (isV2StreamHealthy(now)) {
             return;
         }
-        refreshAccountFromV2IfStale(now);
-        List<String> staleSymbols = new ArrayList<>();
-        for (String symbol : AppConstants.MONITOR_SYMBOLS) {
-            long last = lastKlineTickAt.getOrDefault(symbol, 0L);
-            if (last <= 0L || now - last > AppConstants.SOCKET_STALE_TIMEOUT_MS) {
-                staleSymbols.add(symbol);
-            }
-        }
-        if (staleSymbols.isEmpty()) {
-            return;
-        }
-        refreshStaleSymbolsFromV2(staleSymbols, now);
-        if (now - lastForcedReconnectAt < AppConstants.STALE_RECONNECT_COOLDOWN_MS) {
-            return;
-        }
-        lastForcedReconnectAt = now;
-        for (String symbol : staleSymbols) {
-            socketStates.put(symbol, false);
-        }
-        logManager.warn("行情心跳超时，触发重连: " + String.join(", ", staleSymbols));
-        fallbackKlineSocketManager.forceReconnect("行情心跳超时");
         updateConnectionStatus();
-    }
-
-    // 当统一流超时时，按冷却时间补一轮账户真值，避免账户页和持仓摘要停在旧值。
-    private void refreshAccountFromV2IfStale(long now) {
-        if (now - lastStaleAccountRefreshAt < 20_000L) {
-            return;
-        }
-        lastStaleAccountRefreshAt = now;
-        requestAccountRefreshFromV2();
     }
 
     // 当 v2 stream 仍健康时，旧 WebSocket 只保留为回退层，不再主导状态和重连。
@@ -865,41 +802,6 @@ public class MonitorService extends Service {
                 now,
                 AppConstants.SOCKET_STALE_TIMEOUT_MS
         );
-    }
-
-    private void refreshStaleSymbolsFromV2(List<String> staleSymbols, long now) {
-        if (staleSymbols == null || staleSymbols.isEmpty() || executorService == null) {
-            return;
-        }
-        if (staleRestRefreshInFlight) {
-            return;
-        }
-        if (now - lastStaleRestRefreshAt < 20_000L) {
-            return;
-        }
-        staleRestRefreshInFlight = true;
-        lastStaleRestRefreshAt = now;
-        executorService.execute(() -> {
-            try {
-                for (String symbol : staleSymbols) {
-                    try {
-                        MarketSeriesPayload payload = gatewayV2Client.fetchMarketSeries(symbol, "1m", 2);
-                        KlineData data = applyMarketSeriesPayload(symbol, payload);
-                        if (data == null) {
-                            continue;
-                        }
-                        handleClosedKline(data);
-                        logManager.warn(symbol + " 实时流超时，已回退v2市场补拉，最近收盘(本地时区) "
-                                + FormatUtils.formatDateTime(data.getCloseTime()));
-                    } catch (Exception exception) {
-                        logManager.warn(symbol + " 回退v2市场补拉失败: " + exception.getMessage());
-                    }
-                }
-                mainHandler.post(() -> requestFloatingWindowRefresh(true));
-            } finally {
-                staleRestRefreshInFlight = false;
-            }
-        });
     }
 
     private void refreshFloatingWindow() {
@@ -915,19 +817,10 @@ public class MonitorService extends Service {
         AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
                 ? null
                 : accountStatsPreloadManager.getLatestCache();
-        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository == null
-                ? null
-                : accountStorageRepository.loadStoredSnapshot();
-        AccountSnapshot displaySnapshot = AccountSnapshotDisplayResolver.resolve(
-                cache,
-                storedSnapshot,
-                System.currentTimeMillis(),
-                configManager != null && configManager.isAccountSessionActive()
-        );
         List<com.binance.monitor.ui.account.model.PositionItem> positions =
-                displaySnapshot == null || displaySnapshot.getPositions() == null
+                cache == null || cache.getSnapshot() == null || cache.getSnapshot().getPositions() == null
                         ? new ArrayList<>()
-                        : displaySnapshot.getPositions();
+                        : cache.getSnapshot().getPositions();
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 positions,
                 repository.getDisplayKlineSnapshot(),

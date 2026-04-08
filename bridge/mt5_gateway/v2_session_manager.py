@@ -90,12 +90,54 @@ class AccountSessionManager:
         payload["lastSeenMs"] = self._now_ms()
         return payload
 
+    def _resolve_gateway_identity(self, account_meta: Any) -> tuple[str, str]:
+        """从网关返回中提取完整账号身份。"""
+        if not isinstance(account_meta, dict):
+            raise ValueError("gateway canonical account identity missing")
+        login_text = str(account_meta.get("login") or "").strip()
+        server_text = str(account_meta.get("server") or "").strip()
+        if not login_text or not server_text:
+            raise ValueError("gateway canonical account identity missing")
+        return login_text, server_text
+
+    def _build_active_profile_from_gateway_meta(self, account_meta: Any) -> Dict[str, Any]:
+        """只按网关确认的完整身份构造当前激活账号摘要。"""
+        login_text, server_text = self._resolve_gateway_identity(account_meta)
+        return self._build_profile(login_text, server_text, active=True)
+
     def _to_account_receipt(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """把档案对象裁剪成接口返回结构。"""
         summary = v2_session_models.SessionAccountSummary.from_mapping(profile)
         if summary is None:
             return {}
         return summary.to_dict()
+
+    def _to_active_account_summary(self, profile: Optional[Dict[str, Any]]) -> Optional[v2_session_models.SessionAccountSummary]:
+        """把运行态会话收口成完整 activeAccount 摘要。"""
+        summary = v2_session_models.SessionAccountSummary.from_mapping(profile)
+        if summary is None:
+            return None
+        if not summary.profile_id or not summary.login or not summary.server:
+            return None
+        summary.active = True
+        summary.state = "activated"
+        return summary
+
+    def _to_saved_account_summary(self, profile: Optional[Dict[str, Any]]) -> Optional[v2_session_models.SessionAccountSummary]:
+        """把已保存账号收口成静态摘要，剥离任何运行态字段。"""
+        if not isinstance(profile, dict) or not profile:
+            return None
+        sanitized = dict(profile)
+        sanitized["active"] = False
+        sanitized["state"] = ""
+        summary = v2_session_models.SessionAccountSummary.from_mapping(sanitized)
+        if summary is None:
+            return None
+        if not summary.profile_id or not summary.login or not summary.server:
+            return None
+        summary.active = False
+        summary.state = ""
+        return summary
 
     def _load_profile_record_snapshot(self, profile_id: str) -> Optional[Dict[str, Any]]:
         """读取某个已保存账号档案的原始记录快照，用于失败回滚恢复。"""
@@ -171,6 +213,39 @@ class AccountSessionManager:
                 f"登录提交失败，且补偿失败：{'; '.join(rollback_errors)}"
             ) from commit_error
         raise commit_error
+
+    def _settle_logged_out_after_login_failure(
+        self,
+        previous_active_profile: Optional[Dict[str, Any]],
+        request_id: str,
+        login_error: Exception,
+    ) -> None:
+        """登录阶段失败时，把旧文件态收口到 logged_out，避免运行态与文件态分裂。"""
+        cleanup_errors: List[str] = []
+        try:
+            self.store.clear_active_session()
+        except Exception as exc:
+            cleanup_errors.append(f"clear_active_session failed: {exc}")
+        try:
+            self._notify_session_changed("logout", previous_active_profile)
+        except Exception as exc:
+            cleanup_errors.append(f"notify_session_changed failed: {exc}")
+
+        self._append_audit_log(
+            "login_failed_before_commit",
+            request_id,
+            {
+                "error": str(login_error),
+                "hadPreviousActive": bool(previous_active_profile),
+                "cleanupErrors": cleanup_errors,
+            },
+        )
+
+        if cleanup_errors:
+            raise RuntimeError(
+                f"登录失败，且收口失败：{'; '.join(cleanup_errors)}"
+            ) from login_error
+        raise login_error
 
     def _decrypt_saved_password(self, record: Dict[str, Any]) -> str:
         """从账号档案解密密码。"""
@@ -262,11 +337,7 @@ class AccountSessionManager:
                     password=str(restore_credentials.get("password") or ""),
                     server=str(restore_credentials.get("server") or ""),
                 )
-                restored_profile = self._build_profile(
-                    login=str(restored_meta.get("login") or restore_credentials.get("login") or ""),
-                    server=str(restored_meta.get("server") or restore_credentials.get("server") or ""),
-                    active=True,
-                )
+                restored_profile = self._build_active_profile_from_gateway_meta(restored_meta)
                 self.store.save_active_session(restored_profile)
                 self._notify_session_changed("switch", restored_profile)
                 self._force_gateway_consistency_refresh()
@@ -317,10 +388,13 @@ class AccountSessionManager:
         request_id: str = "",
     ) -> Dict[str, Any]:
         """登录新账号并切为当前激活会话。"""
-        account_meta = self.gateway.login_mt5(login=login, password=password, server=server)
-        actual_login = str(account_meta.get("login") or login)
-        actual_server = str(account_meta.get("server") or server)
-        active_profile = self._build_profile(actual_login, actual_server, active=True)
+        previous_active_profile = self._load_active_profile_snapshot()
+        try:
+            account_meta = self.gateway.login_mt5(login=login, password=password, server=server)
+            active_profile = self._build_active_profile_from_gateway_meta(account_meta)
+        except Exception as login_error:
+            self._settle_logged_out_after_login_failure(previous_active_profile, request_id, login_error)
+            raise AssertionError("unreachable")
         saved_profile_snapshot = None
         should_restore_saved_profile = False
 
@@ -345,7 +419,7 @@ class AccountSessionManager:
         return v2_session_models.SessionReceipt(
             state="activated",
             request_id=str(request_id or ""),
-            account=v2_session_models.SessionAccountSummary.from_mapping(active_profile),
+            active_account=v2_session_models.SessionAccountSummary.from_mapping(active_profile),
             message="登录成功",
         ).to_dict()
 
@@ -370,10 +444,9 @@ class AccountSessionManager:
         payload = v2_session_models.SessionReceipt(
             state="logged_out",
             request_id=str(request_id or ""),
-            account=None,
+            active_account=None,
             message="已退出当前账号",
         ).to_dict()
-        payload["activeAccount"] = None
         return payload
 
     def build_status_payload(self) -> Dict[str, Any]:
@@ -382,12 +455,12 @@ class AccountSessionManager:
         saved_accounts = [
             item
             for item in (
-                v2_session_models.SessionAccountSummary.from_mapping(profile)
+                self._to_saved_account_summary(profile)
                 for profile in self.store.list_profiles()
             )
             if item is not None
         ]
-        active_account = v2_session_models.SessionAccountSummary.from_mapping(active)
+        active_account = self._to_active_account_summary(active)
         payload = v2_session_models.SessionStatusPayload(
             state="activated" if active_account else "logged_out",
             active_account=active_account,
@@ -422,9 +495,7 @@ class AccountSessionManager:
             )
             raise switch_error
 
-        actual_login = str(account_meta.get("login") or target_credentials.get("login") or "")
-        actual_server = str(account_meta.get("server") or target_credentials.get("server") or "")
-        active_profile = self._build_profile(actual_login, actual_server, active=True)
+        active_profile = self._build_active_profile_from_gateway_meta(account_meta)
         try:
             self.store.save_active_session(active_profile)
             self._notify_session_changed("switch", active_profile)
@@ -443,6 +514,6 @@ class AccountSessionManager:
         return v2_session_models.SessionReceipt(
             state="activated",
             request_id=str(request_id or ""),
-            account=v2_session_models.SessionAccountSummary.from_mapping(active_profile),
+            active_account=v2_session_models.SessionAccountSummary.from_mapping(active_profile),
             message="切换成功",
         ).to_dict()

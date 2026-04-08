@@ -1,6 +1,7 @@
 package com.binance.monitor.constants;
 
 import com.binance.monitor.BuildConfig;
+import com.binance.monitor.util.ProductSymbolMapper;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -23,10 +24,10 @@ public final class AppConstants {
 
     public static final String BASE_REST_URL = sanitizeBaseUrl(
             BuildConfig.BINANCE_REST_BASE_URL,
-            "https://fapi.binance.com/fapi/v1/klines");
+            "https://tradeapp.ltd/binance-rest/fapi/v1/klines");
     public static final String BASE_WS_URL = sanitizeBaseUrl(
             BuildConfig.BINANCE_WS_BASE_URL,
-            "wss://fstream.binance.com/ws/");
+            "wss://tradeapp.ltd/binance-ws/ws/");
     public static final int MAX_RECONNECT_ATTEMPTS = 30;
     public static final long WS_PING_INTERVAL_SECONDS = 45L;
     public static final long PRICE_UPDATE_THROTTLE_MS = 500L;
@@ -205,10 +206,14 @@ public final class AppConstants {
     }
 
     public static String symbolToAsset(String symbol) {
-        if (SYMBOL_XAU.equals(symbol)) {
+        String marketSymbol = ProductSymbolMapper.toMarketSymbol(symbol);
+        if (SYMBOL_XAU.equals(marketSymbol)) {
             return "XAU";
         }
-        return "BTC";
+        if (SYMBOL_BTC.equals(marketSymbol)) {
+            return "BTC";
+        }
+        return marketSymbol;
     }
 
     private static String sanitizeBaseUrl(String value, String fallback) {

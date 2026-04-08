@@ -58,7 +58,6 @@ import com.binance.monitor.data.remote.v2.GatewayV2TradeClient;
 import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.databinding.DialogTradeCommandBinding;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
-import com.binance.monitor.ui.account.AccountSnapshotDisplayResolver;
 import com.binance.monitor.ui.account.AccountTimeRange;
 import com.binance.monitor.ui.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
@@ -2785,20 +2784,14 @@ public class MarketChartActivity extends AppCompatActivity {
         AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
                 ? null
                 : accountStatsPreloadManager.getLatestCache();
-        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository == null
-                ? null
-                : accountStorageRepository.loadStoredSnapshot();
-        AccountSnapshot snapshot = AccountSnapshotDisplayResolver.resolve(
-                cache,
-                storedSnapshot,
-                System.currentTimeMillis(),
-                sessionActive
-        );
-        String overlaySignature = buildAccountOverlaySignature(cache, storedSnapshot);
+        AccountSnapshot snapshot = (!sessionActive || cache == null) ? null : cache.getSnapshot();
+        String overlaySignature = buildAccountOverlaySignature(cache);
         if (overlaySignature.equals(lastAccountOverlaySignature)) {
             return;
         }
-        List<TradeRecordItem> trades = ChartHistoricalTradeSourceResolver.resolve(snapshot, storedSnapshot);
+        List<TradeRecordItem> trades = snapshot == null || snapshot.getTrades() == null
+                ? Collections.emptyList()
+                : snapshot.getTrades();
         if (snapshot == null && trades.isEmpty()) {
             lastAccountOverlaySignature = overlaySignature;
             clearAccountAnnotationsOverlay();
@@ -2824,8 +2817,7 @@ public class MarketChartActivity extends AppCompatActivity {
     // 当没有任何可用账户快照时，统一清空图表上的持仓与挂单标注。
     private void clearAccountAnnotationsOverlay() {
         lastAccountOverlaySignature = buildAccountOverlaySignature(
-                accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache(),
-                accountStorageRepository == null ? null : accountStorageRepository.loadStoredSnapshot()
+                accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache()
         );
         binding.klineChartView.setPositionAnnotations(new ArrayList<>());
         binding.klineChartView.setPendingAnnotations(new ArrayList<>());
@@ -2835,15 +2827,13 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     // 用轻量签名识别账户叠加层是否真的变化，避免无效重算。
-    private String buildAccountOverlaySignature(@Nullable AccountStatsPreloadManager.Cache cache,
-                                                @Nullable AccountStorageRepository.StoredSnapshot storedSnapshot) {
+    private String buildAccountOverlaySignature(@Nullable AccountStatsPreloadManager.Cache cache) {
         long firstOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(0).getOpenTime();
         long lastOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
         long cacheUpdatedAt = cache == null ? 0L : cache.getUpdatedAt();
         int cacheTradeCount = cache == null ? -1 : cache.getHistoryTradeCount();
-        long storedUpdatedAt = storedSnapshot == null ? 0L : storedSnapshot.getUpdatedAt();
         return selectedSymbol + "|" + loadedCandles.size() + "|" + firstOpenTime + "|" + lastOpenTime
-                + "|" + cacheUpdatedAt + "|" + cacheTradeCount + "|" + storedUpdatedAt;
+                + "|" + cacheUpdatedAt + "|" + cacheTradeCount;
     }
 
     private List<KlineChartView.PriceAnnotation> buildHistoricalTradeAnnotations(List<TradeRecordItem> trades) {
@@ -2946,6 +2936,9 @@ public class MarketChartActivity extends AppCompatActivity {
                 continue;
             }
             long anchorTime = resolvePositionAnchorTime(item, trades);
+            if (anchorTime <= 0L) {
+                continue;
+            }
             String side = normalizeTradeSideLabel(item.getSide());
             String label = side + " " + formatQuantity(Math.abs(item.getQuantity()))
                     + ", " + formatSignedUsd(item.getTotalPnL());
@@ -2988,6 +2981,9 @@ public class MarketChartActivity extends AppCompatActivity {
             String side = normalizeTradeSideLabel(item.getSide());
             int color = isSellSide(item.getSide()) ? sellColor : buyColor;
             long anchorTime = resolvePendingAnchorTime(item, trades);
+            if (anchorTime <= 0L) {
+                continue;
+            }
             String qtyLabel = lots > 1e-9
                     ? formatQuantity(lots)
                     : (item.getPendingCount() > 0 ? (item.getPendingCount() + "单") : "--");
@@ -3039,12 +3035,8 @@ public class MarketChartActivity extends AppCompatActivity {
             if (byOrderId > 0L) {
                 return byOrderId;
             }
-            long byCodeSide = findTradeOpenTimeByCodeAndSide(position.getCode(), position.getProductName(), position.getSide(), position.getCostPrice(), trades);
-            if (byCodeSide > 0L) {
-                return byCodeSide;
-            }
         }
-        return resolveLatestCandleOpenTime();
+        return 0L;
     }
 
     private long resolvePendingAnchorTime(PositionItem pendingOrder, List<TradeRecordItem> trades) {
@@ -3057,17 +3049,8 @@ public class MarketChartActivity extends AppCompatActivity {
             if (byPositionId > 0L) {
                 return byPositionId;
             }
-            long byCodeSide = findTradeOpenTimeByCodeAndSide(
-                    pendingOrder.getCode(),
-                    pendingOrder.getProductName(),
-                    pendingOrder.getSide(),
-                    pendingOrder.getPendingPrice(),
-                    trades);
-            if (byCodeSide > 0L) {
-                return byCodeSide;
-            }
         }
-        return resolveLatestCandleOpenTime();
+        return 0L;
     }
 
     private long findTradeOpenTimeByPositionId(long positionId, double targetPrice, List<TradeRecordItem> trades) {
@@ -3122,64 +3105,18 @@ public class MarketChartActivity extends AppCompatActivity {
         return bestTime;
     }
 
-    private long findTradeOpenTimeByCodeAndSide(String code,
-                                                String productName,
-                                                String side,
-                                                double targetPrice,
-                                                List<TradeRecordItem> trades) {
-        if (trades == null || trades.isEmpty()) {
-            return 0L;
-        }
-        String normalizedSide = normalizeTradeSideLabel(side);
-        double bestScore = Double.MAX_VALUE;
-        long bestTime = 0L;
-        for (TradeRecordItem trade : trades) {
-            if (trade == null) {
-                continue;
-            }
-            if (!matchesSelectedSymbol(trade.getCode(), trade.getProductName())) {
-                continue;
-            }
-            if (!normalizedSide.equals(normalizeTradeSideLabel(trade.getSide()))) {
-                continue;
-            }
-            long openTime = resolveTradeOpenTime(trade);
-            if (openTime <= 0L) {
-                continue;
-            }
-            double score = priceDistance(resolveTradeOpenPrice(trade), targetPrice);
-            if (score < bestScore || (Math.abs(score - bestScore) < 1e-9 && openTime > bestTime)) {
-                bestScore = score;
-                bestTime = openTime;
-            }
-        }
-        return bestTime;
-    }
-
     private long resolveTradeOpenTime(TradeRecordItem trade) {
         if (trade == null) {
             return 0L;
         }
-        if (trade.getOpenTime() > 0L) {
-            return trade.getOpenTime();
-        }
-        if (trade.getTimestamp() > 0L) {
-            return trade.getTimestamp();
-        }
-        if (trade.getCloseTime() > 0L) {
-            return trade.getCloseTime();
-        }
-        return 0L;
+        return trade.getOpenTime();
     }
 
     private double resolveTradeOpenPrice(TradeRecordItem trade) {
         if (trade == null) {
             return 0d;
         }
-        if (trade.getOpenPrice() > 0d) {
-            return trade.getOpenPrice();
-        }
-        return trade.getPrice();
+        return trade.getOpenPrice();
     }
 
     private double priceDistance(double left, double right) {
@@ -3189,49 +3126,18 @@ public class MarketChartActivity extends AppCompatActivity {
         return Math.abs(left - right) / Math.max(1d, Math.abs(right));
     }
 
-    private long resolveLatestCandleOpenTime() {
-        if (loadedCandles == null || loadedCandles.isEmpty()) {
-            return System.currentTimeMillis();
-        }
-        return loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
-    }
-
     private boolean matchesSelectedSymbol(String code, String productName) {
-        String symbol = selectedSymbol == null ? "" : selectedSymbol.trim().toUpperCase(Locale.ROOT);
-        String asset = symbol.endsWith("USDT") && symbol.length() > 4
-                ? symbol.substring(0, symbol.length() - 4)
-                : symbol;
-        String normalizedCode = code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
-        String normalizedName = productName == null ? "" : productName.trim().toUpperCase(Locale.ROOT);
-        if (normalizedCode.isEmpty() && normalizedName.isEmpty()) {
+        String normalizedSelected = MarketChartTradeSupport.toTradeSymbol(selectedSymbol);
+        if (normalizedSelected == null || normalizedSelected.trim().isEmpty()) {
+            return false;
+        }
+        String selected = normalizedSelected.trim().toUpperCase(Locale.ROOT);
+        String normalizedCode = MarketChartTradeSupport.toTradeSymbol(code);
+        if (normalizedCode != null && selected.equals(normalizedCode.trim().toUpperCase(Locale.ROOT))) {
             return true;
         }
-        List<String> candidates = new ArrayList<>();
-        if (!symbol.isEmpty()) {
-            candidates.add(symbol);
-        }
-        if (!asset.isEmpty()) {
-            candidates.add(asset);
-            candidates.add(asset + "USD");
-            candidates.add(asset + "USDT");
-            if ("XAU".equals(asset)) {
-                candidates.add("XAUUSD");
-                candidates.add("GOLD");
-            } else if ("BTC".equals(asset)) {
-                candidates.add("BTCUSD");
-                candidates.add("XBT");
-            }
-        }
-        for (String candidate : candidates) {
-            if (candidate == null || candidate.trim().isEmpty()) {
-                continue;
-            }
-            String value = candidate.trim().toUpperCase(Locale.ROOT);
-            if (normalizedCode.contains(value) || normalizedName.contains(value)) {
-                return true;
-            }
-        }
-        return false;
+        String normalizedName = MarketChartTradeSupport.toTradeSymbol(productName);
+        return normalizedName != null && selected.equals(normalizedName.trim().toUpperCase(Locale.ROOT));
     }
 
     private String normalizeTradeSideLabel(String side) {
@@ -3261,7 +3167,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private String buildAnnotationGroupId(String type, PositionItem item, long anchorTime, double price) {
         String safeType = type == null ? "order" : type;
         if (item == null) {
-            return safeType + "|na|" + anchorTime;
+            return "";
         }
         if (item.getPositionTicket() > 0L) {
             return safeType + "|position|" + item.getPositionTicket();
@@ -3269,10 +3175,7 @@ public class MarketChartActivity extends AppCompatActivity {
         if (item.getOrderId() > 0L) {
             return safeType + "|order|" + item.getOrderId();
         }
-        String code = item.getCode() == null ? "" : item.getCode().trim().toUpperCase(Locale.ROOT);
-        String side = normalizeTradeSideLabel(item.getSide());
-        String priceToken = String.format(Locale.US, "%.4f", Math.max(0d, price));
-        return safeType + "|fallback|" + code + "|" + side + "|" + anchorTime + "|" + priceToken;
+        return "";
     }
 
     private void appendTpSlAnnotations(List<KlineChartView.PriceAnnotation> output,

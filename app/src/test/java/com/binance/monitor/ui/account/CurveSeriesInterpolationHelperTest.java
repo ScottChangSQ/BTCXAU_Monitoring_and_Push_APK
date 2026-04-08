@@ -1,5 +1,5 @@
 /*
- * 曲线插值辅助测试，确保长按时按当前横轴时间返回插值结果，而不是卡在最近离散点。
+ * 曲线采样点辅助测试，确保长按只吸附真实点，不再插值生成不存在的数据。
  */
 package com.binance.monitor.ui.account;
 
@@ -27,10 +27,10 @@ public class CurveSeriesInterpolationHelperTest {
         CurvePoint point = CurveSeriesInterpolationHelper.interpolateCurvePoint(points, 2_000L);
 
         assertNotNull(point);
-        assertEquals(2_000L, point.getTimestamp());
-        assertEquals(120d, point.getEquity(), 1e-9);
-        assertEquals(100d, point.getBalance(), 1e-9);
-        assertEquals(0.30d, point.getPositionRatio(), 1e-9);
+        assertEquals(1_000L, point.getTimestamp());
+        assertEquals(100d, point.getEquity(), 1e-9);
+        assertEquals(90d, point.getBalance(), 1e-9);
+        assertEquals(0.10d, point.getPositionRatio(), 1e-9);
     }
 
     @Test
@@ -43,8 +43,8 @@ public class CurveSeriesInterpolationHelperTest {
         DrawdownPoint point = CurveSeriesInterpolationHelper.interpolateDrawdownPoint(points, 2_000L);
 
         assertNotNull(point);
-        assertEquals(2_000L, point.getTimestamp());
-        assertEquals(-0.12d, point.getDrawdownRate(), 1e-9);
+        assertEquals(1_000L, point.getTimestamp());
+        assertEquals(-0.20d, point.getDrawdownRate(), 1e-9);
     }
 
     @Test
@@ -57,7 +57,7 @@ public class CurveSeriesInterpolationHelperTest {
         DailyReturnPoint point = CurveSeriesInterpolationHelper.interpolateDailyReturnPoint(points, 2_000L);
 
         assertNotNull(point);
-        assertEquals(2_000L, point.getTimestamp());
-        assertEquals(0.02d, point.getReturnRate(), 1e-9);
+        assertEquals(1_000L, point.getTimestamp());
+        assertEquals(-0.08d, point.getReturnRate(), 1e-9);
     }
 }

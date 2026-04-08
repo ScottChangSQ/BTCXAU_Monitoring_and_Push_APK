@@ -10,6 +10,9 @@ public class AccountHistoryPayload {
 
     private final long serverTime;
     private final String syncToken;
+    private final JSONArray overviewMetrics;
+    private final JSONArray curveIndicators;
+    private final JSONArray statsMetrics;
     private final JSONArray trades;
     private final JSONArray orders;
     private final JSONArray curvePoints;
@@ -18,6 +21,9 @@ public class AccountHistoryPayload {
 
     public AccountHistoryPayload(long serverTime,
                                  String syncToken,
+                                 JSONArray overviewMetrics,
+                                 JSONArray curveIndicators,
+                                 JSONArray statsMetrics,
                                  JSONArray trades,
                                  JSONArray orders,
                                  JSONArray curvePoints,
@@ -25,6 +31,9 @@ public class AccountHistoryPayload {
                                  String rawJson) {
         this.serverTime = serverTime;
         this.syncToken = syncToken == null ? "" : syncToken;
+        this.overviewMetrics = overviewMetrics == null ? new JSONArray() : overviewMetrics;
+        this.curveIndicators = curveIndicators == null ? new JSONArray() : curveIndicators;
+        this.statsMetrics = statsMetrics == null ? new JSONArray() : statsMetrics;
         this.trades = trades == null ? new JSONArray() : trades;
         this.orders = orders == null ? new JSONArray() : orders;
         this.curvePoints = curvePoints == null ? new JSONArray() : curvePoints;
@@ -38,6 +47,18 @@ public class AccountHistoryPayload {
 
     public String getSyncToken() {
         return syncToken;
+    }
+
+    public JSONArray getOverviewMetrics() {
+        return overviewMetrics;
+    }
+
+    public JSONArray getCurveIndicators() {
+        return curveIndicators;
+    }
+
+    public JSONArray getStatsMetrics() {
+        return statsMetrics;
     }
 
     public JSONArray getTrades() {

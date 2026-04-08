@@ -48,7 +48,7 @@ public class MonitorServiceSourceTest {
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         );
 
-        assertTrue("悬浮窗应和图表页一样先解析页面快照",
+        assertFalse("悬浮窗不应再回读本地恢复快照解析器",
                 source.contains("AccountSnapshotDisplayResolver.resolve("));
         assertFalse("悬浮窗不应再直接读取数据库持仓列表",
                 source.contains("accountStorageRepository == null ? new ArrayList<>() : accountStorageRepository.loadPositions()"));
@@ -84,6 +84,17 @@ public class MonitorServiceSourceTest {
                 source.contains("dispatchLocalAbnormalNotification(record);"));
         assertTrue("服务端 alerts 也应进入补发提醒链路",
                 source.contains("dispatchServerAlertIfNeeded(alert);"));
+    }
+
+    @Test
+    public void closedMarketSeriesShouldStillTriggerLocalAbnormalEvaluation() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertTrue("闭合 1m K 线写入主链后，仍应触发本地异常判定",
+                source.contains("handleClosedKline(closedData);"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

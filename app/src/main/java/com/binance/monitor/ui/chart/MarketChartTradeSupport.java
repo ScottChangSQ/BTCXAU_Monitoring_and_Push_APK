@@ -8,9 +8,9 @@ import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.ui.account.model.PositionItem;
+import com.binance.monitor.util.ProductSymbolMapper;
 
 import java.util.List;
-import java.util.Locale;
 
 public final class MarketChartTradeSupport {
 
@@ -19,11 +19,7 @@ public final class MarketChartTradeSupport {
 
     // 把图表品种转换成 MT5 交易品种。
     public static String toTradeSymbol(@Nullable String chartSymbol) {
-        String normalized = safe(chartSymbol).toUpperCase(Locale.ROOT);
-        if (normalized.endsWith("USDT") && normalized.length() > 4) {
-            return normalized.substring(0, normalized.length() - 1);
-        }
-        return normalized;
+        return ProductSymbolMapper.toTradeSymbol(chartSymbol);
     }
 
     // 统一解析当前交易参考价，优先取最新 K 线收盘价。

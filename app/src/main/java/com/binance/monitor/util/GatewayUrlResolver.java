@@ -6,13 +6,15 @@ package com.binance.monitor.util;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.BuildConfig;
+
 import java.net.URI;
 import java.util.Locale;
 import java.util.Objects;
 
 public final class GatewayUrlResolver {
 
-    private static final String DEFAULT_FALLBACK = "http://10.0.2.2:8787";
+    private static final String DEFAULT_FALLBACK = BuildConfig.MT5_GATEWAY_BASE_URL;
     private static final String PATH_MT5 = "/mt5";
     private static final String PATH_BINANCE_REST = "/binance-rest";
     private static final String PATH_BINANCE_WS = "/binance-ws";
@@ -52,7 +54,7 @@ public final class GatewayUrlResolver {
     public static String resolveGatewayRootBaseUrl(@Nullable String raw, @Nullable String fallback) {
         String normalized = normalizeBaseUrl(raw, fallback);
         try {
-            URI uri = new URI(prepareForUri(normalized));
+            URI uri = new URI(prepareForUri(normalized, fallback == null ? DEFAULT_FALLBACK : fallback));
             String scheme = normalizeScheme(uri.getScheme());
             String host = uri.getHost();
             if (host == null || host.trim().isEmpty()) {
@@ -126,8 +128,9 @@ public final class GatewayUrlResolver {
         String normalizedCurrent = normalizeBaseUrl(currentBaseUrl, targetBaseUrl);
         String normalizedTarget = normalizeBaseUrl(targetBaseUrl, targetBaseUrl);
         try {
-            URI current = new URI(prepareForUri(normalizedCurrent));
-            URI target = new URI(prepareForUri(normalizedTarget));
+            String preferredFallback = targetBaseUrl == null ? DEFAULT_FALLBACK : targetBaseUrl;
+            URI current = new URI(prepareForUri(normalizedCurrent, preferredFallback));
+            URI target = new URI(prepareForUri(normalizedTarget, preferredFallback));
             String currentHost = current.getHost();
             String targetHost = target.getHost();
             if (currentHost == null || targetHost == null) {
@@ -161,7 +164,7 @@ public final class GatewayUrlResolver {
                 return fallback;
             }
             boolean rawHasExplicitScheme = hasExplicitScheme(source);
-            String prepared = prepareForUri(source);
+            String prepared = prepareForUri(source, fallback);
             URI uri = new URI(prepared);
             if (uri.getHost() == null || uri.getHost().trim().isEmpty()) {
                 return fallback;
@@ -188,18 +191,26 @@ public final class GatewayUrlResolver {
         }
     }
 
-    private static String prepareForUri(String raw) {
+    private static String prepareForUri(String raw, String fallback) {
         String value = raw.trim()
                 .replace("wss://", "https://")
                 .replace("ws://", "http://");
         if (value.startsWith("//")) {
-            value = "http:" + value;
+            value = preferredScheme(fallback) + ":" + value;
         }
         String lower = value.toLowerCase(Locale.ROOT);
         if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
-            value = "http://" + value;
+            value = preferredScheme(fallback) + "://" + value;
         }
         return value;
+    }
+
+    private static String preferredScheme(@Nullable String fallback) {
+        String value = fallback == null ? "" : fallback.trim().toLowerCase(Locale.ROOT);
+        if (value.startsWith("https://") || value.startsWith("wss://")) {
+            return "https";
+        }
+        return "http";
     }
 
     // 显式写出 scheme 的地址视为“用户已经选定入口形态”，不要再从回退值补旧端口。
@@ -287,7 +298,7 @@ public final class GatewayUrlResolver {
 
     private static int extractPort(String url) {
         try {
-            URI uri = new URI(prepareForUri(url));
+            URI uri = new URI(prepareForUri(url, DEFAULT_FALLBACK));
             return uri.getPort();
         } catch (Exception ignored) {
             return -1;

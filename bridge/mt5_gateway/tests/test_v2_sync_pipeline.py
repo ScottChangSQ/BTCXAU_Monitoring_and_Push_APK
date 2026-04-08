@@ -236,6 +236,32 @@ class V2SyncPipelineTests(unittest.TestCase):
         self.assertIn("fullRefresh", fake_client.messages[0]["payload"])
         self.assertNotEqual("heartbeat", fake_client.messages[1]["type"])
 
+    def test_v2_stream_should_offload_blocking_snapshot_build_to_worker_thread(self):
+        snapshot = self._build_stub_snapshot(position_count=1, order_count=1)
+        to_thread_calls = []
+
+        class _FakeClient:
+            async def accept(self):
+                return None
+
+            async def send_json(self, _payload):
+                raise server_v2.WebSocketDisconnect()
+
+            async def close(self, code=1000, reason=""):
+                return None
+
+        async def _fake_to_thread(func, *args, **kwargs):
+            to_thread_calls.append((func, args, kwargs))
+            return func(*args, **kwargs)
+
+        with mock.patch.object(server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot), mock.patch.object(
+            server_v2.asyncio, "to_thread", new=_fake_to_thread
+        ):
+            asyncio.run(server_v2.v2_stream(_FakeClient()))
+
+        self.assertEqual(1, len(to_thread_calls))
+        self.assertIs(server_v2._build_v2_sync_delta_response, to_thread_calls[0][0])
+
     def test_configure_windows_event_loop_policy_should_switch_to_selector_on_windows(self):
         class _FakeSelectorPolicy:
             pass

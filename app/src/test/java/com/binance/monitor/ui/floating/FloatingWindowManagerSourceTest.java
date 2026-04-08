@@ -22,4 +22,13 @@ public class FloatingWindowManagerSourceTest {
         assertTrue(source.contains("titleView.setTypeface(null, android.graphics.Typeface.BOLD);"));
         assertTrue(source.contains("priceView.setTypeface(null, android.graphics.Typeface.BOLD);"));
     }
+
+    @Test
+    public void volumeUnitShouldUseCanonicalProductSymbolMapper() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("ProductSymbolMapper.toTradeSymbol(code)"));
+        assertTrue(source.contains("ProductSymbolMapper.TRADE_SYMBOL_XAU"));
+    }
 }

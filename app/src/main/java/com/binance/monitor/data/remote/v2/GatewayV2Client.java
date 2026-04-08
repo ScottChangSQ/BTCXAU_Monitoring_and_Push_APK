@@ -8,6 +8,7 @@ import android.content.Context;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.v2.AccountHistoryPayload;
@@ -105,14 +106,14 @@ public class GatewayV2Client {
             account = buildAccountObject(json);
         }
         JSONArray orders = json.optJSONArray("orders");
-        if (orders == null) {
-            orders = json.optJSONArray("pendingOrders");
-        }
         return new AccountSnapshotPayload(
                 extractServerTime(json, accountMeta),
                 extractSyncToken(json, accountMeta),
                 accountMeta,
                 account,
+                json.optJSONArray("overviewMetrics"),
+                json.optJSONArray("curveIndicators"),
+                json.optJSONArray("statsMetrics"),
                 json.optJSONArray("positions"),
                 orders,
                 safeBody(body)
@@ -124,12 +125,12 @@ public class GatewayV2Client {
         JSONObject json = new JSONObject(safeBody(body));
         JSONObject accountMeta = json.optJSONObject("accountMeta");
         JSONArray orders = json.optJSONArray("orders");
-        if (orders == null) {
-            orders = json.optJSONArray("pendingOrders");
-        }
         return new AccountHistoryPayload(
                 extractServerTime(json, accountMeta),
                 extractSyncToken(json, accountMeta),
+                json.optJSONArray("overviewMetrics"),
+                json.optJSONArray("curveIndicators"),
+                json.optJSONArray("statsMetrics"),
                 json.optJSONArray("trades"),
                 orders,
                 json.optJSONArray("curvePoints"),
@@ -222,12 +223,11 @@ public class GatewayV2Client {
     }
 
     private String resolveBaseUrl() {
-        if (configManager == null) {
-            return "";
-        }
-        String baseUrl = configManager.getMt5GatewayBaseUrl();
+        String baseUrl = configManager == null
+                ? AppConstants.MT5_GATEWAY_BASE_URL
+                : configManager.getMt5GatewayBaseUrl();
         if (baseUrl == null) {
-            return "";
+            return AppConstants.MT5_GATEWAY_BASE_URL;
         }
         return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }

@@ -234,6 +234,9 @@ class V2ContractTests(unittest.TestCase):
     def test_v2_account_snapshot_uses_light_snapshot_builder(self):
         light_snapshot = {
             "accountMeta": {"login": "7400048", "balance": 1000.0},
+            "overviewMetrics": [{"name": "总资产", "value": "$1000.00"}],
+            "curveIndicators": [{"name": "当日收益", "value": "+1.2%"}],
+            "statsMetrics": [{"name": "交易笔数", "value": "2"}],
             "positions": [{"symbol": "BTCUSD"}],
             "pendingOrders": [{"symbol": "XAUUSD"}],
         }
@@ -247,6 +250,9 @@ class V2ContractTests(unittest.TestCase):
         light_mock.assert_called_once_with()
         self.assertEqual("BTCUSD", payload["positions"][0]["code"])
         self.assertEqual("XAUUSD", payload["orders"][0]["code"])
+        self.assertEqual([{"name": "总资产", "value": "$1000.00"}], payload["overviewMetrics"])
+        self.assertEqual([{"name": "当日收益", "value": "+1.2%"}], payload["curveIndicators"])
+        self.assertEqual([{"name": "交易笔数", "value": "2"}], payload["statsMetrics"])
 
     def test_v2_market_snapshot_uses_light_snapshot_builder(self):
         light_snapshot = {
@@ -279,30 +285,9 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual({}, server_v2.snapshot_sync_cache)
         self.assertEqual({}, server_v2.v2_sync_state)
 
-    def test_select_snapshot_auto_should_prefer_fresh_ea_snapshot_before_mt5_pull(self):
-        ea_snapshot = {
-            "accountMeta": {"source": "MT5 EA Push", "updatedAt": 123},
-            "overviewMetrics": [],
-            "curvePoints": [],
-            "curveIndicators": [],
-            "positions": [],
-            "pendingOrders": [],
-            "trades": [],
-            "statsMetrics": [],
-        }
-
-        with mock.patch.object(server_v2, "GATEWAY_MODE", "auto"), mock.patch.object(
-            server_v2, "_is_ea_snapshot_fresh", return_value=True
-        ), mock.patch.object(server_v2, "ea_snapshot_cache", ea_snapshot), mock.patch.object(
-            server_v2, "_snapshot_from_mt5", side_effect=AssertionError("不应优先走 MT5 pull")
-        ):
-            snapshot = server_v2._select_snapshot("all")
-
-        self.assertEqual("MT5 EA Push", snapshot["accountMeta"]["source"])
-
-    def test_select_snapshot_auto_should_not_re_normalize_fresh_ea_snapshot(self):
-        ea_snapshot = {
-            "accountMeta": {"source": "MT5 EA Push", "updatedAt": 123},
+    def test_select_snapshot_should_use_mt5_pull_even_when_ea_snapshot_is_fresh(self):
+        mt5_snapshot = {
+            "accountMeta": {"source": "MT5 Python Pull", "updatedAt": 456},
             "overviewMetrics": [],
             "curvePoints": [{"timestamp": 1, "equity": 100.0, "balance": 100.0}],
             "curveIndicators": [],
@@ -312,16 +297,101 @@ class V2ContractTests(unittest.TestCase):
             "statsMetrics": [],
         }
 
-        with mock.patch.object(server_v2, "GATEWAY_MODE", "auto"), mock.patch.object(
-            server_v2, "_is_ea_snapshot_fresh", return_value=True
-        ), mock.patch.object(server_v2, "ea_snapshot_cache", ea_snapshot), mock.patch.object(
-            server_v2, "_normalize_snapshot", side_effect=AssertionError("不应再次标准化 EA 缓存")
-        ):
+        with mock.patch.object(server_v2, "mt5", object()), mock.patch.object(
+            server_v2, "_is_mt5_configured", return_value=True
+        ), mock.patch.object(server_v2, "_is_ea_snapshot_fresh", return_value=True), mock.patch.object(
+            server_v2, "_snapshot_from_mt5", return_value=mt5_snapshot
+        ) as mt5_mock:
             snapshot = server_v2._select_snapshot("all")
 
-        self.assertEqual(ea_snapshot["curvePoints"], snapshot["curvePoints"])
-        self.assertIsNot(snapshot, ea_snapshot)
-        self.assertIsNot(snapshot["accountMeta"], ea_snapshot["accountMeta"])
+        mt5_mock.assert_called_once_with("all")
+        self.assertEqual("MT5 Python Pull", snapshot["accountMeta"]["source"])
+        self.assertEqual(mt5_snapshot["curvePoints"], snapshot["curvePoints"])
+
+    def test_select_snapshot_should_fail_when_mt5_pull_is_not_configured(self):
+        with mock.patch.object(server_v2, "mt5", None), mock.patch.object(
+            server_v2, "_is_mt5_configured", return_value=False
+        ):
+            with self.assertRaisesRegex(RuntimeError, "MT5 Python Pull is not configured"):
+                server_v2._select_snapshot("all")
+
+    def test_build_snapshot_with_cache_should_ignore_legacy_ea_snapshot_cache(self):
+        server_v2.snapshot_build_cache.clear()
+        now_ms = server_v2._now_ms()
+        server_v2.snapshot_build_cache["all"] = {
+            "builtAt": now_ms,
+            "lastAccessAt": now_ms,
+            "snapshot": {
+                "accountMeta": {"source": "MT5 EA Push", "updatedAt": now_ms},
+                "curvePoints": [{"timestamp": 1, "equity": 1.0, "balance": 1.0}],
+            },
+        }
+        mt5_snapshot = {
+            "accountMeta": {"source": "MT5 Python Pull", "updatedAt": now_ms + 1},
+            "overviewMetrics": [],
+            "curvePoints": [{"timestamp": 2, "equity": 2.0, "balance": 2.0}],
+            "curveIndicators": [],
+            "positions": [],
+            "pendingOrders": [],
+            "trades": [],
+            "statsMetrics": [],
+        }
+
+        with mock.patch.object(server_v2, "_select_snapshot", return_value=mt5_snapshot) as select_mock:
+            snapshot = server_v2._build_snapshot_with_cache("all")
+
+        select_mock.assert_called_once_with("all")
+        self.assertEqual("MT5 Python Pull", snapshot["accountMeta"]["source"])
+        self.assertEqual(2, snapshot["curvePoints"][0]["timestamp"])
+
+    def test_build_account_light_snapshot_with_cache_should_ignore_legacy_ea_snapshot_cache(self):
+        server_v2.snapshot_build_cache.clear()
+        now_ms = server_v2._now_ms()
+        server_v2.snapshot_build_cache["account-light"] = {
+            "builtAt": now_ms,
+            "lastAccessAt": now_ms,
+            "snapshot": {
+                "accountMeta": {"source": "MT5 EA Push", "updatedAt": now_ms},
+                "positions": [{"ticket": 1}],
+                "pendingOrders": [],
+            },
+        }
+        mt5_snapshot = {
+            "accountMeta": {"source": "MT5 Python Pull", "updatedAt": now_ms + 1},
+            "positions": [{"ticket": 2}],
+            "pendingOrders": [],
+        }
+
+        with mock.patch.object(server_v2, "_build_account_light_snapshot", return_value=mt5_snapshot) as build_mock:
+            snapshot = server_v2._build_account_light_snapshot_with_cache()
+
+        build_mock.assert_called_once_with()
+        self.assertEqual("MT5 Python Pull", snapshot["accountMeta"]["source"])
+        self.assertEqual(2, snapshot["positions"][0]["ticket"])
+
+    def test_build_account_light_snapshot_should_project_metrics_from_canonical_snapshot(self):
+        canonical_snapshot = {
+            "accountMeta": {"source": "MT5 Python Pull", "updatedAt": 456},
+            "overviewMetrics": [{"name": "总资产", "value": "$1000.00"}],
+            "curveIndicators": [{"name": "当日收益", "value": "+1.2%"}],
+            "statsMetrics": [{"name": "交易笔数", "value": "2"}],
+            "positions": [{"symbol": "BTCUSD"}],
+            "pendingOrders": [{"symbol": "XAUUSD"}],
+            "trades": [{"dealTicket": 1}],
+            "curvePoints": [{"timestamp": 1, "equity": 100.0, "balance": 100.0}],
+        }
+
+        with mock.patch.object(server_v2, "_build_snapshot_with_cache", return_value=canonical_snapshot) as full_mock:
+            snapshot = server_v2._build_account_light_snapshot()
+
+        full_mock.assert_called_once_with("all")
+        self.assertEqual([{"name": "总资产", "value": "$1000.00"}], snapshot["overviewMetrics"])
+        self.assertEqual([{"name": "当日收益", "value": "+1.2%"}], snapshot["curveIndicators"])
+        self.assertEqual([{"name": "交易笔数", "value": "2"}], snapshot["statsMetrics"])
+        self.assertEqual("BTCUSD", snapshot["positions"][0]["symbol"])
+        self.assertEqual("XAUUSD", snapshot["pendingOrders"][0]["symbol"])
+        self.assertNotIn("trades", snapshot)
+        self.assertNotIn("curvePoints", snapshot)
 
     def test_build_trade_history_with_cache_should_prefer_mt5_complete_history(self):
         fallback_snapshot = {
@@ -343,9 +413,68 @@ class V2ContractTests(unittest.TestCase):
         mt5_mock.assert_called_once_with("all")
         self.assertEqual(mt5_trades, trades)
 
+    def test_build_trade_history_with_cache_should_use_canonical_snapshot_trades_directly(self):
+        server_v2.snapshot_build_cache.clear()
+        snapshot = {
+            "accountMeta": {"source": "MT5 Python Pull", "updatedAt": 456},
+            "trades": [
+                {"dealTicket": 11, "code": "BTCUSD"},
+                {"dealTicket": 12, "code": "XAUUSD"},
+            ],
+        }
+
+        with mock.patch.object(server_v2, "mt5", object()), mock.patch.object(
+            server_v2, "_is_mt5_configured", return_value=True
+        ), mock.patch.object(
+            server_v2, "_snapshot_trades_from_mt5", side_effect=AssertionError("不应二次拉取成交历史")
+        ):
+            trades = server_v2._build_trade_history_with_cache("all", snapshot)
+
+        self.assertEqual([11, 12], [item["dealTicket"] for item in trades])
+
+    def test_build_trade_history_with_cache_should_ignore_legacy_cached_history_without_canonical_source(self):
+        server_v2.snapshot_build_cache.clear()
+        now_ms = server_v2._now_ms()
+        server_v2.snapshot_build_cache["all:trade-history"] = {
+            "builtAt": now_ms,
+            "lastAccessAt": now_ms,
+            "trades": [{"dealTicket": 1, "code": "LEGACY"}],
+        }
+        snapshot = {
+            "accountMeta": {"source": "MT5 Python Pull", "updatedAt": now_ms},
+            "trades": [{"dealTicket": 11, "code": "BTCUSD"}],
+        }
+
+        with mock.patch.object(server_v2, "mt5", object()), mock.patch.object(
+            server_v2, "_is_mt5_configured", return_value=True
+        ), mock.patch.object(
+            server_v2, "_snapshot_trades_from_mt5", side_effect=AssertionError("不应二次拉取成交历史")
+        ):
+            trades = server_v2._build_trade_history_with_cache("all", snapshot)
+
+        self.assertEqual([11], [item["dealTicket"] for item in trades])
+
+    def test_build_trade_history_with_cache_should_fail_instead_of_falling_back_to_ea_snapshot(self):
+        server_v2.snapshot_build_cache.clear()
+        fallback_snapshot = {
+            "accountMeta": {"source": "MT5 EA Push", "updatedAt": 456},
+            "trades": [{"dealTicket": 1, "code": "BTCUSD"}],
+        }
+
+        with mock.patch.object(server_v2, "mt5", object()), mock.patch.object(
+            server_v2, "_is_mt5_configured", return_value=True
+        ), mock.patch.object(
+            server_v2, "_snapshot_trades_from_mt5", side_effect=RuntimeError("mt5 failed")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "mt5 failed"):
+                server_v2._build_trade_history_with_cache("all", fallback_snapshot)
+
     def test_v2_account_history_should_use_complete_trade_history_builder(self):
         snapshot = {
             "accountMeta": {"login": "7400048", "source": "MT5 EA Push"},
+            "overviewMetrics": [{"name": "总资产", "value": "$1000.00"}],
+            "curveIndicators": [{"name": "当日收益", "value": "+1.2%"}],
+            "statsMetrics": [{"name": "交易笔数", "value": "2"}],
             "pendingOrders": [{"symbol": "XAUUSD"}],
             "curvePoints": [{"timestamp": 1, "equity": 100.0, "balance": 100.0}],
             "trades": [{"dealTicket": 1, "code": "BTCUSD"}],
@@ -364,6 +493,9 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual([11, 12], [item["dealTicket"] for item in payload["trades"]])
         self.assertEqual(1, payload["curvePoints"][0]["timestamp"])
         self.assertEqual(100.0, payload["curvePoints"][0]["equity"])
+        self.assertEqual([{"name": "总资产", "value": "$1000.00"}], payload["overviewMetrics"])
+        self.assertEqual([{"name": "当日收益", "value": "+1.2%"}], payload["curveIndicators"])
+        self.assertEqual([{"name": "交易笔数", "value": "2"}], payload["statsMetrics"])
 
 
 if __name__ == "__main__":

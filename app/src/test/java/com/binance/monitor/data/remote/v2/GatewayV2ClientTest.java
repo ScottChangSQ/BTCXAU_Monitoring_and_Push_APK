@@ -32,6 +32,9 @@ public class GatewayV2ClientTest {
                 + "\"freeMargin\":989.2,"
                 + "\"marginLevel\":8130.1,"
                 + "\"profit\":1.0,"
+                + "\"overviewMetrics\":[{\"name\":\"总资产\",\"value\":\"$1001.50\"}],"
+                + "\"statsMetrics\":[{\"name\":\"交易笔数\",\"value\":\"2\"}],"
+                + "\"curveIndicators\":[{\"name\":\"当日收益\",\"value\":\"+1.2%\"}],"
                 + "\"positions\":[{\"code\":\"BTCUSD\",\"quantity\":0.05}],"
                 + "\"orders\":[{\"code\":\"XAUUSD\",\"pendingLots\":0.1}]"
                 + "}";
@@ -43,6 +46,9 @@ public class GatewayV2ClientTest {
         assertEquals(1000.5d, payload.getAccount().optDouble("balance"), 0.0001d);
         assertEquals(1001.5d, payload.getAccount().optDouble("equity"), 0.0001d);
         assertEquals(400d, payload.getAccount().optDouble("leverage"), 0.0001d);
+        assertEquals(1, payload.getOverviewMetrics().length());
+        assertEquals(1, payload.getStatsMetrics().length());
+        assertEquals(1, payload.getCurveIndicators().length());
         assertEquals(1, payload.getPositions().length());
         assertEquals(1, payload.getOrders().length());
     }
@@ -51,6 +57,9 @@ public class GatewayV2ClientTest {
     public void parseAccountHistoryShouldKeepTradesOrdersCurveAndCursor() throws Exception {
         String body = "{"
                 + "\"accountMeta\":{\"serverTime\":2222,\"syncToken\":\"history-sync\"},"
+                + "\"overviewMetrics\":[{\"name\":\"总资产\",\"value\":\"$1001.50\"}],"
+                + "\"statsMetrics\":[{\"name\":\"交易笔数\",\"value\":\"2\"}],"
+                + "\"curveIndicators\":[{\"name\":\"当日收益\",\"value\":\"+1.2%\"}],"
                 + "\"trades\":[{\"dealTicket\":11,\"code\":\"BTCUSD\"}],"
                 + "\"orders\":[{\"orderId\":22,\"code\":\"XAUUSD\"}],"
                 + "\"curvePoints\":[{\"timestamp\":1000,\"equity\":100.0,\"balance\":90.0}],"
@@ -64,12 +73,15 @@ public class GatewayV2ClientTest {
         assertEquals(1, payload.getTrades().length());
         assertEquals(1, payload.getOrders().length());
         assertEquals(1, payload.getCurvePoints().length());
+        assertEquals(1, payload.getOverviewMetrics().length());
+        assertEquals(1, payload.getStatsMetrics().length());
+        assertEquals(1, payload.getCurveIndicators().length());
         assertEquals("cursor-2", payload.getNextCursor());
         assertTrue(payload.getRawJson().contains("\"trades\""));
     }
 
     @Test
-    public void parseAccountSnapshotShouldFallbackToPendingOrdersAlias() throws Exception {
+    public void parseAccountSnapshotShouldIgnorePendingOrdersAlias() throws Exception {
         String body = "{"
                 + "\"accountMeta\":{\"serverTime\":3333},"
                 + "\"balance\":1000.0,"
@@ -78,12 +90,11 @@ public class GatewayV2ClientTest {
 
         AccountSnapshotPayload payload = GatewayV2Client.parseAccountSnapshot(body);
 
-        assertEquals(1, payload.getOrders().length());
-        assertEquals("XAUUSD", payload.getOrders().optJSONObject(0).optString("code"));
+        assertEquals(0, payload.getOrders().length());
     }
 
     @Test
-    public void parseAccountHistoryShouldFallbackToPendingOrdersAlias() throws Exception {
+    public void parseAccountHistoryShouldIgnorePendingOrdersAlias() throws Exception {
         String body = "{"
                 + "\"accountMeta\":{\"serverTime\":4444},"
                 + "\"trades\":[],"
@@ -93,7 +104,6 @@ public class GatewayV2ClientTest {
 
         AccountHistoryPayload payload = GatewayV2Client.parseAccountHistory(body);
 
-        assertEquals(1, payload.getOrders().length());
-        assertEquals("XAUUSD", payload.getOrders().optJSONObject(0).optString("code"));
+        assertEquals(0, payload.getOrders().length());
     }
 }

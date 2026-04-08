@@ -23,6 +23,10 @@ GATEWAY_FILES = (
     "start_gateway.ps1",
     "v2_account.py",
     "v2_market.py",
+    "v2_session_crypto.py",
+    "v2_session_manager.py",
+    "v2_session_models.py",
+    "v2_session_store.py",
     "v2_trade.py",
     "v2_trade_models.py",
 )
@@ -136,13 +140,23 @@ C:\\mt5_bundle
 双击 deploy_bundle.cmd
 ```
 
+或：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\mt5_bundle\\windows_server_bundle\\deploy_bundle.ps1 -Mode Gui -BundleRoot "C:\\mt5_bundle\\windows_server_bundle"
+```
+
 它会自动完成：
 
+- 停掉旧计划任务、旧网关、旧管理面板、旧 Caddy / Nginx
+- 强制释放 `80 / 443 / 2019 / 8787 / 8788`
 - 检查脚本语法
 - 补齐 Python 依赖
 - 重新注册网关与管理面板计划任务
 - 隐藏启动 Caddy
-- 自动验收 `8787 / 8788 / 80 / /admin/`
+- 自动验收 `8787 / 8788 / 80 / 443(loopback SNI) / 443(public) / /admin/`
+
+服务器端只会弹出一个状态窗口，用来显示步骤成功与否、当前状态和日志。这个窗口可以关闭，关闭后不会影响后台服务继续运行。
 
 ## caddy.exe 位置说明
 

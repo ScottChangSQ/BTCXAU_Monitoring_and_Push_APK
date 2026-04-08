@@ -126,11 +126,11 @@ final class TradeVisibilityDiagnosticsHelper {
         return String.format(Locale.US, "%.2f", Math.abs(quantity));
     }
 
-    // 统一读取平仓时间，没有时回退到原始时间戳。
+    // 统一读取平仓时间，只消费明确给出的 closeTime。
     private static long resolveCloseTime(TradeRecordItem item) {
         if (item == null) {
             return 0L;
         }
-        return item.getCloseTime() > 0L ? item.getCloseTime() : item.getTimestamp();
+        return item.getCloseTime();
     }
 }

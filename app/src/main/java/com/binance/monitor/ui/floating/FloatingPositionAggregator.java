@@ -7,6 +7,7 @@ package com.binance.monitor.ui.floating;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.ui.account.model.PositionItem;
+import com.binance.monitor.util.ProductSymbolMapper;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -166,19 +167,11 @@ public class FloatingPositionAggregator {
     }
 
     private static boolean isBtcSymbol(String code) {
-        if (code == null) {
-            return false;
-        }
-        return AppConstants.SYMBOL_BTC.equalsIgnoreCase(code)
-                || code.startsWith("BTC");
+        return AppConstants.SYMBOL_BTC.equals(ProductSymbolMapper.toMarketSymbol(code));
     }
 
     private static boolean isXauSymbol(String code) {
-        if (code == null) {
-            return false;
-        }
-        return AppConstants.SYMBOL_XAU.equalsIgnoreCase(code)
-                || code.startsWith("XAU");
+        return AppConstants.SYMBOL_XAU.equals(ProductSymbolMapper.toMarketSymbol(code));
     }
 
     private static boolean shouldIncludeCode(String code, boolean showBtc, boolean showXau) {
@@ -195,17 +188,16 @@ public class FloatingPositionAggregator {
         if (latestPrices == null || latestPrices.isEmpty()) {
             return Double.NaN;
         }
+        String marketCode = ProductSymbolMapper.toMarketSymbol(code);
         Double direct = latestPrices.get(code);
         if (direct != null) {
             return direct;
         }
-        if (isBtcSymbol(code)) {
-            Double btc = latestPrices.get(AppConstants.SYMBOL_BTC);
-            return btc == null ? Double.NaN : btc;
-        }
-        if (isXauSymbol(code)) {
-            Double xau = latestPrices.get(AppConstants.SYMBOL_XAU);
-            return xau == null ? Double.NaN : xau;
+        if (!marketCode.isEmpty()) {
+            Double canonical = latestPrices.get(marketCode);
+            if (canonical != null) {
+                return canonical;
+            }
         }
         return Double.NaN;
     }
@@ -233,8 +225,7 @@ public class FloatingPositionAggregator {
                 continue;
             }
             String code = entry.getKey();
-            if ((isBtcSymbol(symbol) && isBtcSymbol(code))
-                    || (isXauSymbol(symbol) && isXauSymbol(code))) {
+            if (ProductSymbolMapper.isSameProduct(symbol, code)) {
                 return entry.getValue();
             }
         }

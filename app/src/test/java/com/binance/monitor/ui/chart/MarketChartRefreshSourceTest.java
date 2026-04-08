@@ -30,5 +30,28 @@ public class MarketChartRefreshSourceTest {
         assertTrue(source.contains("scheduleChartOverlayRefresh"));
         assertTrue(source.contains("accountOverlayRefreshPending"));
         assertTrue(source.contains("lastAccountOverlaySignature"));
+        assertFalse(source.contains("AccountSnapshotDisplayResolver.resolve("));
+        assertFalse(source.contains("ChartHistoricalTradeSourceResolver.resolve("));
+    }
+
+    @Test
+    public void activityShouldNotBuildFallbackAnnotationGroupIds() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertFalse(source.contains("\"|fallback|\""));
+    }
+
+    @Test
+    public void activityShouldNotGuessAnnotationAnchorsOrSymbolMatches() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertFalse(source.contains("findTradeOpenTimeByCodeAndSide("));
+        assertFalse(source.contains("resolveLatestCandleOpenTime()"));
+        assertFalse(source.contains("normalizedCode.contains(value)"));
+        assertFalse(source.contains("normalizedName.contains(value)"));
+        assertTrue(source.contains("MarketChartTradeSupport.toTradeSymbol(selectedSymbol)"));
+        assertTrue(source.contains("if (anchorTime <= 0L) {"));
     }
 }
