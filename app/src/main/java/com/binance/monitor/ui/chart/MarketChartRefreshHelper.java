@@ -48,7 +48,13 @@ final class MarketChartRefreshHelper {
         boolean realtimeFresh = isRealtimeFresh(nowMs, latestRealtimeClosedTimeMs);
         // 只有页面确实接入了实时尾部数据时，1m 才允许完全依赖本地跳过 REST。
         boolean supportsMinuteDerivedSkip = hasRealtimeTailSource && !yearAggregate && intervalMs == 60_000L;
+        boolean minuteSeriesBroken = supportsMinuteDerivedSkip
+                && hasLocalSeries
+                && hasInternalGap(localSeries, intervalMs);
         int requiredWindowSize = Math.max(1, Math.min(targetLimit, fullWindowLimit));
+        if (minuteSeriesBroken) {
+            return new SyncPlan(SyncMode.FULL, -1L);
+        }
         if (hasLocalSeries
                 && realtimeFresh
                 && supportsMinuteDerivedSkip
@@ -62,7 +68,7 @@ final class MarketChartRefreshHelper {
         if (localSeries.size() < requiredWindowSize) {
             return new SyncPlan(SyncMode.FULL, -1L);
         }
-        if (yearAggregate || intervalMs <= 0L) {
+        if (intervalMs <= 0L) {
             return new SyncPlan(SyncMode.FULL, -1L);
         }
         CandleEntry latest = localSeries.get(localSeries.size() - 1);
@@ -78,6 +84,26 @@ final class MarketChartRefreshHelper {
             return new SyncPlan(SyncMode.SKIP, -1L);
         }
         return new SyncPlan(SyncMode.INCREMENTAL, latestOpenTime);
+    }
+
+    // 只要本地 1m 窗口里存在时间断层或倒序，就不能继续按“尾部补齐”思路刷新。
+    private static boolean hasInternalGap(@Nullable List<CandleEntry> localSeries, long expectedGapMs) {
+        if (localSeries == null || localSeries.size() < 2 || expectedGapMs <= 0L) {
+            return false;
+        }
+        long previousOpenTime = localSeries.get(0) == null ? -1L : localSeries.get(0).getOpenTime();
+        for (int i = 1; i < localSeries.size(); i++) {
+            CandleEntry current = localSeries.get(i);
+            if (current == null || previousOpenTime <= 0L) {
+                return true;
+            }
+            long currentOpenTime = current.getOpenTime();
+            if (currentOpenTime - previousOpenTime != expectedGapMs) {
+                return true;
+            }
+            previousOpenTime = currentOpenTime;
+        }
+        return false;
     }
 
     // 只要最近一根已收盘 1m 仍在合理时窗内，就认为实时推送链路健康，无需再主动打 REST。

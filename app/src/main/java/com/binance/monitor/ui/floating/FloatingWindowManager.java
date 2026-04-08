@@ -34,6 +34,7 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.LayoutFloatingWindowBinding;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
+import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.PermissionHelper;
 import com.binance.monitor.util.ProductSymbolMapper;
@@ -244,6 +245,12 @@ public class FloatingWindowManager {
         renderSummaryHeader(palette, visibleCards, offline, hasActivePositions);
         applyWindowAlpha();
         int renderedCount = renderSymbolCards(visibleCards, palette);
+        for (FloatingSymbolCardData card : visibleCards) {
+            if (card == null) {
+                continue;
+            }
+            ChainLatencyTracer.markFloatingRender(card.getCode(), card.getUpdatedAt());
+        }
         boolean hasItems = renderedCount > 0;
         binding.tvOverlayEmpty.setVisibility(hasItems ? View.GONE : View.VISIBLE);
         binding.tvOverlayEmpty.setText(offline ? "网络未连接" : context.getString(R.string.no_records));

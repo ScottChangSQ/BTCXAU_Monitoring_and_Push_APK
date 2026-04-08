@@ -112,8 +112,9 @@ public class MarketChartRefreshHelperTest {
     }
 
     @Test
-    public void resolvePlanShouldKeepYearAggregateOnFullFallbackWhenRealtimeIsNotFresh() {
+    public void resolvePlanShouldUseIncrementalForYearAggregateWhenLocalWindowIsValid() {
         List<CandleEntry> local = createSeries(1_500, NOW - 365L * 24L * 60L * MINUTE, 30L * 24L * 60L * MINUTE);
+        long latestOpenTime = local.get(local.size() - 1).getOpenTime();
 
         MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
                 local,
@@ -126,7 +127,8 @@ public class MarketChartRefreshHelperTest {
                 false
         );
 
-        assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
+        assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
+        assertEquals(latestOpenTime, plan.startTimeInclusive);
     }
 
     @Test
@@ -167,11 +169,56 @@ public class MarketChartRefreshHelperTest {
         assertEquals(latestOpenTime, plan.startTimeInclusive);
     }
 
+    @Test
+    public void resolvePlanShouldFallbackToFullWhenMinuteSeriesHasInternalGapEvenIfRealtimeIsFresh() {
+        List<CandleEntry> local = createSeriesWithInternalGap(1_500, NOW - MINUTE * 30L, MINUTE, 600);
+
+        MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
+                local,
+                1_500,
+                1_500,
+                NOW,
+                NOW - 30_000L,
+                MINUTE,
+                false,
+                true
+        );
+
+        assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
+        assertEquals(-1L, plan.startTimeInclusive);
+    }
+
     private List<CandleEntry> createSeries(int count, long lastOpenTime, long intervalMs) {
         List<CandleEntry> result = new ArrayList<>();
         long startOpenTime = lastOpenTime - (Math.max(0, count - 1) * intervalMs);
         for (int i = 0; i < count; i++) {
             long openTime = startOpenTime + i * intervalMs;
+            result.add(new CandleEntry(
+                    "BTCUSDT",
+                    openTime,
+                    openTime + intervalMs - 1L,
+                    100d,
+                    101d,
+                    99d,
+                    100.5d,
+                    1d,
+                    10d
+            ));
+        }
+        return result;
+    }
+
+    private List<CandleEntry> createSeriesWithInternalGap(int count,
+                                                          long lastOpenTime,
+                                                          long intervalMs,
+                                                          int gapIndex) {
+        List<CandleEntry> result = new ArrayList<>();
+        long startOpenTime = lastOpenTime - (Math.max(0, count - 1) * intervalMs);
+        for (int i = 0; i < count; i++) {
+            long openTime = startOpenTime + i * intervalMs;
+            if (i > gapIndex) {
+                openTime += intervalMs;
+            }
             result.add(new CandleEntry(
                     "BTCUSDT",
                     openTime,

@@ -42,6 +42,7 @@ import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.AppLaunchHelper;
+import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.GatewayUrlResolver;
 import com.binance.monitor.util.PermissionHelper;
@@ -558,6 +559,9 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         lastMarketRenderSignature = nextSignature;
+        if (latestKline != null) {
+            ChainLatencyTracer.markMainRender(selectedSymbol, latestKline.getCloseTime());
+        }
         renderMarket(prices, klines);
     }
 

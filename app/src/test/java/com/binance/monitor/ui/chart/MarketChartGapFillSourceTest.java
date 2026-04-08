@@ -18,7 +18,7 @@ public class MarketChartGapFillSourceTest {
 
         assertTrue(source.contains("long previousOldestOpenTime = loadedCandles.isEmpty()"));
         assertTrue(source.contains("loadCandlesForRequest("));
-        assertTrue(source.contains("previousOldestOpenTime);"));
+        assertTrue(source.contains("previousOldestOpenTime,"));
         assertTrue(source.contains("ChartGapFillHelper.shouldBackfillOlderHistory("));
     }
 }

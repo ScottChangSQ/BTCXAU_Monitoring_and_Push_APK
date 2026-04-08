@@ -9,13 +9,17 @@ final class ChartGapFillHelper {
     private ChartGapFillHelper() {
     }
 
-    // 只要上一轮最老一根明显早于当前窗口最老一根，就继续向左补历史。
-    static boolean shouldBackfillOlderHistory(long previousOldestOpenTime,
-                                              long latestWindowOldestOpenTime,
-                                              long intervalMs) {
-        if (previousOldestOpenTime <= 0L || latestWindowOldestOpenTime <= 0L || intervalMs <= 0L) {
+    // 只有当用户已加载过超出标准窗口的历史，且本轮最早一根右移时，才继续向左补历史。
+    static boolean shouldBackfillOlderHistory(int previousWindowSize,
+                                              int defaultWindowLimit,
+                                              long previousOldestOpenTime,
+                                              long latestWindowOldestOpenTime) {
+        if (previousWindowSize <= Math.max(1, defaultWindowLimit)) {
             return false;
         }
-        return latestWindowOldestOpenTime - previousOldestOpenTime > intervalMs * 2L;
+        if (previousOldestOpenTime <= 0L || latestWindowOldestOpenTime <= 0L) {
+            return false;
+        }
+        return latestWindowOldestOpenTime > previousOldestOpenTime;
     }
 }

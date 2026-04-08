@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.annotation.Nullable;
 
@@ -36,6 +37,7 @@ import com.binance.monitor.ui.floating.FloatingSymbolCardData;
 import com.binance.monitor.ui.floating.FloatingWindowSnapshot;
 import com.binance.monitor.ui.floating.FloatingWindowManager;
 import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.GatewayUrlResolver;
 import com.binance.monitor.util.NotificationHelper;
 
@@ -290,6 +292,7 @@ public class MonitorService extends Service {
                 message.getType(),
                 message.getPayload()
         );
+        ChainLatencyTracer.markStreamMessage(message.getType(), plan.shouldRefreshMarket());
         if (plan.shouldRefreshAccount()) {
             requestAccountRefreshFromV2();
         }
@@ -351,9 +354,13 @@ public class MonitorService extends Service {
         executorService.execute(() -> {
             try {
                 for (String symbol : AppConstants.MONITOR_SYMBOLS) {
+                    long triggerAtMs = ChainLatencyTracer.consumePendingMarketTriggerAt(symbol);
+                    long fetchStartAtMs = SystemClock.elapsedRealtime();
+                    ChainLatencyTracer.markMarketFetchStart(symbol, triggerAtMs, fetchStartAtMs);
                     try {
                         MarketSeriesPayload payload = gatewayV2Client.fetchMarketSeries(symbol, "1m", 2);
-                        applyMarketSeriesPayload(symbol, payload);
+                        long fetchDoneAtMs = SystemClock.elapsedRealtime();
+                        applyMarketSeriesPayload(symbol, payload, triggerAtMs, fetchStartAtMs, fetchDoneAtMs);
                     } catch (Exception exception) {
                         logManager.warn(symbol + " v2 市场补拉失败: " + exception.getMessage());
                     }
@@ -368,6 +375,15 @@ public class MonitorService extends Service {
     // 把 v2 市场补拉结果回写到最新价格与最近收盘快照，供悬浮窗和监控页复用。
     @Nullable
     private KlineData applyMarketSeriesPayload(String symbol, @Nullable MarketSeriesPayload payload) {
+        return applyMarketSeriesPayload(symbol, payload, -1L, -1L, -1L);
+    }
+
+    @Nullable
+    private KlineData applyMarketSeriesPayload(String symbol,
+                                               @Nullable MarketSeriesPayload payload,
+                                               long triggerAtMs,
+                                               long fetchStartAtMs,
+                                               long fetchDoneAtMs) {
         if (payload == null) {
             return null;
         }
@@ -379,6 +395,13 @@ public class MonitorService extends Service {
         }
         if (latestClosed != null) {
             KlineData closedData = toKlineData(symbol, latestClosed, true);
+            ChainLatencyTracer.markMarketPayloadApplied(
+                    symbol,
+                    closedData.getCloseTime(),
+                    triggerAtMs,
+                    fetchStartAtMs,
+                    fetchDoneAtMs
+            );
             repository.updateDisplayKline(closedData);
             handleClosedKline(closedData);
             maybePublishPrice(symbol, closedData, now, true);
@@ -387,6 +410,13 @@ public class MonitorService extends Service {
         CandleEntry latestPatch = payload.getLatestPatch();
         if (latestPatch != null) {
             KlineData patchData = toKlineData(symbol, latestPatch, false);
+            ChainLatencyTracer.markMarketPayloadApplied(
+                    symbol,
+                    patchData.getCloseTime(),
+                    triggerAtMs,
+                    fetchStartAtMs,
+                    fetchDoneAtMs
+            );
             repository.updateDisplayKline(patchData);
             maybePublishPrice(symbol, patchData, now, true);
             return patchData;
@@ -809,7 +839,14 @@ public class MonitorService extends Service {
             mainHandler.post(this::refreshFloatingWindow);
             return;
         }
-        floatingWindowManager.update(buildFloatingSnapshot());
+        FloatingWindowSnapshot snapshot = buildFloatingSnapshot();
+        for (FloatingSymbolCardData card : snapshot.getCards()) {
+            if (card == null) {
+                continue;
+            }
+            ChainLatencyTracer.markFloatingUpdate(card.getCode(), card.getUpdatedAt());
+        }
+        floatingWindowManager.update(snapshot);
     }
 
     // 组装一份统一悬浮窗快照，确保所有字段在同一次 UI 刷新中一起变化。

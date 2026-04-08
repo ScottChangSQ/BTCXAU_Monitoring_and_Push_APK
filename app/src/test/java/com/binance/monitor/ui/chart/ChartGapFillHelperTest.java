@@ -8,26 +8,30 @@ import org.junit.Test;
 public class ChartGapFillHelperTest {
 
     @Test
-    public void shouldBackfillOlderHistoryWhenPreviousOldestIsFarEarlierThanLatestWindowOldest() {
-        long intervalMs = 60_000L;
+    public void shouldBackfillOlderHistoryWhenExtendedHistoryIsLoadedAndOldestMovedRight() {
+        int previousWindowSize = 2_000;
+        int defaultWindowLimit = 1_500;
         long previousOldestOpenTime = 1_000L;
-        long latestWindowOldestOpenTime = 10_000L * intervalMs;
+        long latestWindowOldestOpenTime = 2_000L;
 
         assertTrue(ChartGapFillHelper.shouldBackfillOlderHistory(
+                previousWindowSize,
+                defaultWindowLimit,
                 previousOldestOpenTime,
-                latestWindowOldestOpenTime,
-                intervalMs));
+                latestWindowOldestOpenTime));
     }
 
     @Test
-    public void shouldNotBackfillWhenGapIsWithinTolerance() {
-        long intervalMs = 60_000L;
+    public void shouldNotBackfillWhenPreviousWindowIsNotExtended() {
+        int previousWindowSize = 1_500;
+        int defaultWindowLimit = 1_500;
         long previousOldestOpenTime = 10_000L;
-        long latestWindowOldestOpenTime = previousOldestOpenTime + intervalMs * 2L;
+        long latestWindowOldestOpenTime = 20_000L;
 
         assertFalse(ChartGapFillHelper.shouldBackfillOlderHistory(
+                previousWindowSize,
+                defaultWindowLimit,
                 previousOldestOpenTime,
-                latestWindowOldestOpenTime,
-                intervalMs));
+                latestWindowOldestOpenTime));
     }
 }

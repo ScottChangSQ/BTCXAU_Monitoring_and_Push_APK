@@ -11,6 +11,7 @@ import com.binance.monitor.data.local.LogManager;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.AppLogEntry;
 import com.binance.monitor.data.model.KlineData;
+import com.binance.monitor.util.ChainLatencyTracer;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -102,6 +103,7 @@ public class MonitorRepository {
     // 更新某个产品的最新 K 线展示快照。
     public synchronized void updateDisplayKline(KlineData data) {
         displayKlineCache.put(data.getSymbol(), data);
+        ChainLatencyTracer.markRepositoryKlinePublished(data.getSymbol(), data.getCloseTime());
         displayKlines.postValue(Collections.unmodifiableMap(new HashMap<>(displayKlineCache)));
         lastUpdateTime.postValue(System.currentTimeMillis());
     }
