@@ -4,6 +4,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from threading import Event, Thread
 from unittest import mock
 
 
@@ -130,8 +131,9 @@ class SummaryResponseTests(unittest.TestCase):
         original_mt5 = server_v2.mt5
         original_map_positions = server_v2._map_positions
         original_map_pending_orders = server_v2._map_pending_orders
-        original_map_trades = server_v2._map_trades
-        original_build_curve = server_v2._build_curve
+        original_progressive_history = server_v2._progressive_trade_history_deals
+        original_build_curve_from_deals = getattr(server_v2, "_build_curve_from_deals", None)
+        original_map_trade_deals = server_v2._map_trade_deals
         original_build_overview = server_v2._build_overview
         original_curve_indicators = server_v2._curve_indicators
         original_build_stats = server_v2._build_stats
@@ -159,10 +161,11 @@ class SummaryResponseTests(unittest.TestCase):
         server_v2.mt5 = _FakeMt5()
         server_v2._map_positions = lambda: []
         server_v2._map_pending_orders = lambda: []
-        server_v2._map_trades = lambda range_key: []
-        server_v2._build_curve = lambda range_key, positions=None: [
+        server_v2._progressive_trade_history_deals = lambda range_key: []
+        server_v2._build_curve_from_deals = lambda deals, current_positions=None, account=None: [
             {"timestamp": 1, "equity": 1255.0, "balance": 1200.0, "positionRatio": 0.0}
         ]
+        server_v2._map_trade_deals = lambda deals: []
         server_v2._build_overview = lambda positions, trades: []
         server_v2._curve_indicators = lambda points: []
         server_v2._build_stats = lambda positions, trades, points: []
@@ -174,8 +177,12 @@ class SummaryResponseTests(unittest.TestCase):
             server_v2.mt5 = original_mt5
             server_v2._map_positions = original_map_positions
             server_v2._map_pending_orders = original_map_pending_orders
-            server_v2._map_trades = original_map_trades
-            server_v2._build_curve = original_build_curve
+            server_v2._progressive_trade_history_deals = original_progressive_history
+            if original_build_curve_from_deals is None:
+                delattr(server_v2, "_build_curve_from_deals")
+            else:
+                server_v2._build_curve_from_deals = original_build_curve_from_deals
+            server_v2._map_trade_deals = original_map_trade_deals
             server_v2._build_overview = original_build_overview
             server_v2._curve_indicators = original_curve_indicators
             server_v2._build_stats = original_build_stats
@@ -330,6 +337,63 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(1775214286619, trades[0]["openTime"])
         self.assertEqual(1775214342404, trades[0]["closeTime"])
 
+    def test_light_snapshot_trade_count_should_follow_mapped_trade_history(self):
+        original_mt5 = server_v2.mt5
+
+        class _FakeMt5:
+            @staticmethod
+            def history_deals_total(from_time, to_time):
+                raise RuntimeError("history_deals_total should not be used")
+
+            @staticmethod
+            def history_deals_get(from_time, to_time):
+                return [
+                    types.SimpleNamespace(
+                        symbol="BTCUSD",
+                        type=0,
+                        volume=0.01,
+                        ticket=1001,
+                        order=2001,
+                        position_id=3001,
+                        entry=0,
+                        time=1775225086,
+                        time_msc=1775225086619,
+                        price=66878.63,
+                        profit=0.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="open",
+                    ),
+                    types.SimpleNamespace(
+                        symbol="BTCUSD",
+                        type=1,
+                        volume=0.01,
+                        ticket=1002,
+                        order=2002,
+                        position_id=3001,
+                        entry=1,
+                        time=1775225142,
+                        time_msc=1775225142404,
+                        price=66860.77,
+                        profit=0.18,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="close",
+                    ),
+                ]
+
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        server_v2.mt5 = _FakeMt5()
+        try:
+            trade_count = server_v2._light_snapshot_trade_count()
+        finally:
+            server_v2.mt5 = original_mt5
+
+        self.assertEqual(1, trade_count)
+
     def test_mt5_history_window_uses_naive_local_datetimes(self):
         window_builder = getattr(server_v2, "_mt5_history_window", None)
         self.assertIsNotNone(window_builder, "缺少 _mt5_history_window，无法统一 MT5 历史查询时间口径")
@@ -438,7 +502,7 @@ class SummaryResponseTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(_FakeMt5.calls), 6)
 
-    def test_ensure_mt5_prefers_plain_initialize_before_auth_initialize(self):
+    def test_ensure_mt5_should_use_authenticated_initialize_without_shutdown(self):
         original_mt5 = server_v2.mt5
         original_login = server_v2.LOGIN
         original_password = server_v2.PASSWORD
@@ -484,10 +548,7 @@ class SummaryResponseTests(unittest.TestCase):
             server_v2._mt5_login = original_login_fn
             server_v2._shutdown_mt5 = original_shutdown
 
-        self.assertGreaterEqual(len(calls), 3)
-        self.assertEqual(("shutdown",), calls[0])
-        self.assertEqual(("init", None, None, None), calls[1])
-        self.assertEqual(("login",), calls[2])
+        self.assertEqual([("init", None, 7400048, "ICMarketsSC-MT5-6")], calls)
 
     def test_map_trades_pairs_partial_close_with_fifo_open_batches(self):
         original_mt5 = server_v2.mt5
@@ -1392,25 +1453,21 @@ class SummaryResponseTests(unittest.TestCase):
             },
         ]
 
-        original_fetch_rows = server_v2._fetch_binance_kline_rows
-        server_v2._fetch_binance_kline_rows = lambda symbol, interval, limit, **kwargs: [
-            [1_000, "100", "102", "99", "101", "0", 1_999, "0", 0],
-            [2_000, "101", "106", "100", "105", "0", 2_999, "0", 0],
-            [3_000, "105", "105", "102", "103", "0", 3_999, "0", 0],
-        ]
-        try:
-            points = helper(
-                deal_history=deals,
-                start_balance=1_000.0,
-                open_positions=[],
-                current_balance=1_004.0,
-                current_equity=1_004.0,
-                leverage=100.0,
-                contract_size_fn=lambda symbol: 1.0,
-                now_ms=5_000,
-            )
-        finally:
-            server_v2._fetch_binance_kline_rows = original_fetch_rows
+        points = helper(
+            deal_history=deals,
+            start_balance=1_000.0,
+            open_positions=[],
+            current_balance=1_004.0,
+            current_equity=1_004.0,
+            leverage=100.0,
+            contract_size_fn=lambda symbol: 1.0,
+            now_ms=5_000,
+            fetch_rows_fn=lambda symbol, interval, limit, **kwargs: [
+                [1_000, "100", "102", "99", "101", "0", 1_999, "0", 0],
+                [2_000, "101", "106", "100", "105", "0", 2_999, "0", 0],
+                [3_000, "105", "105", "102", "103", "0", 3_999, "0", 0],
+            ],
+        )
 
         sampled_points = [point for point in points if 1_000 < point["timestamp"] < 4_000]
         self.assertTrue(sampled_points, "持仓跨越历史区间时，曲线中间应插入历史价格采样点")
@@ -1418,6 +1475,44 @@ class SummaryResponseTests(unittest.TestCase):
             any(abs(point["equity"] - point["balance"]) > 0.0 for point in sampled_points),
             "历史采样点应反映持仓浮盈亏，不能继续让净值等于结余",
         )
+
+    def test_fetch_curve_price_samples_from_mt5_should_use_trade_symbol_and_apply_time_offset(self):
+        original_mt5 = server_v2.mt5
+        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+
+        captured = {}
+
+        class _FakeMt5:
+            TIMEFRAME_M1 = 1
+
+            @staticmethod
+            def symbol_select(symbol, enable):
+                captured["symbol_select"] = (symbol, enable)
+                return True
+
+            @staticmethod
+            def copy_rates_range(symbol, timeframe, date_from, date_to):
+                captured["copy_rates_range"] = (symbol, timeframe, date_from, date_to)
+                return [
+                    {"time": 100, "close": 101.5},
+                    {"time": 101, "close": 102.5},
+                ]
+
+        server_v2.mt5 = _FakeMt5()
+        server_v2.MT5_TIME_OFFSET_MINUTES = 480
+        try:
+            samples = server_v2._fetch_curve_price_samples("BTCUSD", 28_900_000, 29_200_000)
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+
+        self.assertEqual(("BTCUSD", True), captured["symbol_select"])
+        self.assertEqual("BTCUSD", captured["copy_rates_range"][0])
+        self.assertEqual(1, captured["copy_rates_range"][1])
+        self.assertEqual(2, len(samples))
+        self.assertEqual(28_800_000 + 100_000 + 60_000 - 1, samples[0]["timestamp"])
+        self.assertEqual(101.5, samples[0]["price"])
+        self.assertEqual("BTCUSD", samples[0]["symbol"])
 
     def test_rebuild_curve_keeps_final_snapshot_point_in_non_decreasing_order(self):
         helper = getattr(server_v2, "_replay_curve_from_history", None)
@@ -1519,6 +1614,241 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertTrue(broken["mt5ProbeDeferred"])
         self.assertTrue(healthy["mt5Connected"])
         self.assertTrue(broken["mt5Connected"])
+        self.assertIsInstance(healthy.get("bundleFingerprint"), str)
+        self.assertTrue(healthy.get("bundleFingerprint"))
+        self.assertIsInstance(healthy.get("bundleGeneratedAt"), str)
+        self.assertTrue(healthy.get("bundleGeneratedAt"))
+
+    def test_snapshot_from_mt5_light_should_expose_trade_count_without_building_full_history(self):
+        original_mt5 = server_v2.mt5
+        original_is_mt5_configured = server_v2._is_mt5_configured
+        original_ensure_mt5 = server_v2._ensure_mt5
+        original_shutdown_mt5 = server_v2._shutdown_mt5
+        original_map_positions = server_v2._map_positions
+        original_map_pending_orders = server_v2._map_pending_orders
+        history_call = {"get": 0, "total": 0}
+
+        class _Account:
+            login = 7400048
+            server = "ICMarketsSC-MT5-6"
+            currency = "USD"
+            leverage = 500
+            balance = 1000.0
+            equity = 1002.0
+            margin = 10.0
+            margin_free = 992.0
+            margin_level = 10020.0
+            profit = 2.0
+            name = "demo"
+            company = "demo"
+
+        class _Mt5:
+            @staticmethod
+            def account_info():
+                return _Account()
+
+            @staticmethod
+            def history_deals_total(*_args, **_kwargs):
+                history_call["total"] += 1
+                raise RuntimeError("history_deals_total should not be used")
+
+            @staticmethod
+            def history_deals_get(*_args, **_kwargs):
+                history_call["get"] += 1
+                return [
+                    types.SimpleNamespace(
+                        symbol="BTCUSD",
+                        type=0,
+                        volume=0.01,
+                        ticket=1001,
+                        order=2001,
+                        position_id=3001,
+                        entry=0,
+                        time=1775225086,
+                        time_msc=1775225086619,
+                        price=66878.63,
+                        profit=0.0,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="open",
+                    ),
+                    types.SimpleNamespace(
+                        symbol="BTCUSD",
+                        type=1,
+                        volume=0.01,
+                        ticket=1002,
+                        order=2002,
+                        position_id=3001,
+                        entry=1,
+                        time=1775225142,
+                        time_msc=1775225142404,
+                        price=66860.77,
+                        profit=0.18,
+                        commission=0.0,
+                        swap=0.0,
+                        comment="close",
+                    ),
+                ]
+
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        try:
+            server_v2.mt5 = _Mt5()
+            server_v2._is_mt5_configured = lambda: True
+            server_v2._ensure_mt5 = lambda: None
+            server_v2._shutdown_mt5 = lambda: None
+            server_v2._map_positions = lambda: []
+            server_v2._map_pending_orders = lambda: []
+
+            snapshot = server_v2._snapshot_from_mt5_light()
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2._is_mt5_configured = original_is_mt5_configured
+            server_v2._ensure_mt5 = original_ensure_mt5
+            server_v2._shutdown_mt5 = original_shutdown_mt5
+            server_v2._map_positions = original_map_positions
+            server_v2._map_pending_orders = original_map_pending_orders
+
+        self.assertGreaterEqual(history_call["get"], 1)
+        self.assertEqual(0, history_call["total"])
+        self.assertEqual(1, snapshot["accountMeta"]["tradeCount"])
+
+    def test_snapshot_from_mt5_should_reuse_single_progressive_deal_history_for_curve_and_trade_mapping(self):
+        original_mt5 = server_v2.mt5
+        original_is_mt5_configured = server_v2._is_mt5_configured
+        original_ensure_mt5 = server_v2._ensure_mt5
+        original_shutdown_mt5 = server_v2._shutdown_mt5
+        original_map_positions = server_v2._map_positions
+        original_map_pending_orders = server_v2._map_pending_orders
+        original_progressive_history = server_v2._progressive_trade_history_deals
+        original_build_curve_from_deals = getattr(server_v2, "_build_curve_from_deals", None)
+        original_map_trade_deals = server_v2._map_trade_deals
+        original_build_overview = server_v2._build_overview
+        original_curve_indicators = server_v2._curve_indicators
+        original_build_stats = server_v2._build_stats
+
+        raw_deals = [types.SimpleNamespace(ticket=1)]
+        captured_curve_inputs = []
+        captured_trade_inputs = []
+
+        class _Account:
+            login = 7400048
+            server = "ICMarketsSC-MT5-6"
+            currency = "USD"
+            leverage = 500
+            balance = 1000.0
+            equity = 1002.0
+            margin = 10.0
+            margin_free = 992.0
+            margin_level = 10020.0
+            profit = 2.0
+            name = "demo"
+            company = "demo"
+
+        class _Mt5:
+            @staticmethod
+            def account_info():
+                return _Account()
+
+        def fake_build_curve_from_deals(deals, current_positions=None, account=None):
+            captured_curve_inputs.append((deals, current_positions, account))
+            return [{"timestamp": 1, "equity": 1002.0, "balance": 1000.0, "positionRatio": 0.0}]
+
+        def fake_map_trade_deals(deals):
+            captured_trade_inputs.append(deals)
+            return [{"dealTicket": 11, "code": "BTCUSD"}]
+
+        try:
+            server_v2.mt5 = _Mt5()
+            server_v2._is_mt5_configured = lambda: True
+            server_v2._ensure_mt5 = lambda: None
+            server_v2._shutdown_mt5 = lambda: None
+            server_v2._map_positions = lambda: [{"code": "BTCUSD", "marketValue": 100.0, "totalPnL": 2.0, "dayPnL": 1.0, "positionRatio": 1.0}]
+            server_v2._map_pending_orders = lambda: [{"code": "XAUUSD"}]
+            server_v2._progressive_trade_history_deals = lambda range_key: raw_deals
+            server_v2._build_curve_from_deals = fake_build_curve_from_deals
+            server_v2._map_trade_deals = fake_map_trade_deals
+            server_v2._build_overview = lambda positions, trades: [{"name": "总资产", "value": "$1000.00"}]
+            server_v2._curve_indicators = lambda points: []
+            server_v2._build_stats = lambda positions, trades, points: []
+
+            snapshot = server_v2._snapshot_from_mt5("all")
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2._is_mt5_configured = original_is_mt5_configured
+            server_v2._ensure_mt5 = original_ensure_mt5
+            server_v2._shutdown_mt5 = original_shutdown_mt5
+            server_v2._map_positions = original_map_positions
+            server_v2._map_pending_orders = original_map_pending_orders
+            server_v2._progressive_trade_history_deals = original_progressive_history
+            if original_build_curve_from_deals is None:
+                delattr(server_v2, "_build_curve_from_deals")
+            else:
+                server_v2._build_curve_from_deals = original_build_curve_from_deals
+            server_v2._map_trade_deals = original_map_trade_deals
+            server_v2._build_overview = original_build_overview
+            server_v2._curve_indicators = original_curve_indicators
+            server_v2._build_stats = original_build_stats
+
+        self.assertEqual(1, len(captured_curve_inputs))
+        self.assertIs(raw_deals, captured_curve_inputs[0][0])
+        self.assertEqual(1, len(captured_trade_inputs))
+        self.assertIs(raw_deals, captured_trade_inputs[0])
+        self.assertEqual(1, snapshot["accountMeta"]["tradeCount"])
+
+    def test_build_account_light_snapshot_with_cache_should_single_flight_concurrent_miss(self):
+        original_cache = dict(server_v2.snapshot_build_cache)
+        original_now_ms = server_v2._now_ms
+        original_builder = server_v2._build_account_light_snapshot
+
+        started = Event()
+        release = Event()
+        build_calls = {"count": 0}
+        results = []
+        errors = []
+
+        def fake_builder():
+            build_calls["count"] += 1
+            started.set()
+            release.wait(2)
+            return {
+                "accountMeta": {
+                    "login": "7400048",
+                    "server": "ICMarketsSC-MT5-6",
+                    "source": "MT5 Python Pull",
+                }
+            }
+
+        def worker():
+            try:
+                results.append(server_v2._build_account_light_snapshot_with_cache())
+            except Exception as exc:  # pragma: no cover
+                errors.append(exc)
+
+        try:
+            server_v2.snapshot_build_cache.clear()
+            server_v2._now_ms = lambda: 1_000
+            server_v2._build_account_light_snapshot = fake_builder
+
+            first = Thread(target=worker)
+            second = Thread(target=worker)
+            first.start()
+            self.assertTrue(started.wait(1))
+            second.start()
+            release.set()
+            first.join()
+            second.join()
+        finally:
+            server_v2.snapshot_build_cache.clear()
+            server_v2.snapshot_build_cache.update(original_cache)
+            server_v2._now_ms = original_now_ms
+            server_v2._build_account_light_snapshot = original_builder
+
+        self.assertEqual([], errors)
+        self.assertEqual(1, build_calls["count"])
+        self.assertEqual(2, len(results))
 
     def test_curve_point_digest_includes_position_ratio(self):
         helper = getattr(server_v2, "_normalize_digest_curve_points", None)
@@ -1588,12 +1918,14 @@ class SummaryResponseTests(unittest.TestCase):
         server_v2._is_mt5_configured = lambda: False
         server_v2._snapshot_from_mt5_light = lambda: {
             "accountMeta": {"source": "MT5 Python Pull"},
+            "overviewMetrics": [{"name": "总资产", "value": "$1000.00"}],
+            "curveIndicators": [],
+            "statsMetrics": [],
             "positions": [],
             "pendingOrders": [],
         }
         try:
-            with self.assertRaises(RuntimeError):
-                server_v2._build_account_light_snapshot()
+            snapshot = server_v2._build_account_light_snapshot()
         finally:
             server_v2.GATEWAY_MODE = original_mode
             server_v2._is_ea_snapshot_fresh = original_is_fresh
@@ -1601,6 +1933,9 @@ class SummaryResponseTests(unittest.TestCase):
             server_v2.mt5 = original_mt5
             server_v2._is_mt5_configured = original_is_mt5_configured
             server_v2.ea_snapshot_cache = original_ea_snapshot_cache
+
+        self.assertEqual("MT5 Python Pull", snapshot["accountMeta"]["source"])
+        self.assertEqual([{"name": "总资产", "value": "$1000.00"}], snapshot["overviewMetrics"])
 
 
 if __name__ == "__main__":

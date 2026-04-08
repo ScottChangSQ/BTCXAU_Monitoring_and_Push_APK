@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,7 @@ class WindowsServerBundleTests(unittest.TestCase):
             builder.build_bundle(output_dir)
 
             expected_files = [
+                output_dir / "bundle_manifest.json",
                 output_dir / "mt5_gateway" / "v2_session_crypto.py",
                 output_dir / "mt5_gateway" / "v2_session_manager.py",
                 output_dir / "mt5_gateway" / "v2_session_models.py",
@@ -28,6 +30,19 @@ class WindowsServerBundleTests(unittest.TestCase):
 
             for expected_file in expected_files:
                 self.assertTrue(expected_file.exists(), f"missing bundle file: {expected_file}")
+
+    def test_build_bundle_should_write_bundle_manifest_with_runtime_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "windows_server_bundle"
+            builder.build_bundle(output_dir)
+
+            manifest = json.loads((output_dir / "bundle_manifest.json").read_text(encoding="utf-8"))
+
+        self.assertEqual("windows_server_bundle", manifest.get("bundleName"))
+        self.assertIsInstance(manifest.get("bundleFingerprint"), str)
+        self.assertTrue(manifest.get("bundleFingerprint"))
+        self.assertIsInstance(manifest.get("generatedAt"), str)
+        self.assertTrue(manifest.get("generatedAt"))
 
     def test_deploy_script_should_use_single_gui_window_and_full_port_cleanup(self) -> None:
         deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
@@ -40,7 +55,11 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertNotIn("foreach ($pid in $listenerPids)", deploy_script)
         self.assertIn('function Wait-HttpsLoopbackOk', deploy_script)
         self.assertIn('Wait-HttpsLoopbackOk -HostName "tradeapp.ltd" -Path "/health"', deploy_script)
-        self.assertIn('Wait-HttpOk -Url "https://tradeapp.ltd/health"', deploy_script)
+        self.assertIn('Wait-HttpJsonFieldMatch', deploy_script)
+        self.assertIn('https://tradeapp.ltd/health', deploy_script)
+        self.assertIn('bundle_manifest.json', deploy_script)
+        self.assertIn('bundleFingerprint', deploy_script)
+        self.assertIn('wss://tradeapp.ltd/v2/stream', deploy_script)
 
     def test_deploy_cmd_should_launch_hidden_gui_entry(self) -> None:
         deploy_cmd = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.cmd").read_text(encoding="utf-8")
@@ -53,6 +72,12 @@ class WindowsServerBundleTests(unittest.TestCase):
 
         self.assertIn(".requirements.sha256", bootstrap_script)
         self.assertIn("Set-Content -LiteralPath $requirementsStampPath", bootstrap_script)
+
+    def test_bootstrap_script_should_use_dotnet_sha256_instead_of_get_file_hash(self) -> None:
+        bootstrap_script = (builder.SOURCE_WINDOWS_DIR / "01_bootstrap_gateway.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("System.Security.Cryptography.SHA256", bootstrap_script)
+        self.assertNotIn("Get-FileHash", bootstrap_script)
 
     def test_deploy_script_should_use_shared_log_io_between_gui_and_worker(self) -> None:
         deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")

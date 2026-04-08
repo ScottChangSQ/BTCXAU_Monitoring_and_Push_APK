@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE_EA = ROOT / "bridge" / "mt5_gateway" / "ea" / "MT5BridgePushEA.mq5"
 SOURCE_SERVER = ROOT / "bridge" / "mt5_gateway" / "server_v2.py"
+SOURCE_ENV = ROOT / "bridge" / "mt5_gateway" / ".env.example"
 BUILD_SCRIPT = ROOT / "scripts" / "build_windows_server_bundle.py"
 
 
@@ -59,6 +60,14 @@ class GatewayBundleParityTests(unittest.TestCase):
 
         self.assertTrue((bundle_dir / "mt5_gateway" / "v2_trade.py").exists())
         self.assertTrue((bundle_dir / "mt5_gateway" / "v2_trade_models.py").exists())
+        self.assertTrue((bundle_dir / "mt5_gateway" / "mt5_login_probe.py").exists())
+        self.assertTrue((bundle_dir / "bundle_manifest.json").exists())
+
+    def test_build_script_should_copy_gateway_env_template_into_bundle(self):
+        bundle_dir = self._build_bundle()
+        bundle_env = (bundle_dir / "mt5_gateway" / ".env.example").read_text(encoding="utf-8")
+
+        self.assertEqual(SOURCE_ENV.read_text(encoding="utf-8"), bundle_env)
 
     def test_build_script_should_include_root_deploy_entrypoints(self):
         bundle_dir = self._build_bundle()

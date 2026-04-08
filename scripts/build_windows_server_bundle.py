@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -16,6 +19,7 @@ GATEWAY_FILES = (
     ".env.example",
     "admin_panel.py",
     "API.md",
+    "mt5_login_probe.py",
     "README.md",
     "requirements.txt",
     "server_v2.py",
@@ -103,6 +107,25 @@ def copy_tree(source: Path, destination: Path) -> None:
         dirs_exist_ok=True,
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
     )
+
+
+def build_bundle_manifest(output_dir: Path) -> dict:
+    """为部署包生成稳定指纹，供运行时和部署验收核对来源。"""
+    file_hashes: dict[str, str] = {}
+    for path in sorted(output_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        relative_path = path.relative_to(output_dir).as_posix()
+        if relative_path == "bundle_manifest.json":
+            continue
+        file_hashes[relative_path] = hashlib.sha256(path.read_bytes()).hexdigest()
+    fingerprint_source = json.dumps(file_hashes, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {
+        "bundleName": "windows_server_bundle",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "bundleFingerprint": hashlib.sha256(fingerprint_source).hexdigest(),
+        "fileHashes": file_hashes,
+    }
 
 
 def write_bundle_readme(bundle_dir: Path) -> None:
@@ -227,6 +250,11 @@ def build_bundle(output_dir: Path) -> Path:
     for script in windows_dir.rglob("*.ps1"):
         normalize_powershell_file(script)
 
+    manifest = build_bundle_manifest(output_dir)
+    (output_dir / "bundle_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     write_bundle_readme(output_dir)
     return output_dir
 

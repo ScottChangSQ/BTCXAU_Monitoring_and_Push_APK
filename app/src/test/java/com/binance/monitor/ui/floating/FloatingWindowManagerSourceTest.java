@@ -31,4 +31,21 @@ public class FloatingWindowManagerSourceTest {
         assertTrue(source.contains("ProductSymbolMapper.toTradeSymbol(code)"));
         assertTrue(source.contains("ProductSymbolMapper.TRADE_SYMBOL_XAU"));
     }
+
+    @Test
+    public void hideShouldUseImmediateDetachToAvoidDuplicateOverlayWindows() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("windowManager.removeViewImmediate(root);"));
+    }
+
+    @Test
+    public void showPathShouldCheckRealWindowAttachmentInsteadOfOnlyShowingFlag() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("private boolean isBindingAttachedToWindow()"));
+        assertTrue(source.contains("if (!enabled || isBindingAttachedToWindow() || !PermissionHelper.canDrawOverlays(context))"));
+    }
 }

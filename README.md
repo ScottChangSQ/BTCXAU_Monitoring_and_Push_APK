@@ -12,6 +12,9 @@
 - 账户展示链已经收口为纯消费层，只消费 canonical 字段，不再回读旧快照、不再本地猜测或补锚
 - 会话链已经收口为服务端单真值，当前激活账号只认 `status.activeAccount`
 - 历史、曲线、比例补算和启发式归并已经从主链移除，页面只基于服务端给出的标准数据做展示
+- 服务端轻快照主链不再展开全量历史，但会返回真实 `tradeCount`，供 App 只在新增成交时补拉全量历史；缓存 miss 也不再并发放大
+- `/v2/account/snapshot` 现在直接走 MT5 轻快照，`/v2/account/history` 的曲线和交易列表会复用同一份 MT5 成交历史
+- `v2/stream` 在未激活远程会话时会直接返回市场数据和空账户摘要，不再主动拉起 MT5
 - 服务端自带统一管理面板，可查看状态、日志、配置，并控制网关、MT5、Caddy、Nginx
 
 ## 技术架构
@@ -46,8 +49,9 @@
 - 行情监控、异常提醒、悬浮窗、图表、账户总览、交易历史、收益曲线已经跑在统一的 `/v2/*` 主链上
 - `GatewayV2Client`、`GatewayV2StreamClient`、`GatewayV2SessionClient` 已经成为 App 主链入口
 - 账户页主动刷新与后台预加载已经统一到同一套 `v2` 数据链
+- 账户统计页高频刷新现在只更新账户概览、当前持仓和挂单；历史成交、曲线和历史统计只在 `tradeCount` 变化时补拉全量
 - 图表页历史成交标注现在只认显式生命周期字段，不再本地猜品种和补锚点
-- 本地仓储已经停止把旧历史、旧曲线、轻量快照拼回当前真值
+- 本地仓储已经停止把旧历史、旧曲线、轻量快照拼回当前真值；轻量快照刷新时只保留上一轮全量历史的展示结果，不再把历史区清空
 - 服务端 `v2/account/history` 已经停止旧别名兼容、价格回填和启发式成交归并
 - 服务端 `v2/session/*` 已完成登录、切换、退出、状态查询、公钥获取的最小闭环
 - 会话字段名已经统一只认 `activeAccount / active`，不再消费 `account / isActive` 旧别名
@@ -108,7 +112,9 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - 服务器一键停旧服务并重部署命令：`C:\mt5_bundle\windows_server_bundle\deploy_bundle.cmd`
 - 命令行等价入口：`powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\mt5_bundle\windows_server_bundle\deploy_bundle.ps1 -Mode Gui -BundleRoot "C:\mt5_bundle\windows_server_bundle"`
 - 这套一键部署会先停掉旧计划任务、旧网关、旧管理面板、旧 Caddy/Nginx，并强制释放 `80 / 443 / 2019 / 8787 / 8788` 端口，再重新注册任务、启动后台服务并做健康检查
-- 部署脚本会把 443 验收拆成 `loopback SNI` 和 `public HTTPS` 两段，方便现场区分是本机 Caddy/网关链卡住，还是公网入口链卡住
+- 部署包根目录会生成 `bundle_manifest.json`，部署脚本会用它校验运行中的 `8787 / 80 / 443` 返回的 `bundleFingerprint` 是否与当前 bundle 一致
+- 网关启动脚本、管理面板启动脚本、首次引导脚本现在统一在脚本内部用 .NET `SHA256` 计算 `requirements.txt` 指纹，不再依赖 `Get-FileHash`，避免部分 Windows PowerShell 环境里网关根本起不来
+- 部署脚本会把 443 验收拆成 `loopback SNI` 和 `public HTTPS` 两段，并额外校验 `wss://tradeapp.ltd/v2/stream` 首条消息，方便现场区分是本机 Caddy/网关链卡住、公网入口链卡住，还是 websocket 主链没真正起来
 - 服务器端只会出现一个状态窗口，用来显示每一步是否成功、当前状态和日志；这个窗口可以直接关闭，关闭后不会影响已经启动的后台服务
 - 统一控制台默认入口为 `http://43.155.214.62/admin/`
 - 管理面板直连端口入口为 `http://43.155.214.62:8788`
@@ -172,5 +178,7 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - App 最终总验收已通过：执行上面的 App 总验收命令，结果为 `BUILD SUCCESSFUL`
 - 服务端最终总验收已通过：执行上面的服务端总验收命令，结果为 `Ran 101 tests ... OK`
 - 2026-04-08 新增验证：启动脚本去噪回归、Windows bundle 回归、App 入口固定回归均已通过
-- 本轮只更新了 `README.md` 与 `CONTEXT.md` 的最终口径，没有新增代码逻辑
+- 2026-04-08 新增验证：轻快照去全历史扫描、轻快照 single-flight、bundle 指纹校验、websocket 验收链均已通过
+- 2026-04-08 新增验证：`logged_out` 状态下 `v2/stream` 不再触发 MT5，同步链回归通过
+- 2026-04-08 新增验证：真实 `windows/run_gateway.ps1` 启动链已通过，`/health` 可返回最新 `bundleFingerprint`
 - 当前唯一未完成的是“真机 + 已部署 HTTPS 服务器”的人工联调记录

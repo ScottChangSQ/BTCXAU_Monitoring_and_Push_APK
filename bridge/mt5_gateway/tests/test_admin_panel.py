@@ -1,9 +1,12 @@
 """轻量管理面板单测。"""
 
+import hashlib
+import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+import subprocess
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +18,40 @@ from bridge.mt5_gateway import admin_panel  # noqa: E402
 
 class AdminPanelTests(unittest.TestCase):
     """验证管理面板配置解析与本地管理能力。"""
+
+    @staticmethod
+    def _requirements_hash(path: Path) -> str:
+        """计算与启动脚本一致的 requirements SHA256。"""
+        return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+
+    def _build_start_script_fixture(self, script_name: str, target_script_name: str) -> Path:
+        """构造最小启动目录，复现真实 PowerShell 启动链。"""
+        fixture_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, fixture_dir, True)
+
+        (fixture_dir / script_name).write_text((ROOT / script_name).read_text(encoding="utf-8"), encoding="utf-8")
+        requirements_path = fixture_dir / "requirements.txt"
+        requirements_path.write_text("", encoding="utf-8")
+        (fixture_dir / ".requirements.sha256").write_text(self._requirements_hash(requirements_path), encoding="utf-8")
+        (fixture_dir / ".env").write_text("GATEWAY_HOST=127.0.0.1\n", encoding="utf-8")
+        (fixture_dir / target_script_name).write_text("print('fixture ok')\n", encoding="utf-8")
+        subprocess.run([sys.executable, "-m", "venv", str(fixture_dir / ".venv")], check=True, cwd=fixture_dir)
+        return fixture_dir
+
+    def _run_start_script_without_get_file_hash(self, fixture_dir: Path, script_name: str) -> subprocess.CompletedProcess[str]:
+        """在禁用 Get-FileHash 的 PowerShell 会话中执行启动脚本。"""
+        command = (
+            "function Get-FileHash { param($Algorithm, $LiteralPath) throw 'Get-FileHash blocked for regression test' }\n"
+            f"Set-Location '{fixture_dir}'\n"
+            f"& '{fixture_dir / script_name}' -EnvFile '.env'\n"
+        )
+        return subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+            cwd=fixture_dir,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
 
     def test_resolve_gateway_url_should_prefer_explicit_admin_url(self):
         env_map = {"ADMIN_GATEWAY_URL": "http://10.0.0.8:8787"}
@@ -195,6 +232,24 @@ class AdminPanelTests(unittest.TestCase):
         self.assertIn("--disable-pip-version-check", content)
         self.assertIn("public static int Run(string filePath, string argumentsLine, string workingDirectory)", content)
         self.assertIn("RedirectStandardError = true", content)
+
+    def test_start_gateway_script_should_not_depend_on_get_file_hash_cmdlet(self):
+        fixture_dir = self._build_start_script_fixture("start_gateway.ps1", "server_v2.py")
+
+        result = self._run_start_script_without_get_file_hash(fixture_dir, "start_gateway.ps1")
+
+        self.assertEqual(0, result.returncode, msg=result.stdout + result.stderr)
+        self.assertIn("fixture ok", result.stdout + result.stderr)
+        self.assertNotIn("Get-FileHash blocked for regression test", result.stdout + result.stderr)
+
+    def test_start_admin_panel_script_should_not_depend_on_get_file_hash_cmdlet(self):
+        fixture_dir = self._build_start_script_fixture("start_admin_panel.ps1", "admin_panel.py")
+
+        result = self._run_start_script_without_get_file_hash(fixture_dir, "start_admin_panel.ps1")
+
+        self.assertEqual(0, result.returncode, msg=result.stdout + result.stderr)
+        self.assertIn("fixture ok", result.stdout + result.stderr)
+        self.assertNotIn("Get-FileHash blocked for regression test", result.stdout + result.stderr)
 
     def test_health_endpoint_should_not_force_mt5_login_probe(self):
         server_source = (ROOT / "server_v2.py").read_text(encoding="utf-8")

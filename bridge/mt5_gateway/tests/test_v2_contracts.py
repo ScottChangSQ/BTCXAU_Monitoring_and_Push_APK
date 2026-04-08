@@ -369,25 +369,25 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual("MT5 Python Pull", snapshot["accountMeta"]["source"])
         self.assertEqual(2, snapshot["positions"][0]["ticket"])
 
-    def test_build_account_light_snapshot_should_project_metrics_from_canonical_snapshot(self):
-        canonical_snapshot = {
+    def test_build_account_light_snapshot_should_use_mt5_light_builder(self):
+        light_snapshot = {
             "accountMeta": {"source": "MT5 Python Pull", "updatedAt": 456},
             "overviewMetrics": [{"name": "总资产", "value": "$1000.00"}],
-            "curveIndicators": [{"name": "当日收益", "value": "+1.2%"}],
-            "statsMetrics": [{"name": "交易笔数", "value": "2"}],
+            "curveIndicators": [],
+            "statsMetrics": [],
             "positions": [{"symbol": "BTCUSD"}],
             "pendingOrders": [{"symbol": "XAUUSD"}],
-            "trades": [{"dealTicket": 1}],
-            "curvePoints": [{"timestamp": 1, "equity": 100.0, "balance": 100.0}],
         }
 
-        with mock.patch.object(server_v2, "_build_snapshot_with_cache", return_value=canonical_snapshot) as full_mock:
+        with mock.patch.object(server_v2, "_snapshot_from_mt5_light", return_value=light_snapshot) as light_mock, mock.patch.object(
+            server_v2, "_build_snapshot_with_cache", side_effect=AssertionError("轻快照不应回退到完整 all 快照")
+        ):
             snapshot = server_v2._build_account_light_snapshot()
 
-        full_mock.assert_called_once_with("all")
+        light_mock.assert_called_once_with()
         self.assertEqual([{"name": "总资产", "value": "$1000.00"}], snapshot["overviewMetrics"])
-        self.assertEqual([{"name": "当日收益", "value": "+1.2%"}], snapshot["curveIndicators"])
-        self.assertEqual([{"name": "交易笔数", "value": "2"}], snapshot["statsMetrics"])
+        self.assertEqual([], snapshot["curveIndicators"])
+        self.assertEqual([], snapshot["statsMetrics"])
         self.assertEqual("BTCUSD", snapshot["positions"][0]["symbol"])
         self.assertEqual("XAUUSD", snapshot["pendingOrders"][0]["symbol"])
         self.assertNotIn("trades", snapshot)

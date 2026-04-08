@@ -63,7 +63,7 @@
 - [app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java)
   持仓时间分布图控件，负责绘制不同持仓时长桶的交易数量。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java)
-  账户预加载管理器，负责后台轻量同步和前台页面进入时的全量补齐；当前只消费 `v2/account/snapshot + v2/account/history` 返回的账户真值和服务端指标，不再本地回填 `open/close time`、`open/close price` 或秒级时间戳。
+  账户预加载管理器，负责后台轻量同步和前台页面进入时的条件补齐；当前高频链只消费 `v2/account/snapshot` 的账户概览、持仓、挂单和真实 `tradeCount`，只有在 `tradeCount` 变化时才补拉 `v2/account/history` 全量历史，不再本地回填 `open/close time`、`open/close price` 或秒级时间戳。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountPreloadPolicyHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPreloadPolicyHelper.java)
   账户预加载节奏辅助工具，负责把前后台状态和全量/轻量模式转换成统一刷新间隔。
 - [app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java)
@@ -97,7 +97,7 @@
 - [app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java)
   图表历史仓库，负责把上层已经整理好的 K 线窗口直接写入 Room，不再重复回读整段旧历史再合并。
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
-  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出，以及远程账号会话接口与运行时缓存清理。
+  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、delta、stream 输出，以及远程账号会话接口与运行时缓存清理。轻快照主链现在只读取账户概览、持仓、挂单和真实 `tradeCount`，不再展开完整历史对象，并增加 single-flight，避免高频消费链并发放大；`/v2/account/snapshot` 直接走 MT5 轻快照，`/v2/account/history` 的曲线和交易列表继续复用同一份 MT5 成交历史；`v2/stream` 在 `logged_out` 状态下不会再主动触发 MT5。
 - [bridge/mt5_gateway/v2_session_crypto.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_crypto.py)
   远程账号会话加密模块，负责登录信封公钥生成、`rsa-oaep+aes-gcm` 解密、时间戳校验和 nonce 去重。
 - [bridge/mt5_gateway/v2_session_models.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_models.py)
@@ -119,17 +119,17 @@
 - [bridge/mt5_gateway/v2_account.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_account.py)
   v2 账户模型工具，负责把账户快照、历史成交、曲线转换成 APP 侧展示模型。
 - [bridge/mt5_gateway/start_gateway.ps1](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/start_gateway.ps1)
-  网关启动脚本，负责加载 `.env` 并使用本地虚拟环境启动服务。
+  网关启动脚本，负责加载 `.env`、比较 `requirements.txt` 指纹并使用本地虚拟环境启动服务；当前文件指纹改为脚本内置的 .NET `SHA256`，不再依赖 `Get-FileHash`。
 - [bridge/mt5_gateway/start_admin_panel.ps1](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/start_admin_panel.ps1)
-  管理面板启动脚本，负责加载 `.env` 并使用本地虚拟环境启动轻量 Web 面板。
+  管理面板启动脚本，负责加载 `.env`、比较 `requirements.txt` 指纹并使用本地虚拟环境启动轻量 Web 面板；当前文件指纹同样改为脚本内置的 .NET `SHA256`。
 - [deploy/tencent/windows/](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows)
-  Windows 部署脚本源码目录，负责启动、自启注册、健康检查和 Caddy 配置；现在同一套脚本同时兼容“仓库根目录”和“部署包根目录”两种布局。
+  Windows 部署脚本源码目录，负责启动、自启注册、健康检查和 Caddy 配置；现在同一套脚本同时兼容“仓库根目录”和“部署包根目录”两种布局，首次引导脚本也已改成脚本内置 .NET `SHA256` 指纹计算。
 - [deploy/tencent/windows/deploy_bundle.ps1](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows/deploy_bundle.ps1)
-  Windows 一键重部署入口，负责按“停旧服务与占口 -> 校验脚本 -> 初始化环境 -> 注册任务 -> 启动后台服务 -> 健康检查”的顺序执行，并把状态同步到唯一的 GUI 窗口。
+  Windows 一键重部署入口，负责按“停旧服务与占口 -> 校验脚本 -> 初始化环境 -> 注册任务 -> 启动后台服务 -> 健康检查”的顺序执行，并把状态同步到唯一的 GUI 窗口；健康检查现在还会校验 `bundleFingerprint` 与 `wss://tradeapp.ltd/v2/stream` 首条消息。
 - [deploy/tencent/windows/deploy_bundle.cmd](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows/deploy_bundle.cmd)
   Windows 双击部署入口，负责以隐藏方式拉起 `deploy_bundle.ps1` 的 GUI 模式，避免额外弹出命令行窗口。
 - [scripts/build_windows_server_bundle.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/scripts/build_windows_server_bundle.py)
-  Windows 部署包构建脚本，负责从 `bridge/mt5_gateway` 与 `deploy/tencent/windows` 生成唯一上传目录 `dist/windows_server_bundle`，并把根目录双击部署脚本、bundle README 和完整会话链文件一起放进部署包。
+  Windows 部署包构建脚本，负责从 `bridge/mt5_gateway` 与 `deploy/tencent/windows` 生成唯一上传目录 `dist/windows_server_bundle`，并把根目录双击部署脚本、bundle README、完整会话链文件和 `bundle_manifest.json` 运行指纹一起放进部署包。
 
 ## 模块之间的调用关系
 
@@ -224,7 +224,7 @@
 - 图表本地缓存当前只保留 `ChartHistoryRepository` 这一层，已删除旧 `KlineCacheStore` 文件缓存，并禁止把图表序列写进 `V2SnapshotStore`；原因是旧设计会形成“图表缓存清理误伤账户快照”和“同一份 K 线被多处重复存储”的结构性问题。
 - 图表历史仓库当前不再负责“读旧历史再合并”，而只负责写入上层已整理好的窗口；原因是图表页内存窗口已经是本轮展示真值，仓库层重复再读一次只会增加 IO 和复杂度。
 - `MonitorService` 不再承担“预热图表 1m 底稿”的职责，冷启动和 stale 回退都统一改成 `GatewayV2Client.fetchMarketSeries(...)`；原因是服务层现在只负责展示快照和悬浮窗，不应再反向参与图表历史真值。
-- 账户预加载改成“只认 v2 账户接口并原子替换本地缓存”；原因是继续保留旧网关回退，会把新架构下的历史成交、净值曲线和服务端指标再次拆散。
+- 账户预加载改成“高频轻快照 + 历史按真实 `tradeCount` 条件补拉”；原因是账户页平时只需要账户概览、当前持仓和挂单，继续每轮都拉全量历史会浪费流量并拖慢刷新。
 - 仓库内已失联的 `AccountStatsLiveActivity + Mt5GatewayClient` 旧账户页链路已直接删除；原因是它们不再属于任何业务入口，却仍保留 `/v1` 账户快照与本地补位逻辑，继续保留只会制造维护误导。
 - 账户展示链当前收口成“服务端指标直出 + 页面纯消费”；原因是 `overviewMetrics / curveIndicators / statsMetrics` 已由服务端给出，页面层继续本地补算只会重新制造第二套口径。
 - 账户历史与曲线主链当前只接受服务端标准时间和价格字段；原因是客户端再做秒转毫秒、`timestamp -> open/close time`、`price -> open/close price` 这类补位，会把纯消费链重新拉回本地拼装。
@@ -238,10 +238,16 @@
 - 服务端异常同步 `HTTP 404` 改成客户端一次识别后暂停轮询；原因是接口未部署时继续固定频率请求只会刷日志和浪费流量。
 - 服务器管理 UI 独立为 `admin_panel.py` 控制台服务，而不是塞进 `server_v2.py` 本体；原因是这样即便主网关被停止或重启，控制台仍可继续提供浏览器入口，才能真正完成“启动 / 停止 / 重启网关”这类操作。
 - Windows 部署现收口为“源码两处 + 产物一处”：源码只维护 `bridge/mt5_gateway` 和 `deploy/tencent/windows`，部署时统一由 `scripts/build_windows_server_bundle.py` 生成 `dist/windows_server_bundle`；原因是仓库里长期保留静态部署副本会导致改动位置漂移、文件不同步和现场排障困难。
+- 线上部署验收现在必须同时满足“健康接口来自当前 bundle 指纹”和“`wss://tradeapp.ltd/v2/stream` 能收到首条消息”；原因是过去只看 `200` 无法证明公网实际运行的是哪一版网关，也无法证明 websocket 主链真的可用。
+- 轻快照主链当前只负责账户摘要、持仓、挂单和真实 `tradeCount`，不再在高频链里展开全量历史对象；原因是账户页需要服务端真值来判断“是否新增成交”，但不能为了这个条件判断重新回到每轮全量历史重建。
+- `/v2/account/snapshot` 当前直接使用 MT5 轻快照，并只保留当前概览指标、持仓和挂单；原因是账户页和同步链需要的是当前账户真值，不应再被完整历史、曲线和成交重建拖慢。
+- 完整账户快照当前只拉一次 MT5 成交历史，再同时供曲线与交易列表复用；原因是之前曲线和交易映射各扫一次历史，会在 `state_lock` 内重复放大耗时。
+- `v2/stream` 当前先看会话真值，再决定是否读取 MT5 账户快照；原因是未激活远程会话时，监控链只需要市场真值和空账户摘要，不应把 websocket 首包建立建立在 MT5 初始化之上。
 - Windows 部署包现要求闭合为单根目录 `C:\mt5_bundle\windows_server_bundle`；原因是用户明确要求把整个 `dist/windows_server_bundle` 文件夹一次性复制到服务器，而不是拆成两个子目录分别处理。
 - Windows 部署脚本对 `caddy.exe` 采用兼容查找：优先 `windows_server_bundle\windows\caddy.exe`，其次 `windows_server_bundle\caddy.exe`，最后 `C:\mt5_bundle\caddy.exe` 这类上级目录；原因是服务器现场已存在历史安装位置，部署脚本需要兼容而不是强迫用户重新搬动二进制文件。
 - Windows 一键重部署现收口为“前台唯一 GUI + 后台隐藏 worker”；原因是用户要求服务器端除了状态窗口外不再出现其他前台窗口，同时关闭状态窗口也不能影响后台服务继续运行。
 - Windows 一键重部署当前会先显式停掉旧计划任务、旧网关、旧面板、旧 Caddy / Nginx，并强制释放 `80 / 443 / 2019 / 8787 / 8788`；原因是如果不先清掉旧进程与端口占用，重新部署最容易在服务器现场直接失败。
+- Windows 启动脚本和首次引导脚本当前统一使用脚本内置 .NET `SHA256`，不再依赖 `Get-FileHash`；原因是服务器真实启动链已经证明，部分 PowerShell 环境里缺少该 cmdlet 时，网关会在健康检查前就直接起不来。
 - 远程账号会话当前采用“单用户、多账号、任意时刻一个激活账号”的服务端模型；原因是这样能在现有 MT5 网关结构内用最小正确改动闭合安全、切换和同步链路。
 - 远程登录链路当前采用 `cryptography` 实现 `rsa-oaep+aes-gcm`，账号落盘仍用 Windows DPAPI；原因是标准库无法完整提供设计要求的公钥信封解密，而本机密文档案仍应交给 Windows 本机保护能力处理。
 - Task 1 的会话模型当前已从“占位 dataclass”收口成真实接口模型，并由加密层与会话管理层直接复用；原因是如果模型只存在文件里、不参与返回结构生成，后续维护仍会继续依赖散落字典，容易再次出现前后端字段漂移。

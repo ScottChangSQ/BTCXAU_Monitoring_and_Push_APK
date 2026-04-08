@@ -95,6 +95,33 @@ function Resolve-BundleRootPath {
     return (Split-Path -Parent $script:DeployScriptPath)
 }
 
+function Read-BundleManifest {
+    param([string]$ResolvedBundleRoot)
+
+    $manifestPath = Join-Path $ResolvedBundleRoot "bundle_manifest.json"
+    if (-not (Test-Path $manifestPath)) {
+        throw "缺少部署指纹文件: $manifestPath"
+    }
+
+    $manifestText = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8
+    if ([string]::IsNullOrWhiteSpace($manifestText)) {
+        throw "部署指纹文件为空: $manifestPath"
+    }
+
+    $manifest = $manifestText | ConvertFrom-Json
+    $bundleFingerprint = [string]$manifest.bundleFingerprint
+    $generatedAt = [string]$manifest.generatedAt
+    if ([string]::IsNullOrWhiteSpace($bundleFingerprint)) {
+        throw "部署指纹文件缺少 bundleFingerprint: $manifestPath"
+    }
+
+    return [PSCustomObject]@{
+        Path = $manifestPath
+        BundleFingerprint = $bundleFingerprint
+        GeneratedAt = $generatedAt
+    }
+}
+
 function New-DeployContext {
     param(
         [string]$ResolvedBundleRoot,
@@ -103,11 +130,15 @@ function New-DeployContext {
         [string]$DeployRunId
     )
 
+    $bundleManifest = Read-BundleManifest -ResolvedBundleRoot $ResolvedBundleRoot
     $windowsDir = Join-Path $ResolvedBundleRoot "windows"
     return @{
         RunId = $DeployRunId
         BundleRoot = $ResolvedBundleRoot
         BundleParent = Split-Path -Parent $ResolvedBundleRoot
+        BundleManifestPath = $bundleManifest.Path
+        ExpectedBundleFingerprint = $bundleManifest.BundleFingerprint
+        ExpectedBundleGeneratedAt = $bundleManifest.GeneratedAt
         GatewayDir = Join-Path $ResolvedBundleRoot "mt5_gateway"
         WindowsDir = $windowsDir
         StatusFile = $ResolvedStatusFile
@@ -126,6 +157,8 @@ function New-DeployContext {
             artifacts = [ordered]@{
                 logFile = $ResolvedLogFile
                 statusFile = $ResolvedStatusFile
+                bundleManifest = $bundleManifest.Path
+                bundleFingerprint = $bundleManifest.BundleFingerprint
             }
         }
     }
@@ -283,6 +316,39 @@ function Wait-HttpOk {
     throw "等待接口超时: $Url"
 }
 
+function Wait-HttpJsonFieldMatch {
+    param(
+        [string]$Url,
+        [string]$FieldName,
+        [string]$ExpectedValue,
+        [int]$MaxSeconds = 60
+    )
+
+    $deadline = (Get-Date).AddSeconds($MaxSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $resp = Invoke-WebRequest $Url -UseBasicParsing -TimeoutSec 5
+            if ($resp.StatusCode -lt 200 -or $resp.StatusCode -ge 300) {
+                throw "HTTP $($resp.StatusCode)"
+            }
+            $payload = $resp.Content | ConvertFrom-Json
+            $actualValue = [string]$payload.$FieldName
+            if ($actualValue -eq $ExpectedValue) {
+                return [pscustomobject]@{
+                    StatusCode = [int]$resp.StatusCode
+                    FieldName = $FieldName
+                    FieldValue = $actualValue
+                }
+            }
+        }
+        catch {
+        }
+        Start-Sleep -Seconds 2
+    }
+
+    throw "等待接口字段匹配超时: $Url -> $FieldName"
+}
+
 function Invoke-HttpsLoopbackRequest {
     param(
         [string]$HostName,
@@ -365,6 +431,54 @@ function Wait-HttpsLoopbackOk {
     throw "等待本机 HTTPS SNI 接口超时: https://$HostName$Path"
 }
 
+function Wait-WebSocketMessage {
+    param(
+        [string]$Url,
+        [int]$MaxSeconds = 60
+    )
+
+    $client = [System.Net.WebSockets.ClientWebSocket]::new()
+    $cts = [System.Threading.CancellationTokenSource]::new()
+    $cts.CancelAfter([TimeSpan]::FromSeconds($MaxSeconds))
+    try {
+        $client.ConnectAsync([Uri]$Url, $cts.Token).GetAwaiter().GetResult()
+        $buffer = New-Object byte[] 65536
+        $segment = [ArraySegment[byte]]::new($buffer)
+        $builder = New-Object System.Text.StringBuilder
+        do {
+            $result = $client.ReceiveAsync($segment, $cts.Token).GetAwaiter().GetResult()
+            if ($result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
+                throw "WebSocket 在收到首条消息前被关闭"
+            }
+            $null = $builder.Append([System.Text.Encoding]::UTF8.GetString($buffer, 0, $result.Count))
+        } while (-not $result.EndOfMessage)
+
+        $message = $builder.ToString()
+        if ([string]::IsNullOrWhiteSpace($message)) {
+            throw "WebSocket 首条消息为空"
+        }
+        return [pscustomobject]@{
+            Url = $Url
+            Preview = $message.Substring(0, [Math]::Min(160, $message.Length))
+        }
+    }
+    finally {
+        try {
+            if ($client.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
+                $client.CloseAsync(
+                    [System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure,
+                    "deploy-check",
+                    [System.Threading.CancellationToken]::None
+                ).GetAwaiter().GetResult() | Out-Null
+            }
+        }
+        catch {
+        }
+        $cts.Dispose()
+        $client.Dispose()
+    }
+}
+
 function Resolve-CaddyExecutablePath {
     param($Context)
 
@@ -387,6 +501,32 @@ function Get-TargetListeners {
     Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
         Where-Object { $_.LocalPort -in 80, 443, 2019, 8787, 8788 } |
         Sort-Object LocalPort, OwningProcess
+}
+
+function Get-ListenerProcessDetails {
+    param(
+        [int[]]$Ports
+    )
+
+    $listeners = Get-TargetListeners
+    if ($Ports -and $Ports.Count -gt 0) {
+        $listeners = $listeners | Where-Object { $_.LocalPort -in $Ports }
+    }
+
+    $details = @()
+    foreach ($listener in @($listeners)) {
+        $pidValue = [int]$listener.OwningProcess
+        $process = Get-CimInstance Win32_Process -Filter ("ProcessId = " + $pidValue) -ErrorAction SilentlyContinue
+        $commandLine = ""
+        if ($process) {
+            $commandLine = [string]$process.CommandLine
+        }
+        if ([string]::IsNullOrWhiteSpace($commandLine)) {
+            $commandLine = (Get-Process -Id $pidValue -ErrorAction SilentlyContinue).Path
+        }
+        $details += ("{0}:{1}/PID{2} -> {3}" -f $listener.LocalAddress, $listener.LocalPort, $pidValue, $commandLine)
+    }
+    return $details
 }
 
 function Stop-TargetProcessesAndPorts {
@@ -547,20 +687,35 @@ function Invoke-DeployWorker {
             -Details @(
                 "计划任务: $($Context.GatewayTaskName)",
                 "计划任务: $($Context.AdminTaskName)",
-                "Caddy: $caddyExe"
+                "Caddy: $caddyExe",
+                "BundleFingerprint: $($Context.ExpectedBundleFingerprint)"
             )
 
         Begin-Step -Context $Context -Name "健康检查" -Message "验证端口监听和接口可用性"
-        $directGateway = Wait-HttpOk -Url "http://127.0.0.1:8787/health" -MaxSeconds 90
-        Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /health -> " + $directGateway.StatusCode)
+        $directGateway = Wait-HttpJsonFieldMatch `
+            -Url "http://127.0.0.1:8787/health" `
+            -FieldName "bundleFingerprint" `
+            -ExpectedValue $Context.ExpectedBundleFingerprint `
+            -MaxSeconds 90
+        Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /health -> " + $directGateway.StatusCode + " | bundleFingerprint=" + $directGateway.FieldValue)
         $directAdmin = Wait-HttpOk -Url "http://127.0.0.1:8788/" -MaxSeconds 90
         Write-DeployLog -Context $Context -Message ("健康检查通过: 8788 / -> " + $directAdmin.StatusCode)
-        $proxyGateway = Wait-HttpOk -Url "http://127.0.0.1/health" -MaxSeconds 90
-        Write-DeployLog -Context $Context -Message ("健康检查通过: 80 /health -> " + $proxyGateway.StatusCode)
+        $proxyGateway = Wait-HttpJsonFieldMatch `
+            -Url "http://127.0.0.1/health" `
+            -FieldName "bundleFingerprint" `
+            -ExpectedValue $Context.ExpectedBundleFingerprint `
+            -MaxSeconds 90
+        Write-DeployLog -Context $Context -Message ("健康检查通过: 80 /health -> " + $proxyGateway.StatusCode + " | bundleFingerprint=" + $proxyGateway.FieldValue)
         $loopbackHttpsGateway = Wait-HttpsLoopbackOk -HostName "tradeapp.ltd" -Path "/health" -MaxSeconds 90
         Write-DeployLog -Context $Context -Message ("健康检查通过: 443 loopback tradeapp.ltd/health -> " + $loopbackHttpsGateway.StatusCode)
-        $publicHttpsGateway = Wait-HttpOk -Url "https://tradeapp.ltd/health" -MaxSeconds 180
-        Write-DeployLog -Context $Context -Message ("健康检查通过: 443 tradeapp.ltd/health -> " + $publicHttpsGateway.StatusCode)
+        $publicHttpsGateway = Wait-HttpJsonFieldMatch `
+            -Url "https://tradeapp.ltd/health" `
+            -FieldName "bundleFingerprint" `
+            -ExpectedValue $Context.ExpectedBundleFingerprint `
+            -MaxSeconds 180
+        Write-DeployLog -Context $Context -Message ("健康检查通过: 443 tradeapp.ltd/health -> " + $publicHttpsGateway.StatusCode + " | bundleFingerprint=" + $publicHttpsGateway.FieldValue)
+        $streamCheck = Wait-WebSocketMessage -Url "wss://tradeapp.ltd/v2/stream" -MaxSeconds 90
+        Write-DeployLog -Context $Context -Message ("健康检查通过: wss://tradeapp.ltd/v2/stream -> " + $streamCheck.Preview)
 
         $adminProxyStatus = $null
         try {
@@ -580,19 +735,22 @@ function Invoke-DeployWorker {
         $listeners = Get-TargetListeners | ForEach-Object {
             "{0}:{1}/PID{2}" -f $_.LocalAddress, $_.LocalPort, $_.OwningProcess
         }
+        $listenerDetails = Get-ListenerProcessDetails -Ports @(8787, 8788)
         Complete-Step `
             -Context $Context `
             -Name "健康检查" `
             -Status "success" `
             -Message "关键接口检查通过" `
             -Details @(
-                ("8787 /health -> " + $directGateway.StatusCode),
+                ("8787 /health -> " + $directGateway.StatusCode + " | bundleFingerprint=" + $directGateway.FieldValue),
                 ("8788 / -> " + $directAdmin.StatusCode),
-                ("80 /health -> " + $proxyGateway.StatusCode),
+                ("80 /health -> " + $proxyGateway.StatusCode + " | bundleFingerprint=" + $proxyGateway.FieldValue),
                 ("443 loopback tradeapp.ltd/health -> " + $loopbackHttpsGateway.StatusCode),
-                ("443 tradeapp.ltd/health -> " + $publicHttpsGateway.StatusCode),
+                ("443 tradeapp.ltd/health -> " + $publicHttpsGateway.StatusCode + " | bundleFingerprint=" + $publicHttpsGateway.FieldValue),
+                ("wss://tradeapp.ltd/v2/stream -> " + $streamCheck.Preview),
                 ("/admin/ -> " + $adminProxyStatus),
-                ("监听端口: " + ($listeners -join " ; "))
+                ("监听端口: " + ($listeners -join " ; ")),
+                ("监听来源: " + ($listenerDetails -join " ; "))
             )
 
         Complete-Deploy `
@@ -601,8 +759,10 @@ function Invoke-DeployWorker {
             -Artifacts @{
                 gatewayHealth = "http://127.0.0.1:8787/health"
                 publicGatewayHealth = "https://tradeapp.ltd/health"
+                gatewayStream = "wss://tradeapp.ltd/v2/stream"
                 adminPanel = "http://127.0.0.1/admin/"
                 bundleRoot = $Context.BundleRoot
+                bundleFingerprint = $Context.ExpectedBundleFingerprint
             }
     }
     catch {

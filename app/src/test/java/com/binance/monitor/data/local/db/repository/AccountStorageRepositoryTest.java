@@ -213,7 +213,7 @@ public class AccountStorageRepositoryTest {
         assertEquals("[]", snapshotDao.meta.curvePointsJson);
     }
 
-    // 轻量运行态快照只刷新当前持仓/挂单与摘要，不应再写入历史交易或保留旧曲线。
+    // 轻量运行态快照只刷新当前持仓/挂单与摘要，旧历史曲线与历史统计要继续保留到下次全量刷新。
     @Test
     public void persistIncrementalSnapshotShouldOnlyRefreshRuntimeState() {
         FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
@@ -221,6 +221,8 @@ public class AccountStorageRepositoryTest {
         AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
 
         snapshotDao.meta = metaEntity();
+        snapshotDao.meta.curveIndicatorsJson = "[{\"name\":\"最大回撤\",\"value\":\"-1.00%\"}]";
+        snapshotDao.meta.statsMetricsJson = "[{\"name\":\"累计盈亏\",\"value\":\"+$11.00\"}]";
         snapshotDao.meta.curvePointsJson = "[{\"timestamp\":1000,\"equity\":100,\"balance\":90,\"positionRatio\":0.1}]";
         tradeDao.items.add(tradeEntity("deal|1", 1000L, 11d));
 
@@ -270,7 +272,9 @@ public class AccountStorageRepositoryTest {
         assertEquals(11d, tradeDao.items.get(0).profit, 0.0001d);
         assertEquals(1, snapshotDao.positions.size());
         assertEquals(1, snapshotDao.pendingOrders.size());
-        assertEquals("[]", snapshotDao.meta.curvePointsJson);
+        assertEquals("[{\"timestamp\":1000,\"equity\":100,\"balance\":90,\"positionRatio\":0.1}]", snapshotDao.meta.curvePointsJson);
+        assertEquals("[{\"name\":\"最大回撤\",\"value\":\"-1.00%\"}]", snapshotDao.meta.curveIndicatorsJson);
+        assertEquals("[{\"name\":\"Cumulative Profit\",\"value\":\"+$10.00\"}]", snapshotDao.meta.statsMetricsJson);
     }
 
     // 全量快照应覆盖旧交易历史，避免修正后的交易时间仍被本地旧错记录残留污染。

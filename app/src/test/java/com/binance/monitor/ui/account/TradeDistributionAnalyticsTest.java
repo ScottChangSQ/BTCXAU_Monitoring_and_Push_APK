@@ -65,8 +65,9 @@ public class TradeDistributionAnalyticsTest {
 
     @Test
     public void buildHoldingDurationDistributionShouldBucketTradesByDuration() {
+        long baseOpen = 1_704_067_200_000L;
         TradeRecordItem shortTrade = new TradeRecordItem(
-                3_600_000L,
+                baseOpen + 3_600_000L,
                 "BTCUSD",
                 "BTCUSD",
                 "Buy",
@@ -76,12 +77,12 @@ public class TradeDistributionAnalyticsTest {
                 0d,
                 "",
                 5d,
-                0L,
-                3_600_000L,
+                baseOpen,
+                baseOpen + 3_600_000L,
                 0d
         );
         TradeRecordItem swingTrade = new TradeRecordItem(
-                3L * 24L * 60L * 60L * 1_000L,
+                baseOpen + 3L * 24L * 60L * 60L * 1_000L,
                 "XAUUSD",
                 "XAUUSD",
                 "Sell",
@@ -91,12 +92,12 @@ public class TradeDistributionAnalyticsTest {
                 0d,
                 "",
                 8d,
-                0L,
-                3L * 24L * 60L * 60L * 1_000L,
+                baseOpen,
+                baseOpen + 3L * 24L * 60L * 60L * 1_000L,
                 0d
         );
         TradeRecordItem longTrade = new TradeRecordItem(
-                10L * 24L * 60L * 60L * 1_000L,
+                baseOpen + 10L * 24L * 60L * 60L * 1_000L,
                 "BTCUSD",
                 "BTCUSD",
                 "Buy",
@@ -106,8 +107,8 @@ public class TradeDistributionAnalyticsTest {
                 0d,
                 "",
                 -4d,
-                0L,
-                10L * 24L * 60L * 60L * 1_000L,
+                baseOpen,
+                baseOpen + 10L * 24L * 60L * 60L * 1_000L,
                 0d
         );
 
@@ -131,9 +132,9 @@ public class TradeDistributionAnalyticsTest {
     }
 
     @Test
-    public void buildTradeScatterPointsShouldUseOpenPriceForReturnRateAndNormalizeSecondTimestamps() {
+    public void buildTradeScatterPointsShouldUseOpenPriceForReturnRateWithCanonicalMillisecondTimestamps() {
         TradeRecordItem trade = new TradeRecordItem(
-                1_704_074_400L,
+                1_704_074_400_000L,
                 "BTCUSD",
                 "BTCUSD",
                 "Buy",
@@ -143,8 +144,8 @@ public class TradeDistributionAnalyticsTest {
                 0d,
                 "",
                 20d,
-                1_704_067_200L,
-                1_704_074_400L,
+                1_704_067_200_000L,
+                1_704_074_400_000L,
                 0d,
                 100d,
                 120d,
@@ -197,9 +198,9 @@ public class TradeDistributionAnalyticsTest {
     }
 
     @Test
-    public void buildHoldingDurationDistributionShouldNormalizeSecondBasedLifecycleTimestamps() {
+    public void buildHoldingDurationDistributionShouldUseCanonicalMillisecondLifecycleTimestamps() {
         TradeRecordItem trade = new TradeRecordItem(
-                1_704_074_400L,
+                1_704_074_400_000L,
                 "BTCUSD",
                 "BTCUSD",
                 "Buy",
@@ -209,8 +210,8 @@ public class TradeDistributionAnalyticsTest {
                 0d,
                 "",
                 20d,
-                1_704_067_200L,
-                1_704_074_400L,
+                1_704_067_200_000L,
+                1_704_074_400_000L,
                 0d,
                 100d,
                 120d,

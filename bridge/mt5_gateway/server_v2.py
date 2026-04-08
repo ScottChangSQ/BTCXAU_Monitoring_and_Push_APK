@@ -3,6 +3,8 @@ import hashlib
 import json
 import math
 import os
+import subprocess
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -10,7 +12,7 @@ import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
-from threading import Lock
+from threading import Condition, Lock, RLock
 from typing import Any, Dict, List, Optional, Tuple
 
 import uvicorn
@@ -52,15 +54,30 @@ def _configure_windows_event_loop_policy() -> None:
         pass
 
 
+def _read_bounded_env_int(name: str, default: int, minimum: Optional[int] = None, maximum: Optional[int] = None) -> int:
+    """读取整数环境变量，并按契约边界收口到允许范围内。"""
+    try:
+        value = int(os.getenv(name, str(default)))
+    except Exception:
+        value = int(default)
+    if minimum is not None:
+        value = max(int(minimum), value)
+    if maximum is not None:
+        value = min(int(maximum), value)
+    return int(value)
+
+
 LOGIN = int(os.getenv("MT5_LOGIN", "7400048"))
 PASSWORD = os.getenv("MT5_PASSWORD", "_fWsAeW1")
 SERVER = os.getenv("MT5_SERVER", "ICMarketsSC-MT5-6")
 PATH = os.getenv("MT5_PATH", "").strip() or None
 SERVER_ALIASES_RAW = os.getenv("MT5_SERVER_ALIASES", "").strip()
-try:
-    MT5_INIT_TIMEOUT_MS = int(os.getenv("MT5_INIT_TIMEOUT_MS", "60000"))
-except Exception:
-    MT5_INIT_TIMEOUT_MS = 60000
+MT5_INIT_TIMEOUT_MS = _read_bounded_env_int(
+    "MT5_INIT_TIMEOUT_MS",
+    default=50000,
+    minimum=1000,
+    maximum=50000,
+)
 try:
     MT5_TIME_OFFSET_MINUTES = int(os.getenv("MT5_TIME_OFFSET_MINUTES", "0"))
 except Exception:
@@ -104,7 +121,7 @@ if not SESSION_DATA_DIR:
 
 app = FastAPI(title="MT5 Bridge Gateway", version="1.1.0")
 app.add_middleware(GZipMiddleware, minimum_size=512)
-state_lock = Lock()
+state_lock = RLock()
 snapshot_cache_lock = Lock()
 abnormal_state_lock = Lock()
 ea_snapshot_cache: Optional[Dict] = None
@@ -132,6 +149,37 @@ session_runtime_credentials: Dict[str, Any] = {
     "password": "",
     "server": "",
 }
+light_snapshot_build_condition = Condition(snapshot_cache_lock)
+light_snapshot_building = False
+
+
+def _load_bundle_runtime_info() -> Dict[str, str]:
+    """读取部署包运行指纹；开发源码运行时回退到当前主文件指纹。"""
+    server_file = Path(__file__).resolve()
+    manifest_path = server_file.parents[1] / "bundle_manifest.json"
+    default_generated_at = datetime.fromtimestamp(server_file.stat().st_mtime, timezone.utc).isoformat()
+    default_fingerprint = hashlib.sha256(server_file.read_bytes()).hexdigest()
+    if not manifest_path.exists():
+        return {
+            "bundleFingerprint": default_fingerprint,
+            "bundleGeneratedAt": default_generated_at,
+        }
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "bundleFingerprint": default_fingerprint,
+            "bundleGeneratedAt": default_generated_at,
+        }
+    return {
+        "bundleFingerprint": str(payload.get("bundleFingerprint") or default_fingerprint),
+        "bundleGeneratedAt": str(payload.get("generatedAt") or default_generated_at),
+    }
+
+
+BUNDLE_RUNTIME_INFO = _load_bundle_runtime_info()
+BUNDLE_FINGERPRINT = str(BUNDLE_RUNTIME_INFO.get("bundleFingerprint") or "")
+BUNDLE_GENERATED_AT = str(BUNDLE_RUNTIME_INFO.get("bundleGeneratedAt") or "")
 
 
 def _now_ms() -> int:
@@ -394,9 +442,36 @@ def _sanitize_diff_payload(diff_payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _build_logged_out_account_snapshot() -> Dict[str, Any]:
+    """构建未激活远程会话时的空账户快照，避免监控链误触发 MT5。"""
+    return {
+        "accountMeta": {
+            "login": "",
+            "server": "",
+            "source": "remote_logged_out",
+            "updatedAt": _now_ms(),
+            "currency": "",
+            "leverage": 0,
+            "name": "",
+            "company": "",
+            "tradeCount": 0,
+            "positionCount": 0,
+            "pendingOrderCount": 0,
+            "curvePointCount": 0,
+        },
+        "positions": [],
+        "pendingOrders": [],
+    }
+
+
 # 构建 v2 同步层运行态快照，统一 market/account 的摘要和计数。
 def _build_v2_sync_runtime_snapshot(server_time: int) -> Dict[str, Any]:
-    snapshot = _build_account_light_snapshot_with_cache()
+    session_status = session_manager.build_status_payload()
+    active_account = (session_status or {}).get("activeAccount") or None
+    if active_account:
+        snapshot = _build_account_light_snapshot_with_cache()
+    else:
+        snapshot = _build_logged_out_account_snapshot()
     market_section = _build_v2_market_section()
     account_section = _build_v2_account_section_from_snapshot(snapshot)
     normalized_account = {
@@ -620,6 +695,13 @@ def _apply_mt5_time_offset_ms(value: int) -> int:
     if value <= 0:
         return 0
     return int(value + MT5_TIME_OFFSET_MINUTES * 60 * 1000)
+
+
+def _strip_mt5_time_offset_ms(value: int) -> int:
+    """把展示口径时间还原回 MT5 原始时间轴。"""
+    if value <= 0:
+        return 0
+    return int(value - MT5_TIME_OFFSET_MINUTES * 60 * 1000)
 
 
 def _deal_time_ms(deal: Any) -> int:
@@ -1277,6 +1359,13 @@ def _mt5_history_window(range_key: str) -> Tuple[datetime, datetime]:
     return from_time, to_time
 
 
+def _light_snapshot_trade_count() -> int:
+    """按全量历史同口径计算轻快照成交数，保证和 history 接口真值一致。"""
+    raw_deals = _progressive_trade_history_deals("all")
+    trades = _map_trade_deals(raw_deals)
+    return len(trades)
+
+
 def _parse_login_value(raw_login: Any) -> int:
     """把账号值转换成 int，失败时返回 0。"""
     try:
@@ -1471,6 +1560,7 @@ def _mt5_initialize(
     server_name: Optional[str] = None,
 ) -> Tuple[bool, str]:
     kwargs = {"timeout": MT5_INIT_TIMEOUT_MS}
+    auth_requested = bool(login and password and server_name)
     if path_value:
         kwargs["path"] = path_value
     if login and password and server_name:
@@ -1486,7 +1576,9 @@ def _mt5_initialize(
         legacy_kwargs.pop("timeout", None)
         try:
             ok = bool(mt5.initialize(**legacy_kwargs))
-        except TypeError:
+        except TypeError as auth_signature_error:
+            if auth_requested:
+                return False, f"MT5 initialize does not support authenticated init: {auth_signature_error}"
             legacy_kwargs.pop("login", None)
             legacy_kwargs.pop("password", None)
             legacy_kwargs.pop("server", None)
@@ -1539,22 +1631,7 @@ def _ensure_mt5() -> None:
     server_candidates = _server_candidates()
     for path_value in attempts:
         label = path_value if path_value else "<auto>"
-
-        # 优先附着到当前终端已有会话，避免重新拉起鉴权后进入缺历史缓存的上下文。
-        _shutdown_mt5()
-        initialized, init_message = _mt5_initialize(path_value)
-        if not initialized:
-            errors.append(f"init({label})={init_message}")
-        else:
-            logged_in, login_message = _mt5_login()
-            if logged_in:
-                mt5_last_connected_path = label
-                return
-            errors.append(f"login({label})={login_message}")
-
-        # 回退到带鉴权初始化，兼容机器上还没有可复用登录态的场景。
         for server_name in server_candidates:
-            _shutdown_mt5()
             initialized, init_message = _mt5_initialize(
                 path_value,
                 login=resolved_login,
@@ -1606,6 +1683,55 @@ def _on_session_changed(action: str, profile: Optional[Dict[str, Any]]) -> None:
         _clear_runtime_session_credentials()
 
 
+def _probe_mt5_authenticated_session(login_value: int,
+                                     password_value: str,
+                                     server_value: str,
+                                     path_value: Optional[str]) -> Dict[str, str]:
+    """在独立进程里执行 MT5 登录探针，避免主进程被阻塞调用拖死。"""
+    probe_script = Path(__file__).resolve().parent / "mt5_login_probe.py"
+    if not probe_script.exists():
+        raise RuntimeError(f"mt5 login probe script missing: {probe_script}")
+    payload = {
+        "login": int(login_value),
+        "password": str(password_value or ""),
+        "server": str(server_value or ""),
+        "path": str(path_value or ""),
+        "timeoutMs": int(MT5_INIT_TIMEOUT_MS),
+    }
+    # 额外预留 5 秒给独立进程启动、JSON 编解码和退出，不放宽 MT5 自身登录预算。
+    process_timeout_seconds = max(5, int(math.ceil(MT5_INIT_TIMEOUT_MS / 1000.0)) + 5)
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(probe_script)],
+            input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=process_timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"MT5 login probe timed out after {process_timeout_seconds}s") from exc
+    stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace").strip()
+    stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+    try:
+        result = json.loads(stdout_text or "{}")
+    except Exception as exc:
+        raise RuntimeError(f"MT5 login probe returned invalid JSON: {stdout_text or stderr_text}") from exc
+    if not isinstance(result, dict):
+        raise RuntimeError(f"MT5 login probe returned invalid payload: {stdout_text or stderr_text}")
+    if not bool(result.get("ok", False)):
+        error_message = str(result.get("error") or stderr_text or "MT5 login probe failed")
+        raise RuntimeError(error_message)
+    canonical_login = str(result.get("login") or "").strip()
+    canonical_server = str(result.get("server") or "").strip()
+    if not canonical_login or not canonical_server:
+        raise RuntimeError("MT5 login probe returned incomplete canonical identity")
+    return {
+        "login": canonical_login,
+        "server": canonical_server,
+    }
+
+
 class _SessionGatewayAdapter:
     """会话管理器使用的最小 MT5 网关适配器。"""
 
@@ -1616,23 +1742,14 @@ class _SessionGatewayAdapter:
         login_value = int(str(login or "").strip())
         password_value = str(password or "")
         server_value = str(server or "").strip()
-        _shutdown_mt5()
-        initialized, message = _mt5_initialize(PATH)
-        if not initialized:
-            raise RuntimeError(f"MT5 initialize failed: {message}")
-        try:
-            logged_in = bool(mt5.login(login_value, password=password_value, server=server_value, timeout=MT5_INIT_TIMEOUT_MS))
-        except TypeError:
-            logged_in = bool(mt5.login(login_value, password=password_value, server=server_value))
-        if not logged_in:
-            raise RuntimeError(f"MT5 login failed: {mt5.last_error()}")
-        account = mt5.account_info()
-        canonical_login = str(getattr(account, "login", "") or "").strip()
-        canonical_server = str(getattr(account, "server", "") or "").strip()
-        if not canonical_login or not canonical_server:
-            _shutdown_mt5()
-            _clear_runtime_session_credentials()
-            raise ValueError("gateway canonical account identity missing after MT5 login")
+        authenticated = _probe_mt5_authenticated_session(
+            login_value=login_value,
+            password_value=password_value,
+            server_value=server_value,
+            path_value=PATH,
+        )
+        canonical_login = str(authenticated.get("login") or "").strip()
+        canonical_server = str(authenticated.get("server") or "").strip()
         _set_runtime_session_credentials(canonical_login, password_value, canonical_server)
         return {
             "login": canonical_login,
@@ -1696,10 +1813,14 @@ def _deal_profit(deal) -> float:
     )
 
 
-def _build_curve(range_key: str, current_positions: Optional[List[Dict]] = None) -> List[Dict]:
-    from_time, to_time = _mt5_history_window(range_key)
-    deals = mt5.history_deals_get(from_time, to_time) or []
-    account = mt5.account_info()
+def _build_curve_from_deals(
+    deals: List[Any],
+    current_positions: Optional[List[Dict]] = None,
+    account: Optional[Any] = None,
+) -> List[Dict]:
+    # 完整历史链复用同一份成交历史，避免曲线和交易列表重复扫 MT5。
+    deal_rows = deals or []
+    account = account or mt5.account_info()
     if account is None:
         return []
 
@@ -1707,7 +1828,7 @@ def _build_curve(range_key: str, current_positions: Optional[List[Dict]] = None)
     current_equity = float(getattr(account, "equity", 0.0))
     realized = 0.0
     deal_history: List[Dict[str, Any]] = []
-    for deal in deals:
+    for deal in deal_rows:
         profit = float(getattr(deal, "profit", 0.0))
         commission = float(getattr(deal, "commission", 0.0))
         swap = float(getattr(deal, "swap", 0.0))
@@ -1740,6 +1861,11 @@ def _build_curve(range_key: str, current_positions: Optional[List[Dict]] = None)
         contract_size_fn=contract_size_fn,
         now_ms=_now_ms(),
     )
+
+
+def _build_curve(range_key: str, current_positions: Optional[List[Dict]] = None) -> List[Dict]:
+    raw_deals = _progressive_trade_history_deals(range_key)
+    return _build_curve_from_deals(raw_deals, current_positions=current_positions)
 
 
 def _contract_size_for_symbol(symbol: str, cache: Dict[str, float]) -> float:
@@ -1911,18 +2037,106 @@ def _curve_sampling_interval(duration_ms: int) -> Tuple[str, int]:
     return "4h", 4 * hour_ms
 
 
+def _curve_sampling_mt5_timeframe(interval: str) -> Any:
+    safe_interval = str(interval or "").strip().lower()
+    if mt5 is None:
+        return None
+    mapping = {
+        "1m": "TIMEFRAME_M1",
+        "5m": "TIMEFRAME_M5",
+        "15m": "TIMEFRAME_M15",
+        "1h": "TIMEFRAME_H1",
+        "4h": "TIMEFRAME_H4",
+    }
+    timeframe_name = mapping.get(safe_interval, "TIMEFRAME_M1")
+    return getattr(mt5, timeframe_name, None)
+
+
+def _extract_mt5_rate_field(rate: Any, key: str) -> Any:
+    if rate is None:
+        return None
+    if isinstance(rate, dict):
+        return rate.get(key)
+    if hasattr(rate, key):
+        return getattr(rate, key)
+    try:
+        return rate[key]
+    except Exception:
+        return None
+
+
+def _fetch_curve_price_samples_from_mt5(symbol: str,
+                                        start_ms: int,
+                                        end_ms: int) -> List[Dict[str, float]]:
+    safe_symbol = str(symbol or "").strip()
+    safe_start = max(0, int(start_ms or 0))
+    safe_end = max(safe_start, int(end_ms or 0))
+    if mt5 is None or not safe_symbol or safe_end <= safe_start:
+        return []
+
+    interval, interval_ms = _curve_sampling_interval(safe_end - safe_start)
+    timeframe = _curve_sampling_mt5_timeframe(interval)
+    if timeframe is None:
+        return []
+
+    selector = getattr(mt5, "symbol_select", None)
+    if callable(selector):
+        try:
+            selector(safe_symbol, True)
+        except Exception:
+            pass
+
+    query_start_ms = _strip_mt5_time_offset_ms(safe_start)
+    query_end_ms = _strip_mt5_time_offset_ms(safe_end)
+    date_from = datetime.fromtimestamp(query_start_ms / 1000.0, tz=timezone.utc)
+    date_to = datetime.fromtimestamp(query_end_ms / 1000.0, tz=timezone.utc)
+
+    rates = mt5.copy_rates_range(safe_symbol, timeframe, date_from, date_to)
+    if rates is None:
+        return []
+
+    collected: List[Dict[str, float]] = []
+    for rate in rates:
+        open_seconds = _extract_mt5_rate_field(rate, "time")
+        close_price = _extract_mt5_rate_field(rate, "close")
+        try:
+            open_ms = int(open_seconds or 0) * 1000
+            close_price_value = float(close_price or 0.0)
+        except Exception:
+            continue
+        if open_ms <= 0 or close_price_value <= 0.0:
+            continue
+        close_ms = _apply_mt5_time_offset_ms(open_ms + interval_ms - 1)
+        if close_ms <= safe_start or close_ms >= safe_end:
+            continue
+        collected.append(
+            {
+                "timestamp": close_ms,
+                "symbol": safe_symbol,
+                "price": close_price_value,
+            }
+        )
+    return collected
+
+
 def _fetch_curve_price_samples(symbol: str,
                                start_ms: int,
                                end_ms: int,
                                fetch_rows_fn=None) -> List[Dict[str, float]]:
-    normalized_symbol = _normalize_curve_market_symbol(symbol)
     safe_start = max(0, int(start_ms or 0))
     safe_end = max(safe_start, int(end_ms or 0))
-    if not normalized_symbol or safe_end <= safe_start:
+    if safe_end <= safe_start:
+        return []
+
+    if fetch_rows_fn is None:
+        return _fetch_curve_price_samples_from_mt5(symbol, safe_start, safe_end)
+
+    normalized_symbol = _normalize_curve_market_symbol(symbol)
+    if not normalized_symbol:
         return []
 
     interval, interval_ms = _curve_sampling_interval(safe_end - safe_start)
-    fetcher = fetch_rows_fn or _fetch_binance_kline_rows
+    fetcher = fetch_rows_fn
     cursor = safe_start
     collected: Dict[int, Dict[str, float]] = {}
 
@@ -2746,9 +2960,10 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
             if account is None:
                 raise RuntimeError("account_info is None")
             positions = _map_positions()
-            points = _build_curve(range_key, positions)
             pending_orders = _map_pending_orders()
-            trades = _map_trades(range_key)
+            raw_deals = _progressive_trade_history_deals(range_key)
+            points = _build_curve_from_deals(raw_deals, current_positions=positions, account=account)
+            trades = _map_trade_deals(raw_deals)
             overview = _build_overview(positions, trades)
             indicators = _curve_indicators(points)
             stats = _build_stats(positions, trades, points)
@@ -2796,14 +3011,8 @@ def _snapshot_from_mt5_light() -> Dict:
                 raise RuntimeError("account_info is None")
             positions = _map_positions()
             pending_orders = _map_pending_orders()
-            from_time, to_time = _mt5_history_window("all")
-            trade_count = 0
-            try:
-                history_deals_total = getattr(mt5, "history_deals_total", None)
-                if callable(history_deals_total):
-                    trade_count = int(history_deals_total(from_time, to_time) or 0)
-            except Exception:
-                trade_count = 0
+            trade_count = _light_snapshot_trade_count()
+            overview = _build_overview(positions, [])
             return {
                 "accountMeta": {
                     "login": str(getattr(account, "login", LOGIN)),
@@ -2821,11 +3030,15 @@ def _snapshot_from_mt5_light() -> Dict:
                     "name": str(getattr(account, "name", "")),
                     "company": str(getattr(account, "company", "")),
                     "range": "light",
+                    # 轻快照只读取历史成交总数，供客户端判断是否需要补拉全量历史。
                     "tradeCount": trade_count,
                     "positionCount": len(positions),
                     "pendingOrderCount": len(pending_orders),
                     "curvePointCount": 0,
                 },
+                "overviewMetrics": overview,
+                "curveIndicators": [],
+                "statsMetrics": [],
                 "positions": positions,
                 "pendingOrders": pending_orders,
             }
@@ -3480,9 +3693,10 @@ def _build_snapshot_with_cache(range_key: str) -> Dict:
 
 # 构建账户轻快照缓存，避免高频 v2 snapshot/sync 重复生成整份历史对象。
 def _build_account_light_snapshot_with_cache() -> Dict:
+    global light_snapshot_building
     cache_key = "account-light"
     now_ms = _now_ms()
-    with snapshot_cache_lock:
+    with light_snapshot_build_condition:
         cached = snapshot_build_cache.get(cache_key)
         if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
             cached_snapshot = cached.get("snapshot")
@@ -3496,14 +3710,34 @@ def _build_account_light_snapshot_with_cache() -> Dict:
             cached["lastAccessAt"] = now_ms
             _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
             return cached.get("snapshot")
+        while light_snapshot_building:
+            light_snapshot_build_condition.wait()
+            cached = snapshot_build_cache.get(cache_key)
+            if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+                cached_snapshot = cached.get("snapshot")
+                if _is_mt5_pull_account_snapshot(cached_snapshot):
+                    cached["lastAccessAt"] = now_ms
+                    _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+                    return cached_snapshot
+                snapshot_build_cache.pop(cache_key, None)
+        light_snapshot_building = True
 
-    snapshot = _build_account_light_snapshot()
-    with snapshot_cache_lock:
+    try:
+        snapshot = _build_account_light_snapshot()
+    except Exception:
+        with light_snapshot_build_condition:
+            light_snapshot_building = False
+            light_snapshot_build_condition.notify_all()
+        raise
+
+    with light_snapshot_build_condition:
         _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
             "builtAt": now_ms,
             "lastAccessAt": now_ms,
             "snapshot": snapshot,
         }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+        light_snapshot_building = False
+        light_snapshot_build_condition.notify_all()
     return snapshot
 
 
@@ -3838,7 +4072,7 @@ def _strip_account_light_snapshot(snapshot: Optional[Dict[str, Any]]) -> Dict[st
 
 # 轻快照是 canonical 全快照的纯投影，避免和历史链出现不同字段口径。
 def _build_account_light_snapshot() -> Dict[str, Any]:
-    return _strip_account_light_snapshot(_build_snapshot_with_cache("all"))
+    return _strip_account_light_snapshot(_snapshot_from_mt5_light())
 
 
 def _join_query(params: Dict[str, Any]) -> str:
@@ -4218,6 +4452,8 @@ def health():
         info = {
             "ok": True,
             "gatewayMode": GATEWAY_MODE,
+            "bundleFingerprint": BUNDLE_FINGERPRINT,
+            "bundleGeneratedAt": BUNDLE_GENERATED_AT,
             "mt5PackageAvailable": mt5 is not None,
             "mt5Configured": _is_mt5_configured(),
             "mt5ConfiguredLogin": str(LOGIN),
@@ -4265,6 +4501,8 @@ def binance_rest_proxy(path_value: str, request: Request):
 def source_status():
     return {
         "gatewayMode": GATEWAY_MODE,
+        "bundleFingerprint": BUNDLE_FINGERPRINT,
+        "bundleGeneratedAt": BUNDLE_GENERATED_AT,
         "mt5PackageAvailable": mt5 is not None,
         "mt5Configured": _is_mt5_configured(),
         "mt5ConfiguredLogin": str(LOGIN),

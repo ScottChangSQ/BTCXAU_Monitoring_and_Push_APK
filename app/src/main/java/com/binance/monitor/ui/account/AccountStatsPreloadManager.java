@@ -309,7 +309,9 @@ public class AccountStatsPreloadManager {
             AccountStorageRepository.StoredSnapshot storedSnapshot =
                     buildStoredSnapshotFromSnapshotOnly(snapshotPayload);
             accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
-            Cache cache = buildCache(storedSnapshot, remoteTradeCount);
+            AccountStorageRepository.StoredSnapshot cachedSnapshot =
+                    accountStorageRepository.loadStoredSnapshot();
+            Cache cache = buildCache(cachedSnapshot, remoteTradeCount);
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
             return cache;
@@ -339,32 +341,33 @@ public class AccountStatsPreloadManager {
         AccountTimeRange safeRange = range == null ? AccountTimeRange.ALL : range;
         try {
             AccountSnapshotPayload v2Payload = gatewayV2Client.fetchAccountSnapshot();
-            AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(safeRange, "");
             v2SnapshotStore.writeAccountSnapshot(v2Payload.getRawJson());
-            AccountStorageRepository.StoredSnapshot storedSnapshot =
-                    buildStoredSnapshotFromV2(v2Payload, historyPayload);
-            accountStorageRepository.persistV2Snapshot(storedSnapshot);
-            AccountSnapshot snapshot = new AccountSnapshot(
-                    storedSnapshot.getOverviewMetrics(),
-                    storedSnapshot.getCurvePoints(),
-                    storedSnapshot.getCurveIndicators(),
-                    storedSnapshot.getPositions(),
-                    storedSnapshot.getPendingOrders(),
-                    storedSnapshot.getTrades(),
-                    storedSnapshot.getStatsMetrics()
+            int remoteTradeCount = resolveRemoteTradeCount(v2Payload);
+            Cache previous = latestCache;
+            int storedTradeCount = accountStorageRepository.loadTrades().size();
+            int cachedTradeCount = previous == null ? storedTradeCount : previous.getHistoryTradeCount();
+            boolean hasStoredTradeHistory = storedTradeCount > 0;
+            boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
+                    remoteTradeCount,
+                    cachedTradeCount,
+                    hasStoredTradeHistory
             );
-            Cache cache = new Cache(
-                    true,
-                    snapshot,
-                    storedSnapshot.getAccount(),
-                    storedSnapshot.getServer(),
-                    storedSnapshot.getSource(),
-                    storedSnapshot.getGateway(),
-                    storedSnapshot.getUpdatedAt(),
-                    "",
-                    System.currentTimeMillis(),
-                    storedSnapshot.getTrades().size()
-            );
+
+            Cache cache;
+            if (shouldRefreshAllHistory) {
+                AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(safeRange, "");
+                AccountStorageRepository.StoredSnapshot storedSnapshot =
+                        buildStoredSnapshotFromV2(v2Payload, historyPayload);
+                accountStorageRepository.persistV2Snapshot(storedSnapshot);
+                cache = buildCache(storedSnapshot, storedSnapshot.getTrades().size());
+            } else {
+                AccountStorageRepository.StoredSnapshot storedSnapshot =
+                        buildStoredSnapshotFromSnapshotOnly(v2Payload);
+                accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
+                AccountStorageRepository.StoredSnapshot cachedSnapshot =
+                        accountStorageRepository.loadStoredSnapshot();
+                cache = buildCache(cachedSnapshot, remoteTradeCount);
+            }
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
             return cache;
@@ -518,7 +521,7 @@ public class AccountStatsPreloadManager {
     // 读取服务端当前历史成交总数，用它判断是否需要补拉全量历史。
     private int resolveRemoteTradeCount(AccountSnapshotPayload snapshotPayload) {
         JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
-        return (int) optLongAny(accountMeta, 0L, "tradeCount");
+        return (int) optLongAny(accountMeta, -1L, "tradeCount");
     }
 
     // 解析服务端直接返回的展示指标，不再本地补算账户真值。

@@ -135,8 +135,9 @@ public class FloatingWindowManager {
         }
         handler.removeCallbacks(miniBlinkRunnable);
         miniBlinkActive = false;
+        View root = binding.getRoot();
         try {
-            windowManager.removeView(binding.getRoot());
+            windowManager.removeViewImmediate(root);
         } catch (Exception ignored) {
         }
         binding = null;
@@ -148,8 +149,13 @@ public class FloatingWindowManager {
     }
 
     private void showIfPossible() {
-        if (!enabled || showing || !PermissionHelper.canDrawOverlays(context)) {
+        if (!enabled || isBindingAttachedToWindow() || !PermissionHelper.canDrawOverlays(context)) {
             return;
+        }
+        if (binding != null) {
+            binding = null;
+            layoutParams = null;
+            showing = false;
         }
         binding = LayoutFloatingWindowBinding.inflate(LayoutInflater.from(context));
         layoutParams = new WindowManager.LayoutParams(
@@ -201,6 +207,18 @@ public class FloatingWindowManager {
         bindDragSurface(binding.viewMiniSquare);
         windowManager.addView(binding.getRoot(), layoutParams);
         showing = true;
+    }
+
+    // 悬浮窗唯一性以真实附着状态为准，避免布尔状态与系统窗口状态短暂分叉后重复 addView。
+    private boolean isBindingAttachedToWindow() {
+        if (binding == null) {
+            return false;
+        }
+        View root = binding.getRoot();
+        if (root == null) {
+            return false;
+        }
+        return root.getParent() != null || root.isAttachedToWindow() || root.getWindowToken() != null;
     }
 
     private void render() {

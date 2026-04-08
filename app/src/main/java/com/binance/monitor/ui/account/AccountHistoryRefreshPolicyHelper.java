@@ -13,11 +13,11 @@ public final class AccountHistoryRefreshPolicyHelper {
     public static boolean shouldRefreshAllHistory(int remoteTradeCount,
                                                   int cachedTradeCount,
                                                   boolean hasStoredTradeHistory) {
-        if (remoteTradeCount <= 0) {
-            return !hasStoredTradeHistory || cachedTradeCount <= 0;
+        if (remoteTradeCount < 0) {
+            return !hasStoredTradeHistory || cachedTradeCount < 0;
         }
         if (cachedTradeCount < 0) {
-            return !hasStoredTradeHistory;
+            return remoteTradeCount > 0;
         }
         return remoteTradeCount != cachedTradeCount;
     }

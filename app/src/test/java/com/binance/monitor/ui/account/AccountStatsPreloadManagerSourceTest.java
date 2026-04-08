@@ -71,14 +71,14 @@ public class AccountStatsPreloadManagerSourceTest {
     }
 
     @Test
-    public void snapshotOnlyPathShouldNotReloadMergedLocalSnapshotIntoLatestCache() throws Exception {
+    public void snapshotOnlyPathShouldReuseStoredHistoryWhenSkippingHistoryReload() throws Exception {
         String source = new String(
                 Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertFalse(source.contains("accountStorageRepository.loadStoredSnapshot();"));
-        assertTrue(source.contains("Cache cache = buildCache(storedSnapshot, remoteTradeCount);"));
+        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot cachedSnapshot =\n                    accountStorageRepository.loadStoredSnapshot();"));
+        assertTrue(source.contains("Cache cache = buildCache(cachedSnapshot, remoteTradeCount);"));
     }
 
     @Test
@@ -93,6 +93,18 @@ public class AccountStatsPreloadManagerSourceTest {
     }
 
     @Test
+    public void uiRefreshShouldOnlyFetchHistoryAfterTradeCountChange() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("));
+        assertTrue(source.contains("AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(safeRange, \"\");"));
+        assertTrue(source.contains("if (shouldRefreshAllHistory) {"));
+    }
+
+    @Test
     public void preloadManagerFailureCacheShouldNotReusePreviousSnapshotOrLegacyTradeCountAlias() throws Exception {
         String source = new String(
                 Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
@@ -102,6 +114,6 @@ public class AccountStatsPreloadManagerSourceTest {
         assertFalse(source.contains("previous.snapshot"));
         assertFalse(source.contains("\"trade_count\""));
         assertTrue(source.contains("new AccountSnapshot("));
-        assertTrue(source.contains("optLongAny(accountMeta, 0L, \"tradeCount\")"));
+        assertTrue(source.contains("optLongAny(accountMeta, -1L, \"tradeCount\")"));
     }
 }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import subprocess
 import sys
 import time
 import threading
@@ -193,6 +194,43 @@ class V2SessionContractsTests(unittest.TestCase):
 
         self.assertTrue(configured)
 
+    def test_current_mt5_credentials_should_not_deadlock_when_state_lock_already_held(self):
+        """账户主链持有 state_lock 时，再读取运行时凭据也不应自锁死。"""
+        original_runtime = dict(getattr(server_v2, "session_runtime_credentials", {}))
+        completed = threading.Event()
+        result = {}
+
+        def _worker():
+            try:
+                with server_v2.state_lock:
+                    result["creds"] = server_v2._current_mt5_credentials()
+            finally:
+                completed.set()
+
+        try:
+            server_v2.session_runtime_credentials.clear()
+            server_v2.session_runtime_credentials.update(
+                {
+                    "mode": "remote_active",
+                    "login": 12345678,
+                    "password": "runtime-secret",
+                    "server": "ICMarketsSC-MT5-6",
+                }
+            )
+            thread = threading.Thread(target=_worker, daemon=True)
+            thread.start()
+            self.assertTrue(
+                completed.wait(0.3),
+                "state_lock deadlocked while reading runtime MT5 credentials",
+            )
+        finally:
+            server_v2.session_runtime_credentials.clear()
+            server_v2.session_runtime_credentials.update(original_runtime)
+
+        self.assertEqual(12345678, result["creds"]["login"])
+        self.assertEqual("runtime-secret", result["creds"]["password"])
+        self.assertEqual("ICMarketsSC-MT5-6", result["creds"]["server"])
+
     def test_remote_logged_out_should_not_fallback_to_env(self):
         """登出后应进入 remote_logged_out，且不自动回退 env。"""
         original_runtime = dict(getattr(server_v2, "session_runtime_credentials", {}))
@@ -266,6 +304,101 @@ class V2SessionContractsTests(unittest.TestCase):
         clear_mock.assert_called_once_with()
         self.assertEqual("logged_out", payload["state"])
         self.assertIsNone(payload["activeAccount"])
+
+    def test_session_gateway_adapter_should_initialize_mt5_with_credentials_in_single_step(self):
+        """登录适配器应通过独立进程探针拿到 canonical 身份，不再在主进程里追加阻塞登录。"""
+        fake_mt5 = mock.Mock()
+        with mock.patch.object(server_v2, "mt5", fake_mt5), \
+                mock.patch.object(server_v2, "PATH", r"C:\MT5\terminal64.exe"), \
+                mock.patch.object(server_v2, "_shutdown_mt5") as shutdown_mock, \
+                mock.patch.object(
+                    server_v2,
+                    "_probe_mt5_authenticated_session",
+                    return_value={"login": "12345678", "server": "ICMarketsSC-MT5-6"},
+                ) as probe_mock, \
+                mock.patch.object(server_v2, "_set_runtime_session_credentials") as set_runtime_mock:
+            payload = server_v2._SessionGatewayAdapter().login_mt5(
+                login="12345678",
+                password="secret",
+                server="ICMarketsSC-MT5-6",
+            )
+
+        shutdown_mock.assert_not_called()
+        fake_mt5.shutdown.assert_not_called()
+        probe_mock.assert_called_once_with(
+            login_value=12345678,
+            password_value="secret",
+            server_value="ICMarketsSC-MT5-6",
+            path_value=r"C:\MT5\terminal64.exe",
+        )
+        set_runtime_mock.assert_called_once_with("12345678", "secret", "ICMarketsSC-MT5-6")
+        self.assertEqual({"login": "12345678", "server": "ICMarketsSC-MT5-6"}, payload)
+
+    def test_probe_mt5_authenticated_session_should_fail_when_probe_times_out(self):
+        """独立进程探针超时时，应向上返回明确超时错误。"""
+        timeout_error = subprocess.TimeoutExpired(cmd=["python", "probe"], timeout=55)
+        with mock.patch.object(server_v2, "MT5_INIT_TIMEOUT_MS", 50000), \
+                mock.patch("bridge.mt5_gateway.server_v2.subprocess.run", side_effect=timeout_error):
+            with self.assertRaises(RuntimeError) as error_ctx:
+                server_v2._probe_mt5_authenticated_session(
+                    login_value=12345678,
+                    password_value="secret",
+                    server_value="ICMarketsSC-MT5-6",
+                    path_value=r"C:\MT5\terminal64.exe",
+                )
+
+        self.assertIn("timed out", str(error_ctx.exception))
+
+    def test_probe_mt5_authenticated_session_should_fail_when_probe_returns_error(self):
+        """独立进程探针返回错误时，应把错误消息透传出来。"""
+        completed = subprocess.CompletedProcess(
+            args=["python", "probe"],
+            returncode=1,
+            stdout=json.dumps({"ok": False, "error": "MetaTrader5 initialize/login failed"}).encode("utf-8"),
+            stderr=b"",
+        )
+        with mock.patch("bridge.mt5_gateway.server_v2.subprocess.run", return_value=completed):
+            with self.assertRaises(RuntimeError) as error_ctx:
+                server_v2._probe_mt5_authenticated_session(
+                    login_value=12345678,
+                    password_value="secret",
+                    server_value="ICMarketsSC-MT5-6",
+                    path_value=r"C:\MT5\terminal64.exe",
+                )
+
+        self.assertIn("initialize/login failed", str(error_ctx.exception))
+
+    def test_authenticated_mt5_initialize_should_fail_when_sdk_cannot_accept_auth_signature(self):
+        """带鉴权初始化若签名不支持，应直接失败，不能静默退回成未鉴权初始化。"""
+        fake_mt5 = mock.Mock()
+        fake_mt5.initialize.side_effect = [
+            TypeError("timeout signature unsupported"),
+            TypeError("authenticated init unsupported"),
+        ]
+
+        with mock.patch.object(server_v2, "mt5", fake_mt5):
+            ok, message = server_v2._mt5_initialize(
+                path_value=r"C:\MT5\terminal64.exe",
+                login=12345678,
+                password="secret",
+                server_name="ICMarketsSC-MT5-6",
+            )
+
+        self.assertFalse(ok)
+        self.assertIn("authenticated init", message)
+        self.assertEqual(2, fake_mt5.initialize.call_count)
+
+    def test_mt5_init_timeout_should_be_capped_to_client_contract(self):
+        """环境变量把 MT5 登录预算调大时，也不能突破客户端等待契约。"""
+        with mock.patch.dict(os.environ, {"MT5_INIT_TIMEOUT_MS": "90000"}, clear=False):
+            timeout_ms = server_v2._read_bounded_env_int(
+                "MT5_INIT_TIMEOUT_MS",
+                default=50000,
+                minimum=1000,
+                maximum=50000,
+            )
+
+        self.assertEqual(50000, timeout_ms)
 
     def test_session_public_key_should_return_stable_shape(self):
         """public-key 接口应返回稳定结构。"""

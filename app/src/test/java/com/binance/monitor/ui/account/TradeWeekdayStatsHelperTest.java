@@ -53,8 +53,8 @@ public class TradeWeekdayStatsHelperTest {
     }
 
     @Test
-    public void buildRowsShouldNormalizeSecondBasedTimestampsBeforeResolvingWeekday() {
-        TradeRecordItem trade = buildTrade(1704067200L, 1704153600L, 18d, 0d);
+    public void buildRowsShouldUseCanonicalMillisecondTimestampsForWeekdayResolution() {
+        TradeRecordItem trade = buildTrade(1704067200000L, 1704153600000L, 18d, 0d);
 
         List<TradeWeekdayStatsHelper.Row> openRows = TradeWeekdayStatsHelper.buildRows(
                 Arrays.asList(trade),

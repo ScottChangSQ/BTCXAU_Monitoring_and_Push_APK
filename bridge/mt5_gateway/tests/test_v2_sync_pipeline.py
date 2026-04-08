@@ -170,7 +170,16 @@ class V2SyncPipelineTests(unittest.TestCase):
             "restUpstream": "https://fapi.binance.com",
             "wsUpstream": "wss://fstream.binance.com",
         }
-        with mock.patch.object(server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot), mock.patch.object(
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "activated",
+                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot), mock.patch.object(
             server_v2, "_build_v2_market_section", return_value=market
         ):
             payload = server_v2.v2_sync_delta(syncToken="")
@@ -188,6 +197,15 @@ class V2SyncPipelineTests(unittest.TestCase):
         first_snapshot = self._build_stub_snapshot(position_count=0, order_count=0)
         second_snapshot = self._build_stub_snapshot(position_count=1, order_count=0)
         with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "activated",
+                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
             server_v2,
             "_build_account_light_snapshot_with_cache",
             side_effect=[first_snapshot, second_snapshot],
@@ -201,6 +219,40 @@ class V2SyncPipelineTests(unittest.TestCase):
         self.assertEqual(1, len(payload["accountDelta"]))
         self.assertEqual("accountSnapshotChanged", payload["accountDelta"][0]["type"])
         self.assertEqual(1, len(payload["accountDelta"][0]["positions"]["upsert"]))
+
+    def test_runtime_snapshot_should_not_touch_mt5_when_session_logged_out(self):
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "logged_out",
+                "activeAccount": None,
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
+            server_v2,
+            "_build_account_light_snapshot_with_cache",
+            side_effect=AssertionError("logged_out stream should not build MT5 snapshot"),
+        ), mock.patch.object(
+            server_v2,
+            "_build_v2_market_section",
+            return_value={
+                "source": "binance",
+                "symbols": ["BTCUSDT", "XAUUSDT"],
+                "restUpstream": "https://fapi.binance.com",
+                "wsUpstream": "wss://fstream.binance.com",
+            },
+        ):
+            snapshot = server_v2._build_v2_sync_runtime_snapshot(server_time=606)
+
+        self.assertEqual("", snapshot["account"]["accountMeta"]["login"])
+        self.assertEqual("", snapshot["account"]["accountMeta"]["server"])
+        self.assertEqual("remote_logged_out", snapshot["account"]["accountMeta"]["source"])
+        self.assertEqual([], snapshot["account"]["positions"])
+        self.assertEqual([], snapshot["account"]["orders"])
+        self.assertEqual(0, snapshot["tradeCount"])
+        self.assertEqual(0, snapshot["curvePointCount"])
 
     def test_v2_stream_sends_bootstrap_then_non_heartbeat_message(self):
         snapshot = self._build_stub_snapshot(position_count=1, order_count=1)

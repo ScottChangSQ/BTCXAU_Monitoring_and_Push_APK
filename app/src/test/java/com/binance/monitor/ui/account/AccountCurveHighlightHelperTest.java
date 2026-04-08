@@ -52,7 +52,7 @@ public class AccountCurveHighlightHelperTest {
     }
 
     @Test
-    public void resolveSharedHighlightShouldInterpolateCurveValuesForMidpoint() {
+    public void resolveSharedHighlightShouldSnapToNearestRealPointForMidpoint() {
         List<CurvePoint> curvePoints = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 90d, 0.10d),
                 new CurvePoint(3_000L, 140d, 110d, 0.50d)
@@ -76,13 +76,13 @@ public class AccountCurveHighlightHelperTest {
                 );
 
         assertNotNull(snapshot);
-        assertEquals(2_000L, snapshot.getTargetTimestamp());
-        assertEquals(2_000L, snapshot.getCurvePoint().getTimestamp());
-        assertEquals(120d, snapshot.getCurvePoint().getEquity(), 1e-9);
-        assertEquals(100d, snapshot.getCurvePoint().getBalance(), 1e-9);
-        assertEquals(0.30d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
-        assertEquals(-0.12d, snapshot.getDrawdownPoint().getDrawdownRate(), 1e-9);
-        assertEquals(0.02d, snapshot.getDailyReturnPoint().getReturnRate(), 1e-9);
+        assertEquals(1_000L, snapshot.getTargetTimestamp());
+        assertEquals(1_000L, snapshot.getCurvePoint().getTimestamp());
+        assertEquals(100d, snapshot.getCurvePoint().getEquity(), 1e-9);
+        assertEquals(90d, snapshot.getCurvePoint().getBalance(), 1e-9);
+        assertEquals(0.10d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
+        assertEquals(-0.20d, snapshot.getDrawdownPoint().getDrawdownRate(), 1e-9);
+        assertEquals(-0.08d, snapshot.getDailyReturnPoint().getReturnRate(), 1e-9);
     }
 
     @Test
@@ -108,7 +108,7 @@ public class AccountCurveHighlightHelperTest {
     }
 
     @Test
-    public void resolveSharedHighlightShouldAllowExactTimestampToWinForSubCharts() {
+    public void resolveSharedHighlightShouldUseExactTimestampAsAnchorButStillSnapToRealPoint() {
         List<CurvePoint> curvePoints = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 90d, 0.10d),
                 new CurvePoint(2_000L, 140d, 110d, 0.50d),
@@ -126,11 +126,11 @@ public class AccountCurveHighlightHelperTest {
                 );
 
         assertNotNull(snapshot);
-        assertEquals(2_500L, snapshot.getTargetTimestamp());
-        assertEquals(2_500L, snapshot.getCurvePoint().getTimestamp());
-        assertEquals(160d, snapshot.getCurvePoint().getEquity(), 1e-9);
-        assertEquals(120d, snapshot.getCurvePoint().getBalance(), 1e-9);
-        assertEquals(0.70d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
+        assertEquals(2_000L, snapshot.getTargetTimestamp());
+        assertEquals(2_000L, snapshot.getCurvePoint().getTimestamp());
+        assertEquals(140d, snapshot.getCurvePoint().getEquity(), 1e-9);
+        assertEquals(110d, snapshot.getCurvePoint().getBalance(), 1e-9);
+        assertEquals(0.50d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
     }
 
     @Test

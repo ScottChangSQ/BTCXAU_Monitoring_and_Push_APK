@@ -168,6 +168,7 @@ public class AccountStorageRepository {
         }
         accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
         accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
+        AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
 
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
         metaEntity.id = 1;
@@ -180,9 +181,15 @@ public class AccountStorageRepository {
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
-        metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
-        metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
-        metaEntity.curvePointsJson = curvePointsToJsonString(snapshot.getCurvePoints());
+        metaEntity.curveIndicatorsJson = snapshot.getCurveIndicators().isEmpty()
+                ? (existingMeta == null ? "[]" : safe(existingMeta.curveIndicatorsJson))
+                : metricsToJsonString(snapshot.getCurveIndicators());
+        metaEntity.statsMetricsJson = snapshot.getStatsMetrics().isEmpty()
+                ? (existingMeta == null ? "[]" : safe(existingMeta.statsMetricsJson))
+                : metricsToJsonString(snapshot.getStatsMetrics());
+        metaEntity.curvePointsJson = snapshot.getCurvePoints().isEmpty()
+                ? (existingMeta == null ? "[]" : safe(existingMeta.curvePointsJson))
+                : curvePointsToJsonString(snapshot.getCurvePoints());
         accountSnapshotDao.upsertMeta(metaEntity);
     }
 

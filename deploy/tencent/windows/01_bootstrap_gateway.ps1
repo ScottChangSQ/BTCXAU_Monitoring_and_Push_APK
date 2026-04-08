@@ -69,7 +69,21 @@ function Get-FileSha256 {
     if (-not (Test-Path $PathValue)) {
         return ""
     }
-    return (Get-FileHash -Algorithm SHA256 -LiteralPath $PathValue).Hash
+
+    $stream = [System.IO.File]::OpenRead($PathValue)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hashBytes = $sha256.ComputeHash($stream)
+            return ([System.BitConverter]::ToString($hashBytes)).Replace("-", "")
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
 }
 
 $pythonCmd = Get-Command $PythonExe -ErrorAction SilentlyContinue

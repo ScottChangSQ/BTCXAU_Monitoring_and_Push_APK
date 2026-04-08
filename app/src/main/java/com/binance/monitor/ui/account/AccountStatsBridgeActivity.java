@@ -11,6 +11,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -28,6 +29,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -118,6 +120,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final int RETURNS_BODY_HEIGHT_DP = 42;
     private static final int RETURNS_MONTH_GROUP_HEIGHT_DP = 44;
     private static final int RETURNS_STAGE_HEIGHT_DP = 38;
+    @Nullable
+    private AlertDialog activeLoginDialog;
     private static final String ACCOUNT = "7400048";
     private static final String SERVER = "ICMarketsSC-MT5-6";
 
@@ -192,6 +196,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private StatsMetricAdapter statsAdapter;
     private LogManager logManager;
     private ExecutorService ioExecutor;
+    private ExecutorService sessionExecutor;
     private GatewayV2SessionClient sessionClient;
     private SecureSessionPrefs secureSessionPrefs;
     private SessionCredentialEncryptor sessionCredentialEncryptor;
@@ -312,6 +317,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         accountStorageRepository = new AccountStorageRepository(getApplicationContext());
         logManager = LogManager.getInstance(getApplicationContext());
         ioExecutor = Executors.newSingleThreadExecutor();
+        sessionExecutor = Executors.newSingleThreadExecutor();
         sessionClient = new GatewayV2SessionClient(getApplicationContext());
         secureSessionPrefs = new SecureSessionPrefs(getApplicationContext());
         sessionCredentialEncryptor = new SessionCredentialEncryptor();
@@ -407,12 +413,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (ioExecutor != null) {
             ioExecutor.shutdownNow();
         }
+        if (sessionExecutor != null) {
+            sessionExecutor.shutdownNow();
+        }
         super.onDestroy();
     }
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
+            if (activeLoginDialog != null && activeLoginDialog.isShowing()) {
+                return super.dispatchTouchEvent(event);
+            }
             View focus = getCurrentFocus();
             if (focus instanceof EditText) {
                 int[] location = new int[2];
@@ -436,6 +448,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void setupOverviewHeader() {
         binding.ivAccountPrivacyToggle.setOnClickListener(v -> togglePrivacyMaskState());
         binding.tvAccountConnectionStatus.setOnClickListener(v -> {
+            logRemoteSessionDebug("点击账户连接状态: userLoggedIn=" + userLoggedIn);
             if (!userLoggedIn) {
                 showLoginDialog();
             } else {
@@ -706,6 +719,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void showLoginDialog() {
+        logRemoteSessionDebug("准备展示登录弹窗");
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
@@ -714,6 +728,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         int bottom = dpToPx(4);
         container.setPadding(horizontal, top, horizontal, bottom);
         container.setBackground(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // 远程交易账号输入只允许用户直接填写，避免系统自动填充抢占弹窗交互。
+            container.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // 远程会话属于敏感凭据输入，不允许辅助功能服务抓取明文内容。
+            container.setAccessibilityDataSensitive(View.ACCESSIBILITY_DATA_SENSITIVE_YES);
+        }
 
         EditText accountInput = createLoginField("账户名称", false);
         accountInput.setText(trim(loginAccountInput).isEmpty() ? ACCOUNT : trim(loginAccountInput));
@@ -741,10 +763,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 .setNegativeButton("取消", null)
                 .setPositiveButton("继续", null)
                 .create();
+        activeLoginDialog = dialog;
         if (dialog.getWindow() != null) {
+            dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
             dialog.getWindow().setBackgroundDrawable(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
         }
+        dialog.setOnDismissListener(ignored -> {
+            if (activeLoginDialog == dialog) {
+                activeLoginDialog = null;
+            }
+        });
         dialog.setOnShowListener(ignored -> {
+            logRemoteSessionDebug("登录弹窗已展示");
             Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
             Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
             if (positive != null) {
@@ -753,10 +783,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     String account = trim(accountInput.getText() == null ? "" : accountInput.getText().toString());
                     String password = trim(passwordInput.getText() == null ? "" : passwordInput.getText().toString());
                     String server = trim(serverInput.getText() == null ? "" : serverInput.getText().toString());
+                    logRemoteSessionDebug("点击登录继续: accountEmpty=" + account.isEmpty()
+                            + ", passwordEmpty=" + password.isEmpty()
+                            + ", serverEmpty=" + server.isEmpty()
+                            + ", remember=" + rememberCheckBox.isChecked());
                     if (account.isEmpty() || password.isEmpty() || server.isEmpty()) {
+                        logRemoteSessionDebug("登录继续被字段校验拦截");
                         Toast.makeText(this, "请完整填写账户、密码和服务器信息", Toast.LENGTH_SHORT).show();
                         return;
                     }
+                    logRemoteSessionDebug("登录继续通过校验，准备提交");
                     dialog.dismiss();
                     submitRemoteLogin(account, password, server, rememberCheckBox.isChecked());
                 });
@@ -788,6 +824,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         } else {
             input.setInputType(InputType.TYPE_CLASS_TEXT);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // 远程会话凭据不接入系统自动填充，避免 ColorOS 自动填充窗口打断确认按钮点击。
+            input.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+            input.setAutofillHints((String[]) null);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // 远程交易凭据属于敏感辅助功能数据，不允许第三方浮窗服务读取。
+            input.setAccessibilityDataSensitive(View.ACCESSIBILITY_DATA_SENSITIVE_YES);
         }
         return input;
     }
@@ -899,12 +944,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void logoutAccount() {
-        if (ioExecutor == null || remoteSessionCoordinator == null) {
+        if (sessionExecutor == null || remoteSessionCoordinator == null) {
             applyLoggedOutSessionState();
             return;
         }
         sessionStateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SUBMITTING, "正在退出登录");
-        ioExecutor.execute(() -> {
+        sessionExecutor.execute(() -> {
             try {
                 remoteSessionCoordinator.logoutCurrent();
                 runOnUiThread(this::applyLoggedOutSessionState);
@@ -1099,10 +1144,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 刷新服务器上的远程会话状态，并用真值覆盖本地缓存。
     private void refreshRemoteSessionStatus(boolean requestSnapshotAfter) {
-        if (ioExecutor == null || sessionClient == null) {
+        if (sessionExecutor == null || sessionClient == null) {
             return;
         }
-        ioExecutor.execute(() -> {
+        sessionExecutor.execute(() -> {
             try {
                 SessionStatusPayload status = sessionClient.fetchStatus();
                 runOnUiThread(() -> applyRemoteSessionStatus(status, requestSnapshotAfter));
@@ -1162,7 +1207,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 提交新账号远程登录。
     private void submitRemoteLogin(String account, String password, String server, boolean remember) {
-        if (ioExecutor == null || remoteSessionCoordinator == null) {
+        logRemoteSessionDebug("进入 submitRemoteLogin: account=" + account
+                + ", server=" + server
+                + ", remember=" + remember);
+        if (sessionExecutor == null || remoteSessionCoordinator == null) {
+            logRemoteSessionDebug("submitRemoteLogin 失败: 会话执行器未初始化");
+            handleRemoteSessionFailed("远程会话未初始化");
             return;
         }
         loginAccountInput = account;
@@ -1171,7 +1221,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (secureSessionPrefs != null) {
             secureSessionPrefs.saveDraftIdentity(account, server);
         }
-        ioExecutor.execute(() -> {
+        sessionExecutor.execute(() -> {
+            logRemoteSessionDebug("submitRemoteLogin 后台任务已启动: account=" + account
+                    + ", server=" + server);
             try {
                 AccountRemoteSessionCoordinator.SessionActionResult result = remoteSessionCoordinator.loginNewAccount(
                         new AccountRemoteSessionCoordinator.LoginRequest(
@@ -1182,19 +1234,30 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                 System.currentTimeMillis()
                         )
                 );
+                logRemoteSessionDebug("submitRemoteLogin 后台任务成功受理");
                 runOnUiThread(() -> applyRemoteSessionAccepted(result, "登录已受理，正在同步账户"));
             } catch (Exception ex) {
+                logRemoteSessionDebug("submitRemoteLogin 后台任务失败: " + ex.getMessage());
                 runOnUiThread(() -> handleRemoteSessionFailed(ex.getMessage()));
             }
         });
     }
 
-    // 提交已保存账号切换。
-    private void submitSavedAccountSwitch(@NonNull RemoteAccountProfile profile) {
-        if (ioExecutor == null || remoteSessionCoordinator == null || profile == null) {
+    // 统一记录远程会话调试日志，便于真机排查点击链和提交链。
+    private void logRemoteSessionDebug(@NonNull String message) {
+        if (logManager == null) {
             return;
         }
-        ioExecutor.execute(() -> {
+        logManager.info("RemoteSessionDebug: " + message);
+    }
+
+    // 提交已保存账号切换。
+    private void submitSavedAccountSwitch(@NonNull RemoteAccountProfile profile) {
+        if (sessionExecutor == null || remoteSessionCoordinator == null || profile == null) {
+            handleRemoteSessionFailed("远程会话未初始化");
+            return;
+        }
+        sessionExecutor.execute(() -> {
             try {
                 AccountRemoteSessionCoordinator.SessionActionResult result = remoteSessionCoordinator.switchSavedAccount(profile.getProfileId());
                 runOnUiThread(() -> applyRemoteSessionAccepted(result, "切换已受理，正在同步账户"));

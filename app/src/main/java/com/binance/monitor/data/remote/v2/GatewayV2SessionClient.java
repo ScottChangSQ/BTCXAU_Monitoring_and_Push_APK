@@ -32,7 +32,7 @@ import okhttp3.Response;
 
 public class GatewayV2SessionClient {
     private static final long CONNECT_TIMEOUT_SECONDS = 8L;
-    private static final long READ_TIMEOUT_SECONDS = 35L;
+    private static final long READ_TIMEOUT_SECONDS = 60L;
     private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient client;
