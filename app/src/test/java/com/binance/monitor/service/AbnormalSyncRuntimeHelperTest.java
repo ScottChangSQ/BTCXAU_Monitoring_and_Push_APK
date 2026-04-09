@@ -1,5 +1,5 @@
 /*
- * 异常同步运行时辅助逻辑测试，确保本地兜底通知、重复通知抑制和错误日志节流规则稳定。
+ * 异常同步运行时辅助逻辑测试，确保服务端 alert 冷却判定规则稳定。
  */
 package com.binance.monitor.service;
 
@@ -11,36 +11,26 @@ import com.binance.monitor.constants.AppConstants;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 public class AbnormalSyncRuntimeHelperTest {
 
     @Test
-    public void shouldOnlyUseLocalFallbackNotificationAfterSyncFailed() {
-        assertFalse(AbnormalSyncRuntimeHelper.shouldUseLocalFallbackNotification(false, false));
-        assertFalse(AbnormalSyncRuntimeHelper.shouldUseLocalFallbackNotification(false, true));
-        assertFalse(AbnormalSyncRuntimeHelper.shouldUseLocalFallbackNotification(true, true));
-        assertTrue(AbnormalSyncRuntimeHelper.shouldUseLocalFallbackNotification(true, false));
-    }
-
-    @Test
-    public void shouldThrottleSameSyncErrorWithinCooldown() {
-        assertTrue(AbnormalSyncRuntimeHelper.shouldLogSyncError("", 0L, "HTTP 404", 10_000L, 60_000L));
-        assertFalse(AbnormalSyncRuntimeHelper.shouldLogSyncError("HTTP 404", 10_000L, "HTTP 404", 20_000L, 60_000L));
-        assertTrue(AbnormalSyncRuntimeHelper.shouldLogSyncError("HTTP 404", 10_000L, "HTTP 404", 80_001L, 60_000L));
-        assertTrue(AbnormalSyncRuntimeHelper.shouldLogSyncError("HTTP 404", 10_000L, "connect failed", 20_000L, 60_000L));
-    }
-
-    @Test
     public void shouldSkipServerAlertWhenAnySymbolIsStillInCooldown() {
         Map<String, Long> lastNotifyAt = new HashMap<>();
+        Set<String> dispatchedAlertIds = new HashSet<>();
         long now = 1_000_000L;
         lastNotifyAt.put(AppConstants.SYMBOL_BTC, now - 60_000L);
         lastNotifyAt.put(AppConstants.SYMBOL_XAU, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
 
         boolean eligible = AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
+                "alert-1",
                 Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
+                dispatchedAlertIds,
                 lastNotifyAt,
                 now,
                 AppConstants.NOTIFICATION_COOLDOWN_MS
@@ -52,12 +42,15 @@ public class AbnormalSyncRuntimeHelperTest {
     @Test
     public void shouldDispatchServerAlertWhenAllSymbolsAreOutOfCooldown() {
         Map<String, Long> lastNotifyAt = new HashMap<>();
+        Set<String> dispatchedAlertIds = new HashSet<>();
         long now = 1_000_000L;
         lastNotifyAt.put(AppConstants.SYMBOL_BTC, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
         lastNotifyAt.put(AppConstants.SYMBOL_XAU, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
 
         boolean eligible = AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
+                "alert-2",
                 Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
+                dispatchedAlertIds,
                 lastNotifyAt,
                 now,
                 AppConstants.NOTIFICATION_COOLDOWN_MS
@@ -67,10 +60,40 @@ public class AbnormalSyncRuntimeHelperTest {
     }
 
     @Test
-    public void shouldTreatHttp404AsUnsupportedEndpoint() {
-        assertTrue(AbnormalSyncRuntimeHelper.isUnsupportedEndpointError("http://43.155.214.62:8787 -> HTTP 404"));
-        assertTrue(AbnormalSyncRuntimeHelper.isUnsupportedEndpointError(
-                "http://43.155.214.62:8787 -> HTTP 404 ; http://127.0.0.1:8787 -> failed to connect"));
-        assertFalse(AbnormalSyncRuntimeHelper.isUnsupportedEndpointError("failed to connect to localhost"));
+    public void shouldSkipServerAlertWhenAlertIdAlreadyDispatched() {
+        Map<String, Long> lastNotifyAt = new HashMap<>();
+        Set<String> dispatchedAlertIds = new HashSet<>(Collections.singleton("alert-3"));
+        long now = 1_000_000L;
+        lastNotifyAt.put(AppConstants.SYMBOL_BTC, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
+
+        boolean eligible = AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
+                "alert-3",
+                Collections.singletonList(AppConstants.SYMBOL_BTC),
+                dispatchedAlertIds,
+                lastNotifyAt,
+                now,
+                AppConstants.NOTIFICATION_COOLDOWN_MS
+        );
+
+        assertFalse(eligible);
+    }
+
+    @Test
+    public void shouldNormalizeDispatchedAlertIdsBeforeComparing() {
+        Map<String, Long> lastNotifyAt = new HashMap<>();
+        Set<String> dispatchedAlertIds = new HashSet<>(Collections.singleton(" alert-4 "));
+        long now = 1_000_000L;
+        lastNotifyAt.put(AppConstants.SYMBOL_BTC, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
+
+        boolean eligible = AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
+                "alert-4",
+                Collections.singletonList(AppConstants.SYMBOL_BTC),
+                dispatchedAlertIds,
+                lastNotifyAt,
+                now,
+                AppConstants.NOTIFICATION_COOLDOWN_MS
+        );
+
+        assertFalse(eligible);
     }
 }

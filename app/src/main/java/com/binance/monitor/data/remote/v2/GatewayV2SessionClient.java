@@ -35,28 +35,29 @@ public class GatewayV2SessionClient {
     private static final long READ_TIMEOUT_SECONDS = 60L;
     private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
 
-    private final OkHttpClient client;
+    private volatile OkHttpClient client;
     @Nullable
     private final ConfigManager configManager;
 
     // 创建不依赖 Context 的会话客户端实例。
     public GatewayV2SessionClient() {
-        this.client = new OkHttpClient.Builder()
-                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .build();
+        this.client = buildClient();
         this.configManager = null;
     }
 
     // 创建依赖配置中心的会话客户端实例。
     public GatewayV2SessionClient(@Nullable Context context) {
-        this.client = new OkHttpClient.Builder()
-                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .build();
+        this.client = buildClient();
         this.configManager = context == null
                 ? null
                 : ConfigManager.getInstance(context.getApplicationContext());
+    }
+
+    // 前后台恢复后重建会话 HTTP 传输层，避免登录/状态查询继续占用失活连接池。
+    public synchronized void resetTransport() {
+        OkHttpClient previous = client;
+        client = buildClient();
+        closeClient(previous);
     }
 
     // 解析 /v2/session/public-key 响应。
@@ -232,5 +233,21 @@ public class GatewayV2SessionClient {
             }
         }
         return profiles;
+    }
+
+    private static OkHttpClient buildClient() {
+        return new OkHttpClient.Builder()
+                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .build();
+    }
+
+    // 释放旧会话 transport 的连接池和调度线程，避免重复重建后积压旧资源。
+    private static void closeClient(@Nullable OkHttpClient previous) {
+        if (previous == null) {
+            return;
+        }
+        previous.connectionPool().evictAll();
+        previous.dispatcher().executorService().shutdown();
     }
 }

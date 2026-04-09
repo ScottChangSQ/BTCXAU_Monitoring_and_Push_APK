@@ -13,6 +13,7 @@ import java.util.List;
 final class MarketChartRefreshHelper {
     private static final long REALTIME_FRESHNESS_MS = 95_000L;
     private static final long HEALTHY_REALTIME_REFRESH_MS = 15_000L;
+    private static final long SOURCE_MINUTE_REFRESH_MS = 60_000L;
     private static final int LATENCY_SMOOTHING_WEIGHT_PREVIOUS = 3;
     private static final int LATENCY_SMOOTHING_WEIGHT_CURRENT = 1;
 
@@ -114,21 +115,21 @@ final class MarketChartRefreshHelper {
     // 推送健康时降低主动轮询频率，减少无意义的网络请求和切周期等待。
     static long resolveAutoRefreshDelayMs(boolean realtimeFresh,
                                           long fallbackDelayMs,
-                                          boolean hasRealtimeTailSource) {
+                                          boolean hasRealtimeTailSource,
+                                          long nowMs) {
         long safeFallbackDelayMs = Math.max(1_000L, fallbackDelayMs);
         if (!hasRealtimeTailSource) {
-            return safeFallbackDelayMs;
+            return resolveNextMinuteBoundaryDelayMs(nowMs);
         }
         return realtimeFresh
                 ? Math.max(safeFallbackDelayMs, HEALTHY_REALTIME_REFRESH_MS)
                 : safeFallbackDelayMs;
     }
 
-    // 只有页面已经接入本地实时尾部时，恢复前台才允许直接复用当前分钟窗口而不立刻请求网络。
+    // 页面恢复前台时，只要当前窗口仍处于上游分钟源可接受的新鲜范围内，就不应立刻重拉。
     static boolean shouldSkipRequestOnResume(boolean hasCompatibleVisible,
-                                             boolean realtimeFresh,
-                                             boolean hasRealtimeTailSource) {
-        return hasRealtimeTailSource && hasCompatibleVisible && realtimeFresh;
+                                             boolean hasFreshVisibleWindow) {
+        return hasCompatibleVisible && hasFreshVisibleWindow;
     }
 
     // 当前轮直接跳过网络时，不再继续展示上一次 REST 请求耗时，避免 ms 文案误导。
@@ -149,5 +150,16 @@ final class MarketChartRefreshHelper {
                 + safeLatest * LATENCY_SMOOTHING_WEIGHT_CURRENT;
         return Math.max(0L, weighted
                 / (LATENCY_SMOOTHING_WEIGHT_PREVIOUS + LATENCY_SMOOTHING_WEIGHT_CURRENT));
+    }
+
+    // 无实时尾部链路时，长周期快照只会随分钟底稿推进而变化，下一次刷新对齐到最近的分钟边界即可。
+    private static long resolveNextMinuteBoundaryDelayMs(long nowMs) {
+        long safeNowMs = Math.max(0L, nowMs);
+        long elapsedInMinute = safeNowMs % SOURCE_MINUTE_REFRESH_MS;
+        long remainingMs = SOURCE_MINUTE_REFRESH_MS - elapsedInMinute;
+        if (remainingMs <= 0L || remainingMs > SOURCE_MINUTE_REFRESH_MS) {
+            return SOURCE_MINUTE_REFRESH_MS;
+        }
+        return remainingMs;
     }
 }

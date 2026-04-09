@@ -84,4 +84,23 @@ public class FloatingSymbolCardData {
     public boolean hasActivePosition() {
         return hasPosition;
     }
+
+    // 返回用于判定悬浮窗卡片是否需要重绘的稳定签名。
+    public String buildVisualSignature() {
+        return code
+                + "|"
+                + label
+                + "|"
+                + Double.doubleToLongBits(totalPnl)
+                + "|"
+                + Double.doubleToLongBits(latestPrice)
+                + "|"
+                + hasLatestPrice
+                + "|"
+                + Double.doubleToLongBits(volume)
+                + "|"
+                + Double.doubleToLongBits(amount)
+                + "|"
+                + hasPosition;
+    }
 }

@@ -13,20 +13,16 @@ import java.nio.file.Paths;
 public class FallbackKlineSocketManagerSourceTest {
 
     @Test
-    public void monitorServiceShouldUseFallbackKlineSocketNaming() throws Exception {
+    public void monitorServiceShouldNotStartFallbackKlineSocketByDefault() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         );
 
-        assertTrue("监控服务应明确依赖回退 K 线流管理器，而不是继续使用主链式命名",
+        assertFalse("监控服务默认启动链不应再依赖 fallback K 线流管理器",
                 source.contains("FallbackKlineSocketManager"));
-        assertTrue("旧 WebSocket 回调应明确表达自己是回退流状态",
-                source.contains("onFallbackStreamStateChanged("));
-        assertTrue("旧 WebSocket 回调应明确表达自己是回退 K 线更新",
-                source.contains("onFallbackKlineUpdate("));
-        assertTrue("旧 WebSocket 回调应明确表达自己是回退流错误",
-                source.contains("onFallbackStreamError("));
+        assertFalse("监控服务不应再启动 fallback K 线连接",
+                source.contains("fallbackKlineSocketManager.connect("));
         assertFalse("监控服务里不应继续保留旧的主链式 WebSocketManager 字段命名",
                 source.contains("private WebSocketManager webSocketManager;"));
     }

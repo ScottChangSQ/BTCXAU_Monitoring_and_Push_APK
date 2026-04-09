@@ -149,7 +149,40 @@ class AbnormalGatewayTests(unittest.TestCase):
         self.assertEqual(1, len(second["delta"]["alerts"]))
         self.assertEqual("a2", second["delta"]["alerts"][0]["id"])
 
-    def test_build_abnormal_response_should_fallback_to_cached_snapshot_when_refresh_fails(self):
+    def test_build_abnormal_response_should_read_published_snapshot_without_refresh(self):
+        calls = {"refresh": 0}
+
+        def fake_refresh():
+            calls["refresh"] += 1
+
+        server_v2._refresh_abnormal_state = fake_refresh
+        with server_v2.abnormal_state_lock:
+            server_v2.abnormal_sync_state.clear()
+            server_v2.abnormal_sync_state.update({
+                "seq": 9,
+                "digest": "digest-9",
+                "snapshot": {
+                    "abnormalMeta": {"syncSeq": 9},
+                    "configs": [],
+                    "records": [self._build_record("r9", "BTCUSDT", 9000, "成交量")],
+                    "alerts": [],
+                },
+                "previousSeq": 8,
+                "previousSnapshot": {
+                    "abnormalMeta": {"syncSeq": 8},
+                    "configs": [],
+                    "records": [],
+                    "alerts": [],
+                },
+            })
+
+        response = server_v2._build_abnormal_response(since_seq=0, delta=True)
+
+        self.assertEqual(9, response["abnormalMeta"]["syncSeq"])
+        self.assertEqual("r9", response["records"][0]["id"])
+        self.assertEqual(0, calls["refresh"])
+
+    def test_build_abnormal_response_should_return_cached_snapshot_without_refresh_side_effect(self):
         original_fetch = server_v2._fetch_recent_closed_binance_klines
         server_v2._fetch_recent_closed_binance_klines = lambda symbol, limit: (_ for _ in ()).throw(RuntimeError("upstream failed"))
         server_v2._set_abnormal_config({"logicAnd": False, "configs": []})
@@ -164,7 +197,45 @@ class AbnormalGatewayTests(unittest.TestCase):
 
         self.assertFalse(response["isDelta"])
         self.assertEqual("r1", response["records"][0]["id"])
-        self.assertIn("warning", response["abnormalMeta"])
+        self.assertNotIn("warning", response["abnormalMeta"])
+
+    def test_v2_abnormal_snapshot_should_read_published_snapshot(self):
+        with server_v2.abnormal_state_lock:
+            server_v2.abnormal_sync_state.clear()
+            server_v2.abnormal_sync_state.update({
+                "seq": 11,
+                "digest": "digest-11",
+                "snapshot": {
+                    "abnormalMeta": {"syncSeq": 11},
+                    "configs": [],
+                    "records": [self._build_record("r11", "BTCUSDT", 11_000, "成交量")],
+                    "alerts": [self._build_alert("a11", ["BTCUSDT"], 11_000, "BTC 的 成交量 出现异常！")],
+                },
+                "previousSeq": 10,
+                "previousSnapshot": None,
+            })
+
+        payload = server_v2.v2_abnormal_snapshot()
+
+        self.assertEqual(11, payload["abnormalMeta"]["syncSeq"])
+        self.assertEqual("r11", payload["records"][0]["id"])
+        self.assertEqual("a11", payload["alerts"][0]["id"])
+
+    def test_v2_abnormal_history_should_filter_symbol_and_time_range(self):
+        with server_v2.abnormal_state_lock:
+            server_v2.abnormal_record_store[:] = [
+                self._build_record("btc-old", "BTCUSDT", 1000, "成交量"),
+                self._build_record("btc-new", "BTCUSDT", 3000, "成交量"),
+                self._build_record("xau-new", "XAUUSDT", 3000, "价格变化"),
+            ]
+            server_v2.abnormal_alert_store[:] = []
+            server_v2._commit_abnormal_snapshot_locked()
+
+        payload = server_v2.v2_abnormal_history(symbol="BTCUSDT", startTime=2000, endTime=4000, limit=50)
+
+        self.assertEqual(1, len(payload["records"]))
+        self.assertEqual("btc-new", payload["records"][0]["id"])
+        self.assertEqual("BTCUSDT", payload["records"][0]["symbol"])
 
     def test_refresh_abnormal_state_should_expand_fetch_limit_when_last_close_is_stale(self):
         original_fetch = server_v2._fetch_recent_closed_binance_klines

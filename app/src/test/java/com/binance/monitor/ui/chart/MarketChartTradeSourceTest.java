@@ -70,6 +70,17 @@ public class MarketChartTradeSourceTest {
         assertTrue(source.contains("NestedScrollView") || source.contains("ScrollView"));
         assertTrue(source.contains("@drawable/bg_trade_dialog_surface"));
         assertTrue(source.contains("@dimen/control_height_lg"));
+        assertTrue(source.contains("android:id=\"@+id/tvTradeCommandHint\"\n            android:layout_width=\"match_parent\"\n            android:layout_height=\"wrap_content\"\n            android:textColor=\"@color/text_primary\""));
+    }
+
+    @Test
+    public void pendingOrderTypeSpinnerShouldUseProjectStyledAdapterLayouts() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertFalse(source.contains("android.R.layout.simple_spinner_item"));
+        assertFalse(source.contains("android.R.layout.simple_spinner_dropdown_item"));
+        assertTrue(source.contains("dialogBinding.spinnerTradeOrderType.setAdapter("));
     }
 
     @Test

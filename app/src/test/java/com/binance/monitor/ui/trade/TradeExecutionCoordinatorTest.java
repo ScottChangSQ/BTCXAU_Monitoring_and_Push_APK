@@ -114,6 +114,44 @@ public class TradeExecutionCoordinatorTest {
     }
 
     @Test
+    public void submitAfterConfirmationShouldWaitForTradeHistoryWhenClosingPosition() throws Exception {
+        FakeTradeGateway gateway = new FakeTradeGateway();
+        gateway.checkResult = executableCheck("req-close-history");
+        gateway.submitReceipt = acceptedReceipt("req-close-history", 7001L, 7002L);
+        FakeAccountRefreshGateway refreshGateway = new FakeAccountRefreshGateway();
+        AccountStatsPreloadManager.Cache baselineCache = cache(
+                1000L,
+                metrics("$1,000.00", "$100.00"),
+                positions("BTCUSD", 0.10d, 9001L, 0L),
+                pendingOrders(),
+                trades(1001L)
+        );
+        refreshGateway.enqueue(cache(
+                2000L,
+                metrics("$1,030.00", "$80.00"),
+                positions(),
+                pendingOrders(),
+                trades(1001L)
+        ));
+        TradeExecutionCoordinator coordinator = new TradeExecutionCoordinator(
+                gateway,
+                refreshGateway,
+                new TradeConfirmDialogController(),
+                1
+        );
+
+        TradeExecutionCoordinator.PreparedTrade prepared =
+                coordinator.prepareExecution(buildCommand("req-close-history", "CLOSE_POSITION", 0d, 0d));
+        prepared.markConfirmed();
+        TradeExecutionCoordinator.ExecutionResult result =
+                coordinator.submitAfterConfirmation(prepared, baselineCache);
+
+        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertFalse(result.isSettled());
+        assertEquals(TradeCommandStateMachine.Step.ACCEPTED, result.getStateMachine().getStep());
+    }
+
+    @Test
     public void submitAfterConfirmationShouldStayUnconfirmedWhenReceiptIdsDisappearAndOnlySameSymbolStructureChanges() throws Exception {
         FakeTradeGateway gateway = new FakeTradeGateway();
         gateway.checkResult = executableCheck("req-settle-without-receipt-ids");

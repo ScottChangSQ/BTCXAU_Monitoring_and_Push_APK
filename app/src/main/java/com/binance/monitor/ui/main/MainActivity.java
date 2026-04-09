@@ -1,5 +1,4 @@
 package com.binance.monitor.ui.main;
-
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
@@ -111,6 +110,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        ensureMonitorServiceStarted();
 
         viewModel = new ViewModelProvider(this).get(MainViewModel.class);
         recordAdapter = new AbnormalRecordAdapter();
@@ -129,18 +129,18 @@ public class MainActivity extends AppCompatActivity {
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
         applyPaletteStyles();
-        sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
         promptNotificationPermissionIfNeeded();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        ensureMonitorServiceStarted();
         applyPaletteStyles();
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
         latestPricesSnapshot = safePriceSnapshot(viewModel.getDisplayPrices().getValue());
-        latestKlinesSnapshot = safeKlineSnapshot(viewModel.getDisplayKlines().getValue());
+        latestKlinesSnapshot = safeKlineSnapshot(viewModel.getDisplayOverviewKlines().getValue());
         renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
         startRecentRecordsAutoRefresh();
         startUpdateTimeTicker();
@@ -407,7 +407,7 @@ public class MainActivity extends AppCompatActivity {
             latestPricesSnapshot = safePriceSnapshot(prices);
             renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
         });
-        viewModel.getDisplayKlines().observe(this, klines -> {
+        viewModel.getDisplayOverviewKlines().observe(this, klines -> {
             latestKlinesSnapshot = safeKlineSnapshot(klines);
             renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
         });
@@ -888,6 +888,14 @@ public class MainActivity extends AppCompatActivity {
         ContextCompat.startForegroundService(this, intent);
     }
 
+    // 首次创建页面时确保监控服务已启动，避免直达入口时服务尚未建立主链。
+    private void ensureMonitorServiceStarted() {
+        if (MonitorService.isServiceRunning()) {
+            return;
+        }
+        sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
+    }
+
     private void openAccountStats() {
         android.content.Intent intent = new android.content.Intent(this, com.binance.monitor.ui.account.AccountStatsBridgeActivity.class);
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -943,4 +951,5 @@ public class MainActivity extends AppCompatActivity {
                 .setNeutralButton(R.string.dismiss, null)
                 .show();
     }
+
 }

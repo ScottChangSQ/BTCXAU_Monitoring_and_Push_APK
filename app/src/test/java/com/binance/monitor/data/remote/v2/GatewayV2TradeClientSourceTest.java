@@ -24,4 +24,15 @@ public class GatewayV2TradeClientSourceTest {
         assertFalse(source.contains("/v2/account/"));
         assertFalse(source.contains("/v2/sync/"));
     }
+
+    @Test
+    public void tradeClientShouldReleasePreviousTransportWhenResetting() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/data/remote/v2/GatewayV2TradeClient.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("public synchronized void resetTransport()"));
+        assertTrue(source.contains("OkHttpClient previous = client;"));
+        assertTrue(source.contains("closeClient(previous);"));
+        assertTrue(source.contains("previous.connectionPool().evictAll();"));
+    }
 }

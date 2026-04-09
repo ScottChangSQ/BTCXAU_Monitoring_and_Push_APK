@@ -19,6 +19,11 @@ public class AccountHistoryRefreshPolicyHelperTest {
     }
 
     @Test
+    public void shouldSkipAllHistoryWhenRemoteRevisionMatchesCacheEvenIfTradeListIsEmpty() {
+        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("rev-5", "rev-5", false));
+    }
+
+    @Test
     public void shouldSkipAllHistoryWhenRemoteRevisionUnchanged() {
         assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("rev-5", "rev-5", true));
     }
@@ -29,7 +34,7 @@ public class AccountHistoryRefreshPolicyHelperTest {
     }
 
     @Test
-    public void shouldRefreshAllHistoryWhenRemoteRevisionUnavailableButLocalHistoryMissing() {
+    public void shouldRefreshAllHistoryWhenRemoteRevisionUnavailableAndNoCachedRevisionExists() {
         assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("", "", true));
     }
 

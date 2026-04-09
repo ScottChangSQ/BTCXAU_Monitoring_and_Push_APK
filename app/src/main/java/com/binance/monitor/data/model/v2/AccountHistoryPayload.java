@@ -34,13 +34,25 @@ public class AccountHistoryPayload {
                                  String rawJson) {
         this.serverTime = serverTime;
         this.syncToken = syncToken == null ? "" : syncToken;
-        this.accountMeta = accountMeta == null ? new JSONObject() : accountMeta;
+        if (accountMeta == null) {
+            throw new IllegalArgumentException("accountMeta is required");
+        }
+        if (trades == null) {
+            throw new IllegalArgumentException("trades is required");
+        }
+        if (orders == null) {
+            throw new IllegalArgumentException("orders is required");
+        }
+        if (curvePoints == null) {
+            throw new IllegalArgumentException("curvePoints is required");
+        }
+        this.accountMeta = accountMeta;
         this.overviewMetrics = overviewMetrics == null ? new JSONArray() : overviewMetrics;
         this.curveIndicators = curveIndicators == null ? new JSONArray() : curveIndicators;
         this.statsMetrics = statsMetrics == null ? new JSONArray() : statsMetrics;
-        this.trades = trades == null ? new JSONArray() : trades;
-        this.orders = orders == null ? new JSONArray() : orders;
-        this.curvePoints = curvePoints == null ? new JSONArray() : curvePoints;
+        this.trades = trades;
+        this.orders = orders;
+        this.curvePoints = curvePoints;
         this.nextCursor = nextCursor == null ? "" : nextCursor;
         this.rawJson = rawJson == null ? "" : rawJson;
     }

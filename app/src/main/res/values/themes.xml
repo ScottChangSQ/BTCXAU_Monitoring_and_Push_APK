@@ -22,6 +22,14 @@
         <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
     </style>
 
+    <style name="Theme.BinanceMonitor.NoDisplay" parent="Theme.BinanceMonitor">
+        <item name="android:windowNoDisplay">true</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+
     <style name="Widget.BinanceMonitor.Card" parent="Widget.Material3.CardView.Filled">
         <item name="cardBackgroundColor">@color/bg_card</item>
         <item name="strokeColor">@color/stroke_card</item>

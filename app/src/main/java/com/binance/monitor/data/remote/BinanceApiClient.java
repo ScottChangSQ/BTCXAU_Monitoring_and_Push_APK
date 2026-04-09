@@ -1,6 +1,6 @@
 /*
- * 负责 Binance 行情 REST / 历史文件请求与图表数据回退，
- * 供主监控页与图表页统一获取 K 线数据。
+ * 负责 Binance 行情 REST / 历史文件请求。
+ * 图表链路只消费 Binance REST 主链，不再混入历史文件或客户端补算结果。
  */
 package com.binance.monitor.data.remote;
 
@@ -43,7 +43,6 @@ public class BinanceApiClient {
     private static final long SHARED_RESPONSE_CACHE_TTL_MS = 8_000L;
     private static final int SHARED_RESPONSE_CACHE_MAX_SIZE = 120;
     private static final Map<String, CachedArray> SHARED_RESPONSE_CACHE = new ConcurrentHashMap<>();
-    private final ChartKlineFallbackLoader chartKlineFallbackLoader = new ChartKlineFallbackLoader();
     private final ConfigManager configManager;
 
     private static final class CachedArray {
@@ -243,20 +242,10 @@ public class BinanceApiClient {
         return new ArrayList<>();
     }
 
-    // 图表专用：只使用 Binance REST K 线接口拉取完整窗口，避免混入历史文件等二级数据源。
+    // 图表专用：所有周期都只使用 Binance REST K 线接口拉取完整窗口。
     public List<CandleEntry> fetchChartKlineFullWindow(String symbol, String interval, int limit) throws Exception {
         String normalizedInterval = normalizeInterval(interval);
         int safeLimit = clampLimit(limit);
-        if (ChartLongIntervalFetchPolicyHelper.shouldUseDirectRestFirst(normalizedInterval)) {
-            return loadChartLongIntervalWindow(symbol, normalizedInterval, safeLimit, null);
-        }
-        if (isWeeklyOrMonthly(normalizedInterval)) {
-            int dailyLimit = Math.min(1500, "1w".equals(normalizedInterval)
-                    ? Math.max(200, safeLimit * 9)
-                    : Math.max(300, safeLimit * 35));
-            List<CandleEntry> daily = fetchChartKlineFullWindow(symbol, "1d", dailyLimit);
-            return aggregateDailyToInterval(daily, symbol, normalizedInterval, safeLimit, Long.MAX_VALUE);
-        }
         return requestChartRestKlines(symbol, normalizedInterval, safeLimit, null);
     }
 
@@ -267,16 +256,6 @@ public class BinanceApiClient {
                                                           long endTimeInclusive) throws Exception {
         String normalizedInterval = normalizeInterval(interval);
         int safeLimit = clampLimit(limit);
-        if (ChartLongIntervalFetchPolicyHelper.shouldUseDirectRestFirst(normalizedInterval)) {
-            return loadChartLongIntervalWindow(symbol, normalizedInterval, safeLimit, endTimeInclusive);
-        }
-        if (isWeeklyOrMonthly(normalizedInterval)) {
-            int dailyLimit = Math.min(1500, "1w".equals(normalizedInterval)
-                    ? Math.max(260, safeLimit * 10)
-                    : Math.max(360, safeLimit * 38));
-            List<CandleEntry> daily = fetchChartKlineHistoryBefore(symbol, "1d", dailyLimit, endTimeInclusive);
-            return aggregateDailyToInterval(daily, symbol, normalizedInterval, safeLimit, endTimeInclusive);
-        }
         return requestChartRestKlines(symbol, normalizedInterval, safeLimit, endTimeInclusive);
     }
 
@@ -301,65 +280,40 @@ public class BinanceApiClient {
         return new ArrayList<>();
     }
 
-    // 图表专用 REST 请求：读取完整字段并按开盘时间去重排序。
+    // 图表专用 REST 请求：读取完整字段并按开盘时间去重排序，不接历史回退链。
     private List<CandleEntry> requestChartRestKlines(String symbol,
                                                      String interval,
                                                      int limit,
                                                      Long endTimeInclusive) throws Exception {
         Set<String> candidates = buildChartRestCandidates(symbol, interval, limit, endTimeInclusive);
-        return chartKlineFallbackLoader.load(
-                candidates,
-                symbol,
-                endTimeInclusive,
-                this::requestJsonArrayNoCache,
-                () -> endTimeInclusive == null
-                        ? fetchKlineHistory(symbol, interval, limit)
-                        : fetchKlineHistoryBefore(symbol, interval, limit, endTimeInclusive)
-        );
-    }
-
-    // 周/月线先尝试官方原生周期接口，若返回异常偏短，再回退到日线聚合兜底。
-    private List<CandleEntry> loadChartLongIntervalWindow(String symbol,
-                                                          String interval,
-                                                          int limit,
-                                                          Long endTimeInclusive) throws Exception {
-        Exception directError = null;
-        try {
-            List<CandleEntry> direct = requestChartRestKlines(symbol, interval, limit, endTimeInclusive);
-            if (!ChartLongIntervalFetchPolicyHelper.shouldFallbackToDailyAggregation(interval, limit, direct.size())) {
-                return direct;
+        Exception lastError = null;
+        for (String url : candidates) {
+            try {
+                JSONArray array = requestJsonArrayNoCache(url);
+                if (array == null || array.length() == 0) {
+                    lastError = new IOException("返回空数据: " + url);
+                    continue;
+                }
+                List<CandleEntry> parsed = new ArrayList<>(array.length());
+                for (int i = 0; i < array.length(); i++) {
+                    CandleEntry item = CandleEntry.fromRest(symbol, array.getJSONArray(i));
+                    if (endTimeInclusive == null || item.getOpenTime() <= endTimeInclusive) {
+                        parsed.add(item);
+                    }
+                }
+                List<CandleEntry> normalized = normalizeCandles(parsed);
+                if (!normalized.isEmpty()) {
+                    return normalized;
+                }
+                lastError = new IOException("解析后为空: " + url);
+            } catch (Exception e) {
+                lastError = new IOException("请求失败(" + url + "): " + e.getMessage(), e);
             }
-        } catch (Exception exception) {
-            directError = exception;
         }
-        try {
-            int dailyLimit = Math.min(1500, "1w".equals(interval)
-                    ? Math.max(260, limit * 10)
-                    : Math.max(360, limit * 38));
-            List<CandleEntry> daily = endTimeInclusive == null
-                    ? fetchChartKlineFullWindow(symbol, "1d", dailyLimit)
-                    : fetchChartKlineHistoryBefore(symbol, "1d", dailyLimit, endTimeInclusive);
-            List<CandleEntry> aggregated = aggregateDailyToInterval(
-                    daily,
-                    symbol,
-                    interval,
-                    limit,
-                    endTimeInclusive == null ? Long.MAX_VALUE : endTimeInclusive
-            );
-            if (!aggregated.isEmpty()) {
-                return aggregated;
-            }
-        } catch (Exception aggregationError) {
-            if (directError != null) {
-                throw new IOException("长周期直连与日线聚合都失败: " + directError.getMessage() + " ; " + aggregationError.getMessage(),
-                        aggregationError);
-            }
-            throw aggregationError;
+        if (lastError != null) {
+            throw new IOException("图表K线REST请求失败: " + lastError.getMessage(), lastError);
         }
-        if (directError != null) {
-            throw directError;
-        }
-        return new ArrayList<>();
+        throw new IOException("图表K线REST请求失败");
     }
 
     private CandleEntry selectLatestClosed(List<CandleEntry> history, long now) {
@@ -577,6 +531,20 @@ public class BinanceApiClient {
         }
         Collections.sort(filtered, (left, right) -> Long.compare(left.getOpenTime(), right.getOpenTime()));
         return filtered;
+    }
+
+    // 图表链统一按开盘时间排序并去重，确保消费侧只看到单一有序序列。
+    private List<CandleEntry> normalizeCandles(List<CandleEntry> source) {
+        if (source == null || source.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<CandleEntry> filtered = new ArrayList<>();
+        for (CandleEntry item : source) {
+            if (item != null) {
+                filtered.add(item);
+            }
+        }
+        return deduplicateByOpenTime(filtered);
     }
 
     private int resolveVisionMonthlyAttempts(String interval, int target) {

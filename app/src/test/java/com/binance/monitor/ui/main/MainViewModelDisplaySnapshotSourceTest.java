@@ -20,6 +20,7 @@ public class MainViewModelDisplaySnapshotSourceTest {
 
         assertTrue(source.contains("getDisplayPrices()"));
         assertTrue(source.contains("getDisplayKlines()"));
+        assertTrue(source.contains("getDisplayOverviewKlines()"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

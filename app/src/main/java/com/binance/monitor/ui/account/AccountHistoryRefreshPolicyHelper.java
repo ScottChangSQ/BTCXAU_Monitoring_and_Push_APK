@@ -15,11 +15,14 @@ public final class AccountHistoryRefreshPolicyHelper {
                                                   boolean hasStoredTradeHistory) {
         String remote = remoteHistoryRevision == null ? "" : remoteHistoryRevision.trim();
         String cached = cachedHistoryRevision == null ? "" : cachedHistoryRevision.trim();
+        if (!hasStoredTradeHistory) {
+            return true;
+        }
         if (remote.isEmpty()) {
-            return !hasStoredTradeHistory || cached.isEmpty();
+            return cached.isEmpty();
         }
         if (cached.isEmpty()) {
-            return hasStoredTradeHistory ? true : !remote.isEmpty();
+            return true;
         }
         return !remote.equals(cached);
     }

@@ -433,7 +433,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
-        finish();
     }
 
     private void openAccountStats() {
@@ -441,7 +440,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
-        finish();
     }
 
     private void openMarketChart() {
@@ -449,7 +447,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
-        finish();
     }
 
     private void openSettingsHome() {
@@ -457,7 +454,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
-        finish();
     }
 
 }

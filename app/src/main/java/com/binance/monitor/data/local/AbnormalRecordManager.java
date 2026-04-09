@@ -75,6 +75,22 @@ public class AbnormalRecordManager {
         return true;
     }
 
+    // 用服务端真值整批替换当前异常记录缓存，供 stream bootstrap 全量同步复用。
+    public synchronized void replaceAll(List<AbnormalRecord> records) {
+        cache.clear();
+        if (records != null) {
+            for (AbnormalRecord item : records) {
+                if (item == null || containsRecordIdLocked(item.getId())) {
+                    continue;
+                }
+                cache.add(item);
+            }
+        }
+        trimLocked();
+        persistLocked();
+        publishLocked();
+    }
+
     public synchronized AbnormalRecord createRecord(String symbol,
                                                     long closeTime,
                                                     double openPrice,
@@ -99,7 +115,7 @@ public class AbnormalRecordManager {
         );
     }
 
-    // 生成与服务端同口径的稳定记录 ID，便于本地补判和服务端回补去重。
+    // 生成与服务端同口径的稳定记录 ID，便于 stream 全量/增量写入时去重。
     static String buildStableRecordId(String symbol, long closeTime, String triggerSummary) {
         String raw = normalizeStableRecordSymbol(symbol)
                 + ":"

@@ -14,6 +14,17 @@ from bridge.mt5_gateway import v2_market  # noqa: E402
 class V2MarketPipelineTests(unittest.TestCase):
     """覆盖 v2 market helper 的关键行为。"""
 
+    def test_symbol_descriptor_should_not_accept_legacy_aliases(self):
+        btc = v2_market._symbol_descriptor("XBT")
+        xau = v2_market._symbol_descriptor("GOLD")
+
+        self.assertEqual("XBT", btc["productId"])
+        self.assertEqual("XBT", btc["marketSymbol"])
+        self.assertEqual("XBT", btc["tradeSymbol"])
+        self.assertEqual("GOLD", xau["productId"])
+        self.assertEqual("GOLD", xau["marketSymbol"])
+        self.assertEqual("GOLD", xau["tradeSymbol"])
+
     def test_build_market_candle_payload_from_rest_row(self):
         rest_row = [1000, "1.0", "2.0", "0.5", "1.5", "10.0", 1999, "20.0", 3]
         candle = v2_market.build_market_candle_payload(

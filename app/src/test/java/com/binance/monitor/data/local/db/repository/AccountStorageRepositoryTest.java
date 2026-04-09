@@ -277,6 +277,81 @@ public class AccountStorageRepositoryTest {
         assertEquals("[{\"name\":\"Cumulative Profit\",\"value\":\"+$10.00\"}]", snapshotDao.meta.statsMetricsJson);
     }
 
+    // 轻量运行态快照写库后，historyRevision 也必须持久化，避免冷启动丢失版本号后重复全量补拉历史。
+    @Test
+    public void persistIncrementalSnapshotShouldPersistHistoryRevision() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        snapshotDao.meta = metaEntity();
+        snapshotDao.meta.historyRevision = "history-old";
+
+        repository.persistIncrementalSnapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "MT5网关",
+                "http://gateway",
+                3000L,
+                "",
+                3100L,
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(position("BTCUSD", 0.05d, 22d)),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>()
+        ));
+
+        assertEquals("history-old", repository.loadStoredSnapshot().getHistoryRevision());
+    }
+
+    // 当轻量运行态切到新账户时，旧账户的历史交易和曲线不能继续保留到新账户缓存里。
+    @Test
+    public void persistIncrementalSnapshotShouldClearHistorySideDataWhenAccountIdentityChanges() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        snapshotDao.meta = metaEntity();
+        snapshotDao.meta.account = "7400048";
+        snapshotDao.meta.server = "ICMarketsSC-MT5-6";
+        snapshotDao.meta.historyRevision = "history-old";
+        snapshotDao.meta.curveIndicatorsJson = "[{\"name\":\"最大回撤\",\"value\":\"-1.00%\"}]";
+        snapshotDao.meta.statsMetricsJson = "[{\"name\":\"累计盈亏\",\"value\":\"+$11.00\"}]";
+        snapshotDao.meta.curvePointsJson = "[{\"timestamp\":1000,\"equity\":100,\"balance\":90,\"positionRatio\":0.1}]";
+        tradeDao.items.add(tradeEntity("deal|1", 1000L, 11d));
+
+        repository.persistIncrementalSnapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "8800001",
+                "Pepperstone-MT5",
+                "MT5网关",
+                "http://gateway",
+                3000L,
+                "",
+                3100L,
+                "history-new",
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(position("BTCUSD", 0.05d, 22d)),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>()
+        ));
+
+        assertEquals(0, tradeDao.items.size());
+        assertEquals("[]", snapshotDao.meta.curvePointsJson);
+        assertEquals("[]", snapshotDao.meta.curveIndicatorsJson);
+        assertEquals("[]", snapshotDao.meta.statsMetricsJson);
+        assertEquals("history-new", snapshotDao.meta.historyRevision);
+        assertEquals("8800001", snapshotDao.meta.account);
+        assertEquals("Pepperstone-MT5", snapshotDao.meta.server);
+    }
+
     // 全量快照应覆盖旧交易历史，避免修正后的交易时间仍被本地旧错记录残留污染。
     @Test
     public void persistSnapshotShouldReplaceTradeHistoryWithLatestFullSnapshot() {
@@ -547,6 +622,7 @@ public class AccountStorageRepositoryTest {
         entity.connected = true;
         entity.updatedAt = 1000L;
         entity.fetchedAt = 1100L;
+        entity.historyRevision = "";
         entity.overviewMetricsJson = "[]";
         entity.curveIndicatorsJson = "[]";
         entity.statsMetricsJson = "[]";

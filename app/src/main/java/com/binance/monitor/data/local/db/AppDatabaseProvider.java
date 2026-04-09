@@ -1,6 +1,7 @@
 /*
  * Room 数据库单例提供者，负责按应用进程范围复用同一个数据库实例。
  * 当前为了兼容现有页面同步读取暖缓存，暂时允许主线程查询。
+ * 但禁止使用破坏性迁移兜底，避免版本升级时静默删库。
  */
 package com.binance.monitor.data.local.db;
 
@@ -26,7 +27,7 @@ public final class AppDatabaseProvider {
                                     AppDatabase.class,
                                     DATABASE_NAME
                             )
-                            .fallbackToDestructiveMigration()
+                            .addMigrations(AppDatabase.MIGRATION_1_2)
                             .allowMainThreadQueries()
                             .build();
                 }

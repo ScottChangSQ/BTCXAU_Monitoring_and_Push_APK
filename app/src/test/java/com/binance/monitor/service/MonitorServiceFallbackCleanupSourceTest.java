@@ -46,6 +46,8 @@ public class MonitorServiceFallbackCleanupSourceTest {
                 source.contains("refreshStaleSymbolsFromV2(staleSymbols, now);"));
         assertFalse("v2 stream 失效后不应再强制重连 fallback ws",
                 source.contains("fallbackKlineSocketManager.forceReconnect("));
+        assertFalse("fallback 行情 WebSocket 不应再作为默认后台链路启动",
+                source.contains("fallbackKlineSocketManager.connect("));
     }
 
     @Test

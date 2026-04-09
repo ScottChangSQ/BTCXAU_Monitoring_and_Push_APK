@@ -337,6 +337,194 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(1775214286619, trades[0]["openTime"])
         self.assertEqual(1775214342404, trades[0]["closeTime"])
 
+    def test_map_trade_deals_should_order_same_second_deals_by_millisecond_timestamp(self):
+        original_mt5 = server_v2.mt5
+
+        class _FakeMt5:
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        open_deal = types.SimpleNamespace(
+            symbol="BTCUSD",
+            type=0,
+            volume=0.01,
+            ticket=1001,
+            order=2001,
+            position_id=3001,
+            entry=0,
+            time=1775225086,
+            time_msc=1775225086100,
+            price=66878.63,
+            profit=0.0,
+            commission=0.0,
+            swap=0.0,
+            comment="open",
+        )
+        close_deal = types.SimpleNamespace(
+            symbol="BTCUSD",
+            type=1,
+            volume=0.01,
+            ticket=1002,
+            order=2002,
+            position_id=3001,
+            entry=1,
+            time=1775225086,
+            time_msc=1775225086900,
+            price=66860.77,
+            profit=0.18,
+            commission=0.0,
+            swap=0.0,
+            comment="close",
+        )
+
+        server_v2.mt5 = _FakeMt5()
+        try:
+            trades = server_v2._map_trade_deals([close_deal, open_deal])
+        finally:
+            server_v2.mt5 = original_mt5
+
+        self.assertEqual(1, len(trades))
+        self.assertEqual(1775225086100, trades[0]["openTime"])
+        self.assertEqual(1775225086900, trades[0]["closeTime"])
+        self.assertEqual(66878.63, trades[0]["openPrice"])
+        self.assertEqual(66860.77, trades[0]["closePrice"])
+
+    def test_map_trade_deals_should_put_open_before_close_when_millisecond_timestamp_is_identical(self):
+        original_mt5 = server_v2.mt5
+
+        class _FakeMt5:
+            @staticmethod
+            def symbol_info(symbol):
+                return types.SimpleNamespace(trade_contract_size=1.0)
+
+        close_deal = types.SimpleNamespace(
+            symbol="BTCUSD",
+            type=1,
+            volume=0.01,
+            ticket=1002,
+            order=2002,
+            position_id=3001,
+            entry=1,
+            time=1775225086,
+            time_msc=1775225086900,
+            price=66860.77,
+            profit=0.18,
+            commission=0.0,
+            swap=0.0,
+            comment="close",
+        )
+        open_deal = types.SimpleNamespace(
+            symbol="BTCUSD",
+            type=0,
+            volume=0.01,
+            ticket=1001,
+            order=2001,
+            position_id=3001,
+            entry=0,
+            time=1775225086,
+            time_msc=1775225086900,
+            price=66878.63,
+            profit=0.0,
+            commission=0.0,
+            swap=0.0,
+            comment="open",
+        )
+
+        server_v2.mt5 = _FakeMt5()
+        try:
+            trades = server_v2._map_trade_deals([close_deal, open_deal])
+        finally:
+            server_v2.mt5 = original_mt5
+
+        self.assertEqual(1, len(trades))
+        self.assertEqual(66878.63, trades[0]["openPrice"])
+        self.assertEqual(66860.77, trades[0]["closePrice"])
+
+    def test_rebuild_ea_trade_records_should_put_open_before_close_when_timestamp_is_identical(self):
+        records = [
+            {
+                "timestamp": 200000,
+                "productName": "BTCUSD",
+                "code": "BTCUSD",
+                "side": "Sell",
+                "price": 120.0,
+                "quantity": 0.1,
+                "amount": 12.0,
+                "contractSize": 1.0,
+                "fee": 2.0,
+                "commission": -2.0,
+                "profit": 8.0,
+                "openTime": 200000,
+                "closeTime": 200000,
+                "storageFee": -3.0,
+                "swap": -3.0,
+                "dealTicket": 12,
+                "orderId": 102,
+                "positionId": 201,
+                "entryType": 1,
+                "dealType": 1,
+                "remark": "close",
+            },
+            {
+                "timestamp": 200000,
+                "productName": "BTCUSD",
+                "code": "BTCUSD",
+                "side": "Buy",
+                "price": 100.0,
+                "quantity": 0.1,
+                "amount": 10.0,
+                "contractSize": 1.0,
+                "fee": 1.5,
+                "commission": -1.5,
+                "profit": 0.0,
+                "openTime": 200000,
+                "closeTime": 200000,
+                "storageFee": 0.0,
+                "swap": 0.0,
+                "dealTicket": 11,
+                "orderId": 101,
+                "positionId": 201,
+                "entryType": 0,
+                "dealType": 0,
+                "remark": "open",
+            },
+        ]
+
+        rebuilt = server_v2._rebuild_ea_trade_records(records)
+
+        self.assertEqual(1, len(rebuilt))
+        self.assertEqual(100.0, rebuilt[0]["openPrice"])
+        self.assertEqual(120.0, rebuilt[0]["closePrice"])
+
+    def test_rebuild_ea_trade_records_should_require_explicit_contract_size(self):
+        records = [
+            {
+                "timestamp": 100000,
+                "productName": "BTCUSD",
+                "code": "BTCUSD",
+                "side": "Buy",
+                "price": 100.0,
+                "quantity": 0.1,
+                "amount": 10.0,
+                "fee": 1.5,
+                "commission": -1.5,
+                "profit": 0.0,
+                "openTime": 100000,
+                "closeTime": 100000,
+                "storageFee": 0.0,
+                "swap": 0.0,
+                "dealTicket": 11,
+                "orderId": 101,
+                "positionId": 201,
+                "entryType": 0,
+                "dealType": 0,
+            }
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "ea trade missing contractSize"):
+            server_v2._rebuild_ea_trade_records(records)
+
     def test_light_snapshot_trade_count_should_follow_mapped_trade_history(self):
         original_mt5 = server_v2.mt5
 
@@ -766,9 +954,10 @@ class SummaryResponseTests(unittest.TestCase):
                     "price": 100.0,
                     "openPrice": 100.0,
                     "closePrice": 100.0,
-                    "quantity": 0.1,
-                    "amount": 10.0,
-                    "fee": 1.5,
+                "quantity": 0.1,
+                "amount": 10.0,
+                "contractSize": 1.0,
+                "fee": 1.5,
                     "commission": -1.5,
                     "profit": 0.0,
                     "openTime": 100000,
@@ -790,9 +979,10 @@ class SummaryResponseTests(unittest.TestCase):
                     "price": 120.0,
                     "openPrice": 120.0,
                     "closePrice": 120.0,
-                    "quantity": 0.1,
-                    "amount": 12.0,
-                    "fee": 2.0,
+                "quantity": 0.1,
+                "amount": 12.0,
+                "contractSize": 1.0,
+                "fee": 2.0,
                     "commission": -2.0,
                     "profit": 8.0,
                     "openTime": 200000,
@@ -841,9 +1031,10 @@ class SummaryResponseTests(unittest.TestCase):
                     "code": "BTCUSD",
                     "side": "Buy",
                     "price": 100.0,
-                    "quantity": 0.1,
-                    "amount": 10.0,
-                    "fee": 1.5,
+                "quantity": 0.1,
+                "amount": 10.0,
+                "contractSize": 1.0,
+                "fee": 1.5,
                     "commission": -1.5,
                     "profit": 0.0,
                     "openTime": 100000,
@@ -862,9 +1053,10 @@ class SummaryResponseTests(unittest.TestCase):
                     "code": "BTCUSD",
                     "side": "Sell",
                     "price": 120.0,
-                    "quantity": 0.1,
-                    "amount": 12.0,
-                    "fee": 2.0,
+                "quantity": 0.1,
+                "amount": 12.0,
+                "contractSize": 1.0,
+                "fee": 2.0,
                     "commission": -2.0,
                     "profit": 8.0,
                     "openTime": 200000,
@@ -917,6 +1109,7 @@ class SummaryResponseTests(unittest.TestCase):
                     "price": 100.0,
                     "quantity": 0.1,
                     "amount": 10.0,
+                    "contractSize": 1.0,
                     "fee": 1.5,
                     "commission": -1.5,
                     "profit": 0.0,
@@ -938,6 +1131,7 @@ class SummaryResponseTests(unittest.TestCase):
                     "price": 120.0,
                     "quantity": 0.1,
                     "amount": 12.0,
+                    "contractSize": 1.0,
                     "fee": 2.0,
                     "commission": -2.0,
                     "profit": 8.0,
@@ -1306,6 +1500,33 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(points[-1]["equity"], 1030.0)
         self.assertAlmostEqual(points[-1]["positionRatio"], 10.5 / 1030.0, places=6)
 
+    def test_resolve_open_position_ids_should_not_leave_position_open_when_same_timestamp_close_precedes_open(self):
+        helper = getattr(server_v2, "_resolve_open_position_ids_from_history", None)
+        self.assertIsNotNone(helper, "缺少 _resolve_open_position_ids_from_history，无法验证同时间戳生命周期顺序")
+
+        deal_history = [
+            {
+                "timestamp": 1_000,
+                "entry": 1,
+                "deal_type": 1,
+                "volume": 1.0,
+                "symbol": "BTCUSD",
+                "position_id": 7,
+            },
+            {
+                "timestamp": 1_000,
+                "entry": 0,
+                "deal_type": 0,
+                "volume": 1.0,
+                "symbol": "BTCUSD",
+                "position_id": 7,
+            },
+        ]
+
+        open_position_ids = helper(deal_history)
+
+        self.assertEqual(set(), open_position_ids)
+
     def test_rebuild_curve_should_not_preinject_position_when_position_id_already_exists_in_history(self):
         helper = getattr(server_v2, "_replay_curve_from_history", None)
         self.assertIsNotNone(helper, "缺少 _replay_curve_from_history，无法验证持仓重复注入问题")
@@ -1421,6 +1642,51 @@ class SummaryResponseTests(unittest.TestCase):
             places=6,
             msg="卖单平仓后不应因为后续同品种价格更新继续残留浮盈亏",
         )
+
+    def test_rebuild_curve_should_not_leave_position_ratio_when_same_timestamp_close_precedes_open(self):
+        helper = getattr(server_v2, "_replay_curve_from_history", None)
+        self.assertIsNotNone(helper, "缺少 _replay_curve_from_history，无法验证同时间戳生命周期顺序")
+
+        deals = [
+            {
+                "timestamp": 1_000,
+                "price": 110.0,
+                "profit": 10.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 1,
+                "deal_type": 1,
+                "volume": 1.0,
+                "symbol": "BTCUSD",
+                "position_id": 9,
+            },
+            {
+                "timestamp": 1_000,
+                "price": 100.0,
+                "profit": 0.0,
+                "commission": 0.0,
+                "swap": 0.0,
+                "entry": 0,
+                "deal_type": 0,
+                "volume": 1.0,
+                "symbol": "BTCUSD",
+                "position_id": 9,
+            },
+        ]
+
+        points = helper(
+            deal_history=deals,
+            start_balance=1_000.0,
+            open_positions=[],
+            current_balance=1_010.0,
+            current_equity=1_010.0,
+            leverage=100.0,
+            contract_size_fn=lambda symbol: 1.0,
+            now_ms=2_000,
+            fetch_rows_fn=lambda symbol, interval, limit, **kwargs: [],
+        )
+
+        self.assertAlmostEqual(0.0, points[-1]["positionRatio"], places=6)
 
     def test_rebuild_curve_inserts_history_samples_for_open_interval(self):
         helper = getattr(server_v2, "_replay_curve_from_history", None)
@@ -1885,6 +2151,88 @@ class SummaryResponseTests(unittest.TestCase):
 
         self.assertEqual(2, build_calls["count"])
         self.assertEqual("new", (snapshot.get("accountMeta") or {}).get("login"))
+
+    def test_build_snapshot_with_cache_should_drop_stale_result_after_session_epoch_changed(self):
+        original_cache = dict(server_v2.snapshot_build_cache)
+        original_selector = server_v2._select_snapshot
+        original_epoch = int(getattr(server_v2, "session_snapshot_epoch", 0))
+
+        build_calls = {"count": 0}
+
+        def fake_select_snapshot(range_key):
+            self.assertEqual("all", range_key)
+            build_calls["count"] += 1
+            if build_calls["count"] == 1:
+                with server_v2.snapshot_cache_lock:
+                    server_v2.session_snapshot_epoch += 1
+                return {
+                    "accountMeta": {"source": "MT5 Python Pull", "login": "old"},
+                    "overviewMetrics": [],
+                    "curvePoints": [],
+                    "curveIndicators": [],
+                    "positions": [],
+                    "pendingOrders": [],
+                    "trades": [],
+                    "statsMetrics": [],
+                }
+            return {
+                "accountMeta": {"source": "MT5 Python Pull", "login": "new"},
+                "overviewMetrics": [],
+                "curvePoints": [],
+                "curveIndicators": [],
+                "positions": [],
+                "pendingOrders": [],
+                "trades": [],
+                "statsMetrics": [],
+            }
+
+        try:
+            server_v2.snapshot_build_cache.clear()
+            server_v2._select_snapshot = fake_select_snapshot
+            snapshot = server_v2._build_snapshot_with_cache("all")
+        finally:
+            server_v2.snapshot_build_cache.clear()
+            server_v2.snapshot_build_cache.update(original_cache)
+            server_v2._select_snapshot = original_selector
+            server_v2.session_snapshot_epoch = original_epoch
+
+        self.assertEqual(2, build_calls["count"])
+        self.assertEqual("new", (snapshot.get("accountMeta") or {}).get("login"))
+
+    def test_build_trade_history_with_cache_should_drop_stale_result_after_session_epoch_changed(self):
+        original_cache = dict(server_v2.snapshot_build_cache)
+        original_fetch_trades = server_v2._snapshot_trades_from_mt5
+        original_epoch = int(getattr(server_v2, "session_snapshot_epoch", 0))
+        original_mt5 = server_v2.mt5
+        original_is_mt5_configured = server_v2._is_mt5_configured
+
+        build_calls = {"count": 0}
+
+        def fake_snapshot_trades_from_mt5(range_key):
+            self.assertEqual("all", range_key)
+            build_calls["count"] += 1
+            if build_calls["count"] == 1:
+                with server_v2.snapshot_cache_lock:
+                    server_v2.session_snapshot_epoch += 1
+                return [{"dealTicket": 1, "code": "BTCUSD"}]
+            return [{"dealTicket": 2, "code": "XAUUSD"}]
+
+        try:
+            server_v2.snapshot_build_cache.clear()
+            server_v2._snapshot_trades_from_mt5 = fake_snapshot_trades_from_mt5
+            server_v2.mt5 = object()
+            server_v2._is_mt5_configured = lambda: True
+            trades = server_v2._build_trade_history_with_cache("all")
+        finally:
+            server_v2.snapshot_build_cache.clear()
+            server_v2.snapshot_build_cache.update(original_cache)
+            server_v2._snapshot_trades_from_mt5 = original_fetch_trades
+            server_v2.session_snapshot_epoch = original_epoch
+            server_v2.mt5 = original_mt5
+            server_v2._is_mt5_configured = original_is_mt5_configured
+
+        self.assertEqual(2, build_calls["count"])
+        self.assertEqual([{"dealTicket": 2, "code": "XAUUSD"}], trades)
 
     def test_curve_point_digest_includes_position_ratio(self):
         helper = getattr(server_v2, "_normalize_digest_curve_points", None)

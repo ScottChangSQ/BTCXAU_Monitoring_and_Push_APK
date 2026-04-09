@@ -10,13 +10,13 @@ MarketCandle = Dict[str, Any]
 
 def _symbol_descriptor(symbol: str) -> Dict[str, str]:
     normalized = str(symbol or "").strip().upper()
-    if normalized in {"BTCUSDT", "BTCUSD", "BTC", "XBT"}:
+    if normalized in {"BTCUSDT", "BTCUSD", "BTC"}:
         return {
             "productId": "BTC",
             "marketSymbol": "BTCUSDT",
             "tradeSymbol": "BTCUSD",
         }
-    if normalized in {"XAUUSDT", "XAUUSD", "XAU", "GOLD"}:
+    if normalized in {"XAUUSDT", "XAUUSD", "XAU"}:
         return {
             "productId": "XAU",
             "marketSymbol": "XAUUSDT",

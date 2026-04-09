@@ -15,13 +15,14 @@ public class MarketChartRefreshHelperAdditionalTest {
 
     @Test
     public void resolveAutoRefreshDelayMsShouldSlowDownWhenRealtimeIsFresh() {
-        assertEquals(15_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(true, 5_000L, true));
-        assertEquals(5_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(false, 5_000L, true));
+        assertEquals(15_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(true, 5_000L, true, 10_000L));
+        assertEquals(5_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(false, 5_000L, true, 10_000L));
     }
 
     @Test
-    public void resolveAutoRefreshDelayMsShouldKeepFallbackWhenRealtimeTailSourceIsUnavailable() {
-        assertEquals(5_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(true, 5_000L, false));
+    public void resolveAutoRefreshDelayMsShouldAlignToNextMinuteWhenRealtimeTailSourceIsUnavailable() {
+        assertEquals(50_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(true, 5_000L, false, 10_000L));
+        assertEquals(1_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(false, 5_000L, false, 59_000L));
     }
 
     @Test
@@ -74,9 +75,9 @@ public class MarketChartRefreshHelperAdditionalTest {
     }
 
     @Test
-    public void shouldSkipRequestOnResumeShouldRequireRealtimeTailSource() {
-        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, true, false));
-        assertEquals(true, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, true, true));
-        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(false, true, true));
+    public void shouldSkipRequestOnResumeShouldOnlyDependOnVisibleWindowFreshness() {
+        assertEquals(true, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, true));
+        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(false, true));
+        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, false));
     }
 }

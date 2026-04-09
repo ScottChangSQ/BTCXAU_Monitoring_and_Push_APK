@@ -73,6 +73,7 @@ public class AccountStorageRepository {
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
+        metaEntity.historyRevision = safe(snapshot.getHistoryRevision());
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
         metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
         metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
@@ -97,6 +98,7 @@ public class AccountStorageRepository {
         }
         accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
         accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
+        AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
 
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
         metaEntity.id = 1;
@@ -108,6 +110,7 @@ public class AccountStorageRepository {
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
+        metaEntity.historyRevision = resolveStoredHistoryRevision(existingMeta, snapshot);
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
         metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
         metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
@@ -120,6 +123,7 @@ public class AccountStorageRepository {
         if (snapshot == null || accountSnapshotDao == null) {
             return;
         }
+        AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
         metaEntity.id = 1;
         metaEntity.connected = snapshot.isConnected();
@@ -130,6 +134,7 @@ public class AccountStorageRepository {
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
+        metaEntity.historyRevision = resolveStoredHistoryRevision(existingMeta, snapshot);
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
         metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
         metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
@@ -143,6 +148,7 @@ public class AccountStorageRepository {
             return;
         }
         accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
+        AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
 
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
         metaEntity.id = 1;
@@ -154,6 +160,7 @@ public class AccountStorageRepository {
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
+        metaEntity.historyRevision = resolveStoredHistoryRevision(existingMeta, snapshot);
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
         metaEntity.curveIndicatorsJson = metricsToJsonString(snapshot.getCurveIndicators());
         metaEntity.statsMetricsJson = metricsToJsonString(snapshot.getStatsMetrics());
@@ -169,6 +176,10 @@ public class AccountStorageRepository {
         accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
         accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
         AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
+        boolean identityChanged = isSnapshotIdentityChanged(existingMeta, snapshot);
+        if (identityChanged && tradeHistoryDao != null) {
+            tradeHistoryDao.clearAll();
+        }
 
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
         metaEntity.id = 1;
@@ -180,16 +191,23 @@ public class AccountStorageRepository {
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
+        metaEntity.historyRevision = resolveIncrementalHistoryRevision(existingMeta, snapshot, identityChanged);
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
-        metaEntity.curveIndicatorsJson = snapshot.getCurveIndicators().isEmpty()
-                ? (existingMeta == null ? "[]" : safe(existingMeta.curveIndicatorsJson))
-                : metricsToJsonString(snapshot.getCurveIndicators());
-        metaEntity.statsMetricsJson = snapshot.getStatsMetrics().isEmpty()
-                ? (existingMeta == null ? "[]" : safe(existingMeta.statsMetricsJson))
-                : metricsToJsonString(snapshot.getStatsMetrics());
-        metaEntity.curvePointsJson = snapshot.getCurvePoints().isEmpty()
-                ? (existingMeta == null ? "[]" : safe(existingMeta.curvePointsJson))
-                : curvePointsToJsonString(snapshot.getCurvePoints());
+        metaEntity.curveIndicatorsJson = resolveIncrementalMetricsJson(
+                snapshot.getCurveIndicators(),
+                existingMeta == null ? "[]" : safe(existingMeta.curveIndicatorsJson),
+                identityChanged
+        );
+        metaEntity.statsMetricsJson = resolveIncrementalMetricsJson(
+                snapshot.getStatsMetrics(),
+                existingMeta == null ? "[]" : safe(existingMeta.statsMetricsJson),
+                identityChanged
+        );
+        metaEntity.curvePointsJson = resolveIncrementalCurvePointsJson(
+                snapshot.getCurvePoints(),
+                existingMeta == null ? "[]" : safe(existingMeta.curvePointsJson),
+                identityChanged
+        );
         accountSnapshotDao.upsertMeta(metaEntity);
     }
 
@@ -227,6 +245,7 @@ public class AccountStorageRepository {
                 meta.updatedAt,
                 meta.error,
                 meta.fetchedAt,
+                meta.historyRevision,
                 jsonToMetrics(meta.overviewMetricsJson),
                 jsonToCurvePoints(meta.curvePointsJson),
                 jsonToMetrics(meta.curveIndicatorsJson),
@@ -691,6 +710,59 @@ public class AccountStorageRepository {
         return value == null || value.trim().isEmpty();
     }
 
+    // 轻量运行态如果换了账号身份，旧账户的历史侧缓存必须整体失效。
+    private boolean isSnapshotIdentityChanged(AccountSnapshotMetaEntity existingMeta, StoredSnapshot snapshot) {
+        if (existingMeta == null || snapshot == null) {
+            return false;
+        }
+        return !safe(existingMeta.account).trim().equalsIgnoreCase(safe(snapshot.getAccount()).trim())
+                || !safe(existingMeta.server).trim().equalsIgnoreCase(safe(snapshot.getServer()).trim());
+    }
+
+    // historyRevision 在同账户的运行态更新里可以沿用旧值；换账户后必须切到新值或清空。
+    private String resolveIncrementalHistoryRevision(AccountSnapshotMetaEntity existingMeta,
+                                                     StoredSnapshot snapshot,
+                                                     boolean identityChanged) {
+        String incomingRevision = safe(snapshot == null ? "" : snapshot.getHistoryRevision()).trim();
+        if (!incomingRevision.isEmpty()) {
+            return incomingRevision;
+        }
+        if (identityChanged || existingMeta == null) {
+            return "";
+        }
+        return safe(existingMeta.historyRevision);
+    }
+
+    // 全量或摘要写入若未显式给出版本号，则沿用已有 revision，避免把已知历史版本静默覆盖为空。
+    private String resolveStoredHistoryRevision(AccountSnapshotMetaEntity existingMeta,
+                                                StoredSnapshot snapshot) {
+        String incomingRevision = safe(snapshot == null ? "" : snapshot.getHistoryRevision()).trim();
+        if (!incomingRevision.isEmpty()) {
+            return incomingRevision;
+        }
+        return existingMeta == null ? "" : safe(existingMeta.historyRevision);
+    }
+
+    // 轻量运行态在同账户下允许沿用旧历史侧指标；换账户后不能继承旧值。
+    private String resolveIncrementalMetricsJson(List<AccountMetric> metrics,
+                                                 String existingJson,
+                                                 boolean identityChanged) {
+        if (metrics != null && !metrics.isEmpty()) {
+            return metricsToJsonString(metrics);
+        }
+        return identityChanged ? "[]" : safe(existingJson);
+    }
+
+    // 轻量运行态在同账户下允许沿用旧曲线；换账户后不能继承旧曲线。
+    private String resolveIncrementalCurvePointsJson(List<CurvePoint> curvePoints,
+                                                     String existingJson,
+                                                     boolean identityChanged) {
+        if (curvePoints != null && !curvePoints.isEmpty()) {
+            return curvePointsToJsonString(curvePoints);
+        }
+        return identityChanged ? "[]" : safe(existingJson);
+    }
+
     private static String safe(String value) {
         return value == null ? "" : value;
     }
@@ -713,6 +785,7 @@ public class AccountStorageRepository {
         private final long updatedAt;
         private final String error;
         private final long fetchedAt;
+        private final String historyRevision;
         private final List<AccountMetric> overviewMetrics;
         private final List<CurvePoint> curvePoints;
         private final List<AccountMetric> curveIndicators;
@@ -736,6 +809,42 @@ public class AccountStorageRepository {
                               List<PositionItem> pendingOrders,
                               List<TradeRecordItem> trades,
                               List<AccountMetric> statsMetrics) {
+            this(
+                    connected,
+                    account,
+                    server,
+                    source,
+                    gateway,
+                    updatedAt,
+                    error,
+                    fetchedAt,
+                    "",
+                    overviewMetrics,
+                    curvePoints,
+                    curveIndicators,
+                    positions,
+                    pendingOrders,
+                    trades,
+                    statsMetrics
+            );
+        }
+
+        public StoredSnapshot(boolean connected,
+                              String account,
+                              String server,
+                              String source,
+                              String gateway,
+                              long updatedAt,
+                              String error,
+                              long fetchedAt,
+                              String historyRevision,
+                              List<AccountMetric> overviewMetrics,
+                              List<CurvePoint> curvePoints,
+                              List<AccountMetric> curveIndicators,
+                              List<PositionItem> positions,
+                              List<PositionItem> pendingOrders,
+                              List<TradeRecordItem> trades,
+                              List<AccountMetric> statsMetrics) {
             this.connected = connected;
             this.account = safe(account);
             this.server = safe(server);
@@ -744,6 +853,7 @@ public class AccountStorageRepository {
             this.updatedAt = updatedAt;
             this.error = safe(error);
             this.fetchedAt = fetchedAt;
+            this.historyRevision = safe(historyRevision);
             this.overviewMetrics = overviewMetrics == null ? new ArrayList<>() : new ArrayList<>(overviewMetrics);
             this.curvePoints = curvePoints == null ? new ArrayList<>() : new ArrayList<>(curvePoints);
             this.curveIndicators = curveIndicators == null ? new ArrayList<>() : new ArrayList<>(curveIndicators);
@@ -761,6 +871,7 @@ public class AccountStorageRepository {
         public long getUpdatedAt() { return updatedAt; }
         public String getError() { return error; }
         public long getFetchedAt() { return fetchedAt; }
+        public String getHistoryRevision() { return historyRevision; }
         public List<AccountMetric> getOverviewMetrics() { return new ArrayList<>(overviewMetrics); }
         public List<CurvePoint> getCurvePoints() { return new ArrayList<>(curvePoints); }
         public List<AccountMetric> getCurveIndicators() { return new ArrayList<>(curveIndicators); }

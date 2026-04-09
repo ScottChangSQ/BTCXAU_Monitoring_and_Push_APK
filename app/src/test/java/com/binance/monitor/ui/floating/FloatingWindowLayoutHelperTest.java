@@ -12,7 +12,7 @@ import static org.junit.Assert.assertEquals;
 public class FloatingWindowLayoutHelperTest {
 
     @Test
-    public void expandedLayoutShouldUseTighterWidthPreset() {
+    public void expandedLayoutShouldUseStableWiderPresetForPnlTitles() {
         assertEquals(90, FloatingWindowLayoutHelper.resolveExpandedWidthDp());
         assertEquals(82, FloatingWindowLayoutHelper.resolveExpandedContentWidthDp());
         assertEquals(0, FloatingWindowLayoutHelper.resolveTrailingInsetDp());

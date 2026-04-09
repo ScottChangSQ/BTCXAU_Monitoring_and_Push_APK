@@ -44,6 +44,20 @@ public class MainActivityConnectionDialogSourceTest {
                 source.contains("GatewayUrlResolver.buildBinanceWebSocketBaseUrl("));
     }
 
+    @Test
+    public void mainActivityShouldStartServiceOnCreateInsteadOfOnEveryResume() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/main/MainActivity.java",
+                "src/main/java/com/binance/monitor/ui/main/MainActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("ensureMonitorServiceStarted();"));
+        assertTrue(source.contains("private void ensureMonitorServiceStarted()"));
+        assertTrue(source.contains("protected void onResume()"));
+        assertTrue(source.contains("protected void onResume() {\n        super.onResume();\n        ensureMonitorServiceStarted();"));
+        assertFalse(source.contains("protected void onResume() {\n        super.onResume();\n        sendServiceAction(AppConstants.ACTION_BOOTSTRAP);"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

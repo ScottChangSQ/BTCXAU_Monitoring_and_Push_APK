@@ -1,0 +1,1082 @@
+--------- beginning of main
+04-09 16:00:22.858 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-1-1 79900
+04-09 16:00:22.858 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:22.866 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-213-(cpu-1-1-1)-28-0-1
+04-09 16:00:22.866 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-1-1 92300
+04-09 16:00:22.866 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-10614-(cpu-1-1-1)-28-0-1
+04-09 16:00:22.877 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 4
+04-09 16:00:22.887 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:22.891 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-1-1 79900
+04-09 16:00:22.894 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:22.899 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-213-(cpu-1-1-1)-28-0-1
+04-09 16:00:22.899 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-1-1 92300
+04-09 16:00:22.900 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-10614-(cpu-1-1-1)-28-0-1
+04-09 16:00:22.902 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:22.902 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:22.902 D/SensorFeature( 2258): write 39 bytes:768839444131948,768839496614917,29303,0
+04-09 16:00:22.910 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 4
+04-09 16:00:22.913 D/vendor.qti.bluetooth@1.0-wake_lock( 2103): Release wakelock is released 
+04-09 16:00:22.920 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:22.926 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-1-1 79900
+04-09 16:00:22.930 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-213-(cpu-1-1-1)-28-0-1
+04-09 16:00:22.930 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-1-1 92700
+04-09 16:00:22.930 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-10614-(cpu-1-1-1)-28-0-1
+04-09 16:00:22.940 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 3
+04-09 16:00:22.950 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:22.973 D/CommonApp-234-10512(14034): transport layer data is invalid
+04-09 16:00:22.973 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-1-1 79100
+04-09 16:00:22.973 D/CommonApp-235-10512(14034): commonScoreStrategy scenarios 1
+04-09 16:00:22.973 D/CommonApp-235-10512(14034): notifyScoreChange appScene COMMON score 100
+04-09 16:00:22.973 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:22.973 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:22.973 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:23.016 D/ShellSubscriberWorkerThread(15031): the first 8 bytes empty, and RestData length > 8 
+04-09 16:00:23.042 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 215.7,cct 5318.4,brl/algo/ir 1380.0/2.0/9.6,pwm/dc 0.0/0.0,rgbc 7702.707520/5816.308594/2889.824219/16144.590820,ts 768839474551441,cnt 18194,flag 29303
+04-09 16:00:23.042 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18194)(cct, lux, ir)[5318.40, 215.75, 9.586047] (r, g, b, c)[7702.71, 5816.31, 2889.82, 16144.59]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29303
+04-09 16:00:23.043 D/FusionLightNextGen( 3590): process end reported = 1, mode: 0, cnt: 440885, lux 197.4, cct 5408.9, r/g/b/c: 7702.7/5820.7/2907.5/16139.9, R/G/B: 80.0/76.0/67.0, bri 1380.0, match 1.00, ir 0.008468, conf 5.0, ts 768839485621441
+04-09 16:00:23.053 W/InputDispatcherExtImpl( 3590): channel 734657f com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity MotionEvent action_down is in interception region {[homegesture_displayid_0][0.000000,2703.000000][1264.000000,2780.000000],}, x: 798.000000, y: 2708.000000, key: homegesture_displayid_0, displayid: 0, DispatchRegion: {[homegesture_displayid_0][0.000000,2703.000000][1264.000000,2780.000000],}
+04-09 16:00:23.053 D/VRR [OTI]( 2399): handleIdle from 1 to 0
+04-09 16:00:23.053 D/VRR [OTI-HW]( 2399): isStateReady 0
+04-09 16:00:23.053 D/VRR [OTI-HW]( 2399): keep rate.
+04-09 16:00:23.053 D/GestureLog_OplusMultiPointerDetector( 3590): onTouchEvent------>start, mCurNumPointers=1, mCurrStatus=0 mIsDownIntervalTimeout=true, action=0 downTime=727719981 deviceId=-1
+04-09 16:00:23.053 I/[UAH_CLIENT]( 3590): UahEventAcquire, cmdid:37, pkg:none, identity:OplusUAwareInputHelper
+04-09 16:00:23.054 D/UAH-UahAdaptHelper( 3590): adaptSetNotification identity = OplusUAwareInputHelpersrc = 1000 , type 0 ,p1 = -1 ,p2 = -1 ,p3 = -1 ,p4 =
+04-09 16:00:23.054 W/OPLUS_LOG_LOAD( 8730): ==LOGS PROG INFO, prog(com.android.launcher) ==
+04-09 16:00:23.054 D/AnimSeqTimeStamp( 8730): getTimeGapToLastStartAppTime: 727719982
+04-09 16:00:23.054 I/[UAH_CLIENT]( 3590): uahRuleCtl, ruleId:1000, status:0
+04-09 16:00:23.054 D/UAH-UahAdaptHelper( 3590): adaptSetNotification identity = OplusUAwareInputHelpersrc = 1000 , type 1 ,p1 = -1 ,p2 = -1 ,p3 = -1 ,p4 =
+04-09 16:00:23.054 I/[UAH_CLIENT]( 3590): uahRuleCtl, ruleId:1000, status:1
+04-09 16:00:23.054 D/MultiStateCallback( 8730): raw caller: com.android.quickstep.GestureState.<init>:17
+04-09 16:00:23.054 D/OplusBaseTouchInteractionService( 8730): onInputEvent-isReverseGestureAnimationRunning: false, null. null, isInheritForReverseAnim = false, continuePreviousGesture = false
+--------- beginning of system
+04-09 16:00:23.054 D/PowerManagerService( 3590): userActivityNoUpdateLocked: groupId=0, eventTime=727719981, event=touch, flags=0x0, uid=1000
+04-09 16:00:23.054 I/SystemUi--NavBar( 8338): SideGestureDetector-->isInvalidEvent:false ,isMisTouchInvalidEvent = false  ,disableCui:false  ,ev:MotionEvent { action=ACTION_DOWN, actionButton=0, id[0]=0, x[0]=798.0, y[0]=2708.0, toolType[0]=TOOL_TYPE_FINGER, buttonState=0, classification=NONE, metaState=0, flags=0x0, edgeFlags=0x0, pointerCount=1, historySize=0, eventTime=727719981, downTime=727719981, deviceId=-1, source=0x1002, displayId=0, eventId=-1042499678 }
+04-09 16:00:23.054 I/SystemUi--NavBar( 8338): NoBackGesture-->display_id_0 Start gesture: MotionEvent { action=ACTION_DOWN, actionButton=0, id[0]=0, x[0]=798.0, y[0]=2708.0, toolType[0]=TOOL_TYPE_FINGER, buttonState=0, classification=NONE, metaState=0, flags=0x0, edgeFlags=0x0, pointerCount=1, historySize=0, eventTime=727719981, downTime=727719981, deviceId=-1, source=0x1002, displayId=0, eventId=-1042499678 } ,mRotation = 0
+04-09 16:00:23.054 D/PowerManagerService( 3590): userActivityNoUpdateLocked: groupId=0, eventTime=727719981, event=touch, flags=0x0, uid=1000
+04-09 16:00:23.054 I/SystemUi--NavBar( 8338): NoBackGesture-->display_id_0 bottomGestureAreaHeight = 77  mDisplaySize.y = 2780 x = 798.0 y = 2708.0
+04-09 16:00:23.054 I/SystemUi--NavBar( 8338): NoBackGesture-->display_id_0 Not in side gesture area
+04-09 16:00:23.054 D/PowerManagerService( 3590): userActivityNoUpdateLocked: groupId=0, eventTime=727719981, event=touch, flags=0x0, uid=1000
+04-09 16:00:23.054 D/PowerManagerService( 3590): userActivityNoUpdateLocked: groupId=0, eventTime=727719981, event=touch, flags=0x0, uid=1000
+04-09 16:00:23.054 I/SystemUi--NavBar( 8338): SideGestureDetector-->isInvalidEvent:false ,isMisTouchInvalidEvent = false  ,disableCui:false  ,ev:MotionEvent { action=ACTION_UP, actionButton=0, id[0]=0, x[0]=798.0, y[0]=2708.0, toolType[0]=TOOL_TYPE_FINGER, buttonState=0, classification=NONE, metaState=0, flags=0x0, edgeFlags=0x0, pointerCount=1, historySize=0, eventTime=727719981, downTime=727719981, deviceId=-1, source=0x1002, displayId=0, eventId=-974814732 }
+04-09 16:00:23.054 I/SystemUi--NavBar( 8338): NoBackGesture-->gestureBar animation: gestureBarNotHide = false, isCorrectHomeHandle = true
+04-09 16:00:23.054 D/OplusBaseInputConsumerController( 8730): shouldRecreate: mIsCreateFailed: false, mAllowRecreate: true
+04-09 16:00:23.055 W/OplusBaseTouchInteractionService[u0]( 8730): onInputEvent(), ACTION_DOWN, Consumer=TYPE_OTHER_ACTIVITY
+04-09 16:00:23.055 I/PantaCard.Lnch.InstantCard( 8730):  100335&1000001&1_sid=536877599_rk=ea6994,setAllowCardRefreshable refreshable:false[sdk:v1.3.122-1545084,seed-plugin:v16.1.126-d5777f7c,app:v16.4.22] [OplusLauncher|com.android.launcher|2.0.44-25e9612]
+04-09 16:00:23.055 D/CardView( 8730): 0x1081e1 io.iftech.quickapp.box setRefreshable false , completeRequestLayout false , completeRefresh false 
+04-09 16:00:23.055 E/[OPLUS_AFS_CONFIG]( 8730): Failed to open AFS config file: /proc/oplus_afs_config/afs_config
+04-09 16:00:23.055 E/AFS_CONFIG( 8730): Failed to get scene config
+04-09 16:00:23.055 E/OplusAfsManager( 8730): afsConfigSceneConfigGet sceneType is null
+04-09 16:00:23.055 I/[UAH_CLIENT]( 8730): UahEventAcquire, cmdid:426, pkg:none, identity:GpuBoost
+04-09 16:00:23.055 D/AnimSeqTimeStamp( 8730): getTimeGapToLastStartAppTime: 727719983
+04-09 16:00:23.055 I/[UAH_CLIENT]( 8730): UahRelease, handle:426
+04-09 16:00:23.055 E/[OPLUS_AFS_CONFIG]( 8730): Failed to open AFS config file: /proc/oplus_afs_config/afs_config
+04-09 16:00:23.055 E/AFS_CONFIG( 8730): Failed to get scene config
+04-09 16:00:23.055 E/OplusAfsManager( 8730): afsConfigSceneConfigGet sceneType is null
+04-09 16:00:23.055 D/OtherActivityInputConsumer( 8730): removeListener, mActiveCallbacks == null ? true
+04-09 16:00:23.055 E/[OPLUS_AFS_CONFIG]( 8730): Failed to open AFS config file: /proc/oplus_afs_config/afs_config
+04-09 16:00:23.055 E/AFS_CONFIG( 8730): Failed to get scene config
+04-09 16:00:23.055 E/OplusAfsManager( 8730): afsConfigSceneConfigGet sceneType is null
+04-09 16:00:23.055 I/[UAH_CLIENT]( 8730): UahRelease, handle:426
+04-09 16:00:23.056 D/LauncherProxyService( 8338): notifyInjectEvent
+04-09 16:00:23.056 I/SystemUi--NavBar( 8338): SideGestureDetector-->isInvalidEvent:true ,isMisTouchInvalidEvent = false  ,disableCui:false  ,ev:MotionEvent { action=ACTION_DOWN, actionButton=0, id[0]=0, x[0]=798.0, y[0]=2708.0, toolType[0]=TOOL_TYPE_FINGER, buttonState=0, classification=NONE, metaState=0, flags=0x0, edgeFlags=0x0, pointerCount=1, historySize=0, eventTime=727719981, downTime=727719980, deviceId=-1, source=0x1002, displayId=0, eventId=-1042499678 }
+04-09 16:00:23.056 D/GestureLog_OplusMultiPointerDetector( 3590): onTouchEvent------>start, mCurNumPointers=1, mCurrStatus=0 mIsDownIntervalTimeout=false, action=0 downTime=727719980 deviceId=-1
+04-09 16:00:23.056 D/PowerManagerService( 3590): userActivityNoUpdateLocked: groupId=0, eventTime=727719981, event=touch, flags=0x0, uid=1000
+04-09 16:00:23.056 I/[UAH_CLIENT]( 3590): UahEventAcquire, cmdid:37, pkg:none, identity:OplusUAwareInputHelper
+04-09 16:00:23.056 I/SystemUi--NavBar( 8338): SideGestureDetector-->isInvalidEvent:true ,isMisTouchInvalidEvent = false  ,disableCui:false  ,ev:MotionEvent { action=ACTION_UP, actionButton=0, id[0]=0, x[0]=798.0, y[0]=2708.0, toolType[0]=TOOL_TYPE_FINGER, buttonState=0, classification=NONE, metaState=0, flags=0x0, edgeFlags=0x0, pointerCount=1, historySize=0, eventTime=727719981, downTime=727719980, deviceId=-1, source=0x1002, displayId=0, eventId=-974814732 }
+04-09 16:00:23.056 D/AnimSeqTimeStamp( 8730): getTimeGapToLastStartAppTime: 727719984
+04-09 16:00:23.057 E/IJankManager( 6825): slideSceneEnd unknown scene 1000 mScene:-1
+04-09 16:00:23.057 D/PowerManagerService( 3590): userActivityNoUpdateLocked: groupId=0, eventTime=727719981, event=touch, flags=0x0, uid=1000
+04-09 16:00:23.057 D/PowerManagerService( 3590): userActivityNoUpdateLocked: groupId=0, eventTime=727719981, event=touch, flags=0x0, uid=1000
+04-09 16:00:23.057 D/PowerManagerService( 3590): userActivityNoUpdateLocked: groupId=0, eventTime=727719981, event=touch, flags=0x0, uid=1000
+04-09 16:00:23.057 D/UAH-UahAdaptHelper( 3590): adaptSetNotification identity = OplusUAwareInputHelpersrc = 1000 , type 0 ,p1 = -1 ,p2 = -1 ,p3 = -1 ,p4 =
+04-09 16:00:23.057 I/[UAH_CLIENT]( 3590): uahRuleCtl, ruleId:1000, status:0
+04-09 16:00:23.057 D/UAH-UahAdaptHelper( 3590): adaptSetNotification identity = OplusUAwareInputHelpersrc = 1000 , type 1 ,p1 = -1 ,p2 = -1 ,p3 = -1 ,p4 =
+04-09 16:00:23.057 I/[UAH_CLIENT]( 3590): uahRuleCtl, ruleId:1000, status:1
+04-09 16:00:23.057 D/OplusViewDragTouchViewHelper( 6825): dispatchTouchView action = 1
+04-09 16:00:23.057 D/ViewRootImplExtImpl( 6825): the up motion event handled by client, just return
+04-09 16:00:23.058 I/[UAH_CLIENT]( 3590): UahEventAcquire, cmdid:2, pkg:none, identity:com.android.server.wm
+04-09 16:00:23.058 D/WindowManager( 3590): NFW_setClientVisible:ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity clientVisible:true
+04-09 16:00:23.058 V/GrammaticalInflectionUtils( 3590): AttributionSource: android.content.AttributionSource@1020978a does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+04-09 16:00:23.058 D/OplusCompatModeManagerService( 3590): getRequestedConfigurationOrientation  res:1,req:1,config.old:0,config.new:0,ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1}
+04-09 16:00:23.058 D/OplusCompatModeManagerService( 3590):  onPreActivityRecordConfigurationChanged {0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=undefined mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+04-09 16:00:23.058 D/OplusCompatModeManagerService( 3590):  disable:true,valid:false,computeReq:1,isGameRatio:false
+04-09 16:00:23.058 D/OplusCompatModeManagerService( 3590):  getOverrideMinAspectRatioForCompatMode: 0.0 getRawOverrideMinAspectRatioForCompatMode: 0.0
+04-09 16:00:23.058 D/OplusCompatModeManagerService( 3590):  ar : ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} displayId:-1 inCompatMode: false
+04-09 16:00:23.058 D/OplusCompatModeManagerService( 3590): isDefaultDisplay true oldRect: Rect(0, 0 - 0, 0) newRect Rect(0, 0 - 0, 0)
+04-09 16:00:23.058 D/OplusCompatModeManagerService( 3590): reloadCompactRatio mParWorldContainer.isEnabledParallelWindow(pkg):false,mParWorldContainer.isDisabledCompactWindow:false,isUIAutoLayout:false, isFullOrientation: false
+04-09 16:00:23.059 D/FlexibleTaskController( 3590): isSupportFlexibleWindow target = com.binance.monitor/.ui.account.AccountStatsBridgeActivity callPkg = FlexibleTaskController support = true ,caller = 3590
+04-09 16:00:23.059 D/ActivityStarterExtImpl( 3590): checkOpMode: 3
+04-09 16:00:23.059 W/QosScheduler( 3590): executeSceneQosStrategy failed! qos feature no enable
+04-09 16:00:23.059 D/FlexibleWindowManagerService( 3590): isIgnoreAppearedAcrossTask:false
+04-09 16:00:23.059 D/ActivityStarterExtImpl( 3590): setForceUpdateWindow, targetTask = Task{cb85077 #12920 type=standard A=10512:com.binance.monitor} r = ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} notFinish =false
+04-09 16:00:23.059 D/FlexibleWindowManagerService( 3590): isIgnoreAppearedAcrossTask:false
+04-09 16:00:23.059 D/FlexibleTaskController( 3590): adjustOptionsForFlexibleTask skip adjust options reason:4
+04-09 16:00:23.059 I/InsensibleTaskController( 3590): adjustOptionsForInsensibleTask targetTask is resuse so not pureInsensibleOptions
+04-09 16:00:23.059 D/FlexibleTaskController( 3590): isSupportFlexibleWindow target = com.binance.monitor/.ui.account.AccountStatsBridgeActivity callPkg = FlexibleTaskController support = true ,caller = 3590
+04-09 16:00:23.059 D/FlexibleWindowManagerService( 3590): no reused task found for ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1}
+04-09 16:00:23.059 D/ActivityStarterExtImpl( 3590): isLaunchingRootActivity = false
+04-09 16:00:23.059 D/ActivityStarterExtImpl( 3590): resume targetTask isVisibleRequested is true or in SkipCheckedList, need resume:targetTask=Task{cb85077 #12920 type=standard A=10512:com.binance.monitor}
+04-09 16:00:23.059 I/OPM     ( 3590): handleActivityStart : ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1}
+04-09 16:00:23.060 D/ActivityTrigger( 3590): ActivityTrigger activityPauseTrigger 
+04-09 16:00:23.061 V/WindowManagerShell( 8338): Transition requested (#23209): android.os.BinderProxy@d09c357 TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=12920 effectiveUid=10512 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.binance.monitor/.launcher.IconFinancialAlias mCallingUid=10214 } baseActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.main.MainActivity} topActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} origActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias} realActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.main.MainActivity}
+04-09 16:00:23.061 V/WindowManagerShell( 8338):  numActivities=3 lastActiveTime=768839665 supportsSplitScreenMultiWindow=true supportsMultiWindow=true supportsPocketStudioMultiWindow=true isInFlexibleEmbedded = false uid = 10512 pid = 6825 resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@2f6de44} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0)
+04-09 16:00:23.061 V/WindowManagerShell( 8338):  topActivityInfo=ActivityInfo{76d8b2d com.binance.monitor.ui.account.AccountStatsBridgeActivity} launchCookies=[android.os.BinderProxy@263372d, android.os.BinderProxy@63689d4, android.os.BinderProxy@df925a2] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(330, 828 - 935, 2092) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0
+04-09 16:00:23.061 V/WindowManagerShell( 8338):  appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityInOplusCompatMode=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityAppBounds=Rect(0, 140 - 1264, 2780) isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null topActivityLetterboxInsets=Rect(0, 0 - 0, 0)
+04-09 16:00:23.061 V/WindowManagerShell( 8338):  mOplusExtraBundle = Bundle[mParcelledData.dataSize=1540]}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 23209 }
+04-09 16:00:23.061 D/ShellSplitScreen( 8338): logExit: no-op, mLoggerSessionId is null
+04-09 16:00:23.062 I/ActivityTaskManager( 3590): START u0 {flg=0x20020000 xflg=0x4 cmp=com.binance.monitor/.ui.account.AccountStatsBridgeActivity mCallingUid=10512} with LAUNCH_MULTIPLE from uid 10512 (sr=116339672) (BAL_ALLOW_VISIBLE_WINDOW (callingUid has visible window)) result code=3
+04-09 16:00:23.062 D/WindowManagerShell( 8338): onActivityRestartAttempt: topActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}, wasVisible=false
+04-09 16:00:23.063 I/TaskOrganizerController( 3590): onTaskInfoChanged taskid 12920 config { mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0}
+04-09 16:00:23.063 D/OplusFlexibleDragToSplitAnimController( 3590): visibleFlexibleTaskInfos delete:12920
+04-09 16:00:23.063 E/FlexibleWindowManagerService( 3590): notifyTaskObserverToAttachController not need to notify!
+04-09 16:00:23.063 I/FlexibleWindowManagerService( 3590): onFlexibleWindowTaskInfoChanged, return for cur task not embedded
+04-09 16:00:23.063 D/ShellTaskOrganizerExt( 8338): visibleFlexibleTaskInfos delete:12920
+04-09 16:00:23.063 D/ShellTaskOrganizerExt( 8338): isOnCanvas size:0
+04-09 16:00:23.063 D/ShellTaskOrganizerExt( 8338): isOnThreeFlexibleCanvas size:0
+04-09 16:00:23.064 I/OplusAccessController( 3590): enter isIgnoreAppSwitchActivity
+04-09 16:00:23.064 I/OplusAccessController( 3590): enter isIgnoreAppSwitchActivity and intent != null
+04-09 16:00:23.064 I/OplusAccessController( 3590): enter isIgnoreAppSwitchActivity and componentName != null
+04-09 16:00:23.064 I/OplusAccessController( 3590): enter isIgnoreAppSwitchActivity and packageName&activity is not Empty
+04-09 16:00:23.064 D/BackgroundInstallControlService( 3590): Package event received: 0
+04-09 16:00:23.064 D/RefreshRate( 3590): boostRefreshId choose max:currentRefreshRate:90.0 targetRefreshRate:60.0 mCurrentPickRate:90.0
+04-09 16:00:23.064 D/RefreshRate( 3590): Trigger app switch boost, ar=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920},currDisplayRate=90.0,boostId=1
+04-09 16:00:23.064 D/RefreshRate( 3590): setDisplayConfigSpecs complete: targetMode={id=3, width=1264, height=2780, fps=90.0, vsync=90.0, synthetic=false, alternativeRefreshRates=[60.000004, 120.00001, 120.00001], supportedHdrTypes=[1, 2, 3, 4]},srcMode={id=3, width=1264, height=2780, fps=90.0, vsync=90.0, synthetic=false, alternativeRefreshRates=[60.000004, 120.00001, 120.00001], supportedHdrTypes=[1, 2, 3, 4]},sfModId=2,rate=90.0
+04-09 16:00:23.064 D/RefreshRate( 3590): startAppSwitchBoost targetMode={id=3, width=1264, height=2780, fps=90.0, vsync=90.0, synthetic=false, alternativeRefreshRates=[60.000004, 120.00001, 120.00001], supportedHdrTypes=[1, 2, 3, 4]} record=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920}: votes=PRIORITY_START_ANIMATION_BOOST -> Vote{mRefreshRate=90.0, mMinRefreshRate=90.0, mRequestSource=null};PRIORITY_WINDOW_REQUEST -> Vote{mRefreshRate=90.0, mMinRefreshRate=90.0, mRequestSource=null};
+04-09 16:00:23.064 D/RefreshRate( 3590): do setDisplayConfigSpecs  
+04-09 16:00:23.064 D/ActivityTaskManager( 3590): setAppVisibility(Token{1770d6e ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920}}, visible=true):  visible=false mVisibleRequested=false
+04-09 16:00:23.064 D/SurfaceFlinger( 2399): VRR [SurfaceFlinger] setDesiredDisplayModeSpecs, from process 3590, 2, 0, primaryRanges = [ 90.000000, 90.000000, 90.000000, 90.000000 ], appRequestRanges = [ 90.000000, 90.000000, 90.000000 90.000000 ]
+04-09 16:00:23.064 W/SurfaceFlingerPuller( 3590): Failed to pull atom 150134 from surfaceflinger. Success is 0, binder status is EX_NONE
+04-09 16:00:23.064 I/RefreshRateSelector( 2399): Display 4630946685746860179 policy changed
+04-09 16:00:23.064 I/RefreshRateSelector( 2399): Previous: {defaultModeId=2, allowGroupSwitching=false, primaryRanges={physical=[0.00 Hz, 120.00 Hz], render=[0.00 Hz, 90.00 Hz]}, appRequestRanges={physical=[0.00 Hz, 120.00 Hz], render=[0.00 Hz, 90.00 Hz]} idleScreenConfig=nullptr}
+04-09 16:00:23.064 I/RefreshRateSelector( 2399): Current:  DisplayManagerPolicy{defaultModeId=2, allowGroupSwitching=false, primaryRanges={physical=[90.00 Hz, 90.00 Hz], render=[90.00 Hz, 90.00 Hz]}, appRequestRanges={physical=[90.00 Hz, 90.00 Hz], render=[90.00 Hz, 90.00 Hz]} idleScreenConfig=nullptr}
+04-09 16:00:23.064 I/RefreshRateSelector( 2399): 1 mode changes were performed under the previous policy
+04-09 16:00:23.064 E/statsd  ( 2013): Stats puller failed for tag: 150134 at 768839668908875
+04-09 16:00:23.064 D/WindowManager( 3590): NFW_setClientVisible:ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} clientVisible:true
+04-09 16:00:23.064 D/SurfaceFlinger( 2399): VRR [SurfaceFlinger] applyRefreshRateSelectorPolicy: 2 (90.00 Hz), policy: {defaultModeId=2, allowGroupSwitching=false, primaryRanges={physical=[90.00 Hz, 90.00 Hz], render=[90.00 Hz, 90.00 Hz]}, appRequestRanges={physical=[90.00 Hz, 90.00 Hz], render=[90.00 Hz, 90.00 Hz]} idleScreenConfig=nullptr}
+04-09 16:00:23.064 D/SurfaceFlinger( 2399): VRR [SurfaceFlinger] setDesiredActiveMode: displayId: 4630946685746860179, renderRate: 90, vsyncRate: 90, event: 1
+04-09 16:00:23.064 D/DisplayModeController( 2399): setDesiredMode 4630946685746860179 {mode={fps=90.00 Hz, modePtr={id=2, vsyncRate=90.00 Hz, peakRefreshRate=90.00 Hz}}, emitEvent=true, force=false}
+04-09 16:00:23.064 D/VRR [OTI]( 2399): handleIdle from 0 to 0
+04-09 16:00:23.064 D/OplusFeatureDMR[display=0]( 3590): onConfigChanged threadId=70 threadName=OplusDisplayWorkHandler physicalDisplayId=4630946685746860179 modeId=2  
+04-09 16:00:23.064 D/VRR [OTI-HW]( 2399): isStateReady 0
+04-09 16:00:23.064 D/VRR [OTI-HW]( 2399): keep rate.
+04-09 16:00:23.064 D/DisplayModeDirector( 3590): setAppRequest displayId : 0  modeId: 3  requestedRefreshRate: 90.0  requestedMinRefreshRateRange: 90.0  requestedMaxRefreshRateRange: 90.0
+04-09 16:00:23.064 D/ActivityTaskManager( 3590): setVisibility(Token{1770d6e ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920}}, visible=true) defer commitVisibility for transition collecting
+04-09 16:00:23.064 D/VRI[AccountStatsBridgeActivity]( 6825): dispatchAppVisibility visible:true mUpcomingWindowFocus:false
+04-09 16:00:23.065 I/OPM     ( 3590): handlePackageLaunched pkg: com.binance.monitor, uid: 10512, pid: 6825
+04-09 16:00:23.065 D/ActivityTaskManager( 3590): NFW_setLastResumedActivityUncheckLocked:true r:ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} currentFocus:Window{734657f u0 com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity}
+04-09 16:00:23.065 D/WindowManager( 3590): NFW_findFocusedWindowIfNeeded:null mCurrentFocus:Window{734657f u0 com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity}
+04-09 16:00:23.065 V/WindowManager( 3590): Changing focus from Window{734657f u0 com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity} to null,diplayid=0
+04-09 16:00:23.065 D/ActivityTaskManager( 3590): setAppVisibility(Token{fd84a16 ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920}}, visible=false):  visible=true mVisibleRequested=true
+04-09 16:00:23.065 D/ActivityTaskManager( 3590): setVisibility(Token{fd84a16 ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920}}, visible=false) defer commitVisibility for transition collecting
+04-09 16:00:23.065 D/OplusAppSwitchRuleInfo( 3590): generateActivityEnterInfo - launch_source_type =  , launch_source_traceid = 
+04-09 16:00:23.065 D/OplusAppSwitchRuleInfo( 3590): generateActivityEnterInfo - launch_source_type =  , launch_source_traceid = 
+04-09 16:00:23.066 D/FlexibleTaskController( 3590): isFullToFlexibleAnimating: false
+04-09 16:00:23.066 D/WindowManager( 3590): rotation(ROTATION_0) no changed  displayId = 0, lastOrientation = 1
+04-09 16:00:23.066 I/TaskOrganizerController( 3590): onTaskInfoChanged taskid 12920 config { mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0}
+04-09 16:00:23.066 D/OplusFlexibleDragToSplitAnimController( 3590): visibleFlexibleTaskInfos delete:12920
+04-09 16:00:23.066 E/FlexibleWindowManagerService( 3590): notifyTaskObserverToAttachController not need to notify!
+04-09 16:00:23.066 I/FlexibleWindowManagerService( 3590): onFlexibleWindowTaskInfoChanged, return for cur task not embedded
+04-09 16:00:23.066 D/ShellTaskOrganizerExt( 8338): visibleFlexibleTaskInfos delete:12920
+04-09 16:00:23.066 D/ShellTaskOrganizerExt( 8338): isOnCanvas size:0
+04-09 16:00:23.066 D/ShellTaskOrganizerExt( 8338): isOnThreeFlexibleCanvas size:0
+04-09 16:00:23.066 D/OplusFeatureColorMode( 3590): ColorMode getColorMode =0
+04-09 16:00:23.066 D/ColorDisplayServiceExtImpl( 3590): getWCGVersion1App, packageName=com.binance.monitor, sSupportWCG1 = true, sSupportWCG3 = false, nRet = 0
+04-09 16:00:23.066 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.067 D/DisplayModeDirector( 3590): setAppRequest displayId : 0  modeId: 3  requestedRefreshRate: 0.0  requestedMinRefreshRateRange: 0.0  requestedMaxRefreshRateRange: 90.0
+04-09 16:00:23.067 D/VRR [OPlusRefreshRateService]( 3590):  setDirectorStates [flag: 1, state: 1, directorStateOff: 1]
+04-09 16:00:23.067 D/VRR [RefreshRateDirector]( 2399): updateState mState = 0
+04-09 16:00:23.067 D/BatteryChargeControl( 2280): bcc get no support from charging protocol
+04-09 16:00:23.067 D/ColorModeChangeItem( 6825): preExecute mColorMode=0
+04-09 16:00:23.067 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.067 D/BackgroundInstallControlService( 3590): Package event received: 0
+04-09 16:00:23.068 E/statsd  ( 2013): Stats puller failed for tag: 150134 at 768839672716375
+04-09 16:00:23.068 I/OplusPerfCollect( 2399): OplusPerfCollect onPullAtom
+04-09 16:00:23.068 I/OplusPerfCollect( 2399): OplusPerfCollect OplusVrrInfoRecord clear
+04-09 16:00:23.068 D/FlexibleTaskController( 3590): not in list
+04-09 16:00:23.068 I/statsd  ( 2013): An anomaly (104240000001) (42)0x10000->10512[I] (42)0x20000->com.binance.monitor[S] (42)0x30000->.ui.account.AccountStatsBridgeActivity[S]  has occurred! Informing subscribers.
+04-09 16:00:23.068 E/midasd  (10250): getTotalFlipsFromSf mCurFrameCount: 10039306
+04-09 16:00:23.068 I/midasd  (10250): DisplayAgent updateDisplayDevInfo getRenderFps mFps:90 mRenderFps:3 mWidth:1264 mHeight:2780
+04-09 16:00:23.069 W/ProcessStats( 3590): Tracking association SourceState{d07d094 system/1000 BFgs #1051648} whose proc state 4 is better than process ProcessState{703b9ec com.android.wallpaper.livepicker:wallpaperService/10256 pkg=com.android.wallpaper.livepicker} proc state 5 (0 skipped)
+04-09 16:00:23.072 D/VRI[AccountStatsBridgeActivity]( 6825): setWindowStopped stopped:false
+04-09 16:00:23.074 D/SurfaceComposerClient( 3590): Transaction::apply InputWindowCommands.focusRequests timestamp=727719995335519, windowName=<null>
+04-09 16:00:23.074 I/BpBinder( 2399): onLastStrongRef automatically unlinking death recipients: 
+04-09 16:00:23.075 D/ActivityThread( 6825): ComponentInfo{com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} checkFinished=false 2
+04-09 16:00:23.075 D/ResourcesManagerExtImpl( 6825): applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+04-09 16:00:23.086 D/SurfaceFlinger( 2399): updateWinowInfo=1, setFocusedWindow timestamp=727719995335519, windowName=<null>
+04-09 16:00:23.087 I/InputDispatcher( 3590): updateFocusedWindow,  on display 0, reason: NO_WINDOW, result:   FocusedWindows: <none>
+04-09 16:00:23.087 I/InputDispatcher( 3590): NFW_setFocusedWindow, <null> on display 0, same as the previous:1
+04-09 16:00:23.087 D/InputDispatcher( 3590): setFocusedWindow <null> on display 0 ignored, reason: already focused
+04-09 16:00:23.092 I/resRelease( 3590): policy type is 1
+04-09 16:00:23.158 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:23.176 W/dumpsys (16554): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+04-09 16:00:23.177 D/ViewRootImplExtImpl(29239): markOnDumpStart, intervalTime from last scheduleTraversals is 768839782
+04-09 16:00:23.178 I/OplusSystemUINavigationGesture(29239): dump systemGestureExclusionChanged = com.coloros.filemanager ,rect = SkRegion()
+04-09 16:00:23.178 D/ViewExtraInfo(29239): ViewExtraInfoHelper : android.view.debug.OplusViewExtraInfoHelper@6c548cf
+04-09 16:00:23.179 I/SystemUiProxy( 8730): SystemUiProxy#getRecentTasks isInGoRecentsAnim: false
+04-09 16:00:23.179 D/ViewRootImplExtImpl( 8730): markOnDumpStart, intervalTime from last scheduleTraversals is 768839784
+04-09 16:00:23.180 I/OplusSystemUINavigationGesture( 8730): dump systemGestureExclusionChanged = com.android.launcher ,rect = SkRegion()
+04-09 16:00:23.180 D/ActivityTaskManager( 3590): Skipping, invisible task: Task{735fad8 #2 type=undefined I=com.android.launcher/.Launcher}
+04-09 16:00:23.180 D/ActivityTaskManager( 3590): after skip size:17,pre-Filtered:com.binance.monitor # com.microsoft.emmx # com.tencent.mm # com.binance.dev # com.icbc # com.coloros.filemanager # com.tencent.mm # com.xingin.xhs # windinfo.android # com.taobao.taobao # com.coloros.calculator # com.google.android.gms # com.google.android.gms # com.crcc.tjt # io.legado.app.release # com.smzdm.client.android # com.follow.clash # 
+04-09 16:00:23.185 D/ViewExtraInfo( 8730): ViewExtraInfoHelper : android.view.debug.OplusViewExtraInfoHelper@7e4099c
+04-09 16:00:23.188 D/ShortcutService( 3590): Getting shortcuts for launcher= com.android.launcheruserId=0 pkg=null
+04-09 16:00:23.188 D/ShortcutService( 3590): Adjust clone flag for: com.android.launcher
+04-09 16:00:23.238 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:23.244 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:23.244 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:23.244 D/SensorFeature( 2258): write 39 bytes:768839788081167,768839839080594,29304,0
+04-09 16:00:23.250 I/APS_ALOG( 5836): flushRoutine g_immediateFlush=0 g_pendingCount=0 g_oobCount=0
+04-09 16:00:23.255 D/VRI[MarketChartActivity]( 6825): onFocusEvent false
+04-09 16:00:23.256 D/libc-netbsd( 6825): [oplusDnsOpenProxy]: __netdClientDispatch.connect errno = 111
+04-09 16:00:23.256 D/DNS_CACHE( 6825): oplus_oplus_getaddrinfo_proxy open dns proxy failed, use android flow: 10512
+04-09 16:00:23.256 D/libc-netbsd( 6825): [oplusDnsOpenProxy]: __netdClientDispatch.connect errno = 111
+04-09 16:00:23.270 I/GoLog   (25334): from tcp:127.0.0.1:59410 accepted tcp:43.155.214.62:443 [socks >> proxy]
+04-09 16:00:23.289 D/ViewRootImplExtImpl( 6825): wrapConfigInfoIntoFlags rotation=0, smallestScreenWidthDp=361, residentWS=false, scenario=0, bounds=Rect(0, 0 - 1264, 2780), relayoutAsync=false, flags=0, newFlags=1457532192, title=com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity
+04-09 16:00:23.290 V/WindowManager( 3590): Relayout Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}: viewVisibility=0, oldvis=8, req=1264x2780 , apr = 0, vsysui=, x=0, y=0
+04-09 16:00:23.290 I/WindowManager( 3590): Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} state from NO_SURFACE to DRAW_PENDING; reason: resetDrawState
+04-09 16:00:23.290 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.291 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.291 D/WindowManager( 3590): NFW_findFocusedWindowIfNeeded:Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} mCurrentFocus:null
+04-09 16:00:23.291 D/WindowManager( 3590): attachImeScreenshotOnTargetIfNeeded, mImeHiding = false, requestedVisibleTypes = -9
+04-09 16:00:23.291 D/VRR [OPlusSurfaceFlingerController]( 3590):  setComplexSceneEnable : true
+04-09 16:00:23.292 I/[UAH_CLIENT]( 3590): uahRuleCtl, ruleId:206, status:3
+04-09 16:00:23.292 V/WindowManager( 3590): Changing focus from null to Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity},diplayid=0
+04-09 16:00:23.292 D/Theia.NoFocusWindow( 3590): FocusWindowErrorScene cancelCheckFreezeScreen
+04-09 16:00:23.292 W/TheiaWindowMonitor( 3590): [check] focusedWindow is null or enable is false
+04-09 16:00:23.293 D/VRI[AccountStatsBridgeActivity]( 6825): relayoutWindow result, sizeChanged:false, surfaceControlChanged:true, transformHintChanged:false, mSurfaceSize:Point(1264, 2780), mLastSurfaceSize:Point(1264, 2780), mWidth:1264, mHeight:2780, requestedWidth:1264, requestedHeight:2780, transformHint:0, installOrientation:0, displayRotation:0, isSurfaceValid:true, attr.flag:-2122252032, tmpFrames:ClientWindowFrames{frame=[0,0][1264,2780] display=[0,0][1264,2780] parentFrame=[0,0][0,0]}, relayoutAsync:false, mSyncSeqId:0
+04-09 16:00:23.293 W/VRI[AccountStatsBridgeActivity]( 6825): updateBlastSurfaceIfNeeded, surfaceSize:Point(1264, 2780), lastSurfaceSize:Point(1264, 2780), format:-3, blastBufferQueue:null
+04-09 16:00:23.293 D/BufferQueueConsumer( 6825): [](id:1aa90000000d,api:0,p:-1,c:6825) connect: controlledByApp=false
+04-09 16:00:23.293 D/BufferQueueConsumer( 6825): [VRI[AccountStatsBridgeActivity]#13(BLAST Consumer)13](id:1aa90000000d,api:0,p:-1,c:6825) setMaxAcquiredBufferCount: 2
+04-09 16:00:23.294 D/BufferQueueProducer( 6825): [VRI[AccountStatsBridgeActivity]#13(BLAST Consumer)13](id:1aa90000000d,api:1,p:6825,c:6825) connect: api=1 producerControlledByApp=true
+04-09 16:00:23.296 D/SurfaceComposerClient( 3590): Transaction::apply InputWindowCommands.focusRequests timestamp=727720221122915, windowName=ea64b15 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity
+04-09 16:00:23.298 I/SurfaceControl( 6825):  setExtendedRangeBrightness sc=Surface(name=com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity)/@0x1cc1b4c,currentBufferRatio=1.0,desiredRatio=1.0
+04-09 16:00:23.308 D/SurfaceFlinger( 2399): updateWinowInfo=1, setFocusedWindow timestamp=727720221122915, windowName=ea64b15 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity
+04-09 16:00:23.308 I/InputDispatcher( 3590): NFW_setFocusedWindow, ea64b15 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity on display 0, same as the previous:0
+04-09 16:00:23.309 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18199)(cct, lux, ir)[5363.52, 215.94, 9.429110] (r, g, b, c)[7782.45, 5877.90, 2933.98, 16305.45]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29304
+04-09 16:00:23.337 D/BLASTBufferQueue( 6825): [VRI[AccountStatsBridgeActivity]#13](f:0,a:1) acquireNextBufferLocked size=1264x2780 mFrameNumber=1 applyTransaction=true mTimestamp=727720264589633(auto) mPendingTransactions.size=0 graphicBufferId=29313151795278 transform=0
+04-09 16:00:23.337 D/VRI[AccountStatsBridgeActivity]( 6825): Received frameCommittedCallback lastAttemptedDrawFrameNum=1 didProduceBuffer=true syncBuffer=false
+04-09 16:00:23.337 D/VRI[AccountStatsBridgeActivity]( 6825): draw finished. seqId=0
+04-09 16:00:23.337 D/WindowManager( 3590): onSyncFinishedDrawing: Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+04-09 16:00:23.337 I/WindowManager( 3590): finishDrawing skipLayout:false,syncSeqId=0,mPrepareSyncSeqId=0 Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} com.android.server.wm.WindowManagerService.finishDrawingWindow:3217 com.android.server.wm.Session.finishDrawing:399 android.view.IWindowSession$Stub.onTransact:793 
+04-09 16:00:23.337 I/WindowManager( 3590): Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} state from DRAW_PENDING to COMMIT_DRAW_PENDING; reason: finishDrawingLocked
+04-09 16:00:23.337 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.338 D/ViewRootImplExtImpl( 6825): markOnDumpStart, intervalTime from last scheduleTraversals is 768839943
+04-09 16:00:23.338 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.338 I/OplusSystemUINavigationGesture( 6825): dump systemGestureExclusionChanged = com.binance.monitor ,rect = SkRegion()
+04-09 16:00:23.338 I/WindowManager( 3590): Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} state from COMMIT_DRAW_PENDING to READY_TO_SHOW; reason: commitFinishDrawingLocked
+04-09 16:00:23.338 D/CoreBackPreview( 3590):  return markWindowHasDrawn mComposed: false  mWaitTransition: false
+04-09 16:00:23.338 D/ActivityTaskManager( 3590): Clearing startingData for activity=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} mStartingData=null mStartingSurface=null
+04-09 16:00:23.338 D/ActivityTaskManager( 3590): commitVisibility: ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920}: visible=true visibleRequested=true, isInTransition=true 
+04-09 16:00:23.338 D/CoreBackPreview( 3590):  return markWindowHasDrawn mComposed: false  mWaitTransition: false
+04-09 16:00:23.338 D/ActivityTaskManager( 3590): Clearing startingData for activity=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} mStartingData=null mStartingSurface=null
+04-09 16:00:23.339 I/WindowManager( 3590): Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} state from READY_TO_SHOW to HAS_DRAWN; reason: performShowLocked
+04-09 16:00:23.339 D/CoreBackPreview( 3590):  return markWindowHasDrawn mComposed: false  mWaitTransition: false
+04-09 16:00:23.339 E/OplusAppQuickStart_AppQuickStartController( 3590): not start from launcher transition:23209
+04-09 16:00:23.339 D/Transition( 3590): collectOrderChanges onTopTasksEnd: [Task{cb85077 #12920 type=standard A=10512:com.binance.monitor}], reportedOnTop:null, mOnTopTasksStart: [Task{cb85077 #12920 type=standard A=10512:com.binance.monitor}], TDA child: [Task{6d50de4 #12744 type=standard A=10299:io.legado.app.release}, Task{2ae848 #3 type=undefined}, Task{555bdde #12693 type=standard A=10500:com.follow.clash}, Task{d1820f7 #12749 type=standard A=10408:com.crcc.tjt}, Task{2712f2e #12800 type=standard A=10257:com.google.android.gms}, Task{bac1d6 #12824 type=standard A=10293:com.coloros.calculator}, Task{66d13b0 #12860 type=standard A=10340:com.taobao.taobao}, Task{b93224d #12867 type=standard A=10312:windinfo.android}, Task{ab06a5f #12717 type=standard A=10339:com.xingin.xhs}, Task{d965ac7 #12738 type=standard A=99910345:com.tencent.mm}, Task{9f2b2e1 #12906 type=standard A=10296:com.coloros.filemanager}, Task{82ca662 #12925 type=standard A=10350:com.icbc}, Task{4ab5b56 #12916 type=standard A=10306:com.binance.dev}, Task{1abb46b #12626 type=standard A=10345:com.tencent.mm}, Task{9568b66 #12931 type=standard A=10366:com.microsoft.emmx}, Task{1b9ad4c #1 type=home}, Task{cb85077 #12920 type=standard A=10512:com.binance.monitor}]
+04-09 16:00:23.339 D/OplusFlexibleActivityTransitionManager( 3590): fixTransitType type result:1, targets: [ChangeInfo{3ccdc7e container=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} flags=0x0}, ChangeInfo{dc75df container=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920} flags=0x0}]
+04-09 16:00:23.340 D/OplusTransitionAnimationManager( 3590): activityRecordCount1fullScreenArBeHindStartingWindow null
+04-09 16:00:23.340 D/OplusTransitionAnimationManager( 3590): activityRecordCount1fullScreenArBeHindStartingWindow null
+04-09 16:00:23.340 D/QuickBackInputPolicy( 3590): resetInputInterceptState for remoteTransition: false
+04-09 16:00:23.340 D/OplusTransitionController( 3590): onTransactionReady, transition: 23209, info: {id=23209 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920})/@0x1611def sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 bc=fffef7ff component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=FROM_STYLE mUserId=0}},{m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920})/@0x6d35e49 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 bc=fffef7ff component=com.binance.monitor/.ui.chart.MarketChartActivity opt={t=FROM_STYLE mUserId=0}}] 
+04-09 16:00:23.340 D/OplusTransitionController( 3590): extendInfo=[
+04-09 16:00:23.340 D/OplusTransitionController( 3590):  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-09 16:00:23.340 D/OplusTransitionController( 3590): , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=12920, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=23209, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-09 16:00:23.340 D/OplusTransitionController( 3590): , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}, targets : [ChangeInfo{3ccdc7e container=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} flags=0x0}, ChangeInfo{dc75df container=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920} flags=0x0}], participants: {ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920}, ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920}, ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1}}
+04-09 16:00:23.340 I/Quality-ScreenOnOffLogProcessor(15031): withInScreenOnOffRange mIsScreenOn:true refTime:1775721623061 mRecentScreenOnTime:1775720253936 mRecentScreenOffTime:1775720248450
+04-09 16:00:23.341 D/ViewRootImplExtImpl( 6825): markOnDumpStart, intervalTime from last scheduleTraversals is 768839946
+04-09 16:00:23.341 I/OplusSystemUINavigationGesture( 6825): dump systemGestureExclusionChanged = com.binance.monitor ,rect = SkRegion()
+04-09 16:00:23.341 V/WindowManagerShell( 8338): onTransitionReady(transaction=15418934814549)
+04-09 16:00:23.341 V/WindowManager( 3590): Sent Transition (#23209) createdAt=04-09 16:00:23.059 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=12920 effectiveUid=10512 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.binance.monitor/.launcher.IconFinancialAlias mCallingUid=10214 } baseActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.main.MainActivity} topActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} origActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias} realActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.main.MainActivity}
+04-09 16:00:23.341 V/WindowManager( 3590):  numActivities=3 lastActiveTime=768839665 supportsSplitScreenMultiWindow=true supportsMultiWindow=true supportsPocketStudioMultiWindow=true isInFlexibleEmbedded = false uid = 10512 pid = 6825 resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{de49eb9 Task{cb85077 #12920 type=standard A=10512:com.binance.monitor}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0)
+04-09 16:00:23.341 V/WindowManager( 3590):  topActivityInfo=ActivityInfo{14baa0b com.binance.monitor.ui.account.AccountStatsBridgeActivity} launchCookies=[android.os.BinderProxy@eee250d, android.os.BinderProxy@7df1b0f, android.os.BinderProxy@e413361] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(330, 828 - 935, 2092) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0
+04-09 16:00:23.341 V/WindowManager( 3590):  appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityInOplusCompatMode=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityAppBounds=Rect(0, 140 - 1264, 2780) isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null topActivityLetterboxInsets=Rect(0, 0 - 0, 0)
+04-09 16:00:23.341 V/WindowManager( 3590):  mOplusExtraBundle = Bundle[{androidx.flexible.taskFrame=Rect(0, 0 - 0, 0), topOpaqueSystemBarsAppearance=0, androidx.flexible.Alpha=1.0, androidx.activity.task.attach.blur=0, androidx.activity.LaunchInsensible=0, androidx.activity.LaunchCornerRadius=0, key_flexible_task_state=0, topActivitySupportAppInnerSplit=false, key_flexible_task_animating_type=-1, key_flexible_task_root_activity_processname=com.binance.monitor, androidx.activity.LaunchScenario=0, is_oplus_clone_task=false, flexible_super_mini_state=false, topRunningActivityHash=123011440, androidx.activity.LaunchScale=1.0, androidx.activity.LaunchShadowRadius=0, is_transient_hide_for_task_info=false, key_flexible_task_root_activity_pid=6825, key_flexible_task_root_activity_uid=10512}]}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 23209 }
+04-09 16:00:23.341 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.341 V/WindowManager( 3590):     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+04-09 16:00:23.341 V/WindowManager( 3590):     info={id=23209 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+04-09 16:00:23.341 V/WindowManager( 3590):         {m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920})/@0x1611def sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},
+04-09 16:00:23.341 V/WindowManager( 3590):         {m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920})/@0x6d35e49 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.chart.MarketChartActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}
+04-09 16:00:23.341 V/WindowManager( 3590):     ] 
+04-09 16:00:23.341 V/WindowManager( 3590): extendInfo=[
+04-09 16:00:23.341 V/WindowManager( 3590):  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-09 16:00:23.341 V/WindowManager( 3590): , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=12920, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=23209, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-09 16:00:23.341 V/WindowManager( 3590): , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-09 16:00:23.341 V/WindowManagerShell( 8338): onTransitionReady (#23209) android.os.BinderProxy@d09c357: {id=23209 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+04-09 16:00:23.341 V/WindowManagerShell( 8338):         {m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920})/@0xbda2862 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},
+04-09 16:00:23.341 V/WindowManagerShell( 8338):         {m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920})/@0x1fd3df3 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.chart.MarketChartActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}
+04-09 16:00:23.341 V/WindowManagerShell( 8338):     ] 
+04-09 16:00:23.341 V/WindowManagerShell( 8338): extendInfo=[
+04-09 16:00:23.341 V/WindowManagerShell( 8338):  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-09 16:00:23.341 V/WindowManagerShell( 8338): , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=12920, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=23209, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-09 16:00:23.341 V/WindowManagerShell( 8338): , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-09 16:00:23.341 D/OplusShellTransition( 8338): dispatchReady, active:(#23209) android.os.BinderProxy@d09c357@0, isSync=false, track:com.android.wm.shell.transition.Transitions$Track@f3fa59b
+04-09 16:00:23.341 D/OplusShellTransition( 8338): Abort transition (#23209) android.os.BinderProxy@d09c357@0 WMCore requested. reason: 0; abortTransition: false
+04-09 16:00:23.341 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.341 V/WindowManagerShell( 8338): Playing animation for (#23209) android.os.BinderProxy@d09c357@0
+04-09 16:00:23.341 V/ShellRecents( 8338): RecentsTransitionHandler.startAnimation: no controller found
+04-09 16:00:23.341 V/WindowManagerShell( 8338): start OnePuttTransition animation, info = {id=23209 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920})/@0xbda2862 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920})/@0x1fd3df3 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.chart.MarketChartActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-09 16:00:23.341 V/WindowManagerShell( 8338): extendInfo=[
+04-09 16:00:23.341 V/WindowManagerShell( 8338):  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-09 16:00:23.341 V/WindowManagerShell( 8338): , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=12920, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=23209, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-09 16:00:23.341 V/WindowManagerShell( 8338): , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-09 16:00:23.341 D/FlexibleTaskTransitionHandler( 8338):  performAnimation transition:android.os.BinderProxy@d09c357 ,info:{id=23209 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920})/@0xbda2862 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920})/@0x1fd3df3 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.chart.MarketChartActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-09 16:00:23.341 D/FlexibleTaskTransitionHandler( 8338): extendInfo=[
+04-09 16:00:23.341 D/FlexibleTaskTransitionHandler( 8338):  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-09 16:00:23.341 D/FlexibleTaskTransitionHandler( 8338): , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=12920, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=23209, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-09 16:00:23.341 D/FlexibleTaskTransitionHandler( 8338): , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-09 16:00:23.342 D/FlexibleTaskTransitionHandler( 8338):  no need handler this transitionInfo: {id=23209 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920})/@0xbda2862 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920})/@0x1fd3df3 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.chart.MarketChartActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-09 16:00:23.342 D/FlexibleTaskTransitionHandler( 8338): extendInfo=[
+04-09 16:00:23.342 D/FlexibleTaskTransitionHandler( 8338):  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-09 16:00:23.342 D/FlexibleTaskTransitionHandler( 8338): , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=12920, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=23209, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-09 16:00:23.342 D/FlexibleTaskTransitionHandler( 8338): , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-09 16:00:23.342 V/WindowManagerShell( 8338): Transition doesn't have explicit remote, search filters for match for {id=23209 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920})/@0xbda2862 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920})/@0x1fd3df3 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.chart.MarketChartActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-09 16:00:23.342 V/WindowManagerShell( 8338): extendInfo=[
+04-09 16:00:23.342 V/WindowManagerShell( 8338):  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-09 16:00:23.342 V/WindowManagerShell( 8338): , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=12920, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=23209, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-09 16:00:23.342 V/WindowManagerShell( 8338): , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-09 16:00:23.342 D/ViewRootImplExtImpl( 6825): markOnDumpStart, intervalTime from last scheduleTraversals is 768839946
+04-09 16:00:23.342 V/WindowManagerShell( 8338):  Checking filter Pair{{types=[] flags=0x0] notFlags=0x100 checks=[{atype=home independent=true modes=[OPEN,TO_FRONT] flags=NONE mustBeTask=false order=TOP topActivity=ComponentInfo{com.android.launcher/com.android.launcher.Launcher} launchCookie=null windowingMode=undefined},{atype=standard independent=true modes=[CLOSE,TO_BACK] flags=NONE mustBeTask=false order=ANY topActivity=null launchCookie=null windowingMode=undefined}]} RemoteTransition { remoteTransition = android.window.IRemoteTransition$Stub$Proxy@a5bfc11, appThread = android.app.IApplicationThread$Stub$Proxy@61db176, debugName = QuickstepLaunchHome }}
+04-09 16:00:23.342 V/WindowManagerShell( 8338):  Delegate animation for (#23209) to null
+04-09 16:00:23.342 I/OplusSystemUINavigationGesture( 6825): dump systemGestureExclusionChanged = com.binance.monitor ,rect = SkRegion()
+04-09 16:00:23.342 V/WindowManagerShell( 8338): start default transition animation, info = {id=23209 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920})/@0xbda2862 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920})/@0x1fd3df3 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.chart.MarketChartActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-09 16:00:23.342 V/WindowManagerShell( 8338): extendInfo=[
+04-09 16:00:23.342 V/WindowManagerShell( 8338):  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-09 16:00:23.342 V/WindowManagerShell( 8338): , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=12920, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=23209, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-09 16:00:23.342 V/WindowManagerShell( 8338): , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-09 16:00:23.342 D/FSS_OplusFoldSwitchStateObserver( 8338): cancelAnimationIfNeedWhenFolding: foldChangeType = -1
+04-09 16:00:23.342 D/ViewRootImplExtImpl( 6825): markOnDumpStart, intervalTime from last scheduleTraversals is 768839947
+04-09 16:00:23.342 I/OplusSystemUINavigationGesture( 6825): dump systemGestureExclusionChanged = com.binance.monitor ,rect = SkRegion()
+04-09 16:00:23.342 D/OplusShellTransition( 8338): canCustomizeAppTransition, isGlobalSearchPageSwitch = false, swipeUpBrowserPageSwitch = false, onlyHasTranslucentActivity = false, pkgName = com.binance.monitor
+04-09 16:00:23.342 D/OplusShellTransition( 8338): This page has its own override animation, enterResId = 0, closeResId = 0, pkgName = com.binance.monitor
+04-09 16:00:23.342 D/OplusShellTransition( 8338): checkAndLoadCustomAnimation packageName =:com.binance.monitor,transit =:2,enter =:false,animResId =:0
+04-09 16:00:23.342 D/OplusShellTransition( 8338): canCustomizeAppTransition, isGlobalSearchPageSwitch = false, swipeUpBrowserPageSwitch = false, onlyHasTranslucentActivity = false, pkgName = com.binance.monitor
+04-09 16:00:23.342 D/OplusShellTransition( 8338): This page has its own override animation, enterResId = 0, closeResId = 0, pkgName = com.binance.monitor
+04-09 16:00:23.342 D/OplusShellTransition( 8338): checkAndLoadCustomAnimation packageName =:com.binance.monitor,transit =:2,enter =:true,animResId =:0
+04-09 16:00:23.342 D/OplusShellTransition( 8338): addBackgroundColorOnTask, , isTaskLevelTransition = false, hasBgAlready = false
+04-09 16:00:23.343 D/OplusShellTransition( 8338): DefaultTransitionHandler#onAnimFinish=> transition=android.os.BinderProxy@d09c357, backAnimContinue=false
+04-09 16:00:23.343 V/WindowManagerShell( 8338): Transition animation finished (aborted=false), notifying core (#23209) android.os.BinderProxy@d09c357@0
+04-09 16:00:23.343 D/SplitScreen-->AppLockManager( 8338): setStartFromSafeControl mStartFromSafeControl=false
+04-09 16:00:23.343 D/ShellTaskOrganizerExt( 8338): adjust change for exiting mini task: -1
+04-09 16:00:23.343 D/ViewExtraInfo( 6825): ViewExtraInfoHelper : android.view.debug.OplusViewExtraInfoHelper@a4b3b71
+04-09 16:00:23.344 D/Transition( 3590): finishTransition ar ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920}, isVisibleRequested=false, state=PAUSED, visibleAtTransitionEndTokens={ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920}}, this=TransitionRecord{9986518 id=23209 track=0 type=OPEN flags=0x0 state=2 c=[
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{d408b71 container=Display{#0 state=ON size=1264x2780 ROTATION_0} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{dc75df container=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{3ccdc7e container=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{95dfd56 container=DefaultTaskDisplayArea@136308155 flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{6b941d7 container=Task{cb85077 #12920 type=standard A=10512:com.binance.monitor} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{23abac4 container=ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590): ]
+04-09 16:00:23.344 D/Transition( 3590): }
+04-09 16:00:23.344 D/ActivityTaskManager( 3590): commitVisibility: ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920}: visible=false visibleRequested=false, isInTransition=false 
+04-09 16:00:23.344 D/WindowManager( 3590): NFW_setClientVisible:ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920} clientVisible:false
+04-09 16:00:23.344 I/WindowManager( 3590): Window{734657f u0 com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity} state from HAS_DRAWN to DRAW_PENDING; reason: resetDrawState
+04-09 16:00:23.344 D/Transition( 3590): finishTransition ar ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920}, isVisibleRequested=true, state=RESUMED, visibleAtTransitionEndTokens={ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920}}, this=TransitionRecord{9986518 id=23209 track=0 type=OPEN flags=0x0 state=2 c=[
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{d408b71 container=Display{#0 state=ON size=1264x2780 ROTATION_0} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{dc75df container=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{3ccdc7e container=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{95dfd56 container=DefaultTaskDisplayArea@136308155 flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{6b941d7 container=Task{cb85077 #12920 type=standard A=10512:com.binance.monitor} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590):    ChangeInfo{23abac4 container=ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} flags=0x0}
+04-09 16:00:23.344 D/Transition( 3590): ]
+04-09 16:00:23.344 D/Transition( 3590): }
+04-09 16:00:23.344 D/VRI[MarketChartActivity]( 6825): dispatchAppVisibility visible:false mUpcomingWindowFocus:false
+04-09 16:00:23.344 I/OplusAppSwitchManagerService( 3590):  handleAppVisible , r = ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920}
+04-09 16:00:23.344 D/OplusTransitionController( 3590): finishTransition, transition: TransitionRecord{9986518 id=23209 track=0 type=OPEN flags=0x0 state=4 c=[
+04-09 16:00:23.344 D/OplusTransitionController( 3590):    ChangeInfo{d408b71 container=Display{#0 state=ON size=1264x2780 ROTATION_0} flags=0x0}
+04-09 16:00:23.344 D/OplusTransitionController( 3590):    ChangeInfo{dc75df container=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920} flags=0x0}
+04-09 16:00:23.344 D/OplusTransitionController( 3590):    ChangeInfo{3ccdc7e container=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} flags=0x0}
+04-09 16:00:23.344 D/OplusTransitionController( 3590):    ChangeInfo{95dfd56 container=DefaultTaskDisplayArea@136308155 flags=0x0}
+04-09 16:00:23.344 D/OplusTransitionController( 3590):    ChangeInfo{6b941d7 container=Task{cb85077 #12920 type=standard A=10512:com.binance.monitor} flags=0x0}
+04-09 16:00:23.344 D/OplusTransitionController( 3590):    ChangeInfo{23abac4 container=ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} flags=0x0}
+04-09 16:00:23.344 D/OplusTransitionController( 3590): ]
+04-09 16:00:23.344 D/OplusTransitionController( 3590): }
+04-09 16:00:23.344 D/FlexibleTaskTransitionController( 3590):  finishTransition pendingRecentToFlexibleTask:null,isRotationTransition:false ,pendingRecentToFlexible:null ,transition:TransitionRecord{9986518 id=23209 track=0 type=OPEN flags=0x0 state=4 c=[
+04-09 16:00:23.344 D/FlexibleTaskTransitionController( 3590):    ChangeInfo{d408b71 container=Display{#0 state=ON size=1264x2780 ROTATION_0} flags=0x0}
+04-09 16:00:23.344 D/FlexibleTaskTransitionController( 3590):    ChangeInfo{dc75df container=ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920} flags=0x0}
+04-09 16:00:23.344 D/FlexibleTaskTransitionController( 3590):    ChangeInfo{3ccdc7e container=ActivityRecord{123011440 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t12920} flags=0x0}
+04-09 16:00:23.344 D/FlexibleTaskTransitionController( 3590):    ChangeInfo{95dfd56 container=DefaultTaskDisplayArea@136308155 flags=0x0}
+04-09 16:00:23.344 D/FlexibleTaskTransitionController( 3590):    ChangeInfo{6b941d7 container=Task{cb85077 #12920 type=standard A=10512:com.binance.monitor} flags=0x0}
+04-09 16:00:23.344 D/FlexibleTaskTransitionController( 3590):    ChangeInfo{23abac4 container=ActivityRecord{266610199 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} flags=0x0}
+04-09 16:00:23.344 D/FlexibleTaskTransitionController( 3590): ]
+04-09 16:00:23.344 D/FlexibleTaskTransitionController( 3590): }
+04-09 16:00:23.345 D/TransitionControllerExtImpl( 3590): NFW_send RECOMPUTE_FOCUS in finishTransition
+04-09 16:00:23.345 D/ShellTaskOrganizer( 8338): onTransitionFinish, isRecent:false
+04-09 16:00:23.345 V/WindowManagerShell( 8338): Track 0 became idle
+04-09 16:00:23.345 V/WindowManagerShell( 8338): All active transition animations finished
+04-09 16:00:23.345 V/WindowManagerShell( 8338):  animated by com.android.wm.shell.transition.DefaultTransitionHandler@423c8cd
+04-09 16:00:23.345 D/OplusShellTransition( 8338): dispatchTransition, animated mHandler: com.android.wm.shell.transition.DefaultTransitionHandler@423c8cd
+04-09 16:00:23.345 V/WindowManagerShell( 8338): Track 0 became idle
+04-09 16:00:23.345 V/WindowManagerShell( 8338): All active transition animations finished
+04-09 16:00:23.345 D/WindowManager( 3590): NFW_findFocusedWindowIfNeeded:Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} mCurrentFocus:Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+04-09 16:00:23.352 I/BLASTSyncEngine( 3590): onCommitted syncId: 23209, timeout: false ran: false
+04-09 16:00:23.352 D/Transition( 3590): finishTransaction-onCommitted syncId=23209
+04-09 16:00:23.353 I/InputDispatcher( 3590): updateFocusedWindow, ea64b15 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity on display 0, reason: Window became focusable. Previous reason: NOT_VISIBLE, result:   FocusedWindows:
+04-09 16:00:23.353 I/InputDispatcher( 3590):     displayId=0, name='ea64b15 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity'
+04-09 16:00:23.364 D/RefreshRate( 3590): app switch boost timeout,transition isPlaying:false isInInterruptScene:false
+04-09 16:00:23.364 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.364 D/VRR [OPlusRefreshRateService]( 3590):  setDirectorStates [flag: 1, state: 0, directorStateOff: 0]
+04-09 16:00:23.364 D/VRR [RefreshRateDirector]( 2399): updateState mState = 1
+04-09 16:00:23.422 I/AICCTModule( 3590): SensorFilter: brightness threshold 1.2 screenNit is 98.252 ave enviroment lux is 199.11095 luxForNit 94.94245demarcationPoint200.0 result is false
+04-09 16:00:23.422 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 5414.2397 nearestMaxValue:5416.137 secondNearestValue: 5416.137
+04-09 16:00:23.422 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 198.77542 nearestMaxValue:199.11095 secondNearestValue: 199.11095
+04-09 16:00:23.456 D/VRI[AccountStatsBridgeActivity]( 6825): onFocusEvent true
+04-09 16:00:23.458 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:23.511 E/PERFHAL-PERFCTRL( 2187): PERFHAL-PERFCTRL: chk_core_online_poll_loop() 748: poll() has timed out for /sys/kernel/msm_performance/events/cpu_hotplug
+04-09 16:00:23.511 E/PERFHAL-PERFCTRL( 2187): PERFHAL-PERFCTRL: chk_core_online_poll_loop() 743: Block on poll()
+04-09 16:00:23.512 D/VRI[MarketChartActivity]( 6825): visibilityChanged oldVisibility=true newVisibility=false
+04-09 16:00:23.512 D/VRI[MarketChartActivity]( 6825): setWindowStopped stopped:true
+04-09 16:00:23.528 D/InputMethodManagerService( 3590): isSecurity: attribute.packageName = com.binance.monitor mCurMethodId = com.sohu.inputmethod.sogou/.SogouIME isSecurity = false ( enable = true needShow = false inBlackList = false isExist = true )
+04-09 16:00:23.528 I/ImeTracker( 3590): com.binance.monitor:45877a59: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+04-09 16:00:23.528 D/HWUI    ( 6825): RenderProxy::destroy: this=0xb4000070f614cb00, mContext=0xb4000070f5b37e40
+04-09 16:00:23.528 D/HWUI    ( 6825): SkiaVulkanPipeline::setSurface: this=0xb400007246c89c00, surface=NULL
+04-09 16:00:23.529 D/BufferQueueProducer( 6825): [VRI[MarketChartActivity]#12(BLAST Consumer)12](id:1aa90000000c,api:1,p:6825,c:6825) disconnect: api 1
+04-09 16:00:23.529 V/A11yInputMethod( 2673): startInput(): editor=android.view.inputmethod.EditorInfo@8749c72
+04-09 16:00:23.529 V/A11yInputMethod( 2673): CALL: doFinishInput
+04-09 16:00:23.529 V/A11yInputMethod( 2673): CALL: onFinishInput
+04-09 16:00:23.529 D/BLASTBufferQueue( 6825): [VRI[MarketChartActivity]#12](f:0,a:1) destructor()
+04-09 16:00:23.529 D/BufferQueueConsumer( 6825): [VRI[MarketChartActivity]#12(BLAST Consumer)12](id:1aa90000000c,api:0,p:-1,c:6825) disconnect
+04-09 16:00:23.529 D/ViewRootImplExtImpl( 6825): wrapConfigInfoIntoFlags rotation=0, smallestScreenWidthDp=361, residentWS=false, scenario=0, bounds=Rect(0, 0 - 1264, 2780), relayoutAsync=false, flags=0, newFlags=1457532192, title=com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity
+04-09 16:00:23.530 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:23.530 I/ImeTracker( 3590): system_server:4dec3314: onRequestHide at ORIGIN_SERVER reason IME_REQUESTED_CHANGED_LISTENER fromUser false
+04-09 16:00:23.530 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:23.530 D/SensorFeature( 2258): write 39 bytes:768840113382712,768840124493823,29305,0
+04-09 16:00:23.530 I/ImeTracker( 3590): system_server:4dec3314: onCancelled at PHASE_SERVER_SHOULD_HIDE
+04-09 16:00:23.530 V/WindowManager( 3590): Relayout Window{734657f u0 com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity}: viewVisibility=8, oldvis=0, req=1264x2780 , apr = 0, vsysui=
+04-09 16:00:23.530 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.531 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.531 D/WindowManager( 3590): NFW_findFocusedWindowIfNeeded:Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} mCurrentFocus:Window{ea64b15 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+04-09 16:00:23.531 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.531 D/VRI[MarketChartActivity]( 6825): relayoutWindow result, sizeChanged:false, surfaceControlChanged:true, transformHintChanged:false, mSurfaceSize:Point(1264, 2780), mLastSurfaceSize:Point(1264, 2780), mWidth:1264, mHeight:2780, requestedWidth:1264, requestedHeight:2780, transformHint:0, installOrientation:0, displayRotation:0, isSurfaceValid:false, attr.flag:-2122252032, tmpFrames:ClientWindowFrames{frame=[0,0][1264,2780] display=[0,0][1264,2780] parentFrame=[0,0][0,0]}, relayoutAsync:false, mSyncSeqId:0
+04-09 16:00:23.537 I/WindowManager( 3590): Window{734657f u0 com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity} state from DRAW_PENDING to NO_SURFACE; reason: destroySurface
+04-09 16:00:23.537 D/BackgroundInstallControlService( 3590): Package event received: 0
+04-09 16:00:23.537 D/InsetsController( 6825): hide(ime(), fromIme=false)
+04-09 16:00:23.537 I/ImeTracker( 6825): com.binance.monitor:45877a59: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+04-09 16:00:23.537 D/OplusStartingWindowManager( 3590): skip remove starting window for activity = ActivityRecord{116339672 u0 com.binance.monitor/.ui.chart.MarketChartActivity t12920} ,ar != topActivityContainsStartingWindow on activityStopped
+04-09 16:00:23.540 I/Osense-BaseDecisionMaker( 3590): notifySceneToAthenaPolicy: SCENE_ACTIVITY_IDLE, bundle: Bundle[{scene=SCENE_ACTIVITY_IDLE}]
+04-09 16:00:23.573 I/ChainTrace( 6825): stream type=syncEvent gapMs=991 refreshMarket=true
+04-09 16:00:23.575 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 217.5,cct 5334.2,brl/algo/ir 1380.0/2.0/9.5,pwm/dc 0.0/0.0,rgbc 7797.402344/5893.302246/2945.015869/16342.754883,ts 768840117951962,cnt 18204,flag 29305
+04-09 16:00:23.575 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18204)(cct, lux, ir)[5334.22, 217.53, 9.457768] (r, g, b, c)[7797.40, 5893.30, 2945.02, 16342.75]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29305
+04-09 16:00:23.600 D/RadioProxyJ[0](14034): [73277]> getRRCStatus
+04-09 16:00:23.600 D/RadioProxyJ[1](14034): [73278]> getRRCStatus
+04-09 16:00:23.601 D/QmiNasClient( 2727): getRRCStatus - enter
+04-09 16:00:23.601 D/QmiNasClient( 3438): getRRCStatus - enter
+04-09 16:00:23.601 D/QmiNasClient( 2727): getRRCStatus callback - enter
+04-09 16:00:23.601 D/QmiNasClient( 2727): getRRCStatus result.rsp.rrcStatusInfo.rrcStatus = 0
+04-09 16:00:23.601 D/NasProxy( 2727): handleMessage msg is 4001
+04-09 16:00:23.601 D/RadioProxy( 2727): getRRCStatus : response cb for instance 0
+04-09 16:00:23.601 D/RadioProxyJ[0](14034): [73277]< getRRCStatusResponse 0
+04-09 16:00:23.602 D/QmiNasClient( 3438): getRRCStatus callback - enter
+04-09 16:00:23.602 D/QmiNasClient( 3438): getRRCStatus result.rsp.rrcStatusInfo.rrcStatus = 0
+04-09 16:00:23.602 D/NasProxy( 3438): handleMessage msg is 4001
+04-09 16:00:23.602 D/RadioProxy( 3438): getRRCStatus : response cb for instance 1
+04-09 16:00:23.602 D/RadioProxyJ[1](14034): [73278]< getRRCStatusResponse 0
+04-09 16:00:23.602 D/CoexRfService(14034): report RRC state:false
+04-09 16:00:23.612 I/OplusTouchDaemon( 3289): ts_run_service: shellback temperature updated 29 (29508)
+04-09 16:00:23.714 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:23.716 I/SurfaceControl( 6825):  setExtendedRangeBrightness sc=Surface(name=)/@0x51f69f9,currentBufferRatio=1.0,desiredRatio=1.0
+04-09 16:00:23.716 V/WindowManager( 3590): Relayout Window{f71f005 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x379 , apr = 0, vsysui=, x=-1885, y=1068
+04-09 16:00:23.716 D/VRR [OPlusSurfaceFlingerController]( 3590):  setComplexSceneEnable : true
+04-09 16:00:23.716 I/[UAH_CLIENT]( 3590): uahRuleCtl, ruleId:206, status:3
+04-09 16:00:23.716 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.717 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:23.793 E/KeymasterUtils( 1311): IKMHal_sendCmd failed with rsp_header->status: -28
+04-09 16:00:23.793 E/KeyMasterHalDevice( 1311): abort_operation
+04-09 16:00:23.793 E/KeyMasterHalDevice( 1311): ret: -28
+04-09 16:00:23.803 E/KeymasterUtils( 1311): IKMHal_sendCmd failed with rsp_header->status: -28
+04-09 16:00:23.803 E/KeyMasterHalDevice( 1311): abort_operation
+04-09 16:00:23.803 E/KeyMasterHalDevice( 1311): ret: -28
+04-09 16:00:23.814 E/KeymasterUtils( 1311): IKMHal_sendCmd failed with rsp_header->status: -28
+04-09 16:00:23.814 E/KeyMasterHalDevice( 1311): abort_operation
+04-09 16:00:23.814 E/KeyMasterHalDevice( 1311): ret: -28
+04-09 16:00:23.815 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:23.824 E/KeymasterUtils( 1311): IKMHal_sendCmd failed with rsp_header->status: -28
+04-09 16:00:23.824 E/KeyMasterHalDevice( 1311): abort_operation
+04-09 16:00:23.824 E/KeyMasterHalDevice( 1311): ret: -28
+04-09 16:00:23.830 I/GoLog   (25334): from tcp:127.0.0.1:59426 accepted tcp:43.155.214.62:443 [socks >> proxy]
+04-09 16:00:23.831 D/AppSenseConfig(14034): getIgnoreAppList: [com.android.launcher, com.android.contacts, com.oplus.wirelesssettings, com.coloros.alarmclock, com.coloros.calculator, com.coloros.calendar, com.coloros.phonemanager, com.android.settings, com.android.phone, com.oplus.nas, com.oplus.nhs, com.oplus.appdetail, com.android.permissioncontroller, com.oplus.pscanvas, com.oplus.autotest.test.ctp, com.android.systemui, com.android.systemui.overlay.fingerprint.anim.fy, com.android.systemui.overlay.fingerprint.anim.qy, com.android.systemui.overlay.fingerprint.anim.sw, com.android.systemui.overlay.fingerprint.anim.xw, com.android.systemui.overlay.fingerprint.anim.ccyh, com.android.systemui.overlay.fingerprint.anim.halo, com.android.systemui.overlay.fingerprint.anim.jslz, com.android.systemui.overlay.fingerprint.anim.none, com.android.systemui.overlay.fingerprint.anim.xklc]
+04-09 16:00:23.831 D/AppSenseConfig(14034): getIgnoreAppList: [com.android.launcher, com.android.contacts, com.oplus.wirelesssettings, com.coloros.alarmclock, com.coloros.calculator, com.coloros.calendar, com.coloros.phonemanager, com.android.settings, com.android.phone, com.oplus.nas, com.oplus.nhs, com.oplus.appdetail, com.android.permissioncontroller, com.oplus.pscanvas, com.oplus.autotest.test.ctp, com.android.systemui, com.android.systemui.overlay.fingerprint.anim.fy, com.android.systemui.overlay.fingerprint.anim.qy, com.android.systemui.overlay.fingerprint.anim.sw, com.android.systemui.overlay.fingerprint.anim.xw, com.android.systemui.overlay.fingerprint.anim.ccyh, com.android.systemui.overlay.fingerprint.anim.halo, com.android.systemui.overlay.fingerprint.anim.jslz, com.android.systemui.overlay.fingerprint.anim.none, com.android.systemui.overlay.fingerprint.anim.xklc]
+04-09 16:00:23.831 D/AppSenseConfig(14034): getIgnoreAppList: [com.android.launcher, com.android.contacts, com.oplus.wirelesssettings, com.coloros.alarmclock, com.coloros.calculator, com.coloros.calendar, com.coloros.phonemanager, com.android.settings, com.android.phone, com.oplus.nas, com.oplus.nhs, com.oplus.appdetail, com.android.permissioncontroller, com.oplus.pscanvas, com.oplus.autotest.test.ctp, com.android.systemui, com.android.systemui.overlay.fingerprint.anim.fy, com.android.systemui.overlay.fingerprint.anim.qy, com.android.systemui.overlay.fingerprint.anim.sw, com.android.systemui.overlay.fingerprint.anim.xw, com.android.systemui.overlay.fingerprint.anim.ccyh, com.android.systemui.overlay.fingerprint.anim.halo, com.android.systemui.overlay.fingerprint.anim.jslz, com.android.systemui.overlay.fingerprint.anim.none, com.android.systemui.overlay.fingerprint.anim.xklc]
+04-09 16:00:23.831 D/ActivityAdapter(14034): taskChange: pre: 1, cur: 1, changed:true
+04-09 16:00:23.832 D/ActivityAdapter(14034): notifyActivityQuery: [com.binance.monitor; com.binance.monitor.ui.account.AccountStatsBridgeActivity; 1; COMMON; 10512]
+04-09 16:00:23.832 D/OPlusFrontAppManager(14034): useAdapterResult, pkg=com.binance.monitor,activity=com.binance.monitor.ui.account.AccountStatsBridgeActivity,result=true
+04-09 16:00:23.832 D/OPlusFrontAppManager(14034): decide -->> [com.binance.monitor; com.binance.monitor.ui.account.AccountStatsBridgeActivity; 1; COMMON; 10512]
+04-09 16:00:23.832 D/ConferenceScene(14034): pkg:com.binance.monitor, activity:com.binance.monitor.ui.account.AccountStatsBridgeActivity, appSense:COMMON
+04-09 16:00:23.832 D/ConferenceScene(14034): pkg:com.binance.monitor, activity:com.binance.monitor.ui.chart.MarketChartActivity, appSense:COMMON
+04-09 16:00:23.832 D/CellMap/GameLatencyMapService(14034): handleAppSceneChange: [{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}]
+04-09 16:00:23.832 D/AtomHighLoadSenseInfo(14034): handleMessage what:1000
+04-09 16:00:23.832 D/CellMap/QoeMapService(14034): handleAppSceneChange: [{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}]
+04-09 16:00:23.832 D/AtomHighLoadSenseInfo(14034): handleAppSenseChanged original mode:{live:0,video:0,voice call:0,video call:0,live host:0,meeting:0}
+04-09 16:00:23.832 D/CellMap/QoeMapService(14034): handleAppSceneChange update: 0
+04-09 16:00:23.832 D/AtomHighLoadSenseInfo(14034): handleAppSenseChanged appInfoUnit:{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}
+04-09 16:00:23.832 D/AtomNetworkScoreInfo(14034): handleMessage: 1006
+04-09 16:00:23.832 D/AtomNetworkScoreInfo(14034): top app size: 1
+04-09 16:00:23.832 D/AtomNetworkScoreInfo(14034): Front app state: 1
+04-09 16:00:23.832 D/AtomModemKpiInfo(14034): handleMessage what:1000
+04-09 16:00:23.832 D/SceneService(14034): handleMessage what:1004
+04-09 16:00:23.832 D/SceneService(14034): notifyAppSceneChanged original mode:{live:0,video:0,voice call:0,video call:0,live host:0,game:0,meeting:0,news:0,file transfer:0},appInfoUnit:[{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}]
+04-09 16:00:23.832 D/ExtremeCommService(14034): handleMessage what:1012
+04-09 16:00:23.833 D/ExtremeCommService(14034): updateAppInfo appInfoUnit: com.binance.monitor, winMode:1
+04-09 16:00:23.833 D/FrontAppsEvent(14034): receive msg:1001
+04-09 16:00:23.833 D/FrontAppsEvent(14034): onAppSceneUpdate, infoList:[{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}]
+04-09 16:00:23.833 D/Subsys-ScoreAppManager(14034): handleMessage what:2
+04-09 16:00:23.833 D/Subsys-ScoreAppManager(14034): EVENT_ID_APP_SENSE_CHANGE  onFrontActivityChanged
+04-09 16:00:23.833 D/Subsys-ScoreAppManager(14034): appSceneChange fgAppUnits size 1 fgAppUnits [{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}] mLastNetworkList[234, 235]
+04-09 16:00:23.833 D/Subsys-ScoreAppManager(14034): createApp
+04-09 16:00:23.833 D/Subsys-ScoreAppManager(14034): createApp
+04-09 16:00:23.833 D/Subsys-ScoreAppManager(14034): unit: {pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}
+04-09 16:00:23.833 D/CommonApp-234-10512(14034): DefaultState EVENT_SCENARIOS_CHANGE
+04-09 16:00:23.833 D/CommonApp-234-10512(14034): scene=COMMON pn=com.binance.monitor
+04-09 16:00:23.833 D/CommonApp-235-10512(14034): DefaultState EVENT_SCENARIOS_CHANGE
+04-09 16:00:23.833 D/CommonApp-235-10512(14034): scene=COMMON pn=com.binance.monitor
+04-09 16:00:23.834 D/AppSenseClient( 8406): handleMessage: 100
+04-09 16:00:23.834 D/AppSenseClient( 8498): handleMessage: 100
+04-09 16:00:23.834 D/AppSenseClient( 8498): handleSenseEvent appInfoUnits: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512},
+04-09 16:00:23.834 D/AppSenseClient( 8406): handleSenseEvent appInfoUnits: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512},
+04-09 16:00:23.834 D/AppSenseClient( 8498): handleSenseEvent clients: 1
+04-09 16:00:23.834 D/AppSenseClient( 8406): handleSenseEvent clients: 1
+04-09 16:00:23.834 D/AppSenseClient( 8498): handleSenseEvent clientId: 74017188
+04-09 16:00:23.834 D/AppSenseService(14034): notifySenseEvent: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512},
+04-09 16:00:23.834 D/AppSenseClient( 8406): handleSenseEvent clientId: 101737326
+04-09 16:00:23.834 D/AppSenseClient( 8498): notifyAppChanges: [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}]
+04-09 16:00:23.834 D/AppSenseClient( 8406): notifyAppChanges: [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}]
+04-09 16:00:23.834 D/NhsAppSenseListener( 8498): onAppChanged, app list size: 1
+04-09 16:00:23.834 D/AppSenseClient( 3590): handleMessage: 100
+04-09 16:00:23.834 D/AppSenseClient( 3590): handleSenseEvent appInfoUnits: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512},
+04-09 16:00:23.834 D/AppSenseClient( 3590): handleSenseEvent clients: 1
+04-09 16:00:23.834 D/AppSenseClient( 3590): handleSenseEvent clientId: 224279445
+04-09 16:00:23.834 D/AppSenseClient(13839): handleMessage: 100
+04-09 16:00:23.834 D/AppSenseClient( 3590): notifyAppChanges: [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}]
+04-09 16:00:23.834 D/AppSenseClient(13839): handleSenseEvent appInfoUnits: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512},
+04-09 16:00:23.834 D/AppSenseClient(13839): handleSenseEvent clients: 1
+04-09 16:00:23.834 D/AppSenseClient(13839): handleSenseEvent clientId: 106466519
+04-09 16:00:23.834 D/AppSenseClient(13839): notifyAppChanges: [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}]
+04-09 16:00:23.834 D/NAS-DataSceneEvent(13839): onAppChanged, app list size: 1
+04-09 16:00:23.834 D/NAS-DataSceneEvent(13839): updateAppSenseChange [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:6825,uid:10512}]
+04-09 16:00:23.835 D/OplusLinkBoostSceneManager(13839): handleAppSceneChange: live broadcast off
+04-09 16:00:23.835 E/OplusNetlinkConnect(13839): parse rsp msg failed!Message missing required fields: header
+04-09 16:00:23.852 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:23.853 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:23.853 D/SensorFeature( 2258): write 39 bytes:768840435427452,768840446538563,29306,0
+04-09 16:00:23.915 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:23.997 D/CommonApp-234-10512(14034): transport layer data is invalid
+04-09 16:00:23.997 D/CommonApp-235-10512(14034): commonScoreStrategy scenarios 1
+04-09 16:00:23.997 D/CommonApp-235-10512(14034): notifyScoreChange appScene COMMON score 100
+04-09 16:00:23.998 D/OplusL3Monitor( 3590): linkIndex=90, networkId=0, ignore
+04-09 16:00:23.998 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:23.998 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:23.998 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:24.053 W/OPLUS_LOG_LOAD( 3590): ==LOGS PROG INFO, prog(system_server) ==
+04-09 16:00:24.053 V/AlarmManager( 3590): sending alarm Alarm{ba11063 type 1 origWhen 1775721624054 whenElapsed 768840658 android} uid 1000 whenElapsed 768840658 windowLength 0 maxWhenElapsed 768840658 repeatInterval 0 action null component null tag StorgaeBandInfoAlarmTag flags 0x9 procName system_server
+04-09 16:00:24.054 E/OplusStorageUFSBandwidth( 3590): storage_io_metrics_path is /proc/oplus_storage/io_metrics/forever/
+04-09 16:00:24.056 E/OplusStorageUFSBandwidth( 3590): Bandwidth - Read: 8.49 MB/s, Write: 0.50 MB/s
+04-09 16:00:24.056 E/OplusStorageUFSBandwidth( 3590): Task time: 2ms
+04-09 16:00:24.062 E/OplusStorageUFSBandwidth( 3590): Alarm set to trigger in 10 seconds
+04-09 16:00:24.067 D/BatteryChargeControl( 2280): bcc get no support from charging protocol
+04-09 16:00:24.148 D/LocationManagerService( 3590): network provider added registration from 1000/android[OplusLBS]/1B15ED95 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}] permissionLevel: 2 permitted: true
+04-09 16:00:24.148 V/LocationManagerService( 3590): network provider package android permitted = true
+04-09 16:00:24.149 I/OplusLocationStatistics( 3590): startRequesting
+04-09 16:00:24.149 I/LocationRequestStatistics( 3590): startRequesting, PackageProviderKey = PackageProviderKey: network: android: OplusLBS
+04-09 16:00:24.149 V/OplusLocationBlacklistUtil( 3590): block status: android = false
+04-09 16:00:24.152 E/AppOps  ( 3590): attributionTag OplusLBS not declared in manifest of android
+04-09 16:00:24.152 D/LocationManagerService( 3590): network provider request changed to ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+04-09 16:00:24.152 W/LocationFreezeProc( 3590): ignore LocationRequest 1000/android
+04-09 16:00:24.152 I/OplusLocationStatistics( 3590): recordNlpNavigatingStarted
+04-09 16:00:24.158 I/PCDR-pcdr_lte_nr_pingpong_opt[0](13839): handleCellInfoChange compoundIdStr:460_11_405526_1698132610
+04-09 16:00:24.159 W/Settings( 8406): Setting airplane_mode_on has moved from android.provider.Settings.System to android.provider.Settings.Global, returning read-only value.
+04-09 16:00:24.159 I/metis_v2_MetroAwarenessCollector(24527): onCellInfoChanged: cell size=1
+04-09 16:00:24.159 D/HLog-UpMgr(24527): [metis]CheckWhetherUploadBody Mgr:com.oplus.sdp.y9.c@f7b271c
+04-09 16:00:24.159 D/HLog-MultiConfigManage(24527): [metis]checkAllPushTask
+04-09 16:00:24.159 D/HLog-MultiConfigManage(24527): [metis]checkAllPushTask existPushInfo : 
+04-09 16:00:24.159 I/ContextAware_DailyStatisticsRecorder(24527): Increase context change count: metro_cell_count, value: 1
+04-09 16:00:24.159 I/ContextAware_DailyStatisticsRecorder(24527): Increase context change count: metro_cell_cost_time_ms, value: 0
+04-09 16:00:24.163 E/FileStrategy(24527): java.io.IOException: Read-only file system
+04-09 16:00:24.163 W/Settings( 8406): Setting airplane_mode_on has moved from android.provider.Settings.System to android.provider.Settings.Global, returning read-only value.
+04-09 16:00:24.163 I/NLogWriter(24527): loganProtocolStatus: clogan_open,-2010
+04-09 16:00:24.163 D/SubsysEventListenerManager-SubsysTelephonyCallback[1](14034): onCellInfoChanged
+04-09 16:00:24.163 I/PCDR-pcdr_lte_nr_pingpong_opt[1](13839): handleCellInfoChange compoundIdStr:460_00_2097161_5683769345
+04-09 16:00:24.163 D/CellChangeEvent(14034): update event
+04-09 16:00:24.163 D/PolicyHandler(14034): updateEventContext trigger event Event{mEventName=CellChangeEvent,mNickName=cellchange,mEventVal=true,mDefaultVal=false,mId=-1,mDefaultId=-1,mInstanceId=0,mUseNameId=false}
+04-09 16:00:24.163 D/CellMap/CellMonitor(14034): handleCellChange: [CellInfoNr:{ mRegistered=YES mTimeStamp=768840767518719ns mCellConnectionStatus=0 CellIdentityNr:{ mPci = 702 mTac = 2097161 mNrArfcn = 504990 mBands = [41] mMcc = 460 mMnc = 00 mNci = 5683769345 mAlphaLong = 中国移动 mAlphaShort = 中国移动 mAdditionalPlmns = {} } CellSignalStrengthNr:{ csiRsrp = 2147483647 csiRsrq = 2147483647 csiCqiTableIndex = 2147483647 csiCqiReport = [] ssRsrp = -73 ssRsrq = -10 ssSinr = 23 level = 3 parametersUseForLevel = 0 timingAdvance = 2147483647 } }]
+04-09 16:00:24.163 D/CellMap/CellMonitor(14034): handleAllSubCellChange slotId: 1, cellInfo: [CellInfoNr:{ mRegistered=YES mTimeStamp=768840767518719ns mCellConnectionStatus=0 CellIdentityNr:{ mPci = 702 mTac = 2097161 mNrArfcn = 504990 mBands = [41] mMcc = 460 mMnc = 00 mNci = 5683769345 mAlphaLong = 中国移动 mAlphaShort = 中国移动 mAdditionalPlmns = {} } CellSignalStrengthNr:{ csiRsrp = 2147483647 csiRsrq = 2147483647 csiCqiTableIndex = 2147483647 csiCqiReport = [] ssRsrp = -73 ssRsrq = -10 ssSinr = 23 level = 3 parametersUseForLevel = 0 timingAdvance = 2147483647 } }]
+04-09 16:00:24.163 D/TimerEvent(14034): TimerEvent reset to false
+04-09 16:00:24.163 D/AtomAction(14034): startAction
+04-09 16:00:24.163 E/MetricsAction(14034): startMetricsCollect no metrics data id 54502
+04-09 16:00:24.163 D/AtomMetricsApp(14034): doAction mPrimaryRuleExpireTime <= 0
+04-09 16:00:24.163 D/PolicyHandler(14034): updateEventContext mEventList Event{mEventName=TimerEvent,mNickName=timer,mEventVal=false,mDefaultVal=false,mId=-1,mDefaultId=-1,mInstanceId=0,mUseNameId=false}
+04-09 16:00:24.163 D/LocationTransport(24085): get the LocationTransport Instance
+04-09 16:00:24.163 D/LocationTransport(24085): get the LocationTransport Instance
+04-09 16:00:24.163 I/OplusLocationStatistics( 3590): NLP update locatin successed.
+04-09 16:00:24.164 I/OplusLocationStatistics( 3590): setNlpRequestDuration: 11
+04-09 16:00:24.164 I/LocationManagerService( 3590): incoming location [Location[network 39.91****,116.25**** hAcc=35.0 et=+8d21h34m0s768ms]]
+04-09 16:00:24.164 E/AppOps  ( 3590): attributionTag OplusLBS not declared in manifest of android
+04-09 16:00:24.164 I/LocationManagerService( 3590): incoming location [Location[network 39.91****,116.25**** hAcc=35.0 et=+8d21h34m0s768ms]]
+04-09 16:00:24.164 I/LocationRequestStatistics( 3590): deliverLocation, PackageProviderKey = PackageProviderKey: network: android: OplusLBS
+04-09 16:00:24.164 E/AppOps  ( 3590): attributionTag OplusLBS not declared in manifest of android
+04-09 16:00:24.164 W/LocationFreezeProc( 3590): removeLocationRequest [android.location.LocationManager$LocationListenerTransport@16d5d19]
+04-09 16:00:24.164 I/LocationFreezeProc( 3590): Remove: Don't find the app's name, do nothing! [android.location.LocationManager$LocationListenerTransport@16d5d19]
+04-09 16:00:24.165 D/SubsysLocationManager(14034): onLocationChanged(passive)
+04-09 16:00:24.165 D/GeoFenceDetectionService-ConcertSyncService(14034): handleMessage what:2004
+04-09 16:00:24.165 D/GeoFenceDetectionService-ConcertSyncService(14034): Location changed too small, distance:0.0
+04-09 16:00:24.165 D/GeoFenceDetectionService-AttractionSyncService(14034): handleMessage what:2004
+04-09 16:00:24.165 D/GeoFenceDetectionService-AttractionSyncService(14034): Location changed too small, distance:0.0
+04-09 16:00:24.165 D/GeoFenceDetectionService-AirportSyncService(14034): handleMessage what:2004
+04-09 16:00:24.165 D/GeoFenceDetectionService-AirportSyncService(14034): Location changed too small, distance:0.0
+04-09 16:00:24.165 D/BorderPortEvent(14034): onLocationChanged location.
+04-09 16:00:24.165 D/BorderPortEvent(14034): checkIsBorderPort cloub policy:false
+04-09 16:00:24.165 D/SubsysThreadPool(14034): execute task
+04-09 16:00:24.165 D/AtomPassiveLocationInfo(14034): handleMessage what:1
+04-09 16:00:24.165 D/ExitGarageFilterEventImpl(14034): handleMessage what:1
+04-09 16:00:24.165 D/ExitGarageFilterEventImpl(14034): onLocationChanged
+04-09 16:00:24.165 D/ExitGarageFilterEventImpl(14034): handleMessage what:1
+04-09 16:00:24.165 D/ExitGarageFilterEventImpl(14034): onLocationChanged
+04-09 16:00:24.165 D/GeoFenceDetectionService-ConcertSyncService(14034): handleMessage what:2004
+04-09 16:00:24.165 D/GeoFenceDetectionService-ConcertSyncService(14034): Location changed too small, distance:0.0
+04-09 16:00:24.165 D/GeoFenceDetectionService-AttractionSyncService(14034): handleMessage what:2004
+04-09 16:00:24.165 D/GeoFenceDetectionService-AttractionSyncService(14034): Location changed too small, distance:0.0
+04-09 16:00:24.165 D/GeoFenceDetectionService-AirportSyncService(14034): handleMessage what:2004
+04-09 16:00:24.165 D/GeoFenceDetectionService-AirportSyncService(14034): Location changed too small, distance:0.0
+04-09 16:00:24.165 D/GpsService(14034): onLocationChanged
+04-09 16:00:24.165 V/LocationManagerService( 3590): passive provider registration 10188/com.coloros.weather.service/F58C6840 dropped delivery - too close
+04-09 16:00:24.165 E/AppOps  ( 3590): attributionTag OplusLBS not declared in manifest of android
+04-09 16:00:24.165 D/BorderPortEvent(14034): check cloud border port result false
+04-09 16:00:24.165 V/LocationManagerService( 3590): passive provider registration 10113/com.oplus.metis/D9E85B32 dropped delivery - too close
+04-09 16:00:24.165 V/LocationManagerService( 3590): passive provider registration 1000/android[SensorNotificationService]/67EBFBFC dropped delivery - too close
+04-09 16:00:24.165 E/AppOps  ( 3590): attributionTag OplusLBS not declared in manifest of android
+04-09 16:00:24.165 I/OplusLocationStatistics( 3590): stopRequesting
+04-09 16:00:24.165 I/LocationRequestStatistics( 3590): stopRequesting, PackageProviderKey = PackageProviderKey: network: android: OplusLBS
+04-09 16:00:24.166 D/LocationManagerService( 3590): network provider removed registration from 1000/android[OplusLBS]/1B15ED95
+04-09 16:00:24.166 W/LocationFreezeProc( 3590): remove [network]'s Location Request[android.location.LocationManager$LocationListenerTransport@16d5d19] Done from 1000/android[OplusLBS]/1B15ED95
+04-09 16:00:24.166 D/LocationManagerService( 3590): network provider request changed to ProviderRequest[OFF]
+04-09 16:00:24.166 I/OplusLocationStatistics( 3590): recordNlpNavigatingStopped
+04-09 16:00:24.166 I/OplusLocationStatistics( 3590): Nlp locaiton has update or Error has recored! Do nothing
+04-09 16:00:24.166 I/GnssAidl( 2109): ===> injectLocation line 239 
+04-09 16:00:24.166 I/5111PAS[16002114][f26f602].PhoneStateInfoCollector_Travel( 5111): onLocationChanged: 
+04-09 16:00:24.166 D/CellMap/GridLocationManager(14034): handleLocationChange location provider is: network
+04-09 16:00:24.166 I/5111PAS[16002114][f26f602].PhoneStateInfoCollector_Travel( 5111): , mock = false, provider = network, time = 2026-04-09 16:00:24
+04-09 16:00:24.166 I/LocationRequestStatistics( 3590): deliverLocation, PackageProviderKey = PackageProviderKey: network: android: GnssService
+04-09 16:00:24.166 D/OplusLocationAidl(16233): injectLocation: injectLocation()
+04-09 16:00:24.166 D/QcomLocationAidlImpl(16233): injectLocation: enter default injectLocation()
+04-09 16:00:24.166 D/vendor.oplus.hardware.location_aidl-service(16233): checkAndLoopSuid: location_oplus_injectLocation]: checkAndLoopSuid sOplusLocConn = 0xb400007a3b4a4000, sIsLoopupSuid = 0!
+04-09 16:00:24.166 D/vendor.oplus.hardware.location_aidl-service(16233): execute: Task[injectLocation] will be run!
+04-09 16:00:24.166 D/vendor.oplus.hardware.location_aidl-service(16233): sendInjectLocationRequest: Send inject location request
+04-09 16:00:24.166 D/vendor.oplus.hardware.location_aidl-service(16233): sendInjectLocationRequest: [sendInjectLocationRequest]: location inject req [399056865, 1162495135, 0.000000, 0]
+04-09 16:00:24.166 I/LocSvc_api_v02( 2109): ---> locClientSendReq line 2409 QMI_LOC_INJECT_POSITION_REQ_V02
+04-09 16:00:24.166 D/vendor.oplus.hardware.location_aidl-service(16233): waitForAck: location_oplus: Wait request[50] ack for [2] sec, pid = 16233
+04-09 16:00:24.166 I/5111PAS[16002114][f26f602].ScheduleTaskManager_Travel( 5111): doRemoveAlarmTaskLock: timestamp = ****-04-09 15:**:**
+04-09 16:00:24.167 I/5111PAS[16002114][f26f602].ScheduleTaskManager_Travel( 5111): doAddAlarmTaskLock: timestamp = ****-04-09 16:**:**
+04-09 16:00:24.167 D/vendor.oplus.hardware.location_aidl-service(16233): respCb: Response callback received: 0 99
+04-09 16:00:24.167 I/5111PAS[16002114][f26f602].ScheduleTaskManager_Travel( 5111): addAlarmTask task = ScheduleTask{mTaskId=2, mPolicyId=20000, mTimeStampMillis=****-04-09 16:**:**}, isNeedAlign = true
+04-09 16:00:24.168 I/5111PAS[16002114][f26f602].ScheduleTaskManager( 5111): addAlarmTask alarm size=8
+04-09 16:00:24.168 I/LocSvc_ApiV02( 2109): <--- globalRespCb line 288 QMI_LOC_INJECT_POSITION_REQ_V02
+04-09 16:00:24.168 I/5111PAS[16002114][f26f602].PhoneStateInfoCollector_Travel( 5111): updateLocationData: 
+04-09 16:00:24.168 I/5111PAS[16002114][f26f602].PhoneStateInfoCollector_Travel( 5111): updateLocationData -> updateLocationCache
+04-09 16:00:24.171 I/5111PAS[16002114][f26f602].PhoneStateInfoCollector_Travel( 5111): reportLocation, earthquake_warning status = 0
+04-09 16:00:24.171 I/5111PAS[16002114][f26f602].PhoneStateInfoCollector_Travel( 5111): reportLocation, earthquake_warning is not open, return
+04-09 16:00:24.171 I/5111PAS[16002114][f26f602].BaseResourceCollectManger_Travel( 5111): notifyResourceChange:10009
+04-09 16:00:24.171 I/5111PAS[16002114][f26f602].ResourceTrigger( 5111): resourceOnChange, resourceId is 10009
+04-09 16:00:24.171 I/5111PAS[16002114][f26f602].ResourceTrigger( 5111): startAlign
+04-09 16:00:24.178 E/LoganThread( 5111): HLog_File_com_coloros_sceneservice_2026_03_10_16.dog3被删除
+04-09 16:00:24.181 D/HLog    ( 5111): model -> strm == NULL
+04-09 16:00:24.186 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:24.189 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:24.189 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:24.189 D/SensorFeature( 2258): write 39 bytes:768840732154135,768840783627156,29307,0
+04-09 16:00:24.267 D/vendor.oplus.hardware.location_aidl-service(16233): eventCb: Received QMI indication with length 42
+04-09 16:00:24.267 D/vendor.oplus.hardware.location_aidl-service(16233): eventCb: Event[0] msg_id=899, ts=14761830929798
+04-09 16:00:24.267 D/vendor.oplus.hardware.location_aidl-service(16233): eventCb: Received inject location ap message ID 899
+04-09 16:00:24.267 D/vendor.oplus.hardware.location_aidl-service(16233): sendSensorUsageRequest: Send oplus sensor usage request
+04-09 16:00:24.267 D/vendor.oplus.hardware.location_aidl-service(16233): waitForAck: location_oplus: Got signal from ACK
+04-09 16:00:24.267 D/vendor.oplus.hardware.location_aidl-service(16233): injectLocationTask: location_oplus_injectLocationTask]: location fence inject location request operation ret = 12
+04-09 16:00:24.268 D/vendor.oplus.hardware.location_aidl-service(16233): respCb: Response callback received: 0 99
+04-09 16:00:24.303 E/WifiHAL ( 2123): wifi_get_cached_scan_results: Wifi Cached Scan Result not supported by driver
+04-09 16:00:24.303 E/WifiStaIfaceAidlImpl( 3590): getCachedScanData failed with service-specific exception: android.os.ServiceSpecificException:  (code 4)
+04-09 16:00:24.305 D/VendorWifiService(14034): onEvent event:9,action:1
+04-09 16:00:24.307 D/OplusWifiPower_TriggerCenter( 3590): mComponentCallback: wifistat
+04-09 16:00:24.335 D/UlPriorityPolicyForeground(13839): match: config has not com.binance.monitor
+04-09 16:00:24.390 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18209)(cct, lux, ir)[5365.22, 218.52, 8.860497] (r, g, b, c)[7745.07, 5853.71, 2911.90, 16230.85]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29307
+04-09 16:00:24.391 D/FusionLightNextGen( 3590): process end reported = 1, mode: 0, cnt: 440890, lux 198.9, cct 5413.1, r/g/b/c: 7720.2/5831.7/2905.3/16207.5, R/G/B: 80.0/76.0/67.0, bri 1380.0, match 1.00, ir 0.007050, conf 5.0, ts 768840774034879
+04-09 16:00:24.422 I/sensors-hal( 2113): handle_sns_std_sensor_event:114, oplus rgb_rear sample: (cct, lux, ir, x, y)[5132, 75, 21, 343, 384]
+04-09 16:00:24.422 I/sensors-hal( 2113): handle_sns_std_sensor_event:116, oplus rgb_rear sample: (r, g, b, c w)[4121, 8493, 1348, 180, 0]
+04-09 16:00:24.427 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-0-1 92300
+04-09 16:00:24.427 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-213-(cpu-1-0-1)-26-0-1
+04-09 16:00:24.427 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-10614-(cpu-1-0-1)-26-0-1
+04-09 16:00:24.438 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 3
+04-09 16:00:24.448 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:24.460 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-0-1 79900
+04-09 16:00:24.461 D/OplusScrollToTopManager( 6825): com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity,This com.android.internal.policy.DecorView{eda4ae2 I.E...... R......D 0,0-1264,2780 aid=2 alpha=1.0 viewInfo = }[MarketChartActivity] change focus to false
+04-09 16:00:24.490 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:24.490 D/SensorFeature( 2258): write 39 bytes:768840732154135,768841094425906,29308,0
+04-09 16:00:24.526 D/OplusScrollToTopManager( 6825): com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity,This com.android.internal.policy.DecorView{13382af V.E...... R....... 0,0-1264,2780 aid=1 alpha=1.0 viewInfo = }[AccountStatsBridgeActivity] change focus to true
+04-09 16:00:24.595 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:24.619 I/ChainTrace( 6825): stream type=heartbeat gapMs=1046 refreshMarket=false
+04-09 16:00:24.623 I/AICCTModule( 3590): SensorFilter: brightness threshold 1.2 screenNit is 98.252 ave enviroment lux is 198.85266 luxForNit 94.92581demarcationPoint200.0 result is false
+04-09 16:00:24.623 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 5416.137 nearestMaxValue:5413.322 secondNearestValue: 5413.322
+04-09 16:00:24.623 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 199.11095 nearestMaxValue:198.85266 secondNearestValue: 198.85266
+04-09 16:00:24.642 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 215.7,cct 5354.8,brl/algo/ir 1380.0/2.0/8.8,pwm/dc 0.0/0.0,rgbc 7722.643066/5840.506348/2896.447266/16191.216797,ts 768841040624618,cnt 18214,flag 29308
+04-09 16:00:24.642 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18214)(cct, lux, ir)[5354.81, 215.74, 8.793255] (r, g, b, c)[7722.64, 5840.51, 2896.45, 16191.22]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29308
+04-09 16:00:24.754 D/vendor.oplus.hardware.charger-V10-service( 2280): ret_value:122, read content:,295,295,4050,4043,-191,64,65,1,1,0,494,4957,65,1,4480,600,500,0,0,9500,0,0,1,0,2,0,0,0,1,5868,89,0,3202,5026,0,0,0,0,0,0
+04-09 16:00:24.754 D/vendor.oplus.hardware.charger-V10-service( 2280): gmtime: 2026-04-09-16-00-24
+04-09 16:00:24.755 D/vendor.oplus.hardware.charger-V10-service( 2280): usb_online:1, ac_online:-2147483648, wireless_online:-2147483648
+04-09 16:00:24.831 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:24.837 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:24.837 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:24.837 D/SensorFeature( 2258): write 39 bytes:768841376723198,768841430837781,29309,0
+04-09 16:00:24.911 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18219)(cct, lux, ir)[5357.75, 216.54, 8.830665] (r, g, b, c)[7720.15, 5833.91, 2909.69, 16181.89]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29309
+04-09 16:00:25.025 D/CommonApp-234-10512(14034): transport layer data is invalid
+04-09 16:00:25.025 D/CommonApp-235-10512(14034): commonScoreStrategy scenarios 1
+04-09 16:00:25.025 D/CommonApp-235-10512(14034): notifyScoreChange appScene COMMON score 100
+04-09 16:00:25.025 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:25.026 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:25.026 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:25.056 I/PantaCard.Lnch.InstantCard( 8730):  100335&1000001&1_sid=536877599_rk=ea6994,setAllowCardRefreshable refreshable:true[sdk:v1.3.122-1545084,seed-plugin:v16.1.126-d5777f7c,app:v16.4.22] [OplusLauncher|com.android.launcher|2.0.44-25e9612]
+04-09 16:00:25.056 D/CardView( 8730): 0x1081e1 io.iftech.quickapp.box setRefreshable true , completeRequestLayout false , completeRefresh true 
+04-09 16:00:25.057 D/CardView( 8730): refreshable postAtFrontOfQueue
+04-09 16:00:25.060 W/QosScheduler( 3590): executeSceneQosStrategy failed! qos feature no enable
+04-09 16:00:25.068 D/BatteryChargeControl( 2280): bcc get no support from charging protocol
+04-09 16:00:25.141 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:25.141 D/SensorFeature( 2258): write 39 bytes:768841376723198,768841743842364,29310,0
+04-09 16:00:25.173 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 217.8,cct 5362.4,brl/algo/ir 1380.0/2.0/9.3,pwm/dc 0.0/0.0,rgbc 7742.578613/5838.306641/2927.354492/16219.193359,ts 768841695267952,cnt 18224,flag 29310
+04-09 16:00:25.174 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18224)(cct, lux, ir)[5362.42, 217.83, 9.336511] (r, g, b, c)[7742.58, 5838.31, 2927.35, 16219.19]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29310
+04-09 16:00:25.231 D/gaia-GaiaConnectChecker(13843): start connect check++
+04-09 16:00:25.444 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:25.444 D/SensorFeature( 2258): write 39 bytes:768841376723198,768842047177989,29311,0
+04-09 16:00:25.446 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18229)(cct, lux, ir)[5317.81, 215.31, 9.557515] (r, g, b, c)[7722.64, 5844.91, 2914.11, 16142.26]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29311
+04-09 16:00:25.510 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:25.537 I/ChainTrace( 6825): stream type=syncEvent gapMs=918 refreshMarket=true
+04-09 16:00:25.540 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_WAKE_IND: 0xFD
+04-09 16:00:25.540 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK ON
+04-09 16:00:25.540 D/vendor.qti.bluetooth@1.0-wake_lock( 2103): Acquire wakelock is acquired 
+04-09 16:00:25.540 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Writing IBS_WAKE_ACK
+04-09 16:00:25.542 W/PTC.DISC.FusionProvider(11972): [FusionBleDiscover]current device: **:72:47:FD rssi is -107, minRssi is -100, ignore it
+04-09 16:00:25.549 V/WindowManager( 3590): Relayout Window{f71f005 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x379 , apr = 0, vsysui=, x=-1885, y=1068
+04-09 16:00:25.549 I/SurfaceControl( 6825):  setExtendedRangeBrightness sc=Surface(name=)/@0x51f69f9,currentBufferRatio=1.0,desiredRatio=1.0
+04-09 16:00:25.549 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:25.550 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:25.565 D/VRR [OTI]( 2399): handleIdle from 0 to 1
+04-09 16:00:25.565 D/VRR [OTI-HW]( 2399): isStateReady 0
+04-09 16:00:25.565 D/VRR [OTI-HW]( 2399): keep rate.
+04-09 16:00:25.581 D/NotificationService--OplusNotificationFixHelper( 3590): fixAppIcon: pkg=com.v2ray.ang
+04-09 16:00:25.581 D/NotificationService--OplusNotificationFixHelper( 3590): fixAppIcon: appIcon = null, pkg = com.v2ray.ang
+04-09 16:00:25.581 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_SLEEP_IND: 0xFE
+04-09 16:00:25.581 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK OFF
+04-09 16:00:25.581 D/NotificationService--NotificationRecord( 3590): isSupportRearLight , isRearLight = false mLedRM = false isMultilLed = false
+04-09 16:00:25.582 I/OplusStatusBarManagerServiceEnhance( 3590):  getTopIsFullscreen mTopIsFullscreen: false
+04-09 16:00:25.582 W/ActivityManager( 3590): Permission Denial: getTopApplicationInfo from pid=25334, uid=10397 requires oplus.permission.OPLUS_COMPONENT_SAFE
+04-09 16:00:25.582 E/OplusNotificationCenter( 3590): getForegroundApplication exception
+04-09 16:00:25.583 D/NotificationService--OplusNotificationManagerServiceExtImpl( 3590): isForwardToAssistants: true, case : Is local notification
+04-09 16:00:25.583 D/NotificationService( 3590): This application enqueue notifications is need postDelayed mcsAssistantDelayTime: 50
+04-09 16:00:25.607 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_WAKE_IND: 0xFD
+04-09 16:00:25.607 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK ON
+04-09 16:00:25.607 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Writing IBS_WAKE_ACK
+04-09 16:00:25.610 W/PTC.DISC.FusionProvider(11972): [FusionBleDiscover]current device: **:72:47:FD rssi is -104, minRssi is -100, ignore it
+04-09 16:00:25.643 I/SystemUi--Notification( 8338): OplusLiveAlertNotificationsRepository-->onRankingApplied
+04-09 16:00:25.646 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:25.649 I/PluginSeedling--Track( 8338): RequestHandler-->notificationUpdated 0|com.v2ray.ang|1|null|10397 postTime: 1775721625581
+04-09 16:00:25.649 E/LockScreenNotificationDispatcherImp( 8338): updateNotificationListOnKg size:0
+04-09 16:00:25.653 W/SystemUi--Notification( 8338): OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-09 16:00:25.653 I/SystemUi--Notification( 8338): LockScreenNotificationDispatcherImp-->updateNotificationListOnKg resultCode: 0
+04-09 16:00:25.658 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_SLEEP_IND: 0xFE
+04-09 16:00:25.658 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK OFF
+04-09 16:00:25.680 D/LocalImageResolver( 8338): Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-09 16:00:25.682 D/OplusNotificationDateTimeView( 8338): setTime mSettingTimeMillis 1775721625577, mSettingLocalDateTime 2026-04-09T16:00:00.577
+04-09 16:00:25.689 D/LocalImageResolver( 8338): Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-09 16:00:25.690 D/OplusNotificationDateTimeView( 8338): setTime mSettingTimeMillis 1775721625577, mSettingLocalDateTime 2026-04-09T16:00:00.577
+04-09 16:00:25.695 D/LocalImageResolver( 8338): Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-09 16:00:25.695 D/OplusNotificationDateTimeView( 8338): setTime mSettingTimeMillis 1775721625577, mSettingLocalDateTime 2026-04-09T16:00:00.577
+04-09 16:00:25.699 I/SystemUi--Notification( 8338): OplusNotificationTempla-->resolveContentMargin: marginTop=112 isChildInGroup=false hasSubtitle=true params.topMargin=112
+04-09 16:00:25.700 W/SystemUi--Notification( 8338): OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-09 16:00:25.704 E/LockScreenNotificationDispatcherImp( 8338): updateNotificationListOnKg size:0
+04-09 16:00:25.708 W/SystemUi--Notification( 8338): OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-09 16:00:25.708 I/SystemUi--Notification( 8338): LockScreenNotificationDispatcherImp-->updateNotificationListOnKg resultCode: 0
+04-09 16:00:25.783 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:25.792 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:25.793 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:25.793 D/SensorFeature( 2258): write 39 bytes:768842331749083,768842386081531,29312,0
+04-09 16:00:25.795 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:25.796 D/FusionLightNextGen( 3590): process end reported = 1, mode: 0, cnt: 440895, lux 199.6, cct 5365.6, r/g/b/c: 7804.9/5884.5/2929.6/16310.1, R/G/B: 80.0/76.0/67.0, bri 1380.0, match 1.00, ir 0.008964, conf 5.0, ts 768842283508473
+04-09 16:00:25.797 I/AICCTModule( 3590): SensorFilter: brightness threshold 1.2 screenNit is 98.252 ave enviroment lux is 199.6499 luxForNit 94.97728demarcationPoint200.0 result is false
+04-09 16:00:25.797 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 5413.322 nearestMaxValue:5405.3228 secondNearestValue: 5405.3228
+04-09 16:00:25.797 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 198.85266 nearestMaxValue:198.43858 secondNearestValue: 198.43858
+04-09 16:00:25.808 D/vendor.qti.bluetooth@1.0-wake_lock( 2103): Release wakelock is released 
+04-09 16:00:25.941 D/OplusCellularNetworkConfig( 8406): getDnsQueryPriority value=http://pdns.dnspod.cn
+04-09 16:00:25.941 D/NetworkService[0](14034): getActiveNetworks networkList size:1
+04-09 16:00:25.941 D/SubsysThreadPool(14034): execute task
+04-09 16:00:25.943 D/libc-netbsd(14034): [oplusDnsOpenProxy]: __netdClientDispatch.connect errno = 111
+04-09 16:00:25.944 D/DNS_CACHE(14034): oplus_oplus_getaddrinfo_proxy open dns proxy failed, use android flow: 1000
+04-09 16:00:25.996 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18234)(cct, lux, ir)[5322.84, 217.32, 10.574483] (r, g, b, c)[7794.91, 5873.50, 2929.56, 16277.48]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29312
+04-09 16:00:25.996 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 217.3,cct 5322.8,brl/algo/ir 1380.0/2.0/10.6,pwm/dc 0.0/0.0,rgbc 7794.910645/5873.503906/2929.562256/16277.477539,ts 768842328679931,cnt 18234,flag 29312
+04-09 16:00:26.044 D/CommonApp-234-10512(14034): transport layer data is invalid
+04-09 16:00:26.044 D/CommonApp-235-10512(14034): commonScoreStrategy scenarios 1
+04-09 16:00:26.044 D/CommonApp-235-10512(14034): notifyScoreChange appScene COMMON score 100
+04-09 16:00:26.044 D/OplusL3Monitor( 3590): linkIndex=90, networkId=0, ignore
+04-09 16:00:26.044 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:26.044 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:26.044 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:26.056 V/AlarmManager( 3590): sending alarm Alarm{734bca7 type 1 origWhen 1775721626056 whenElapsed 768842661 android} uid 1000 whenElapsed 768842661 windowLength 0 maxWhenElapsed 768842661 repeatInterval 0 action null component null tag StorgaeBandInfoAlarmTag flags 0x9 procName system_server
+04-09 16:00:26.057 E/OplusStorageUFSBandwidth( 3590): storage_io_metrics_path is /proc/oplus_storage/io_metrics/forever/
+04-09 16:00:26.058 E/OplusStorageUFSBandwidth( 3590): Bandwidth - Read: 0.50 MB/s, Write: 1.00 MB/s
+04-09 16:00:26.058 E/OplusStorageUFSBandwidth( 3590): Task time: 1ms
+04-09 16:00:26.061 E/OplusStorageUFSBandwidth( 3590): Alarm set to trigger in 10 seconds
+04-09 16:00:26.063 I/ChainTrace( 6825): chart_pull phase=load_done symbol=BTCUSDT interval=15m request=22 durationMs=4783 itemCount=13500
+04-09 16:00:26.069 D/BatteryChargeControl( 2280): bcc get no support from charging protocol
+04-09 16:00:26.094 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:26.094 D/SensorFeature( 2258): write 39 bytes:768842331749083,768842699060645,29313,0
+04-09 16:00:26.100 D/ShellSubscriberWorkerThread(15031): the first 8 bytes empty, and RestData length > 8 
+04-09 16:00:26.108 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-213-(cpu-1-0-1)-26-0-1
+04-09 16:00:26.108 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-0-1 92300
+04-09 16:00:26.108 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-10614-(cpu-1-0-1)-26-0-1
+04-09 16:00:26.115 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-0-1 79900
+04-09 16:00:26.129 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-213-(cpu-1-0-1)-26-0-1
+04-09 16:00:26.129 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-0-1 92300
+04-09 16:00:26.129 I/ostats_tpd(10330): stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-10614-(cpu-1-0-1)-26-0-1
+04-09 16:00:26.140 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 3
+04-09 16:00:26.150 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:26.160 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 3
+04-09 16:00:26.170 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:26.181 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 3
+04-09 16:00:26.191 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:26.211 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 2
+04-09 16:00:26.221 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 3
+04-09 16:00:26.232 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:26.242 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18239)(cct, lux, ir)[5282.65, 214.86, 10.800904] (r, g, b, c)[7742.58, 5858.11, 2905.28, 16228.52]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29313
+04-09 16:00:26.252 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 3
+04-09 16:00:26.262 I/ThermalEngine(10385): ACTION: CPU - Setting CPU[6] to 0
+04-09 16:00:26.304 I/ThermalEngine(10385): VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-0-1 79900
+04-09 16:00:26.315 E/WifiHAL ( 2123): wifi_get_cached_scan_results: Wifi Cached Scan Result not supported by driver
+04-09 16:00:26.315 E/WifiStaIfaceAidlImpl( 3590): getCachedScanData failed with service-specific exception: android.os.ServiceSpecificException:  (code 4)
+04-09 16:00:26.317 D/VendorWifiService(14034): onEvent event:9,action:1
+04-09 16:00:26.325 E/TetherController( 1905): property_get sys.radio.data.modem_share_flag return 0, 1!
+04-09 16:00:26.334 V/NetworkPolicy( 3590): updateNetworkEnabledNL() return
+04-09 16:00:26.334 V/NetworkPolicy( 3590): updateNotificationsNL not process
+04-09 16:00:26.335 V/MonthTrafficAlert(13839): getWarningNotification subId:1 numWarningNotificaion:2
+04-09 16:00:26.378 V/MonthTrafficAlert(13839): getWarningNotification subId:2 numWarningNotificaion:0
+04-09 16:00:26.384 I/ChainTrace( 6825): chart_pull phase=ui_applied symbol=BTCUSDT interval=15m request=22 durationMs=5104 itemCount=13500
+04-09 16:00:26.396 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:26.396 D/SensorFeature( 2258): write 39 bytes:768842331749083,768842999642833,29314,0
+04-09 16:00:26.422 I/sensors-hal( 2113): handle_sns_std_sensor_event:114, oplus rgb_rear sample: (cct, lux, ir, x, y)[5175, 76, 21, 342, 382]
+04-09 16:00:26.422 I/sensors-hal( 2113): handle_sns_std_sensor_event:116, oplus rgb_rear sample: (r, g, b, c w)[4136, 8523, 1380, 181, 0]
+04-09 16:00:26.507 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 215.9,cct 5332.0,brl/algo/ir 1380.0/2.0/9.7,pwm/dc 0.0/0.0,rgbc 7745.070801/5844.906738/2907.485596/16242.506836,ts 768842939235400,cnt 18244,flag 29314
+04-09 16:00:26.507 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18244)(cct, lux, ir)[5331.96, 215.87, 9.744297] (r, g, b, c)[7745.07, 5844.91, 2907.49, 16242.51]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29314
+04-09 16:00:26.514 E/PERFHAL-PERFCTRL( 2187): PERFHAL-PERFCTRL: chk_core_online_poll_loop() 748: poll() has timed out for /sys/kernel/msm_performance/events/cpu_hotplug
+04-09 16:00:26.514 E/PERFHAL-PERFCTRL( 2187): PERFHAL-PERFCTRL: chk_core_online_poll_loop() 743: Block on poll()
+04-09 16:00:26.570 I/ChainTrace( 6825): stream type=syncEvent gapMs=1032 refreshMarket=true
+04-09 16:00:26.581 D/healthd ( 2110): system healthd: battery l=65 v=4033 t=29.5 h=2 st=2 c=106 fc=6100000 cc=439 chg=u
+04-09 16:00:26.582 I/SurfaceControl( 6825):  setExtendedRangeBrightness sc=Surface(name=)/@0x51f69f9,currentBufferRatio=1.0,desiredRatio=1.0
+04-09 16:00:26.583 V/WindowManager( 3590): Relayout Window{f71f005 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x379 , apr = 0, vsysui=, x=-1885, y=1068
+04-09 16:00:26.583 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:26.584 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:26.587 D/ChargerInfo( 2280): getInfo: type: 0x1, update: 1
+04-09 16:00:26.587 D/ChargerInfo( 2280): chargerInfoUpdateThread: update start
+04-09 16:00:26.589 D/ChargerInfo( 2280): enableTx: path(/proc/wireless/enable_tx): not exist
+04-09 16:00:26.589 D/ChargerInfo( 2280): wlsAdapterPower: path(/sys/class/oplus_chg/wireless/max_w_power): not exist
+04-09 16:00:26.589 D/ChargerInfo( 2280): unknown: path(/sys/class/oplus_chg/ac/online) and backupPath(/sys/class/power_supply/ac/online) not exist
+04-09 16:00:26.589 D/ChargerInfo( 2280): unknown: path(/sys/class/oplus_chg/ac/online) and backupPath(/sys/class/power_supply/ac/online) not exist
+04-09 16:00:26.590 D/osense.compress( 3590): com.android.mms do shrink, target ratio = 89, final ratio = 90, cur ratio = 84
+04-09 16:00:26.590 D/ChargerInfo( 2280): get_ui_charge_icon_type: [0 0] [0 0] 1
+04-09 16:00:26.590 D/ChargerInfo( 2280): unknown: path(/sys/class/oplus_chg/ac/online) and backupPath(/sys/class/power_supply/ac/online) not exist
+04-09 16:00:26.590 D/ChargerInfo( 2280): unknown: path(/sys/class/oplus_chg/ac/online) and backupPath(/sys/class/power_supply/ac/online) not exist
+04-09 16:00:26.590 E/ChargerInfo( 2280): SingleHyperPath not found
+04-09 16:00:26.590 D/ChargerInfo( 2280): chargerInfoUpdateThread: update end
+04-09 16:00:26.590 D/ChargerInfo( 2280): chargerInfoUpdateThread: update wait
+04-09 16:00:26.590 D/ChargerInfo( 2280): enableTx: path(/proc/wireless/enable_tx): not exist
+04-09 16:00:26.591 D/ChargerInfo( 2280): wlsAdapterPower: path(/sys/class/oplus_chg/wireless/max_w_power): not exist
+04-09 16:00:26.591 D/ChargerInfo( 2280): getInfo: {"Update":{"batteryFcc":5738,"batteryRm":3204,"bddLeakCurr":0,"bmsStatus":0,"bypassChgStatus":2,"chargeTimeRemaining":0,"cpaPower":2,"enableTx":"0","fastCharge":0,"isSupportSpeedCharge":0,"notifyCode":0,"otgOnline":1,"ppsChargePower":0,"ppsCharging":0,"shortCHwStatus":0,"shortIcOtpStatus":0,"uiIconType":0,"uiPower":0,"usbStatus":0,"wlsAdapterPower":0}}
+04-09 16:00:26.593 D/BatteryStatsImplExtImpl( 3590): mActiveProcesses size = 51
+04-09 16:00:26.595 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:26.603 D/RadioProxyJ[0](14034): [73279]> getRRCStatus
+04-09 16:00:26.604 D/RadioProxyJ[1](14034): [73280]> getRRCStatus
+04-09 16:00:26.604 D/QmiNasClient( 2727): getRRCStatus - enter
+04-09 16:00:26.604 D/QmiNasClient( 3438): getRRCStatus - enter
+04-09 16:00:26.606 D/QmiNasClient( 2727): getRRCStatus callback - enter
+04-09 16:00:26.606 D/QmiNasClient( 2727): getRRCStatus result.rsp.rrcStatusInfo.rrcStatus = 0
+04-09 16:00:26.606 D/NasProxy( 2727): handleMessage msg is 4001
+04-09 16:00:26.606 D/RadioProxy( 2727): getRRCStatus : response cb for instance 0
+04-09 16:00:26.606 D/QmiNasClient( 3438): getRRCStatus callback - enter
+04-09 16:00:26.606 D/QmiNasClient( 3438): getRRCStatus result.rsp.rrcStatusInfo.rrcStatus = 0
+04-09 16:00:26.606 D/NasProxy( 3438): handleMessage msg is 4001
+04-09 16:00:26.606 D/RadioProxy( 3438): getRRCStatus : response cb for instance 1
+04-09 16:00:26.606 D/RadioProxyJ[0](14034): [73279]< getRRCStatusResponse 0
+04-09 16:00:26.606 D/RadioProxyJ[1](14034): [73280]< getRRCStatusResponse 0
+04-09 16:00:26.607 D/CoexRfService(14034): report RRC state:false
+04-09 16:00:26.684 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:26.701 I/SmartDataSwitchStateManager(13839): handle message:7
+04-09 16:00:26.701 I/SmartDataSwitchSM(13839): [DisableState]Handle msg: 2
+04-09 16:00:26.701 I/SmartDataSwitchSM(13839): [DisableState]handle state change, reason:DataScoreLow
+04-09 16:00:26.763 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:26.769 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:26.770 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:26.770 D/SensorFeature( 2258): write 39 bytes:768843309173614,768843363465020,29315,0
+04-09 16:00:26.776 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18249)(cct, lux, ir)[5333.60, 217.76, 9.461685] (r, g, b, c)[7760.02, 5869.10, 2929.56, 16277.48]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29315
+04-09 16:00:26.822 I/AICCTModule( 3590): SensorFilter: brightness threshold 1.2 screenNit is 98.252 ave enviroment lux is 198.56183 luxForNit 94.90713demarcationPoint200.0 result is false
+04-09 16:00:26.822 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 5405.3228 nearestMaxValue:5400.715 secondNearestValue: 5400.715
+04-09 16:00:26.822 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 198.43858 nearestMaxValue:198.56183 secondNearestValue: 198.56183
+04-09 16:00:26.897 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_WAKE_IND: 0xFD
+04-09 16:00:26.897 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK ON
+04-09 16:00:26.898 D/vendor.qti.bluetooth@1.0-wake_lock( 2103): Acquire wakelock is acquired 
+04-09 16:00:26.898 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Writing IBS_WAKE_ACK
+04-09 16:00:26.901 D/OplusHansManager ( 3590): 25497/1002 to 23359/10344 | android.bluetooth.le.IScannerCallback | 2 reason default_unfreezeForKernel
+04-09 16:00:26.953 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_SLEEP_IND: 0xFE
+04-09 16:00:26.953 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK OFF
+04-09 16:00:27.070 D/BatteryChargeControl( 2280): bcc get no support from charging protocol
+04-09 16:00:27.070 D/CommonApp-234-10512(14034): transport layer data is invalid
+04-09 16:00:27.071 D/CommonApp-235-10512(14034): commonScoreStrategy scenarios low package
+04-09 16:00:27.071 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:27.071 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:27.071 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:27.072 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:27.072 D/SensorFeature( 2258): write 39 bytes:768843309173614,768843675984603,29316,0
+04-09 16:00:27.074 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 215.7,cct 5335.8,brl/algo/ir 1380.0/2.0/9.6,pwm/dc 0.0/0.0,rgbc 7755.038574/5858.105469/2907.485596/16230.850586,ts 768843572126962,cnt 18254,flag 29316
+04-09 16:00:27.075 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18254)(cct, lux, ir)[5335.80, 215.70, 9.566840] (r, g, b, c)[7755.04, 5858.11, 2907.49, 16230.85]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29316
+04-09 16:00:27.075 D/FusionLightNextGen( 3590): process end reported = 1, mode: 0, cnt: 440900, lux 200.0, cct 5384.4, r/g/b/c: 7799.9/5897.7/2938.4/16326.4, R/G/B: 80.0/76.0/67.0, bri 1380.0, match 1.00, ir 0.008978, conf 5.0, ts 768843616406962
+04-09 16:00:27.104 D/vendor.qti.bluetooth@1.0-wake_lock( 2103): Release wakelock is released 
+04-09 16:00:27.308 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18259)(cct, lux, ir)[5321.94, 216.38, 9.295250] (r, g, b, c)[7742.58, 5866.90, 2920.73, 16228.52]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29316
+04-09 16:00:27.335 V/MonthTrafficAlert(13839): getWarningNotification subId:1 numWarningNotificaion:2
+04-09 16:00:27.337 V/MonthTrafficAlert(13839): getWarningNotification subId:2 numWarningNotificaion:0
+04-09 16:00:27.374 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:27.374 D/SensorFeature( 2258): write 39 bytes:768843309173614,768843977941374,29317,0
+04-09 16:00:27.464 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:27.510 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:27.535 I/ChainTrace( 6825): stream type=syncEvent gapMs=966 refreshMarket=true
+04-09 16:00:27.576 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 217.1,cct 5351.4,brl/algo/ir 1380.0/2.0/10.2,pwm/dc 0.0/0.0,rgbc 7819.830078/5902.102051/2964.884766/16354.412109,ts 768843917267795,cnt 18264,flag 29317
+04-09 16:00:27.576 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18264)(cct, lux, ir)[5351.40, 217.11, 10.162527] (r, g, b, c)[7819.83, 5902.10, 2964.88, 16354.41]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29317
+04-09 16:00:27.598 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:27.665 I/SurfaceControl( 6825):  setExtendedRangeBrightness sc=Surface(name=)/@0x51f69f9,currentBufferRatio=1.0,desiredRatio=1.0
+04-09 16:00:27.665 V/WindowManager( 3590): Relayout Window{f71f005 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x379 , apr = 0, vsysui=, x=-1885, y=1068
+04-09 16:00:27.665 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:27.666 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:27.685 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:27.686 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:27.686 D/SensorFeature( 2258): write 39 bytes:768844253054499,768844278625124,29318,0
+04-09 16:00:27.760 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:27.786 D/osense.compress( 3590): com.v2ray.ang do shrink, target ratio = 80, final ratio = 90, cur ratio = 70
+04-09 16:00:27.839 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18269)(cct, lux, ir)[5275.05, 215.31, 11.492083] (r, g, b, c)[7794.91, 5882.30, 2922.94, 16303.12]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29318
+04-09 16:00:28.024 I/AICCTModule( 3590): SensorFilter: brightness threshold 1.2 screenNit is 98.252 ave enviroment lux is 199.80946 luxForNit 94.98763demarcationPoint200.0 result is false
+04-09 16:00:28.024 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 5400.715 nearestMaxValue:5404.799 secondNearestValue: 5404.799
+04-09 16:00:28.024 I/AICCTModule( 3590): SensorFilter: findSecondNearestValue, sensorValue: 198.56183 nearestMaxValue:198.56183 secondNearestValue: 199.80946
+04-09 16:00:28.031 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:28.036 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:28.037 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:28.037 D/SensorFeature( 2258): write 39 bytes:768844575277155,768844629560592,29319,0
+04-09 16:00:28.058 V/AlarmManager( 3590): sending alarm Alarm{6a999f type 1 origWhen 1775721628058 whenElapsed 768844663 android} uid 1000 whenElapsed 768844663 windowLength 0 maxWhenElapsed 768844663 repeatInterval 0 action null component null tag StorgaeBandInfoAlarmTag flags 0x9 procName system_server
+04-09 16:00:28.059 E/OplusStorageUFSBandwidth( 3590): storage_io_metrics_path is /proc/oplus_storage/io_metrics/forever/
+04-09 16:00:28.060 E/OplusStorageUFSBandwidth( 3590): Bandwidth - Read: 0.00 MB/s, Write: 0.50 MB/s
+04-09 16:00:28.060 E/OplusStorageUFSBandwidth( 3590): Task time: 1ms
+04-09 16:00:28.063 E/OplusStorageUFSBandwidth( 3590): Alarm set to trigger in 10 seconds
+04-09 16:00:28.070 D/BatteryChargeControl( 2280): bcc get no support from charging protocol
+04-09 16:00:28.094 D/CommonApp-234-10512(14034): transport layer data is invalid
+04-09 16:00:28.095 D/CommonApp-235-10512(14034): commonScoreStrategy scenarios low package
+04-09 16:00:28.095 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:28.095 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:28.095 D/ScorePolicy(14034): handleScoreChanged: []
+04-09 16:00:28.095 D/OplusL3Monitor( 3590): linkIndex=90, networkId=0, ignore
+04-09 16:00:28.105 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 217.0,cct 5327.2,brl/algo/ir 1380.0/2.0/9.7,pwm/dc 0.0/0.0,rgbc 7799.894043/5886.703125/2922.939453/16333.429688,ts 768844571790452,cnt 18274,flag 29319
+04-09 16:00:28.106 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18274)(cct, lux, ir)[5327.18, 217.02, 9.670341] (r, g, b, c)[7799.89, 5886.70, 2922.94, 16333.43]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29319
+04-09 16:00:28.151 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_WAKE_IND: 0xFD
+04-09 16:00:28.151 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK ON
+04-09 16:00:28.151 D/vendor.qti.bluetooth@1.0-wake_lock( 2103): Acquire wakelock is acquired 
+04-09 16:00:28.151 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Writing IBS_WAKE_ACK
+04-09 16:00:28.155 W/OPLUS_LOG_LOAD(11972): ==LOGS PROG INFO, prog(com.heytap.accessory) ==
+04-09 16:00:28.155 W/PTC.DISC.FusionProvider(11972): [FusionBleDiscover]current device: **:72:47:FD rssi is -101, minRssi is -100, ignore it
+04-09 16:00:28.179 D/osense.compress( 3590): com.google.android.gms do shrink, target ratio = 90, final ratio = 90, cur ratio = 86
+04-09 16:00:28.192 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_SLEEP_IND: 0xFE
+04-09 16:00:28.192 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK OFF
+04-09 16:00:28.202 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_WAKE_IND: 0xFD
+04-09 16:00:28.202 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK ON
+04-09 16:00:28.202 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Writing IBS_WAKE_ACK
+04-09 16:00:28.243 I/vendor.qti.bluetooth@1.0-ibs_handler( 2103): ProcessIbsCmd: Received IBS_SLEEP_IND: 0xFE
+04-09 16:00:28.243 D/vendor.qti.bluetooth@1.0-ibs_handler( 2103): SerialClockVote: vote for UART CLK OFF
+04-09 16:00:28.250 W/OPLUS_LOG_LOAD( 5836): ==LOGS PROG INFO, prog(com.oplus.camera) ==
+04-09 16:00:28.250 I/APS_ALOG( 5836): flushRoutine g_immediateFlush=0 g_pendingCount=0 g_oobCount=0
+04-09 16:00:28.329 E/WifiHAL ( 2123): wifi_get_cached_scan_results: Wifi Cached Scan Result not supported by driver
+04-09 16:00:28.329 E/WifiStaIfaceAidlImpl( 3590): getCachedScanData failed with service-specific exception: android.os.ServiceSpecificException:  (code 4)
+04-09 16:00:28.332 E/libEGL  (16625): No entry found in platform lookup table for eglSurfaceAttribMTK
+04-09 16:00:28.332 D/ExtensionsLoader(16625): createInstance(64bit) : createExtendedFactory
+04-09 16:00:28.332 D/ExtensionsLoader(16625): Opened libguiextimpl.so
+04-09 16:00:28.333 D/VendorWifiService(14034): onEvent event:9,action:1
+04-09 16:00:28.338 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:28.338 D/SensorFeature( 2258): write 39 bytes:768844575277155,768844942527936,29320,0
+04-09 16:00:28.339 D/OplusUtils(16625): OplusUtils [84]: 
+04-09 16:00:28.342 E/screencap(16625): createInstance(64bit) : createExtendedFactory
+04-09 16:00:28.342 E/screencap(16625): createInstance(64bit) : createExtendedFactory
+04-09 16:00:28.342 E/screencap(16625): Opened libinputextensionsimpl.so
+04-09 16:00:28.342 E/screencap(16625): Opened libinputextensionsimpl.so
+04-09 16:00:28.343 D/ScorerUtils( 3590): isLowTraffic: txTputKBps=0, rxTputKBps=1
+04-09 16:00:28.343 D/OplusWifiPower_TriggerCenter( 3590): mComponentCallback: wifistat
+04-09 16:00:28.343 W/screencap(16625): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+04-09 16:00:28.343 W/BpBinder(16625): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+04-09 16:00:28.343 W/ProcessState(16625): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+04-09 16:00:28.343 D/SurfaceFlinger( 2399): captureDisplayById from pid 0 display 4630946685746860179
+04-09 16:00:28.345 E/HwcComposer( 2399): getLuts failed Status(-129, EX_TRANSACTION_FAILED): 'UNKNOWN_TRANSACTION: '
+04-09 16:00:28.365 D/qdgralloc(16625): Fetching IMapper5 from QtiMapper5
+04-09 16:00:28.373 I/SnapAlloc(16625): Graphics lib is available
+04-09 16:00:28.374 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18279)(cct, lux, ir)[5318.65, 218.06, 10.226816] (r, g, b, c)[7792.42, 5882.30, 2927.35, 16270.48]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29320
+04-09 16:00:28.374 D/FusionLightNextGen( 3590): process end reported = 1, mode: 0, cnt: 440905, lux 202.5, cct 5388.7, r/g/b/c: 7884.6/5954.9/2967.1/16510.6, R/G/B: 80.0/76.0/67.0, bri 1380.0, match 1.00, ir 0.008427, conf 5.0, ts 768844926888577
+04-09 16:00:28.374 D/MediaProvider(11108): insertInternal start, caller = com.android.shell
+04-09 16:00:28.375 W/MediaProvider(11108): isAppCloneUserPair for user 0: false
+04-09 16:00:28.383 D/MediaProvider(11108): insertAllowingUpsert finish, rowId = 1000008038
+04-09 16:00:28.383 D/MediaProvider(11108): insertInternal end
+04-09 16:00:28.383 D/OplusFileObserveService(13847): onEvent() file = /storage/emulated/0/codex_after_accounttap3.png, event = 256
+04-09 16:00:28.384 I/ContextAware_DailyStatisticsRecorder(24527): Increase context change count: dmp_change_count, value: 1
+04-09 16:00:28.393 D/vendor.qti.bluetooth@1.0-wake_lock( 2103): Release wakelock is released 
+04-09 16:00:28.422 I/sensors-hal( 2113): handle_sns_std_sensor_event:114, oplus rgb_rear sample: (cct, lux, ir, x, y)[5136, 75, 21, 343, 384]
+04-09 16:00:28.422 I/sensors-hal( 2113): handle_sns_std_sensor_event:116, oplus rgb_rear sample: (r, g, b, c w)[4156, 8563, 1361, 183, 0]
+04-09 16:00:28.490 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:28.521 I/ActivityManager( 3590): Broadcasting: Intent { act=android.intent.action.MEDIA_SCANNER_SCAN_FILE dat=file:///... flg=0x400000 }
+04-09 16:00:28.522 I/ActivityManager( 3590): Enqueued broadcast Intent { act=android.intent.action.MEDIA_SCANNER_SCAN_FILE dat=file:///... flg=0x400000 }: 0
+04-09 16:00:28.523 W/JobInfo ( 3590): Job 'com.android.providers.media.module/com.android.providers.media.MediaService#-300' has a deadline with no functional constraints. The deadline won't improve job execution latency. Consider removing the deadline.
+04-09 16:00:28.524 D/OplusFileObserveService(13847): onEvent() file = /storage/emulated/0/codex_after_accounttap3.png, event = 8
+04-09 16:00:28.524 W/OplusFileObserveService(13847): onEvent() CLOSE_WRITE file is not in root dirs, skip.
+04-09 16:00:28.525 I/ActivityManager( 3590): Broadcast completed: result=0
+04-09 16:00:28.526 I/OplusExSystemServiceHelper( 3590): connected :com.android.providers.media.MediaService
+04-09 16:00:28.526 I/MediaProvider(11108): Begin Intent { act=android.intent.action.MEDIA_SCANNER_SCAN_FILE dat=file:///... flg=0x1400010 cmp=com.android.providers.media.module/com.android.providers.media.MediaService }
+04-09 16:00:28.528 W/PermissionInjector(11108): applyBatch in invalid type: 2
+04-09 16:00:28.530 W/OplusAddVideoThumbnail(11108): isInsertThumbnail2Video() the caller = com.android.providers.media.module,uri = content://media/external_primary/file/1000008038
+04-09 16:00:28.530 W/OplusAddVideoThumbnail(11108): isInsertThumbnail2Video() mimeType is not video 
+04-09 16:00:28.530 D/MediaProvider(11108): updateInternal cacheThumbnail uri = content://media/external_primary/file/1000008038,count = 1,retPending = 0
+04-09 16:00:28.531 D/OplusThumbnailUtils(11108): cacheThumbnail() cacheThumbnailByUri uri=content://media/external_primary/file/1000008038,priority=100,path=/storage/emulated/0/codex_after_accounttap3.png
+04-09 16:00:28.531 D/OplusCacheThumbnail(11108): cacheThumbnailByUri() filePath = /storage/emulated/0/codex_after_accounttap3.png ,uri = content://media/external_primary/file/1000008038
+04-09 16:00:28.532 I/MediaProvider(11108): End Intent { act=android.intent.action.MEDIA_SCANNER_SCAN_FILE dat=file:///... flg=0x1400010 cmp=com.android.providers.media.module/com.android.providers.media.MediaService }
+04-09 16:00:28.533 D/OplusThumbnailUtils(11108): cacheThumbnail() cacheThumbnailByUri uri=content://media/external_primary/images/media/1000008038,priority=300,path=/storage/emulated/0/codex_after_accounttap3.png
+04-09 16:00:28.533 D/OplusCacheThumbnail(11108): cacheThumbnailByUri() filePath = /storage/emulated/0/codex_after_accounttap3.png ,uri = content://media/external_primary/images/media/1000008038
+04-09 16:00:28.533 I/ContextAware_DaemonObserver(24527): onChangeImpl, wait together.
+04-09 16:00:28.533 I/ContextAware_DailyStatisticsRecorder(24527): Increase context change count: dmp_change_count, value: 1
+04-09 16:00:28.536 D/WM-SystemJobScheduler(11108): Scheduling work ID df29df47-8b25-4c32-a0fa-f87f0c16a59eJob ID 6530
+04-09 16:00:28.576 W/ProcessCpuTracker( 3590): Failed to stat(/proc/16625): android.system.ErrnoException: stat failed: ENOENT (No such file or directory)
+04-09 16:00:28.576 W/ProcessCpuTracker( 3590): Skipping unknown process pid 16625
+04-09 16:00:28.578 D/ProcessCpuTrackerExtImpl( 3590): mContext is already set, return now! 
+04-09 16:00:28.589 D/NotificationService--OplusNotificationFixHelper( 3590): fixAppIcon: pkg=com.v2ray.ang
+04-09 16:00:28.589 D/NotificationService--OplusNotificationFixHelper( 3590): fixAppIcon: appIcon = null, pkg = com.v2ray.ang
+04-09 16:00:28.590 D/NotificationService--NotificationRecord( 3590): isSupportRearLight , isRearLight = false mLedRM = false isMultilLed = false
+04-09 16:00:28.591 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:28.591 I/OplusStatusBarManagerServiceEnhance( 3590):  getTopIsFullscreen mTopIsFullscreen: false
+04-09 16:00:28.591 W/ActivityManager( 3590): Permission Denial: getTopApplicationInfo from pid=25334, uid=10397 requires oplus.permission.OPLUS_COMPONENT_SAFE
+04-09 16:00:28.591 E/OplusNotificationCenter( 3590): getForegroundApplication exception
+04-09 16:00:28.592 D/NotificationService--OplusNotificationManagerServiceExtImpl( 3590): isForwardToAssistants: true, case : Is local notification
+04-09 16:00:28.592 D/NotificationService( 3590): This application enqueue notifications is need postDelayed mcsAssistantDelayTime: 50
+04-09 16:00:28.609 I/ChainTrace( 6825): stream type=syncEvent gapMs=1074 refreshMarket=true
+04-09 16:00:28.650 I/SystemUi--Notification( 8338): OplusLiveAlertNotificationsRepository-->onRankingApplied
+04-09 16:00:28.658 I/PluginSeedling--Track( 8338): RequestHandler-->notificationUpdated 0|com.v2ray.ang|1|null|10397 postTime: 1775721628589
+04-09 16:00:28.658 E/LockScreenNotificationDispatcherImp( 8338): updateNotificationListOnKg size:0
+04-09 16:00:28.660 W/SystemUi--Notification( 8338): OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-09 16:00:28.660 I/SystemUi--Notification( 8338): LockScreenNotificationDispatcherImp-->updateNotificationListOnKg resultCode: 0
+04-09 16:00:28.670 I/SDM     ( 2181): DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-09 16:00:28.672 D/LocalImageResolver( 8338): Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-09 16:00:28.672 D/OplusNotificationDateTimeView( 8338): setTime mSettingTimeMillis 1775721628586, mSettingLocalDateTime 2026-04-09T16:00:00.586
+04-09 16:00:28.674 D/LocalImageResolver( 8338): Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-09 16:00:28.675 D/OplusNotificationDateTimeView( 8338): setTime mSettingTimeMillis 1775721628586, mSettingLocalDateTime 2026-04-09T16:00:00.586
+04-09 16:00:28.677 D/LocalImageResolver( 8338): Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-09 16:00:28.677 D/OplusNotificationDateTimeView( 8338): setTime mSettingTimeMillis 1775721628586, mSettingLocalDateTime 2026-04-09T16:00:00.586
+04-09 16:00:28.678 E/CwbService( 2181): Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-09 16:00:28.678 D/SensorFeature( 2258): name=ssc_screenshot_info ,index = 22
+04-09 16:00:28.679 D/SensorFeature( 2258): write 39 bytes:768845219099342,768845273210592,29321,0
+04-09 16:00:28.680 I/SystemUi--Notification( 8338): OplusNotificationTempla-->resolveContentMargin: marginTop=112 isChildInGroup=false hasSubtitle=true params.topMargin=112
+04-09 16:00:28.680 W/SystemUi--Notification( 8338): OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-09 16:00:28.680 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:189, high_pwm_light:lux 217.1,cct 5290.0,brl/algo/ir 1380.0/2.0/11.0,pwm/dc 0.0/0.0,rgbc 7882.129395/5937.298828/2956.053955/16512.943359,ts 768845171722379,cnt 18284,flag 29321
+04-09 16:00:28.680 I/sensors-hal( 2113): handle_oplus_wise_rgb_event:161, wise_rgb: (18284)(cct, lux, ir)[5289.99, 217.13, 11.047742] (r, g, b, c)[7882.13, 5937.30, 2956.05, 16512.94]                 (pwm, hbm, brl, algo)[0.0 0.0 1380.0 2.0], flag 29321
+04-09 16:00:28.680 E/LockScreenNotificationDispatcherImp( 8338): updateNotificationListOnKg size:0
+04-09 16:00:28.682 W/SystemUi--Notification( 8338): OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-09 16:00:28.683 I/SystemUi--Notification( 8338): LockScreenNotificationDispatcherImp-->updateNotificationListOnKg resultCode: 0
+04-09 16:00:28.705 D/OplusCacheThumbnail(11108): CacheThumbnailTask run() fd = {ParcelFileDescriptor: java.io.FileDescriptor@d352b40} ,uri= content://media/external_primary/file/1000008038,mPath = null,caller = com.android.providers.media.module
+04-09 16:00:28.743 V/WindowManager( 3590): Relayout Window{f71f005 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x379 , apr = 0, vsysui=, x=-1885, y=1068
+04-09 16:00:28.744 I/SurfaceControl( 6825):  setExtendedRangeBrightness sc=Surface(name=)/@0x51f69f9,currentBufferRatio=1.0,desiredRatio=1.0
+04-09 16:00:28.744 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-09 16:00:28.745 D/InsetsSourceProvider( 3590): updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT

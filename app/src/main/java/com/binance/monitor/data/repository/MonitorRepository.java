@@ -30,8 +30,10 @@ public class MonitorRepository {
     private final MutableLiveData<Long> lastUpdateTime = new MutableLiveData<>(0L);
     private final MutableLiveData<Map<String, Double>> displayPrices = new MutableLiveData<>(Collections.emptyMap());
     private final MutableLiveData<Map<String, KlineData>> displayKlines = new MutableLiveData<>(Collections.emptyMap());
+    private final MutableLiveData<Map<String, KlineData>> displayOverviewKlines = new MutableLiveData<>(Collections.emptyMap());
     private final Map<String, Double> displayPriceCache = new HashMap<>();
     private final Map<String, KlineData> displayKlineCache = new HashMap<>();
+    private final Map<String, KlineData> displayOverviewKlineCache = new HashMap<>();
 
     private MonitorRepository(Context context) {
         Context appContext = context.getApplicationContext();
@@ -85,6 +87,11 @@ public class MonitorRepository {
         return displayKlines;
     }
 
+    // 返回监控页概览专用的已闭合 1 分钟 K 线快照。
+    public LiveData<Map<String, KlineData>> getDisplayOverviewKlines() {
+        return displayOverviewKlines;
+    }
+
     public LiveData<List<AppLogEntry>> getLogs() {
         return logManager.getLogsLiveData();
     }
@@ -126,8 +133,15 @@ public class MonitorRepository {
         return new HashMap<>(displayKlineCache);
     }
 
+    // 读取当前概览专用的已闭合 K 线快照。
+    public synchronized Map<String, KlineData> getDisplayOverviewKlineSnapshot() {
+        return new HashMap<>(displayOverviewKlineCache);
+    }
+
     // 原子应用市场侧增量，统一更新最新价和K线快照。
-    public synchronized void applyMarketDelta(Map<String, KlineData> klineDelta, Map<String, Double> priceDelta) {
+    public synchronized void applyMarketDelta(Map<String, KlineData> klineDelta,
+                                              Map<String, Double> priceDelta,
+                                              Map<String, KlineData> overviewKlineDelta) {
         if (klineDelta != null && !klineDelta.isEmpty()) {
             for (Map.Entry<String, KlineData> entry : klineDelta.entrySet()) {
                 String symbol = entry.getKey();
@@ -139,6 +153,17 @@ public class MonitorRepository {
                 ChainLatencyTracer.markRepositoryKlinePublished(symbol, value.getCloseTime());
             }
             displayKlines.postValue(Collections.unmodifiableMap(new HashMap<>(displayKlineCache)));
+        }
+        if (overviewKlineDelta != null && !overviewKlineDelta.isEmpty()) {
+            for (Map.Entry<String, KlineData> entry : overviewKlineDelta.entrySet()) {
+                String symbol = entry.getKey();
+                KlineData value = entry.getValue();
+                if (symbol == null || value == null) {
+                    continue;
+                }
+                displayOverviewKlineCache.put(symbol, value);
+            }
+            displayOverviewKlines.postValue(Collections.unmodifiableMap(new HashMap<>(displayOverviewKlineCache)));
         }
         if (priceDelta != null && !priceDelta.isEmpty()) {
             for (Map.Entry<String, Double> entry : priceDelta.entrySet()) {

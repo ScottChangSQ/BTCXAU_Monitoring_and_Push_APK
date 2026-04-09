@@ -125,13 +125,17 @@ public class FloatingPositionAggregatorTest {
 
         assertEquals(2, cards.size());
         assertEquals(AppConstants.SYMBOL_BTC, cards.get(0).getCode());
-        assertEquals("BTC", cards.get(0).getLabel());
+        assertEquals("BTCUSD", cards.get(0).getLabel());
         assertEquals(true, cards.get(0).hasActivePosition());
         assertEquals(-20d, cards.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(123d, cards.get(0).getVolume(), 0.0001d);
+        assertEquals(456_000d, cards.get(0).getAmount(), 0.0001d);
         assertEquals(AppConstants.SYMBOL_XAU, cards.get(1).getCode());
-        assertEquals("XAU", cards.get(1).getLabel());
+        assertEquals("XAUUSD", cards.get(1).getLabel());
         assertEquals(true, cards.get(1).hasActivePosition());
         assertEquals(4d, cards.get(1).getTotalPnl(), 0.0001d);
+        assertEquals(456d, cards.get(1).getVolume(), 0.0001d);
+        assertEquals(789_000d, cards.get(1).getAmount(), 0.0001d);
     }
 
     // 悬浮窗价格应优先使用实时价格缓存，不能继续落回旧的已收盘 K 线价格。
@@ -280,5 +284,24 @@ public class FloatingPositionAggregatorTest {
         assertEquals(1, items.size());
         assertEquals(15d, items.get(0).getTotalPnl(), 0.0001d);
         assertEquals(2_010d, items.get(0).getMarketPrice(), 0.0001d);
+    }
+
+    // code 缺失时不应再回退 productName，避免把协议缺字段静默吞掉。
+    @Test
+    public void aggregateShouldSkipPositionWhenCanonicalCodeMissing() {
+        List<PositionItem> positions = Arrays.asList(
+                new PositionItem("BTCUSD", "", "Buy", 1L, 11L,
+                        0.05d, 0.05d, 66_000d, 66_500d, 3_325d, 0.1d,
+                        0d, 20d, 0.03d, 0d, 0, 0d, 0d, 0d, 0d)
+        );
+
+        List<FloatingPositionPnlItem> items = FloatingPositionAggregator.aggregate(
+                positions,
+                Collections.emptyMap(),
+                true,
+                true
+        );
+
+        assertEquals(0, items.size());
     }
 }

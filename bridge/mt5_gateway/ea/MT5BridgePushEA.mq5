@@ -10,6 +10,7 @@ input int MaxTradeItems = 200;
 
 string g_lastSuccessfulState = "";
 datetime g_lastSuccessfulPushTime = 0;
+string g_lastBuildError = "";
 
 string JsonEscape(string value)
 {
@@ -26,12 +27,21 @@ string BuildMetric(string name, string value)
    return StringFormat("{\"name\":\"%s\",\"value\":\"%s\"}", JsonEscape(name), JsonEscape(value));
 }
 
-double GetContractSize(string symbol)
+void SetBuildError(string message)
 {
-   double contractSize = 1.0;
+   g_lastBuildError = message;
+   Print("MT5BridgePushEA: ", message);
+}
+
+bool TryGetContractSize(string symbol, double &contractSize)
+{
+   contractSize = 0.0;
    if(!SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE, contractSize) || contractSize <= 0.0)
-      contractSize = 1.0;
-   return contractSize;
+   {
+      SetBuildError(StringFormat("missing contractSize for symbol=%s", symbol));
+      return false;
+   }
+   return true;
 }
 
 string BuildOverviewMetrics()
@@ -78,11 +88,12 @@ string BuildCurveIndicators()
    return json;
 }
 
-string BuildPositions()
+bool BuildPositions(string &json)
 {
+   json = "[]";
    int total = PositionsTotal();
    if(total <= 0)
-      return "[]";
+      return true;
 
    double totalMarketValue = 0.0;
    int i;
@@ -95,10 +106,13 @@ string BuildPositions()
       string symbol = PositionGetString(POSITION_SYMBOL);
       double volume = PositionGetDouble(POSITION_VOLUME);
       double priceCurrent = PositionGetDouble(POSITION_PRICE_CURRENT);
-      totalMarketValue += MathAbs(volume * priceCurrent * GetContractSize(symbol));
+      double contractSize = 0.0;
+      if(!TryGetContractSize(symbol, contractSize))
+         return false;
+      totalMarketValue += MathAbs(volume * priceCurrent * contractSize);
    }
 
-   string json = "[";
+   json = "[";
    bool first = true;
    for(i = 0; i < total; i++)
    {
@@ -116,7 +130,10 @@ string BuildPositions()
       double takeProfit = PositionGetDouble(POSITION_TP);
       double stopLoss = PositionGetDouble(POSITION_SL);
       double storageFee = PositionGetDouble(POSITION_SWAP);
-      double marketValue = MathAbs(volume * priceCurrent * GetContractSize(symbol));
+      double contractSize = 0.0;
+      if(!TryGetContractSize(symbol, contractSize))
+         return false;
+      double marketValue = MathAbs(volume * priceCurrent * contractSize);
       double ratio = 0.0;
       if(totalMarketValue > 0.0)
          ratio = marketValue / totalMarketValue;
@@ -147,22 +164,23 @@ string BuildPositions()
    }
 
    json += "]";
-   return json;
+   return true;
 }
 
-string BuildTrades()
+bool BuildTrades(string &json)
 {
+   json = "[]";
    int historyDays = TradeHistoryDays;
    if(historyDays <= 0)
       historyDays = 3650;
    datetime fromTime = TimeCurrent() - historyDays * 24 * 60 * 60;
    datetime toTime = TimeCurrent();
    if(!HistorySelect(fromTime, toTime))
-      return "[]";
+      return true;
 
    int total = HistoryDealsTotal();
    if(total <= 0)
-      return "[]";
+      return true;
 
    int maxItems = MaxTradeItems;
    if(maxItems <= 0 || maxItems > total)
@@ -170,7 +188,7 @@ string BuildTrades()
    int start = total - 1;
    int end = MathMax(0, total - maxItems);
 
-   string json = "[";
+   json = "[";
    bool first = true;
    int i;
    for(i = start; i >= end; i--)
@@ -187,6 +205,9 @@ string BuildTrades()
       long positionId = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
       double volume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
       double price = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
+      double contractSize = 0.0;
+      if(!TryGetContractSize(symbol, contractSize))
+         return false;
       double commission = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
       double swapFee = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
       double fee = MathAbs(commission);
@@ -194,11 +215,11 @@ string BuildTrades()
       long timeMs = (long)HistoryDealGetInteger(dealTicket, DEAL_TIME_MSC);
       if(timeMs <= 0)
          timeMs = (long)HistoryDealGetInteger(dealTicket, DEAL_TIME) * 1000;
-      double amount = MathAbs(volume * price * GetContractSize(symbol));
+      double amount = MathAbs(volume * price * contractSize);
       string comment = HistoryDealGetString(dealTicket, DEAL_COMMENT);
 
       string item = StringFormat(
-         "{\"timestamp\":%I64d,\"productName\":\"%s\",\"code\":\"%s\",\"side\":\"%s\",\"price\":%.5f,\"openPrice\":%.5f,\"closePrice\":%.5f,\"quantity\":%.4f,\"amount\":%.2f,\"fee\":%.2f,\"commission\":%.2f,\"profit\":%.2f,\"openTime\":%I64d,\"closeTime\":%I64d,\"storageFee\":%.2f,\"swap\":%.2f,\"dealTicket\":%I64u,\"orderId\":%I64d,\"positionId\":%I64d,\"entryType\":%I64d,\"dealType\":%I64d,\"remark\":\"%s\"}",
+         "{\"timestamp\":%I64d,\"productName\":\"%s\",\"code\":\"%s\",\"side\":\"%s\",\"price\":%.5f,\"openPrice\":%.5f,\"closePrice\":%.5f,\"quantity\":%.4f,\"amount\":%.2f,\"contractSize\":%.8f,\"fee\":%.2f,\"commission\":%.2f,\"profit\":%.2f,\"openTime\":%I64d,\"closeTime\":%I64d,\"storageFee\":%.2f,\"swap\":%.2f,\"dealTicket\":%I64u,\"orderId\":%I64d,\"positionId\":%I64d,\"entryType\":%I64d,\"dealType\":%I64d,\"remark\":\"%s\"}",
          timeMs,
          JsonEscape(symbol),
          JsonEscape(symbol),
@@ -208,6 +229,7 @@ string BuildTrades()
          price,
          volume,
          amount,
+         contractSize,
          fee,
          commission,
          profit,
@@ -230,7 +252,7 @@ string BuildTrades()
    }
 
    json += "]";
-   return json;
+   return true;
 }
 
 string BuildStats()
@@ -337,14 +359,35 @@ bool PushSnapshotBody(string body)
    return true;
 }
 
+bool BuildSnapshotParts(string &overviewMetrics,
+                        string &curvePoints,
+                        string &curveIndicators,
+                        string &positions,
+                        string &trades,
+                        string &stats)
+{
+   g_lastBuildError = "";
+   overviewMetrics = BuildOverviewMetrics();
+   curvePoints = BuildCurvePoints();
+   curveIndicators = BuildCurveIndicators();
+   if(!BuildPositions(positions))
+      return false;
+   if(!BuildTrades(trades))
+      return false;
+   stats = BuildStats();
+   return true;
+}
+
 bool PushSnapshot()
 {
-   string overviewMetrics = BuildOverviewMetrics();
-   string curvePoints = BuildCurvePoints();
-   string curveIndicators = BuildCurveIndicators();
-   string positions = BuildPositions();
-   string trades = BuildTrades();
-   string stats = BuildStats();
+   string overviewMetrics = "";
+   string curvePoints = "";
+   string curveIndicators = "";
+   string positions = "";
+   string trades = "";
+   string stats = "";
+   if(!BuildSnapshotParts(overviewMetrics, curvePoints, curveIndicators, positions, trades, stats))
+      return false;
    string body = BuildSnapshotJsonFromParts(
       overviewMetrics,
       curvePoints,
@@ -369,12 +412,14 @@ int OnInit()
    EventSetTimer(intervalSeconds);
    Print("MT5BridgePushEA started. Gateway=", GatewayUrl, " interval=", intervalSeconds, "s heartbeat=", heartbeatSeconds, "s");
 
-   string overviewMetrics = BuildOverviewMetrics();
-   string curvePoints = BuildCurvePoints();
-   string curveIndicators = BuildCurveIndicators();
-   string positions = BuildPositions();
-   string trades = BuildTrades();
-   string stats = BuildStats();
+   string overviewMetrics = "";
+   string curvePoints = "";
+   string curveIndicators = "";
+   string positions = "";
+   string trades = "";
+   string stats = "";
+   if(!BuildSnapshotParts(overviewMetrics, curvePoints, curveIndicators, positions, trades, stats))
+      return(INIT_SUCCEEDED);
    string body = BuildSnapshotJsonFromParts(
       overviewMetrics,
       curvePoints,
@@ -409,11 +454,14 @@ void OnTimer()
    if(heartbeatSeconds < PushIntervalSeconds)
       heartbeatSeconds = PushIntervalSeconds * 2;
 
-   string overviewMetrics = BuildOverviewMetrics();
-   string curvePoints = BuildCurvePoints();
-   string curveIndicators = BuildCurveIndicators();
-   string positions = BuildPositions();
-   string trades = BuildTrades();
+   string overviewMetrics = "";
+   string curvePoints = "";
+   string curveIndicators = "";
+   string positions = "";
+   string trades = "";
+   string stats = "";
+   if(!BuildSnapshotParts(overviewMetrics, curvePoints, curveIndicators, positions, trades, stats))
+      return;
    string stateSignature = BuildSnapshotStateSignature(
       overviewMetrics,
       curveIndicators,
@@ -433,7 +481,7 @@ void OnTimer()
       curveIndicators,
       positions,
       trades,
-      BuildStats()
+      stats
    );
    if(PushSnapshotBody(body))
    {

@@ -4,6 +4,8 @@
  */
 package com.binance.monitor.data.local.db.entity;
 
+import androidx.annotation.NonNull;
+import androidx.room.ColumnInfo;
 import androidx.room.Entity;
 import androidx.room.PrimaryKey;
 
@@ -14,6 +16,9 @@ public class AccountSnapshotMetaEntity {
     public boolean connected;
     public long updatedAt;
     public long fetchedAt;
+    @NonNull
+    @ColumnInfo(defaultValue = "''")
+    public String historyRevision = "";
     public String account = "";
     public String server = "";
     public String source = "";

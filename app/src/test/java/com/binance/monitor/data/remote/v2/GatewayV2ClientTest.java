@@ -76,16 +76,19 @@ public class GatewayV2ClientTest {
     }
 
     @Test
-    public void parseAccountSnapshotShouldIgnorePendingOrdersAlias() throws Exception {
+    public void parseAccountSnapshotShouldRejectMissingOrdersArray() throws Exception {
         String body = "{"
                 + "\"accountMeta\":{\"serverTime\":3333},"
                 + "\"account\":{\"balance\":1000.0},"
-                + "\"pendingOrders\":[{\"orderId\":22,\"code\":\"XAUUSD\"}]"
+                + "\"positions\":[]"
                 + "}";
 
-        AccountSnapshotPayload payload = GatewayV2Client.parseAccountSnapshot(body);
-
-        assertEquals(0, payload.getOrders().length());
+        try {
+            GatewayV2Client.parseAccountSnapshot(body);
+            fail("expected missing orders array error");
+        } catch (IllegalStateException expected) {
+            assertEquals("v2 account snapshot missing orders array", expected.getMessage());
+        }
     }
 
     @Test
@@ -104,16 +107,66 @@ public class GatewayV2ClientTest {
     }
 
     @Test
-    public void parseAccountHistoryShouldIgnorePendingOrdersAlias() throws Exception {
+    public void parseAccountSnapshotShouldRejectMissingPositionsArray() throws Exception {
+        String body = "{"
+                + "\"accountMeta\":{\"serverTime\":4444},"
+                + "\"account\":{\"balance\":1000.0},"
+                + "\"orders\":[]"
+                + "}";
+
+        try {
+            GatewayV2Client.parseAccountSnapshot(body);
+            fail("expected missing positions array error");
+        } catch (IllegalStateException expected) {
+            assertEquals("v2 account snapshot missing positions array", expected.getMessage());
+        }
+    }
+
+    @Test
+    public void parseAccountHistoryShouldRejectMissingOrdersArray() throws Exception {
         String body = "{"
                 + "\"accountMeta\":{\"serverTime\":4444},"
                 + "\"trades\":[],"
-                + "\"pendingOrders\":[{\"orderId\":22,\"code\":\"XAUUSD\"}],"
                 + "\"curvePoints\":[]"
                 + "}";
 
-        AccountHistoryPayload payload = GatewayV2Client.parseAccountHistory(body);
+        try {
+            GatewayV2Client.parseAccountHistory(body);
+            fail("expected missing orders array error");
+        } catch (IllegalStateException expected) {
+            assertEquals("v2 account history missing orders array", expected.getMessage());
+        }
+    }
 
-        assertEquals(0, payload.getOrders().length());
+    @Test
+    public void parseAccountHistoryShouldRejectMissingTradesArray() throws Exception {
+        String body = "{"
+                + "\"accountMeta\":{\"serverTime\":4444},"
+                + "\"orders\":[],"
+                + "\"curvePoints\":[]"
+                + "}";
+
+        try {
+            GatewayV2Client.parseAccountHistory(body);
+            fail("expected missing trades array error");
+        } catch (IllegalStateException expected) {
+            assertEquals("v2 account history missing trades array", expected.getMessage());
+        }
+    }
+
+    @Test
+    public void parseAccountHistoryShouldRejectMissingCurvePointsArray() throws Exception {
+        String body = "{"
+                + "\"accountMeta\":{\"serverTime\":4444},"
+                + "\"trades\":[],"
+                + "\"orders\":[]"
+                + "}";
+
+        try {
+            GatewayV2Client.parseAccountHistory(body);
+            fail("expected missing curvePoints array error");
+        } catch (IllegalStateException expected) {
+            assertEquals("v2 account history missing curvePoints array", expected.getMessage());
+        }
     }
 }

@@ -33,28 +33,29 @@ public class GatewayV2TradeClient {
     private static final long READ_TIMEOUT_SECONDS = 35L;
     private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
 
-    private final OkHttpClient client;
+    private volatile OkHttpClient client;
     @Nullable
     private final ConfigManager configManager;
 
     // 创建不依赖 Context 的交易客户端实例。
     public GatewayV2TradeClient() {
-        this.client = new OkHttpClient.Builder()
-                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .build();
+        this.client = buildClient();
         this.configManager = null;
     }
 
     // 创建依赖配置中心的交易客户端实例。
     public GatewayV2TradeClient(@Nullable Context context) {
-        this.client = new OkHttpClient.Builder()
-                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .build();
+        this.client = buildClient();
         this.configManager = context == null
                 ? null
                 : ConfigManager.getInstance(context.getApplicationContext());
+    }
+
+    // 前后台恢复后重建交易 HTTP 传输层，避免交易命令继续复用失活连接池。
+    public synchronized void resetTransport() {
+        OkHttpClient previous = client;
+        client = buildClient();
+        closeClient(previous);
     }
 
     // 构建交易命令请求体，固定带 8 个关键字段。
@@ -176,6 +177,22 @@ public class GatewayV2TradeClient {
     // 保护空响应体解析。
     private static String safeBody(String body) {
         return body == null ? "{}" : body;
+    }
+
+    private static OkHttpClient buildClient() {
+        return new OkHttpClient.Builder()
+                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .build();
+    }
+
+    // 释放旧交易 transport 的连接池和调度线程，避免多次重建后累积资源。
+    private static void closeClient(@Nullable OkHttpClient previous) {
+        if (previous == null) {
+            return;
+        }
+        previous.connectionPool().evictAll();
+        previous.dispatcher().executorService().shutdown();
     }
 
     // 尽量保留服务端 detail/error 里的结构化错误信息，避免只剩 HTTP 状态码。

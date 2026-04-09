@@ -32,13 +32,25 @@ public class AccountSnapshotPayload {
                                   String rawJson) {
         this.serverTime = serverTime;
         this.syncToken = syncToken == null ? "" : syncToken;
-        this.accountMeta = accountMeta == null ? new JSONObject() : accountMeta;
-        this.account = account == null ? new JSONObject() : account;
+        if (accountMeta == null) {
+            throw new IllegalArgumentException("accountMeta is required");
+        }
+        if (account == null) {
+            throw new IllegalArgumentException("account is required");
+        }
+        if (positions == null) {
+            throw new IllegalArgumentException("positions is required");
+        }
+        if (orders == null) {
+            throw new IllegalArgumentException("orders is required");
+        }
+        this.accountMeta = accountMeta;
+        this.account = account;
         this.overviewMetrics = overviewMetrics == null ? new JSONArray() : overviewMetrics;
         this.curveIndicators = curveIndicators == null ? new JSONArray() : curveIndicators;
         this.statsMetrics = statsMetrics == null ? new JSONArray() : statsMetrics;
-        this.positions = positions == null ? new JSONArray() : positions;
-        this.orders = orders == null ? new JSONArray() : orders;
+        this.positions = positions;
+        this.orders = orders;
         this.rawJson = rawJson == null ? "" : rawJson;
     }
 

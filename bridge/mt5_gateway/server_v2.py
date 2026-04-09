@@ -12,7 +12,8 @@ import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
-from threading import Condition, Lock, RLock
+from threading import Condition, Event, Lock, RLock, Thread
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import uvicorn
@@ -137,6 +138,23 @@ mt5_last_connected_path = ""
 snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
 snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
 v2_sync_state: Dict[str, Any] = {}
+v2_bus_state: Dict[str, Any] = {
+    "busSeq": 0,
+    "publishedAt": 0,
+    "revisions": {
+        "marketRevision": "",
+        "accountRuntimeRevision": "",
+        "accountHistoryRevision": "",
+        "abnormalRevision": "",
+    },
+    "event": None,
+    "runtimeSnapshot": None,
+    "abnormalSnapshot": None,
+}
+v2_bus_producer_lock = Lock()
+v2_bus_producer_started = False
+v2_bus_producer_thread: Optional[Thread] = None
+v2_bus_stop_event = Event()
 market_candles_cache: Dict[str, Dict[str, Any]] = {}
 health_status_cache: Dict[str, Any] = {}
 abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
@@ -158,6 +176,16 @@ session_runtime_credentials: Dict[str, Any] = {
 light_snapshot_build_condition = Condition(snapshot_cache_lock)
 light_snapshot_building = False
 session_snapshot_epoch = 0
+
+if hasattr(app, "on_event"):
+    @app.on_event("startup")
+    def _startup_v2_bus_runtime() -> None:
+        _bootstrap_v2_bus_producer()
+
+
+    @app.on_event("shutdown")
+    def _shutdown_v2_bus_runtime() -> None:
+        _stop_v2_bus_producer()
 
 
 def _load_bundle_runtime_info() -> Dict[str, str]:
@@ -201,6 +229,170 @@ def _build_sync_token(server_time_ms: int, revision: str) -> str:
 
 def _clone_json_value(value: Any) -> Any:
     return json.loads(json.dumps(value, ensure_ascii=False))
+
+
+def _read_v2_bus_state() -> Dict[str, Any]:
+    with snapshot_cache_lock:
+        state = v2_bus_state or {}
+        event = state.get("event")
+        return {
+            "busSeq": int(state.get("busSeq", 0) or 0),
+            "publishedAt": int(state.get("publishedAt", 0) or 0),
+            "revisions": _clone_json_value(state.get("revisions") or {}),
+            "event": _clone_json_value(event) if event is not None else None,
+            "runtimeSnapshot": _clone_json_value(state.get("runtimeSnapshot")) if state.get("runtimeSnapshot") is not None else None,
+            "abnormalSnapshot": _clone_json_value(state.get("abnormalSnapshot")) if state.get("abnormalSnapshot") is not None else None,
+        }
+
+
+def _publish_v2_bus_event(event_type: str,
+                          changes: Dict[str, Any],
+                          revisions: Dict[str, str],
+                          published_at: int,
+                          runtime_snapshot: Optional[Dict[str, Any]] = None,
+                          abnormal_snapshot: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    with snapshot_cache_lock:
+        bus_seq = int(v2_bus_state.get("busSeq", 0) or 0) + 1
+        event = {
+            "type": str(event_type or "syncEvent"),
+            "busSeq": bus_seq,
+            "publishedAt": int(published_at or 0),
+            "revisions": _clone_json_value(revisions or {}),
+            "changes": _clone_json_value(changes or {}),
+        }
+        v2_bus_state.update({
+            "busSeq": bus_seq,
+            "publishedAt": int(published_at or 0),
+            "revisions": _clone_json_value(revisions or {}),
+            "event": _clone_json_value(event),
+            "runtimeSnapshot": _clone_json_value(runtime_snapshot) if runtime_snapshot is not None else None,
+            "abnormalSnapshot": _clone_json_value(abnormal_snapshot) if abnormal_snapshot is not None else None,
+        })
+        return _clone_json_value(event)
+
+
+def _read_abnormal_sync_state_for_bus() -> Dict[str, Any]:
+    with abnormal_state_lock:
+        _ensure_abnormal_defaults_locked()
+        if not abnormal_sync_state:
+            _commit_abnormal_snapshot_locked()
+        return {
+            "seq": int(abnormal_sync_state.get("seq", 1) or 1),
+            "previousSeq": int(abnormal_sync_state.get("previousSeq", 0) or 0),
+            "snapshot": _clone_json_value(abnormal_sync_state.get("snapshot") or _build_abnormal_snapshot_locked()),
+            "previousSnapshot": _clone_json_value(abnormal_sync_state.get("previousSnapshot")) if abnormal_sync_state.get("previousSnapshot") is not None else None,
+            "lastError": str(abnormal_sync_state.get("lastError", "") or ""),
+        }
+
+
+def _build_v2_bus_changes(runtime_snapshot: Dict[str, Any],
+                          abnormal_state: Dict[str, Any],
+                          previous_revisions: Dict[str, str],
+                          bootstrap: bool) -> Dict[str, Any]:
+    current_revisions = {
+        "marketRevision": str(runtime_snapshot.get("marketDigest", "")),
+        "accountRuntimeRevision": str(runtime_snapshot.get("accountRevision", "")),
+        "accountHistoryRevision": str(runtime_snapshot.get("historyRevision", "")),
+        "abnormalRevision": str(abnormal_state.get("seq", "")),
+    }
+    if bootstrap:
+        return {
+            "market": {"snapshot": _clone_json_value(runtime_snapshot.get("market") or {})},
+            "accountRuntime": {"snapshot": _clone_json_value(runtime_snapshot.get("account") or {})},
+            "accountHistory": {
+                "historyRevision": str(runtime_snapshot.get("historyRevision", "")),
+                "tradeCount": int(runtime_snapshot.get("tradeCount", 0) or 0),
+                "curvePointCount": int(runtime_snapshot.get("curvePointCount", 0) or 0),
+            },
+            "abnormal": {"snapshot": _clone_json_value(abnormal_state.get("snapshot") or {})},
+        }
+
+    changes: Dict[str, Any] = {}
+    if current_revisions["marketRevision"] != str(previous_revisions.get("marketRevision", "")):
+        changes["market"] = {"snapshot": _clone_json_value(runtime_snapshot.get("market") or {})}
+    if current_revisions["accountRuntimeRevision"] != str(previous_revisions.get("accountRuntimeRevision", "")):
+        changes["accountRuntime"] = {"snapshot": _clone_json_value(runtime_snapshot.get("account") or {})}
+    if current_revisions["accountHistoryRevision"] != str(previous_revisions.get("accountHistoryRevision", "")):
+        changes["accountHistory"] = {
+            "historyRevision": str(runtime_snapshot.get("historyRevision", "")),
+            "tradeCount": int(runtime_snapshot.get("tradeCount", 0) or 0),
+            "curvePointCount": int(runtime_snapshot.get("curvePointCount", 0) or 0),
+        }
+    if current_revisions["abnormalRevision"] != str(previous_revisions.get("abnormalRevision", "")):
+        previous_snapshot = abnormal_state.get("previousSnapshot") or {"records": [], "alerts": []}
+        current_snapshot = abnormal_state.get("snapshot") or {"records": [], "alerts": []}
+        changes["abnormal"] = {
+            "meta": _clone_json_value(current_snapshot.get("abnormalMeta") or {}),
+            "delta": {
+                "records": _diff_abnormal_items(previous_snapshot.get("records") or [], current_snapshot.get("records") or []),
+                "alerts": _diff_abnormal_items(previous_snapshot.get("alerts") or [], current_snapshot.get("alerts") or []),
+            },
+        }
+        last_error = str(abnormal_state.get("lastError", "") or "")
+        if last_error:
+            changes["abnormal"]["meta"]["warning"] = last_error
+    return changes
+
+
+def _normalize_v2_stream_message(event_type: str,
+                                 bus_seq: int,
+                                 published_at: int,
+                                 revisions: Dict[str, str],
+                                 changes: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "type": str(event_type or "syncEvent"),
+        "busSeq": int(bus_seq or 0),
+        "publishedAt": int(published_at or 0),
+        "revisions": _clone_json_value(revisions or {}),
+        "changes": _clone_json_value(changes or {}),
+    }
+
+
+def _build_v2_stream_bootstrap_message(state: Dict[str, Any]) -> Dict[str, Any]:
+    runtime_snapshot = state.get("runtimeSnapshot") or {}
+    abnormal_snapshot = state.get("abnormalSnapshot") or {}
+    changes = {
+        "market": {"snapshot": _clone_json_value(runtime_snapshot.get("market") or {})},
+        "accountRuntime": {"snapshot": _clone_json_value(runtime_snapshot.get("account") or {})},
+        "accountHistory": {
+            "historyRevision": str(runtime_snapshot.get("historyRevision", "")),
+            "tradeCount": int(runtime_snapshot.get("tradeCount", 0) or 0),
+            "curvePointCount": int(runtime_snapshot.get("curvePointCount", 0) or 0),
+        },
+        "abnormal": {"snapshot": _clone_json_value(abnormal_snapshot or {})},
+    }
+    return _normalize_v2_stream_message(
+        event_type="syncBootstrap",
+        bus_seq=int(state.get("busSeq", 0) or 0),
+        published_at=int(state.get("publishedAt", 0) or 0),
+        revisions=dict(state.get("revisions") or {}),
+        changes=changes,
+    )
+
+
+def _build_v2_stream_event_for_client(last_bus_seq: int) -> Dict[str, Any]:
+    state = _read_v2_bus_state()
+    current_bus_seq = int(state.get("busSeq", 0) or 0)
+    published_at = int(state.get("publishedAt", 0) or 0)
+    revisions = dict(state.get("revisions") or {})
+    if current_bus_seq <= 0:
+        return _normalize_v2_stream_message("heartbeat", 0, published_at, revisions, {})
+    if int(last_bus_seq or 0) <= 0:
+        return _build_v2_stream_bootstrap_message(state)
+    if current_bus_seq <= int(last_bus_seq or 0):
+        return _normalize_v2_stream_message("heartbeat", current_bus_seq, published_at, revisions, {})
+
+    event = dict(state.get("event") or {})
+    event_bus_seq = int(event.get("busSeq", current_bus_seq) or current_bus_seq)
+    if event and int(last_bus_seq or 0) == max(0, event_bus_seq - 1):
+        return _normalize_v2_stream_message(
+            event_type=str(event.get("type", "") or "syncEvent"),
+            bus_seq=event_bus_seq,
+            published_at=int(event.get("publishedAt", published_at) or published_at),
+            revisions=dict(event.get("revisions") or revisions),
+            changes=dict(event.get("changes") or {}),
+        )
+    return _build_v2_stream_bootstrap_message(state)
 
 
 # 生成交易命令摘要，用于 requestId 幂等的内容一致性校验。
@@ -362,52 +554,6 @@ def _build_v2_account_snapshot_payload(account: Dict[str, Any],
         "account": dict(account or {}),
         "positions": [dict(item) for item in (positions or [])],
         "orders": [dict(item) for item in (orders or [])],
-    }
-
-
-# 构建 v2 增量返回体，供 HTTP delta 同步入口统一复用。
-def _build_v2_delta_payload(market_delta: List[Dict[str, Any]],
-                             account_delta: List[Dict[str, Any]],
-                             server_time: int,
-                             next_sync_token: Optional[str] = None,
-                             unchanged: bool = False,
-                             full_refresh: Optional[Dict[str, Any]] = None,
-                             summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    safe_market_delta = [dict(item) for item in (market_delta or [])]
-    safe_account_delta = [dict(item) for item in (account_delta or [])]
-    refresh_payload = full_refresh or {
-        "required": False,
-        "reason": "",
-        "snapshot": None,
-    }
-    return {
-        "serverTime": int(server_time),
-        "marketDelta": safe_market_delta,
-        "accountDelta": safe_account_delta,
-        "unchanged": bool(unchanged),
-        "fullRefresh": {
-            "required": bool(refresh_payload.get("required", False)),
-            "reason": str(refresh_payload.get("reason", "")),
-            "snapshot": refresh_payload.get("snapshot"),
-        },
-        "summary": dict(summary or {}),
-        "nextSyncToken": str(next_sync_token or _build_sync_token(
-            server_time,
-            f"delta:{len(safe_market_delta)}:{len(safe_account_delta)}"
-        )),
-    }
-
-
-# 构建 v2 WS 消息体，统一保留类型、载荷和同步 token。
-def _build_v2_ws_message(message_type: str,
-                         payload: Dict[str, Any],
-                         sync_token: str,
-                         server_time: int) -> Dict[str, Any]:
-    return {
-        "type": str(message_type or ""),
-        "payload": dict(payload or {}),
-        "serverTime": int(server_time),
-        "syncToken": str(sync_token or ""),
     }
 
 
@@ -650,77 +796,79 @@ def _commit_v2_sync_state(runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-# 生成 v2 同步 delta/full-refresh 响应，供 HTTP 与 WS 复用。
-def _build_v2_sync_delta_response(sync_token: str, server_time: int) -> Dict[str, Any]:
-    runtime_snapshot = _build_v2_sync_runtime_snapshot(server_time)
-    state = _commit_v2_sync_state(runtime_snapshot)
-    current_token = str(state.get("token", ""))
-    previous_token = str(state.get("previousToken", ""))
-    current_snapshot = state.get("snapshot") or runtime_snapshot
-    previous_snapshot = state.get("previousSnapshot")
-    client_token = str(sync_token or "")
-
-    market_delta: List[Dict[str, Any]] = []
-    account_delta: List[Dict[str, Any]] = []
-    unchanged = False
-    full_refresh = {
-        "required": False,
-        "reason": "",
-        "snapshot": None,
+def _v2_bus_publish_current_state() -> None:
+    now_ms = _now_ms()
+    runtime_snapshot = _build_v2_sync_runtime_snapshot(now_ms)
+    _commit_v2_sync_state(runtime_snapshot)
+    _refresh_abnormal_state()
+    abnormal_state = _read_abnormal_sync_state_for_bus()
+    current_revisions = {
+        "marketRevision": str(runtime_snapshot.get("marketDigest", "")),
+        "accountRuntimeRevision": str(runtime_snapshot.get("accountRevision", "")),
+        "accountHistoryRevision": str(runtime_snapshot.get("historyRevision", "")),
+        "abnormalRevision": str(abnormal_state.get("seq", "")),
     }
-
-    if not client_token:
-        full_refresh = {
-            "required": True,
-            "reason": "bootstrap",
-            "snapshot": {
-                "market": dict(current_snapshot.get("market") or {}),
-                "account": dict(current_snapshot.get("account") or {}),
-            },
-        }
-    elif client_token == current_token:
-        unchanged = True
-    elif previous_token and client_token == previous_token and previous_snapshot is not None:
-        market_delta, account_delta = _build_v2_sync_delta_events(previous_snapshot, current_snapshot)
-        if not market_delta and not account_delta:
-            full_refresh = {
-                "required": True,
-                "reason": "stateChanged",
-                "snapshot": {
-                    "market": dict(current_snapshot.get("market") or {}),
-                    "account": dict(current_snapshot.get("account") or {}),
-                },
-            }
-    else:
-        full_refresh = {
-            "required": True,
-            "reason": "tokenMismatch",
-            "snapshot": {
-                "market": dict(current_snapshot.get("market") or {}),
-                "account": dict(current_snapshot.get("account") or {}),
-            },
-        }
-
-    return _build_v2_delta_payload(
-        market_delta=market_delta,
-        account_delta=account_delta,
-        server_time=server_time,
-        next_sync_token=current_token,
-        unchanged=unchanged,
-        full_refresh=full_refresh,
-        summary=_build_v2_sync_summary(current_snapshot),
+    previous_bus_state = _read_v2_bus_state()
+    previous_revisions = dict(previous_bus_state.get("revisions") or {})
+    bootstrap = int(previous_bus_state.get("busSeq", 0) or 0) <= 0
+    changes = _build_v2_bus_changes(
+        runtime_snapshot=runtime_snapshot,
+        abnormal_state=abnormal_state,
+        previous_revisions=previous_revisions,
+        bootstrap=bootstrap,
+    )
+    if not bootstrap and not changes:
+        return
+    event_type = "syncBootstrap" if bootstrap else "syncEvent"
+    _publish_v2_bus_event(
+        event_type=event_type,
+        changes=changes,
+        revisions=current_revisions,
+        published_at=now_ms,
+        runtime_snapshot=runtime_snapshot,
+        abnormal_snapshot=abnormal_state.get("snapshot") or {},
     )
 
 
-# 把 delta 结果映射成 WS 事件类型，保证首包和后续消息都有业务含义。
-def _resolve_v2_stream_message_type(sync_token: str, delta_payload: Dict[str, Any]) -> str:
-    full_refresh = (delta_payload.get("fullRefresh") or {}).get("required", False)
-    if full_refresh:
-        return "syncBootstrap" if not str(sync_token or "") else "syncRefresh"
-    if bool(delta_payload.get("unchanged", False)):
-        return "syncSummary"
-    return "syncDelta"
+def _v2_bus_producer_loop() -> None:
+    interval_sec = max(0.2, float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0)
+    while not v2_bus_stop_event.is_set():
+        try:
+            _v2_bus_publish_current_state()
+        except Exception:
+            pass
+        v2_bus_stop_event.wait(interval_sec)
 
+
+def _start_v2_bus_producer_locked() -> None:
+    global v2_bus_producer_started, v2_bus_producer_thread
+    v2_bus_stop_event.clear()
+    thread = Thread(target=_v2_bus_producer_loop, name="v2-bus-producer", daemon=True)
+    thread.start()
+    v2_bus_producer_thread = thread
+    v2_bus_producer_started = True
+
+
+def _bootstrap_v2_bus_producer() -> None:
+    with v2_bus_producer_lock:
+        alive = v2_bus_producer_thread is not None and v2_bus_producer_thread.is_alive()
+        if not alive:
+            _v2_bus_publish_current_state()
+            _start_v2_bus_producer_locked()
+
+
+def _stop_v2_bus_producer() -> None:
+    global v2_bus_producer_started, v2_bus_producer_thread
+    with v2_bus_producer_lock:
+        thread = v2_bus_producer_thread
+        if thread is None:
+            v2_bus_producer_started = False
+            return
+        v2_bus_stop_event.set()
+        if thread.is_alive():
+            thread.join(timeout=1.0)
+        v2_bus_producer_thread = None
+        v2_bus_producer_started = False
 
 def _apply_mt5_time_offset_ms(value: int) -> int:
     """按配置补偿 MT5 返回时间与本地展示口径之间的固定偏移。"""
@@ -741,6 +889,51 @@ def _deal_time_ms(deal: Any) -> int:
     if value > 0:
         return _apply_mt5_time_offset_ms(value)
     return _apply_mt5_time_offset_ms(int(getattr(deal, "time", 0) or 0) * 1000)
+
+
+def _deal_sort_timestamp_ms(deal: Any) -> int:
+    """统一用毫秒级成交时间排序，避免同一秒内多笔成交的先后顺序丢失。"""
+    value = int(getattr(deal, "time_msc", 0) or 0)
+    if value > 0:
+        return value
+    return int(getattr(deal, "time", 0) or 0) * 1000
+
+
+def _trade_entry_phase_rank(entry_type: int) -> int:
+    """统一成交生命周期顺序：开仓在前，反手居中，平仓在后。"""
+    opens = _is_entry_open(entry_type)
+    closes = _is_entry_close(entry_type)
+    if opens and not closes:
+        return 0
+    if opens and closes:
+        return 1
+    if closes:
+        return 2
+    return 3
+
+
+def _deal_sort_key(deal: Any) -> Tuple[int, int, int]:
+    """统一 MT5 原始成交排序键，避免同一毫秒内开平仓顺序受输入顺序影响。"""
+    entry_type = int(getattr(deal, "entry", 0) or 0)
+    ticket = int(getattr(deal, "ticket", 0) or 0)
+    return _deal_sort_timestamp_ms(deal), _trade_entry_phase_rank(entry_type), ticket
+
+
+def _trade_record_sort_key(record: Dict[str, Any]) -> Tuple[int, int, int]:
+    """统一 EA 原始成交记录排序键，保证同一时刻先处理开仓再处理平仓。"""
+    timestamp = int(record.get("timestamp", record.get("time", 0)) or 0)
+    entry_type = int(record.get("entryType", record.get("entry", 0)) or 0)
+    ticket = int(record.get("dealTicket", record.get("ticket", 0)) or 0)
+    return timestamp, _trade_entry_phase_rank(entry_type), ticket
+
+
+def _deal_history_sort_key(item: Dict[str, Any]) -> Tuple[int, int, int, int]:
+    """统一历史成交重放排序键，避免消费链再次受输入顺序影响。"""
+    timestamp = int(item.get("timestamp", item.get("time", 0)) or 0)
+    entry_type = int(item.get("entryType", item.get("entry", 0)) or 0)
+    position_id = int(item.get("position_id", item.get("positionId", 0)) or 0)
+    ticket = int(item.get("dealTicket", item.get("ticket", 0)) or 0)
+    return timestamp, _trade_entry_phase_rank(entry_type), position_id, ticket
 
 
 # 统一裁剪缓存条目，只保留最近访问的部分，避免快照缓存长期堆满内存。
@@ -863,9 +1056,9 @@ def _safe_div(a: float, b: float) -> float:
 
 def _normalize_market_symbol(symbol: str) -> str:
     value = str(symbol or "").strip().upper()
-    if value in {"BTC", "BTCUSD", MARKET_SYMBOL_BTC, "XBT"}:
+    if value in {"BTC", "BTCUSD", MARKET_SYMBOL_BTC}:
         return MARKET_SYMBOL_BTC
-    if value in {"XAU", "XAUUSD", MARKET_SYMBOL_XAU, "GOLD"}:
+    if value in {"XAU", "XAUUSD", MARKET_SYMBOL_XAU}:
         return MARKET_SYMBOL_XAU
     return value
 
@@ -1324,7 +1517,6 @@ def _refresh_abnormal_state() -> None:
 
 
 def _build_abnormal_response(since_seq: int, delta: bool) -> Dict[str, Any]:
-    _refresh_abnormal_state()
     with abnormal_state_lock:
         _ensure_abnormal_defaults_locked()
         if not abnormal_sync_state:
@@ -1359,6 +1551,60 @@ def _build_abnormal_response(since_seq: int, delta: bool) -> Dict[str, Any]:
         }
 
     return _build_full_abnormal_response(snapshot, sync_seq)
+
+
+def _build_v2_abnormal_snapshot_response() -> Dict[str, Any]:
+    with abnormal_state_lock:
+        _ensure_abnormal_defaults_locked()
+        if not abnormal_sync_state:
+            _commit_abnormal_snapshot_locked()
+        snapshot = abnormal_sync_state.get("snapshot") or _build_abnormal_snapshot_locked()
+        sync_seq = int(abnormal_sync_state.get("seq", 1) or 1)
+
+    payload = _clone_json_value(snapshot)
+    meta = dict(payload.get("abnormalMeta") or {})
+    meta["syncSeq"] = sync_seq
+    meta["deltaEnabled"] = ABNORMAL_DELTA_ENABLED
+    payload["abnormalMeta"] = meta
+    return payload
+
+
+def _build_v2_abnormal_history_response(symbol: str, start_time: int, end_time: int, limit: int) -> Dict[str, Any]:
+    normalized_symbol = _normalize_abnormal_symbol(symbol) if str(symbol or "").strip() else ""
+    start_value = int(start_time or 0)
+    end_value = int(end_time or 0)
+    safe_limit = max(1, min(5000, int(limit or ABNORMAL_RECORD_LIMIT)))
+    with abnormal_state_lock:
+        _ensure_abnormal_defaults_locked()
+        if not abnormal_sync_state:
+            _commit_abnormal_snapshot_locked()
+        sync_seq = int(abnormal_sync_state.get("seq", 1) or 1)
+        records = [_clone_json_value(item) for item in abnormal_record_store]
+
+    filtered: List[Dict[str, Any]] = []
+    for record in records:
+        current_symbol = _normalize_abnormal_symbol(record.get("symbol"))
+        close_time = int(record.get("closeTime", 0) or 0)
+        if normalized_symbol and current_symbol != normalized_symbol:
+            continue
+        if start_value > 0 and close_time < start_value:
+            continue
+        if end_value > 0 and close_time > end_value:
+            continue
+        filtered.append(record)
+        if len(filtered) >= safe_limit:
+            break
+    return {
+        "abnormalMeta": {
+            "syncSeq": sync_seq,
+            "deltaEnabled": ABNORMAL_DELTA_ENABLED,
+        },
+        "symbol": normalized_symbol,
+        "startTime": start_value,
+        "endTime": end_value,
+        "limit": safe_limit,
+        "records": filtered,
+    }
 
 
 def _is_buy_trade_type(trade_type: int) -> bool:
@@ -2316,16 +2562,14 @@ def _inject_positions_into_exposures(
 def _resolve_open_position_ids_from_history(deal_history: List[Dict[str, Any]]) -> set:
     # 只保留在历史窗口末尾仍然未平的 position id，避免把已平历史仓位误当成当前持仓。
     states: Dict[Tuple[int, str], float] = {}
-    sorted_deals = sorted(
-        deal_history or [],
-        key=lambda item: (int(item.get("timestamp", 0) or 0), int(item.get("position_id", 0) or 0)),
-    )
+    sorted_deals = sorted(deal_history or [], key=_deal_history_sort_key)
     for deal in sorted_deals:
         position_id = int(deal.get("position_id", 0) or 0)
         if position_id <= 0:
             continue
         entry = int(deal.get("entry", 0) or 0)
-        deal_type = int(deal.get("deal_type", -1) or -1)
+        # deal_type=0 是合法 Buy 取值，不能再用 `or -1` 吞掉。
+        deal_type = int(deal.get("deal_type", -1))
         volume = abs(float(deal.get("volume", 0.0) or 0.0))
         if volume <= 0.0:
             continue
@@ -2373,7 +2617,7 @@ def _replay_curve_from_history(
     open_position_ids = _resolve_open_position_ids_from_history(deal_history)
     _inject_positions_into_exposures(exposures, open_positions, open_position_ids, contract_size_fn, last_price_by_symbol)
 
-    sorted_deals = sorted(deal_history, key=lambda item: int(item.get("timestamp", 0)))
+    sorted_deals = sorted(deal_history, key=_deal_history_sort_key)
     running_balance = float(start_balance)
     points: List[Dict[str, float]] = []
     first_ts = max(int(sorted_deals[0].get("timestamp", 0)), 0)
@@ -2775,7 +3019,7 @@ def _map_trade_deals(deals: List[Any]) -> List[Dict]:
             }
         )
 
-    sorted_deals = sorted(deals, key=lambda d: int(getattr(d, "time", 0)))
+    sorted_deals = sorted(deals, key=_deal_sort_key)
 
     for deal in sorted_deals:
         symbol = getattr(deal, "symbol", "")
@@ -3129,14 +3373,15 @@ def _snapshot_from_mt5_light() -> Dict:
             _shutdown_mt5()
 
 
-def _infer_trade_contract_size(item: Dict[str, Any]) -> float:
-    quantity = abs(float(item.get("quantity", 0.0) or 0.0))
-    price = abs(float(item.get("price", 0.0) or 0.0))
-    amount = abs(float(item.get("amount", 0.0) or 0.0))
-    if quantity <= 0.0 or price <= 0.0 or amount <= 0.0:
-        return 1.0
-    inferred = amount / (quantity * price)
-    return inferred if inferred > 0.0 else 1.0
+def _require_trade_contract_size(item: Dict[str, Any], context: str) -> float:
+    value = item.get("contractSize", item.get("contract_size"))
+    try:
+        contract_size = float(value)
+    except Exception as exc:
+        raise RuntimeError(f"{context} missing contractSize") from exc
+    if contract_size <= 0.0:
+        raise RuntimeError(f"{context} missing contractSize")
+    return contract_size
 
 
 def _should_rebuild_ea_trade_records(records: List[Dict[str, Any]]) -> bool:
@@ -3167,7 +3412,7 @@ def _rebuild_ea_trade_records(records: List[Dict[str, Any]]) -> List[Dict[str, A
     volume_epsilon = 1e-9
 
     def contract_size_of(item: Dict[str, Any]) -> float:
-        return _infer_trade_contract_size(item)
+        return _require_trade_contract_size(item, "ea trade")
 
     def lifecycle_key(position_id: int, order_id: int, ticket: int) -> str:
         if position_id > 0:
@@ -3282,7 +3527,7 @@ def _rebuild_ea_trade_records(records: List[Dict[str, Any]]) -> List[Dict[str, A
             }
         )
 
-    sorted_records = sorted(records, key=lambda item: int(item.get("timestamp", item.get("time", 0)) or 0))
+    sorted_records = sorted(records, key=_trade_record_sort_key)
     for record in sorted_records:
         symbol = str(record.get("code") or record.get("productName") or "").strip()
         if not symbol:
@@ -3395,16 +3640,6 @@ def _overview_metric_value(metrics: List[Dict[str, Any]], *names: str) -> float:
     return 0.0
 
 
-def _infer_ea_curve_contract_size(item: Dict[str, Any]) -> float:
-    quantity = abs(float(item.get("quantity", item.get("volume", 0.0)) or 0.0))
-    price = abs(float(item.get("price", 0.0) or 0.0))
-    amount = abs(float(item.get("amount", 0.0) or 0.0))
-    if quantity <= 0.0 or price <= 0.0 or amount <= 0.0:
-        return 1.0
-    inferred = amount / (quantity * price)
-    return inferred if inferred > 0.0 else 1.0
-
-
 def _rebuild_sparse_ea_curve_points(account_meta: Dict[str, Any],
                                     overview_metrics: List[Dict[str, Any]],
                                     curve_points: List[Dict[str, Any]],
@@ -3428,11 +3663,10 @@ def _rebuild_sparse_ea_curve_points(account_meta: Dict[str, Any],
             item_symbol = str(item.get("code") or item.get("productName") or item.get("symbol") or "").strip()
             if item_symbol != symbol:
                 continue
-            cached = _infer_ea_curve_contract_size(item)
+            cached = _require_trade_contract_size(item, f"ea curve trade {symbol}")
             contract_size_cache[symbol] = cached
             return cached
-        contract_size_cache[symbol] = 1.0
-        return 1.0
+        raise RuntimeError(f"ea curve trade {symbol} missing contractSize")
 
     for item in sorted(raw_trades, key=lambda current: int(current.get("timestamp", current.get("time", 0)) or 0)):
         entry = int(item.get("entryType", item.get("entry", 0)) or 0)
@@ -3803,31 +4037,35 @@ def _build_curve_response(snapshot: Dict, sync_seq: int) -> Dict:
 
 
 def _build_snapshot_with_cache(range_key: str) -> Dict:
-    now_ms = _now_ms()
-    with snapshot_cache_lock:
-        cached = snapshot_build_cache.get(range_key)
-        if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
-            cached_snapshot = cached.get("snapshot")
-            if _is_mt5_pull_account_snapshot(cached_snapshot):
+    while True:
+        now_ms = _now_ms()
+        with snapshot_cache_lock:
+            cached = snapshot_build_cache.get(range_key)
+            if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+                cached_snapshot = cached.get("snapshot")
+                if _is_mt5_pull_account_snapshot(cached_snapshot):
+                    cached["lastAccessAt"] = now_ms
+                    _remember_cache_entry_locked(snapshot_build_cache, range_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+                    return cached_snapshot
+                snapshot_build_cache.pop(range_key, None)
+            if _should_slide_snapshot_build_cache(cached, now_ms):
+                cached["builtAt"] = now_ms
                 cached["lastAccessAt"] = now_ms
                 _remember_cache_entry_locked(snapshot_build_cache, range_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-                return cached_snapshot
-            snapshot_build_cache.pop(range_key, None)
-        if _should_slide_snapshot_build_cache(cached, now_ms):
-            cached["builtAt"] = now_ms
-            cached["lastAccessAt"] = now_ms
-            _remember_cache_entry_locked(snapshot_build_cache, range_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-            return cached.get("snapshot")
+                return cached.get("snapshot")
+            build_epoch = int(session_snapshot_epoch)
 
-    snapshot = _normalize_snapshot(_select_snapshot(range_key), "MT5 Gateway")
-    with snapshot_cache_lock:
-        built_at = _now_ms()
-        _remember_cache_entry_locked(snapshot_build_cache, range_key, {
-            "builtAt": built_at,
-            "lastAccessAt": built_at,
-            "snapshot": snapshot,
-        }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-    return snapshot
+        snapshot = _normalize_snapshot(_select_snapshot(range_key), "MT5 Gateway")
+        with snapshot_cache_lock:
+            if build_epoch != int(session_snapshot_epoch):
+                continue
+            built_at = _now_ms()
+            _remember_cache_entry_locked(snapshot_build_cache, range_key, {
+                "builtAt": built_at,
+                "lastAccessAt": built_at,
+                "snapshot": snapshot,
+            }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+            return snapshot
 
 
 # 构建账户轻快照缓存，避免高频 v2 snapshot/sync 重复生成整份历史对象。
@@ -3903,32 +4141,36 @@ def _snapshot_trades_from_mt5(range_key: str) -> List[Dict[str, Any]]:
 
 def _build_trade_history_with_cache(range_key: str, fallback_snapshot: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     cache_key = f"{range_key}:trade-history"
-    now_ms = _now_ms()
-    with snapshot_cache_lock:
-        cached = snapshot_build_cache.get(cache_key)
-        if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
-            if str(cached.get("source") or "") == "MT5 Python Pull":
-                cached["lastAccessAt"] = now_ms
-                _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-                return [dict(item) for item in (cached.get("trades") or [])]
-            snapshot_build_cache.pop(cache_key, None)
+    while True:
+        now_ms = _now_ms()
+        with snapshot_cache_lock:
+            cached = snapshot_build_cache.get(cache_key)
+            if cached and (now_ms - int(cached.get("builtAt", 0))) <= SNAPSHOT_BUILD_CACHE_MS:
+                if str(cached.get("source") or "") == "MT5 Python Pull":
+                    cached["lastAccessAt"] = now_ms
+                    _remember_cache_entry_locked(snapshot_build_cache, cache_key, cached, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+                    return [dict(item) for item in (cached.get("trades") or [])]
+                snapshot_build_cache.pop(cache_key, None)
+            build_epoch = int(session_snapshot_epoch)
 
-    if _is_mt5_pull_account_snapshot(fallback_snapshot):
-        trades = [dict(item) for item in ((fallback_snapshot or {}).get("trades") or [])]
-    else:
-        if mt5 is None or not _is_mt5_configured():
-            raise RuntimeError("MT5 Python Pull is not configured.")
-        trades = [dict(item) for item in (_snapshot_trades_from_mt5(range_key) or [])]
+        if _is_mt5_pull_account_snapshot(fallback_snapshot):
+            trades = [dict(item) for item in ((fallback_snapshot or {}).get("trades") or [])]
+        else:
+            if mt5 is None or not _is_mt5_configured():
+                raise RuntimeError("MT5 Python Pull is not configured.")
+            trades = [dict(item) for item in (_snapshot_trades_from_mt5(range_key) or [])]
 
-    with snapshot_cache_lock:
-        built_at = _now_ms()
-        _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
-            "builtAt": built_at,
-            "lastAccessAt": built_at,
-            "source": "MT5 Python Pull",
-            "trades": trades,
-        }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
-    return [dict(item) for item in trades]
+        with snapshot_cache_lock:
+            if build_epoch != int(session_snapshot_epoch):
+                continue
+            built_at = _now_ms()
+            _remember_cache_entry_locked(snapshot_build_cache, cache_key, {
+                "builtAt": built_at,
+                "lastAccessAt": built_at,
+                "source": "MT5 Python Pull",
+                "trades": trades,
+            }, SNAPSHOT_BUILD_CACHE_MAX_ENTRIES)
+            return [dict(item) for item in trades]
 
 
 def _build_summary_snapshot(snapshot: Dict) -> Dict:
@@ -4820,7 +5062,12 @@ def v2_session_logout(payload: Dict[str, Any]):
 def v2_market_snapshot():
     try:
         now_ms = _now_ms()
-        snapshot = _build_account_light_snapshot_with_cache()
+        session_status = session_manager.build_status_payload()
+        active_account = (session_status or {}).get("activeAccount") or None
+        if active_account:
+            snapshot = _build_account_light_snapshot_with_cache()
+        else:
+            snapshot = _build_logged_out_account_snapshot()
         return _build_v2_market_snapshot_payload(
             market=_build_v2_market_section(now_ms),
             account=_build_v2_account_section_from_snapshot(snapshot),
@@ -4916,10 +5163,17 @@ def v2_account_history(
     try:
         now_ms = _now_ms()
         range_key = range.lower()
-        snapshot = _build_snapshot_with_cache(range_key)
+        session_status = session_manager.build_status_payload()
+        active_account = (session_status or {}).get("activeAccount") or None
+        if active_account:
+            snapshot = _build_snapshot_with_cache(range_key)
+            trades = _build_trade_history_with_cache(range_key, snapshot)
+        else:
+            snapshot = _build_logged_out_account_snapshot()
+            trades = []
         history_model = v2_account.build_account_history_model(
             {
-                "trades": _build_trade_history_with_cache(range_key, snapshot),
+                "trades": trades,
                 "orders": snapshot.get("pendingOrders") or [],
                 "curvePoints": snapshot.get("curvePoints") or [],
             }
@@ -5139,15 +5393,6 @@ def v2_trade_result(requestId: str = Query(default="")):
     return payload
 
 
-@app.get("/v2/sync/delta")
-def v2_sync_delta(syncToken: str = Query(default="")):
-    try:
-        now_ms = _now_ms()
-        return _build_v2_sync_delta_response(sync_token=syncToken, server_time=now_ms)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
 @app.post("/v1/ea/snapshot")
 def ingest_ea_snapshot(payload: Dict, x_bridge_token: Optional[str] = Header(default=None)):
     global ea_snapshot_cache, ea_snapshot_received_at_ms, ea_snapshot_change_digest
@@ -5255,6 +5500,32 @@ def abnormal(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.get("/v2/abnormal/snapshot")
+def v2_abnormal_snapshot():
+    try:
+        return _build_v2_abnormal_snapshot_response()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v2/abnormal/history")
+def v2_abnormal_history(
+    symbol: str = Query(default=""),
+    startTime: int = Query(default=0, ge=0),
+    endTime: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=5000),
+):
+    try:
+        return _build_v2_abnormal_history_response(
+            symbol=symbol,
+            start_time=startTime,
+            end_time=endTime,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/v1/abnormal/config")
 def abnormal_config(payload: Dict[str, Any]):
     try:
@@ -5272,6 +5543,7 @@ def admin_cache_clear():
             "snapshotSyncCache": len(snapshot_sync_cache),
             "marketCandlesCache": len(market_candles_cache),
             "v2SyncState": 1 if v2_sync_state else 0,
+            "v2BusState": 1 if v2_bus_state.get("busSeq", 0) else 0,
             "abnormalSyncState": 1 if abnormal_sync_state else 0,
             "tradeRequestStore": len(trade_request_store),
         }
@@ -5279,6 +5551,20 @@ def admin_cache_clear():
         snapshot_sync_cache.clear()
         market_candles_cache.clear()
         v2_sync_state.clear()
+        v2_bus_state.clear()
+        v2_bus_state.update({
+            "busSeq": 0,
+            "publishedAt": 0,
+            "revisions": {
+                "marketRevision": "",
+                "accountRuntimeRevision": "",
+                "accountHistoryRevision": "",
+                "abnormalRevision": "",
+            },
+            "event": None,
+            "runtimeSnapshot": None,
+            "abnormalSnapshot": None,
+        })
         abnormal_sync_state.clear()
         trade_request_store.clear()
     return {"ok": True, "cleared": cleared}
@@ -5292,30 +5578,16 @@ async def binance_ws_proxy(client: WebSocket, path_value: str):
 @app.websocket("/v2/stream")
 async def v2_stream(client: WebSocket):
     await client.accept()
-    current_sync_token = ""
+    current_bus_seq = 0
     push_interval_sec = float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0
     loop = asyncio.get_running_loop()
     next_tick = loop.time()
     try:
         while True:
-            now_ms = _now_ms()
-            previous_sync_token = current_sync_token
-            # MT5 快照构建链是同步阻塞的，必须移出事件循环线程，
-            # 否则一个 v2 stream 客户端就会把同进程的 /health、/v1/*、/v2/* 一起拖住。
-            delta_payload = await asyncio.to_thread(
-                _build_v2_sync_delta_response,
-                previous_sync_token,
-                now_ms,
-            )
-            current_sync_token = str(delta_payload.get("nextSyncToken", ""))
-            await client.send_json(
-                _build_v2_ws_message(
-                    message_type=_resolve_v2_stream_message_type(sync_token=previous_sync_token, delta_payload=delta_payload),
-                    payload=delta_payload,
-                    sync_token=current_sync_token,
-                    server_time=now_ms,
-                )
-            )
+            message = _build_v2_stream_event_for_client(last_bus_seq=current_bus_seq)
+            current_bus_seq = int(message.get("busSeq", current_bus_seq) or current_bus_seq)
+            message["serverTime"] = _now_ms()
+            await client.send_json(message)
             next_tick += push_interval_sec
             sleep_sec = next_tick - loop.time()
             if sleep_sec > 0:

@@ -25,8 +25,10 @@ public class MonitorServiceV2SourceTest {
                 source.contains("GatewayV2StreamClient"));
         assertTrue("监控服务应启动 v2 stream 连接，而不是继续只依赖旧实时链路",
                 source.contains("v2StreamClient.connect("));
-        assertTrue("监控服务应在需要时走轻量账户补拉，而不是每次都拉全量历史",
-                source.contains("accountStatsPreloadManager.fetchForOverlay("));
+        assertTrue("监控服务应先应用 stream 里的账户运行态，再按 history revision 拉历史",
+                source.contains("accountStatsPreloadManager.applyPublishedAccountRuntime("));
+        assertTrue("监控服务应在 history revision 前进时再拉账户历史",
+                source.contains("requestAccountHistoryRefreshFromV2("));
         assertTrue("监控服务应在收到 market delta 时直接消费 stream 快照",
                 source.contains("applyMarketSnapshotFromStream("));
         assertTrue("当 v2 stream 健康时，不应再让旧 WebSocket 超时检查主导重连",

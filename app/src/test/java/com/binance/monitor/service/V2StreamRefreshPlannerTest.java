@@ -10,79 +10,85 @@ import org.junit.Test;
 public class V2StreamRefreshPlannerTest {
 
     @Test
-    public void planShouldRefreshBothSidesWhenFullRefreshRequired() throws Exception {
-        JSONObject payload = new JSONObject();
-        payload.put("unchanged", false);
-        payload.put("fullRefresh", new JSONObject()
-                .put("required", true)
-                .put("snapshot", new JSONObject()
-                        .put("market", new JSONObject().put("symbols", new JSONArray()))
-                        .put("account", new JSONObject().put("positions", new JSONArray()))));
-        payload.put("marketDelta", new JSONArray());
-        payload.put("accountDelta", new JSONArray());
+    public void planShouldRefreshMarketAndAccountRuntimeFromChanges() throws Exception {
+        JSONObject event = new JSONObject()
+                .put("revisions", new JSONObject()
+                        .put("marketRevision", "market-1")
+                        .put("accountRuntimeRevision", "account-1"))
+                .put("changes", new JSONObject()
+                        .put("market", new JSONObject()
+                                .put("snapshot", new JSONObject().put("symbolStates", new JSONArray())))
+                        .put("accountRuntime", new JSONObject()
+                                .put("snapshot", new JSONObject().put("positions", new JSONArray()))));
 
         V2StreamRefreshPlanner.RefreshPlan plan =
-                V2StreamRefreshPlanner.plan("syncBootstrap", payload);
+                V2StreamRefreshPlanner.plan("runtimeChanged", event);
 
         assertTrue(plan.shouldRefreshMarket());
         assertTrue(plan.shouldRefreshAccount());
         assertTrue(plan.shouldRefreshFloating());
-        assertTrue(plan.shouldPullAccountSnapshot());
+        assertFalse(plan.shouldPullAccountHistory());
+        assertFalse(plan.hasAbnormalChange());
     }
 
     @Test
-    public void planShouldRefreshOnlyAccountWhenAccountDeltaPresent() throws Exception {
-        JSONObject payload = new JSONObject();
-        payload.put("unchanged", false);
-        payload.put("fullRefresh", new JSONObject().put("required", false));
-        payload.put("marketDelta", new JSONArray());
-        payload.put("accountDelta", new JSONArray().put(new JSONObject()
-                .put("type", "accountSnapshotChanged")
-                .put("action", "account.snapshot")
-                .put("snapshot", new JSONObject().put("positions", new JSONArray()))));
+    public void planShouldRequestAccountPullWhenHistoryRevisionAdvances() throws Exception {
+        JSONObject event = new JSONObject()
+                .put("revisions", new JSONObject()
+                        .put("accountHistoryRevision", "history-2"))
+                .put("changes", new JSONObject()
+                        .put("accountHistory", new JSONObject()
+                                .put("historyRevision", "history-2")
+                                .put("tradeCount", 9)
+                                .put("curvePointCount", 3)));
 
         V2StreamRefreshPlanner.RefreshPlan plan =
-                V2StreamRefreshPlanner.plan("syncDelta", payload);
-
-        assertFalse(plan.shouldRefreshMarket());
-        assertTrue(plan.shouldRefreshAccount());
-        assertTrue(plan.shouldRefreshFloating());
-        assertFalse(plan.shouldPullAccountSnapshot());
-    }
-
-    @Test
-    public void planShouldStayIdleWhenPayloadUnchanged() throws Exception {
-        JSONObject payload = new JSONObject();
-        payload.put("unchanged", true);
-        payload.put("fullRefresh", new JSONObject().put("required", false));
-        payload.put("marketDelta", new JSONArray());
-        payload.put("accountDelta", new JSONArray());
-
-        V2StreamRefreshPlanner.RefreshPlan plan =
-                V2StreamRefreshPlanner.plan("syncSummary", payload);
+                V2StreamRefreshPlanner.plan("historyChanged", event);
 
         assertFalse(plan.shouldRefreshMarket());
         assertFalse(plan.shouldRefreshAccount());
         assertFalse(plan.shouldRefreshFloating());
-        assertFalse(plan.shouldPullAccountSnapshot());
+        assertTrue(plan.shouldPullAccountHistory());
+        assertTrue(plan.getAccountHistoryRevision().equals("history-2"));
+        assertFalse(plan.hasAbnormalChange());
     }
 
     @Test
-    public void planShouldRequestAccountPullWhenHistoryRevisionChanges() throws Exception {
-        JSONObject payload = new JSONObject();
-        payload.put("unchanged", false);
-        payload.put("fullRefresh", new JSONObject().put("required", false));
-        payload.put("marketDelta", new JSONArray());
-        payload.put("accountDelta", new JSONArray().put(new JSONObject()
-                .put("type", "accountSnapshotChanged")
-                .put("action", "account.snapshot")
-                .put("historyRevisionChanged", true)
-                .put("snapshot", new JSONObject().put("positions", new JSONArray()))));
+    public void planShouldExposeAbnormalChangesWithoutRuntimeRefresh() throws Exception {
+        JSONObject event = new JSONObject()
+                .put("revisions", new JSONObject().put("abnormalRevision", "abnormal-3"))
+                .put("changes", new JSONObject()
+                        .put("abnormal", new JSONObject()
+                                .put("meta", new JSONObject().put("syncSeq", 3))
+                                .put("delta", new JSONObject()
+                                        .put("records", new JSONArray())
+                                        .put("alerts", new JSONArray()))));
 
         V2StreamRefreshPlanner.RefreshPlan plan =
-                V2StreamRefreshPlanner.plan("syncDelta", payload);
+                V2StreamRefreshPlanner.plan("abnormalChanged", event);
 
-        assertTrue(plan.shouldRefreshAccount());
-        assertTrue(plan.shouldPullAccountSnapshot());
+        assertFalse(plan.shouldRefreshMarket());
+        assertFalse(plan.shouldRefreshAccount());
+        assertFalse(plan.shouldRefreshFloating());
+        assertFalse(plan.shouldPullAccountHistory());
+        assertTrue(plan.hasAbnormalChange());
+    }
+
+    @Test
+    public void planShouldStayIdleWhenEventHasNoChanges() throws Exception {
+        JSONObject event = new JSONObject()
+                .put("revisions", new JSONObject()
+                        .put("marketRevision", "market-5")
+                        .put("accountRuntimeRevision", "account-8"))
+                .put("changes", new JSONObject());
+
+        V2StreamRefreshPlanner.RefreshPlan plan =
+                V2StreamRefreshPlanner.plan("heartbeat", event);
+
+        assertFalse(plan.shouldRefreshMarket());
+        assertFalse(plan.shouldRefreshAccount());
+        assertFalse(plan.shouldRefreshFloating());
+        assertFalse(plan.shouldPullAccountHistory());
+        assertFalse(plan.hasAbnormalChange());
     }
 }

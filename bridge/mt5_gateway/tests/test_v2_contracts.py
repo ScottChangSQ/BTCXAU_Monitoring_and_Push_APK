@@ -91,6 +91,15 @@ import server_v2  # noqa: E402
 class V2ContractTests(unittest.TestCase):
     """验证 v2 契约最小结构。"""
 
+    def setUp(self):
+        # 每个用例前清理共享缓存状态，避免跨用例污染导致偶发失败。
+        if hasattr(server_v2, "snapshot_build_cache"):
+            server_v2.snapshot_build_cache.clear()
+        if hasattr(server_v2, "snapshot_sync_cache"):
+            server_v2.snapshot_sync_cache.clear()
+        if hasattr(server_v2, "v2_sync_state"):
+            server_v2.v2_sync_state.clear()
+
     def test_market_snapshot_has_sync_token_and_market_section(self):
         payload = server_v2._build_v2_market_snapshot_payload({}, {}, 101)
 
@@ -98,6 +107,17 @@ class V2ContractTests(unittest.TestCase):
         self.assertIn("syncToken", payload)
         self.assertIn("market", payload)
         self.assertIn("account", payload)
+
+    def test_symbol_descriptor_should_not_accept_legacy_aliases(self):
+        btc = server_v2._resolve_symbol_descriptor("XBT")
+        xau = server_v2._resolve_symbol_descriptor("GOLD")
+
+        self.assertEqual("XBT", btc["productId"])
+        self.assertEqual("XBT", btc["marketSymbol"])
+        self.assertEqual("XBT", btc["tradeSymbol"])
+        self.assertEqual("GOLD", xau["productId"])
+        self.assertEqual("GOLD", xau["marketSymbol"])
+        self.assertEqual("GOLD", xau["tradeSymbol"])
 
     def test_market_candles_response_separates_closed_and_patch(self):
         payload = server_v2._build_v2_market_candles_payload(
@@ -298,6 +318,15 @@ class V2ContractTests(unittest.TestCase):
             "pendingOrders": [{"symbol": "XAUUSD"}],
         }
         with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "activated",
+                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
             server_v2, "_build_account_light_snapshot_with_cache", return_value=light_snapshot
         ) as light_mock, mock.patch.object(
             server_v2, "_build_snapshot_with_cache", side_effect=AssertionError("不应走重快照")
@@ -319,6 +348,39 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual("BTCUSDT", payload["account"]["positions"][0]["marketSymbol"])
         self.assertEqual("XAUUSD", payload["account"]["orders"][0]["code"])
         self.assertEqual("XAUUSDT", payload["account"]["orders"][0]["marketSymbol"])
+
+    def test_v2_market_snapshot_should_use_logged_out_snapshot_when_no_active_session(self):
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "logged_out",
+                "activeAccount": None,
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
+            server_v2,
+            "_build_account_light_snapshot_with_cache",
+            side_effect=AssertionError("logged_out 不应触发 MT5 轻快照构建"),
+        ), mock.patch.object(
+            server_v2,
+            "_build_v2_market_section",
+            return_value={
+                "source": "binance",
+                "symbols": ["BTCUSDT", "XAUUSDT"],
+                "symbolStates": [],
+                "restUpstream": "https://fapi.binance.com",
+                "wsUpstream": "wss://fstream.binance.com",
+            },
+        ):
+            payload = server_v2.v2_market_snapshot()
+
+        self.assertEqual("", payload["account"]["accountMeta"]["login"])
+        self.assertEqual("", payload["account"]["accountMeta"]["server"])
+        self.assertEqual("remote_logged_out", payload["account"]["accountMeta"]["source"])
+        self.assertEqual([], payload["account"]["positions"])
+        self.assertEqual([], payload["account"]["orders"])
 
     def test_admin_cache_clear_should_flush_runtime_caches(self):
         server_v2.snapshot_build_cache = {"build": {"snapshot": 1}}
@@ -447,8 +509,8 @@ class V2ContractTests(unittest.TestCase):
             "trades": [{"dealTicket": 1, "code": "BTCUSD"}],
         }
         mt5_trades = [
-            {"dealTicket": 11, "code": "BTCUSD"},
-            {"dealTicket": 12, "code": "XAUUSD"},
+            {"dealTicket": 11, "tradeSymbol": "BTCUSD", "productName": "BTCUSD", "code": "BTCUSD"},
+            {"dealTicket": 12, "tradeSymbol": "XAUUSD", "productName": "XAUUSD", "code": "XAUUSD"},
         ]
         server_v2.snapshot_build_cache.clear()
 
@@ -524,16 +586,53 @@ class V2ContractTests(unittest.TestCase):
             "overviewMetrics": [{"name": "总资产", "value": "$1000.00"}],
             "curveIndicators": [{"name": "当日收益", "value": "+1.2%"}],
             "statsMetrics": [{"name": "交易笔数", "value": "2"}],
-            "pendingOrders": [{"symbol": "XAUUSD"}],
+            "pendingOrders": [{
+                "productId": "XAU",
+                "marketSymbol": "XAUUSDT",
+                "tradeSymbol": "XAUUSD",
+                "productName": "XAUUSD",
+                "quantity": 0.0,
+                "pendingLots": 0.1,
+                "pendingPrice": 2000.0,
+                "latestPrice": 2000.0,
+                "pendingCount": 1,
+            }],
             "curvePoints": [{"timestamp": 1, "equity": 100.0, "balance": 100.0}],
-            "trades": [{"dealTicket": 1, "code": "BTCUSD"}],
+            "trades": [{
+                "dealTicket": 1,
+                "productId": "BTC",
+                "marketSymbol": "BTCUSDT",
+                "tradeSymbol": "BTCUSD",
+                "productName": "BTCUSD",
+            }],
         }
         mt5_trades = [
-            {"dealTicket": 11, "code": "BTCUSD"},
-            {"dealTicket": 12, "code": "XAUUSD"},
+            {
+                "dealTicket": 11,
+                "productId": "BTC",
+                "marketSymbol": "BTCUSDT",
+                "tradeSymbol": "BTCUSD",
+                "productName": "BTCUSD",
+            },
+            {
+                "dealTicket": 12,
+                "productId": "XAU",
+                "marketSymbol": "XAUUSDT",
+                "tradeSymbol": "XAUUSD",
+                "productName": "XAUUSD",
+            },
         ]
 
-        with mock.patch.object(server_v2, "_build_snapshot_with_cache", return_value=snapshot), mock.patch.object(
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "activated",
+                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(server_v2, "_build_snapshot_with_cache", return_value=snapshot), mock.patch.object(
             server_v2, "_build_trade_history_with_cache", return_value=mt5_trades
         ) as history_mock:
             payload = server_v2.v2_account_history(range="all", cursor="")
@@ -545,6 +644,43 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual([{"name": "总资产", "value": "$1000.00"}], payload["overviewMetrics"])
         self.assertEqual([{"name": "当日收益", "value": "+1.2%"}], payload["curveIndicators"])
         self.assertEqual([{"name": "交易笔数", "value": "2"}], payload["statsMetrics"])
+
+    def test_v2_account_history_should_use_logged_out_snapshot_when_no_active_session(self):
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "logged_out",
+                "activeAccount": None,
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
+            server_v2,
+            "_build_snapshot_with_cache",
+            side_effect=AssertionError("logged_out 不应触发完整 MT5 快照构建"),
+        ), mock.patch.object(
+            server_v2,
+            "_build_trade_history_with_cache",
+            side_effect=AssertionError("logged_out 不应触发 MT5 历史成交构建"),
+        ):
+            payload = server_v2.v2_account_history(range="all", cursor="")
+
+        self.assertEqual("", payload["accountMeta"]["login"])
+        self.assertEqual("", payload["accountMeta"]["server"])
+        self.assertEqual("remote_logged_out", payload["accountMeta"]["source"])
+        self.assertEqual([], payload["trades"])
+        self.assertEqual([], payload["orders"])
+        self.assertEqual([], payload["curvePoints"])
+
+    def test_mt5_bridge_push_ea_should_not_default_missing_contract_size_to_one(self):
+        source = (ROOT / "ea" / "MT5BridgePushEA.mq5").read_text(encoding="utf-8")
+
+        self.assertIn("bool TryGetContractSize(string symbol, double &contractSize)", source)
+        self.assertIn("missing contractSize for symbol=", source)
+        self.assertIn("if(!BuildSnapshotParts(overviewMetrics, curvePoints, curveIndicators, positions, trades, stats))", source)
+        self.assertNotIn("contractSize = 1.0;", source)
+        self.assertNotIn("return 1.0;", source)
 
 
 if __name__ == "__main__":

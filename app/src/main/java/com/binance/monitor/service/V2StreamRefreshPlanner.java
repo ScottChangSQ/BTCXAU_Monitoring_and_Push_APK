@@ -14,114 +14,109 @@ public final class V2StreamRefreshPlanner {
     private V2StreamRefreshPlanner() {
     }
 
-    // 根据 v2 stream 消息类型和 payload，生成本轮最小刷新计划。
+    // 根据 v2 stream 新协议事件封套，生成本轮最小刷新计划。
     public static RefreshPlan plan(@Nullable String messageType, @Nullable JSONObject payload) {
         JSONObject safePayload = payload == null ? new JSONObject() : payload;
-        boolean unchanged = safePayload.optBoolean("unchanged", false);
-        JSONObject fullRefresh = safePayload.optJSONObject("fullRefresh");
-        boolean fullRefreshRequired = fullRefresh != null && fullRefresh.optBoolean("required", false);
-        JSONObject fullRefreshSnapshot = fullRefresh == null ? null : fullRefresh.optJSONObject("snapshot");
-        JSONObject fullMarketSnapshot = fullRefreshSnapshot == null ? null : fullRefreshSnapshot.optJSONObject("market");
-        JSONObject fullAccountSnapshot = fullRefreshSnapshot == null ? null : fullRefreshSnapshot.optJSONObject("account");
-
-        JSONArray marketDelta = safePayload.optJSONArray("marketDelta");
-        JSONArray accountDelta = safePayload.optJSONArray("accountDelta");
-        JSONObject marketSnapshot = extractSnapshot(marketDelta, "market.snapshot");
-        JSONObject accountSnapshot = extractSnapshot(accountDelta, "account.snapshot");
-        boolean historyRevisionChanged = hasHistoryRevisionChanged(accountDelta);
-
-        if (unchanged && !fullRefreshRequired && marketSnapshot == null && accountSnapshot == null) {
-            return new RefreshPlan(
-                    false,
-                    false,
-                    false,
-                    false,
-                    null,
-                    null,
-                    messageType == null ? "" : messageType
-            );
+        JSONObject revisions = safePayload.optJSONObject("revisions");
+        if (revisions == null) {
+            revisions = new JSONObject();
         }
-        boolean refreshMarket = fullRefreshRequired || marketSnapshot != null || hasItems(marketDelta);
-        boolean refreshAccount = fullRefreshRequired || accountSnapshot != null || hasItems(accountDelta);
+        JSONObject changes = safePayload.optJSONObject("changes");
+        if (changes == null) {
+            changes = new JSONObject();
+        }
+
+        JSONObject marketSnapshot = extractSnapshot(changes, "market");
+        JSONObject accountSnapshot = extractSnapshot(changes, "accountRuntime");
+        boolean historyRevisionAdvanced = hasHistoryRevisionAdvanced(revisions, changes);
+        boolean abnormalChanged = hasAbnormalChange(revisions, changes);
+
+        boolean refreshMarket = marketSnapshot != null;
+        boolean refreshAccount = accountSnapshot != null;
         boolean refreshFloating = refreshMarket || refreshAccount;
-        boolean pullAccountSnapshot = fullRefreshRequired || historyRevisionChanged;
+        String accountHistoryRevision = revisions.optString("accountHistoryRevision", "").trim();
+        boolean pullAccountHistory = historyRevisionAdvanced;
         return new RefreshPlan(
                 refreshMarket,
                 refreshAccount,
                 refreshFloating,
-                pullAccountSnapshot,
-                fullRefreshRequired ? fullMarketSnapshot : marketSnapshot,
-                fullRefreshRequired ? fullAccountSnapshot : accountSnapshot,
+                pullAccountHistory,
+                marketSnapshot,
+                accountSnapshot,
+                abnormalChanged,
+                accountHistoryRevision,
                 messageType == null ? "" : messageType
         );
     }
 
     @Nullable
-    private static JSONObject extractSnapshot(@Nullable JSONArray events, String expectedAction) {
-        if (events == null || events.length() == 0) {
+    private static JSONObject extractSnapshot(@Nullable JSONObject changes, String changeKey) {
+        if (changes == null) {
             return null;
         }
-        for (int i = 0; i < events.length(); i++) {
-            JSONObject event = events.optJSONObject(i);
-            if (event == null) {
-                continue;
-            }
-            String action = event.optString("action", "");
-            if (!expectedAction.equals(action)) {
-                continue;
-            }
-            JSONObject snapshot = event.optJSONObject("snapshot");
-            if (snapshot != null) {
-                return snapshot;
-            }
+        JSONObject change = changes.optJSONObject(changeKey);
+        if (change == null) {
+            return null;
         }
-        return null;
+        return change.optJSONObject("snapshot");
     }
 
-    private static boolean hasHistoryRevisionChanged(@Nullable JSONArray events) {
-        if (events == null || events.length() == 0) {
+    // 只有 accountHistory change 与 revisions 里的新修订号同时成立，才认定历史修订前进。
+    private static boolean hasHistoryRevisionAdvanced(@Nullable JSONObject revisions, @Nullable JSONObject changes) {
+        if (revisions == null || changes == null) {
             return false;
         }
-        for (int i = 0; i < events.length(); i++) {
-            JSONObject event = events.optJSONObject(i);
-            if (event == null) {
-                continue;
-            }
-            if (event.optBoolean("historyRevisionChanged", false)) {
-                return true;
-            }
+        JSONObject accountHistory = changes.optJSONObject("accountHistory");
+        if (accountHistory == null) {
+            return false;
         }
-        return false;
+        String changedRevision = accountHistory.optString("historyRevision", "").trim();
+        String currentRevision = revisions.optString("accountHistoryRevision", "").trim();
+        return !changedRevision.isEmpty() && changedRevision.equals(currentRevision);
     }
 
-    private static boolean hasItems(@Nullable JSONArray array) {
-        return array != null && array.length() > 0;
+    // abnormal 变化必须同时具备 change 记录和当前 revision，避免把缺字段事件误判成有效变化。
+    private static boolean hasAbnormalChange(@Nullable JSONObject revisions, @Nullable JSONObject changes) {
+        if (revisions == null || changes == null) {
+            return false;
+        }
+        JSONObject abnormal = changes.optJSONObject("abnormal");
+        if (abnormal == null) {
+            return false;
+        }
+        return !revisions.optString("abnormalRevision", "").trim().isEmpty();
     }
 
     public static final class RefreshPlan {
         private final boolean refreshMarket;
         private final boolean refreshAccount;
         private final boolean refreshFloating;
-        private final boolean pullAccountSnapshot;
+        private final boolean pullAccountHistory;
         @Nullable
         private final JSONObject marketSnapshot;
         @Nullable
         private final JSONObject accountSnapshot;
+        private final boolean abnormalChange;
+        private final String accountHistoryRevision;
         private final String messageType;
 
         RefreshPlan(boolean refreshMarket,
                     boolean refreshAccount,
                     boolean refreshFloating,
-                    boolean pullAccountSnapshot,
+                    boolean pullAccountHistory,
                     @Nullable JSONObject marketSnapshot,
                     @Nullable JSONObject accountSnapshot,
+                    boolean abnormalChange,
+                    String accountHistoryRevision,
                     String messageType) {
             this.refreshMarket = refreshMarket;
             this.refreshAccount = refreshAccount;
             this.refreshFloating = refreshFloating;
-            this.pullAccountSnapshot = pullAccountSnapshot;
+            this.pullAccountHistory = pullAccountHistory;
             this.marketSnapshot = marketSnapshot;
             this.accountSnapshot = accountSnapshot;
+            this.abnormalChange = abnormalChange;
+            this.accountHistoryRevision = accountHistoryRevision == null ? "" : accountHistoryRevision;
             this.messageType = messageType == null ? "" : messageType;
         }
 
@@ -137,8 +132,16 @@ public final class V2StreamRefreshPlanner {
             return refreshFloating;
         }
 
-        public boolean shouldPullAccountSnapshot() {
-            return pullAccountSnapshot;
+        public boolean shouldPullAccountHistory() {
+            return pullAccountHistory;
+        }
+
+        public boolean hasAbnormalChange() {
+            return abnormalChange;
+        }
+
+        public String getAccountHistoryRevision() {
+            return accountHistoryRevision;
         }
 
         @Nullable

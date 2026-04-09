@@ -17,8 +17,8 @@ public class AccountV2SourceTest {
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
         assertTrue(source.contains("GatewayV2Client"));
-        assertTrue(source.contains("fetchAccountSnapshot()"));
+        assertTrue(source.contains("applyPublishedAccountRuntime("));
         assertTrue(source.contains("fetchAccountHistory(AccountTimeRange.ALL"));
-        assertTrue(source.contains("persistV2Snapshot"));
+        assertTrue(source.contains("persistIncrementalSnapshot"));
     }
 }

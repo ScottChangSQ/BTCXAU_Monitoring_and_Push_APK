@@ -32,7 +32,8 @@ import androidx.core.content.ContextCompat;
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.LayoutFloatingWindowBinding;
-import com.binance.monitor.ui.chart.MarketChartActivity;
+import com.binance.monitor.runtime.ConnectionStage;
+import com.binance.monitor.ui.launch.OverlayLaunchBridgeActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.FormatUtils;
@@ -58,7 +59,12 @@ public class FloatingWindowManager {
     private boolean minimized;
     private boolean draggingWindow;
     private boolean pendingRender;
-    private FloatingWindowSnapshot snapshot = new FloatingWindowSnapshot("", 0L, new ArrayList<>());
+    private FloatingWindowSnapshot snapshot = new FloatingWindowSnapshot(
+            ConnectionStage.CONNECTING,
+            "",
+            0L,
+            new ArrayList<>()
+    );
     private boolean showBtc = true;
     private boolean showXau = true;
     private long miniBlinkEndAt;
@@ -97,17 +103,22 @@ public class FloatingWindowManager {
     public void update(FloatingWindowSnapshot snapshot) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             FloatingWindowSnapshot copy = snapshot == null
-                    ? new FloatingWindowSnapshot("", 0L, new ArrayList<>())
+                    ? new FloatingWindowSnapshot(ConnectionStage.CONNECTING, "", 0L, new ArrayList<>())
                     : new FloatingWindowSnapshot(
+                    snapshot.getConnectionStage(),
                     snapshot.getConnectionStatus(),
                     snapshot.getUpdatedAt(),
                     snapshot.getCards());
             handler.post(() -> update(copy));
             return;
         }
-        this.snapshot = snapshot == null
-                ? new FloatingWindowSnapshot("", 0L, new ArrayList<>())
+        FloatingWindowSnapshot normalized = snapshot == null
+                ? new FloatingWindowSnapshot(ConnectionStage.CONNECTING, "", 0L, new ArrayList<>())
                 : snapshot;
+        if (normalized.hasSameVisualContent(this.snapshot)) {
+            return;
+        }
+        this.snapshot = normalized;
         if (draggingWindow) {
             pendingRender = true;
             return;
@@ -142,9 +153,9 @@ public class FloatingWindowManager {
         }
         try {
             windowManager.removeViewImmediate(binding.getRoot());
-            windowAdded = false;
         } catch (Exception ignored) {
-            return;
+        } finally {
+            windowAdded = false;
         }
         minimized = false;
         draggingWindow = false;
@@ -237,16 +248,16 @@ public class FloatingWindowManager {
         }
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
         binding.layoutExpanded.setBackground(UiPaletteManager.createFloatingBackground(context, palette));
-        boolean offline = shouldRenderOfflineState(snapshot.getConnectionStatus());
-        binding.tvOverlayConnection.setText(offline
-                ? "网络未连接"
-                : (snapshot.getConnectionStatus() == null || snapshot.getConnectionStatus().trim().isEmpty()
+        List<FloatingSymbolCardData> visibleCards = collectVisibleCards();
+        boolean offline = shouldRenderOfflineState(snapshot.getConnectionStage(), visibleCards);
+        binding.tvOverlayConnection.setText(
+                snapshot.getConnectionStatus() == null || snapshot.getConnectionStatus().trim().isEmpty()
                 ? context.getString(R.string.status_unknown)
-                : snapshot.getConnectionStatus()));
+                : snapshot.getConnectionStatus());
         binding.tvOverlayConnection.setTextColor(palette.textSecondary);
-        List<FloatingSymbolCardData> visibleCards = offline ? new ArrayList<>() : collectVisibleCards();
+        visibleCards = offline ? new ArrayList<>() : visibleCards;
         boolean hasActivePositions = hasActivePositions(visibleCards);
-        renderSummaryHeader(palette, visibleCards, offline, hasActivePositions);
+        renderSummaryHeader(palette, visibleCards, snapshot.getConnectionStage(), offline, hasActivePositions);
         applyWindowAlpha();
         int renderedCount = renderSymbolCards(visibleCards, palette);
         for (FloatingSymbolCardData card : visibleCards) {
@@ -257,7 +268,7 @@ public class FloatingWindowManager {
         }
         boolean hasItems = renderedCount > 0;
         binding.tvOverlayEmpty.setVisibility(hasItems ? View.GONE : View.VISIBLE);
-        binding.tvOverlayEmpty.setText(offline ? "网络未连接" : context.getString(R.string.no_records));
+        binding.tvOverlayEmpty.setText(resolveEmptyStateText(snapshot.getConnectionStage(), offline));
         binding.tvOverlayEmpty.setTextColor(palette.textSecondary);
         refreshMinimizedState(false);
     }
@@ -281,6 +292,7 @@ public class FloatingWindowManager {
 
     private void renderSummaryHeader(UiPaletteManager.Palette palette,
                                      List<FloatingSymbolCardData> visibleCards,
+                                     ConnectionStage connectionStage,
                                      boolean offline,
                                      boolean hasActivePositions) {
         boolean masked = SensitiveDisplayMasker.isEnabled(context);
@@ -292,7 +304,7 @@ public class FloatingWindowManager {
         }
         String text;
         if (offline) {
-            text = "离线";
+            text = resolveOfflineHeaderText(connectionStage);
         } else if (!hasActivePositions) {
             text = "无持仓";
         } else {
@@ -323,14 +335,46 @@ public class FloatingWindowManager {
     }
 
     // 未连网时切到特殊悬浮窗状态，避免继续展示过期价格和持仓卡片。
-    private boolean shouldRenderOfflineState(String connectionStatus) {
-        String status = connectionStatus == null ? "" : connectionStatus.trim();
-        if (status.isEmpty()) {
+    private boolean shouldRenderOfflineState(ConnectionStage connectionStage,
+                                             List<FloatingSymbolCardData> visibleCards) {
+        ConnectionStage safeStage = connectionStage == null ? ConnectionStage.CONNECTING : connectionStage;
+        if (safeStage == ConnectionStage.DISCONNECTED) {
             return true;
         }
-        return status.contains("连接中")
-                || status.contains("重连中")
-                || status.contains("等待数据");
+        if (safeStage == ConnectionStage.RECONNECTING) {
+            return visibleCards == null || visibleCards.isEmpty();
+        }
+        if (safeStage == ConnectionStage.CONNECTING) {
+            return visibleCards == null || visibleCards.isEmpty();
+        }
+        return false;
+    }
+
+    // 空态文案按连接阶段区分，避免“重连中”被错误显示成离线。
+    private String resolveEmptyStateText(ConnectionStage connectionStage, boolean offline) {
+        if (!offline) {
+            return context.getString(R.string.no_records);
+        }
+        ConnectionStage safeStage = connectionStage == null ? ConnectionStage.CONNECTING : connectionStage;
+        if (safeStage == ConnectionStage.RECONNECTING) {
+            return "重连中";
+        }
+        if (safeStage == ConnectionStage.CONNECTING) {
+            return "连接中";
+        }
+        return "网络未连接";
+    }
+
+    // 顶部状态文案按连接阶段区分，避免把重连过程误判成离线。
+    private String resolveOfflineHeaderText(ConnectionStage connectionStage) {
+        ConnectionStage safeStage = connectionStage == null ? ConnectionStage.CONNECTING : connectionStage;
+        if (safeStage == ConnectionStage.RECONNECTING) {
+            return "重连中";
+        }
+        if (safeStage == ConnectionStage.CONNECTING) {
+            return "连接中";
+        }
+        return "离线";
     }
 
     private int renderSymbolCards(List<FloatingSymbolCardData> visibleCards, UiPaletteManager.Palette palette) {
@@ -377,8 +421,8 @@ public class FloatingWindowManager {
         titleView.setTextColor(palette.textPrimary);
         titleView.setTextSize(9f);
         titleView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
-        titleView.setSingleLine(true);
-        titleView.setMaxLines(1);
+        titleView.setSingleLine(false);
+        titleView.setMaxLines(2);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         headerRow.addView(titleView);
         cardView.addView(headerRow);
@@ -433,7 +477,7 @@ public class FloatingWindowManager {
         cardView.addView(amountView);
 
         bindDragSurface(cardView);
-        cardView.setOnClickListener(v -> openChartForSymbol(card.getCode()));
+        cardView.setOnClickListener(v -> openChartForCard(card));
         return cardView;
     }
 
@@ -544,14 +588,33 @@ public class FloatingWindowManager {
         applyMiniSquareBackgroundAlpha(miniBlinkDimmed);
     }
 
-    private void openChartForSymbol(String symbol) {
-        if (symbol == null || symbol.trim().isEmpty()) {
+    // 点击产品卡时固定进入对应产品的行情持仓页，避免再随机回到其他页面。
+    private void openChartForCard(FloatingSymbolCardData card) {
+        String targetSymbol = card == null ? "" : ProductSymbolMapper.toTradeSymbol(card.getCode());
+        if (targetSymbol == null || targetSymbol.trim().isEmpty()) {
+            openMainScreen();
             return;
         }
-        Intent intent = new Intent(context, MarketChartActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL, symbol.trim());
-        context.startActivity(intent);
+        Intent launchIntent = new Intent(context, OverlayLaunchBridgeActivity.class);
+        launchIntent.putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_SYMBOL, targetSymbol.trim().toUpperCase());
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        context.startActivity(launchIntent);
+    }
+
+    // 兜底只在产品代码缺失时回主界面，避免悬浮窗点击完全失效。
+    private void openMainScreen() {
+        Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        if (launchIntent == null) {
+            return;
+        }
+        launchIntent.setAction(Intent.ACTION_MAIN);
+        launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        context.startActivity(launchIntent);
     }
 
     // 让产品名保持主文字色，只让盈亏金额部分按涨跌或中性色着色。

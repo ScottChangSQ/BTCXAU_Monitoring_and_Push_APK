@@ -26,14 +26,12 @@ public final class ProductSymbolMapper {
         }
         if ("BTC".equals(normalized)
                 || TRADE_SYMBOL_BTC.equals(normalized)
-                || AppConstants.SYMBOL_BTC.equals(normalized)
-                || "XBT".equals(normalized)) {
+                || AppConstants.SYMBOL_BTC.equals(normalized)) {
             return AppConstants.SYMBOL_BTC;
         }
         if ("XAU".equals(normalized)
                 || TRADE_SYMBOL_XAU.equals(normalized)
-                || AppConstants.SYMBOL_XAU.equals(normalized)
-                || "GOLD".equals(normalized)) {
+                || AppConstants.SYMBOL_XAU.equals(normalized)) {
             return AppConstants.SYMBOL_XAU;
         }
         return normalized;
@@ -47,14 +45,12 @@ public final class ProductSymbolMapper {
         }
         if ("BTC".equals(normalized)
                 || TRADE_SYMBOL_BTC.equals(normalized)
-                || AppConstants.SYMBOL_BTC.equals(normalized)
-                || "XBT".equals(normalized)) {
+                || AppConstants.SYMBOL_BTC.equals(normalized)) {
             return TRADE_SYMBOL_BTC;
         }
         if ("XAU".equals(normalized)
                 || TRADE_SYMBOL_XAU.equals(normalized)
-                || AppConstants.SYMBOL_XAU.equals(normalized)
-                || "GOLD".equals(normalized)) {
+                || AppConstants.SYMBOL_XAU.equals(normalized)) {
             return TRADE_SYMBOL_XAU;
         }
         return normalized;

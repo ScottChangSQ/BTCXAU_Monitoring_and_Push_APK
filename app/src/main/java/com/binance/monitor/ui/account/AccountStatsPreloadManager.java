@@ -1,5 +1,5 @@
 /*
- * 账户快照预加载管理器，负责后台拉取 MT5 网关快照并向页面分发最新缓存。
+ * 账户预加载管理器，负责消费服务端已发布的账户运行态并管理历史补拉。
  * 供账户页、图表页等依赖账户信息的界面复用。
  */
 package com.binance.monitor.ui.account;
@@ -10,7 +10,6 @@ import android.os.Looper;
 
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
-import com.binance.monitor.data.local.V2SnapshotStore;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.model.v2.AccountHistoryPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
@@ -41,7 +40,6 @@ public class AccountStatsPreloadManager {
 
     private final GatewayV2Client gatewayV2Client;
     private final AccountStorageRepository accountStorageRepository;
-    private final V2SnapshotStore v2SnapshotStore;
     private final ConfigManager configManager;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -65,7 +63,6 @@ public class AccountStatsPreloadManager {
     private AccountStatsPreloadManager(Context context) {
         gatewayV2Client = new GatewayV2Client(context.getApplicationContext());
         accountStorageRepository = new AccountStorageRepository(context.getApplicationContext());
-        v2SnapshotStore = new V2SnapshotStore(context.getApplicationContext());
         configManager = ConfigManager.getInstance(context.getApplicationContext());
     }
 
@@ -95,7 +92,17 @@ public class AccountStatsPreloadManager {
     }
 
     public Cache getLatestCache() {
-        return latestCache;
+        Cache cache = latestCache;
+        if (cache != null || !isAccountSessionActive()) {
+            return cache;
+        }
+        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository.loadStoredSnapshot();
+        if (!hasStoredSnapshotContent(storedSnapshot)) {
+            return null;
+        }
+        Cache hydratedCache = buildCache(storedSnapshot, storedSnapshot.getHistoryRevision());
+        latestCache = hydratedCache;
+        return hydratedCache;
     }
 
     // 注册缓存更新监听，页面可在首屏时收到最新快照并立即刷新。
@@ -171,13 +178,16 @@ public class AccountStatsPreloadManager {
         }
     }
 
-    // 前后台切换后按最新策略重新排下一次预加载，前台优先立即补新数据。
+    // 前后台切换后按最新策略重排下一次预加载，只切节奏，不因回前台立刻补拉。
     private void handleForegroundStateChanged(boolean foreground) {
         nextDelayMs = resolveRefreshDelayMs();
+        if (foreground) {
+            gatewayV2Client.resetTransport();
+        }
         if (!started || !isAccountSessionActive() || liveScreenActive) {
             return;
         }
-        scheduleFetch(foreground ? 0L : nextDelayMs);
+        scheduleFetch(nextDelayMs);
     }
 
     // 统一读取当前预加载节奏，避免不同入口写出不一致的时间。
@@ -234,7 +244,7 @@ public class AccountStatsPreloadManager {
         scheduledFetchFuture = null;
     }
 
-    // 拉取一次最新账户快照，并根据当前运行态决定下一次调度节奏。
+    // 刷新一次预加载节奏；账户真值由 stream 直接写入，本方法不再主动拉 snapshot。
     private void fetchOnce() {
         if (loading) {
             return;
@@ -248,17 +258,7 @@ public class AccountStatsPreloadManager {
                 nextDelayMs = MAX_REFRESH_MS;
                 return;
             }
-            if (liveScreenActive) {
-                nextDelayMs = MAX_REFRESH_MS;
-                return;
-            }
-            Cache cache = fullSnapshotActive
-                    ? fetchForUi(AccountTimeRange.ALL)
-                    : fetchForOverlay();
             nextDelayMs = resolveRefreshDelayMs();
-            if (cache != null) {
-                return;
-            }
         } catch (Exception exception) {
             nextDelayMs = resolveRefreshDelayMs();
             Cache previous = latestCache;
@@ -270,8 +270,45 @@ public class AccountStatsPreloadManager {
         }
     }
 
-    // 图表页和悬浮窗的高频账户刷新入口：只消费 v2 snapshot/history，不再回退旧网关。
-    public Cache fetchForOverlay() {
+    // 应用服务端发布的账户运行态快照，统一更新本地运行态与页面缓存。
+    public Cache applyPublishedAccountRuntime(JSONObject accountRuntimeSnapshot, long publishedAt) {
+        if (accountRuntimeSnapshot == null) {
+            return latestCache;
+        }
+        try {
+            if (!isAccountSessionActive()) {
+                accountStorageRepository.clearRuntimeSnapshot();
+                accountStorageRepository.clearTradeHistory();
+                clearLatestCache();
+                nextDelayMs = MAX_REFRESH_MS;
+                return null;
+            }
+            AccountStorageRepository.StoredSnapshot storedSnapshot =
+                    buildStoredSnapshotFromPublishedRuntime(accountRuntimeSnapshot, publishedAt);
+            accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
+            AccountStorageRepository.StoredSnapshot cachedSnapshot =
+                    accountStorageRepository.loadStoredSnapshot();
+            String resolvedRevision = resolveHistoryRevisionFromPublishedRuntime(accountRuntimeSnapshot);
+            Cache cache = buildCache(cachedSnapshot, resolvedRevision);
+            nextDelayMs = resolveRefreshDelayMs();
+            updateLatestCache(cache);
+            return cache;
+        } catch (Exception exception) {
+            nextDelayMs = resolveRefreshDelayMs();
+            Cache previous = latestCache;
+            if (previous != null) {
+                Cache cache = buildFailureCache(previous, exception.getMessage());
+                updateLatestCache(cache);
+                return cache;
+            }
+            Cache cache = buildInitialFailureCache(exception.getMessage());
+            updateLatestCache(cache);
+            return cache;
+        }
+    }
+
+    // 仅当 history revision 前进或本地还没有历史时，才补拉一次全量历史。
+    public Cache refreshHistoryForRevision(String remoteHistoryRevision) {
         if (!overlayFetchInFlight.compareAndSet(false, true)) {
             return latestCache;
         }
@@ -283,11 +320,12 @@ public class AccountStatsPreloadManager {
                 nextDelayMs = MAX_REFRESH_MS;
                 return null;
             }
-            AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();
-            v2SnapshotStore.writeAccountSnapshot(snapshotPayload.getRawJson());
-            String remoteHistoryRevision = resolveRemoteHistoryRevision(snapshotPayload);
             Cache previous = latestCache;
-            String cachedHistoryRevision = previous == null ? "" : previous.getHistoryRevision();
+            AccountStorageRepository.StoredSnapshot storedSnapshot =
+                    accountStorageRepository.loadStoredSnapshot();
+            String cachedHistoryRevision = previous == null
+                    ? storedSnapshot.getHistoryRevision()
+                    : previous.getHistoryRevision();
             int storedTradeCount = accountStorageRepository.loadTrades().size();
             boolean hasStoredTradeHistory = storedTradeCount > 0;
             boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
@@ -295,25 +333,20 @@ public class AccountStatsPreloadManager {
                     cachedHistoryRevision,
                     hasStoredTradeHistory
             );
-            if (shouldRefreshAllHistory) {
-                AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, "");
-                AccountStorageRepository.StoredSnapshot storedSnapshot =
-                        buildStoredSnapshotFromV2(snapshotPayload, historyPayload);
-                accountStorageRepository.persistV2Snapshot(storedSnapshot);
-                String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, historyPayload);
-                Cache cache = buildCache(storedSnapshot, resolvedRevision);
-                nextDelayMs = resolveRefreshDelayMs();
+            if (!shouldRefreshAllHistory) {
+                if (previous != null) {
+                    return previous;
+                }
+                Cache cache = buildCache(storedSnapshot, cachedHistoryRevision);
                 updateLatestCache(cache);
                 return cache;
             }
-
-            AccountStorageRepository.StoredSnapshot storedSnapshot =
-                    buildStoredSnapshotFromSnapshotOnly(snapshotPayload);
-            accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
-            AccountStorageRepository.StoredSnapshot cachedSnapshot =
-                    accountStorageRepository.loadStoredSnapshot();
-            String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, null);
-            Cache cache = buildCache(cachedSnapshot, resolvedRevision);
+            AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, "");
+            AccountStorageRepository.StoredSnapshot mergedSnapshot =
+                    buildStoredSnapshotFromHistoryOnly(storedSnapshot, historyPayload, remoteHistoryRevision);
+            accountStorageRepository.persistV2Snapshot(mergedSnapshot);
+            String resolvedRevision = requireHistoryRevision(remoteHistoryRevision);
+            Cache cache = buildCache(mergedSnapshot, resolvedRevision);
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
             return cache;
@@ -333,7 +366,12 @@ public class AccountStatsPreloadManager {
         }
     }
 
-    // 供账户页主动触发一次前台刷新，只走 v2 正式账户链路。
+    // 图表页和悬浮窗读取当前账户缓存，不再主动拉取 account snapshot。
+    public Cache fetchForOverlay() {
+        return latestCache;
+    }
+
+    // 供账户页主动刷新与交易后强一致确认复用；显式入口仍走 canonical snapshot/history。
     public Cache fetchForUi(AccountTimeRange range) {
         if (!isAccountSessionActive()) {
             accountStorageRepository.clearRuntimeSnapshot();
@@ -344,11 +382,14 @@ public class AccountStatsPreloadManager {
         }
         AccountTimeRange safeRange = range == null ? AccountTimeRange.ALL : range;
         try {
-            AccountSnapshotPayload v2Payload = gatewayV2Client.fetchAccountSnapshot();
-            v2SnapshotStore.writeAccountSnapshot(v2Payload.getRawJson());
-            String remoteHistoryRevision = resolveRemoteHistoryRevision(v2Payload);
+            AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();
+            String remoteHistoryRevision = resolveRemoteHistoryRevision(snapshotPayload);
             Cache previous = latestCache;
-            String cachedHistoryRevision = previous == null ? "" : previous.getHistoryRevision();
+            AccountStorageRepository.StoredSnapshot storedSnapshot =
+                    accountStorageRepository.loadStoredSnapshot();
+            String cachedHistoryRevision = previous == null
+                    ? storedSnapshot.getHistoryRevision()
+                    : previous.getHistoryRevision();
             int storedTradeCount = accountStorageRepository.loadTrades().size();
             boolean hasStoredTradeHistory = storedTradeCount > 0;
             boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
@@ -360,18 +401,18 @@ public class AccountStatsPreloadManager {
             Cache cache;
             if (shouldRefreshAllHistory) {
                 AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(safeRange, "");
-                AccountStorageRepository.StoredSnapshot storedSnapshot =
-                        buildStoredSnapshotFromV2(v2Payload, historyPayload);
-                accountStorageRepository.persistV2Snapshot(storedSnapshot);
-                String resolvedRevision = resolveHistoryRevisionFromPayload(v2Payload, historyPayload);
-                cache = buildCache(storedSnapshot, resolvedRevision);
+                AccountStorageRepository.StoredSnapshot mergedSnapshot =
+                        buildStoredSnapshotFromV2(snapshotPayload, historyPayload);
+                accountStorageRepository.persistV2Snapshot(mergedSnapshot);
+                String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, historyPayload);
+                cache = buildCache(mergedSnapshot, resolvedRevision);
             } else {
-                AccountStorageRepository.StoredSnapshot storedSnapshot =
-                        buildStoredSnapshotFromSnapshotOnly(v2Payload);
-                accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
+                AccountStorageRepository.StoredSnapshot incrementalSnapshot =
+                        buildStoredSnapshotFromSnapshotOnly(snapshotPayload);
+                accountStorageRepository.persistIncrementalSnapshot(incrementalSnapshot);
                 AccountStorageRepository.StoredSnapshot cachedSnapshot =
                         accountStorageRepository.loadStoredSnapshot();
-                String resolvedRevision = resolveHistoryRevisionFromPayload(v2Payload, null);
+                String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, null);
                 cache = buildCache(cachedSnapshot, resolvedRevision);
             }
             nextDelayMs = resolveRefreshDelayMs();
@@ -409,7 +450,37 @@ public class AccountStatsPreloadManager {
         });
     }
 
-    // 将 v2 快照与历史载荷转换为本地统一存储结构。
+    // 将 stream 下发的账户运行态转换为本地统一运行态结构，不再通过 HTTP snapshot 再拼一次。
+    private AccountStorageRepository.StoredSnapshot buildStoredSnapshotFromPublishedRuntime(JSONObject runtimeSnapshot,
+                                                                                           long publishedAt) {
+        JSONObject runtimeMeta = runtimeSnapshot == null ? new JSONObject() : runtimeSnapshot.optJSONObject("accountMeta");
+        JSONArray positions = runtimeSnapshot == null ? new JSONArray() : runtimeSnapshot.optJSONArray("positions");
+        JSONArray orders = runtimeSnapshot == null ? new JSONArray() : runtimeSnapshot.optJSONArray("orders");
+        JSONArray overviewMetrics = runtimeSnapshot == null ? null : runtimeSnapshot.optJSONArray("overviewMetrics");
+        JSONArray curveIndicators = runtimeSnapshot == null ? null : runtimeSnapshot.optJSONArray("curveIndicators");
+        JSONArray statsMetrics = runtimeSnapshot == null ? null : runtimeSnapshot.optJSONArray("statsMetrics");
+        long updatedAt = publishedAt > 0L ? publishedAt : System.currentTimeMillis();
+        return new AccountStorageRepository.StoredSnapshot(
+                resolveRuntimeConnected(runtimeMeta),
+                optString(runtimeMeta, "login", ""),
+                optString(runtimeMeta, "server", ""),
+                resolveV2Source(runtimeMeta),
+                resolveGatewayEndpoint(),
+                updatedAt,
+                "",
+                System.currentTimeMillis(),
+                resolveHistoryRevisionFromPublishedRuntime(runtimeSnapshot),
+                parseMetrics(overviewMetrics),
+                new ArrayList<>(),
+                parseMetrics(curveIndicators),
+                parsePositionItems(positions, false),
+                parsePositionItems(orders, true),
+                new ArrayList<>(),
+                parseMetrics(statsMetrics)
+        );
+    }
+
+    // 将显式 snapshot + history 响应合并成本地完整快照，供账户页和交易确认强刷新复用。
     private AccountStorageRepository.StoredSnapshot buildStoredSnapshotFromV2(AccountSnapshotPayload snapshotPayload,
                                                                               AccountHistoryPayload historyPayload) {
         JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
@@ -417,41 +488,41 @@ public class AccountStatsPreloadManager {
         JSONArray orders = snapshotPayload == null ? new JSONArray() : snapshotPayload.getOrders();
         JSONArray trades = historyPayload == null ? new JSONArray() : historyPayload.getTrades();
         JSONArray curvePoints = historyPayload == null ? new JSONArray() : historyPayload.getCurvePoints();
-
-        List<TradeRecordItem> tradeItems = parseTradeItems(trades);
         return new AccountStorageRepository.StoredSnapshot(
-                true,
-                accountMeta.optString("login", ""),
-                accountMeta.optString("server", ""),
+                resolveRuntimeConnected(accountMeta),
+                optString(accountMeta, "login", ""),
+                optString(accountMeta, "server", ""),
                 resolveV2Source(accountMeta),
                 resolveGatewayEndpoint(),
                 resolveUpdatedAt(snapshotPayload, historyPayload),
                 "",
                 System.currentTimeMillis(),
+                resolveHistoryRevisionFromPayload(snapshotPayload, historyPayload),
                 parseMetrics(snapshotPayload == null ? null : snapshotPayload.getOverviewMetrics()),
                 parseCurvePoints(curvePoints),
                 parseMetrics(historyPayload == null ? null : historyPayload.getCurveIndicators()),
                 parsePositionItems(positions, false),
                 parsePositionItems(orders, true),
-                tradeItems,
+                parseTradeItems(trades),
                 parseMetrics(historyPayload == null ? null : historyPayload.getStatsMetrics())
         );
     }
 
-    // 将 v2 轻快照转换为只包含账户摘要、当前持仓和挂单的本地结构。
+    // 将显式 snapshot 响应转换为只更新运行态的本地结构，保留现有历史侧数据。
     private AccountStorageRepository.StoredSnapshot buildStoredSnapshotFromSnapshotOnly(AccountSnapshotPayload snapshotPayload) {
         JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
         JSONArray positions = snapshotPayload == null ? new JSONArray() : snapshotPayload.getPositions();
         JSONArray orders = snapshotPayload == null ? new JSONArray() : snapshotPayload.getOrders();
         return new AccountStorageRepository.StoredSnapshot(
-                true,
-                accountMeta.optString("login", ""),
-                accountMeta.optString("server", ""),
+                resolveRuntimeConnected(accountMeta),
+                optString(accountMeta, "login", ""),
+                optString(accountMeta, "server", ""),
                 resolveV2Source(accountMeta),
                 resolveGatewayEndpoint(),
                 resolveUpdatedAt(snapshotPayload, null),
                 "",
                 System.currentTimeMillis(),
+                resolveHistoryRevisionFromPayload(snapshotPayload, null),
                 parseMetrics(snapshotPayload == null ? null : snapshotPayload.getOverviewMetrics()),
                 new ArrayList<>(),
                 parseMetrics(snapshotPayload == null ? null : snapshotPayload.getCurveIndicators()),
@@ -462,8 +533,62 @@ public class AccountStatsPreloadManager {
         );
     }
 
+    // 运行态连接真值只认完整远程账号身份；明确 logged_out 时不能继续伪装成已连接。
+    private static boolean resolveRuntimeConnected(JSONObject runtimeMeta) {
+        String source = runtimeMeta == null ? "" : runtimeMeta.optString("source", "").trim();
+        if ("remote_logged_out".equals(source)) {
+            return false;
+        }
+        String login = runtimeMeta == null ? "" : runtimeMeta.optString("login", "").trim();
+        String server = runtimeMeta == null ? "" : runtimeMeta.optString("server", "").trim();
+        return !login.isEmpty() && !server.isEmpty();
+    }
+
+    // 将 history 结果合并进当前运行态，只替换历史、曲线与历史侧指标。
+    private AccountStorageRepository.StoredSnapshot buildStoredSnapshotFromHistoryOnly(AccountStorageRepository.StoredSnapshot runtimeSnapshot,
+                                                                                       AccountHistoryPayload historyPayload,
+                                                                                       String historyRevision) {
+        AccountStorageRepository.StoredSnapshot baseSnapshot = runtimeSnapshot == null
+                ? accountStorageRepository.loadStoredSnapshot()
+                : runtimeSnapshot;
+        JSONObject historyMeta = historyPayload == null ? new JSONObject() : historyPayload.getAccountMeta();
+        String account = resolveIdentityField(baseSnapshot == null ? "" : baseSnapshot.getAccount(), historyMeta, "login");
+        String server = resolveIdentityField(baseSnapshot == null ? "" : baseSnapshot.getServer(), historyMeta, "server");
+        String source = baseSnapshot == null || baseSnapshot.getSource().trim().isEmpty()
+                ? resolveV2Source(historyMeta)
+                : baseSnapshot.getSource();
+        String gateway = baseSnapshot == null || baseSnapshot.getGateway().trim().isEmpty()
+                ? resolveGatewayEndpoint()
+                : baseSnapshot.getGateway();
+        long updatedAt = historyPayload == null ? 0L : historyPayload.getServerTime();
+        if (updatedAt <= 0L && baseSnapshot != null) {
+            updatedAt = baseSnapshot.getUpdatedAt();
+        }
+        return new AccountStorageRepository.StoredSnapshot(
+                baseSnapshot != null && baseSnapshot.isConnected(),
+                account,
+                server,
+                source,
+                gateway,
+                updatedAt,
+                "",
+                System.currentTimeMillis(),
+                requireHistoryRevision(historyRevision),
+                parseMetrics(historyPayload == null ? null : historyPayload.getOverviewMetrics()),
+                parseCurvePoints(historyPayload == null ? null : historyPayload.getCurvePoints()),
+                parseMetrics(historyPayload == null ? null : historyPayload.getCurveIndicators()),
+                baseSnapshot == null ? new ArrayList<>() : baseSnapshot.getPositions(),
+                baseSnapshot == null ? new ArrayList<>() : baseSnapshot.getPendingOrders(),
+                parseTradeItems(historyPayload == null ? null : historyPayload.getTrades()),
+                parseMetrics(historyPayload == null ? null : historyPayload.getStatsMetrics())
+        );
+    }
+
     // 统一把存储快照转成页面缓存，避免同一份字段在多处重复拼装。
     private Cache buildCache(AccountStorageRepository.StoredSnapshot storedSnapshot, String historyRevision) {
+        String resolvedHistoryRevision = historyRevision == null || historyRevision.trim().isEmpty()
+                ? storedSnapshot.getHistoryRevision()
+                : historyRevision.trim();
         AccountSnapshot snapshot = new AccountSnapshot(
                 storedSnapshot.getOverviewMetrics(),
                 storedSnapshot.getCurvePoints(),
@@ -474,7 +599,7 @@ public class AccountStatsPreloadManager {
                 storedSnapshot.getStatsMetrics()
         );
         return new Cache(
-                true,
+                storedSnapshot.isConnected(),
                 snapshot,
                 storedSnapshot.getAccount(),
                 storedSnapshot.getServer(),
@@ -483,8 +608,32 @@ public class AccountStatsPreloadManager {
                 storedSnapshot.getUpdatedAt(),
                 "",
                 System.currentTimeMillis(),
-                historyRevision
+                resolvedHistoryRevision
         );
+    }
+
+    // 冷启动时如果内存缓存还没被 stream 填充，就先从本地已保存快照恢复页面。
+    private boolean hasStoredSnapshotContent(AccountStorageRepository.StoredSnapshot storedSnapshot) {
+        if (storedSnapshot == null) {
+            return false;
+        }
+        if (storedSnapshot.getUpdatedAt() > 0L || storedSnapshot.getFetchedAt() > 0L) {
+            return true;
+        }
+        if (!storedSnapshot.getOverviewMetrics().isEmpty()
+                || !storedSnapshot.getCurveIndicators().isEmpty()
+                || !storedSnapshot.getCurvePoints().isEmpty()
+                || !storedSnapshot.getPositions().isEmpty()
+                || !storedSnapshot.getPendingOrders().isEmpty()
+                || !storedSnapshot.getTrades().isEmpty()
+                || !storedSnapshot.getStatsMetrics().isEmpty()) {
+            return true;
+        }
+        return !(storedSnapshot.getAccount().trim().isEmpty()
+                && storedSnapshot.getServer().trim().isEmpty()
+                && storedSnapshot.getSource().trim().isEmpty()
+                && storedSnapshot.getGateway().trim().isEmpty()
+                && storedSnapshot.getError().trim().isEmpty());
     }
 
     // 统一构建失败缓存，失败时不再把旧快照继续伪装成当前真值。
@@ -526,13 +675,23 @@ public class AccountStatsPreloadManager {
         );
     }
 
-    // 读取服务端当前历史修订号，用它判断是否需要补拉全量历史。
+    // stream 运行态必须显式给出 historyRevision，缺失时直接暴露协议问题。
+    private String resolveHistoryRevisionFromPublishedRuntime(JSONObject runtimeSnapshot) {
+        JSONObject runtimeMeta = runtimeSnapshot == null ? new JSONObject() : runtimeSnapshot.optJSONObject("accountMeta");
+        String runtimeRevision = optString(runtimeMeta, "historyRevision", "");
+        if (!runtimeRevision.trim().isEmpty()) {
+            return runtimeRevision.trim();
+        }
+        throw new IllegalStateException("published account runtime missing historyRevision");
+    }
+
+    // 主动 snapshot 刷新时，historyRevision 只认 accountMeta 里的显式字段。
     private String resolveRemoteHistoryRevision(AccountSnapshotPayload snapshotPayload) {
         JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
         return optString(accountMeta, "historyRevision", "");
     }
 
-    // 只接受服务端显式 historyRevision；缺失即视为协议断裂。
+    // 显式 snapshot/history 刷新只接受服务端给出的 historyRevision，缺失视为协议错误。
     private String resolveHistoryRevisionFromPayload(AccountSnapshotPayload snapshotPayload,
                                                      AccountHistoryPayload historyPayload) {
         JSONObject snapshotMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
@@ -541,6 +700,15 @@ public class AccountStatsPreloadManager {
             return snapshotRevision.trim();
         }
         throw new IllegalStateException("v2 account snapshot missing historyRevision");
+    }
+
+    // history revision 真值来自 stream revisions，空值时直接视为协议断裂。
+    private String requireHistoryRevision(String historyRevision) {
+        String safeRevision = historyRevision == null ? "" : historyRevision.trim();
+        if (!safeRevision.isEmpty()) {
+            return safeRevision;
+        }
+        throw new IllegalStateException("v2 account history refresh missing historyRevision");
     }
 
     // 解析服务端直接返回的展示指标，不再本地补算账户真值。
@@ -573,10 +741,15 @@ public class AccountStatsPreloadManager {
             if (item == null) {
                 continue;
             }
+            String tradeSymbol = requireCanonicalTradeSymbol(item, pending ? "v2 pending order" : "v2 position");
+            String productName = requireCanonicalProductName(
+                    item,
+                    tradeSymbol,
+                    pending ? "v2 pending order" : "v2 position"
+            );
             items.add(new PositionItem(
-                    optString(item, "productName",
-                            optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", "")))),
-                    optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", ""))),
+                    productName,
+                    tradeSymbol,
                     optString(item, "side", ""),
                     optLong(item, "positionTicket", 0L),
                     optLong(item, "orderId", 0L),
@@ -611,11 +784,12 @@ public class AccountStatsPreloadManager {
             if (item == null) {
                 continue;
             }
+            String tradeSymbol = requireCanonicalTradeSymbol(item, "v2 trade");
+            String productName = requireCanonicalProductName(item, tradeSymbol, "v2 trade");
             items.add(new TradeRecordItem(
                     optLong(item, "timestamp", 0L),
-                    optString(item, "productName",
-                            optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", "")))),
-                    optString(item, "tradeSymbol", optString(item, "code", optString(item, "marketSymbol", ""))),
+                    productName,
+                    tradeSymbol,
                     optString(item, "side", ""),
                     optDouble(item, "price"),
                     optDouble(item, "quantity"),
@@ -658,7 +832,7 @@ public class AccountStatsPreloadManager {
         return items;
     }
 
-    // 统一读取 v2 响应里的更新时间，优先取账户快照时间。
+    // 显式刷新优先使用 snapshot 时间，没有时再回退 history 时间。
     private long resolveUpdatedAt(AccountSnapshotPayload snapshotPayload, AccountHistoryPayload historyPayload) {
         long snapshotTime = snapshotPayload == null ? 0L : snapshotPayload.getServerTime();
         if (snapshotTime > 0L) {
@@ -689,6 +863,15 @@ public class AccountStatsPreloadManager {
         return raw == null || raw.trim().isEmpty() ? "V2网关" : raw.trim();
     }
 
+    // 账号与服务器优先沿用当前运行态真值，缺失时才补本次 history meta。
+    private String resolveIdentityField(String currentValue, JSONObject meta, String key) {
+        String normalizedCurrent = currentValue == null ? "" : currentValue.trim();
+        if (!normalizedCurrent.isEmpty()) {
+            return normalizedCurrent;
+        }
+        return optString(meta, key, "");
+    }
+
     // 读取字符串字段，空值时回退到默认值。
     private String optString(JSONObject item, String key, String fallback) {
         if (item == null || key == null || key.trim().isEmpty() || !item.has(key)) {
@@ -696,6 +879,27 @@ public class AccountStatsPreloadManager {
         }
         String value = item.optString(key, "").trim();
         return value.isEmpty() ? fallback : value;
+    }
+
+    // 主链协议字段必须显式提供 tradeSymbol，不能再从其他字段兜底拼装。
+    private String requireCanonicalTradeSymbol(JSONObject item, String context) {
+        String tradeSymbol = optString(item, "tradeSymbol", "").trim();
+        if (tradeSymbol.isEmpty()) {
+            throw new IllegalStateException(context + " missing tradeSymbol");
+        }
+        return tradeSymbol;
+    }
+
+    // 展示名称必须与 canonical tradeSymbol 对齐，避免同一产品多口径并存。
+    private String requireCanonicalProductName(JSONObject item, String tradeSymbol, String context) {
+        String productName = optString(item, "productName", "").trim();
+        if (productName.isEmpty()) {
+            throw new IllegalStateException(context + " missing productName");
+        }
+        if (!productName.equals(tradeSymbol)) {
+            throw new IllegalStateException(context + " productName must equal tradeSymbol");
+        }
+        return productName;
     }
 
     // 读取浮点字段，缺失或非法时返回 0。

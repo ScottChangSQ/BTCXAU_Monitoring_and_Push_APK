@@ -95,6 +95,21 @@ class V2SyncPipelineTests(unittest.TestCase):
     def setUp(self):
         if hasattr(server_v2, "v2_sync_state"):
             server_v2.v2_sync_state.clear()
+        if hasattr(server_v2, "v2_bus_state"):
+            server_v2.v2_bus_state.clear()
+            server_v2.v2_bus_state.update({
+                "busSeq": 0,
+                "publishedAt": 0,
+                "revisions": {
+                    "marketRevision": "",
+                    "accountRuntimeRevision": "",
+                    "accountHistoryRevision": "",
+                    "abnormalRevision": "",
+                },
+                "event": None,
+                "runtimeSnapshot": None,
+                "abnormalSnapshot": None,
+            })
 
     @staticmethod
     def _build_stub_snapshot(position_count: int = 0, order_count: int = 0):
@@ -138,88 +153,85 @@ class V2SyncPipelineTests(unittest.TestCase):
             "statsMetrics": [],
         }
 
-    def test_build_delta_payload_contains_market_and_account_sections(self):
-        payload = server_v2._build_v2_delta_payload(
-            market_delta=[{"type": "marketClosedCandle"}],
-            account_delta=[{"type": "accountSnapshotChanged"}],
-            server_time=404,
-        )
+    def test_stream_event_should_read_published_bus_state_without_runtime_rebuild(self):
+        calls = {"runtime": 0}
 
-        self.assertEqual(404, payload["serverTime"])
-        self.assertEqual([{"type": "marketClosedCandle"}], payload["marketDelta"])
-        self.assertEqual([{"type": "accountSnapshotChanged"}], payload["accountDelta"])
-        self.assertIn("nextSyncToken", payload)
+        def fake_runtime_snapshot(server_time):
+            calls["runtime"] += 1
+            return {
+                "digest": "runtime-digest",
+                "market": {"symbolStates": []},
+                "account": {"positions": []},
+            }
 
-    def test_build_ws_message_has_type_and_sync_token(self):
-        message = server_v2._build_v2_ws_message(
-            message_type="marketPatch",
-            payload={"symbol": "BTCUSDT"},
-            sync_token="abc",
-            server_time=505,
-        )
+        original_runtime_builder = getattr(server_v2, "_build_v2_sync_runtime_snapshot")
+        server_v2._build_v2_sync_runtime_snapshot = fake_runtime_snapshot
+        try:
+            server_v2.v2_bus_state = {
+                "busSeq": 3,
+                "publishedAt": 1000,
+                "revisions": {
+                    "marketRevision": "market-3",
+                    "accountRuntimeRevision": "account-7",
+                    "accountHistoryRevision": "history-9",
+                    "abnormalRevision": "abnormal-2",
+                },
+                "event": {
+                    "type": "syncEvent",
+                    "busSeq": 3,
+                    "publishedAt": 1000,
+                    "revisions": {
+                        "marketRevision": "market-3",
+                        "accountRuntimeRevision": "account-7",
+                        "accountHistoryRevision": "history-9",
+                        "abnormalRevision": "abnormal-2",
+                    },
+                    "changes": {
+                        "market": {"snapshot": {"symbolStates": []}},
+                    },
+                },
+            }
 
-        self.assertEqual("marketPatch", message["type"])
-        self.assertEqual({"symbol": "BTCUSDT"}, message["payload"])
-        self.assertEqual("abc", message["syncToken"])
-        self.assertEqual(505, message["serverTime"])
+            payload = server_v2._build_v2_stream_event_for_client(last_bus_seq=2)
+        finally:
+            server_v2._build_v2_sync_runtime_snapshot = original_runtime_builder
 
-    def test_sync_delta_bootstrap_returns_full_refresh_snapshot(self):
-        snapshot = self._build_stub_snapshot(position_count=1, order_count=1)
-        market = {
-            "source": "binance",
-            "symbols": ["BTCUSDT", "XAUUSDT"],
-            "restUpstream": "https://fapi.binance.com",
-            "wsUpstream": "wss://fstream.binance.com",
+        self.assertEqual(3, payload["busSeq"])
+        self.assertEqual("syncEvent", payload["type"])
+        self.assertEqual("market-3", payload["revisions"]["marketRevision"])
+        self.assertEqual(0, calls["runtime"])
+
+    def test_stream_event_should_emit_heartbeat_when_bus_seq_unchanged(self):
+        server_v2.v2_bus_state = {
+            "busSeq": 5,
+            "publishedAt": 2000,
+            "revisions": {
+                "marketRevision": "market-5",
+                "accountRuntimeRevision": "account-5",
+                "accountHistoryRevision": "history-5",
+                "abnormalRevision": "abnormal-5",
+            },
+            "event": {
+                "type": "syncEvent",
+                "busSeq": 5,
+                "publishedAt": 2000,
+                "revisions": {
+                    "marketRevision": "market-5",
+                    "accountRuntimeRevision": "account-5",
+                    "accountHistoryRevision": "history-5",
+                    "abnormalRevision": "abnormal-5",
+                },
+                "changes": {
+                    "accountRuntime": {"snapshot": {"positions": []}},
+                },
+            },
         }
-        with mock.patch.object(
-            server_v2.session_manager,
-            "build_status_payload",
-            return_value={
-                "state": "activated",
-                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
-                "savedAccounts": [],
-                "savedAccountCount": 0,
-            },
-        ), mock.patch.object(server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot), mock.patch.object(
-            server_v2, "_build_v2_market_section", return_value=market
-        ):
-            payload = server_v2.v2_sync_delta(syncToken="")
 
-        self.assertTrue(payload["fullRefresh"]["required"])
-        self.assertEqual("bootstrap", payload["fullRefresh"]["reason"])
-        self.assertEqual(market, payload["fullRefresh"]["snapshot"]["market"])
-        self.assertEqual(1, payload["summary"]["positionCount"])
-        self.assertEqual(1, payload["summary"]["orderCount"])
-        self.assertEqual([], payload["marketDelta"])
-        self.assertEqual([], payload["accountDelta"])
-        self.assertTrue(payload["nextSyncToken"])
+        payload = server_v2._build_v2_stream_event_for_client(last_bus_seq=5)
 
-    def test_sync_delta_with_previous_token_returns_account_delta(self):
-        first_snapshot = self._build_stub_snapshot(position_count=0, order_count=0)
-        second_snapshot = self._build_stub_snapshot(position_count=1, order_count=0)
-        with mock.patch.object(
-            server_v2.session_manager,
-            "build_status_payload",
-            return_value={
-                "state": "activated",
-                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
-                "savedAccounts": [],
-                "savedAccountCount": 0,
-            },
-        ), mock.patch.object(
-            server_v2,
-            "_build_account_light_snapshot_with_cache",
-            side_effect=[first_snapshot, second_snapshot],
-        ):
-            bootstrap = server_v2.v2_sync_delta(syncToken="")
-            payload = server_v2.v2_sync_delta(syncToken=bootstrap["nextSyncToken"])
-
-        self.assertFalse(payload["fullRefresh"]["required"])
-        self.assertFalse(payload["unchanged"])
-        self.assertEqual(1, len(payload["accountDelta"]))
-        self.assertEqual("accountSnapshotChanged", payload["accountDelta"][0]["type"])
-        self.assertEqual(1, len(payload["accountDelta"][0]["positions"]["upsert"]))
-        self.assertNotIn("refreshHint", payload["accountDelta"][0])
+        self.assertEqual("heartbeat", payload["type"])
+        self.assertEqual(5, payload["busSeq"])
+        self.assertEqual({}, payload["changes"])
 
     def test_runtime_snapshot_should_not_touch_mt5_when_session_logged_out(self):
         with mock.patch.object(
@@ -257,6 +269,13 @@ class V2SyncPipelineTests(unittest.TestCase):
 
     def test_v2_stream_sends_bootstrap_then_non_heartbeat_message(self):
         snapshot = self._build_stub_snapshot(position_count=1, order_count=1)
+        market = {
+            "source": "binance",
+            "symbols": ["BTCUSDT", "XAUUSDT"],
+            "symbolStates": [],
+            "restUpstream": "https://fapi.binance.com",
+            "wsUpstream": "wss://fstream.binance.com",
+        }
 
         class _FakeClient:
             def __init__(self):
@@ -278,19 +297,41 @@ class V2SyncPipelineTests(unittest.TestCase):
             return None
 
         fake_client = _FakeClient()
-        with mock.patch.object(server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot), mock.patch.object(
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "activated",
+                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
+            server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot
+        ), mock.patch.object(
+            server_v2, "_build_v2_market_section", return_value=market
+        ), mock.patch.object(
             server_v2.asyncio, "sleep", new=_fast_sleep
         ):
+            server_v2._v2_bus_publish_current_state()
             asyncio.run(server_v2.v2_stream(fake_client))
 
         self.assertTrue(fake_client.accepted)
         self.assertGreaterEqual(len(fake_client.messages), 2)
         self.assertEqual("syncBootstrap", fake_client.messages[0]["type"])
-        self.assertIn("fullRefresh", fake_client.messages[0]["payload"])
-        self.assertNotEqual("heartbeat", fake_client.messages[1]["type"])
+        self.assertIn("changes", fake_client.messages[0])
+        self.assertIn("market", fake_client.messages[0]["changes"])
+        self.assertEqual("heartbeat", fake_client.messages[1]["type"])
 
-    def test_v2_stream_should_offload_blocking_snapshot_build_to_worker_thread(self):
+    def test_v2_stream_should_consume_published_bus_without_to_thread_snapshot_build(self):
         snapshot = self._build_stub_snapshot(position_count=1, order_count=1)
+        market = {
+            "source": "binance",
+            "symbols": ["BTCUSDT", "XAUUSDT"],
+            "symbolStates": [],
+            "restUpstream": "https://fapi.binance.com",
+            "wsUpstream": "wss://fstream.binance.com",
+        }
         to_thread_calls = []
 
         class _FakeClient:
@@ -307,13 +348,26 @@ class V2SyncPipelineTests(unittest.TestCase):
             to_thread_calls.append((func, args, kwargs))
             return func(*args, **kwargs)
 
-        with mock.patch.object(server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot), mock.patch.object(
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "activated",
+                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
+            server_v2, "_build_account_light_snapshot_with_cache", return_value=snapshot
+        ), mock.patch.object(
+            server_v2, "_build_v2_market_section", return_value=market
+        ), mock.patch.object(
             server_v2.asyncio, "to_thread", new=_fake_to_thread
         ):
+            server_v2._v2_bus_publish_current_state()
             asyncio.run(server_v2.v2_stream(_FakeClient()))
 
-        self.assertEqual(1, len(to_thread_calls))
-        self.assertIs(server_v2._build_v2_sync_delta_response, to_thread_calls[0][0])
+        self.assertEqual(0, len(to_thread_calls))
 
     def test_configure_windows_event_loop_policy_should_switch_to_selector_on_windows(self):
         class _FakeSelectorPolicy:

@@ -43,6 +43,10 @@ public class MainViewModel extends AndroidViewModel {
         return repository.getDisplayKlines();
     }
 
+    public LiveData<Map<String, KlineData>> getDisplayOverviewKlines() {
+        return repository.getDisplayOverviewKlines();
+    }
+
     public LiveData<List<AbnormalRecord>> getRecords() {
         return repository.getRecords();
     }

@@ -20,10 +20,12 @@ public class MonitorRepositoryDisplaySnapshotSourceTest {
 
         assertTrue(source.contains("getDisplayPrices()"));
         assertTrue(source.contains("getDisplayKlines()"));
+        assertTrue(source.contains("getDisplayOverviewKlines()"));
         assertTrue(source.contains("updateDisplayPrice("));
         assertTrue(source.contains("updateDisplayKline("));
         assertTrue(source.contains("getDisplayPriceSnapshot()"));
         assertTrue(source.contains("getDisplayKlineSnapshot()"));
+        assertTrue(source.contains("getDisplayOverviewKlineSnapshot()"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

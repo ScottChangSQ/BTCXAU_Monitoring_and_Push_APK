@@ -259,7 +259,8 @@ public class KlineChartView extends View {
     private float candleGap;
     private float minWidth;
     private float maxWidth;
-    private static final float DEFAULT_CANDLE_WIDTH_DP = 1.8f;
+    private static final float DEFAULT_CANDLE_WIDTH_DP = 0.96f;
+    private static final float DEFAULT_CANDLE_GAP_DP = 0.7067f;
     // 图表右侧固定保留绘图区 1/7 的空白，避免最新 K 线贴边。
     private static final float RIGHT_BLANK_RATIO = 1f / 7f;
     private float offsetCandles;
@@ -292,9 +293,6 @@ public class KlineChartView extends View {
     private boolean showAggregateCostAnnotation = true;
     private String highlightedAnnotationGroupId = "";
     private boolean crosshairOnCandle = true;
-    private float verticalScale = 1f;
-    private static final float MIN_VERTICAL_SCALE = 0.55f;
-    private static final float MAX_VERTICAL_SCALE = 3.6f;
 
     private boolean requestingMore;
     private long lastRequestedBefore = Long.MIN_VALUE;
@@ -327,8 +325,8 @@ public class KlineChartView extends View {
         super(context, attrs, defStyleAttr);
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         initPaints();
-        candleWidth = dp(1.8f);
-        candleGap = dp(0.7f);
+        candleWidth = dp(DEFAULT_CANDLE_WIDTH_DP);
+        candleGap = dp(DEFAULT_CANDLE_GAP_DP);
         minWidth = dp(0.15f);
         maxWidth = dp(24f);
 
@@ -900,7 +898,7 @@ public class KlineChartView extends View {
         visiblePriceMax = max + pad;
         double centerPrice = (visiblePriceMin + visiblePriceMax) * 0.5d;
         double halfRange = Math.max(1e-6d, (visiblePriceMax - visiblePriceMin) * 0.5d);
-        double scaledHalf = halfRange / Math.max(1e-6f, verticalScale);
+        double scaledHalf = halfRange;
         visiblePriceMin = centerPrice - scaledHalf;
         visiblePriceMax = centerPrice + scaledHalf;
         if (candleHighMax > -Double.MAX_VALUE) {
@@ -2237,20 +2235,61 @@ public class KlineChartView extends View {
         }
         int last = candles.size() - 1;
         long firstTime = candles.get(0).getOpenTime();
-        long lastTime = candles.get(last).getOpenTime();
-        if (openTime <= firstTime || openTime >= lastTime) {
-            float overflowIndex = HistoricalTradeViewportHelper.resolveOverflowRawIndex(
-                    openTime,
-                    firstTime,
-                    lastTime,
-                    last,
-                    estimateCandleIntervalMs()
-            );
-            if (!Float.isNaN(overflowIndex)) {
-                return overflowIndex;
+        long intervalMs = estimateCandleIntervalMs();
+        long lastVisibleExclusiveTime = resolveHistoricalTradeLastVisibleTime();
+        float overflowIndex = HistoricalTradeViewportHelper.resolveOverflowRawIndexFromWindow(
+                openTime,
+                firstTime,
+                lastVisibleExclusiveTime,
+                last,
+                intervalMs
+        );
+        if (!Float.isNaN(overflowIndex)) {
+            return overflowIndex;
+        }
+        int bucketIndex = floorIndexByOpenTime(openTime);
+        if (bucketIndex < 0 || bucketIndex >= candles.size()) {
+            return Float.NaN;
+        }
+        CandleEntry bucket = candles.get(bucketIndex);
+        long bucketOpenTime = bucket == null ? 0L : bucket.getOpenTime();
+        long bucketCloseExclusiveTime = resolveHistoricalBucketCloseExclusiveTime(bucketIndex, lastVisibleExclusiveTime);
+        return HistoricalTradeViewportHelper.resolveTimeInsideBucketRawIndex(
+                bucketIndex,
+                bucketOpenTime,
+                bucketCloseExclusiveTime,
+                openTime
+        );
+    }
+
+    // 统一取历史成交允许映射到的最后一个时间边界，末端使用 K 线时间桶的右边界。
+    private long resolveHistoricalTradeLastVisibleTime() {
+        if (candles.isEmpty()) {
+            return 0L;
+        }
+        int lastIndex = candles.size() - 1;
+        CandleEntry lastCandle = candles.get(lastIndex);
+        long lastOpenTime = lastCandle == null ? 0L : lastCandle.getOpenTime();
+        long lastCloseTime = lastCandle == null ? 0L : lastCandle.getCloseTime();
+        long intervalMs = estimateCandleIntervalMs();
+        long fallbackExclusiveTime = lastOpenTime + intervalMs;
+        long candleCloseExclusiveTime = lastCloseTime > 0L ? lastCloseTime + 1L : 0L;
+        return Math.max(fallbackExclusiveTime, candleCloseExclusiveTime);
+    }
+
+    // 每根 K 线的时间槽位右边界优先取下一根开盘时间，最后一根取最后可见时间边界。
+    private long resolveHistoricalBucketCloseExclusiveTime(int bucketIndex, long lastVisibleExclusiveTime) {
+        if (bucketIndex < 0 || bucketIndex >= candles.size()) {
+            return 0L;
+        }
+        if (bucketIndex < candles.size() - 1) {
+            CandleEntry nextCandle = candles.get(bucketIndex + 1);
+            long nextOpenTime = nextCandle == null ? 0L : nextCandle.getOpenTime();
+            if (nextOpenTime > 0L) {
+                return nextOpenTime;
             }
         }
-        return rawIndexByOpenTime(openTime);
+        return lastVisibleExclusiveTime;
     }
 
     private float rawIndexByOpenTime(long openTime) {
@@ -2602,7 +2641,7 @@ public class KlineChartView extends View {
     // 将视口恢复到默认状态，供首次进入、切换标的和切换周期时复位。
     private void resetViewportToDefault() {
         candleWidth = dp(DEFAULT_CANDLE_WIDTH_DP);
-        verticalScale = 1f;
+        candleGap = dp(DEFAULT_CANDLE_GAP_DP);
         offsetCandles = 0f;
     }
 
@@ -2652,15 +2691,6 @@ public class KlineChartView extends View {
             float absX = Math.abs(spanXDelta);
             float absY = Math.abs(spanYDelta);
             ChartScaleGestureResolver.Mode scaleMode = ChartScaleGestureResolver.resolveMode(absX, absY);
-            float rawYScale = detector.getPreviousSpanY() <= 1e-3f
-                    ? detector.getScaleFactor()
-                    : detector.getCurrentSpanY() / detector.getPreviousSpanY();
-            float smoothYScale = 1f + (rawYScale - 1f) * 0.5f;
-            if (scaleMode == ChartScaleGestureResolver.Mode.VERTICAL) {
-                verticalScale = clamp(verticalScale * smoothYScale, MIN_VERTICAL_SCALE, MAX_VERTICAL_SCALE);
-                requestFrame();
-                return true;
-            }
             float beforeSlot = slot();
             int focusIndex = xToIndex(detector.getFocusX(), visibleEndFloat);
             float rawScale = scaleMode == ChartScaleGestureResolver.Mode.HORIZONTAL
@@ -2669,9 +2699,6 @@ public class KlineChartView extends View {
                     : detector.getCurrentSpanX() / detector.getPreviousSpanX())
                     : detector.getScaleFactor();
             float smoothScale = 1f + (rawScale - 1f) * 0.6f;
-            if (scaleMode == ChartScaleGestureResolver.Mode.DIAGONAL) {
-                verticalScale = clamp(verticalScale * smoothYScale, MIN_VERTICAL_SCALE, MAX_VERTICAL_SCALE);
-            }
             candleWidth = clamp(candleWidth * smoothScale, minWidth, maxWidth);
             float afterSlot = slot();
             if (focusIndex >= 0) {

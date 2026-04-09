@@ -34,6 +34,14 @@
         android:theme="@style/Theme.BinanceMonitor">
 
         <activity
+            android:name=".ui.launch.OverlayLaunchBridgeActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.BinanceMonitor.NoDisplay" />
+
+        <activity
             android:name=".ui.log.LogActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

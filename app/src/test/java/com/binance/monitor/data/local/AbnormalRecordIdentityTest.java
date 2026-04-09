@@ -1,5 +1,5 @@
 /*
- * 异常记录 ID 测试，确保本地补判和服务端回补使用同一套稳定标识。
+ * 异常记录 ID 测试，确保异常记录在不同入口下仍使用同一套稳定标识。
  */
 package com.binance.monitor.data.local;
 

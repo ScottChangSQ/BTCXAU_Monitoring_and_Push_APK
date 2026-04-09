@@ -1,5 +1,5 @@
 /*
- * 悬浮窗文案格式测试，确保产品盈亏改成“产品（盈亏）”的一体化显示。
+ * 悬浮窗文案格式测试，确保产品名称和产品盈亏按两行稳定展示。
  */
 package com.binance.monitor.ui.floating;
 
@@ -13,21 +13,21 @@ public class FloatingWindowTextFormatterTest {
     public void formatCardTitleShouldCombineAssetAndPnl() {
         String title = FloatingWindowTextFormatter.formatCardTitle("BTC", -1250d, false);
 
-        assertEquals("BTC（-$1,250.0）", title);
+        assertEquals("BTC\n-$1,250.0", title);
     }
 
     @Test
     public void formatCardTitleShouldMaskPnlOnly() {
         String title = FloatingWindowTextFormatter.formatCardTitle("XAU", 88d, true);
 
-        assertEquals("XAU（*）", title);
+        assertEquals("XAU\n*", title);
     }
 
     @Test
     public void formatCardTitleShouldShowDashWhenPnlIsZero() {
         String title = FloatingWindowTextFormatter.formatCardTitle("BTC", 0d, false);
 
-        assertEquals("BTC（$-）", title);
+        assertEquals("BTC\n$-", title);
     }
 
     @Test

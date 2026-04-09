@@ -281,13 +281,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String lastTradeVisibilitySnapshotSignature = "";
     private String lastTradeFilterVisibilitySignature = "";
     private String lastAppliedSnapshotSignature = "";
+    private String lastOverviewTitleSignature = "";
+    private String lastOverviewMetaText = "";
     private long dynamicRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private long scheduledRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private int unchangedRefreshStreak = 0;
     private boolean draggingTradeScrollBar;
     private final Runnable hideLoginSuccessBannerRunnable = this::hideLoginSuccessBannerNow;
     private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {
-        if (cache == null || isFinishing() || isDestroyed() || loading) {
+        if (cache == null || isFinishing() || isDestroyed()) {
             return;
         }
         applyPreloadedCacheIfAvailable();
@@ -314,6 +316,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         binding = ActivityAccountStatsBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        ensureMonitorServiceStarted();
 
         preloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
         accountStorageRepository = new AccountStorageRepository(getApplicationContext());
@@ -353,22 +356,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         bindLocalMeta();
         applyPaletteStyles();
         applyPrivacyMaskState();
-        applyPreloadedCacheIfAvailable();
         snapshotLoopEnabled = true;
-        if (shouldBootstrapRemoteSession()) {
-            refreshRemoteSessionStatus(true);
-        } else if (userLoggedIn) {
-            requestForegroundEntrySnapshot();
-        } else {
-            clearScheduledRefresh();
-            setConnectionStatus(false);
-        }
+        enterAccountScreen(true);
         startOverviewHeaderTicker();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        ensureMonitorServiceStarted();
         applyPaletteStyles();
         applyPrivacyMaskState();
         if (preloadManager != null) {
@@ -376,13 +372,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             preloadManager.setLiveScreenActive(true);
         }
         snapshotLoopEnabled = true;
-        if (shouldBootstrapRemoteSession()) {
-            refreshRemoteSessionStatus(true);
-        } else if (userLoggedIn) {
-            requestForegroundEntrySnapshot();
-        } else {
-            clearScheduledRefresh();
-        }
+        enterAccountScreen(false);
         startOverviewHeaderTicker();
     }
 
@@ -1159,6 +1149,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         sessionExecutor.execute(() -> {
             try {
+                sessionClient.resetTransport();
                 SessionStatusPayload status = sessionClient.fetchStatus();
                 runOnUiThread(() -> applyRemoteSessionStatus(status, requestSnapshotAfter));
             } catch (Exception ex) {
@@ -2402,6 +2393,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void bindLocalMeta() {
+        AccountStatsPreloadManager.Cache cache = resolveCurrentSessionCache();
+        if (cache != null) {
+            applyCacheMeta(cache);
+            return;
+        }
         String defaultAccount = activeSessionAccount != null && !trim(activeSessionAccount.getLogin()).isEmpty()
                 ? trim(activeSessionAccount.getLogin())
                 : loginAccountInput;
@@ -2431,23 +2427,81 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             applyLoggedOutEmptyState();
             return;
         }
-        if (preloadManager == null) {
-            return;
-        }
-        AccountStatsPreloadManager.Cache cache = preloadManager.getLatestCache();
+        AccountStatsPreloadManager.Cache cache = resolveCurrentSessionCache();
         if (cache == null || cache.getSnapshot() == null) {
-            return;
-        }
-        if (!isPreloadedCacheForCurrentSession(cache)) {
-            return;
-        }
-        if (System.currentTimeMillis() - cache.getFetchedAt() > AppConstants.ACCOUNT_REFRESH_INTERVAL_MS * 3L) {
             return;
         }
         long updateAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
         if (isOlderThanCurrentSnapshot(updateAt)) {
             return;
         }
+        applyCacheMeta(cache);
+        updateOverviewHeader();
+        logConnectionEvent(cache.isConnected());
+        String cacheSignature = buildRefreshSignature(
+                cache.getSnapshot(),
+                cache.getHistoryRevision(),
+                cache.isConnected(),
+                connectedAccount,
+                connectedServer
+        );
+        if (cacheSignature.equals(lastAppliedSnapshotSignature)) {
+            return;
+        }
+        applySnapshot(cache.getSnapshot(), cache.isConnected());
+        lastAppliedSnapshotSignature = cacheSignature;
+    }
+
+    // 账户页进入前台时只消费已有会话真值与缓存；只有当前页确实没有可渲染状态时才重新 bootstrap。
+    private void enterAccountScreen(boolean coldStart) {
+        applyPreloadedCacheIfAvailable();
+        if (!userLoggedIn) {
+            clearScheduledRefresh();
+            setConnectionStatus(false);
+            updateOverviewHeader();
+            return;
+        }
+        if (hasRenderableCurrentSessionState()) {
+            if (shouldKeepRefreshLoop()) {
+                scheduleNextSnapshot(dynamicRefreshDelayMs);
+            }
+            updateOverviewHeader();
+            return;
+        }
+        if (!coldStart && loading) {
+            return;
+        }
+        if (shouldBootstrapRemoteSession()) {
+            refreshRemoteSessionStatus(true);
+            return;
+        }
+        requestForegroundEntrySnapshot();
+    }
+
+    // 只要当前页已有本账户可渲染快照，就不应把切页/回前台误当成一次新的页面 bootstrap。
+    private boolean hasRenderableCurrentSessionState() {
+        if (!lastAppliedSnapshotSignature.isEmpty()) {
+            return true;
+        }
+        AccountStatsPreloadManager.Cache cache = resolveCurrentSessionCache();
+        return cache != null && cache.getSnapshot() != null;
+    }
+
+    // 统一解析当前活动远程会话可消费的缓存，避免页面不同入口各自重复判断。
+    private AccountStatsPreloadManager.Cache resolveCurrentSessionCache() {
+        if (preloadManager == null) {
+            return null;
+        }
+        AccountStatsPreloadManager.Cache cache = preloadManager.getLatestCache();
+        if (cache == null || !isPreloadedCacheForCurrentSession(cache)) {
+            return null;
+        }
+        return cache;
+    }
+
+    // 当前页首帧先消费缓存元数据，避免先把连接态写成未连接再被真实快照纠正。
+    private void applyCacheMeta(@NonNull AccountStatsPreloadManager.Cache cache) {
+        long updateAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
         connectedAccount = cache.getAccount().isEmpty() ? ACCOUNT : cache.getAccount();
         connectedAccountName = connectedAccount;
         connectedServer = cache.getServer().isEmpty() ? SERVER : cache.getServer();
@@ -2456,18 +2510,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedUpdateAtMs = updateAt;
         connectedUpdate = FormatUtils.formatDateTime(updateAt);
         connectedError = cache.getError();
-
         setConnectionStatus(cache.isConnected());
-        updateOverviewHeader();
-        logConnectionEvent(cache.isConnected());
-        applySnapshot(cache.getSnapshot(), cache.isConnected());
-        lastAppliedSnapshotSignature = buildRefreshSignature(
-                cache.getSnapshot(),
-                cache.getHistoryRevision(),
-                cache.isConnected(),
-                connectedAccount,
-                connectedServer
-        );
     }
 
     // 只消费当前活动远程会话对应的预加载缓存，避免旧账号缓存短暂回灌到页面。
@@ -2510,25 +2553,39 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                         ACCOUNT
                 ),
                 masked);
-        if (!masked && !connectedLeverageText.isEmpty()) {
-            String leverageText = "（" + connectedLeverageText + "）";
-            SpannableStringBuilder builder = new SpannableStringBuilder(title).append(leverageText);
-            int leverageStart = builder.length() - leverageText.length();
-            builder.setSpan(new AbsoluteSizeSpan(12, true),
-                    leverageStart,
-                    builder.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            builder.setSpan(new ForegroundColorSpan(ContextCompat.getColor(this, R.color.text_secondary)),
-                    leverageStart,
-                    builder.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            binding.tvAccountOverviewTitle.setText(builder);
-        } else {
-            binding.tvAccountOverviewTitle.setText(title);
+        String titleSignature = disconnected
+                + "|"
+                + masked
+                + "|"
+                + title
+                + "|"
+                + connectedLeverageText;
+        if (!titleSignature.equals(lastOverviewTitleSignature)) {
+            if (!masked && !connectedLeverageText.isEmpty()) {
+                String leverageText = "（" + connectedLeverageText + "）";
+                SpannableStringBuilder builder = new SpannableStringBuilder(title).append(leverageText);
+                int leverageStart = builder.length() - leverageText.length();
+                builder.setSpan(new AbsoluteSizeSpan(12, true),
+                        leverageStart,
+                        builder.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                builder.setSpan(new ForegroundColorSpan(ContextCompat.getColor(this, R.color.text_secondary)),
+                        leverageStart,
+                        builder.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                binding.tvAccountOverviewTitle.setText(builder);
+            } else {
+                binding.tvAccountOverviewTitle.setText(title);
+            }
+            lastOverviewTitleSignature = titleSignature;
         }
-        binding.tvAccountMeta.setText(disconnected
+        String metaText = disconnected
                 ? "更新时间 --"
-                : AccountStatsPrivacyFormatter.formatRefreshMeta(formatRefreshMetaText(), masked));
+                : AccountStatsPrivacyFormatter.formatRefreshMeta(formatRefreshMetaText(), masked);
+        if (!metaText.equals(lastOverviewMetaText)) {
+            binding.tvAccountMeta.setText(metaText);
+            lastOverviewMetaText = metaText;
+        }
     }
 
     private boolean isAccountSessionReady() {
@@ -2714,8 +2771,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                         && "登录校验失败".equals(finalSource)) {
                     remoteSessionCoordinator.markSyncFailed(finalError);
                 }
-                if (sessionActivatedNow
-                        || AccountConnectionTransitionHelper.shouldShowLoginSuccess(previousConnected, finalConnected, userLoggedIn)) {
+                if (sessionActivatedNow) {
                     showLoginSuccessBanner();
                 }
                 updateOverviewHeader();
@@ -2791,6 +2847,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         appendMetricsSignature(builder, snapshot.getOverviewMetrics());
         appendMetricsSignature(builder, snapshot.getCurveIndicators());
         appendMetricsSignature(builder, snapshot.getStatsMetrics());
+        appendCurveSignature(builder, snapshot.getCurvePoints());
+        appendTradeSignature(builder, snapshot.getTrades());
         appendPositionSignature(builder, snapshot.getPositions());
         appendPositionSignature(builder, snapshot.getPendingOrders());
         return builder.toString();
@@ -2854,6 +2912,68 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             appendDoubleToken(entry, item.getTakeProfit());
             appendDoubleToken(entry, item.getStopLoss());
             appendDoubleToken(entry, item.getStorageFee());
+            entries.add(entry.toString());
+        }
+        Collections.sort(entries);
+        for (String entry : entries) {
+            appendStringToken(builder, entry);
+        }
+    }
+
+    // 追加净值曲线签名，避免曲线刷新后被误判为同一份页面快照。
+    private void appendCurveSignature(StringBuilder builder, @Nullable List<CurvePoint> points) {
+        if (points == null) {
+            appendStringToken(builder, "curve:null");
+            return;
+        }
+        appendStringToken(builder, "curve:size:" + points.size());
+        List<String> entries = new ArrayList<>(points.size());
+        for (CurvePoint item : points) {
+            if (item == null) {
+                entries.add("curve:item:null");
+                continue;
+            }
+            StringBuilder entry = new StringBuilder(96);
+            appendLongToken(entry, item.getTimestamp());
+            appendDoubleToken(entry, item.getEquity());
+            appendDoubleToken(entry, item.getBalance());
+            appendDoubleToken(entry, item.getPositionRatio());
+            entries.add(entry.toString());
+        }
+        Collections.sort(entries);
+        for (String entry : entries) {
+            appendStringToken(builder, entry);
+        }
+    }
+
+    // 追加交易记录签名，确保历史成交变更时页面不会跳过重绘。
+    private void appendTradeSignature(StringBuilder builder, @Nullable List<TradeRecordItem> trades) {
+        if (trades == null) {
+            appendStringToken(builder, "trade:null");
+            return;
+        }
+        appendStringToken(builder, "trade:size:" + trades.size());
+        List<String> entries = new ArrayList<>(trades.size());
+        for (TradeRecordItem item : trades) {
+            if (item == null) {
+                entries.add("trade:item:null");
+                continue;
+            }
+            StringBuilder entry = new StringBuilder(160);
+            appendStringToken(entry, item.getProductName());
+            appendStringToken(entry, item.getCode());
+            appendStringToken(entry, item.getSide());
+            appendLongToken(entry, item.getDealTicket());
+            appendLongToken(entry, item.getOrderId());
+            appendLongToken(entry, item.getPositionId());
+            appendLongToken(entry, item.getOpenTime());
+            appendLongToken(entry, item.getCloseTime());
+            appendLongToken(entry, item.getTimestamp());
+            appendDoubleToken(entry, item.getQuantity());
+            appendDoubleToken(entry, item.getProfit());
+            appendDoubleToken(entry, item.getStorageFee());
+            appendDoubleToken(entry, item.getOpenPrice());
+            appendDoubleToken(entry, item.getClosePrice());
             entries.add(entry.toString());
         }
         Collections.sort(entries);
@@ -3412,13 +3532,46 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview) {
         if (snapshotOverview != null && !snapshotOverview.isEmpty()) {
             latestCumulativePnl = metricValue(snapshotOverview, "累计盈亏");
-            return new ArrayList<>(snapshotOverview);
+            List<AccountMetric> result = new ArrayList<>(snapshotOverview);
+            AccountOverviewDailyMetricsCalculator.OverviewDailyValues dailyValues =
+                    AccountOverviewDailyMetricsCalculator.calculate(
+                            baseTrades,
+                            allCurvePoints,
+                            System.currentTimeMillis(),
+                            BEIJING_TIME_ZONE
+                    );
+            replaceOrAppendOverviewMetric(result, "当日盈亏", signedMoney(dailyValues.getTodayPnl()));
+            replaceOrAppendOverviewMetric(result, "当日收益率", percent(dailyValues.getTodayReturnRate()));
+            return sortOverviewMetricsForDisplay(result);
         }
         latestCumulativePnl = 0d;
         if (!userLoggedIn && !gatewayConnected) {
-            return buildDisconnectedOverviewMetrics();
+            return sortOverviewMetricsForDisplay(buildDisconnectedOverviewMetrics());
         }
-        return new ArrayList<>();
+        return sortOverviewMetricsForDisplay(new ArrayList<>());
+    }
+
+    // 用 APP 本地真值覆盖账户概览里的目标指标，缺项时追加到列表末尾。
+    private void replaceOrAppendOverviewMetric(List<AccountMetric> metrics,
+                                               String targetName,
+                                               String targetValue) {
+        if (metrics == null || targetName == null || targetName.trim().isEmpty()) {
+            return;
+        }
+        String normalizedTarget = trim(targetName);
+        for (int i = 0; i < metrics.size(); i++) {
+            AccountMetric metric = metrics.get(i);
+            if (metric == null) {
+                continue;
+            }
+            String currentName = trim(MetricNameTranslator.toChinese(metric.getName()));
+            if (!currentName.equalsIgnoreCase(normalizedTarget)) {
+                continue;
+            }
+            metrics.set(i, new AccountMetric(targetName, targetValue));
+            return;
+        }
+        metrics.add(new AccountMetric(targetName, targetValue));
     }
 
     // 退出登录后账户概览统一显示为空值，避免误把默认值当成真实账户数据。
@@ -3427,9 +3580,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         result.add(new AccountMetric("总资产", "--"));
         result.add(new AccountMetric("净资产", "--"));
         result.add(new AccountMetric("可用预付款", "--"));
-        result.add(new AccountMetric("预付款", "--"));
-        result.add(new AccountMetric("仓位占比", "--"));
-        result.add(new AccountMetric("持仓市值", "--"));
+        result.add(new AccountMetric("保证金", "--"));
         result.add(new AccountMetric("持仓盈亏", "--"));
         result.add(new AccountMetric("持仓收益率", "--"));
         result.add(new AccountMetric("当日盈亏", "--"));
@@ -3439,50 +3590,94 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return result;
     }
 
-    private double calcTodayClosedPnl(List<TradeRecordItem> trades) {
-        if (trades == null || trades.isEmpty()) {
-            return 0d;
+    // 账户概览统一按固定 5 行顺序展示，不再跟随上游返回顺序或附带字段漂移。
+    private List<AccountMetric> sortOverviewMetricsForDisplay(List<AccountMetric> metrics) {
+        if (metrics == null || metrics.isEmpty()) {
+            return new ArrayList<>();
         }
-        long start = startOfToday();
-        long end = endOfToday();
-        double sum = 0d;
-        for (TradeRecordItem item : trades) {
-            long closeTime = resolveCloseTime(item);
-            if (closeTime >= start && closeTime <= end) {
-                sum += item.getProfit() + item.getStorageFee();
+        Map<String, List<AccountMetric>> metricsByKey = new LinkedHashMap<>();
+        for (AccountMetric metric : metrics) {
+            if (metric == null) {
+                continue;
+            }
+            String displayKey = normalizeOverviewMetricDisplayKey(metric.getName());
+            List<AccountMetric> bucket = metricsByKey.get(displayKey);
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                metricsByKey.put(displayKey, bucket);
+            }
+            bucket.add(metric);
+        }
+        List<AccountMetric> ordered = new ArrayList<>();
+        Set<AccountMetric> appended = new HashSet<>();
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "总资产");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "净资产");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "可用预付款");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "保证金");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "累计盈亏");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "累计收益率");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "当日盈亏");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "当日收益率");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "持仓盈亏");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "持仓收益率");
+        return ordered;
+    }
+
+    // 从同一语义分组里挑出最适合展示的那一项，并把同组别名一并视为已消费。
+    private void appendOverviewMetricInDisplayOrder(List<AccountMetric> ordered,
+                                                    Map<String, List<AccountMetric>> metricsByKey,
+                                                    Set<AccountMetric> appended,
+                                                    String key) {
+        List<AccountMetric> bucket = metricsByKey.get(key);
+        if (bucket == null || bucket.isEmpty()) {
+            return;
+        }
+        AccountMetric chosen = chooseOverviewMetricForDisplay(bucket, key);
+        if (chosen == null) {
+            return;
+        }
+        ordered.add(chosen);
+        appended.addAll(bucket);
+    }
+
+    // 同一组里优先选与目标展示名完全一致的指标，避免“保证金/预付款”等别名随机漂移。
+    @Nullable
+    private AccountMetric chooseOverviewMetricForDisplay(List<AccountMetric> bucket, String targetKey) {
+        if (bucket == null || bucket.isEmpty()) {
+            return null;
+        }
+        for (AccountMetric metric : bucket) {
+            if (metric == null) {
+                continue;
+            }
+            String normalizedName = trim(MetricNameTranslator.toChinese(metric.getName()));
+            if (normalizedName.equalsIgnoreCase(targetKey)) {
+                return metric;
             }
         }
-        return sum;
+        return bucket.get(0);
     }
 
-    private double calcTodayStartAsset(double currentBalance, double todayClosedPnl, List<CurvePoint> points) {
-        if (points != null && !points.isEmpty()) {
-            long start = startOfToday();
-            for (CurvePoint point : points) {
-                if (point.getTimestamp() >= start) {
-                    return Math.max(1d, point.getBalance());
-                }
-            }
+    // 把服务端不同命名口径统一折叠成页面固定展示位。
+    private String normalizeOverviewMetricDisplayKey(String rawName) {
+        String name = trim(MetricNameTranslator.toChinese(rawName));
+        if (name.isEmpty()) {
+            return "";
         }
-        return Math.max(1d, currentBalance - todayClosedPnl);
-    }
-
-    private long startOfToday() {
-        Calendar calendar = Calendar.getInstance(BEIJING_TIME_ZONE);
-        calendar.set(Calendar.HOUR_OF_DAY, 0);
-        calendar.set(Calendar.MINUTE, 0);
-        calendar.set(Calendar.SECOND, 0);
-        calendar.set(Calendar.MILLISECOND, 0);
-        return calendar.getTimeInMillis();
-    }
-
-    private long endOfToday() {
-        Calendar calendar = Calendar.getInstance(BEIJING_TIME_ZONE);
-        calendar.set(Calendar.HOUR_OF_DAY, 23);
-        calendar.set(Calendar.MINUTE, 59);
-        calendar.set(Calendar.SECOND, 59);
-        calendar.set(Calendar.MILLISECOND, 999);
-        return calendar.getTimeInMillis();
+        if ("当前净值".equalsIgnoreCase(name) || "净值".equalsIgnoreCase(name)) {
+            return "净资产";
+        }
+        if ("可用资金".equalsIgnoreCase(name) || "可用保证金".equalsIgnoreCase(name)) {
+            return "可用预付款";
+        }
+        if ("预付款".equalsIgnoreCase(name)
+                || "保证金".equalsIgnoreCase(name)
+                || "保证金金额".equalsIgnoreCase(name)
+                || "Margin".equalsIgnoreCase(name)
+                || "Margin Amount".equalsIgnoreCase(name)) {
+            return "保证金";
+        }
+        return name;
     }
 
     private double metricValue(List<AccountMetric> metrics, String... names) {
@@ -6280,6 +6475,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         Intent intent = new Intent(this, MonitorService.class);
         intent.setAction(action);
         ContextCompat.startForegroundService(this, intent);
+    }
+
+    // 首次创建账户页时确保监控服务已启动，避免用户直达账户页时服务未建立主链。
+    private void ensureMonitorServiceStarted() {
+        if (MonitorService.isServiceRunning()) {
+            return;
+        }
+        sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
     }
 
     private void openSettings() {

@@ -38,6 +38,9 @@ public class FloatingPositionAggregator {
                 continue;
             }
             String code = safeCode(item);
+            if (code.isEmpty()) {
+                continue;
+            }
             if (!shouldIncludeCode(code, showBtc, showXau)) {
                 continue;
             }
@@ -147,14 +150,10 @@ public class FloatingPositionAggregator {
         return new ArrayList<>(filtered);
     }
 
-    // 统一取产品代码，优先 code，缺失时回退 productName。
+    // 统一取产品代码，只接受 canonical code，缺失时直接判为无效条目。
     private static String safeCode(PositionItem item) {
         String code = item.getCode() == null ? "" : item.getCode().trim();
-        if (!code.isEmpty()) {
-            return code.toUpperCase(Locale.ROOT);
-        }
-        String productName = item.getProductName() == null ? "" : item.getProductName().trim();
-        return productName.toUpperCase(Locale.ROOT);
+        return code.toUpperCase(Locale.ROOT);
     }
 
     // 统一生成悬浮窗展示标签。
@@ -234,6 +233,9 @@ public class FloatingPositionAggregator {
 
     // 统一悬浮窗产品标题，优先使用已有持仓标签，否则回退资产简称。
     private static String resolveCardLabel(String symbol, FloatingPositionPnlItem item) {
-        return AppConstants.symbolToAsset(symbol);
+        if (item != null && item.getLabel() != null && !item.getLabel().trim().isEmpty()) {
+            return item.getLabel().trim();
+        }
+        return ProductSymbolMapper.toTradeSymbol(symbol);
     }
 }

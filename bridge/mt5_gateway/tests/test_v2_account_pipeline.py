@@ -36,23 +36,58 @@ class V2AccountPipelineTests(unittest.TestCase):
         self.assertEqual([], payload["positions"])
         self.assertEqual([], payload["orders"])
 
+    def test_build_account_snapshot_model_should_preserve_zero_metric_values(self):
+        payload = v2_account.build_account_snapshot_model(
+            {
+                "balance": 1000.0,
+                "equity": 1000.0,
+                "margin": 50.0,
+                "freeMargin": 950.0,
+                "profit": 12.0,
+                "accountMetrics": {
+                    "balance": 0.0,
+                    "equity": 0.0,
+                    "margin": 0.0,
+                    "freeMargin": 0.0,
+                    "marginLevel": 0.0,
+                    "profit": 0.0,
+                },
+                "positions": [],
+                "orders": [],
+            }
+        )
+
+        self.assertEqual(0.0, payload["balance"])
+        self.assertEqual(0.0, payload["equity"])
+        self.assertEqual(0.0, payload["margin"])
+        self.assertEqual(0.0, payload["freeMargin"])
+        self.assertEqual(0.0, payload["marginLevel"])
+        self.assertEqual(0.0, payload["profit"])
+
     def test_build_account_history_model_exposes_curve_and_trades(self):
         payload = v2_account.build_account_history_model(
             {
                 "trades": [{
                     "timestamp": 1,
+                    "productId": "BTC",
+                    "marketSymbol": "BTCUSDT",
+                    "tradeSymbol": "BTCUSD",
                     "productName": "BTCUSD",
-                    "code": "BTCUSD",
                     "side": "Buy",
                     "price": 10,
                     "quantity": 0.1,
                 }],
                 "orders": [{
+                    "productId": "XAU",
+                    "marketSymbol": "XAUUSDT",
+                    "tradeSymbol": "XAUUSD",
                     "productName": "XAUUSD",
-                    "code": "XAUUSD",
                     "side": "Sell",
+                    "quantity": 0.0,
                     "pendingPrice": 20,
                     "pendingLots": 0.2,
+                    "latestPrice": 20.0,
+                    "pendingCount": 1,
                 }],
                 "curvePoints": [{"timestamp": 3, "equity": 1100.0, "balance": 1000.0, "positionRatio": 0.1}],
             }
@@ -72,8 +107,10 @@ class V2AccountPipelineTests(unittest.TestCase):
             {
                 "trades": [{
                     "timestamp": 200,
-                    "symbol": "BTCUSD",
-                    "code": "BTCUSD",
+                    "productId": "BTC",
+                    "marketSymbol": "BTCUSDT",
+                    "tradeSymbol": "BTCUSD",
+                    "productName": "BTCUSD",
                     "side": "Sell",
                     "price": 120.0,
                     "quantity": 0.1,
@@ -110,7 +147,10 @@ class V2AccountPipelineTests(unittest.TestCase):
             {
                 "trades": [{
                     "timestamp": 200,
-                    "symbol": "BTCUSD",
+                    "productId": "BTC",
+                    "marketSymbol": "BTCUSDT",
+                    "tradeSymbol": "BTCUSD",
+                    "productName": "BTCUSD",
                     "price": 120.0,
                     "quantity": 0.1,
                 }],
@@ -145,8 +185,10 @@ class V2AccountPipelineTests(unittest.TestCase):
             {
                 "trades": [{
                     "timestamp": 200,
+                    "productId": "BTC",
+                    "marketSymbol": "BTCUSDT",
+                    "tradeSymbol": "BTCUSD",
                     "productName": "BTCUSD",
-                    "code": "BTCUSD",
                     "side": "Sell",
                     "openPrice": 100.0,
                     "closePrice": 120.0,
@@ -167,7 +209,10 @@ class V2AccountPipelineTests(unittest.TestCase):
         payload = v2_account.build_account_snapshot_model(
             {
                 "positions": [{
-                    "symbol": "BTCUSD",
+                    "productId": "BTC",
+                    "marketSymbol": "BTCUSDT",
+                    "tradeSymbol": "BTCUSD",
+                    "productName": "BTCUSD",
                     "positionTicket": 101,
                     "orderId": 202,
                     "quantity": 0.1,
@@ -178,8 +223,12 @@ class V2AccountPipelineTests(unittest.TestCase):
                     "storageFee": -1.5,
                 }],
                 "orders": [{
-                    "symbol": "XAUUSD",
+                    "productId": "XAU",
+                    "marketSymbol": "XAUUSDT",
+                    "tradeSymbol": "XAUUSD",
+                    "productName": "XAUUSD",
                     "orderId": 303,
+                    "quantity": 0.0,
                     "pendingLots": 0.2,
                     "pendingPrice": 2050.0,
                     "latestPrice": 2051.0,
@@ -202,6 +251,35 @@ class V2AccountPipelineTests(unittest.TestCase):
         self.assertEqual(2070.0, order["takeProfit"])
         self.assertEqual(2030.0, order["stopLoss"])
         self.assertEqual(1, order["pendingCount"])
+
+    def test_build_account_history_model_should_require_canonical_trade_symbol_fields(self):
+        with self.assertRaisesRegex(RuntimeError, "trade missing tradeSymbol"):
+            v2_account.build_account_history_model(
+                {
+                    "trades": [{
+                        "timestamp": 1,
+                        "productName": "BTCUSD",
+                        "price": 10.0,
+                        "quantity": 0.1,
+                    }],
+                    "orders": [],
+                    "curvePoints": [],
+                }
+            )
+
+    def test_build_account_snapshot_model_should_require_matching_product_name(self):
+        with self.assertRaisesRegex(RuntimeError, "position productName must equal tradeSymbol"):
+            v2_account.build_account_snapshot_model(
+                {
+                    "positions": [{
+                        "productId": "BTC",
+                        "marketSymbol": "BTCUSDT",
+                        "tradeSymbol": "BTCUSD",
+                        "productName": "BTC",
+                    }],
+                    "orders": [],
+                }
+            )
 
     def test_build_account_snapshot_model_should_ignore_legacy_snapshot_aliases(self):
         payload = v2_account.build_account_snapshot_model(

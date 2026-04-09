@@ -76,6 +76,7 @@ import com.binance.monitor.ui.trade.TradeCommandFactory;
 import com.binance.monitor.ui.trade.TradeCommandStateMachine;
 import com.binance.monitor.ui.trade.TradeConfirmDialogController;
 import com.binance.monitor.ui.trade.TradeExecutionCoordinator;
+import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
@@ -92,6 +93,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -107,7 +109,8 @@ public class MarketChartActivity extends AppCompatActivity {
     private static final int CHART_CACHE_SCHEMA_VERSION = 2;
 
     private static final int HISTORY_PERSIST_LIMIT = 5_000;
-    private static final int FULL_WINDOW_LIMIT = 1500;
+    private static final int RESTORE_WINDOW_LIMIT = 300;
+    private static final int HISTORY_PAGE_LIMIT = 300;
     private static final int GAP_FILL_MAX_ROUNDS = 8;
     private static final long CHART_OVERLAY_REFRESH_DEBOUNCE_MS = 120L;
 
@@ -153,6 +156,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private ExecutorService ioExecutor;
     private Future<?> runningTask;
     private Future<?> loadMoreTask;
+    private Future<?> progressiveGapFillTask;
     private long runningTaskStartMs;
     private int requestVersion = 0;
     private final Map<String, List<CandleEntry>> klineCache = new ConcurrentHashMap<>();
@@ -218,8 +222,10 @@ public class MarketChartActivity extends AppCompatActivity {
     private long lastSuccessfulRequestLatencyMs = -1L;
     private List<AbnormalRecord> abnormalRecords = new ArrayList<>();
     private volatile boolean tradeFlowRunning;
+    private boolean chartScreenEntered;
     private boolean accountOverlayRefreshPending;
     private String lastAccountOverlaySignature = "";
+    private String lastAbnormalOverlaySignature = "";
     private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> scheduleChartOverlayRefresh();
     private final Runnable chartOverlayRefreshRunnable = new Runnable() {
         @Override
@@ -291,6 +297,7 @@ public class MarketChartActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         binding = ActivityMarketChartBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        ensureMonitorServiceStarted();
         gatewayV2Client = new GatewayV2Client(this);
         gatewayV2TradeClient = new GatewayV2TradeClient(this);
         monitorRepository = MonitorRepository.getInstance(getApplicationContext());
@@ -325,23 +332,19 @@ public class MarketChartActivity extends AppCompatActivity {
         restorePersistedCache(buildCacheKey(selectedSymbol, selectedInterval));
         updateStateCount();
         updateRefreshCountdownText();
-        requestKlines();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        ensureMonitorServiceStarted();
         applyPaletteStyles();
         applyPrivacyMaskState();
         if (accountStatsPreloadManager != null) {
             accountStatsPreloadManager.addCacheListener(accountCacheListener);
-            accountStatsPreloadManager.setFullSnapshotActive(true);
         }
-        if (shouldRequestKlinesOnResume()) {
-            requestKlines();
-        }
-        refreshChartOverlays();
-        startAutoRefresh();
+        enterChartScreen(!chartScreenEntered);
+        chartScreenEntered = true;
     }
 
     @Override
@@ -358,7 +361,6 @@ public class MarketChartActivity extends AppCompatActivity {
         accountOverlayRefreshPending = false;
         if (accountStatsPreloadManager != null) {
             accountStatsPreloadManager.removeCacheListener(accountCacheListener);
-            accountStatsPreloadManager.setFullSnapshotActive(false);
         }
         super.onPause();
     }
@@ -379,6 +381,7 @@ public class MarketChartActivity extends AppCompatActivity {
             loadMoreTask.cancel(true);
             loadMoreTask = null;
         }
+        cancelProgressiveGapFillTask();
         if (ioExecutor != null) {
             ioExecutor.shutdownNow();
         }
@@ -559,6 +562,17 @@ public class MarketChartActivity extends AppCompatActivity {
             return "";
         }
         return raw.trim().toUpperCase(Locale.ROOT);
+    }
+
+    // 统一处理图表页进入前台：冷启动只发起一次初始请求，普通切页返回只恢复消费节奏。
+    private void enterChartScreen(boolean coldStart) {
+        if (coldStart) {
+            requestKlines();
+        } else if (shouldRequestKlinesOnResume()) {
+            requestKlines();
+        }
+        refreshChartOverlays();
+        startAutoRefresh();
     }
 
     private boolean isSupportedSymbol(@Nullable String symbol) {
@@ -882,13 +896,9 @@ public class MarketChartActivity extends AppCompatActivity {
         dialogBinding.tvTradeCommandHint.setText(resolveTradeDialogHint(action, targetItem, referencePrice));
 
         if (showOrderType) {
-            ArrayAdapter<String> orderTypeAdapter = new ArrayAdapter<>(
-                    this,
-                    android.R.layout.simple_spinner_item,
+            dialogBinding.spinnerTradeOrderType.setAdapter(createTradeOrderTypeAdapter(
                     new String[]{"buy_limit", "sell_limit", "buy_stop", "sell_stop"}
-            );
-            orderTypeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-            dialogBinding.spinnerTradeOrderType.setAdapter(orderTypeAdapter);
+            ));
         }
         if (showVolume) {
             dialogBinding.etTradeVolume.setText("0.10");
@@ -1198,11 +1208,53 @@ public class MarketChartActivity extends AppCompatActivity {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
         }
         if (dialog.getButton(AlertDialog.BUTTON_NEGATIVE) != null) {
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(palette.textSecondary);
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(palette.textPrimary);
         }
         if (dialog.getButton(AlertDialog.BUTTON_NEUTRAL) != null) {
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setTextColor(palette.textSecondary);
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setTextColor(palette.textPrimary);
         }
+        int titleId = getResources().getIdentifier("alertTitle", "id", "android");
+        if (titleId != 0) {
+            View titleView = dialog.findViewById(titleId);
+            if (titleView instanceof TextView) {
+                ((TextView) titleView).setTextColor(palette.textPrimary);
+            }
+        }
+    }
+
+    // 交易弹窗挂单类型使用统一下拉样式，避免系统默认布局在深色面板中显示裁切和低对比。
+    private ArrayAdapter<String> createTradeOrderTypeAdapter(String[] orderTypes) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
+                this,
+                R.layout.item_spinner_filter,
+                android.R.id.text1,
+                orderTypes
+        ) {
+            @Override
+            public View getView(int position, @Nullable View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                styleTradeOrderTypeSpinnerItem(view);
+                return view;
+            }
+
+            @Override
+            public View getDropDownView(int position, @Nullable View convertView, ViewGroup parent) {
+                View view = super.getDropDownView(position, convertView, parent);
+                styleTradeOrderTypeSpinnerItem(view);
+                return view;
+            }
+        };
+        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
+        return adapter;
+    }
+
+    // 统一挂单类型选项文字样式，确保深色背景下可读且不被截断。
+    private void styleTradeOrderTypeSpinnerItem(@Nullable View view) {
+        if (!(view instanceof TextView)) {
+            return;
+        }
+        TextView textView = (TextView) view;
+        UiPaletteManager.styleSpinnerItemText(textView, UiPaletteManager.resolve(this), 13f);
     }
 
     // 统一生成弹窗标题。
@@ -1730,7 +1782,7 @@ public class MarketChartActivity extends AppCompatActivity {
         MarketChartRefreshHelper.SyncPlan refreshPlan = MarketChartRefreshHelper.resolvePlan(
                 localForPlan,
                 selectedInterval.limit,
-                FULL_WINDOW_LIMIT,
+                RESTORE_WINDOW_LIMIT,
                 System.currentTimeMillis(),
                 latestVisibleTime,
                 intervalToMs(selectedInterval.key),
@@ -1744,7 +1796,8 @@ public class MarketChartActivity extends AppCompatActivity {
 
         final int current = ++requestVersion;
         final String traceSymbol = selectedSymbol;
-        final String traceIntervalKey = selectedInterval == null ? "" : selectedInterval.key;
+        final IntervalOption reqInterval = selectedInterval;
+        final String traceIntervalKey = reqInterval == null ? "" : reqInterval.key;
         final long previousLatestOpenTime = loadedCandles.isEmpty()
                 ? -1L
                 : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
@@ -1755,6 +1808,7 @@ public class MarketChartActivity extends AppCompatActivity {
         final long requestStartedAtMs = SystemClock.elapsedRealtime();
         applyRequestStartState(autoRefresh);
         runningTaskStartMs = System.currentTimeMillis();
+        cancelProgressiveGapFillTask();
         final List<CandleEntry> refreshSeed = localForPlan == null ? new ArrayList<>() : new ArrayList<>(localForPlan);
         ChainLatencyTracer.markChartPullPhase(
                 traceSymbol,
@@ -1794,10 +1848,10 @@ public class MarketChartActivity extends AppCompatActivity {
                             && binding.klineChartView != null
                             && binding.klineChartView.isFollowingLatestViewport();
                     MarketChartDisplayHelper.DisplayUpdate displayUpdate = MarketChartDisplayHelper.buildDisplayUpdate(
-                            selectedInterval.key,
+                            reqInterval == null ? "" : reqInterval.key,
                             refreshSeed,
                             finalProcessed,
-                            selectedInterval.limit,
+                            reqInterval == null ? RESTORE_WINDOW_LIMIT : reqInterval.limit,
                             loadedCandles,
                             autoRefresh,
                             followingLatestViewport
@@ -1807,8 +1861,16 @@ public class MarketChartActivity extends AppCompatActivity {
                         applyDisplayCandles(key, displayUpdate.toDisplay, autoRefresh, displayUpdate.shouldFollowLatest, true);
                         List<CandleEntry> closedPersistenceWindow =
                                 ChartPersistenceWindowHelper.retainClosedCandles(finalProcessed, System.currentTimeMillis());
-                        persistCandlesAsync(key, closedPersistenceWindow, selectedSymbol, selectedInterval, true);
+                        persistCandlesAsync(key, closedPersistenceWindow, traceSymbol, reqInterval, true);
                     }
+                    startProgressiveGapFill(
+                            traceSymbol,
+                            reqInterval,
+                            current,
+                            displayUpdate.toDisplay,
+                            previousOldestOpenTime,
+                            previousWindowSize
+                    );
                     applyRequestSuccessState(autoRefresh, requestStartedAtMs);
                     long totalDurationMs = Math.max(0L, SystemClock.elapsedRealtime() - requestStartedAtMs);
                     ChainLatencyTracer.markChartPullPhase(
@@ -1843,6 +1905,7 @@ public class MarketChartActivity extends AppCompatActivity {
         loadingMore = true;
         final String reqSymbol = selectedSymbol;
         final IntervalOption reqInterval = selectedInterval;
+        cancelProgressiveGapFillTask();
         if (loadMoreTask != null) {
             loadMoreTask.cancel(true);
         }
@@ -1851,7 +1914,7 @@ public class MarketChartActivity extends AppCompatActivity {
                 List<CandleEntry> fetched = fetchV2SeriesBefore(
                         reqSymbol,
                         reqInterval,
-                        FULL_WINDOW_LIMIT,
+                        HISTORY_PAGE_LIMIT,
                         beforeOpenTime - 1L
                 );
                 List<CandleEntry> processed = reqInterval.yearAggregate
@@ -2021,11 +2084,12 @@ public class MarketChartActivity extends AppCompatActivity {
         return MarketChartRefreshHelper.resolveAutoRefreshDelayMs(
                 realtimeFresh,
                 AppConstants.CHART_AUTO_REFRESH_INTERVAL_MS,
-                hasRealtimeTailSourceForChart()
+                hasRealtimeTailSourceForChart(),
+                System.currentTimeMillis()
         );
     }
 
-    // 页面从其他 Tab 返回时，若已有可用窗口且实时链路新鲜，则不立即重拉，减少切换等待。
+    // 页面从其他 Tab 返回时，若已有可用窗口且当前窗口仍处于分钟源新鲜范围内，则不立即重拉。
     private boolean shouldRequestKlinesOnResume() {
         String key = buildCacheKey(selectedSymbol, selectedInterval);
         List<CandleEntry> visible = loadedCandles;
@@ -2037,14 +2101,13 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         boolean compatibleVisible = !visible.isEmpty()
                 && MarketChartDisplayHelper.isSeriesCompatibleForInterval(selectedInterval.key, visible);
-        boolean realtimeFresh = compatibleVisible
+        boolean freshVisibleWindow = compatibleVisible
                 && MarketChartRefreshHelper.isRealtimeFresh(
                 System.currentTimeMillis(),
                 resolveLatestVisibleCandleTime(visible));
         return !MarketChartRefreshHelper.shouldSkipRequestOnResume(
                 compatibleVisible,
-                realtimeFresh,
-                hasRealtimeTailSourceForChart()
+                freshVisibleWindow
         );
     }
 
@@ -2128,7 +2191,7 @@ public class MarketChartActivity extends AppCompatActivity {
                 minuteSource,
                 realtimeBaseCandle,
                 selectedSymbol,
-                Math.max(minuteOption.limit, FULL_WINDOW_LIMIT)
+                Math.max(minuteOption.limit, RESTORE_WINDOW_LIMIT)
         );
         if (!mergedMinute.isEmpty()) {
             klineCache.put(minuteKey, new ArrayList<>(mergedMinute));
@@ -2360,6 +2423,152 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.klineChartView.notifyLoadMoreFinished();
     }
 
+    // 自动缺口补拉和主请求分开执行，避免重新进入图表时必须等整轮历史补完才第一次落图。
+    private void startProgressiveGapFill(String reqSymbol,
+                                         IntervalOption reqInterval,
+                                         int current,
+                                         @Nullable List<CandleEntry> visibleWindow,
+                                         long previousOldestOpenTime,
+                                         int previousWindowSize) {
+        cancelProgressiveGapFillTask();
+        if (reqSymbol == null
+                || reqInterval == null
+                || visibleWindow == null
+                || visibleWindow.isEmpty()
+                || ioExecutor == null
+                || ioExecutor.isShutdown()) {
+            return;
+        }
+        long latestWindowOldestOpenTime = resolveOldestOpenTime(visibleWindow);
+        if (!ChartGapFillHelper.shouldBackfillOlderHistory(
+                previousWindowSize,
+                RESTORE_WINDOW_LIMIT,
+                previousOldestOpenTime,
+                latestWindowOldestOpenTime)) {
+            return;
+        }
+        List<CandleEntry> workingWindow = new ArrayList<>(visibleWindow);
+        progressiveGapFillTask = ioExecutor.submit(() -> {
+            try {
+                if (reqInterval.yearAggregate) {
+                    runYearGapFill(reqSymbol, reqInterval, current, workingWindow, previousOldestOpenTime, previousWindowSize);
+                    return;
+                }
+                runProgressiveGapFill(reqSymbol, reqInterval, current, workingWindow, previousOldestOpenTime, previousWindowSize);
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    // 自动缺口补拉按批次向左 prepend，和手动左滑共用同一套落图路径。
+    private void runProgressiveGapFill(String reqSymbol,
+                                       IntervalOption reqInterval,
+                                       int current,
+                                       List<CandleEntry> workingWindow,
+                                       long previousOldestOpenTime,
+                                       int previousWindowSize) throws Exception {
+        long latestOldest = resolveOldestOpenTime(workingWindow);
+        int rounds = 0;
+        while (!Thread.currentThread().isInterrupted()
+                && ChartGapFillHelper.shouldBackfillOlderHistory(
+                previousWindowSize,
+                RESTORE_WINDOW_LIMIT,
+                previousOldestOpenTime,
+                latestOldest)
+                && rounds < GAP_FILL_MAX_ROUNDS) {
+            List<CandleEntry> fetched = fetchV2SeriesBefore(
+                    reqSymbol,
+                    reqInterval,
+                    HISTORY_PAGE_LIMIT,
+                    Math.max(0L, latestOldest - 1L)
+            );
+            List<CandleEntry> older = ChartHistoryPagingHelper.resolveOlderCandles(workingWindow, fetched);
+            if (older.isEmpty()) {
+                break;
+            }
+            workingWindow.addAll(0, older);
+            latestOldest = resolveOldestOpenTime(workingWindow);
+            applyGapFillBatch(reqSymbol, reqInterval, current, older);
+            rounds++;
+        }
+    }
+
+    // 年线自动缺口补拉仍走月线底稿，再聚合成年桶，保持时间桶语义和手动翻页一致。
+    private void runYearGapFill(String reqSymbol,
+                                IntervalOption reqInterval,
+                                int current,
+                                List<CandleEntry> workingWindow,
+                                long previousOldestOpenTime,
+                                int previousWindowSize) throws Exception {
+        long latestOldest = resolveOldestOpenTime(workingWindow);
+        int rounds = 0;
+        while (!Thread.currentThread().isInterrupted()
+                && ChartGapFillHelper.shouldBackfillOlderHistory(
+                previousWindowSize,
+                RESTORE_WINDOW_LIMIT,
+                previousOldestOpenTime,
+                latestOldest)
+                && rounds < GAP_FILL_MAX_ROUNDS) {
+            List<CandleEntry> olderMonthly = fetchV2SeriesBefore(
+                    reqSymbol,
+                    reqInterval,
+                    HISTORY_PAGE_LIMIT,
+                    Math.max(0L, latestOldest - 1L)
+            );
+            List<CandleEntry> olderYear = aggregateToYear(olderMonthly, reqSymbol);
+            List<CandleEntry> older = ChartHistoryPagingHelper.resolveOlderCandles(workingWindow, olderYear);
+            if (older.isEmpty()) {
+                break;
+            }
+            workingWindow.addAll(0, older);
+            latestOldest = resolveOldestOpenTime(workingWindow);
+            applyGapFillBatch(reqSymbol, reqInterval, current, older);
+            rounds++;
+        }
+    }
+
+    // 后台补拉回包统一切回主线程并复用 prepend 更新，避免自动补拉和手动左滑两套 UI 逻辑分叉。
+    private void applyGapFillBatch(String reqSymbol,
+                                   IntervalOption reqInterval,
+                                   int current,
+                                   List<CandleEntry> older) {
+        if (older == null || older.isEmpty()) {
+            return;
+        }
+        mainHandler.post(() -> {
+            if (current != requestVersion || isFinishing() || isDestroyed()) {
+                return;
+            }
+            if (!reqSymbol.equals(selectedSymbol) || reqInterval != selectedInterval) {
+                return;
+            }
+            if (loadedCandles.isEmpty()) {
+                return;
+            }
+            List<CandleEntry> appendable = ChartHistoryPagingHelper.resolveOlderCandles(loadedCandles, older);
+            if (appendable.isEmpty()) {
+                return;
+            }
+            applyLoadMoreSuccessState(reqSymbol, reqInterval, appendable);
+        });
+    }
+
+    // 新请求、手动左滑或页面销毁时都要中断自动缺口补拉，避免旧任务继续占用网络与 UI。
+    private void cancelProgressiveGapFillTask() {
+        if (progressiveGapFillTask != null) {
+            progressiveGapFillTask.cancel(true);
+            progressiveGapFillTask = null;
+        }
+    }
+
+    private long resolveOldestOpenTime(@Nullable List<CandleEntry> candles) {
+        if (candles == null || candles.isEmpty()) {
+            return -1L;
+        }
+        CandleEntry oldest = candles.get(0);
+        return oldest == null ? -1L : oldest.getOpenTime();
+    }
+
     private List<CandleEntry> getCachedOrPersisted(String key) {
         List<CandleEntry> cached = klineCache.get(key);
         if (cached != null && !cached.isEmpty()) {
@@ -2450,24 +2659,17 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         List<CandleEntry> result;
         if (plan != null && plan.mode == MarketChartRefreshHelper.SyncMode.INCREMENTAL) {
-            List<CandleEntry> base = ChartWindowSliceHelper.takeLatest(seed, FULL_WINDOW_LIMIT);
+            List<CandleEntry> base = ChartWindowSliceHelper.takeLatest(seed, RESTORE_WINDOW_LIMIT);
             List<CandleEntry> tail = fetchV2SeriesAfter(
                     selectedSymbol,
                     selectedInterval,
-                    FULL_WINDOW_LIMIT,
+                    RESTORE_WINDOW_LIMIT,
                     plan.startTimeInclusive
             );
             result = MarketChartDisplayHelper.mergeSeriesByOpenTime(base, tail);
         } else {
-            result = fetchFullHistoryAndMark(selectedSymbol, FULL_WINDOW_LIMIT);
+            result = fetchFullHistoryAndMark(selectedSymbol, RESTORE_WINDOW_LIMIT);
         }
-        result = expandFullHistoryWhenGapDetected(
-                selectedSymbol,
-                selectedInterval,
-                result,
-                previousLatestOpenTime,
-                previousOldestOpenTime,
-                previousWindowSize);
         if (result == null || result.isEmpty()) {
             throw new IllegalStateException("币安未返回可用K线数据");
         }
@@ -2482,134 +2684,23 @@ public class MarketChartActivity extends AppCompatActivity {
                                                                  int previousWindowSize) throws Exception {
         List<CandleEntry> mergedYear;
         if (plan != null && plan.mode == MarketChartRefreshHelper.SyncMode.INCREMENTAL) {
-            List<CandleEntry> baseYear = ChartWindowSliceHelper.takeLatest(seed, FULL_WINDOW_LIMIT);
+            List<CandleEntry> baseYear = ChartWindowSliceHelper.takeLatest(seed, RESTORE_WINDOW_LIMIT);
             List<CandleEntry> tailMonthly = fetchV2SeriesAfter(
                     selectedSymbol,
                     selectedInterval,
-                    FULL_WINDOW_LIMIT,
+                    RESTORE_WINDOW_LIMIT,
                     plan.startTimeInclusive
             );
             List<CandleEntry> tailYear = aggregateToYear(tailMonthly, selectedSymbol);
             mergedYear = MarketChartDisplayHelper.mergeSeriesByOpenTime(baseYear, tailYear);
         } else {
-            List<CandleEntry> fullMonthly = fetchFullHistoryAndMark(selectedSymbol, FULL_WINDOW_LIMIT);
+            List<CandleEntry> fullMonthly = fetchFullHistoryAndMark(selectedSymbol, RESTORE_WINDOW_LIMIT);
             mergedYear = aggregateToYear(fullMonthly, selectedSymbol);
         }
-        List<CandleEntry> expanded = expandYearHistoryWhenGapDetected(
-                selectedSymbol,
-                selectedInterval,
-                mergedYear,
-                previousLatestOpenTime,
-                previousOldestOpenTime,
-                previousWindowSize
-        );
-        if (expanded == null || expanded.isEmpty()) {
+        if (mergedYear == null || mergedYear.isEmpty()) {
             throw new IllegalStateException("币安未返回可用K线数据");
         }
-        return expanded;
-    }
-
-    private List<CandleEntry> expandFullHistoryWhenGapDetected(String symbol,
-                                                               IntervalOption interval,
-                                                               List<CandleEntry> latestWindow,
-                                                               long previousLatestOpenTime,
-                                                               long previousOldestOpenTime,
-                                                               int previousWindowSize) throws Exception {
-        if (interval == null || latestWindow == null || latestWindow.isEmpty() || interval.yearAggregate) {
-            return latestWindow == null ? new ArrayList<>() : latestWindow;
-        }
-        if (previousLatestOpenTime <= 0L && previousOldestOpenTime <= 0L) {
-            return latestWindow;
-        }
-        List<CandleEntry> merged = MarketChartDisplayHelper.mergeSeriesByOpenTime(null, latestWindow);
-        if (merged.isEmpty()) {
-            return merged;
-        }
-        long latestOldest = merged.get(0).getOpenTime();
-        if (!ChartGapFillHelper.shouldBackfillOlderHistory(
-                previousWindowSize,
-                FULL_WINDOW_LIMIT,
-                previousOldestOpenTime,
-                latestOldest)) {
-            return merged;
-        }
-
-        int rounds = 0;
-        while (ChartGapFillHelper.shouldBackfillOlderHistory(
-                previousWindowSize,
-                FULL_WINDOW_LIMIT,
-                previousOldestOpenTime,
-                latestOldest) && rounds < GAP_FILL_MAX_ROUNDS) {
-            long endTime = Math.max(0L, latestOldest - 1L);
-            List<CandleEntry> older = fetchV2SeriesBefore(
-                    symbol,
-                    interval,
-                    FULL_WINDOW_LIMIT,
-                    endTime);
-            if (older == null || older.isEmpty()) {
-                break;
-            }
-            int beforeSize = merged.size();
-            long beforeOldest = latestOldest;
-            merged = MarketChartDisplayHelper.mergeSeriesByOpenTime(merged, older);
-            latestOldest = merged.get(0).getOpenTime();
-            if (merged.size() <= beforeSize || latestOldest >= beforeOldest) {
-                break;
-            }
-            rounds++;
-        }
-        return merged;
-    }
-
-    // 年线缺口补拉：按“当前最早年桶之前”继续拉月线，再聚合成年桶并并入结果，直到补回上一轮最早年桶。
-    private List<CandleEntry> expandYearHistoryWhenGapDetected(String symbol,
-                                                               IntervalOption interval,
-                                                               List<CandleEntry> latestYearWindow,
-                                                               long previousLatestOpenTime,
-                                                               long previousOldestOpenTime,
-                                                               int previousWindowSize) throws Exception {
-        if (interval == null || !interval.yearAggregate || latestYearWindow == null || latestYearWindow.isEmpty()) {
-            return latestYearWindow == null ? new ArrayList<>() : latestYearWindow;
-        }
-        if (previousLatestOpenTime <= 0L && previousOldestOpenTime <= 0L) {
-            return latestYearWindow;
-        }
-        List<CandleEntry> merged = MarketChartDisplayHelper.mergeSeriesByOpenTime(null, latestYearWindow);
-        if (merged.isEmpty()) {
-            return merged;
-        }
-        long latestOldest = merged.get(0).getOpenTime();
-        int rounds = 0;
-        while (ChartGapFillHelper.shouldBackfillOlderHistory(
-                previousWindowSize,
-                FULL_WINDOW_LIMIT,
-                previousOldestOpenTime,
-                latestOldest)
-                && rounds < GAP_FILL_MAX_ROUNDS) {
-            long endTime = Math.max(0L, latestOldest - 1L);
-            List<CandleEntry> olderMonthly = fetchV2SeriesBefore(
-                    symbol,
-                    interval,
-                    FULL_WINDOW_LIMIT,
-                    endTime
-            );
-            if (olderMonthly == null || olderMonthly.isEmpty()) {
-                break;
-            }
-            List<CandleEntry> olderYear = aggregateToYear(olderMonthly, symbol);
-            if (olderYear.isEmpty()) {
-                break;
-            }
-            int beforeSize = merged.size();
-            long beforeOldest = latestOldest;
-            merged = MarketChartDisplayHelper.mergeSeriesByOpenTime(merged, olderYear);
-            latestOldest = merged.get(0).getOpenTime();
-            if (merged.size() <= beforeSize || latestOldest >= beforeOldest) {
-                break;
-            }
-            rounds++;
-        }
-        return merged;
+        return mergedYear;
     }
 
     private List<CandleEntry> fetchFullHistoryAndMark(String symbol, int limit) throws Exception {
@@ -2677,7 +2768,7 @@ public class MarketChartActivity extends AppCompatActivity {
             return new ArrayList<>();
         }
         Map<Integer, List<CandleEntry>> grouped = new LinkedHashMap<>();
-        Calendar calendar = Calendar.getInstance();
+        Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
         for (CandleEntry item : source) {
             calendar.setTimeInMillis(item.getOpenTime());
             int year = calendar.get(Calendar.YEAR);
@@ -2831,20 +2922,14 @@ public class MarketChartActivity extends AppCompatActivity {
         if (binding == null || binding.klineChartView == null) {
             return;
         }
-        List<KlineChartView.PriceAnnotation> abnormalAnnotations = new ArrayList<>();
-        ConfigManager configManager = ConfigManager.getInstance(this);
-        SymbolConfig config = configManager == null ? null : configManager.getSymbolConfig(selectedSymbol);
         List<AbnormalRecord> filteredRecords = filterAbnormalRecordsForSelectedSymbol();
-        List<CandleEntry> abnormalBaseCandles = resolveAbnormalBaseCandles();
-        List<AbnormalRecord> derivedRecords = HistoricalAbnormalRecordBuilder.buildFromCandles(
-                selectedSymbol,
-                abnormalBaseCandles,
-                config,
-                configManager != null && configManager.isUseAndMode()
-        );
-        List<AbnormalRecord> mergedRecords = HistoricalAbnormalRecordBuilder.merge(filteredRecords, derivedRecords);
+        String abnormalOverlaySignature = buildAbnormalOverlaySignature(filteredRecords);
+        if (abnormalOverlaySignature.equals(lastAbnormalOverlaySignature)) {
+            return;
+        }
+        List<KlineChartView.PriceAnnotation> abnormalAnnotations = new ArrayList<>();
         List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> groupedAnnotations =
-                AbnormalAnnotationOverlayBuilder.build(mergedRecords, loadedCandles);
+                AbnormalAnnotationOverlayBuilder.build(filteredRecords, loadedCandles);
         for (AbnormalAnnotationOverlayBuilder.BucketAnnotation item : groupedAnnotations) {
             abnormalAnnotations.add(new KlineChartView.PriceAnnotation(
                     item.anchorTimeMs,
@@ -2856,39 +2941,8 @@ public class MarketChartActivity extends AppCompatActivity {
                     item.intensity
             ));
         }
+        lastAbnormalOverlaySignature = abnormalOverlaySignature;
         binding.klineChartView.setAbnormalAnnotations(abnormalAnnotations);
-    }
-
-    // 异常圆点统一以 1 分钟 K 线为底稿重算，再投影到当前周期，避免高周期直接按粗粒度数据漏计次数。
-    private List<CandleEntry> resolveAbnormalBaseCandles() {
-        if (loadedCandles == null || loadedCandles.isEmpty()) {
-            return new ArrayList<>();
-        }
-        IntervalOption minuteOption = INTERVALS[0];
-        if ("1m".equalsIgnoreCase(selectedInterval.key) && !selectedInterval.yearAggregate) {
-            return new ArrayList<>(loadedCandles);
-        }
-        List<CandleEntry> minuteCandles = getCachedOrPersisted(buildCacheKey(selectedSymbol, minuteOption));
-        if (minuteCandles == null || minuteCandles.isEmpty()) {
-            return new ArrayList<>(loadedCandles);
-        }
-        long startTime = loadedCandles.get(0).getOpenTime();
-        long endTime = loadedCandles.get(loadedCandles.size() - 1).getCloseTime();
-        if (endTime <= 0L) {
-            endTime = loadedCandles.get(loadedCandles.size() - 1).getOpenTime() + 60_000L;
-        }
-        List<CandleEntry> filtered = new ArrayList<>();
-        for (CandleEntry candle : minuteCandles) {
-            if (candle == null) {
-                continue;
-            }
-            long openTime = candle.getOpenTime();
-            if (openTime < startTime || openTime > endTime) {
-                continue;
-            }
-            filtered.add(candle);
-        }
-        return filtered.isEmpty() ? new ArrayList<>(loadedCandles) : filtered;
     }
 
     // 先按当前选中标的筛掉无关异常记录，避免聚合器承担页面状态判断。
@@ -2904,6 +2958,50 @@ public class MarketChartActivity extends AppCompatActivity {
             filtered.add(record);
         }
         return filtered;
+    }
+
+    // 用输入真值签名识别异常标注是否真的变化，避免切 tab 时重复重建同一层标注。
+    private String buildAbnormalOverlaySignature(List<AbnormalRecord> filteredRecords) {
+        long firstOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(0).getOpenTime();
+        long lastOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
+        StringBuilder builder = new StringBuilder();
+        builder.append(selectedSymbol == null ? "" : selectedSymbol.trim())
+                .append('|')
+                .append(loadedCandles.size())
+                .append('|')
+                .append(firstOpenTime)
+                .append('|')
+                .append(lastOpenTime);
+        if (filteredRecords == null || filteredRecords.isEmpty()) {
+            return builder.toString();
+        }
+        for (AbnormalRecord record : filteredRecords) {
+            if (record == null) {
+                builder.append("|null");
+                continue;
+            }
+            builder.append('|')
+                    .append(record.getId() == null ? "" : record.getId().trim())
+                    .append('|')
+                    .append(record.getTimestamp())
+                    .append('|')
+                    .append(record.getCloseTime())
+                    .append('|')
+                    .append(record.getOpenPrice())
+                    .append('|')
+                    .append(record.getClosePrice())
+                    .append('|')
+                    .append(record.getVolume())
+                    .append('|')
+                    .append(record.getAmount())
+                    .append('|')
+                    .append(record.getPriceChange())
+                    .append('|')
+                    .append(record.getPercentChange())
+                    .append('|')
+                    .append(record.getTriggerSummary() == null ? "" : record.getTriggerSummary().trim());
+        }
+        return builder.toString();
     }
 
     private void updateAccountAnnotationsOverlay() {
@@ -2986,8 +3084,8 @@ public class MarketChartActivity extends AppCompatActivity {
             String[] detailLines = new String[]{
                     safeTradePopupValue(item.productName, item.code),
                     "方向 " + sideLabel,
-                    "开仓 " + FormatUtils.formatTime(item.openTimeMs) + " $" + FormatUtils.formatPrice(item.entryPrice),
-                    "平仓 " + FormatUtils.formatTime(item.closeTimeMs) + " $" + FormatUtils.formatPrice(item.exitPrice),
+                    "开仓 " + FormatUtils.formatDateTime(item.openTimeMs) + " $" + FormatUtils.formatPrice(item.entryPrice),
+                    "平仓 " + FormatUtils.formatDateTime(item.closeTimeMs) + " $" + FormatUtils.formatPrice(item.exitPrice),
                     "数量 " + formatQuantity(item.quantity),
                     "盈亏 " + pnlLabel
             };
@@ -3263,11 +3361,7 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         String selected = normalizedSelected.trim().toUpperCase(Locale.ROOT);
         String normalizedCode = MarketChartTradeSupport.toTradeSymbol(code);
-        if (normalizedCode != null && selected.equals(normalizedCode.trim().toUpperCase(Locale.ROOT))) {
-            return true;
-        }
-        String normalizedName = MarketChartTradeSupport.toTradeSymbol(productName);
-        return normalizedName != null && selected.equals(normalizedName.trim().toUpperCase(Locale.ROOT));
+        return normalizedCode != null && selected.equals(normalizedCode.trim().toUpperCase(Locale.ROOT));
     }
 
     private String normalizeTradeSideLabel(String side) {
@@ -3751,5 +3845,19 @@ public class MarketChartActivity extends AppCompatActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
+    }
+
+    private void sendServiceAction(String action) {
+        Intent intent = new Intent(this, MonitorService.class);
+        intent.setAction(action);
+        ContextCompat.startForegroundService(this, intent);
+    }
+
+    // 首次创建图表页时确保监控服务已启动，避免悬浮窗直达时主链尚未建立。
+    private void ensureMonitorServiceStarted() {
+        if (MonitorService.isServiceRunning()) {
+            return;
+        }
+        sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
     }
 }

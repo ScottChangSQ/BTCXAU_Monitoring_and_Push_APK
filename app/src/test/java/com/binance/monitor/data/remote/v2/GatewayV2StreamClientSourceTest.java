@@ -26,17 +26,17 @@ public class GatewayV2StreamClientSourceTest {
     }
 
     @Test
-    public void sourceShouldPublishDisconnectedStateBeforeReconnectOnTermination() throws Exception {
+    public void sourceShouldPublishStructuredReconnectingStateOnTermination() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java",
                 "src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java"
         );
-        int disconnectedIndex = source.indexOf("notifyState(false, reason);");
+        int reconnectingIndex = source.indexOf("ConnectionStage.RECONNECTING");
         int errorIndex = source.indexOf("notifyError(reason);");
         int reconnectIndex = source.indexOf("scheduleReconnect();");
-        assertTrue("断流后必须先发布 disconnected 状态", disconnectedIndex >= 0);
-        assertTrue("断流后必须先通知 disconnected，再上报错误", disconnectedIndex < errorIndex);
-        assertTrue("断流后必须先通知 disconnected，再安排重连", disconnectedIndex < reconnectIndex);
+        assertTrue("断流后必须先发布结构化 reconnecting 阶段", reconnectingIndex >= 0);
+        assertTrue("断流后必须先发布 reconnecting，再上报错误", reconnectingIndex < errorIndex);
+        assertTrue("断流后必须先发布 reconnecting，再安排重连", reconnectingIndex < reconnectIndex);
     }
 
     @Test
@@ -52,6 +52,8 @@ public class GatewayV2StreamClientSourceTest {
                 source.contains("current.cancel();"));
         assertTrue("旧 socket 的迟到断连回调不应再污染当前连接状态",
                 source.contains("if (socket != terminatedSocket || activeConnectionId != connectionId) {"));
+        assertTrue("监听器应接收结构化连接事件，而不是 boolean+message 拼装",
+                source.contains("void onStateChanged(ConnectionEvent event);"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

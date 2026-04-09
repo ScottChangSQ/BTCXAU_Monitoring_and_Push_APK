@@ -39,7 +39,7 @@ public class AbnormalGatewayClient {
 
     @Nullable
     private final ConfigManager configManager;
-    private final OkHttpClient client;
+    private volatile OkHttpClient client;
 
     public AbnormalGatewayClient() {
         this.configManager = null;
@@ -49,6 +49,13 @@ public class AbnormalGatewayClient {
     public AbnormalGatewayClient(@Nullable Context context) {
         this.configManager = context == null ? null : ConfigManager.getInstance(context.getApplicationContext());
         this.client = buildClient();
+    }
+
+    // 前后台恢复后重建异常同步 HTTP 传输层，避免继续复用失活连接池。
+    public synchronized void resetTransport() {
+        OkHttpClient previous = client;
+        client = buildClient();
+        closeClient(previous);
     }
 
     // 拉取服务端异常记录，首次返回全量，后续根据 syncSeq 请求增量。
@@ -225,6 +232,15 @@ public class AbnormalGatewayClient {
                 .writeTimeout(6, TimeUnit.SECONDS)
                 .callTimeout(8, TimeUnit.SECONDS)
                 .build();
+    }
+
+    // 释放旧异常同步 transport 的连接池和调度线程，避免反复重建后残留旧资源。
+    private static void closeClient(@Nullable OkHttpClient previous) {
+        if (previous == null) {
+            return;
+        }
+        previous.connectionPool().evictAll();
+        previous.dispatcher().executorService().shutdown();
     }
 
     private List<String> buildCandidateBaseUrls() {

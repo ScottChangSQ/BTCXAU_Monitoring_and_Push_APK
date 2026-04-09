@@ -6,6 +6,8 @@ package com.binance.monitor.data.local.db;
 
 import androidx.room.Database;
 import androidx.room.RoomDatabase;
+import androidx.room.migration.Migration;
+import androidx.sqlite.db.SupportSQLiteDatabase;
 
 import com.binance.monitor.data.local.db.dao.AccountSnapshotDao;
 import com.binance.monitor.data.local.db.dao.KlineHistoryDao;
@@ -24,10 +26,17 @@ import com.binance.monitor.data.local.db.entity.TradeHistoryEntity;
                 PendingOrderSnapshotEntity.class,
                 AccountSnapshotMetaEntity.class
         },
-        version = 1,
+        version = 2,
         exportSchema = false
 )
 public abstract class AppDatabase extends RoomDatabase {
+
+    public static final Migration MIGRATION_1_2 = new Migration(1, 2) {
+        @Override
+        public void migrate(SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE account_snapshot_meta ADD COLUMN historyRevision TEXT NOT NULL DEFAULT ''");
+        }
+    };
 
     // 提供行情历史访问入口。
     public abstract KlineHistoryDao klineHistoryDao();

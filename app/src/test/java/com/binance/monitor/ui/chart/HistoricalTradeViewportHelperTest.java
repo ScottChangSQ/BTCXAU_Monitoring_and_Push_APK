@@ -37,6 +37,19 @@ public class HistoricalTradeViewportHelperTest {
     }
 
     @Test
+    public void resolveTimeInsideBucketRawIndexShouldKeepLastCandleTradeInsideVisibleSlot() {
+        float rawIndex = HistoricalTradeViewportHelper.resolveTimeInsideBucketRawIndex(
+                2,
+                1_120_000L,
+                1_180_000L,
+                1_179_000L
+        );
+
+        assertTrue(rawIndex > 2f);
+        assertTrue(rawIndex < 2.5f);
+    }
+
+    @Test
     public void pointOutsideViewportShouldNotBeVisible() {
         assertFalse(HistoricalTradeViewportHelper.isPointVisible(95f, 100f, 300f));
         assertFalse(HistoricalTradeViewportHelper.isPointVisible(305f, 100f, 300f));

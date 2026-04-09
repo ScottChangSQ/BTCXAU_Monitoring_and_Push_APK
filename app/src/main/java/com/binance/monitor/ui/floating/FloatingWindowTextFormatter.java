@@ -1,5 +1,5 @@
 /*
- * 悬浮窗文案格式工具，负责把产品名与盈亏金额拼成统一的一行文本。
+ * 悬浮窗文案格式工具，负责把产品名与盈亏金额拼成统一的两行文本。
  */
 package com.binance.monitor.ui.floating;
 
@@ -13,11 +13,11 @@ final class FloatingWindowTextFormatter {
     private FloatingWindowTextFormatter() {
     }
 
-    // 生成“产品（盈亏）”格式的标题，隐私开启时仅隐藏金额部分。
+    // 生成“产品名\n盈亏金额”格式的标题，隐私开启时仅隐藏金额部分。
     static String formatCardTitle(String label, double totalPnl, boolean masked) {
         String safeLabel = label == null ? "" : label.trim();
         String pnlText = formatPnlAmount(totalPnl, masked);
-        return safeLabel + "（" + pnlText + "）";
+        return safeLabel + "\n" + pnlText;
     }
 
     // 统一格式化悬浮窗盈亏金额，顶部汇总和产品标题都复用这套规则。

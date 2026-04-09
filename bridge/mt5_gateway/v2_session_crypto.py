@@ -137,6 +137,17 @@ def _parse_bool_flag(value: object, default: bool = False) -> bool:
     return bool(default)
 
 
+def _normalize_public_key_active_account(active_account: dict | None) -> dict | None:
+    """public-key 接口对当前激活账号补齐 canonical active 标记。"""
+    if not isinstance(active_account, dict) or not active_account:
+        return None
+    normalized = dict(active_account)
+    state = str(normalized.get("state") or "").strip().lower()
+    if state == "activated":
+        normalized["active"] = True
+    return normalized
+
+
 class LoginEnvelopeCrypto:
     """管理登录信封公钥与解密流程。"""
 
@@ -244,7 +255,9 @@ class LoginEnvelopeCrypto:
             algorithm=algorithm,
             public_key_pem=public_key_pem,
             expires_at=expires_at,
-            active_account=v2_session_models.SessionAccountSummary.from_mapping(active_account),
+            active_account=v2_session_models.SessionAccountSummary.from_mapping(
+                _normalize_public_key_active_account(active_account)
+            ),
             saved_accounts=[
                 item
                 for item in (

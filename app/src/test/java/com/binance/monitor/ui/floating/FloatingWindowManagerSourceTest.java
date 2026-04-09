@@ -70,4 +70,47 @@ public class FloatingWindowManagerSourceTest {
         assertTrue(source.contains("if (!windowAdded || binding == null) {"));
         assertTrue(source.contains("windowAdded = false;"));
     }
+
+    @Test
+    public void updateShouldSkipRenderWhenSnapshotVisualContentIsUnchanged() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("if (normalized.hasSameVisualContent(this.snapshot)) {"));
+        assertTrue(source.contains("return;"));
+    }
+
+    @Test
+    public void overlayTapShouldBringExistingAppTaskToFrontInsteadOfDirectChartLaunch() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("new Intent(context, OverlayLaunchBridgeActivity.class)"));
+        assertTrue(source.contains("putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_SYMBOL"));
+        assertTrue(source.contains("Intent.FLAG_ACTIVITY_NEW_TASK"));
+        assertTrue(source.contains("cardView.setOnClickListener(v -> openChartForCard(card));"));
+        assertFalse(source.contains("new Intent(context, MainActivity.class)"));
+    }
+
+    @Test
+    public void reconnectingStateShouldNotBeRenderedAsOffline() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("private boolean shouldRenderOfflineState(ConnectionStage connectionStage,"));
+        assertTrue(source.contains("if (safeStage == ConnectionStage.RECONNECTING) {"));
+        assertTrue(source.contains("return visibleCards == null || visibleCards.isEmpty();"));
+        assertTrue(source.contains("return \"重连中\";"));
+    }
+
+    @Test
+    public void hideShouldClearWindowOwnershipEvenWhenImmediateRemoveThrows() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertFalse(source.contains("} catch (Exception ignored) {\n            return;\n        }"));
+        assertTrue(source.contains("windowAdded = false;"));
+    }
 }

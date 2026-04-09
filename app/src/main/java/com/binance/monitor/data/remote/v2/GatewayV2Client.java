@@ -1,5 +1,5 @@
 /*
- * v2 网关客户端，负责请求和解析新的 market/account/sync 接口。
+ * v2 网关客户端，负责请求和解析 `/v2/market/*`、`/v2/account/*` 接口。
  * 图表页和账户页后续会统一通过这里读取服务端真值，而不是各自拼接口。
  */
 package com.binance.monitor.data.remote.v2;
@@ -15,7 +15,6 @@ import com.binance.monitor.data.model.v2.AccountHistoryPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.data.model.v2.MarketSeriesPayload;
 import com.binance.monitor.data.model.v2.MarketSnapshotPayload;
-import com.binance.monitor.data.model.v2.SyncDeltaPayload;
 import com.binance.monitor.ui.account.AccountTimeRange;
 
 import org.json.JSONArray;
@@ -36,26 +35,27 @@ public class GatewayV2Client {
     private static final long CONNECT_TIMEOUT_SECONDS = 8L;
     private static final long READ_TIMEOUT_SECONDS = 35L;
 
-    private final OkHttpClient client;
+    private volatile OkHttpClient client;
     @Nullable
     private final ConfigManager configManager;
 
     public GatewayV2Client() {
-        this.client = new OkHttpClient.Builder()
-                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .build();
+        this.client = buildClient();
         this.configManager = null;
     }
 
     public GatewayV2Client(@Nullable Context context) {
-        this.client = new OkHttpClient.Builder()
-                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .build();
+        this.client = buildClient();
         this.configManager = context == null
                 ? null
                 : ConfigManager.getInstance(context.getApplicationContext());
+    }
+
+    // 前后台恢复后重建 HTTP 传输层，避免系统网络切换后继续复用失活连接池。
+    public synchronized void resetTransport() {
+        OkHttpClient previous = client;
+        client = buildClient();
+        closeClient(previous);
     }
 
     // 解析 v2 market snapshot，供测试和页面预加载复用。
@@ -100,12 +100,10 @@ public class GatewayV2Client {
     // 解析 v2 account snapshot，保留账户区和当前持仓/挂单原始载荷。
     public static AccountSnapshotPayload parseAccountSnapshot(String body) throws Exception {
         JSONObject json = new JSONObject(safeBody(body));
-        JSONObject accountMeta = json.optJSONObject("accountMeta");
-        JSONObject account = json.optJSONObject("account");
-        if (account == null) {
-            throw new IllegalStateException("v2 account snapshot missing account object");
-        }
-        JSONArray orders = json.optJSONArray("orders");
+        JSONObject accountMeta = requireObject(json, "accountMeta", "v2 account snapshot");
+        JSONObject account = requireObject(json, "account", "v2 account snapshot");
+        JSONArray positions = requireArray(json, "positions", "v2 account snapshot");
+        JSONArray orders = requireArray(json, "orders", "v2 account snapshot");
         return new AccountSnapshotPayload(
                 extractServerTime(json, accountMeta),
                 extractSyncToken(json, accountMeta),
@@ -114,7 +112,7 @@ public class GatewayV2Client {
                 json.optJSONArray("overviewMetrics"),
                 json.optJSONArray("curveIndicators"),
                 json.optJSONArray("statsMetrics"),
-                json.optJSONArray("positions"),
+                positions,
                 orders,
                 safeBody(body)
         );
@@ -123,8 +121,10 @@ public class GatewayV2Client {
     // 解析 v2 account history，保留交易、历史挂单和净值曲线。
     public static AccountHistoryPayload parseAccountHistory(String body) throws Exception {
         JSONObject json = new JSONObject(safeBody(body));
-        JSONObject accountMeta = json.optJSONObject("accountMeta");
-        JSONArray orders = json.optJSONArray("orders");
+        JSONObject accountMeta = requireObject(json, "accountMeta", "v2 account history");
+        JSONArray trades = requireArray(json, "trades", "v2 account history");
+        JSONArray orders = requireArray(json, "orders", "v2 account history");
+        JSONArray curvePoints = requireArray(json, "curvePoints", "v2 account history");
         return new AccountHistoryPayload(
                 extractServerTime(json, accountMeta),
                 extractSyncToken(json, accountMeta),
@@ -132,22 +132,10 @@ public class GatewayV2Client {
                 json.optJSONArray("overviewMetrics"),
                 json.optJSONArray("curveIndicators"),
                 json.optJSONArray("statsMetrics"),
-                json.optJSONArray("trades"),
+                trades,
                 orders,
-                json.optJSONArray("curvePoints"),
+                curvePoints,
                 json.optString("nextCursor", ""),
-                safeBody(body)
-        );
-    }
-
-    // 解析 v2 增量响应，供断线补差逻辑复用。
-    public static SyncDeltaPayload parseSyncDelta(String body) throws Exception {
-        JSONObject json = new JSONObject(safeBody(body));
-        return new SyncDeltaPayload(
-                json.optLong("serverTime"),
-                json.optString("nextSyncToken", ""),
-                json.optJSONArray("marketDelta"),
-                json.optJSONArray("accountDelta"),
                 safeBody(body)
         );
     }
@@ -187,14 +175,14 @@ public class GatewayV2Client {
         return parseMarketSeries(get(path));
     }
 
-    // 请求账户当前快照。
-    public AccountSnapshotPayload fetchAccountSnapshot() throws Exception {
-        return parseAccountSnapshot(get("/v2/account/snapshot"));
-    }
-
     // 请求账户历史交易、挂单历史和净值曲线。
     public AccountHistoryPayload fetchAccountHistory(AccountTimeRange range, String cursor) throws Exception {
         return fetchAccountHistory(mapRangeKey(range), cursor);
+    }
+
+    // 请求账户当前运行态快照，供页面主动刷新与交易后强一致确认复用。
+    public AccountSnapshotPayload fetchAccountSnapshot() throws Exception {
+        return parseAccountSnapshot(get("/v2/account/snapshot"));
     }
 
     // 请求账户历史交易、挂单历史和净值曲线。
@@ -203,12 +191,6 @@ public class GatewayV2Client {
         String encodedCursor = encodeQuery(cursor);
         String path = "/v2/account/history?range=" + rangeKey + "&cursor=" + encodedCursor;
         return parseAccountHistory(get(path));
-    }
-
-    // 请求统一增量补丁。
-    public SyncDeltaPayload fetchSyncDelta(String syncToken) throws Exception {
-        String path = "/v2/sync/delta?syncToken=" + (syncToken == null ? "" : syncToken);
-        return parseSyncDelta(get(path));
     }
 
     private String get(String path) throws Exception {
@@ -235,6 +217,22 @@ public class GatewayV2Client {
 
     private static String safeBody(String body) {
         return body == null ? "{}" : body;
+    }
+
+    private static JSONObject requireObject(JSONObject root, String key, String context) {
+        JSONObject value = root == null ? null : root.optJSONObject(key);
+        if (value == null) {
+            throw new IllegalStateException(context + " missing " + key + " object");
+        }
+        return value;
+    }
+
+    private static JSONArray requireArray(JSONObject root, String key, String context) {
+        JSONArray value = root == null ? null : root.optJSONArray(key);
+        if (value == null) {
+            throw new IllegalStateException(context + " missing " + key + " array");
+        }
+        return value;
     }
 
     private static long extractServerTime(JSONObject root, @Nullable JSONObject meta) {
@@ -275,5 +273,21 @@ public class GatewayV2Client {
     private static String encodeQuery(@Nullable String value) {
         String safe = value == null ? "" : value;
         return URLEncoder.encode(safe, StandardCharsets.UTF_8);
+    }
+
+    private static OkHttpClient buildClient() {
+        return new OkHttpClient.Builder()
+                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .build();
+    }
+
+    // 释放旧 transport 持有的连接池和调度线程，避免频繁重建后累积旧资源。
+    private static void closeClient(@Nullable OkHttpClient previous) {
+        if (previous == null) {
+            return;
+        }
+        previous.connectionPool().evictAll();
+        previous.dispatcher().executorService().shutdown();
     }
 }

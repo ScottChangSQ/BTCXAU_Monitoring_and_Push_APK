@@ -27,8 +27,26 @@ public class GatewayV2ClientSourceTest {
         Path file = Paths.get("src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("v2 account snapshot missing account object"));
-        assertTrue(source.contains("JSONObject account = json.optJSONObject(\"account\");"));
-        assertTrue(source.contains("if (account == null) {"));
+        assertTrue(source.contains("requireObject(json, \"accountMeta\", \"v2 account snapshot\")"));
+        assertTrue(source.contains("requireObject(json, \"account\", \"v2 account snapshot\")"));
+        assertTrue(source.contains("requireArray(json, \"positions\", \"v2 account snapshot\")"));
+        assertTrue(source.contains("requireArray(json, \"orders\", \"v2 account snapshot\")"));
+        assertTrue(source.contains("requireArray(json, \"trades\", \"v2 account history\")"));
+        assertTrue(source.contains("requireArray(json, \"curvePoints\", \"v2 account history\")"));
+        assertTrue(source.contains("throw new IllegalStateException(context + \" missing \" + key + \" object\")"));
+        assertTrue(source.contains("throw new IllegalStateException(context + \" missing \" + key + \" array\")"));
+    }
+
+    @Test
+    public void gatewayV2ClientShouldSupportTransportResetAfterForegroundResume() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("public synchronized void resetTransport()"));
+        assertTrue(source.contains("client = buildClient();"));
+        assertTrue(source.contains("private static OkHttpClient buildClient()"));
+        assertTrue(source.contains("OkHttpClient previous = client;"));
+        assertTrue(source.contains("closeClient(previous);"));
+        assertTrue(source.contains("previous.connectionPool().evictAll();"));
     }
 }

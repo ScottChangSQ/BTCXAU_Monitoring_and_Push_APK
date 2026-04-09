@@ -71,6 +71,17 @@ public class NotificationHelper {
                 .build();
     }
 
+    // 更新前台服务通知内容，但不撤销服务身份。
+    public void updateServiceNotification(String connectionState, boolean monitoringEnabled) {
+        if (manager == null) {
+            return;
+        }
+        manager.notify(
+                AppConstants.SERVICE_NOTIFICATION_ID,
+                buildServiceNotification(connectionState, monitoringEnabled)
+        );
+    }
+
     public void cancelServiceNotification() {
         if (manager != null) {
             manager.cancel(AppConstants.SERVICE_NOTIFICATION_ID);
