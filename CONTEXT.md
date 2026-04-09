@@ -1,6 +1,7 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 正在收口 K 线十字光标横向跟随规则：十字光标横线的价格仍按手指纵向位置实时变化，但纵线不再匀速跟随手指左右滑动，而是吸附到当前高亮 K 线的中心位置，形成按柱跳格的横向反馈。
 - 正在收口悬浮窗产品标题样式：产品卡标题已从单行“产品名（盈亏）”改成两行“产品名\n产品盈亏”，同时展开态固定宽度已从 `144dp` 恢复到此前的 `90dp`，保持固定宽度不做动态抖动。
 - 正在收口“K 线图重新进入后左侧缺口补得慢”这一项：主链恢复窗口已从固定 `1500` 收口到 `300`，自动缺口补拉已从“同步整轮补完再落图”改成“首屏先落图，后台按批次 prepend 渐进补齐”，和手动左滑共用同一套历史落图路径。
 - 当前已补对应源码约束测试并通过：`MarketChartProgressiveGapFillSourceTest`、`MarketChartGapFillSourceTest`、`MarketChartLoadMoreStateSourceTest`、`MarketChartHistoryPagingSourceTest`、`MarketChartRefreshHelperTest`。
@@ -25,6 +26,7 @@
 - 最新一轮 ADB 复核又确认了一个真实拦截点：手机上先前运行的不是本地最新 APK；安装最新 APK 后，APP 启动被 `account_snapshot_meta.historyRevision` 的 Room 迁移契约不一致拦截。现在已把实体字段显式收口为 `NOT NULL DEFAULT ''` 对应契约，重新编译安装后，真机日志已出现 `syncBootstrap refreshMarket=true`、`repo_kline`、`main_render` 和 `floating_render`，说明行情主链已重新打通。
 
 ## 上次停在哪个位置
+- 当前最新停在“K 线十字光标横向吸附到 K 线中心”这一轮已收口：`KlineChartView.updateCrosshair(...)` 已改成先按手指横坐标求高亮 K 线，再把十字纵线吸附到该 K 线中心；纵向 `crosshairY` 与价格换算保持原样。相关图表源码测试已于 2026-04-09 通过。
 - 当前最新停在“悬浮窗产品标题改两行 + 宽度恢复旧固定值”这一轮已收口：`FloatingWindowTextFormatter` 已改成输出两行标题，`FloatingWindowManager` 标题 TextView 已允许两行显示，`FloatingWindowLayoutHelper` 固定宽度已恢复到 `90dp`；相关悬浮窗定向测试已于 2026-04-09 通过。
 - 当前最新停在“K 线图重新进入后的缺口渐进补拉 + 主链窗口收口”这一轮已收口：`MarketChartActivity` 已拆分 `RESTORE_WINDOW_LIMIT=300` 与 `HISTORY_PAGE_LIMIT=300`，自动缺口补拉改成独立后台任务按批次调用 `applyLoadMoreSuccessState(...)`；相关图表定向测试已于 2026-04-09 通过。
 - 当前最新停在“订单操作弹窗可读性 + 挂单类型下拉显示不全”这一项已收口：`dialog_trade_command.xml` 和 `MarketChartActivity` 已完成结构性修复；`MarketChartTradeSourceTest` 已于 2026-04-09 通过。
@@ -50,6 +52,7 @@
 - 当前最新停在“悬浮窗点击前台切换链已改成任务前移”：`FloatingWindowManager` 不再直接发起图表页启动；`FloatingWindowManagerSourceTest` 定向通过；最新 APK 已于 2026-04-09 14:28 安装到真机，可继续现场验证用户点击浮窗时是否还会出现类似重开的表现。
 
 ## 近期关键决定和原因
+- 决定只修改十字光标的横向显示坐标，不改手势识别、纵向价格定位和上下滑动。原因是当前问题的根因是 `crosshairX` 直接使用了手指 `x`，而高亮 K 线索引已经在按桶计算；把显示坐标吸附到 `xFor(highlightedIndex, ...)` 就能准确得到“按 K 线中心跳动”的效果，同时不引入新的交互分支。
 - 决定把悬浮窗产品标题拆成“产品名 + 下一行产品盈亏”两行固定文本，而不是继续把盈亏包在产品名后面。原因是当前固定窄宽度下，产品名和盈亏放在同一行更容易截断；拆成两行后，信息优先级更清楚，也不需要重新引入动态宽度。
 - 决定把悬浮窗展开宽度从 `144dp` 恢复到修改前的 `90dp`。原因是用户这轮明确要求恢复旧固定宽度，只调整标题排版，不再继续依赖放大宽度容纳单行盈亏。
 - 决定把图表“主链恢复窗口”和“历史分页批次”拆成两个独立常量，并都先收口到 `300`。原因是 `1500` 之前同时承担了“最新窗口恢复”和“左侧补历史分页”两种职责，导致重新进入图表时单次请求过重、补拉反馈过慢。

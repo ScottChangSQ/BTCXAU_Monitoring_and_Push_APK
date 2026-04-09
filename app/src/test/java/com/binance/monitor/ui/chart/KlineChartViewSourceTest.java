@@ -49,4 +49,16 @@ public class KlineChartViewSourceTest {
         assertTrue(!source.contains("verticalScale = clamp(verticalScale * smoothYScale"));
         assertTrue(!source.contains("/ Math.max(1e-6f, verticalScale)"));
     }
+
+    @Test
+    public void crosshairShouldSnapHorizontallyToHighlightedCandleCenter() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("highlightedIndex = Math.round(rawIndex);"));
+        assertTrue(source.contains("crosshairX = clamp(xFor(highlightedIndex, visibleEndFloat), priceRect.left, priceRect.right);"));
+        assertTrue(source.contains("crosshairY = clamp(y, priceRect.top, priceRect.bottom);"));
+    }
 }

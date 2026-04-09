@@ -1940,13 +1940,14 @@ public class KlineChartView extends View {
 
     private void updateCrosshair(float x, float y) {
         if (candles.isEmpty()) return;
-        crosshairX = clamp(x, priceRect.left, priceRect.right);
+        float touchX = clamp(x, priceRect.left, priceRect.right);
         crosshairY = clamp(y, priceRect.top, priceRect.bottom);
-        float rawIndex = xToRawIndex(crosshairX, visibleEndFloat);
+        float rawIndex = xToRawIndex(touchX, visibleEndFloat);
         crosshairOnCandle = rawIndex >= -0.05f && rawIndex <= candles.size() - 1f + 0.05f;
         highlightedIndex = Math.round(rawIndex);
         if (highlightedIndex < 0) highlightedIndex = 0;
         if (highlightedIndex >= candles.size()) highlightedIndex = candles.size() - 1;
+        crosshairX = clamp(xFor(highlightedIndex, visibleEndFloat), priceRect.left, priceRect.right);
         crosshairPrice = valueForY(crosshairY, visiblePriceMin, visiblePriceMax, priceRect);
         notifyCrosshair();
         invalidate();
