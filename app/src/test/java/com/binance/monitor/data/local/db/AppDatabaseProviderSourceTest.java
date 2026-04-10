@@ -42,6 +42,32 @@ public class AppDatabaseProviderSourceTest {
                 databaseSource.contains("ALTER TABLE account_snapshot_meta ADD COLUMN historyRevision TEXT NOT NULL DEFAULT ''"));
     }
 
+    @Test
+    public void positionAndPendingSnapshotShouldPersistOpenTimeWithMigration() throws Exception {
+        String positionSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/db/entity/PositionSnapshotEntity.java",
+                "src/main/java/com/binance/monitor/data/local/db/entity/PositionSnapshotEntity.java"
+        );
+        String pendingSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/db/entity/PendingOrderSnapshotEntity.java",
+                "src/main/java/com/binance/monitor/data/local/db/entity/PendingOrderSnapshotEntity.java"
+        );
+        String databaseSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/db/AppDatabase.java",
+                "src/main/java/com/binance/monitor/data/local/db/AppDatabase.java"
+        );
+        String providerSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/db/AppDatabaseProvider.java",
+                "src/main/java/com/binance/monitor/data/local/db/AppDatabaseProvider.java"
+        );
+
+        assertTrue(positionSource.contains("public long openTime;"));
+        assertTrue(pendingSource.contains("public long openTime;"));
+        assertTrue(databaseSource.contains("ALTER TABLE position_snapshot ADD COLUMN openTime INTEGER NOT NULL DEFAULT 0"));
+        assertTrue(databaseSource.contains("ALTER TABLE pending_order_snapshot ADD COLUMN openTime INTEGER NOT NULL DEFAULT 0"));
+        assertTrue(providerSource.contains(".addMigrations(AppDatabase.MIGRATION_2_3)"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

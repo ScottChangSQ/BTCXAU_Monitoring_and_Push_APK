@@ -9,7 +9,7 @@ public final class AccountHistoryRefreshPolicyHelper {
     private AccountHistoryRefreshPolicyHelper() {
     }
 
-    // 仅当服务端历史修订号变化时，才补拉全量历史，避免按数量猜测导致的误刷新。
+    // 仅当服务端历史修订号变化，或本地已经没有可用历史时，才补拉全量历史。
     public static boolean shouldRefreshAllHistory(String remoteHistoryRevision,
                                                   String cachedHistoryRevision,
                                                   boolean hasStoredTradeHistory) {

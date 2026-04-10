@@ -105,6 +105,7 @@ public class MarketChartActivity extends AppCompatActivity {
     public static final String PREF_RUNTIME_NAME = "market_chart_runtime";
     private static final String PREF_KEY_SELECTED_INTERVAL = "selected_interval";
     private static final String PREF_KEY_SHOW_HISTORY_TRADES = "show_history_trades";
+    private static final String PREF_KEY_POSITION_SORT = "position_sort";
     private static final String PREF_KEY_CHART_CACHE_SCHEMA_VERSION = "chart_cache_schema_version";
     private static final int CHART_CACHE_SCHEMA_VERSION = 2;
 
@@ -161,10 +162,13 @@ public class MarketChartActivity extends AppCompatActivity {
     private int requestVersion = 0;
     private final Map<String, List<CandleEntry>> klineCache = new ConcurrentHashMap<>();
     private final Map<String, String> latestPersistedSignatures = new ConcurrentHashMap<>();
+    private final Set<String> pendingPersistedCacheKeys = ConcurrentHashMap.newKeySet();
     private ChartHistoryRepository chartHistoryRepository;
     private AccountStorageRepository accountStorageRepository;
     private AccountStatsPreloadManager accountStatsPreloadManager;
     private AbnormalRecordManager abnormalRecordManager;
+    private Future<?> storedChartOverlayRestoreTask;
+    private AccountSnapshot storedChartOverlaySnapshot;
 
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private ArrayAdapter<String> symbolAdapter;
@@ -208,6 +212,8 @@ public class MarketChartActivity extends AppCompatActivity {
     private final List<PositionItem> lastChartPositions = new ArrayList<>();
     private final List<PositionItem> lastChartPendingOrders = new ArrayList<>();
     private double lastChartTotalAsset;
+    private MarketChartPositionSortHelper.SortOption selectedPositionSort =
+            MarketChartPositionSortHelper.SortOption.OPEN_TIME_DESC;
     private int pricePaneLeftPx;
     private int pricePaneTopPx;
     private int pricePaneRightPx;
@@ -311,6 +317,7 @@ public class MarketChartActivity extends AppCompatActivity {
         applyIntentSymbol(getIntent(), false);
         restoreSelectedInterval();
         restoreHistoryTradeVisibility();
+        restoreChartPositionSort();
         if (abnormalRecordManager != null) {
             abnormalRecordManager.getRecordsLiveData().observe(this, records -> {
                 abnormalRecords = records == null ? new ArrayList<>() : new ArrayList<>(records);
@@ -339,10 +346,11 @@ public class MarketChartActivity extends AppCompatActivity {
         super.onResume();
         ensureMonitorServiceStarted();
         applyPaletteStyles();
-        applyPrivacyMaskState();
         if (accountStatsPreloadManager != null) {
             accountStatsPreloadManager.addCacheListener(accountCacheListener);
         }
+        restoreChartOverlayFromLatestCacheOrEmpty();
+        applyPrivacyMaskState();
         enterChartScreen(!chartScreenEntered);
         chartScreenEntered = true;
     }
@@ -789,6 +797,7 @@ public class MarketChartActivity extends AppCompatActivity {
         chartPositionAggregateAdapter = new PositionAggregateAdapter();
         chartPositionAdapter = new PositionAdapterV2();
         chartPendingOrderAdapter = new PendingOrderAdapter();
+        ArrayAdapter<String> positionSortAdapter = createPositionSortAdapter();
         binding.recyclerChartPositionByProduct.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerChartPositionByProduct.setAdapter(chartPositionAggregateAdapter);
         binding.recyclerChartPositions.setLayoutManager(new LinearLayoutManager(this));
@@ -797,12 +806,101 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.recyclerChartPendingOrders.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerChartPendingOrders.setItemAnimator(null);
         binding.recyclerChartPendingOrders.setAdapter(chartPendingOrderAdapter);
+        binding.spinnerChartPositionSort.setAdapter(positionSortAdapter);
+        binding.spinnerChartPositionSort.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                Object item = parent.getItemAtPosition(position);
+                handleChartPositionSortSelection(MarketChartPositionSortHelper.fromLabel(
+                        item == null ? "" : String.valueOf(item)), true);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        binding.tvChartPositionSortLabel.setOnClickListener(v -> binding.spinnerChartPositionSort.performClick());
         chartPositionAdapter.setActionListener(this::showPositionActionMenu);
         chartPendingOrderAdapter.setActionListener(this::showPendingOrderActionMenu);
         binding.btnChartTradeBuy.setOnClickListener(v -> showTradeCommandDialog(ChartTradeAction.OPEN_BUY, null));
         binding.btnChartTradeSell.setOnClickListener(v -> showTradeCommandDialog(ChartTradeAction.OPEN_SELL, null));
         binding.btnChartTradePending.setOnClickListener(v -> showTradeCommandDialog(ChartTradeAction.PENDING_ADD, null));
-        updateChartPositionPanel(new ArrayList<>(), new ArrayList<>(), 0d);
+        syncChartPositionSortSelection();
+        restoreChartOverlayFromLatestCacheOrEmpty();
+    }
+
+    // 统一创建持仓明细排序下拉项，保证主题切换后选项仍可见。
+    private ArrayAdapter<String> createPositionSortAdapter() {
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
+                this,
+                R.layout.item_spinner_filter,
+                android.R.id.text1,
+                MarketChartPositionSortHelper.buildOptionLabels()
+        ) {
+            @Override
+            public View getView(int position, @Nullable View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                stylePositionSortSpinnerItem(view);
+                return view;
+            }
+
+            @Override
+            public View getDropDownView(int position, @Nullable View convertView, ViewGroup parent) {
+                View view = super.getDropDownView(position, convertView, parent);
+                stylePositionSortSpinnerItem(view);
+                return view;
+            }
+        };
+        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
+        return adapter;
+    }
+
+    // 排序标签和下拉选项统一使用当前主题文字色。
+    private void stylePositionSortSpinnerItem(@Nullable View view) {
+        if (!(view instanceof TextView)) {
+            return;
+        }
+        TextView textView = (TextView) view;
+        UiPaletteManager.styleSpinnerItemText(textView, UiPaletteManager.resolve(this), 12f);
+    }
+
+    // 点击右侧排序入口后统一更新状态、文案和持久化，再用最近一份持仓快照重绘列表。
+    private void handleChartPositionSortSelection(@Nullable MarketChartPositionSortHelper.SortOption option,
+                                                  boolean persist) {
+        MarketChartPositionSortHelper.SortOption resolved = option == null
+                ? MarketChartPositionSortHelper.SortOption.OPEN_TIME_DESC
+                : option;
+        if (resolved == selectedPositionSort && binding != null && binding.tvChartPositionSortLabel != null) {
+            binding.tvChartPositionSortLabel.setText(resolved.getLabel());
+            return;
+        }
+        selectedPositionSort = resolved;
+        if (binding != null && binding.tvChartPositionSortLabel != null) {
+            binding.tvChartPositionSortLabel.setText(resolved.getLabel());
+        }
+        if (persist) {
+            persistChartPositionSort();
+        }
+        updateChartPositionPanel(lastChartPositions, lastChartPendingOrders, lastChartTotalAsset);
+    }
+
+    // 进入页面时同步 Spinner 选中项和右侧标签，避免控件状态与真实排序规则脱节。
+    private void syncChartPositionSortSelection() {
+        if (binding == null) {
+            return;
+        }
+        binding.tvChartPositionSortLabel.setText(selectedPositionSort.getLabel());
+        SpinnerAdapter adapter = binding.spinnerChartPositionSort.getAdapter();
+        if (adapter == null) {
+            return;
+        }
+        String[] labels = MarketChartPositionSortHelper.buildOptionLabels();
+        for (int i = 0; i < labels.length; i++) {
+            if (selectedPositionSort.getLabel().equals(labels[i])) {
+                binding.spinnerChartPositionSort.setSelection(i, false);
+                return;
+            }
+        }
     }
 
     // 打开持仓操作菜单，第一阶段只支持全平和改 TP/SL。
@@ -813,7 +911,7 @@ public class MarketChartActivity extends AppCompatActivity {
         String[] actions = new String[]{"全部平仓", "修改止盈止损"};
         AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle("持仓操作")
-                .setItems(actions, (menuDialog, which) -> {
+                .setAdapter(createTradeActionMenuAdapter(actions), (menuDialog, which) -> {
                     try {
                         if (which == 0) {
                             requestTradeExecution(buildClosePositionInput(item));
@@ -837,7 +935,7 @@ public class MarketChartActivity extends AppCompatActivity {
         String[] actions = new String[]{"撤销挂单"};
         AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle("挂单操作")
-                .setItems(actions, (menuDialog, which) -> {
+                .setAdapter(createTradeActionMenuAdapter(actions), (menuDialog, which) -> {
                     try {
                         requestTradeExecution(buildPendingCancelInput(item));
                     } catch (IllegalArgumentException exception) {
@@ -1222,6 +1320,29 @@ public class MarketChartActivity extends AppCompatActivity {
         }
     }
 
+    // 统一交易动作菜单样式，确保深色弹窗里的列表项文字保持高对比可读。
+    private ArrayAdapter<String> createTradeActionMenuAdapter(String[] actions) {
+        return new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, android.R.id.text1, actions) {
+            @Override
+            public View getView(int position, @Nullable View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                styleTradeActionMenuItem(view);
+                return view;
+            }
+        };
+    }
+
+    // 统一交易动作菜单列表项文字样式，避免标题和操作项在深色背景下对比不足。
+    private void styleTradeActionMenuItem(@Nullable View view) {
+        if (!(view instanceof TextView)) {
+            return;
+        }
+        TextView textView = (TextView) view;
+        textView.setTextColor(Color.WHITE);
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        textView.setTypeface(null, Typeface.NORMAL);
+    }
+
     // 交易弹窗挂单类型使用统一下拉样式，避免系统默认布局在深色面板中显示裁切和低对比。
     private ArrayAdapter<String> createTradeOrderTypeAdapter(String[] orderTypes) {
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(
@@ -1254,7 +1375,9 @@ public class MarketChartActivity extends AppCompatActivity {
             return;
         }
         TextView textView = (TextView) view;
-        UiPaletteManager.styleSpinnerItemText(textView, UiPaletteManager.resolve(this), 13f);
+        textView.setTextColor(Color.WHITE);
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        textView.setTypeface(null, Typeface.NORMAL);
     }
 
     // 统一生成弹窗标题。
@@ -1333,52 +1456,52 @@ public class MarketChartActivity extends AppCompatActivity {
                 || chartPendingOrderAdapter == null) {
             return;
         }
+        List<PositionItem> positionSnapshot = positions == null
+                ? new ArrayList<>()
+                : new ArrayList<>(positions);
+        List<PositionItem> pendingSnapshot = pendingOrders == null
+                ? new ArrayList<>()
+                : new ArrayList<>(pendingOrders);
         lastChartPositions.clear();
-        if (positions != null) {
-            lastChartPositions.addAll(positions);
-        }
+        lastChartPositions.addAll(positionSnapshot);
         lastChartPendingOrders.clear();
-        if (pendingOrders != null) {
-            lastChartPendingOrders.addAll(pendingOrders);
-        }
+        lastChartPendingOrders.addAll(pendingSnapshot);
         lastChartTotalAsset = Math.max(0d, totalAsset);
         boolean masked = SensitiveDisplayMasker.isEnabled(this);
         List<PositionItem> filteredPositions = new ArrayList<>();
-        if (positions != null) {
-            for (PositionItem item : positions) {
-                if (item == null || Math.abs(item.getQuantity()) <= 1e-9) {
-                    continue;
-                }
-                if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {
-                    continue;
-                }
-                filteredPositions.add(item);
+        for (PositionItem item : positionSnapshot) {
+            if (item == null || Math.abs(item.getQuantity()) <= 1e-9) {
+                continue;
             }
+            if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {
+                continue;
+            }
+            filteredPositions.add(item);
         }
-        filteredPositions.sort(Comparator.comparing(PositionItem::getProductName));
+        List<PositionItem> aggregateSource = new ArrayList<>(filteredPositions);
+        aggregateSource.sort(Comparator.comparing(PositionItem::getProductName));
+        filteredPositions = MarketChartPositionSortHelper.sortPositions(filteredPositions, selectedPositionSort);
 
         List<PositionItem> filteredPendingOrders = new ArrayList<>();
-        if (pendingOrders != null) {
-            for (PositionItem item : pendingOrders) {
-                if (item == null) {
-                    continue;
-                }
-                if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {
-                    continue;
-                }
-                double pendingLots = resolvePendingLots(item);
-                if (pendingLots <= 1e-9 && item.getPendingCount() <= 0) {
-                    continue;
-                }
-                filteredPendingOrders.add(item);
+        for (PositionItem item : pendingSnapshot) {
+            if (item == null) {
+                continue;
             }
+            if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {
+                continue;
+            }
+            double pendingLots = resolvePendingLots(item);
+            if (pendingLots <= 1e-9 && item.getPendingCount() <= 0) {
+                continue;
+            }
+            filteredPendingOrders.add(item);
         }
         filteredPendingOrders.sort((a, b) -> Double.compare(resolvePendingSortWeight(b), resolvePendingSortWeight(a)));
 
         chartPositionAggregateAdapter.setMasked(masked);
         chartPositionAdapter.setMasked(masked);
         chartPendingOrderAdapter.setMasked(masked);
-        List<PositionAggregateAdapter.AggregateItem> aggregateItems = buildPositionAggregatesForChart(filteredPositions);
+        List<PositionAggregateAdapter.AggregateItem> aggregateItems = buildPositionAggregatesForChart(aggregateSource);
         chartPositionAggregateAdapter.submitList(aggregateItems);
         binding.recyclerChartPositionByProduct.setVisibility(aggregateItems.isEmpty() ? View.GONE : View.VISIBLE);
         if (binding.tvChartPositionAggregateEmpty != null) {
@@ -1759,11 +1882,15 @@ public class MarketChartActivity extends AppCompatActivity {
                 loadedCandles.isEmpty(),
                 !key.equals(activeDataKey)
         );
+        List<CandleEntry> memoryCached = getCachedCandles(key);
+        if (!MarketChartDisplayHelper.isSeriesCompatibleForInterval(selectedInterval.key, memoryCached)) {
+            memoryCached = null;
+        }
+        if (memoryCached == null || memoryCached.isEmpty()) {
+            schedulePersistedCacheRestore(key, shouldWarmDisplay);
+        }
         if (shouldWarmDisplay) {
-            List<CandleEntry> cached = getCachedOrPersisted(key);
-            if (!MarketChartDisplayHelper.isSeriesCompatibleForInterval(selectedInterval.key, cached)) {
-                cached = null;
-            }
+            List<CandleEntry> cached = memoryCached;
             if (cached == null || cached.isEmpty()) {
                 cached = buildWarmDisplayCandles(selectedSymbol, selectedInterval);
             }
@@ -1774,7 +1901,7 @@ public class MarketChartActivity extends AppCompatActivity {
 
         List<CandleEntry> localForPlan = key.equals(activeDataKey)
                 ? loadedCandles
-                : getCachedOrPersisted(key);
+                : memoryCached;
         if (!MarketChartDisplayHelper.isSeriesCompatibleForInterval(selectedInterval.key, localForPlan)) {
             localForPlan = null;
         }
@@ -1844,9 +1971,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     if (current != requestVersion || isFinishing() || isDestroyed()) {
                         return;
                     }
-                    boolean followingLatestViewport = binding != null
-                            && binding.klineChartView != null
-                            && binding.klineChartView.isFollowingLatestViewport();
+                    boolean followingLatestViewport = shouldFollowLatestViewportOnRefresh();
                     MarketChartDisplayHelper.DisplayUpdate displayUpdate = MarketChartDisplayHelper.buildDisplayUpdate(
                             reqInterval == null ? "" : reqInterval.key,
                             refreshSeed,
@@ -1985,7 +2110,7 @@ public class MarketChartActivity extends AppCompatActivity {
             if (!canWarmDisplayFrom(candidate, targetInterval)) {
                 continue;
             }
-            List<CandleEntry> source = getCachedOrPersisted(buildCacheKey(symbol, candidate));
+            List<CandleEntry> source = getCachedCandles(buildCacheKey(symbol, candidate));
             if (source == null || source.isEmpty()) {
                 continue;
             }
@@ -2076,7 +2201,7 @@ public class MarketChartActivity extends AppCompatActivity {
         String key = buildCacheKey(selectedSymbol, selectedInterval);
         List<CandleEntry> visible = key.equals(activeDataKey)
                 ? loadedCandles
-                : getCachedOrPersisted(key);
+                : getCachedCandles(key);
         boolean realtimeFresh = MarketChartRefreshHelper.isRealtimeFresh(
                 System.currentTimeMillis(),
                 resolveLatestVisibleCandleTime(visible)
@@ -2094,9 +2219,11 @@ public class MarketChartActivity extends AppCompatActivity {
         String key = buildCacheKey(selectedSymbol, selectedInterval);
         List<CandleEntry> visible = loadedCandles;
         if (visible.isEmpty()) {
-            List<CandleEntry> cached = getCachedOrPersisted(key);
+            List<CandleEntry> cached = getCachedCandles(key);
             if (cached != null && !cached.isEmpty()) {
                 visible = cached;
+            } else {
+                schedulePersistedCacheRestore(key, true);
             }
         }
         boolean compatibleVisible = !visible.isEmpty()
@@ -2105,9 +2232,17 @@ public class MarketChartActivity extends AppCompatActivity {
                 && MarketChartRefreshHelper.isRealtimeFresh(
                 System.currentTimeMillis(),
                 resolveLatestVisibleCandleTime(visible));
+        boolean visibleSeriesNeedsRepair = compatibleVisible
+                && MarketChartRefreshHelper.shouldForceRequestForSeriesRepair(
+                visible,
+                intervalToMs(selectedInterval.key),
+                selectedInterval.yearAggregate,
+                hasRealtimeTailSourceForChart()
+        );
         return !MarketChartRefreshHelper.shouldSkipRequestOnResume(
                 compatibleVisible,
-                freshVisibleWindow
+                freshVisibleWindow,
+                visibleSeriesNeedsRepair
         );
     }
 
@@ -2150,8 +2285,7 @@ public class MarketChartActivity extends AppCompatActivity {
         if (mergedDisplay.isEmpty()) {
             return;
         }
-        boolean followingLatestViewport = binding.klineChartView != null
-                && binding.klineChartView.isFollowingLatestViewport();
+        boolean followingLatestViewport = shouldFollowLatestViewportOnRefresh();
         applyDisplayCandles(key, mergedDisplay, true, followingLatestViewport, true);
         ChainLatencyTracer.markChartRealtimeRender(
                 selectedSymbol,
@@ -2186,7 +2320,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private List<CandleEntry> mergeRealtimeMinuteCache(CandleEntry realtimeBaseCandle) {
         IntervalOption minuteOption = INTERVALS[0];
         String minuteKey = buildCacheKey(selectedSymbol, minuteOption);
-        List<CandleEntry> minuteSource = getCachedOrPersisted(minuteKey);
+        List<CandleEntry> minuteSource = getCachedCandles(minuteKey);
         List<CandleEntry> mergedMinute = CandleAggregationHelper.mergeRealtimeBaseCandle(
                 minuteSource,
                 realtimeBaseCandle,
@@ -2301,11 +2435,9 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private void restorePersistedCache(String key) {
-        if (key == null || key.trim().isEmpty()) {
-            return;
-        }
-        List<CandleEntry> persisted = getCachedOrPersisted(key);
+        List<CandleEntry> persisted = getCachedCandles(key);
         if (persisted == null || persisted.isEmpty()) {
+            schedulePersistedCacheRestore(key, true);
             return;
         }
         applyLocalDisplayCandles(key, persisted);
@@ -2339,12 +2471,20 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         if (keepViewport) {
             binding.klineChartView.setCandlesKeepingViewport(loadedCandles);
-            if (shouldFollowLatest) {
+            if (shouldFollowLatest && !binding.klineChartView.hasActiveCrosshair()) {
                 binding.klineChartView.scrollToLatest();
             }
             return;
         }
         binding.klineChartView.setCandles(loadedCandles);
+    }
+
+    // 十字线激活时说明用户正在查看某根K线，自动刷新此时不应再抢焦点跟随最新值。
+    private boolean shouldFollowLatestViewportOnRefresh() {
+        return binding != null
+                && binding.klineChartView != null
+                && binding.klineChartView.isFollowingLatestViewport()
+                && !binding.klineChartView.hasActiveCrosshair();
     }
 
     // 统一处理成功回包后的页面状态更新，避免成功路径再散落多套收尾逻辑。
@@ -2440,11 +2580,13 @@ public class MarketChartActivity extends AppCompatActivity {
             return;
         }
         long latestWindowOldestOpenTime = resolveOldestOpenTime(visibleWindow);
+        boolean visibleWindowHasInternalGap = hasVisibleWindowInternalGap(reqInterval, visibleWindow);
         if (!ChartGapFillHelper.shouldBackfillOlderHistory(
                 previousWindowSize,
                 RESTORE_WINDOW_LIMIT,
                 previousOldestOpenTime,
-                latestWindowOldestOpenTime)) {
+                latestWindowOldestOpenTime,
+                visibleWindowHasInternalGap)) {
             return;
         }
         List<CandleEntry> workingWindow = new ArrayList<>(visibleWindow);
@@ -2474,7 +2616,8 @@ public class MarketChartActivity extends AppCompatActivity {
                 previousWindowSize,
                 RESTORE_WINDOW_LIMIT,
                 previousOldestOpenTime,
-                latestOldest)
+                latestOldest,
+                hasVisibleWindowInternalGap(reqInterval, workingWindow))
                 && rounds < GAP_FILL_MAX_ROUNDS) {
             List<CandleEntry> fetched = fetchV2SeriesBefore(
                     reqSymbol,
@@ -2507,7 +2650,8 @@ public class MarketChartActivity extends AppCompatActivity {
                 previousWindowSize,
                 RESTORE_WINDOW_LIMIT,
                 previousOldestOpenTime,
-                latestOldest)
+                latestOldest,
+                hasVisibleWindowInternalGap(reqInterval, workingWindow))
                 && rounds < GAP_FILL_MAX_ROUNDS) {
             List<CandleEntry> olderMonthly = fetchV2SeriesBefore(
                     reqSymbol,
@@ -2569,20 +2713,55 @@ public class MarketChartActivity extends AppCompatActivity {
         return oldest == null ? -1L : oldest.getOpenTime();
     }
 
-    private List<CandleEntry> getCachedOrPersisted(String key) {
+    private List<CandleEntry> getCachedCandles(String key) {
+        if (key == null || key.trim().isEmpty()) {
+            return null;
+        }
         List<CandleEntry> cached = klineCache.get(key);
-        if (cached != null && !cached.isEmpty()) {
-            return cached;
+        return cached == null || cached.isEmpty() ? null : cached;
+    }
+
+    // 图表页启动只允许消费内存缓存；Room 回读改为后台执行，避免切页时阻塞主线程导致 ANR。
+    private void schedulePersistedCacheRestore(String key, boolean applyWhenLoaded) {
+        if (chartHistoryRepository == null
+                || ioExecutor == null
+                || ioExecutor.isShutdown()
+                || key == null
+                || key.trim().isEmpty()) {
+            return;
         }
-        if (chartHistoryRepository == null || key == null || key.trim().isEmpty()) {
-            return cached;
+        if (!pendingPersistedCacheKeys.add(key)) {
+            return;
         }
-        List<CandleEntry> persisted = chartHistoryRepository.loadCandles(key);
-        if (persisted != null && !persisted.isEmpty()) {
-            klineCache.put(key, new ArrayList<>(persisted));
-            return persisted;
+        ioExecutor.submit(() -> {
+            try {
+                List<CandleEntry> persisted = chartHistoryRepository.loadCandles(key);
+                if (persisted == null || persisted.isEmpty()) {
+                    return;
+                }
+                List<CandleEntry> snapshot = new ArrayList<>(persisted);
+                klineCache.put(key, snapshot);
+                if (!applyWhenLoaded) {
+                    return;
+                }
+                mainHandler.post(() -> applyPersistedCacheRestoreResult(key, snapshot));
+            } finally {
+                pendingPersistedCacheKeys.remove(key);
+            }
+        });
+    }
+
+    private void applyPersistedCacheRestoreResult(String key, List<CandleEntry> persisted) {
+        if (isFinishing() || isDestroyed() || persisted == null || persisted.isEmpty()) {
+            return;
         }
-        return cached;
+        if (!key.equals(buildCacheKey(selectedSymbol, selectedInterval))) {
+            return;
+        }
+        if (!loadedCandles.isEmpty()) {
+            return;
+        }
+        applyLocalDisplayCandles(key, persisted);
     }
 
     // 避免主线程频繁写大文件，持久化统一异步执行且按签名去重。
@@ -3013,33 +3192,147 @@ public class MarketChartActivity extends AppCompatActivity {
                 ? null
                 : accountStatsPreloadManager.getLatestCache();
         AccountSnapshot snapshot = (!sessionActive || cache == null) ? null : cache.getSnapshot();
+        if (!sessionActive) {
+            clearAccountAnnotationsOverlay();
+            return;
+        }
+        if (sessionActive && (cache == null || snapshot == null)) {
+            return;
+        }
         String overlaySignature = buildAccountOverlaySignature(cache);
         if (overlaySignature.equals(lastAccountOverlaySignature)) {
             return;
         }
-        List<TradeRecordItem> trades = snapshot == null || snapshot.getTrades() == null
-                ? Collections.emptyList()
-                : snapshot.getTrades();
-        if (snapshot == null && trades.isEmpty()) {
+        if (snapshot == null) {
             lastAccountOverlaySignature = overlaySignature;
             clearAccountAnnotationsOverlay();
             return;
         }
+        applyChartOverlaySnapshot(snapshot, cache);
+    }
 
-        List<PositionItem> positions = snapshot == null || snapshot.getPositions() == null
+    // 图表页初次创建时优先直接消费最近一份账户缓存，避免“当前持仓”先闪成空白再恢复。
+    private void restoreChartOverlayFromLatestCacheOrEmpty() {
+        if (binding == null || binding.klineChartView == null) {
+            return;
+        }
+        boolean sessionActive = ConfigManager.getInstance(this).isAccountSessionActive();
+        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
+                ? null
+                : accountStatsPreloadManager.getLatestCache();
+        AccountSnapshot snapshot = resolveChartOverlaySnapshot(sessionActive, cache);
+        if (!sessionActive) {
+            clearAccountAnnotationsOverlay();
+            return;
+        }
+        // 会话仍有效但缓存尚未回填时，保留当前页面状态，避免首帧先闪成空白。
+        if (snapshot == null) {
+            return;
+        }
+        applyChartOverlaySnapshot(snapshot, cache);
+    }
+
+    // 图表页恢复时优先消费内存缓存；缓存还没回填时回退到本地已持久化快照。
+    @Nullable
+    private AccountSnapshot resolveChartOverlaySnapshot(boolean sessionActive,
+                                                        @Nullable AccountStatsPreloadManager.Cache cache) {
+        if (!sessionActive) {
+            return null;
+        }
+        if (cache != null && cache.getSnapshot() != null) {
+            return cache.getSnapshot();
+        }
+        if (storedChartOverlaySnapshot != null) {
+            return storedChartOverlaySnapshot;
+        }
+        scheduleStoredChartOverlayRestore();
+        return null;
+    }
+
+    // 图表页恢复时如需回退本地账户快照，也必须走后台线程，不能在首帧阶段同步读 Room。
+    private void scheduleStoredChartOverlayRestore() {
+        if (accountStorageRepository == null
+                || ioExecutor == null
+                || ioExecutor.isShutdown()
+                || (storedChartOverlayRestoreTask != null && !storedChartOverlayRestoreTask.isDone())) {
+            return;
+        }
+        storedChartOverlayRestoreTask = ioExecutor.submit(() -> {
+            try {
+                AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository.loadStoredSnapshot();
+                if (!hasStoredChartOverlaySnapshot(storedSnapshot)) {
+                    return;
+                }
+                AccountSnapshot snapshot = toAccountSnapshot(storedSnapshot);
+                mainHandler.post(() -> applyStoredChartOverlaySnapshot(snapshot));
+            } finally {
+                storedChartOverlayRestoreTask = null;
+            }
+        });
+    }
+
+    private void applyStoredChartOverlaySnapshot(@Nullable AccountSnapshot snapshot) {
+        if (snapshot == null || isFinishing() || isDestroyed() || binding == null || binding.klineChartView == null) {
+            return;
+        }
+        if (!ConfigManager.getInstance(this).isAccountSessionActive()) {
+            return;
+        }
+        AccountStatsPreloadManager.Cache latestCache = accountStatsPreloadManager == null
+                ? null
+                : accountStatsPreloadManager.getLatestCache();
+        if (latestCache != null && latestCache.getSnapshot() != null) {
+            return;
+        }
+        storedChartOverlaySnapshot = snapshot;
+        applyChartOverlaySnapshot(snapshot, null);
+    }
+
+    private AccountSnapshot toAccountSnapshot(AccountStorageRepository.StoredSnapshot storedSnapshot) {
+        return new AccountSnapshot(
+                storedSnapshot.getOverviewMetrics(),
+                storedSnapshot.getCurvePoints(),
+                storedSnapshot.getCurveIndicators(),
+                storedSnapshot.getPositions(),
+                storedSnapshot.getPendingOrders(),
+                storedSnapshot.getTrades(),
+                storedSnapshot.getStatsMetrics()
+        );
+    }
+
+    private void applyChartOverlaySnapshot(@Nullable AccountSnapshot snapshot,
+                                           @Nullable AccountStatsPreloadManager.Cache cache) {
+        if (snapshot == null || binding == null || binding.klineChartView == null) {
+            return;
+        }
+        List<TradeRecordItem> trades = snapshot.getTrades() == null
+                ? Collections.emptyList()
+                : snapshot.getTrades();
+        List<PositionItem> positions = snapshot.getPositions() == null
                 ? Collections.emptyList()
                 : snapshot.getPositions();
-        List<PositionItem> pendingOrders = snapshot == null || snapshot.getPendingOrders() == null
+        List<PositionItem> pendingOrders = snapshot.getPendingOrders() == null
                 ? Collections.emptyList()
                 : snapshot.getPendingOrders();
         double totalAsset = resolveChartTotalAsset(snapshot);
-
         binding.klineChartView.setPositionAnnotations(buildPositionAnnotations(positions, trades));
         binding.klineChartView.setPendingAnnotations(buildPendingAnnotations(pendingOrders, trades));
         binding.klineChartView.setHistoryTradeAnnotations(buildHistoricalTradeAnnotations(trades));
         binding.klineChartView.setAggregateCostAnnotation(buildAggregateCostAnnotation(positions));
-        lastAccountOverlaySignature = overlaySignature;
+        lastAccountOverlaySignature = buildAccountOverlaySignature(cache);
         updateChartPositionPanel(positions, pendingOrders, totalAsset);
+    }
+
+    // 只要本地已经落过账户叠加层必需数据，就允许首帧直接恢复，避免当前持仓先空白。
+    private boolean hasStoredChartOverlaySnapshot(@Nullable AccountStorageRepository.StoredSnapshot storedSnapshot) {
+        if (storedSnapshot == null) {
+            return false;
+        }
+        return !storedSnapshot.getPositions().isEmpty()
+                || !storedSnapshot.getPendingOrders().isEmpty()
+                || !storedSnapshot.getTrades().isEmpty()
+                || !storedSnapshot.getOverviewMetrics().isEmpty()
+                || !storedSnapshot.getCurvePoints().isEmpty();
     }
 
     // 当没有任何可用账户快照时，统一清空图表上的持仓与挂单标注。
@@ -3062,6 +3355,41 @@ public class MarketChartActivity extends AppCompatActivity {
         String historyRevision = cache == null ? "" : cache.getHistoryRevision();
         return selectedSymbol + "|" + loadedCandles.size() + "|" + firstOpenTime + "|" + lastOpenTime
                 + "|" + cacheUpdatedAt + "|" + historyRevision;
+    }
+
+    // 图表页可见窗口仍有固定时间粒度缺口时，需要继续向左补历史，不能只看窗口长度。
+    private boolean hasVisibleWindowInternalGap(@Nullable IntervalOption interval,
+                                                @Nullable List<CandleEntry> visibleWindow) {
+        long expectedGapMs = resolveExpectedGapMs(interval);
+        return expectedGapMs > 0L && MarketChartRefreshHelper.hasInternalGap(visibleWindow, expectedGapMs);
+    }
+
+    // 固定周期直接使用标准时间步长；月线和年线属于变长桶，不走这里的定长缺口判定。
+    private long resolveExpectedGapMs(@Nullable IntervalOption interval) {
+        if (interval == null || interval.yearAggregate) {
+            return 0L;
+        }
+        String apiInterval = interval.apiInterval == null ? "" : interval.apiInterval.trim().toLowerCase(Locale.ROOT);
+        switch (apiInterval) {
+            case "1m":
+                return 60_000L;
+            case "5m":
+                return 5L * 60_000L;
+            case "15m":
+                return 15L * 60_000L;
+            case "30m":
+                return 30L * 60_000L;
+            case "1h":
+                return 60L * 60_000L;
+            case "4h":
+                return 4L * 60L * 60_000L;
+            case "1d":
+                return 24L * 60L * 60_000L;
+            case "1w":
+                return 7L * 24L * 60L * 60_000L;
+            default:
+                return 0L;
+        }
     }
 
     private List<KlineChartView.PriceAnnotation> buildHistoricalTradeAnnotations(List<TradeRecordItem> trades) {
@@ -3172,7 +3500,28 @@ public class MarketChartActivity extends AppCompatActivity {
                     + ", " + formatSignedUsd(item.getTotalPnL());
             int color = item.getTotalPnL() >= 0d ? gainColor : lossColor;
             String groupId = buildAnnotationGroupId("position", item, anchorTime, price);
-            result.add(new KlineChartView.PriceAnnotation(anchorTime, price, label, color, groupId));
+            String[] detailLines = new String[]{
+                    safeTradePopupValue(item.getProductName(), item.getCode()),
+                    "方向 " + side,
+                    "开仓 " + formatPositionOpenTime(anchorTime) + " $" + FormatUtils.formatPrice(price),
+                    "数量 " + formatQuantity(Math.abs(item.getQuantity())),
+                    "浮盈亏 " + formatSignedUsd(item.getTotalPnL()),
+                    "止盈 " + formatOptionalPrice(item.getTakeProfit()),
+                    "止损 " + formatOptionalPrice(item.getStopLoss())
+            };
+            result.add(new KlineChartView.PriceAnnotation(
+                    anchorTime,
+                    price,
+                    label,
+                    color,
+                    groupId,
+                    1,
+                    0f,
+                    0L,
+                    Double.NaN,
+                    KlineChartView.ANNOTATION_KIND_DEFAULT,
+                    detailLines
+            ));
             appendTpSlAnnotations(result, anchorTime, item.getTakeProfit(), item.getStopLoss(), tpColor, slColor, groupId);
         }
         result.sort(Comparator.comparingDouble(annotation -> annotation.price));
@@ -3218,7 +3567,27 @@ public class MarketChartActivity extends AppCompatActivity {
             String label = "PENDING " + side + " " + qtyLabel
                     + ", @ $" + FormatUtils.formatPrice(price);
             String groupId = buildAnnotationGroupId("pending", item, anchorTime, price);
-            result.add(new KlineChartView.PriceAnnotation(anchorTime, price, label, color, groupId));
+            String[] detailLines = new String[]{
+                    safeTradePopupValue(item.getProductName(), item.getCode()),
+                    "方向 " + side,
+                    "挂单 " + formatPositionOpenTime(anchorTime) + " $" + FormatUtils.formatPrice(price),
+                    "数量 " + qtyLabel,
+                    "止盈 " + formatOptionalPrice(item.getTakeProfit()),
+                    "止损 " + formatOptionalPrice(item.getStopLoss())
+            };
+            result.add(new KlineChartView.PriceAnnotation(
+                    anchorTime,
+                    price,
+                    label,
+                    color,
+                    groupId,
+                    1,
+                    0f,
+                    0L,
+                    Double.NaN,
+                    KlineChartView.ANNOTATION_KIND_DEFAULT,
+                    detailLines
+            ));
             appendTpSlAnnotations(result, anchorTime, item.getTakeProfit(), item.getStopLoss(), tpColor, slColor, groupId);
         }
         result.sort(Comparator.comparingDouble(annotation -> annotation.price));
@@ -3254,6 +3623,10 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private long resolvePositionAnchorTime(PositionItem position, List<TradeRecordItem> trades) {
+        long directOpenTime = position.getOpenTime();
+        if (directOpenTime > 0L) {
+            return directOpenTime;
+        }
         if (trades != null && !trades.isEmpty()) {
             long byPositionId = findTradeOpenTimeByPositionId(position.getPositionTicket(), position.getCostPrice(), trades);
             if (byPositionId > 0L) {
@@ -3268,6 +3641,10 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private long resolvePendingAnchorTime(PositionItem pendingOrder, List<TradeRecordItem> trades) {
+        long directOpenTime = pendingOrder.getOpenTime();
+        if (directOpenTime > 0L) {
+            return directOpenTime;
+        }
         if (trades != null && !trades.isEmpty()) {
             long byOrderId = findTradeOpenTimeByOrderId(pendingOrder.getOrderId(), pendingOrder.getPendingPrice(), trades);
             if (byOrderId > 0L) {
@@ -3386,6 +3763,22 @@ public class MarketChartActivity extends AppCompatActivity {
     private String formatSignedUsd(double value) {
         String sign = value >= 0d ? "+" : "-";
         return sign + "$" + pnlFormat.format(Math.abs(value));
+    }
+
+    // 当前持仓/挂单没有真实开仓时间时只显示占位，避免伪造时间。
+    private String formatPositionOpenTime(long openTimeMs) {
+        if (openTimeMs <= 0L) {
+            return "--";
+        }
+        return FormatUtils.formatDateTime(openTimeMs);
+    }
+
+    // 当前持仓/挂单的 TP/SL 为空时统一显示占位。
+    private String formatOptionalPrice(double value) {
+        if (value <= 0d) {
+            return "--";
+        }
+        return "$" + FormatUtils.formatPrice(value);
     }
 
     private String buildAnnotationGroupId(String type, PositionItem item, long anchorTime, double price) {
@@ -3601,6 +3994,13 @@ public class MarketChartActivity extends AppCompatActivity {
         showHistoryTrades = preferences.getBoolean(PREF_KEY_SHOW_HISTORY_TRADES, true);
     }
 
+    // 恢复持仓明细排序选项，避免每次进入都回到默认排序。
+    private void restoreChartPositionSort() {
+        SharedPreferences preferences = getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE);
+        selectedPositionSort = MarketChartPositionSortHelper.fromStoredValue(
+                preferences.getString(PREF_KEY_POSITION_SORT, MarketChartPositionSortHelper.SortOption.OPEN_TIME_DESC.name()));
+    }
+
     // 持久化当前选中的K线周期，供下次进入时恢复。
     private void persistSelectedInterval() {
         getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE)
@@ -3614,6 +4014,14 @@ public class MarketChartActivity extends AppCompatActivity {
         getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE)
                 .edit()
                 .putBoolean(PREF_KEY_SHOW_HISTORY_TRADES, showHistoryTrades)
+                .apply();
+    }
+
+    // 持久化持仓明细排序规则，保证下次进入仍沿用用户上一次选择。
+    private void persistChartPositionSort() {
+        getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(PREF_KEY_POSITION_SORT, selectedPositionSort.name())
                 .apply();
     }
 
@@ -3775,10 +4183,12 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.cardChartPanel.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
         binding.cardChartPositions.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
+        binding.spinnerChartPositionSort.setBackgroundColor(Color.TRANSPARENT);
         applyStripBackground(binding.btnInterval1m, palette);
         applyStripBackground(binding.btnIndicatorVolume, palette);
         applyStripBackground(binding.btnChartTradeBuy, palette);
         binding.tvChartSymbolPickerLabel.setTextColor(palette.textPrimary);
+        binding.tvChartPositionSortLabel.setTextColor(palette.textPrimary);
         applyChartSymbolPickerIndicator();
         binding.btnRetryLoad.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
         binding.btnRetryLoad.setTextColor(ContextCompat.getColor(this, R.color.white));
@@ -3810,8 +4220,12 @@ public class MarketChartActivity extends AppCompatActivity {
         if (binding.spinnerSymbolPicker.getAdapter() instanceof BaseAdapter) {
             ((BaseAdapter) binding.spinnerSymbolPicker.getAdapter()).notifyDataSetChanged();
         }
+        if (binding.spinnerChartPositionSort.getAdapter() instanceof BaseAdapter) {
+            ((BaseAdapter) binding.spinnerChartPositionSort.getAdapter()).notifyDataSetChanged();
+        }
         updateBottomTabs(false, true, false, false);
         syncSymbolSelector();
+        syncChartPositionSortSelection();
         updateIntervalButtons();
         updateIndicatorButtons();
         updateTradeActionButtons();
@@ -3828,21 +4242,21 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private void openMarketMonitor() {
         Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
     }
 
     private void openAccountStats() {
         Intent intent = new Intent(this, AccountStatsBridgeActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
     }
 
     private void openSettings() {
         Intent intent = new Intent(this, SettingsActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
     }

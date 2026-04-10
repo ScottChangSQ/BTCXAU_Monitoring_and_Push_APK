@@ -66,7 +66,7 @@ final class FloatingWindowTextFormatter {
     static String formatAmountLine(double amount, boolean masked) {
         String amountText = masked
                 ? SensitiveDisplayMasker.MASK_TEXT
-                : FormatUtils.formatAmount(amount);
+                : FormatUtils.formatAmountWithChineseUnit(amount);
         return "1M额 " + amountText;
     }
 

@@ -20,6 +20,6 @@ public class MarketChartDisplayApplySourceTest {
         assertTrue(source.contains("applyDisplayCandles(key, candles, false, false, false);"));
         assertTrue(source.contains("applyDisplayCandles(key, displayUpdate.toDisplay, autoRefresh, displayUpdate.shouldFollowLatest, true);"));
         assertTrue(source.contains("binding.klineChartView.setCandlesKeepingViewport(loadedCandles);"));
-        assertTrue(source.contains("binding.klineChartView.scrollToLatest();"));
+        assertTrue(source.contains("if (shouldFollowLatest && !binding.klineChartView.hasActiveCrosshair()) {\n                binding.klineChartView.scrollToLatest();\n            }"));
     }
 }

@@ -20,4 +20,17 @@ public class MarketChartRealtimeSourceTest {
         assertTrue(source.contains("getDisplayKlines().observe(this"));
         assertFalse(source.contains("private boolean hasRealtimeTailSourceForChart() {\r\n        return false;\r\n    }"));
     }
+
+    @Test
+    public void activeCrosshairShouldPauseFollowLatestDuringRefresh() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private boolean shouldFollowLatestViewportOnRefresh()"));
+        assertTrue(source.contains("binding.klineChartView.isFollowingLatestViewport()"));
+        assertTrue(source.contains("!binding.klineChartView.hasActiveCrosshair()"));
+        assertTrue(source.contains("shouldFollowLatestViewportOnRefresh();"));
+    }
 }

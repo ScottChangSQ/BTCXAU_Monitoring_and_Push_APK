@@ -18,6 +18,14 @@ public final class FormatUtils {
         return decimal("#,##0.00", value / 1_000_000d) + "M$";
     }
 
+    public static String formatAmountWithChineseUnit(double value) {
+        double abs = Math.abs(value);
+        if (abs >= 100_000_000d) {
+            return decimal("0.00", value / 100_000_000d) + "亿$";
+        }
+        return decimal("0.00", value / 10_000d) + "万$";
+    }
+
     public static String formatVolume(double value) {
         return decimal("#,##0.00", value);
     }

@@ -88,7 +88,7 @@ final class MarketChartRefreshHelper {
     }
 
     // 只要本地 1m 窗口里存在时间断层或倒序，就不能继续按“尾部补齐”思路刷新。
-    private static boolean hasInternalGap(@Nullable List<CandleEntry> localSeries, long expectedGapMs) {
+    static boolean hasInternalGap(@Nullable List<CandleEntry> localSeries, long expectedGapMs) {
         if (localSeries == null || localSeries.size() < 2 || expectedGapMs <= 0L) {
             return false;
         }
@@ -128,8 +128,18 @@ final class MarketChartRefreshHelper {
 
     // 页面恢复前台时，只要当前窗口仍处于上游分钟源可接受的新鲜范围内，就不应立刻重拉。
     static boolean shouldSkipRequestOnResume(boolean hasCompatibleVisible,
-                                             boolean hasFreshVisibleWindow) {
-        return hasCompatibleVisible && hasFreshVisibleWindow;
+                                             boolean hasFreshVisibleWindow,
+                                             boolean visibleSeriesNeedsRepair) {
+        return hasCompatibleVisible && hasFreshVisibleWindow && !visibleSeriesNeedsRepair;
+    }
+
+    // 当前可见分钟窗口如果自身已经断档，恢复前台时必须先走一次修复请求，不能继续按“窗口新鲜”直接跳过。
+    static boolean shouldForceRequestForSeriesRepair(@Nullable List<CandleEntry> visibleSeries,
+                                                     long intervalMs,
+                                                     boolean yearAggregate,
+                                                     boolean hasRealtimeTailSource) {
+        boolean supportsMinuteDerivedSkip = hasRealtimeTailSource && !yearAggregate && intervalMs == 60_000L;
+        return supportsMinuteDerivedSkip && hasInternalGap(visibleSeries, intervalMs);
     }
 
     // 当前轮直接跳过网络时，不再继续展示上一次 REST 请求耗时，避免 ms 文案误导。

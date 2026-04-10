@@ -50,4 +50,14 @@ public class FormatUtilsMoneyFormatTest {
     public void shouldFormatPriceWithOneDecimalUnit() {
         assertEquals("$1,234.6", FormatUtils.formatPriceOneDecimalWithUnit(1234.56));
     }
+
+    @Test
+    public void shouldFormatAmountWithChineseWanUnit() {
+        assertEquals("123.46万$", FormatUtils.formatAmountWithChineseUnit(1_234_567d));
+    }
+
+    @Test
+    public void shouldFormatAmountWithChineseYiUnit() {
+        assertEquals("1.23亿$", FormatUtils.formatAmountWithChineseUnit(123_456_789d));
+    }
 }

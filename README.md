@@ -1,6 +1,6 @@
 # BTC/XAU 异常交易监控 Android App
 
-一个用于监控 BTC / XAU 行情、展示 MT5 账户状态、接收异常提醒的 Android App + Python 网关项目。当前本次 1-6 步主链收口已完成，App 与服务端已经统一到单入口、单真值、纯消费展示的结构。
+一个用于监控 BTC / XAU 行情、展示 MT5 账户状态、接收异常提醒的 Android App + Python 网关项目。当前仓库内 1-6 步主链收口、BUG review 收口和最终自动化验收均已完成，App 与服务端已经统一到单入口、单真值、纯消费展示的结构。
 
 ## 项目功能简介
 
@@ -10,12 +10,15 @@
 - 服务端账户真值已经收口到 `MT5 Python Pull`，旧 EA 上报只保留原始存档，不再参与主链选源
 - 监控链已经收口为纯消费层，`v2/stream` 默认 1s 推送一次，消息直接携带市场/账户快照增量，客户端不再按每条消息回源市场 REST
 - 行情监控页里的开盘价、收盘价、成交量、成交额、价格变化、涨跌幅，已经收口为“上一根已闭合 1 分钟 K 线”口径；实时价格和图表尾部仍继续消费实时 patch
-- 账户展示链已经收口为纯消费层，只消费 canonical 字段，不再回读旧快照、不再本地猜测或补锚
+- 账户展示链已经收口为纯消费层：主字段继续只消费 canonical 字段；仅 `当日盈亏/当日收益率`、`累计盈亏/累计收益率` 这类在 APP 侧已有完整真值的展示位，才允许做严格本地覆盖
 - APP 账户运行态现在直接消费 `v2/stream` 下发的 `accountRuntime`，不再定时补拉 `/v2/account/snapshot`
 - 账户页主动刷新和交易提交后的强一致确认，仍统一通过 `AccountStatsPreloadManager` 走一次显式 canonical `/v2/account/snapshot + /v2/account/history` 刷新，不再各自散落直连接口
 - 账户统计页“账户概览”里的 `当日盈亏`、`当日收益率` 已收口为 APP 本地口径：用当天已平仓成交和今日起点结余直接计算，不再直接透传服务端日指标
+- 账户统计页“账户概览”里的 `累计盈亏`、`累计收益率` 已收口为“只在 APP 侧能证明有完整真值时才覆盖”：优先净值曲线，其次历史成交 + 当前持仓；仅有当前持仓时不再错误闪成持仓口径
 - APP 从后台回前台、或点悬浮窗切回主界面时，主链不再按“重新打开 APP”处理；只有 stream 真失活时才重建连接，正常情况下只切换刷新节奏
 - 图表页从其他 tab 返回前台时，已收口为“恢复消费节奏”而不是“重新启动页面链路”：普通返回不再在 `onResume()` 里重置 V2 transport，也不再由图表页切账户全量快照节奏
+- 图表页当前持仓/挂单叠加层首帧现在会优先恢复最近一次本地已持久化快照，不再因为内存缓存尚未回填就先清空“当前持仓”
+- K 线图当前持仓、挂单、历史成交、异常记录现在共用统一 annotation 明细消费链；当前持仓/挂单线支持查看开仓时间、数量、浮盈亏、止盈止损等详情
 - 图表页 `1w / 1M / 1y` 长周期恢复前台时，若当前窗口仍新鲜则不再立刻重拉；后续自动刷新也不再走快速 fallback，而是对齐到下一次分钟边界
 - 账户统计页命中同签名预加载缓存时，不再重复整页 `applySnapshot()`，切页返回时不会再把总览、曲线、持仓和成交区整套重画一遍
 - 设置首页和设置子页切换到底部其他 tab 时，不再通过 `finish()` 销毁自己，tab 切换语义已统一为前台切换
@@ -64,13 +67,15 @@
 - 行情监控、异常提醒、悬浮窗、图表、账户总览、交易历史、收益曲线已经跑在统一的 `/v2/*` 主链上
 - `GatewayV2Client`、`GatewayV2StreamClient`、`GatewayV2SessionClient` 已经成为 App 主链入口
 - 账户页主动刷新与后台预加载已经统一到同一套 `v2` 数据链
-- 账户预加载现在拆成两条明确链路：运行态只应用 stream 已发布快照，历史只在 `historyRevision` 前进或本地还没有历史时补拉 `v2/account/history`
+- 账户预加载现在拆成两条明确链路：运行态只应用 stream 已发布快照，历史只在 `historyRevision` 前进时补拉 `v2/account/history`
 - 账户统计页高频刷新现在只更新账户概览、当前持仓和挂单；历史成交、曲线和历史统计只在 `historyRevision` 变化时补拉全量
 - 账户统计页“账户概览”的 `当日盈亏 / 当日收益率` 现在固定按 APP 本地今日口径计算，只覆盖这两个字段，其余 overview 指标仍消费服务端 canonical metrics
+- 账户统计页“账户概览”的 `累计盈亏 / 累计收益率` 现在只会在净值曲线或历史成交已给出完整真值时才本地覆盖；仅有当前持仓时不会再误写成持仓口径
 - 账户运行态连接状态现在只认完整账号身份，`source=remote_logged_out` 不再被误判为“已连接”
 - 账户历史补拉现在会在单次补拉进行中暂存后到的最新 `historyRevision`，当前一轮结束后继续追到最新版本，不再丢 revision
 - 账户统计页刷新节流现在按“快照签名是否变化”自动调节：未变化时逐步降频，变化时立即回到最小刷新间隔
 - 图表页历史成交标注现在只认显式生命周期字段，不再本地猜品种和补锚点
+- 图表页当前持仓/挂单标注现在会优先消费 `openTime` 并回退到本地持久化快照恢复，重新进入页面时不会先丢线再回补
 - 图表长周期 K 线现在固定只走 Binance REST 原生周期接口，不再按返回条数切换到日线聚合或历史回退链
 - 行情监控主界面的概览指标现在固定消费服务端 `latestClosedCandle`，不再误用当前分钟未闭合 patch
 - 本地仓储已经停止把旧历史、旧曲线、轻量快照拼回当前真值；轻量快照刷新时只保留上一轮全量历史的展示结果，不再把历史区清空
@@ -162,6 +167,8 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
   负责读取 `/v2/session/*` 会话接口。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
   账户页入口，负责消费账户运行态、历史和会话状态。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountOverviewCumulativeMetricsCalculator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountOverviewCumulativeMetricsCalculator.java)
+  账户累计指标真值辅助工具，负责按“曲线优先，其次历史成交 + 当前持仓”的规则决定是否输出累计盈亏、累计收益率。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java)
   账户页预加载管理器，负责应用运行态并按 `historyRevision` 管理历史缓存；内存缓存为空时会回退到本地已持久化 revision 判断是否需要全量补拉。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java)
@@ -204,6 +211,7 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 ## 阶段验收说明
 
 - 当前 1-6 步代码收口已经完成，自动化验收已经通过
+- 2026-04-10 最终收口复核：仓库内所有任务已完成代码与文档收口；当前唯一不在仓库内闭合范围中的事项，是“真机 + 已部署 HTTPS 服务器”的现场人工联调记录
 - App 最终总验收已通过：执行上面的 App 总验收命令，结果为 `BUILD SUCCESSFUL`
 - 服务端最终总验收已通过：执行上面的服务端总验收命令，结果为 `Ran 135 tests ... OK`
 - 2026-04-08 新增验证：启动脚本去噪回归、Windows bundle 回归、App 入口固定回归均已通过
@@ -223,4 +231,7 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - 2026-04-09 最终 BUG review 补充验证：`/v2/account/history` 已收口到远程会话真值边界；APP 账户缓存不再把断开态硬写成已连接，也不再用历史订单覆盖当前挂单。`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerTest" --tests "com.binance.monitor.ui.trade.TradeExecutionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityV2RefreshSourceTest"` 通过；`python -m unittest bridge.mt5_gateway.tests.test_v2_contracts.V2ContractTests.test_v2_account_history_should_use_complete_trade_history_builder bridge.mt5_gateway.tests.test_v2_contracts.V2ContractTests.test_v2_account_history_should_use_logged_out_snapshot_when_no_active_session bridge.mt5_gateway.tests.test_v2_contracts.V2ContractTests.test_v2_account_snapshot_should_use_logged_out_snapshot_when_no_active_session bridge.mt5_gateway.tests.test_v2_contracts.V2ContractTests.test_v2_market_snapshot_should_use_logged_out_snapshot_when_no_active_session bridge.mt5_gateway.tests.test_v2_sync_pipeline.V2SyncPipelineTests.test_runtime_snapshot_should_not_touch_mt5_when_session_logged_out -v` 通过；服务端最终总验收结果更新为 `Ran 136 tests ... OK`
 - 2026-04-09 最终收口新增验证：`.\gradlew.bat testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperAdditionalTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartV2SourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityV2RefreshSourceTest" --tests "com.binance.monitor.ui.settings.SettingsTabNavigationSourceTest"` 已通过，覆盖“图表页普通 tab 返回不再重置 transport、长周期恢复前台按分钟边界刷新、账户页同签名缓存不重复整页重画、设置页 tab 切换不再 finish”这一组约束
 - 2026-04-09 最终收口新增验证：`.\gradlew.bat :app:assembleDebug` 已重新通过，最新 APK 已输出到 `app/build/outputs/apk/debug/app-debug.apk`
+- 2026-04-10 本轮新增验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.data.local.db.AppDatabaseProviderSourceTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" --tests "com.binance.monitor.ui.account.AccountOverviewCumulativeMetricsCalculatorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeOverviewSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionAnnotationSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartV2SourceTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest"` 已通过，覆盖“累计指标真值覆盖、图表页首帧账户叠加恢复、当前持仓/挂单 annotation 明细链”这一组约束
+- 2026-04-10 本轮新增验证：`.\gradlew.bat :app:assembleDebug` 已通过，最新 APK 已输出到 `app/build/outputs/apk/debug/app-debug.apk`
+- 2026-04-10 最终 BUG review 与任务收口新增验证：`.\gradlew.bat :app:testDebugUnitTest` 已通过；`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py"` 已通过，结果为 `Ran 226 tests ... OK`
 - 当前唯一未完成的是“真机 + 已部署 HTTPS 服务器”的人工联调记录

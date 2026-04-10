@@ -1,98 +1,26 @@
 # CONTEXT
 
 ## 当前正在做什么
-- 正在收口 K 线十字光标横向跟随规则：十字光标横线的价格仍按手指纵向位置实时变化，但纵线不再匀速跟随手指左右滑动，而是吸附到当前高亮 K 线的中心位置，形成按柱跳格的横向反馈。
-- 正在收口悬浮窗产品标题样式：产品卡标题已从单行“产品名（盈亏）”改成两行“产品名\n产品盈亏”，同时展开态固定宽度已从 `144dp` 恢复到此前的 `90dp`，保持固定宽度不做动态抖动。
-- 正在收口“K 线图重新进入后左侧缺口补得慢”这一项：主链恢复窗口已从固定 `1500` 收口到 `300`，自动缺口补拉已从“同步整轮补完再落图”改成“首屏先落图，后台按批次 prepend 渐进补齐”，和手动左滑共用同一套历史落图路径。
-- 当前已补对应源码约束测试并通过：`MarketChartProgressiveGapFillSourceTest`、`MarketChartGapFillSourceTest`、`MarketChartLoadMoreStateSourceTest`、`MarketChartHistoryPagingSourceTest`、`MarketChartRefreshHelperTest`。
-- 正在收口订单操作弹窗 UI 两项：挂单类型 Spinner 已从系统默认 `simple_spinner_*` 布局切到项目统一 `item_spinner_filter/item_spinner_filter_dropdown` 样式并统一文字上色，解决下拉内容显示裁切和低对比；交易弹窗提示文字改为主文本色并强化标题/按钮对比度。
-- 正在收口悬浮窗与账户概览 4 项：悬浮窗展开宽度已固定调大到 `144dp`，避免按产品盈亏数字被截断；悬浮窗 `1M量/1M额` 已改为消费上一根已收盘 1 分钟 K 线；账户页快照签名已补上交易记录与曲线，平仓后交易记录不再被误判成“无需刷新”；账户概览已固定为 5 行 10 个指标顺序。
-- 正在收口“K 线图只允许左右缩放”的交互约束：`KlineChartView` 已移除纵向缩放状态，价格轴恢复为固定自适应范围，双指缩放现在只改变 K 线横向宽度；对应源码约束测试与图表相关定向测试已通过。
-- 正在继续收口“行情持仓页切回前台仍像刷新一次”的剩余部分：长周期 `1w/1M/1y` 图表现在不再沿用“无实时尾部就 1 秒 fallback”策略，而是改成按上游分钟源的真实节奏对齐到下一个分钟边界刷新；同一时间窗口在恢复前台时若仍新鲜，也不再立刻重拉。
-- 正在收口“点击行情持仓像重新刷新/重登”和“底部 tab 切换卡顿”这两个问题：图表页已改成统一 `enterChartScreen(coldStart)` 前台入口，普通 tab 返回不再在 `onResume()` 里重置 V2 transport，也不再由图表页切换 `fullSnapshotActive`；账户页命中同签名预加载缓存时不再重复 `applySnapshot()` 整页重画；设置首页/设置子页切换其他 tab 时不再 `finish()` 自己。
-- 当前已补对应源码约束测试并通过：`MarketChartV2SourceTest`、`MarketChartLifecycleSourceTest`、`AccountStatsBridgeActivityV2RefreshSourceTest`、`SettingsTabNavigationSourceTest`。
-- 正在收口两个残留切页问题：账户统计页首次进入时不再先渲染成“已登录账户/未连接”再跳成“已连接账户”；悬浮窗点击产品卡时改成经过无界面桥接页稳定转发到对应产品图表页，避免再依赖主界面根 Activity 接收外部路由。
-- 当前已完成结构性修复、定向源码测试、重新编译 APK，并做了 ADB 复核：账户页从主界面新建进入时，界面直接显示“已连接账户”；同时 ADB 已证实“通过 MainActivity extras 回前台再路由”的方案在任务已存在时不会稳定送达路由，因此该方案已撤回，改为 `OverlayLaunchBridgeActivity`。
-- 正在收口 3 个前后台切换相关问题：悬浮窗点击回 APP 时不再回到上次重页面并触发重刷新，而是固定回到 `MainActivity`；账户统计页前后台恢复不再把页面恢复误当成一次新的远程会话 bootstrap；悬浮窗已区分“重连中”和“离线”，息屏再亮屏后不再先渲染成离线空态。
-- 当前已完成对应代码收口、定向单测和真机 ADB 回归：悬浮窗点击后当前焦点已回到 `com.binance.monitor/.launcher.IconFinancialAlias` 对应主界面；账户统计页再次进入时保持 `已连接账户` 状态；息屏 2 秒再亮屏后的悬浮窗截图继续显示实时数据，没有先掉成离线。
-- 正在继续收口“点击悬浮窗切回 APP 仍像重开一次”的问题，本轮已把悬浮窗点击链从“直接启动图表页”改成“优先前移现有 APP 任务，只有任务不存在时才冷启动一次”。
-- 当前重点是让悬浮窗点击只承担“切回现有 APP 界面”的职责，不再通过 `NEW_TASK + CLEAR_TOP` 触发生命周期重入、页面级重刷和类似重连的体感。
-- 本轮刚修复“行情监控-行情概览”取值语义错误：主界面里的开盘价、收盘价、成交量、成交额、价格变化、涨跌幅，现已明确改成消费服务端 `latestClosedCandle` 对应的上一根已闭合 1 分钟 K 线；实时价格、图表实时尾部仍继续消费 `latestPatch` / 实时价链。
-- 本轮又修复“账户统计-账户概览”的当日指标口径：`当日盈亏` 与 `当日收益率` 不再直接透传服务端日指标，而是统一改成用 APP 本地交易历史与曲线真值计算今天已平仓盈亏，并按今日起点结余换算收益率；其余 overview 指标继续消费服务端 canonical metrics。
-- 本轮继续修复“点悬浮窗切回 APP 像重开一次”的问题：`MonitorService` 前台恢复不再无条件 `restartV2Stream("foreground_resume")`，`AccountStatsPreloadManager` 也不再因为回前台就立刻 `scheduleFetch(0L)`；现在前后台切换只调整刷新节奏，只有 stream 真失活时才重建主链。
-- 当前主链保持不变：页面首次创建时才负责启动 `MonitorService`，页面 `onResume()` 只做“服务未运行时补拉起”；服务端异常通知按 `alert.id` 持久化去重。
-- 本轮新增收掉 3 个确定性问题：`AccountStatsPreloadManager.refreshHistoryForRevision()` 在内存缓存为空时没有回退到本地库里的 `historyRevision`，会把 bootstrap 后已有同 revision 的历史误判成缺失并重复全量补拉；`buildStoredSnapshotFromPublishedRuntime()` 会把 `remote_logged_out` 运行态也落成 `connected=true`；`MonitorService.requestAccountHistoryRefreshFromV2()` 只有单个 `inFlight` 开关，没有暂存后到的最新 `historyRevision`，补拉 `revA` 期间到来的 `revB` 会被直接丢掉。现在三处都已修复并补了回归测试。
-- 本轮已重新完成最小必要验证：APP 侧定向单测通过，服务端 `test_v2_sync_pipeline` 与 `test_v2_contracts` 共 30 个用例通过；`app-debug.apk` 已重新编译，`dist/windows_server_bundle` 已重新生成并写入新的 `bundle_manifest.json`。
-- 最新一轮 ADB 复核又确认了一个真实拦截点：手机上先前运行的不是本地最新 APK；安装最新 APK 后，APP 启动被 `account_snapshot_meta.historyRevision` 的 Room 迁移契约不一致拦截。现在已把实体字段显式收口为 `NOT NULL DEFAULT ''` 对应契约，重新编译安装后，真机日志已出现 `syncBootstrap refreshMarket=true`、`repo_kline`、`main_render` 和 `floating_render`，说明行情主链已重新打通。
+- 当前已完成 2026-04-10 这轮“行情持仓当前持仓先空白再刷新”的收口复核。
+- `MarketChartActivity` 仍保持“账户叠加层优先用最新内存缓存/本地持久化快照恢复，缓存未就绪时不先画空态”的恢复链路。
+- 图表页启动链路已保持后台读取 Room，不再回退到主线程同步读库。
+- 最新 APK 已于 2026-04-10 12:16（Asia/Shanghai）重新全量编译、安装并用 ADB 复核：`app/build/outputs/apk/debug/app-debug.apk`。
 
 ## 上次停在哪个位置
-- 当前最新停在“K 线十字光标横向吸附到 K 线中心”这一轮已收口：`KlineChartView.updateCrosshair(...)` 已改成先按手指横坐标求高亮 K 线，再把十字纵线吸附到该 K 线中心；纵向 `crosshairY` 与价格换算保持原样。相关图表源码测试已于 2026-04-09 通过。
-- 当前最新停在“悬浮窗产品标题改两行 + 宽度恢复旧固定值”这一轮已收口：`FloatingWindowTextFormatter` 已改成输出两行标题，`FloatingWindowManager` 标题 TextView 已允许两行显示，`FloatingWindowLayoutHelper` 固定宽度已恢复到 `90dp`；相关悬浮窗定向测试已于 2026-04-09 通过。
-- 当前最新停在“K 线图重新进入后的缺口渐进补拉 + 主链窗口收口”这一轮已收口：`MarketChartActivity` 已拆分 `RESTORE_WINDOW_LIMIT=300` 与 `HISTORY_PAGE_LIMIT=300`，自动缺口补拉改成独立后台任务按批次调用 `applyLoadMoreSuccessState(...)`；相关图表定向测试已于 2026-04-09 通过。
-- 当前最新停在“订单操作弹窗可读性 + 挂单类型下拉显示不全”这一项已收口：`dialog_trade_command.xml` 和 `MarketChartActivity` 已完成结构性修复；`MarketChartTradeSourceTest` 已于 2026-04-09 通过。
-- 当前最新停在“悬浮窗宽度/闭合 1m 成交量成交额 + 账户页平仓后及时刷新 + 概览固定排序”这一项已收口：`FloatingWindowLayoutHelper` 已把展开宽度固定为 `144dp`；`MonitorService.buildFloatingSnapshot()` 已切到 `displayOverviewKlineSnapshot`；`AccountStatsBridgeActivity.buildRefreshSignature(...)` 已补上交易记录与曲线签名；账户概览固定顺序为“总资产、净资产；可用预付款、保证金；累计盈亏、累计收益率；当日盈亏、当日收益率；持仓盈亏、持仓收益率”。相关定向测试已于 2026-04-09 通过。
-- 当前最新停在“K 线图禁止高低缩放”这一项已收口：`KlineChartView` 不再维护 `verticalScale`，图表价格轴只做内容自适应，缩放手势统一只落到横向 K 线密度；`KlineChartViewSourceTest`、`MarketChartV2SourceTest`、`MarketChartLifecycleSourceTest` 已于 2026-04-09 通过。
-- 当前最新停在“图表页长周期恢复策略也已收口”这一轮：`MarketChartRefreshHelper` 已改成无实时尾部时按下一个分钟边界调度刷新，`shouldSkipRequestOnResume()` 已不再把“是否有 realtime tail source”当成唯一条件；相关定向测试与 APK 重编译已于 2026-04-09 19:06 完成。
-- 当前最新停在“图表页普通 tab 返回恢复链收口 + 账户页预加载签名短路 + 设置页 tab 语义统一”这一轮：相关代码已改完，定向单测已于 2026-04-09 18:28 通过，下一步如需继续可直接上真机验证 `行情持仓` 和四个 tab 的切换体感。
-- 当前最新停在“账户页首帧与悬浮窗入口”这一轮收口：`AccountStatsBridgeActivity.bindLocalMeta()` 已改成优先消费当前会话缓存元数据；`FloatingWindowManager` 已不再尝试通过 `MainActivity` 传外部路由，而是启动 `OverlayLaunchBridgeActivity` 做无界面转发；最新 `app-debug.apk` 已重新编译安装。
-- 当前最新停在“前后台恢复链 3 个问题已完成本轮收口并通过 ADB 回归”：悬浮窗点击固定回主界面；账户统计页恢复不再无条件重做远程会话对齐和首轮快照；悬浮窗在 `RECONNECTING` 阶段保留上一份有效卡片并显示“重连中”而不是“网络未连接”。
-- 上次停在“代码和 ADB 复核确认：悬浮窗产品卡点击仍然是从服务上下文直接启动 `MarketChartActivity`，这和用户要求的‘仅切回现有 APP’不一致”。
-- 本轮已经补了源码约束测试，并完成实现改造、定向测试通过、最新 APK 重编译和真机重装。
-- 上次停在“多模型并行复核发现的 3 个确定性问题已经修复并验证通过”。
-- 本轮继续复核后，又定位到市场快照链没有完全收口到远程会话真值，且部署包一致性检查把 Windows 脚本编码归一化误判成源码漂移；两项已经完成修复/澄清，并重新跑过服务端定向验收、服务端最终总验收和 bundle 重建校验。
-- 本轮最新停在“最近一轮 BUG review 未再发现新的确定性问题；最新 APK 已生成到 `app/build/outputs/apk/debug/app-debug.apk`，最新服务器部署目录已生成到 `dist/windows_server_bundle`，可直接继续部署或进入下一轮问题排查”。
-- 当前最新停在“APP 无行情显示”的现场排查已完成：先确认设备安装包和本地 APK 不一致，再通过 ADB 发现最新包安装后被 Room 迁移拦截；修复 `historyRevision` 字段契约后重新编译安装，真机已恢复市场流刷新。
-- 当前最新停在“行情监控-行情概览应显示上一根闭合 1m K 线而不是当前分钟”这一项已收口：新增概览专用闭合 K 线快照通道，主界面已切到该通道，图表实时尾部继续保留原实时 K 线通道；定向单测与图表回归源码测试均已通过。
-- 当前最新停在“账户概览里的当日盈亏/当日收益率要改成 APP 本地今日口径”这一项已收口：新增本地日指标计算 helper，账户页最终展示前只覆盖这两项字段；定向单测与账户页相关回归已通过。
-- 当前最新停在“点悬浮窗切回 APP 会像重开并全量刷新”这一项已收口：前台恢复只切换刷新节奏，不再无条件重建 stream 或立即触发预加载；相关源码约束测试已通过。
-- 当前最新停在“最终收口 README 同步”这一项：README 已补齐最近 3 个已确认修复点和对应定向验收记录，准备给出最终收口结论。
-- 当前最新又补收掉一个确定性回归：`AccountStatsPreloadManager.fetchForUi()` 之前被误改成“只返回 latestCache”，导致账户页主动刷新和交易提交后的强一致确认失效；现在已恢复为显式 canonical snapshot/history 刷新入口，并已补回归测试。
-- 当前最新又补收掉 3 个确定性问题：`/v2/account/history` 现在和 `/v2/account/snapshot` 一样先看 `activeAccount`，未激活远程会话时直接返回空历史而不再触发 MT5；`AccountStatsPreloadManager.buildCache()` 不再把断开态缓存硬写成 `connected=true`；`buildStoredSnapshotFromHistoryOnly()` 不再用 history 里的历史订单覆盖当前挂单。
-- 当前最新停在“最新交付物已重新生成”：`dist/windows_server_bundle` 已于 2026-04-09 14:06 重建完成，`app/build/outputs/apk/debug/app-debug.apk` 已于 2026-04-09 14:06 编译完成，可直接继续部署服务器和安装真机。
-- 当前最新停在“悬浮窗点击前台切换链已改成任务前移”：`FloatingWindowManager` 不再直接发起图表页启动；`FloatingWindowManagerSourceTest` 定向通过；最新 APK 已于 2026-04-09 14:28 安装到真机，可继续现场验证用户点击浮窗时是否还会出现类似重开的表现。
+- 上次停在用户继续反馈“每次打开 APP / 切换 Tab 到行情持仓后，当前持仓会先空白再刷新”。
+- 本次继续用 ADB 按“冷启动首页 -> 行情持仓”和“行情持仓 -> 账户统计 -> 行情持仓”两条路径复核。
+- 当前两条路径在 `700ms` 界面树里都已直接出现真实持仓摘要，不再先落到“当前暂无持仓”空态。
 
 ## 近期关键决定和原因
-- 决定只修改十字光标的横向显示坐标，不改手势识别、纵向价格定位和上下滑动。原因是当前问题的根因是 `crosshairX` 直接使用了手指 `x`，而高亮 K 线索引已经在按桶计算；把显示坐标吸附到 `xFor(highlightedIndex, ...)` 就能准确得到“按 K 线中心跳动”的效果，同时不引入新的交互分支。
-- 决定把悬浮窗产品标题拆成“产品名 + 下一行产品盈亏”两行固定文本，而不是继续把盈亏包在产品名后面。原因是当前固定窄宽度下，产品名和盈亏放在同一行更容易截断；拆成两行后，信息优先级更清楚，也不需要重新引入动态宽度。
-- 决定把悬浮窗展开宽度从 `144dp` 恢复到修改前的 `90dp`。原因是用户这轮明确要求恢复旧固定宽度，只调整标题排版，不再继续依赖放大宽度容纳单行盈亏。
-- 决定把图表“主链恢复窗口”和“历史分页批次”拆成两个独立常量，并都先收口到 `300`。原因是 `1500` 之前同时承担了“最新窗口恢复”和“左侧补历史分页”两种职责，导致重新进入图表时单次请求过重、补拉反馈过慢。
-- 决定让自动缺口补拉改成后台批次 prepend，而不是继续在主请求里同步整轮补完。原因是用户真正需要的是“先看到当前窗口，再看左侧历史逐步补上”，而不是为了恢复旧历史阻塞首屏落图。
-- 决定把挂单类型下拉从系统默认 Spinner 布局改成项目统一样式布局并在 Activity 里统一着色。原因是系统默认布局在深色弹窗里对比度不稳定且容易出现文本裁切，统一布局后可确保文字完整和可读性一致。
-- 决定把悬浮窗展开宽度固定提升到 `144dp`，而不是按文本动态测量。原因是用户要“宽一点但不能抖”，固定宽度既能容纳更长的盈亏数字，也不会因价格波动频繁触发布局抖动。
-- 决定让悬浮窗 `1M量/1M额` 直接消费 `displayOverviewKlineSnapshot`。原因是这两个字段语义上属于上一根已闭合 1 分钟 K 线，继续读取实时 patch 会展示当前未收盘分钟的数据。
-- 决定把账户页“是否需要重画”的签名补齐到交易记录和净值曲线。原因是账户页展示的不只是概览、持仓和挂单；如果交易或曲线更新却不进签名，页面会把平仓后的真实新数据误判成旧缓存并跳过刷新。
-- 决定把账户概览展示收口为固定 5 行 10 个指标，并在页面层做稳定排序。原因是概览是读数界面，不应跟随服务端返回顺序或附带字段漂移；继续原样直出会让信息优先级和行列顺序不稳定。
-- 决定把 K 线图缩放能力收口为“只改横向密度，不改价格轴比例”。原因是用户要的是默认固定的价格轴视图，只允许通过左右缩放改变可见 K 线数量；继续保留 `verticalScale` 会让图表在相同数据窗口下产生额外的纵向视觉偏移。
-- 决定把无实时尾部周期的图表自动刷新从“固定 fallback 间隔”改成“对齐到下一次分钟边界”。原因是周/月/年线当前窗口本质上也是由分钟级底稿推进，1 秒轮询既不会带来更早的新数据，也会放大切页后的再次刷新体感。
-- 决定让 `shouldSkipRequestOnResume()` 只看“当前窗口是否仍可渲染且足够新鲜”，不再强依赖 `hasRealtimeTailSourceForChart()`。原因是长周期即使没有实时尾部，只要当前窗口还是上游分钟源刚同步过的结果，就不应在普通 tab 返回时立刻再打一轮请求。
-- 决定把图表页的前台恢复统一收口到 `enterChartScreen(coldStart)`，并移除 `onResume()` 里的 `gatewayV2Client.resetTransport()`、`gatewayV2TradeClient.resetTransport()` 以及 `setFullSnapshotActive(true/false)`。原因是这些动作属于链路恢复或生产侧节奏控制，不应在普通 tab 切换时由图表消费页触发，否则体感上就像重新进入页面。
-- 决定让账户页在命中预加载缓存时先比较 `buildRefreshSignature(...)`，签名未变则直接返回，不再重复 `applySnapshot()`。原因是账户页的总览、曲线、持仓、成交区都在主线程重画，同一份缓存每次 `onResume()` 都重放会直接造成 tab 卡顿。
-- 决定让 `SettingsActivity` 和 `SettingsSectionActivity` 的底部 tab 导航不再 `finish()` 当前页。原因是 tab 切换本质上是前台切换，不是销毁再重建；继续 `finish()` 会让返回设置页时更容易出现重建和卡顿体感。
-- 决定撤回“悬浮窗 -> `MainActivity` extras -> 再路由到图表页”这条方案。原因是 ADB 已证实：当 APP 任务已存在时，系统只会把任务带回前台，不会稳定把 extras 送达根页面，这条路由在真实任务栈里不可靠。
-- 决定新增 `OverlayLaunchBridgeActivity` 作为无界面桥接页。原因是悬浮窗来自服务上下文，必须有一个确定会被创建的 Activity 来承接外部启动，再由该桥在应用内把请求转发给 `MarketChartActivity`，才能保证点击产品卡稳定落到对应产品图表页。
-- 决定让 `AccountStatsBridgeActivity.bindLocalMeta()` 先解析并应用当前会话缓存元数据。原因是账户页新建实例时，旧实现会先把连接态硬写成未连接，随后再被预加载快照纠正，造成明显“重登/重刷”体感。
-- 决定把悬浮窗点击目标从“前移当前任务顶部页面”进一步收口成“统一回到 `MainActivity`”。原因是当前任务顶部可能是图表页或账户页，而这两个页面都有各自的恢复链；用户要的是回 APP 主界面，不是回到上次停留的重页面。
-- 决定把账户统计页的前台恢复逻辑收口成 `enterAccountScreen(coldStart)`。原因是 `onCreate()` 和 `onResume()` 之前都在各自散落地触发远程会话状态同步和前景快照刷新，导致切页或回前台时重复 bootstrap、重复全量拉取，并出现“像重新登录”的体感。
-- 决定引入统一 `ConnectionStage`（`CONNECTING / RECONNECTING / CONNECTED / DISCONNECTED`），并让悬浮窗快照直接携带该阶段。原因是原来只有一条字符串状态，悬浮窗把“重连中”也当成“离线”空态渲染，无法正确表达“连接正在恢复但上一份数据仍有效”的状态。
-- 决定把 `ACTION_BOOTSTRAP` 的触发时机收口到页面首次创建，而不是每次 `onResume()`。原因是 APP 前后台切换已经由 `AppForegroundTracker -> MonitorService.handleForegroundStateChanged()` 统一处理，页面恢复再发 bootstrap 会重复触发主链刷新。
-- 决定让悬浮窗打开图表页时使用 `NEW_TASK + SINGLE_TOP + CLEAR_TOP`。原因是要复用已有图表页实例并走 `onNewIntent()` 更新目标产品，避免每次点开都像重新起一个 APP 栈。
-- 决定新增本地 `AbnormalAlertDispatchStore`，把已消费的服务端 `alert.id` 持久化。原因是旧告警的重复通知问题本质上是“缺少稳定事件身份去重”，只靠按产品冷却并不成立。
-- 决定把 `FloatingWindowManager.hide()` 的窗口所有权复位放到 `finally`。原因是移除浮层抛异常时也必须清掉 `windowAdded`，否则同进程后续无法重新显示悬浮窗。
-- 决定把 `AbnormalSyncRuntimeHelper` 对已派发 `alertId` 的比较改成标准化 `trim` 后再比。原因是服务端同一 alert 不应因为 ID 字符串前后空白差异而重复提醒。
-- 决定同步补齐 README 里的 App / 服务端最终验收命令。原因是文档里的最终验收必须覆盖当前真实主链约束，不能遗漏最近修复的回归测试。
-- 决定把账户链的 `historyRevision` 落到 Room 元数据表并通过迁移保留旧库。原因是这个版本号本来就是“是否需要全量补拉 history”的真值，只放在内存里会让冷启动后的节流策略失效。
-- 决定让 `persistIncrementalSnapshot()` 在检测到账户身份变化时清空历史交易、曲线和历史统计缓存。原因是新账户运行态不能短暂继承旧账户历史侧数据，否则会污染账户页和图表叠加层真值。
-- 决定仅在 `public-key` 接口入口把 `state=activated` 的当前账号显式收口成 `active=true`。原因是通用会话模型仍然坚持“只认 canonical active 字段”，但 public-key 接口对当前激活账号需要维持现有客户端契约。
-- 决定让 `/v2/market/snapshot` 和 `/v2/account/snapshot` 使用同一套“先看 `activeAccount`，再决定是否读取 MT5 轻快照”的分流规则。原因是市场链与账户链必须共用同一个远程会话真值边界，不能一个已登出、一个还继续触发 MT5。
-- 决定保留部署包阶段对 Windows 脚本的 `UTF-8 BOM + CRLF` 归一化。原因是这是 Windows PowerShell / cmd 的兼容性要求，不是业务逻辑分叉；后续核对源码与部署包时应按归一化后的文本内容判断，而不是直接比较原始文件哈希。
-- 决定把“主界面概览指标”和“实时价格/图表尾部”拆成两条市场消费通道。原因是两者语义本来不同：概览指标要求上一根已闭合 1 分钟 K 线真值，而实时价格和图表尾部需要继续消费当前分钟 patch；继续共用同一份 `displayKlines` 会把闭合真值覆盖掉。
-- 决定把“账户概览里的当日盈亏/当日收益率”从服务端 overview 指标里单独拿出来，由 APP 本地交易历史和曲线真值重新计算后覆盖展示。原因是这两项本来就属于 APP 页面口径，继续原样透传服务端 `Daily PnL / Daily Return` 会和 APP 自己的历史、曲线侧真值不一致。
-- 决定把“前台恢复”从“无条件重建主链 + 立即补拉”收口成“健康时只切节奏、失活时才重建”。原因是点击悬浮窗或从后台回前台本质上只是页面可见性切换，不应表现得像重新打开 APP，更不应把持续中的 stream 主链打断重来。
-- 决定把悬浮窗点击的页面行为从“直接启动 `MarketChartActivity`”收口成“优先 `ActivityManager.AppTask.moveToFront()` 前移现有任务”。原因是用户要的是真正的任务前台切换，而不是从服务上下文再次发起内部页面导航；后者天然会触发生命周期重入，造成像重开、重连、重刷一样的体感。
-- 决定让 `AccountStatsPreloadManager.refreshHistoryForRevision()` 在判定是否需要全量补拉前先读取一次本地 `StoredSnapshot`，并在内存缓存为空时回退到本地 `historyRevision`。原因是 stream bootstrap 后是否需要补拉 history 的真值不能只依赖内存缓存，否则冷启动或服务重连时会重复拉整段历史。
-- 决定让 APP 侧账户运行态连接状态只认完整账号身份，并把 `source=remote_logged_out` 明确映射成未连接。原因是远程登出后的空运行态不能继续驱动账户页显示“已连接”，更不能让交易执行链误以为当前会话有效。
-- 决定给 `MonitorService` 的账户历史补拉增加“待处理 revision”队列位，而不是只保留单个 `inFlight` 标记。原因是 `historyRevision` 可能在一次 history 拉取期间继续前进，只靠互斥会把后到的新 revision 直接丢掉，导致本地历史缓存停在旧版本。
-- 决定让 `AccountSnapshotMetaEntity.historyRevision` 的实体声明显式对齐 `MIGRATION_1_2` 建出的 `TEXT NOT NULL DEFAULT ''`。原因是设备上的旧库已经按迁移 SQL 建成了非空列；如果实体仍按可空无默认值建模，Room 会在启动校验阶段直接拒绝打开数据库，导致服务起不来、行情链完全中断。
-- 决定在最终 README 收口中单独写明“概览指标闭合 1m K 线口径”“账户概览本地日指标口径”“前后台恢复只切节奏”这 3 项。原因是这 3 项都是最近用户现场感知最强、也最容易因文档滞后造成误解的行为收口点。
-- 决定保留“后台预加载纯 stream 驱动”，但恢复 `fetchForUi()` 作为显式强刷新入口。原因是账户页主动刷新和交易确认属于用户发起的强一致读取，和后台定时链不是一回事；把两者都改成“只读缓存”会直接切断确认闭环。
-- 决定让 `/v2/account/history` 也和 `snapshot/market/stream` 共用同一套远程会话边界。原因是历史接口如果绕开 `activeAccount` 继续直连 MT5，会在冷启动无会话时读到 `env_default` 历史，或在显式登出后稳定报错，这和“服务端只认当前激活账号”的主链真值冲突。
+- 保持“会话有效但账户缓存尚未回填时直接保留上一帧持仓 UI，不先走空态”的恢复边界，不再新增降级分支。
+- 保持“本地持久化快照恢复走后台线程”的实现，不回退到任何主线程同步读库方案。
+- 这次 ADB 复核只用于确认真实前台表现；临时诊断代码已全部移除，最终安装包保持干净。
+
+## 当前验证状态
+- `.\gradlew.bat testDebugUnitTest --tests com.binance.monitor.ui.chart.MarketChartPositionPanelSourceTest --tests com.binance.monitor.ui.chart.MarketChartPositionSortSourceTest --tests com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest --tests com.binance.monitor.ui.chart.MarketChartOverlayRestoreSourceTest --tests com.binance.monitor.ui.chart.MarketChartLaunchAnrSourceTest --tests com.binance.monitor.ui.chart.MarketChartCacheRestoreSourceTest`
+- `.\gradlew.bat :app:assembleDebug -x lint --rerun-tasks`
+- `adb install -r app\build\outputs\apk\debug\app-debug.apk`
+- ADB 复核：
+- 冷启动首页后点击“行情持仓”，`700ms` 的界面树已包含“持仓盈亏…”，未出现“当前暂无持仓”
+- `行情持仓 -> 账户统计 -> 行情持仓` 返回后，`700ms` 的界面树同样已包含“持仓盈亏…”，未出现“当前暂无持仓”
+- 返回场景里前台仍为同一个 `MarketChartActivity` 实例，任务栈保持 `MainActivity(root) -> MarketChartActivity(top)`

@@ -13,7 +13,11 @@ final class ChartGapFillHelper {
     static boolean shouldBackfillOlderHistory(int previousWindowSize,
                                               int defaultWindowLimit,
                                               long previousOldestOpenTime,
-                                              long latestWindowOldestOpenTime) {
+                                              long latestWindowOldestOpenTime,
+                                              boolean visibleWindowHasInternalGap) {
+        if (visibleWindowHasInternalGap) {
+            return true;
+        }
         if (previousWindowSize <= Math.max(1, defaultWindowLimit)) {
             return false;
         }

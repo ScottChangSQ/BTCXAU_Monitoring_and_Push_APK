@@ -75,9 +75,10 @@ public class MarketChartRefreshHelperAdditionalTest {
     }
 
     @Test
-    public void shouldSkipRequestOnResumeShouldOnlyDependOnVisibleWindowFreshness() {
-        assertEquals(true, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, true));
-        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(false, true));
-        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, false));
+    public void shouldSkipRequestOnResumeShouldRequireFreshnessAndNoPendingRepair() {
+        assertEquals(true, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, true, false));
+        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(false, true, false));
+        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, false, false));
+        assertEquals(false, MarketChartRefreshHelper.shouldSkipRequestOnResume(true, true, true));
     }
 }

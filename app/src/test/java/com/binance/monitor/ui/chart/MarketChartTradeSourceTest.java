@@ -84,6 +84,19 @@ public class MarketChartTradeSourceTest {
     }
 
     @Test
+    public void tradeDialogActionTextsShouldUseWhiteTextForDarkDialogSurface() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private ArrayAdapter<String> createTradeActionMenuAdapter(String[] actions) {"));
+        assertTrue(source.contains(".setAdapter(createTradeActionMenuAdapter(actions), (menuDialog, which) -> {"));
+        assertTrue(source.contains("textView.setTextColor(Color.WHITE);"));
+        assertTrue(source.contains("private void styleTradeOrderTypeSpinnerItem(@Nullable View view) {"));
+    }
+
+    @Test
     public void positionRowLayoutShouldExposeVisibleActionButton() throws Exception {
         Path file = Paths.get("src/main/res/layout/item_position.xml");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);

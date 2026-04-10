@@ -372,6 +372,7 @@ public class AccountStatsPreloadManager {
     }
 
     // 供账户页主动刷新与交易后强一致确认复用；显式入口仍走 canonical snapshot/history。
+    // 这里写回本地的是“全局账户历史缓存”，不能把页面当前时间范围裁短后覆盖进去。
     public Cache fetchForUi(AccountTimeRange range) {
         if (!isAccountSessionActive()) {
             accountStorageRepository.clearRuntimeSnapshot();
@@ -380,7 +381,6 @@ public class AccountStatsPreloadManager {
             nextDelayMs = MAX_REFRESH_MS;
             return null;
         }
-        AccountTimeRange safeRange = range == null ? AccountTimeRange.ALL : range;
         try {
             AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();
             String remoteHistoryRevision = resolveRemoteHistoryRevision(snapshotPayload);
@@ -400,7 +400,7 @@ public class AccountStatsPreloadManager {
 
             Cache cache;
             if (shouldRefreshAllHistory) {
-                AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(safeRange, "");
+                AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, "");
                 AccountStorageRepository.StoredSnapshot mergedSnapshot =
                         buildStoredSnapshotFromV2(snapshotPayload, historyPayload);
                 accountStorageRepository.persistV2Snapshot(mergedSnapshot);
@@ -753,6 +753,7 @@ public class AccountStatsPreloadManager {
                     optString(item, "side", ""),
                     optLong(item, "positionTicket", 0L),
                     optLong(item, "orderId", 0L),
+                    optLong(item, "openTime", 0L),
                     optDouble(item, "quantity"),
                     pending ? 0d : optDouble(item, "sellableQuantity"),
                     optDouble(item, "costPrice"),

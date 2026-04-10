@@ -25,9 +25,9 @@
 - [app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java)
   APP 安全会话偏好，负责用 Android Keystore 加密保存最近一次远程会话摘要和已保存账号列表缓存；logout 时只清当前激活账号，不清已保存账号摘要。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
-  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏和右上角刷新/延迟信息；当前最终真值只认服务端 `candles + latestPatch`，本地只保留 `ChartHistoryRepository + 内存窗口` 这一层图表缓存。
+  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏和右上角刷新/延迟信息；当前最终真值只认服务端 `candles + latestPatch`，本地只保留 `ChartHistoryRepository + 内存窗口` 这一层图表缓存。图表账户叠加层恢复时，会在内存缓存 miss 时回退到 Room 已持久化快照，避免首帧把当前持仓先清空。
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java)
-  K 线绘制控件，负责主图、副图、指标、右侧留白、异常点胶囊、成本线和缩放交互。
+  K 线绘制控件，负责主图、副图、指标、右侧留白、异常点胶囊、成本线和缩放交互；当前持仓、挂单、历史成交、异常记录都通过统一 annotation 明细链进入高亮详情弹窗。
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java)
   图表视口计算工具，负责 K 线横向边界和右侧留白相关数学逻辑。
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartRefreshMetaFormatter.java)
@@ -38,6 +38,8 @@
   缩放方向判定工具，负责把双指手势分成横向、纵向和斜向整体缩放。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
   账户统计页入口，负责账户概览、收益统计、净值/结余主图、附图、交易分布、交易记录、隐私小眼睛和登录成功提示动画；当前主动刷新已统一改走 `AccountStatsPreloadManager.fetchForUi(...)`，并已接入远程账号会话面板。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountOverviewCumulativeMetricsCalculator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountOverviewCumulativeMetricsCalculator.java)
+  账户概览累计指标真值辅助工具，负责判断当前是否拥有足够真值来覆盖 `累计盈亏 / 累计收益率`；优先净值曲线，其次历史成交 + 当前持仓，仅有当前持仓时不输出累计指标。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java)
   远程账号会话协调器，负责把公钥获取、加密登录、已保存账号切换、退出和切换后缓存清理串成单条主链。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountSessionStateMachine.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountSessionStateMachine.java)
@@ -61,7 +63,7 @@
 - [app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/HoldingDurationDistributionView.java)
   持仓时间分布图控件，负责绘制不同持仓时长桶的交易数量。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java)
-  账户预加载管理器，负责承接服务端已发布的账户运行态并管理历史补拉；当前运行态只消费 `v2/stream.accountRuntime`，只有在 `historyRevision` 变化或本地还没有历史时才补拉 `v2/account/history`，不再定时补拉 `/v2/account/snapshot`，也不再本地回填 `open/close time`、`open/close price` 或秒级时间戳；运行态连接状态只认完整账号身份，`remote_logged_out` 会明确收口为未连接。
+  账户预加载管理器，负责承接服务端已发布的账户运行态并管理历史补拉；当前运行态只消费 `v2/stream.accountRuntime`，只有在 `historyRevision` 变化时才补拉 `v2/account/history`，不再定时补拉 `/v2/account/snapshot`，也不再本地回填 `open/close time`、`open/close price` 或秒级时间戳；运行态连接状态只认完整账号身份，`remote_logged_out` 会明确收口为未连接。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountPreloadPolicyHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPreloadPolicyHelper.java)
   账户预加载节奏辅助工具，负责把前后台状态和全量/轻量模式转换成统一刷新间隔。
 - [app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java)
@@ -160,11 +162,13 @@
 - `KlineChartView` -> `ChartScaleGestureResolver`
   根据双指跨度变化决定走横向、纵向还是整体缩放。
 - `AccountStatsPreloadManager` -> `GatewayV2Client` -> `server_v2.py /v2/account/*`
-  账户运行态直接消费 `v2/stream.accountRuntime`；只有在 `historyRevision` 前进或本地还没有历史时，才补拉 `v2/account/history`，并原子替换本地历史缓存；若内存缓存为空，则回退到本地已持久化 `historyRevision` 判断是否真的需要全量补拉。
+  账户运行态直接消费 `v2/stream.accountRuntime`；只有在 `historyRevision` 前进时，才补拉 `v2/account/history`，并原子替换本地历史缓存；若内存缓存为空，则回退到本地已持久化 `historyRevision` 判断是否真的需要全量补拉。
 - `AppForegroundTracker` -> `AccountPreloadPolicyHelper` -> `AccountStatsPreloadManager`
   统一把应用前后台状态转换成账户预加载节奏，避免旧常量分散在多个入口里。
 - `AccountStatsBridgeActivity` -> `AccountStatsPreloadManager`
   主动刷新时统一复用 `v2` 优先抓取逻辑，不再由页面自己直连旧网关。
+- `AccountStatsBridgeActivity` -> `AccountOverviewCumulativeMetricsCalculator`
+  账户概览渲染前先判断是否已具备累计指标真值；只有曲线或历史成交侧能证明累计真值时，才覆盖 `累计盈亏 / 累计收益率`。
 - `AccountStatsBridgeActivity` -> `AccountRemoteSessionCoordinator` -> `GatewayV2SessionClient`
   账户页远程会话入口统一先拉公钥或读取状态，再执行登录、切换、退出，避免页面自己拼会话接口。
 - `AccountRemoteSessionCoordinator` -> `SessionCredentialEncryptor`
@@ -179,6 +183,8 @@
   当 `v2 stream` 带账户运行态时直接应用已发布快照；只有 `historyRevision` 前进时才刷新历史，避免服务层再周期性补拉账户 snapshot；若补拉期间又收到更新 revision，会在当前一轮结束后继续追到最新版本。
 - `AccountStatsBridgeActivity` -> `AccountCurvePointNormalizer` -> `CurvePoint`
   只对服务端曲线做严格清洗，不再在页面层补点、补值、补仓位比例，再驱动主图和附图。
+- `MarketChartActivity` -> `AccountStorageRepository`
+  图表账户叠加层在内存缓存缺失时回退到本地已持久化快照恢复当前持仓/挂单，保证首帧连续。
 - `AccountStatsBridgeActivity` -> `AccountCurveHighlightHelper` -> `EquityCurveView` / `PositionRatioChartView` / `DrawdownChartView` / `DailyReturnChartView`
   附图长按时按共享横轴位置反推目标时间，再同步四张图的十字光标和主图弹窗数据。
 - `AccountStatsBridgeActivity` -> `AccountConnectionTransitionHelper`
@@ -227,7 +233,8 @@
 - 账户运行态的“已连接/未连接”现在只认完整远程账号身份，不再把 `remote_logged_out` 的空快照当成已连接；原因是账户页和交易执行链都不能基于假连接状态继续工作。
 - `MonitorService` 的历史补拉改成“串行执行 + 暂存最新 revision 续跑”；原因是 stream 可能在单次全量 history 拉取期间继续前进，如果只保留单个 `inFlight` 开关会丢失后到 revision。
 - 仓库内已失联的 `AccountStatsLiveActivity + Mt5GatewayClient` 旧账户页链路已直接删除；原因是它们不再属于任何业务入口，却仍保留 `/v1` 账户快照与本地补位逻辑，继续保留只会制造维护误导。
-- 账户展示链当前收口成“服务端指标直出 + 页面纯消费”；原因是 `overviewMetrics / curveIndicators / statsMetrics` 已由服务端给出，页面层继续本地补算只会重新制造第二套口径。
+- 账户展示链当前收口成“服务端指标直出 + 页面只在能证明真值时做有限覆盖”；原因是 `overviewMetrics / curveIndicators / statsMetrics` 主体仍由服务端给出，但 `累计盈亏 / 累计收益率` 这类字段在 APP 端已有完整曲线或历史成交真值时，可以严格覆盖；继续完全禁用或继续无条件覆盖，都会制造新的错误口径。
+- 图表页账户叠加层恢复链当前收口成“先内存，再 Room 持久化快照”；原因是 tab 切换或重新进入图表页时，问题根因是本地首帧主动清空，而不是上游真值不存在。
 - 账户历史与曲线主链当前只接受服务端标准时间和价格字段；原因是客户端再做秒转毫秒、`timestamp -> open/close time`、`price -> open/close price` 这类补位，会把纯消费链重新拉回本地拼装。
 - 会话收口当前采用“login/switch 成功后必须 `fetchStatus()`，且只认 `status.activeAccount`”；原因是 `receipt/status/本地 saved account/输入值` 多路拼装会继续制造账号身份分裂。
 - 当 `receipt.activeAccount` 与 `status.activeAccount` 冲突时直接失败；原因是这代表服务器会话真值未闭合，前端不能自行猜测哪一个才是目标账号。

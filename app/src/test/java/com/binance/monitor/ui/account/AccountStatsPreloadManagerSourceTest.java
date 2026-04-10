@@ -189,6 +189,17 @@ public class AccountStatsPreloadManagerSourceTest {
     }
 
     @Test
+    public void fetchForUiShouldAlwaysHydrateStoredHistoryFromAllRange() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, \"\");"));
+        assertFalse(source.contains("AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(safeRange, \"\");"));
+    }
+
+    @Test
     public void explicitSnapshotRefreshShouldReuseRuntimeConnectionTruthInsteadOfHardcodingConnected() throws Exception {
         String source = new String(
                 Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),

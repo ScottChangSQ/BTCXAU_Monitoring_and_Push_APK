@@ -71,4 +71,31 @@ public class KlinePopupDataHelperTest {
 
         assertEquals(8, rows.size());
     }
+
+    @Test
+    public void shouldFormatPopupTurnoverWithChineseLargeUnit() {
+        CandleEntry candle = new CandleEntry("BTCUSDT", 1L, 2L, 100d, 110d, 90d, 105d, 12d, 123_456_789d);
+
+        List<KlinePopupDataHelper.Row> rows = KlinePopupDataHelper.buildRows(
+                candle,
+                false,
+                20,
+                2,
+                Double.NaN,
+                Double.NaN,
+                Double.NaN,
+                false,
+                7,
+                Double.NaN,
+                false,
+                12,
+                Double.NaN,
+                false,
+                14,
+                Double.NaN
+        );
+
+        assertEquals("TOV", rows.get(7).label);
+        assertEquals("1.23亿$", rows.get(7).value);
+    }
 }

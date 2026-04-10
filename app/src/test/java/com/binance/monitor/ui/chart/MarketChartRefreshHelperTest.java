@@ -188,6 +188,17 @@ public class MarketChartRefreshHelperTest {
         assertEquals(-1L, plan.startTimeInclusive);
     }
 
+    @Test
+    public void shouldSkipRequestOnResumeShouldStayFalseWhenVisibleMinuteSeriesNeedsRepair() {
+        boolean shouldSkip = MarketChartRefreshHelper.shouldSkipRequestOnResume(
+                true,
+                true,
+                true
+        );
+
+        assertEquals(false, shouldSkip);
+    }
+
     private List<CandleEntry> createSeries(int count, long lastOpenTime, long intervalMs) {
         List<CandleEntry> result = new ArrayList<>();
         long startOpenTime = lastOpenTime - (Math.max(0, count - 1) * intervalMs);

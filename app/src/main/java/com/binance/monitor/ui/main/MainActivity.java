@@ -898,21 +898,21 @@ public class MainActivity extends AppCompatActivity {
 
     private void openAccountStats() {
         android.content.Intent intent = new android.content.Intent(this, com.binance.monitor.ui.account.AccountStatsBridgeActivity.class);
-        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
     }
 
     private void openMarketChart() {
         android.content.Intent intent = new android.content.Intent(this, MarketChartActivity.class);
-        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
     }
 
     private void openSettings() {
         android.content.Intent intent = new android.content.Intent(this, SettingsActivity.class);
-        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
     }

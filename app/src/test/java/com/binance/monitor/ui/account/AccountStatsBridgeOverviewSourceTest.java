@@ -73,4 +73,28 @@ public class AccountStatsBridgeOverviewSourceTest {
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"持仓盈亏\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"持仓收益率\");"));
     }
+
+    @Test
+    public void buildOverviewMetricsShouldFillPositionMetricsFromCanonicalSnapshot() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")),
+                StandardCharsets.UTF_8
+        );
+
+        assertTrue(source.contains("AccountOverviewMetricsCalculator.calculate("));
+        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓盈亏\""));
+        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓收益率\""));
+    }
+
+    @Test
+    public void buildOverviewMetricsShouldKeepCanonicalCumulativeMetricsFromSnapshot() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")),
+                StandardCharsets.UTF_8
+        );
+
+        assertTrue(source.contains("AccountOverviewCumulativeMetricsCalculator.calculate("));
+        assertTrue(source.contains("if (cumulativeValues.hasCumulativePnlTruth()) {"));
+        assertTrue(source.contains("if (cumulativeValues.hasCumulativeReturnRateTruth()) {"));
+    }
 }

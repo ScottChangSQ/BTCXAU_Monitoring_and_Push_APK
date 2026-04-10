@@ -26,7 +26,7 @@ import com.binance.monitor.data.local.db.entity.TradeHistoryEntity;
                 PendingOrderSnapshotEntity.class,
                 AccountSnapshotMetaEntity.class
         },
-        version = 2,
+        version = 3,
         exportSchema = false
 )
 public abstract class AppDatabase extends RoomDatabase {
@@ -35,6 +35,14 @@ public abstract class AppDatabase extends RoomDatabase {
         @Override
         public void migrate(SupportSQLiteDatabase database) {
             database.execSQL("ALTER TABLE account_snapshot_meta ADD COLUMN historyRevision TEXT NOT NULL DEFAULT ''");
+        }
+    };
+
+    public static final Migration MIGRATION_2_3 = new Migration(2, 3) {
+        @Override
+        public void migrate(SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE position_snapshot ADD COLUMN openTime INTEGER NOT NULL DEFAULT 0");
+            database.execSQL("ALTER TABLE pending_order_snapshot ADD COLUMN openTime INTEGER NOT NULL DEFAULT 0");
         }
     };
 

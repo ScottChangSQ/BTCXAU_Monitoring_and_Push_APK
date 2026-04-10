@@ -289,7 +289,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private boolean draggingTradeScrollBar;
     private final Runnable hideLoginSuccessBannerRunnable = this::hideLoginSuccessBannerNow;
     private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {
-        if (cache == null || isFinishing() || isDestroyed()) {
+        if (cache == null || isFinishing() || isDestroyed() || loading) {
             return;
         }
         applyPreloadedCacheIfAvailable();
@@ -2493,7 +2493,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return null;
         }
         AccountStatsPreloadManager.Cache cache = preloadManager.getLatestCache();
-        if (cache == null || !isPreloadedCacheForCurrentSession(cache)) {
+        if (cache == null) {
+            return null;
+        }
+        if (!isPreloadedCacheForCurrentSession(cache)) {
             return null;
         }
         return cache;
@@ -2660,12 +2663,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         loading = true;
         final AccountSnapshotRequestGuard.RequestToken requestToken = snapshotRequestGuard.openRequest();
         AccountTimeRange fetchRange = AccountTimeRange.ALL;
+        AccountStatsPreloadManager.Cache requestStartCache = resolveCurrentSessionCache();
+        final String requestStartHistoryRevision = requestStartCache == null
+                ? ""
+                : trim(requestStartCache.getHistoryRevision());
 
         ioExecutor.execute(() -> {
             AccountStatsPreloadManager.Cache remote = preloadManager == null
                     ? null
                     : preloadManager.fetchForUi(fetchRange);
             AccountSnapshot snapshot;
+            boolean syntheticDisconnectedSnapshot = false;
             boolean connected;
             String account;
             String accountName;
@@ -2705,6 +2713,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             } else {
                 // 断线时直接进入空快照态，不再把旧数据伪装成当前真值。
                 snapshot = buildEmptyAccountSnapshot();
+                syntheticDisconnectedSnapshot = true;
                 connected = false;
                 account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
                 accountName = account;
@@ -2731,6 +2740,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             final long finalUpdatedAt = updatedAt;
             final String finalError = error;
             final String finalHistoryRevision = remote == null ? "" : remote.getHistoryRevision();
+            final boolean finalSyntheticDisconnectedSnapshot = syntheticDisconnectedSnapshot;
             final String finalSignature = buildRefreshSignature(
                     finalSnapshot,
                     finalHistoryRevision,
@@ -2776,7 +2786,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 }
                 updateOverviewHeader();
                 logConnectionEvent(finalConnected);
-                if (finalSnapshot != null) {
+                if (shouldApplyFetchedSnapshot(
+                        finalSnapshot,
+                        finalConnected,
+                        finalSyntheticDisconnectedSnapshot,
+                        finalHistoryRevision,
+                        requestStartHistoryRevision)) {
                     applySnapshot(finalSnapshot, finalConnected);
                 }
                 lastAppliedSnapshotSignature = finalSignature;
@@ -2790,6 +2805,49 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 updateOverviewHeader();
             });
         });
+    }
+
+    // 页面自己合成的断线空快照只用于“完全无可渲染状态”的场景，不能覆盖当前已展示的真实持仓。
+    private boolean shouldApplyFetchedSnapshot(@Nullable AccountSnapshot snapshot,
+                                               boolean remoteConnected,
+                                               boolean syntheticDisconnectedSnapshot,
+                                               @Nullable String incomingHistoryRevision,
+                                               @Nullable String requestStartHistoryRevision) {
+        if (snapshot == null) {
+            return false;
+        }
+        if (shouldRejectStaleHistorySnapshot(incomingHistoryRevision, requestStartHistoryRevision)) {
+            return false;
+        }
+        if (remoteConnected) {
+            return true;
+        }
+        if (syntheticDisconnectedSnapshot && hasRenderableCurrentSessionState()) {
+            return false;
+        }
+        return true;
+    }
+
+    // 如果请求发出后页面已经收到了更新过的历史修订号，旧回包就不能再把交易记录覆盖回去。
+    private boolean shouldRejectStaleHistorySnapshot(@Nullable String incomingHistoryRevision,
+                                                     @Nullable String requestStartHistoryRevision) {
+        String requestRevision = trim(requestStartHistoryRevision);
+        if (requestRevision.isEmpty()) {
+            return false;
+        }
+        AccountStatsPreloadManager.Cache currentCache = resolveCurrentSessionCache();
+        if (currentCache == null) {
+            return false;
+        }
+        String currentRevision = trim(currentCache.getHistoryRevision());
+        String incomingRevision = trim(incomingHistoryRevision);
+        if (currentRevision.isEmpty() || incomingRevision.isEmpty()) {
+            return false;
+        }
+        if (currentRevision.equals(requestRevision)) {
+            return false;
+        }
+        return !currentRevision.equals(incomingRevision);
     }
 
     private boolean isOlderThanCurrentSnapshot(long incomingUpdatedAt) {
@@ -3531,8 +3589,22 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview) {
         if (snapshotOverview != null && !snapshotOverview.isEmpty()) {
-            latestCumulativePnl = metricValue(snapshotOverview, "累计盈亏");
             List<AccountMetric> result = new ArrayList<>(snapshotOverview);
+            double totalAsset = metricValue(snapshotOverview, "总资产", "Total Asset", "Total Assets");
+            double netAsset = metricValue(snapshotOverview, "净资产", "当前净值", "净值", "Current Equity", "Net Asset");
+            AccountOverviewMetricsCalculator.OverviewValues overviewValues =
+                    AccountOverviewMetricsCalculator.calculate(
+                            totalAsset,
+                            netAsset,
+                            snapshotOverview,
+                            basePositions
+                    );
+            replaceOrAppendOverviewMetric(result, "可用预付款",
+                    FormatUtils.formatPriceWithUnit(overviewValues.getFreePrepayment()));
+            replaceOrAppendOverviewMetric(result, "保证金",
+                    FormatUtils.formatPriceWithUnit(overviewValues.getPrepayment()));
+            replaceOrAppendOverviewMetric(result, "持仓盈亏", signedMoney(overviewValues.getPositionPnl()));
+            replaceOrAppendOverviewMetric(result, "持仓收益率", percent(overviewValues.getPositionPnlRate()));
             AccountOverviewDailyMetricsCalculator.OverviewDailyValues dailyValues =
                     AccountOverviewDailyMetricsCalculator.calculate(
                             baseTrades,
@@ -3542,6 +3614,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     );
             replaceOrAppendOverviewMetric(result, "当日盈亏", signedMoney(dailyValues.getTodayPnl()));
             replaceOrAppendOverviewMetric(result, "当日收益率", percent(dailyValues.getTodayReturnRate()));
+            AccountOverviewCumulativeMetricsCalculator.OverviewCumulativeValues cumulativeValues =
+                    AccountOverviewCumulativeMetricsCalculator.calculate(
+                            baseTrades,
+                            basePositions,
+                            allCurvePoints
+                    );
+            if (cumulativeValues.hasCumulativePnlTruth()) {
+                replaceOrAppendOverviewMetric(result, "累计盈亏", signedMoney(cumulativeValues.getCumulativePnl()));
+            }
+            if (cumulativeValues.hasCumulativeReturnRateTruth()) {
+                replaceOrAppendOverviewMetric(result, "累计收益率", percent(cumulativeValues.getCumulativeReturnRate()));
+            }
+            latestCumulativePnl = metricValue(result, "累计盈亏");
             return sortOverviewMetricsForDisplay(result);
         }
         latestCumulativePnl = 0d;
@@ -5856,7 +5941,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             totalMarketValue += Math.max(0d, Math.abs(item.getMarketValue()));
         }
         double ratio = safeDivide(totalPnl, Math.max(1d, totalMarketValue));
-        overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics));
         binding.tvPositionPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
         if (masked) {
             binding.tvPositionPnlSummary.setText("全周期总计盈亏（持仓）: **** | 持仓收益率: ****");
@@ -6459,14 +6543,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void openMarketMonitor() {
         Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
     }
 
     private void openMarketChart() {
         Intent intent = new Intent(this, MarketChartActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
     }
@@ -6487,7 +6571,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void openSettings() {
         Intent intent = new Intent(this, SettingsActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);
     }

@@ -18,7 +18,8 @@ public class ChartGapFillHelperTest {
                 previousWindowSize,
                 defaultWindowLimit,
                 previousOldestOpenTime,
-                latestWindowOldestOpenTime));
+                latestWindowOldestOpenTime,
+                false));
     }
 
     @Test
@@ -32,6 +33,22 @@ public class ChartGapFillHelperTest {
                 previousWindowSize,
                 defaultWindowLimit,
                 previousOldestOpenTime,
-                latestWindowOldestOpenTime));
+                latestWindowOldestOpenTime,
+                false));
+    }
+
+    @Test
+    public void shouldBackfillWhenVisibleMinuteWindowStillHasInternalGap() {
+        int previousWindowSize = 300;
+        int defaultWindowLimit = 300;
+        long previousOldestOpenTime = 10_000L;
+        long latestWindowOldestOpenTime = 10_000L;
+
+        assertTrue(ChartGapFillHelper.shouldBackfillOlderHistory(
+                previousWindowSize,
+                defaultWindowLimit,
+                previousOldestOpenTime,
+                latestWindowOldestOpenTime,
+                true));
     }
 }

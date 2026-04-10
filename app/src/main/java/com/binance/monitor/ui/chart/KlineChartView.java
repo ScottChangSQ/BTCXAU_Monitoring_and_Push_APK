@@ -707,6 +707,7 @@ public class KlineChartView extends View {
         float oldOffset = offsetCandles;
         float oldVisibleEnd = oldSize > 0 ? (oldSize - 1f - oldOffset) : 0f;
         boolean hasLayout = ensureLayoutForMath();
+        long highlightedOpenTime = resolveHighlightedOpenTime();
         float focusX = resolveViewportFocusX(hasLayout);
         float focusIndexFloat = oldVisibleEnd;
         if (oldSize > 0 && hasLayout) {
@@ -740,7 +741,9 @@ public class KlineChartView extends View {
         }
         clampOffset();
         if (longPressing && !Float.isNaN(crosshairX) && !Float.isNaN(crosshairY)) {
-            updateCrosshair(crosshairX, crosshairY);
+            if (!restoreCrosshairByOpenTime(highlightedOpenTime)) {
+                updateCrosshair(crosshairX, crosshairY);
+            }
         } else {
             notifyCrosshair();
         }
@@ -756,12 +759,15 @@ public class KlineChartView extends View {
             setCandles(olderCandles);
             return;
         }
+        long highlightedOpenTime = resolveHighlightedOpenTime();
         candles.addAll(0, olderCandles);
         offsetCandles += olderCandles.size();
         computeIndicators();
         clampOffset();
         if (longPressing && !Float.isNaN(crosshairX) && !Float.isNaN(crosshairY)) {
-            updateCrosshair(crosshairX, crosshairY);
+            if (!restoreCrosshairByOpenTime(highlightedOpenTime)) {
+                updateCrosshair(crosshairX, crosshairY);
+            }
         }
         invalidate();
     }
@@ -1564,10 +1570,32 @@ public class KlineChartView extends View {
 
     @Nullable
     private PriceAnnotation findHighlightedAnnotationWithDetails() {
-        if (highlightedAnnotationGroupId.isEmpty() || !showHistoryTradeAnnotations) {
+        if (highlightedAnnotationGroupId.isEmpty()) {
             return null;
         }
-        for (PriceAnnotation item : historyTradeAnnotations) {
+        PriceAnnotation selected = findHighlightedAnnotationWithDetails(positionAnnotations);
+        if (selected != null) {
+            return selected;
+        }
+        selected = findHighlightedAnnotationWithDetails(pendingAnnotations);
+        if (selected != null) {
+            return selected;
+        }
+        if (showHistoryTradeAnnotations) {
+            selected = findHighlightedAnnotationWithDetails(historyTradeAnnotations);
+            if (selected != null) {
+                return selected;
+            }
+        }
+        return findHighlightedAnnotationWithDetails(abnormalAnnotations);
+    }
+
+    @Nullable
+    private PriceAnnotation findHighlightedAnnotationWithDetails(@Nullable List<PriceAnnotation> annotations) {
+        if (annotations == null || annotations.isEmpty()) {
+            return null;
+        }
+        for (PriceAnnotation item : annotations) {
             if (item != null
                     && highlightedAnnotationGroupId.equals(resolveAnnotationGroupKey(item))
                     && item.detailLines.length > 0) {
@@ -1943,7 +1971,7 @@ public class KlineChartView extends View {
         float touchX = clamp(x, priceRect.left, priceRect.right);
         crosshairY = clamp(y, priceRect.top, priceRect.bottom);
         float rawIndex = xToRawIndex(touchX, visibleEndFloat);
-        crosshairOnCandle = rawIndex >= -0.05f && rawIndex <= candles.size() - 1f + 0.05f;
+        crosshairOnCandle = rawIndex >= -0.05f && rawIndex <= candles.size() - 1f + resolveRightBlankSlotsForOffset();
         highlightedIndex = Math.round(rawIndex);
         if (highlightedIndex < 0) highlightedIndex = 0;
         if (highlightedIndex >= candles.size()) highlightedIndex = candles.size() - 1;
@@ -1980,6 +2008,33 @@ public class KlineChartView extends View {
                 valueAt(stochK, i),
                 valueAt(stochD, i)
         ));
+    }
+
+    // 刷新前记住当前十字焦点所对应的K线时间，供数据更新后优先按同一根K线恢复。
+    private long resolveHighlightedOpenTime() {
+        if (!longPressing || highlightedIndex < 0 || highlightedIndex >= candles.size()) {
+            return Long.MIN_VALUE;
+        }
+        CandleEntry highlighted = candles.get(highlightedIndex);
+        return highlighted == null ? Long.MIN_VALUE : highlighted.getOpenTime();
+    }
+
+    // 数据刷新后优先按原焦点的openTime恢复高亮，避免按旧屏幕坐标重算时来回跳到相邻K线。
+    private boolean restoreCrosshairByOpenTime(long highlightedOpenTime) {
+        if (highlightedOpenTime == Long.MIN_VALUE || candles.isEmpty()) {
+            return false;
+        }
+        int restoredIndex = indexByOpenTime(highlightedOpenTime);
+        if (restoredIndex < 0) {
+            return false;
+        }
+        highlightedIndex = restoredIndex;
+        crosshairOnCandle = true;
+        crosshairY = clamp(crosshairY, priceRect.top, priceRect.bottom);
+        crosshairX = clamp(xFor(highlightedIndex, visibleEndFloat), priceRect.left, priceRect.right);
+        crosshairPrice = valueForY(crosshairY, visiblePriceMin, visiblePriceMax, priceRect);
+        notifyCrosshair();
+        return true;
     }
 
     private void maybeRequestMore() {
@@ -2147,8 +2202,14 @@ public class KlineChartView extends View {
         );
     }
 
+    // 视口偏移一旦变化就立即刷新可见末端位置，避免高频刷新时十字线继续使用上一帧的旧视口值。
+    private void syncVisibleEndFloat() {
+        visibleEndFloat = candles.isEmpty() ? 0f : (candles.size() - 1f - offsetCandles);
+    }
+
     private void clampOffset() {
         offsetCandles = clamp(offsetCandles, 0f, maxOffset());
+        syncVisibleEndFloat();
     }
 
     private float xFor(int index, float endFloat) {

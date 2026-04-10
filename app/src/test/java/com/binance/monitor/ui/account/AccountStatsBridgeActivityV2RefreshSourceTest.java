@@ -97,7 +97,7 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
     }
 
     @Test
-    public void preloadCacheListenerShouldNotDropTradeRefreshWhileLoading() throws Exception {
+    public void preloadCacheListenerShouldSkipCacheReplayWhileExplicitSnapshotIsLoading() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
@@ -105,10 +105,8 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
 
         assertTrue("账户页应保留统一的预加载缓存监听器",
                 source.contains("private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {"));
-        assertTrue("预加载缓存监听器命中后应继续应用当前缓存，而不是直接丢弃交易后的强刷结果",
-                source.contains("if (cache == null || isFinishing() || isDestroyed()) {\n            return;\n        }\n        applyPreloadedCacheIfAvailable();"));
-        assertTrue("账户页不应再因为 loading=true 而跳过预加载缓存更新",
-                !source.contains("if (cache == null || isFinishing() || isDestroyed() || loading) {"));
+        assertTrue("显式快照请求进行中时，预加载监听器不应再回灌缓存覆盖当前请求链路",
+                source.contains("if (cache == null || isFinishing() || isDestroyed() || loading) {\n            return;\n        }\n        applyPreloadedCacheIfAvailable();"));
     }
 
     @Test
@@ -126,6 +124,36 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
                 source.contains("private String buildRefreshSignature("));
         assertTrue("快照签名应做顺序无关排序，避免仅顺序变化导致误判",
                 source.contains("Collections.sort(entries);"));
+    }
+
+    @Test
+    public void transientDisconnectedSnapshotShouldNotClearRenderablePositions() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("账户页应显式区分“真实快照”和“页面自己合成的断线空快照”",
+                source.contains("private boolean shouldApplyFetchedSnapshot("));
+        assertTrue("当前页已经有可渲染快照时，临时断线不应再用合成空快照清空持仓",
+                source.contains("if (syntheticDisconnectedSnapshot && hasRenderableCurrentSessionState()) {\n            return false;\n        }"));
+        assertTrue("快照回写前应统一通过 shouldApplyFetchedSnapshot 决定是否重画",
+                source.contains("if (shouldApplyFetchedSnapshot(\n                        finalSnapshot,\n                        finalConnected,\n                        finalSyntheticDisconnectedSnapshot,\n                        finalHistoryRevision,\n                        requestStartHistoryRevision)) {\n                    applySnapshot(finalSnapshot, finalConnected);\n                }"));
+    }
+
+    @Test
+    public void staleHistoryResponseShouldNotOverwriteNewerTradeHistoryAlreadyAppliedFromCache() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("请求发起时应记录当时页面所见的历史修订号，供回包时判断是否过期",
+                source.contains("final String requestStartHistoryRevision = requestStartCache == null\n                ? \"\"\n                : trim(requestStartCache.getHistoryRevision());"));
+        assertTrue("账户页应提供统一的旧历史回包拦截方法",
+                source.contains("private boolean shouldRejectStaleHistorySnapshot("));
+        assertTrue("如果请求发出后页面已经收到新的 historyRevision，旧回包不应再覆盖当前交易记录",
+                source.contains("if (currentRevision.equals(requestRevision)) {\n            return false;\n        }\n        return !currentRevision.equals(incomingRevision);"));
     }
 
     @Test

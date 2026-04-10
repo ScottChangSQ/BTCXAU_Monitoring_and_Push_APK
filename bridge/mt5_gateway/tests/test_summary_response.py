@@ -127,6 +127,40 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual("$150.00", values["Margin"])
         self.assertEqual("$1,100.00", values["Free Fund"])
 
+    def test_build_overview_uses_account_cumulative_pnl_instead_of_position_only(self):
+        original_mt5 = server_v2.mt5
+
+        class _FakeMt5:
+            @staticmethod
+            def account_info():
+                return types.SimpleNamespace(
+                    equity=1184.0,
+                    balance=1084.0,
+                    margin=150.0,
+                    margin_free=934.0,
+                    leverage=100,
+                    margin_level=789.33,
+                )
+
+        server_v2.mt5 = _FakeMt5()
+        positions = [
+            {"marketValue": 2500.0, "totalPnL": 80.0, "dayPnL": 20.0},
+            {"marketValue": 1200.0, "totalPnL": 20.0, "dayPnL": 5.0},
+        ]
+        trades = [
+            {"timestamp": server_v2._now_ms(), "profit": 60.0, "fee": -3.0, "storageFee": -2.0},
+            {"timestamp": server_v2._now_ms(), "profit": 30.0, "fee": -1.0, "storageFee": 0.0},
+        ]
+        try:
+            overview = server_v2._build_overview(positions, trades)
+        finally:
+            server_v2.mt5 = original_mt5
+
+        values = {item["name"]: item["value"] for item in overview}
+        self.assertEqual("+$184.00", values["Cumulative PnL"])
+        self.assertEqual("+18.40%", values["Total Return"])
+        self.assertEqual("+9.23%", values["Position Return"])
+
     def test_build_snapshot_includes_account_meta_margin_fields_for_v2_account(self):
         original_mt5 = server_v2.mt5
         original_map_positions = server_v2._map_positions

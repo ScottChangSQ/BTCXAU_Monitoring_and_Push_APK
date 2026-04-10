@@ -91,7 +91,9 @@ public class AccountStatsBridgeSnapshotSourceTest {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics));"));
+        assertTrue(source.contains("List<AccountMetric> overview = buildOverviewMetrics(latestOverviewMetrics);"));
+        assertTrue(source.contains("overviewAdapter.submitList(overview);"));
+        assertTrue(!source.contains("overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics));"));
         assertTrue(source.contains("indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));"));
         assertTrue(source.contains("statsAdapter.submitList(buildTradeStatsMetrics(latestStatsMetrics));"));
     }

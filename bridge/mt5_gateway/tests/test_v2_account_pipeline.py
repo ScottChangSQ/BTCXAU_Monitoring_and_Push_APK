@@ -215,6 +215,7 @@ class V2AccountPipelineTests(unittest.TestCase):
                     "productName": "BTCUSD",
                     "positionTicket": 101,
                     "orderId": 202,
+                    "openTime": 1710000000123,
                     "quantity": 0.1,
                     "costPrice": 100.0,
                     "latestPrice": 105.0,
@@ -228,6 +229,7 @@ class V2AccountPipelineTests(unittest.TestCase):
                     "tradeSymbol": "XAUUSD",
                     "productName": "XAUUSD",
                     "orderId": 303,
+                    "openTime": 1710000000456,
                     "quantity": 0.0,
                     "pendingLots": 0.2,
                     "pendingPrice": 2050.0,
@@ -243,10 +245,12 @@ class V2AccountPipelineTests(unittest.TestCase):
         order = payload["orders"][0]
         self.assertEqual(101, position["positionTicket"])
         self.assertEqual(202, position["orderId"])
+        self.assertEqual(1710000000123, position["openTime"])
         self.assertEqual(120.0, position["takeProfit"])
         self.assertEqual(90.0, position["stopLoss"])
         self.assertEqual(-1.5, position["storageFee"])
         self.assertEqual(303, order["orderId"])
+        self.assertEqual(1710000000456, order["openTime"])
         self.assertEqual(2051.0, order["latestPrice"])
         self.assertEqual(2070.0, order["takeProfit"])
         self.assertEqual(2030.0, order["stopLoss"])

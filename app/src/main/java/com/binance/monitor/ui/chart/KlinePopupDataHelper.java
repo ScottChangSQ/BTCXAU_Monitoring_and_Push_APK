@@ -57,7 +57,7 @@ final class KlinePopupDataHelper {
         rows.add(new Row("C", candle == null ? "-" : FormatUtils.formatPrice(candle.getClose())));
         rows.add(new Row("价格变动", candle == null ? "-" : formatSignedDelta(candle.getClose() - candle.getOpen())));
         rows.add(new Row("VOL", candle == null ? "-" : formatVolumeNumber(candle.getVolume())));
-        rows.add(new Row("TOV", candle == null ? "-" : formatVolumeNumber(candle.getQuoteVolume())));
+        rows.add(new Row("TOV", candle == null ? "-" : FormatUtils.formatAmountWithChineseUnit(candle.getQuoteVolume())));
         if (showBoll) {
             appendPriceRow(rows, "BOLL UP", bollUp);
             appendPriceRow(rows, "BOLL MB", bollMid);

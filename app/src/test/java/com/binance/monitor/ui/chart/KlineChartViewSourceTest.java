@@ -60,5 +60,41 @@ public class KlineChartViewSourceTest {
         assertTrue(source.contains("highlightedIndex = Math.round(rawIndex);"));
         assertTrue(source.contains("crosshairX = clamp(xFor(highlightedIndex, visibleEndFloat), priceRect.left, priceRect.right);"));
         assertTrue(source.contains("crosshairY = clamp(y, priceRect.top, priceRect.bottom);"));
+        assertTrue(source.contains("crosshairOnCandle = rawIndex >= -0.05f && rawIndex <= candles.size() - 1f + resolveRightBlankSlotsForOffset();"));
+    }
+
+    @Test
+    public void activeCrosshairShouldRestoreByHighlightedOpenTimeDuringViewportRefresh() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("long highlightedOpenTime = resolveHighlightedOpenTime();"));
+        assertTrue(source.contains("restoreCrosshairByOpenTime(highlightedOpenTime)"));
+        assertTrue(source.contains("updateCrosshair(crosshairX, crosshairY);"));
+    }
+
+    @Test
+    public void prependOlderCandlesShouldRestoreActiveCrosshairByOpenTimeInsteadOfOldIndex() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("public void prependCandles(@Nullable List<CandleEntry> olderCandles) {"));
+        assertTrue(source.contains("long highlightedOpenTime = resolveHighlightedOpenTime();"));
+        assertTrue(source.contains("if (!restoreCrosshairByOpenTime(highlightedOpenTime)) {\n                updateCrosshair(crosshairX, crosshairY);\n            }"));
+    }
+
+    @Test
+    public void offsetClampShouldRefreshVisibleEndFloatBeforeCrosshairMath() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private void syncVisibleEndFloat() {\n        visibleEndFloat = candles.isEmpty() ? 0f : (candles.size() - 1f - offsetCandles);\n    }"));
+        assertTrue(source.contains("private void clampOffset() {\n        offsetCandles = clamp(offsetCandles, 0f, maxOffset());\n        syncVisibleEndFloat();\n    }"));
     }
 }

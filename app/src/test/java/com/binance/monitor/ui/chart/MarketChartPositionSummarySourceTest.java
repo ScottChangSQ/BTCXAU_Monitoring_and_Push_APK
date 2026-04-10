@@ -30,4 +30,17 @@ public class MarketChartPositionSummarySourceTest {
 
         assertFalse(source.contains("new AbsoluteSizeSpan("));
     }
+
+    @Test
+    public void chartActivityShouldProvidePositionDetailSortOptions() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("binding.spinnerChartPositionSort.setAdapter(positionSortAdapter);"));
+        assertTrue(source.contains("binding.tvChartPositionSortLabel.setOnClickListener(v -> binding.spinnerChartPositionSort.performClick());"));
+        assertTrue(source.contains("MarketChartPositionSortHelper.buildOptionLabels()"));
+        assertTrue(source.contains("filteredPositions = MarketChartPositionSortHelper.sortPositions(filteredPositions, selectedPositionSort);"));
+    }
 }

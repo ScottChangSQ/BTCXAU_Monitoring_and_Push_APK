@@ -21,4 +21,16 @@ public class MarketChartGapFillSourceTest {
         assertTrue(source.contains("previousOldestOpenTime,"));
         assertTrue(source.contains("ChartGapFillHelper.shouldBackfillOlderHistory("));
     }
+
+    @Test
+    public void activityShouldNotSkipResumeRefreshWhenVisibleSeriesNeedsRepair() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("boolean visibleSeriesNeedsRepair = compatibleVisible"));
+        assertTrue(source.contains("hasRealtimeTailSourceForChart()"));
+        assertTrue(source.contains("return !MarketChartRefreshHelper.shouldSkipRequestOnResume(\n                compatibleVisible,\n                freshVisibleWindow,\n                visibleSeriesNeedsRepair\n        );"));
+    }
 }

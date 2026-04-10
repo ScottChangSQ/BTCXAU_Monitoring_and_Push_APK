@@ -21,6 +21,7 @@ public class PendingOrderSnapshotEntity {
     public String side = "";
     public long positionTicket;
     public long orderId;
+    public long openTime;
     public double quantity;
     public double sellableQuantity;
     public double costPrice;

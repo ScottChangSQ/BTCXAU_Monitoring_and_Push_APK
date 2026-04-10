@@ -504,6 +504,33 @@ class V2ContractTests(unittest.TestCase):
         self.assertNotIn("trades", snapshot)
         self.assertNotIn("curvePoints", snapshot)
 
+    def test_map_positions_should_include_mt5_open_time(self):
+        fake_position = types.SimpleNamespace(
+            symbol="BTCUSD",
+            type=0,
+            volume=0.1,
+            price_open=100.0,
+            price_current=105.0,
+            profit=5.0,
+            ticket=101,
+            identifier=202,
+            tp=120.0,
+            sl=90.0,
+            swap=-1.5,
+            time_msc=1710000000123,
+            time=1710000000,
+        )
+        fake_mt5 = types.SimpleNamespace(
+            symbol_info=lambda _symbol: None,
+            positions_get=lambda: [fake_position],
+            orders_get=lambda: [],
+        )
+
+        with mock.patch.object(server_v2, "mt5", fake_mt5):
+            payload = server_v2._map_positions()
+
+        self.assertEqual(1710000000123, payload[0]["openTime"])
+
     def test_build_trade_history_with_cache_should_prefer_mt5_complete_history(self):
         fallback_snapshot = {
             "trades": [{"dealTicket": 1, "code": "BTCUSD"}],

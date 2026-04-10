@@ -71,7 +71,7 @@ public class FloatingWindowTextFormatterTest {
 
     @Test
     public void formatAmountLineShouldUseOneMinuteLabel() {
-        assertEquals("1M额 1.23M$",
+        assertEquals("1M额 123.46万$",
                 FloatingWindowTextFormatter.formatAmountLine(1_234_567d, false));
     }
 }

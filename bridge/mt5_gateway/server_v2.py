@@ -645,7 +645,9 @@ def _build_v2_sync_runtime_snapshot(server_time: int) -> Dict[str, Any]:
     }
     market_digest = _stable_payload_digest(market_section)
     account_digest = _stable_payload_digest(normalized_account)
-    account_revision = _stable_payload_digest(account_section)
+    # accountRevision 代表“对客户端可见的账户运行态是否发生变化”，必须排除 updatedAt 等抖动字段，
+    # 否则会导致 stream 在真值未变时也持续发 accountRuntime 更新。
+    account_revision = account_digest
     state_digest = _stable_payload_digest({
         "marketDigest": market_digest,
         "accountDigest": account_digest,
@@ -897,6 +899,22 @@ def _deal_sort_timestamp_ms(deal: Any) -> int:
     if value > 0:
         return value
     return int(getattr(deal, "time", 0) or 0) * 1000
+
+
+def _position_time_ms(position: Any) -> int:
+    """统一把 MT5 持仓开仓时间转换为展示口径毫秒时间。"""
+    value = int(getattr(position, "time_msc", 0) or 0)
+    if value > 0:
+        return _apply_mt5_time_offset_ms(value)
+    return _apply_mt5_time_offset_ms(int(getattr(position, "time", 0) or 0) * 1000)
+
+
+def _order_open_time_ms(order: Any) -> int:
+    """统一把 MT5 挂单创建时间转换为展示口径毫秒时间。"""
+    value = int(getattr(order, "time_setup_msc", 0) or 0)
+    if value > 0:
+        return _apply_mt5_time_offset_ms(value)
+    return _apply_mt5_time_offset_ms(int(getattr(order, "time_setup", 0) or 0) * 1000)
 
 
 def _trade_entry_phase_rank(entry_type: int) -> int:
@@ -2791,6 +2809,7 @@ def _map_positions() -> List[Dict]:
                 "side": side,
                 "positionId": int(getattr(position, "identifier", 0) or getattr(position, "ticket", 0)),
                 "positionTicket": int(getattr(position, "ticket", 0)),
+                "openTime": _position_time_ms(position),
                 "quantity": volume,
                 "sellableQuantity": volume,
                 "costPrice": price_open,
@@ -2848,6 +2867,7 @@ def _map_pending_orders() -> List[Dict]:
                 "code": symbol_descriptor["tradeSymbol"],
                 "side": side,
                 "orderId": int(getattr(order, "ticket", 0)),
+                "openTime": _order_open_time_ms(order),
                 "quantity": 0.0,
                 "sellableQuantity": 0.0,
                 "costPrice": 0.0,
@@ -3138,6 +3158,13 @@ def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
     free_margin = float(account.margin_free)
     market_value = sum(p["marketValue"] for p in positions)
     total_pnl = sum(p["totalPnL"] for p in positions)
+    realized_pnl = 0.0
+    for trade in trades:
+        profit = float(trade.get("profit", 0.0) or 0.0)
+        commission = float(trade.get("commission", trade.get("fee", 0.0)) or 0.0)
+        storage_fee = float(trade.get("swap", trade.get("storageFee", 0.0)) or 0.0)
+        realized_pnl += profit + commission + storage_fee
+    cumulative_pnl = realized_pnl + total_pnl
     day_pnl = sum(p["dayPnL"] for p in positions)
 
     today_ts = int(
@@ -3148,8 +3175,9 @@ def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
 
     total_asset = balance
     day_return = _safe_div(day_pnl, max(1.0, equity - day_pnl))
-    total_return = _safe_div(total_pnl, max(1.0, balance - total_pnl))
+    total_return = _safe_div(cumulative_pnl, max(1.0, balance - realized_pnl))
     position_ratio = _safe_div(market_value, max(1.0, equity))
+    position_return = _safe_div(total_pnl, max(1.0, total_asset))
     leverage = int(getattr(account, "leverage", 0) or 0)
     margin_level = float(getattr(account, "margin_level", 0.0) or 0.0)
     margin_level_text = "--" if not math.isfinite(margin_level) else f"{margin_level:.2f}%"
@@ -3160,8 +3188,9 @@ def _build_overview(positions: List[Dict], trades: List[Dict]) -> List[Dict]:
         {"name": "Free Fund", "value": _fmt_usd(free_margin)},
         {"name": "Position Market Value", "value": _fmt_usd(market_value)},
         {"name": "Position PnL", "value": _fmt_money(total_pnl)},
+        {"name": "Position Return", "value": _fmt_pct(position_return)},
         {"name": "Daily PnL", "value": _fmt_money(day_pnl)},
-        {"name": "Cumulative PnL", "value": _fmt_money(total_pnl)},
+        {"name": "Cumulative PnL", "value": _fmt_money(cumulative_pnl)},
         {"name": "Current Equity", "value": _fmt_usd(equity)},
         {"name": "Daily Return", "value": _fmt_pct(day_return)},
         {"name": "Total Return", "value": _fmt_pct(total_return)},

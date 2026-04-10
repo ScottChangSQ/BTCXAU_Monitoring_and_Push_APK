@@ -19,8 +19,8 @@ public class AccountHistoryRefreshPolicyHelperTest {
     }
 
     @Test
-    public void shouldSkipAllHistoryWhenRemoteRevisionMatchesCacheEvenIfTradeListIsEmpty() {
-        assertFalse(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("rev-5", "rev-5", false));
+    public void shouldRefreshAllHistoryWhenTradeHistoryMissingEvenIfRemoteRevisionMatchesCache() {
+        assertTrue(AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("rev-5", "rev-5", false));
     }
 
     @Test

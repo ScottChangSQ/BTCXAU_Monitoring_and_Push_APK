@@ -182,6 +182,73 @@ public class AccountStorageRepositoryTest {
         assertEquals("deal|1", tradeDao.items.get(0).tradeKey);
     }
 
+    @Test
+    public void persistLiveSnapshotShouldKeepOpenTimeForPositionsWithoutOverwritingPendingOrders() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        snapshotDao.pendingOrders.add(pendingEntity("pending|old", "XAUUSD", 0.02d));
+        snapshotDao.pendingOrders.get(0).openTime = 223344L;
+
+        repository.persistLiveSnapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "MT5网关",
+                "http://gateway",
+                2000L,
+                "",
+                2100L,
+                Arrays.asList(new AccountMetric("Total Asset", "$1,000.00")),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(position("BTCUSD", 1001L, 2001L, 0.05d, 22d, 123456L)),
+                Arrays.asList(pending("XAUUSD", 1002L, 2002L, 0.03d, 223344L)),
+                new ArrayList<>(),
+                new ArrayList<>()
+        ));
+
+        assertEquals(123456L, snapshotDao.positions.get(0).openTime);
+        assertEquals(223344L, snapshotDao.pendingOrders.get(0).openTime);
+
+        AccountStorageRepository.StoredSnapshot restored = repository.loadStoredSnapshot();
+        assertEquals(123456L, restored.getPositions().get(0).getOpenTime());
+        assertEquals(223344L, restored.getPendingOrders().get(0).getOpenTime());
+    }
+
+    @Test
+    public void persistIncrementalSnapshotShouldKeepOpenTimeForPositionsAndPendingOrders() {
+        FakeTradeHistoryDao tradeDao = new FakeTradeHistoryDao();
+        FakeAccountSnapshotDao snapshotDao = new FakeAccountSnapshotDao();
+        AccountStorageRepository repository = new AccountStorageRepository(tradeDao, snapshotDao);
+
+        repository.persistIncrementalSnapshot(new AccountStorageRepository.StoredSnapshot(
+                true,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "MT5网关",
+                "http://gateway",
+                3000L,
+                "",
+                3100L,
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                Arrays.asList(position("BTCUSD", 1001L, 2001L, 0.05d, 22d, 123456L)),
+                Arrays.asList(pending("XAUUSD", 1002L, 2002L, 0.03d, 223344L)),
+                new ArrayList<>(),
+                new ArrayList<>()
+        ));
+
+        assertEquals(123456L, snapshotDao.positions.get(0).openTime);
+        assertEquals(223344L, snapshotDao.pendingOrders.get(0).openTime);
+
+        AccountStorageRepository.StoredSnapshot restored = repository.loadStoredSnapshot();
+        assertEquals(123456L, restored.getPositions().get(0).getOpenTime());
+        assertEquals(223344L, restored.getPendingOrders().get(0).getOpenTime());
+    }
+
     // 轻实时快照如果没有曲线，就必须显式清空旧曲线，不能继续把历史曲线伪装成当前运行态。
     @Test
     public void persistLiveSnapshotShouldClearLegacyCurvePointsWhenIncomingCurveIsEmpty() {
@@ -588,12 +655,22 @@ public class AccountStorageRepositoryTest {
                                   long orderId,
                                   double quantity,
                                   double profit) {
+        return position(code, positionTicket, orderId, quantity, profit, 0L);
+    }
+
+    private PositionItem position(String code,
+                                  long positionTicket,
+                                  long orderId,
+                                  double quantity,
+                                  double profit,
+                                  long openTime) {
         return new PositionItem(
                 code,
                 code,
                 "Buy",
                 positionTicket,
                 orderId,
+                openTime,
                 quantity,
                 quantity,
                 100d,
@@ -608,6 +685,36 @@ public class AccountStorageRepositoryTest {
                 0d,
                 0d,
                 0d,
+                0d
+        );
+    }
+
+    private PositionItem pending(String code,
+                                 long positionTicket,
+                                 long orderId,
+                                 double pendingLots,
+                                 long openTime) {
+        return new PositionItem(
+                code,
+                code,
+                "Buy",
+                positionTicket,
+                orderId,
+                openTime,
+                0d,
+                0d,
+                100d,
+                120d,
+                0d,
+                0d,
+                0d,
+                0d,
+                0d,
+                pendingLots,
+                1,
+                101d,
+                130d,
+                90d,
                 0d
         );
     }
@@ -637,6 +744,7 @@ public class AccountStorageRepositoryTest {
         entity.code = code;
         entity.side = "Buy";
         entity.positionTicket = 1L;
+        entity.openTime = 0L;
         entity.quantity = quantity;
         entity.sellableQuantity = quantity;
         return entity;
@@ -649,6 +757,7 @@ public class AccountStorageRepositoryTest {
         entity.code = code;
         entity.side = "Buy";
         entity.orderId = 1L;
+        entity.openTime = 0L;
         entity.pendingLots = pendingLots;
         entity.pendingCount = 1;
         return entity;

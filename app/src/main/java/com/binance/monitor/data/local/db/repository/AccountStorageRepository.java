@@ -460,6 +460,7 @@ public class AccountStorageRepository {
         entity.side = safe(item.getSide());
         entity.positionTicket = item.getPositionTicket();
         entity.orderId = item.getOrderId();
+        entity.openTime = item.getOpenTime();
         entity.quantity = item.getQuantity();
         entity.sellableQuantity = item.getSellableQuantity();
         entity.costPrice = item.getCostPrice();
@@ -484,6 +485,7 @@ public class AccountStorageRepository {
         entity.side = safe(item.getSide());
         entity.positionTicket = item.getPositionTicket();
         entity.orderId = item.getOrderId();
+        entity.openTime = item.getOpenTime();
         entity.quantity = item.getQuantity();
         entity.sellableQuantity = item.getSellableQuantity();
         entity.costPrice = item.getCostPrice();
@@ -508,6 +510,7 @@ public class AccountStorageRepository {
                 entity.side,
                 entity.positionTicket,
                 entity.orderId,
+                entity.openTime,
                 entity.quantity,
                 entity.sellableQuantity,
                 entity.costPrice,
@@ -533,6 +536,7 @@ public class AccountStorageRepository {
                 entity.side,
                 entity.positionTicket,
                 entity.orderId,
+                entity.openTime,
                 entity.quantity,
                 entity.sellableQuantity,
                 entity.costPrice,

@@ -20,6 +20,7 @@ public final class MetricNameTranslator {
         NAME_MAP.put("Position Market Value", "持仓市值");
         NAME_MAP.put("Position Value", "持仓市值");
         NAME_MAP.put("Position PnL", "持仓盈亏");
+        NAME_MAP.put("Position Return", "持仓收益率");
         NAME_MAP.put("Daily PnL", "当日盈亏");
         NAME_MAP.put("Cumulative PnL", "累计盈亏");
         NAME_MAP.put("Daily Return", "当日收益率");
