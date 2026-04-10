@@ -108,6 +108,35 @@ public class AccountStatsBridgeActivitySessionSourceTest {
     }
 
     @Test
+    public void loginFlowShouldNotKeepPlainPasswordInActivityStateOrRefillInput() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        );
+
+        assertFalse("登录提交后不应再把明文密码缓存到 Activity 字段",
+                source.contains("loginPasswordInput = password;"));
+        assertFalse("再次打开登录弹窗时不应把旧密码回填到输入框",
+                source.contains("passwordInput.setText(loginPasswordInput);"));
+    }
+
+    @Test
+    public void accountSnapshotResetShouldMoveUiStateChangesToMainThreadAndClearServiceRuntime() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        );
+
+        assertTrue("切账号清理应在主线程收口页面内存态和 loading 状态",
+                source.contains("runOnUiThread(() -> {\n                            snapshotRequestGuard.invalidateSession();\n                            loading = false;\n                            clearRuntimeAccountState();"));
+        assertTrue("切账号和登出后应显式通知服务清理流式账户运行态",
+                source.contains("requestMonitorServiceAccountRuntimeClear();"));
+        assertTrue("账户页应提供统一的服务清理入口",
+                source.contains("private void requestMonitorServiceAccountRuntimeClear() {")
+                        && source.contains("sendServiceAction(AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME);"));
+    }
+
+    @Test
     public void dispatchTouchEventShouldNotStealLoginDialogTouches() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",

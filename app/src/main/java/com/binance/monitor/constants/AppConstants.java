@@ -55,6 +55,7 @@ public final class AppConstants {
     public static final String ACTION_START_MONITORING = "com.binance.monitor.action.START_MONITORING";
     public static final String ACTION_STOP_MONITORING = "com.binance.monitor.action.STOP_MONITORING";
     public static final String ACTION_REFRESH_CONFIG = "com.binance.monitor.action.REFRESH_CONFIG";
+    public static final String ACTION_CLEAR_ACCOUNT_RUNTIME = "com.binance.monitor.action.CLEAR_ACCOUNT_RUNTIME";
 
     public static final String LOG_INFO = "INFO";
     public static final String LOG_WARN = "WARN";

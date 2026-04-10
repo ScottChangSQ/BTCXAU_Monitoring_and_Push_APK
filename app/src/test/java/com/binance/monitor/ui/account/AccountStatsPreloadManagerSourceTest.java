@@ -14,7 +14,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void preloadManagerShouldUseGatewayV2AsOnlyAccountSource() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         );
 
@@ -29,7 +29,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void preloadManagerShouldConsumeServerMetricsInsteadOfBuildingLocally() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         );
 
@@ -43,7 +43,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void preloadManagerShouldNotBackfillTradeLifecycleFieldsLocally() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         );
 
@@ -55,7 +55,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void preloadManagerShouldConsumeCanonicalSnapshotAndTradeFieldsOnly() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         );
 
@@ -75,7 +75,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void runtimeApplyShouldReuseStoredHistoryWhenSkippingHistoryReload() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -86,7 +86,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void historyRefreshShouldFallBackToStoredHistoryRevisionWhenMemoryCacheMissing() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -98,19 +98,19 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void historyRefreshShouldOnlyFetchHistoryAfterRevisionChange() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue(source.contains("boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("));
-        assertTrue(source.contains("AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, \"\");"));
+        assertTrue(source.contains("AccountHistoryPayload historyPayload = fetchCompleteHistoryPayload(AccountTimeRange.ALL);"));
         assertTrue(source.contains("if (!shouldRefreshAllHistory) {"));
     }
 
     @Test
     public void historyRefreshShouldHydrateMemoryCacheFromStoredSnapshotWhenSkippingReload() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -120,7 +120,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void preloadManagerFailureCacheShouldNotReusePreviousSnapshotOrLegacyTradeCountAlias() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -133,7 +133,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void preloadManagerShouldRequireHistoryRevisionFromSnapshotMetaOnly() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -145,7 +145,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void preloadManagerShouldResetGatewayTransportWhenAppReturnsForeground() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -155,7 +155,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void preloadManagerShouldOnlyRescheduleCadenceWhenAppReturnsForeground() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -166,7 +166,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void preloadManagerShouldHydrateMemoryCacheFromStoredSnapshotWhenEmpty() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -178,7 +178,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void fetchForUiShouldForceCanonicalSnapshotRefreshInsteadOfOnlyReturningLatestCache() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -191,18 +191,21 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void fetchForUiShouldAlwaysHydrateStoredHistoryFromAllRange() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, \"\");"));
-        assertFalse(source.contains("AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(safeRange, \"\");"));
+        assertTrue(source.contains("AccountHistoryPayload historyPayload = fetchCompleteHistoryPayload(AccountTimeRange.ALL);"));
+        assertTrue(source.contains("private AccountHistoryPayload fetchCompleteHistoryPayload(AccountTimeRange range) throws Exception {"));
+        assertTrue(source.contains("String nextCursor = firstPage.getNextCursor();"));
+        assertTrue(source.contains("while (!nextCursor.trim().isEmpty()) {"));
+        assertTrue(source.contains("gatewayV2Client.fetchAccountHistory(range, nextCursor)"));
     }
 
     @Test
     public void explicitSnapshotRefreshShouldReuseRuntimeConnectionTruthInsteadOfHardcodingConnected() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -215,7 +218,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void buildCacheShouldReuseStoredConnectedTruthInsteadOfHardcodingTrue() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
@@ -226,7 +229,7 @@ public class AccountStatsPreloadManagerSourceTest {
     @Test
     public void historyMergeShouldKeepCurrentPendingOrdersInsteadOfOverwritingWithHistoryOrders() throws Exception {
         String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java")),
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 

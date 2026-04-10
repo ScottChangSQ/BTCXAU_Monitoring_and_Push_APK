@@ -16,7 +16,7 @@ public class MarketChartPositionAnnotationSourceTest {
         String chartSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
-        String preloadSource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java");
+        String preloadSource = readUtf8("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java");
         String modelSource = readUtf8("src/main/java/com/binance/monitor/ui/account/model/PositionItem.java");
 
         assertTrue(modelSource.contains("private final long openTime;"));

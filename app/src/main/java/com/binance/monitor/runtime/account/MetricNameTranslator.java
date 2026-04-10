@@ -1,4 +1,4 @@
-package com.binance.monitor.ui.account;
+package com.binance.monitor.runtime.account;
 
 import java.util.HashMap;
 import java.util.Locale;

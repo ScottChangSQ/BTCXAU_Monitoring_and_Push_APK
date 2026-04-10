@@ -10,7 +10,7 @@ import com.binance.monitor.data.model.v2.trade.ExecutionError;
 import com.binance.monitor.data.model.v2.trade.TradeCheckResult;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
 import com.binance.monitor.data.model.v2.trade.TradeReceipt;
-import com.binance.monitor.ui.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.account.AccountTimeRange;
 import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.ui.account.model.AccountSnapshot;

@@ -2,7 +2,7 @@
  * 账户预加载管理器，负责消费服务端已发布的账户运行态并管理历史补拉。
  * 供账户页、图表页等依赖账户信息的界面复用。
  */
-package com.binance.monitor.ui.account;
+package com.binance.monitor.runtime.account;
 
 import android.content.Context;
 import android.os.Handler;
@@ -15,6 +15,7 @@ import com.binance.monitor.data.model.v2.AccountHistoryPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.runtime.AppForegroundTracker;
+import com.binance.monitor.ui.account.AccountTimeRange;
 import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.ui.account.model.AccountSnapshot;
 import com.binance.monitor.ui.account.model.CurvePoint;
@@ -341,7 +342,7 @@ public class AccountStatsPreloadManager {
                 updateLatestCache(cache);
                 return cache;
             }
-            AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, "");
+            AccountHistoryPayload historyPayload = fetchCompleteHistoryPayload(AccountTimeRange.ALL);
             AccountStorageRepository.StoredSnapshot mergedSnapshot =
                     buildStoredSnapshotFromHistoryOnly(storedSnapshot, historyPayload, remoteHistoryRevision);
             accountStorageRepository.persistV2Snapshot(mergedSnapshot);
@@ -400,7 +401,7 @@ public class AccountStatsPreloadManager {
 
             Cache cache;
             if (shouldRefreshAllHistory) {
-                AccountHistoryPayload historyPayload = gatewayV2Client.fetchAccountHistory(AccountTimeRange.ALL, "");
+                AccountHistoryPayload historyPayload = fetchCompleteHistoryPayload(AccountTimeRange.ALL);
                 AccountStorageRepository.StoredSnapshot mergedSnapshot =
                         buildStoredSnapshotFromV2(snapshotPayload, historyPayload);
                 accountStorageRepository.persistV2Snapshot(mergedSnapshot);
@@ -581,6 +582,52 @@ public class AccountStatsPreloadManager {
                 baseSnapshot == null ? new ArrayList<>() : baseSnapshot.getPendingOrders(),
                 parseTradeItems(historyPayload == null ? null : historyPayload.getTrades()),
                 parseMetrics(historyPayload == null ? null : historyPayload.getStatsMetrics())
+        );
+    }
+
+    // 历史接口返回游标时必须顺着拉满，不能只消费第一页。
+    private AccountHistoryPayload fetchCompleteHistoryPayload(AccountTimeRange range) throws Exception {
+        AccountHistoryPayload firstPage = gatewayV2Client.fetchAccountHistory(range, "");
+        List<AccountHistoryPayload> pages = new ArrayList<>();
+        pages.add(firstPage);
+        String nextCursor = firstPage.getNextCursor();
+        while (!nextCursor.trim().isEmpty()) {
+            AccountHistoryPayload nextPage = gatewayV2Client.fetchAccountHistory(range, nextCursor);
+            pages.add(nextPage);
+            nextCursor = nextPage.getNextCursor();
+        }
+        return mergeHistoryPages(pages);
+    }
+
+    // history 分页中只有列表字段需要跨页拼接，单值字段固定以第一页为准。
+    private static AccountHistoryPayload mergeHistoryPages(List<AccountHistoryPayload> pages) {
+        if (pages == null || pages.isEmpty()) {
+            throw new IllegalArgumentException("history pages are required");
+        }
+        AccountHistoryPayload firstPage = pages.get(0);
+        JSONArray trades = new JSONArray();
+        JSONArray orders = new JSONArray();
+        JSONArray curvePoints = new JSONArray();
+        for (AccountHistoryPayload page : pages) {
+            if (page == null) {
+                continue;
+            }
+            appendJsonArray(trades, page.getTrades());
+            appendJsonArray(orders, page.getOrders());
+            appendJsonArray(curvePoints, page.getCurvePoints());
+        }
+        return new AccountHistoryPayload(
+                firstPage.getServerTime(),
+                firstPage.getSyncToken(),
+                copyJsonObject(firstPage.getAccountMeta()),
+                copyJsonArray(firstPage.getOverviewMetrics()),
+                copyJsonArray(firstPage.getCurveIndicators()),
+                copyJsonArray(firstPage.getStatsMetrics()),
+                trades,
+                orders,
+                curvePoints,
+                "",
+                firstPage.getRawJson()
         );
     }
 
@@ -871,6 +918,40 @@ public class AccountStatsPreloadManager {
             return normalizedCurrent;
         }
         return optString(meta, key, "");
+    }
+
+    // 复制对象，避免后续页拼接时意外改写第一页原始载荷。
+    private static JSONObject copyJsonObject(JSONObject source) {
+        if (source == null) {
+            return new JSONObject();
+        }
+        try {
+            return new JSONObject(source.toString());
+        } catch (Exception exception) {
+            throw new IllegalStateException("failed to copy history object", exception);
+        }
+    }
+
+    // 复制数组，避免合并结果与原始页共享同一引用。
+    private static JSONArray copyJsonArray(JSONArray source) {
+        if (source == null) {
+            return new JSONArray();
+        }
+        try {
+            return new JSONArray(source.toString());
+        } catch (Exception exception) {
+            throw new IllegalStateException("failed to copy history array", exception);
+        }
+    }
+
+    // 逐项追加分页数组，保持服务端返回顺序不变。
+    private static void appendJsonArray(JSONArray target, JSONArray source) {
+        if (target == null || source == null) {
+            return;
+        }
+        for (int i = 0; i < source.length(); i++) {
+            target.put(source.opt(i));
+        }
     }
 
     // 读取字符串字段，空值时回退到默认值。

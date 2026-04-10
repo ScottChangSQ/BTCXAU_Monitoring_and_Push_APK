@@ -1,0 +1,218 @@
+--------- beginning of main
+04-10 16:08:28.527 I/ChainTrace(14512): stream type=heartbeat gapMs=975 refreshMarket=false
+04-10 16:08:29.619 I/ChainTrace(14512): stream type=syncEvent gapMs=1093 refreshMarket=true
+04-10 16:08:30.530 I/ChainTrace(14512): stream type=heartbeat gapMs=911 refreshMarket=false
+04-10 16:08:31.533 I/ChainTrace(14512): stream type=syncEvent gapMs=1003 refreshMarket=true
+04-10 16:08:31.549 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:32.521 I/ChainTrace(14512): stream type=syncEvent gapMs=988 refreshMarket=true
+04-10 16:08:32.651 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:33.610 I/ChainTrace(14512): stream type=syncEvent gapMs=1089 refreshMarket=true
+04-10 16:08:34.638 I/ChainTrace(14512): stream type=heartbeat gapMs=1028 refreshMarket=false
+04-10 16:08:35.638 I/ChainTrace(14512): stream type=syncEvent gapMs=1000 refreshMarket=true
+04-10 16:08:36.557 I/ChainTrace(14512): stream type=syncEvent gapMs=919 refreshMarket=true
+04-10 16:08:36.693 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:37.582 I/ChainTrace(14512): stream type=syncEvent gapMs=1025 refreshMarket=true
+04-10 16:08:37.717 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:38.621 I/ChainTrace(14512): stream type=syncEvent gapMs=1039 refreshMarket=true
+04-10 16:08:39.650 I/ChainTrace(14512): stream type=heartbeat gapMs=1029 refreshMarket=false
+04-10 16:08:40.670 I/ChainTrace(14512): stream type=syncEvent gapMs=1020 refreshMarket=true
+04-10 16:08:40.684 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:41.584 I/ChainTrace(14512): stream type=heartbeat gapMs=914 refreshMarket=false
+04-10 16:08:42.594 I/ChainTrace(14512): stream type=heartbeat gapMs=1010 refreshMarket=false
+04-10 16:08:43.535 I/ChainTrace(14512): stream type=syncEvent gapMs=941 refreshMarket=true
+04-10 16:08:43.546 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:44.542 I/ChainTrace(14512): stream type=syncEvent gapMs=1007 refreshMarket=true
+04-10 16:08:44.557 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:45.565 I/ChainTrace(14512): stream type=syncEvent gapMs=1023 refreshMarket=true
+04-10 16:08:45.580 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:46.527 I/ChainTrace(14512): stream type=heartbeat gapMs=962 refreshMarket=false
+04-10 16:08:47.609 I/ChainTrace(14512): stream type=heartbeat gapMs=1082 refreshMarket=false
+04-10 16:08:48.632 I/ChainTrace(14512): stream type=heartbeat gapMs=1023 refreshMarket=false
+04-10 16:08:49.558 I/ChainTrace(14512): stream type=syncEvent gapMs=926 refreshMarket=true
+04-10 16:08:49.572 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:50.579 I/ChainTrace(14512): stream type=syncEvent gapMs=1021 refreshMarket=true
+04-10 16:08:51.600 I/ChainTrace(14512): stream type=syncEvent gapMs=1021 refreshMarket=true
+04-10 16:08:51.613 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:52.623 I/ChainTrace(14512): stream type=heartbeat gapMs=1023 refreshMarket=false
+04-10 16:08:53.673 I/ChainTrace(14512): stream type=syncEvent gapMs=1050 refreshMarket=true
+04-10 16:08:53.686 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:54.573 I/ChainTrace(14512): stream type=heartbeat gapMs=900 refreshMarket=false
+04-10 16:08:55.610 I/ChainTrace(14512): stream type=syncEvent gapMs=1037 refreshMarket=true
+04-10 16:08:55.624 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:56.590 I/ChainTrace(14512): stream type=syncEvent gapMs=980 refreshMarket=true
+04-10 16:08:57.643 I/ChainTrace(14512): stream type=syncEvent gapMs=1053 refreshMarket=true
+04-10 16:08:57.778 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:08:58.523 I/ChainTrace(14512): stream type=heartbeat gapMs=880 refreshMarket=false
+04-10 16:08:59.586 I/ChainTrace(14512): stream type=syncEvent gapMs=1063 refreshMarket=true
+04-10 16:08:59.600 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:00.626 I/ChainTrace(14512): stream type=syncEvent gapMs=1040 refreshMarket=true
+04-10 16:09:00.627 I/ChainTrace(14512): floating_update symbol=BTCUSDT closeTime=1775808539999 repoToFloatingUpdateMs=55056
+04-10 16:09:00.635 I/ChainTrace(14512): floating_render symbol=BTCUSDT closeTime=1775808539999 updateToRenderMs=8 repoToFloatingRenderMs=55064 triggerToFloatingRenderMs=-1
+04-10 16:09:00.640 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:01.653 I/ChainTrace(14512): stream type=heartbeat gapMs=1027 refreshMarket=false
+04-10 16:09:02.652 I/ChainTrace(14512): stream type=syncEvent gapMs=999 refreshMarket=true
+04-10 16:09:02.666 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:03.571 I/ChainTrace(14512): stream type=syncEvent gapMs=918 refreshMarket=true
+04-10 16:09:03.705 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:04.535 I/ChainTrace(14512): stream type=heartbeat gapMs=965 refreshMarket=false
+04-10 16:09:05.664 I/ChainTrace(14512): stream type=syncEvent gapMs=1129 refreshMarket=true
+04-10 16:09:05.664 I/ChainTrace(14512): market_apply symbol=XAUUSDT closeTime=1775808599999 fetchMs=-1 triggerToApplyMs=-1
+04-10 16:09:05.665 I/ChainTrace(14512): repo_kline symbol=XAUUSDT closeTime=1775808599999 applyToRepoMs=1
+04-10 16:09:06.643 I/ChainTrace(14512): stream type=syncEvent gapMs=979 refreshMarket=true
+04-10 16:09:06.644 I/ChainTrace(14512): market_apply symbol=BTCUSDT closeTime=1775808599999 fetchMs=-1 triggerToApplyMs=-1
+04-10 16:09:06.644 I/ChainTrace(14512): repo_kline symbol=BTCUSDT closeTime=1775808599999 applyToRepoMs=0
+04-10 16:09:06.779 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:07.576 I/ChainTrace(14512): stream type=heartbeat gapMs=933 refreshMarket=false
+04-10 16:09:08.586 I/ChainTrace(14512): stream type=syncEvent gapMs=1010 refreshMarket=true
+04-10 16:09:08.596 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:09.527 I/ChainTrace(14512): stream type=heartbeat gapMs=941 refreshMarket=false
+04-10 16:09:10.658 I/ChainTrace(14512): stream type=syncEvent gapMs=1131 refreshMarket=true
+04-10 16:09:10.674 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:11.568 I/ChainTrace(14512): stream type=syncEvent gapMs=910 refreshMarket=true
+04-10 16:09:11.704 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:12.594 I/ChainTrace(14512): stream type=syncEvent gapMs=1026 refreshMarket=true
+04-10 16:09:12.721 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:13.601 I/ChainTrace(14512): stream type=syncEvent gapMs=1007 refreshMarket=true
+04-10 16:09:13.734 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:14.521 I/ChainTrace(14512): stream type=heartbeat gapMs=920 refreshMarket=false
+04-10 16:09:15.650 I/ChainTrace(14512): stream type=syncEvent gapMs=1129 refreshMarket=true
+04-10 16:09:15.663 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:16.581 I/ChainTrace(14512): stream type=syncEvent gapMs=931 refreshMarket=true
+04-10 16:09:16.717 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:17.594 I/ChainTrace(14512): stream type=syncEvent gapMs=1013 refreshMarket=true
+04-10 16:09:17.729 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:18.616 I/ChainTrace(14512): stream type=syncEvent gapMs=1022 refreshMarket=true
+04-10 16:09:19.641 I/ChainTrace(14512): stream type=syncEvent gapMs=1025 refreshMarket=true
+04-10 16:09:20.567 I/ChainTrace(14512): stream type=heartbeat gapMs=926 refreshMarket=false
+04-10 16:09:21.585 I/ChainTrace(14512): stream type=syncEvent gapMs=1017 refreshMarket=true
+04-10 16:09:21.598 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:22.607 I/ChainTrace(14512): stream type=syncEvent gapMs=1023 refreshMarket=true
+04-10 16:09:23.644 I/ChainTrace(14512): stream type=syncEvent gapMs=1037 refreshMarket=true
+04-10 16:09:23.660 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:24.535 I/ChainTrace(14512): stream type=heartbeat gapMs=891 refreshMarket=false
+04-10 16:09:25.599 I/ChainTrace(14512): stream type=syncEvent gapMs=1064 refreshMarket=true
+04-10 16:09:25.611 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:26.601 I/ChainTrace(14512): stream type=syncEvent gapMs=1002 refreshMarket=true
+04-10 16:09:27.622 I/ChainTrace(14512): stream type=heartbeat gapMs=1021 refreshMarket=false
+04-10 16:09:28.529 I/ChainTrace(14512): stream type=syncEvent gapMs=907 refreshMarket=true
+04-10 16:09:28.543 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:29.591 I/ChainTrace(14512): stream type=syncEvent gapMs=1062 refreshMarket=true
+04-10 16:09:30.596 I/ChainTrace(14512): stream type=syncEvent gapMs=1004 refreshMarket=true
+04-10 16:09:30.609 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:31.638 I/ChainTrace(14512): stream type=syncEvent gapMs=1043 refreshMarket=true
+04-10 16:09:32.656 I/ChainTrace(14512): stream type=heartbeat gapMs=1018 refreshMarket=false
+04-10 16:09:33.662 I/ChainTrace(14512): stream type=heartbeat gapMs=1006 refreshMarket=false
+04-10 16:09:34.579 I/ChainTrace(14512): stream type=heartbeat gapMs=917 refreshMarket=false
+04-10 16:09:35.605 I/ChainTrace(14512): stream type=syncEvent gapMs=1026 refreshMarket=true
+04-10 16:09:35.620 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:36.525 I/ChainTrace(14512): stream type=syncEvent gapMs=920 refreshMarket=true
+04-10 16:09:36.661 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:37.508 I/ChainTrace(14512): stream type=syncEvent gapMs=983 refreshMarket=true
+04-10 16:09:38.573 I/ChainTrace(14512): stream type=syncEvent gapMs=1065 refreshMarket=true
+04-10 16:09:39.604 I/ChainTrace(14512): stream type=heartbeat gapMs=1031 refreshMarket=false
+04-10 16:09:40.630 I/ChainTrace(14512): stream type=heartbeat gapMs=1026 refreshMarket=false
+04-10 16:09:41.529 I/ChainTrace(14512): stream type=syncEvent gapMs=899 refreshMarket=true
+04-10 16:09:41.540 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:42.665 I/ChainTrace(14512): stream type=syncEvent gapMs=1136 refreshMarket=true
+04-10 16:09:42.678 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:43.533 I/ChainTrace(14512): stream type=syncEvent gapMs=868 refreshMarket=true
+04-10 16:09:43.679 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:44.609 I/ChainTrace(14512): stream type=syncEvent gapMs=1076 refreshMarket=true
+04-10 16:09:45.531 I/ChainTrace(14512): stream type=syncEvent gapMs=922 refreshMarket=true
+04-10 16:09:46.581 I/ChainTrace(14512): stream type=syncEvent gapMs=1050 refreshMarket=true
+04-10 16:09:46.747 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:47.164 E/IJankManager(14512): slideSceneEnd unknown scene 1000 mScene:-1
+04-10 16:09:47.166 D/OplusViewDragTouchViewHelper(14512): dispatchTouchView action = 1
+04-10 16:09:47.166 D/ViewRootImplExtImpl(14512): the up motion event handled by client, just return
+04-10 16:09:47.204 D/ColorModeChangeItem(14512): preExecute mColorMode=0
+--------- beginning of system
+04-10 16:09:47.206 D/ResourcesManagerExtImpl(14512): applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+04-10 16:09:47.212 I/binance.monitor(14512): AssetManager2(0xb4000071838f8528) locale list changing from [] to [zh-CN]
+04-10 16:09:47.215 E/OplusPredictiveBackController(14512):  NoSuchMethodException 
+04-10 16:09:47.215 E/OplusPredictiveBackController(14512):  NoSuchMethodException 
+04-10 16:09:47.215 E/OplusPredictiveBackController(14512):  NoSuchMethodException 
+04-10 16:09:47.215 D/OplusPredictiveBackController(14512): initPredictiveBackConfig for com.binance.monitor.ui.chart.MarketChartActivity@1e79328 initPredictiveBackConfig mShouldInterceptKeyEvent false
+04-10 16:09:47.215 D/WindowOnBackDispatcher(14512):  predictive settings is disabled for com.binance.monitor
+04-10 16:09:47.249 I/ChainTrace(14512): chart_realtime_render symbol=BTCUSDT closeTime=1775808599999 interval=1h repoToChartMs=40605 triggerToChartMs=-1
+04-10 16:09:47.260 E/CursorWindow(14512): Failed alloc newOffset: 309404mAllocOffset: 309384mSlotsOffset: 309392: Success
+04-10 16:09:47.260 E/CursorWindow(14512): Failed NO_MEMORY: Success
+04-10 16:09:47.367 D/ActivityThread(14512): ComponentInfo{com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity} checkFinished=false 2
+04-10 16:09:47.367 D/ResourcesManagerExtImpl(14512): applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+04-10 16:09:47.400 I/binance.monitor(14512): _Desupression native alloc  gc_urgency: 54102expectation: 105242 native bytes: 41640104
+04-10 16:09:47.489 I/ChainTrace(14512): chart_pull phase=start symbol=BTCUSDT interval=1h request=1 durationMs=0 itemCount=1
+04-10 16:09:47.489 D/WindowManager(14512): Add to mViews: com.android.internal.policy.DecorView{f58082a I.E...... R.....I. 0,0-0,0 alpha=1.0 viewInfo = }[MarketChartActivity],pkg= com.binance.monitor
+04-10 16:09:47.490 D/skia    (14512): setRusSupported enable 0
+04-10 16:09:47.490 D/libc-netbsd(14512): [oplusDnsOpenProxy]: __netdClientDispatch.connect errno = 111
+04-10 16:09:47.490 D/DNS_CACHE(14512): oplus_oplus_getaddrinfo_proxy open dns proxy failed, use android flow: 10512
+04-10 16:09:47.492 D/ViewRootImplExtImpl(14512): onDisplayChanged -1 for VRI android.view.ViewRootImpl@2c2c591
+04-10 16:09:47.493 D/VRI[AccountStatsBridgeActivity](14512): onFocusEvent false
+04-10 16:09:47.493 D/ResourcesManagerExtImpl(14512): applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+04-10 16:09:47.495 E/OplusBracketLog(14512): [OplusViewMirrorManager] updateHostViewRootIfNeeded, not support android.view.ViewRootImpl@2c2c591
+04-10 16:09:47.496 D/WindowOnBackDispatcher(14512):  predictive settings is disabled for com.binance.monitor
+04-10 16:09:47.496 D/WindowOnBackDispatcher(14512):  predictive settings is disabled for com.binance.monitor
+04-10 16:09:47.500 D/ViewRootImplExtImpl(14512): wrapConfigInfoIntoFlags rotation=0, smallestScreenWidthDp=0, residentWS=false, scenario=0, bounds=Rect(0, 0 - 1264, 2780), relayoutAsync=false, flags=0, newFlags=1457520640, title=com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity
+04-10 16:09:47.503 D/VRI[MarketChartActivity](14512): relayoutWindow result, sizeChanged:true, surfaceControlChanged:true, transformHintChanged:false, mSurfaceSize:Point(1264, 2780), mLastSurfaceSize:Point(0, 0), mWidth:-1, mHeight:-1, requestedWidth:1264, requestedHeight:2780, transformHint:0, installOrientation:0, displayRotation:0, isSurfaceValid:true, attr.flag:-2122252032, tmpFrames:ClientWindowFrames{frame=[0,0][1264,2780] display=[0,0][1264,2780] parentFrame=[0,0][0,0]}, relayoutAsync:false, mSyncSeqId:0
+04-10 16:09:47.503 W/VRI[MarketChartActivity](14512): updateBlastSurfaceIfNeeded, surfaceSize:Point(1264, 2780), lastSurfaceSize:Point(0, 0), format:-3, blastBufferQueue:null
+04-10 16:09:47.503 D/BufferQueueConsumer(14512): [](id:38b000000003,api:0,p:-1,c:14512) connect: controlledByApp=false
+04-10 16:09:47.503 D/BufferQueueConsumer(14512): [VRI[MarketChartActivity]#3(BLAST Consumer)3](id:38b000000003,api:0,p:-1,c:14512) setMaxAcquiredBufferCount: 2
+04-10 16:09:47.504 D/BufferQueueProducer(14512): [VRI[MarketChartActivity]#3(BLAST Consumer)3](id:38b000000003,api:1,p:14512,c:14512) connect: api=1 producerControlledByApp=true
+04-10 16:09:47.506 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity)/@0x9e2c585,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:47.513 D/BLASTBufferQueue(14512): [VRI[MarketChartActivity]#3](f:0,a:1) acquireNextBufferLocked size=1264x2780 mFrameNumber=1 applyTransaction=true mTimestamp=808048826117375(auto) mPendingTransactions.size=0 graphicBufferId=62328565399567 transform=0
+04-10 16:09:47.513 D/VRI[MarketChartActivity](14512): Received frameCommittedCallback lastAttemptedDrawFrameNum=1 didProduceBuffer=true syncBuffer=false
+04-10 16:09:47.513 D/VRI[MarketChartActivity](14512): draw finished. seqId=0
+04-10 16:09:47.518 W/VRI[MarketChartActivity](14512): handleResized, msg:, frameChanged:false, configChanged:false, displayChanged:false, attachedFrameChanged:false, compatScaleChanged:false, pendingDragResizing=false
+04-10 16:09:47.519 I/ChainTrace(14512): stream type=heartbeat gapMs=938 refreshMarket=false
+04-10 16:09:47.521 D/VRI[MarketChartActivity](14512): Received frameCommittedCallback lastAttemptedDrawFrameNum=3 didProduceBuffer=false syncBuffer=false
+04-10 16:09:47.521 D/VRI[AccountStatsBridgeActivity](14512): dispatchAppVisibility visible:false mUpcomingWindowFocus:false
+04-10 16:09:47.521 D/VRI[MarketChartActivity](14512): draw finished. seqId=0
+04-10 16:09:47.521 D/VRI[AccountStatsBridgeActivity](14512): visibilityChanged oldVisibility=true newVisibility=false
+04-10 16:09:47.522 D/VRI[MarketChartActivity](14512): onFocusEvent true
+04-10 16:09:47.530 D/HWUI    (14512): RenderProxy::destroy: this=0xb4000071834a9000, mContext=0xb4000070e4b6c6c0
+04-10 16:09:47.530 D/HWUI    (14512): SkiaVulkanPipeline::setSurface: this=0xb400007183674bc0, surface=NULL
+04-10 16:09:47.530 D/BufferQueueProducer(14512): [VRI[AccountStatsBridgeActivity]#2(BLAST Consumer)2](id:38b000000002,api:1,p:14512,c:14512) disconnect: api 1
+04-10 16:09:47.531 D/ViewRootImplExtImpl(14512): wrapConfigInfoIntoFlags rotation=0, smallestScreenWidthDp=361, residentWS=false, scenario=0, bounds=Rect(0, 0 - 1264, 2780), relayoutAsync=false, flags=0, newFlags=1457532192, title=com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity
+04-10 16:09:47.533 D/VRI[AccountStatsBridgeActivity](14512): relayoutWindow result, sizeChanged:false, surfaceControlChanged:true, transformHintChanged:false, mSurfaceSize:Point(1264, 2780), mLastSurfaceSize:Point(1264, 2780), mWidth:1264, mHeight:2780, requestedWidth:1264, requestedHeight:2780, transformHint:0, installOrientation:0, displayRotation:0, isSurfaceValid:false, attr.flag:-2122252032, tmpFrames:ClientWindowFrames{frame=[0,0][1264,2780] display=[0,0][1264,2780] parentFrame=[0,0][0,0]}, relayoutAsync:false, mSyncSeqId:0
+04-10 16:09:47.533 D/BLASTBufferQueue(14512): [VRI[AccountStatsBridgeActivity]#2](f:0,a:1) destructor()
+04-10 16:09:47.533 D/BufferQueueConsumer(14512): [VRI[AccountStatsBridgeActivity]#2(BLAST Consumer)2](id:38b000000002,api:0,p:-1,c:14512) disconnect
+04-10 16:09:47.534 D/VRI[AccountStatsBridgeActivity](14512): setWindowStopped stopped:true
+04-10 16:09:47.535 D/InsetsController(14512): hide(ime(), fromIme=false)
+04-10 16:09:47.535 I/ImeTracker(14512): com.binance.monitor:715c5fd: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+04-10 16:09:47.539 D/ViewRootImplExtImpl(14512): wrapConfigInfoIntoFlags rotation=0, smallestScreenWidthDp=361, residentWS=false, scenario=0, bounds=Rect(0, 0 - 1264, 2780), relayoutAsync=false, flags=0, newFlags=1457532192, title=com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity
+04-10 16:09:47.541 D/VRI[AccountStatsBridgeActivity](14512): relayoutWindow result, sizeChanged:false, surfaceControlChanged:true, transformHintChanged:false, mSurfaceSize:Point(1264, 2780), mLastSurfaceSize:Point(1264, 2780), mWidth:1264, mHeight:2780, requestedWidth:1264, requestedHeight:2780, transformHint:0, installOrientation:0, displayRotation:0, isSurfaceValid:false, attr.flag:-2122252032, tmpFrames:ClientWindowFrames{frame=[0,0][1264,2780] display=[0,0][1264,2780] parentFrame=[0,0][0,0]}, relayoutAsync:false, mSyncSeqId:0
+04-10 16:09:47.885 D/libc-netbsd(14512): [oplusDnsOpenProxy]: __netdClientDispatch.connect errno = 111
+04-10 16:09:48.507 I/ChainTrace(14512): stream type=syncEvent gapMs=988 refreshMarket=true
+04-10 16:09:48.519 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity,This com.android.internal.policy.DecorView{fe0e96b I.E...... R.....ID 0,0-1264,2780 aid=1 alpha=1.0 viewInfo = }[AccountStatsBridgeActivity] change focus to false
+04-10 16:09:48.520 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:48.533 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity,This com.android.internal.policy.DecorView{f58082a V.E...... R....... 0,0-1264,2780 aid=2 alpha=1.0 viewInfo = }[MarketChartActivity] change focus to true
+04-10 16:09:48.552 I/ChainTrace(14512): chart_pull phase=load_done symbol=BTCUSDT interval=1h request=1 durationMs=1063 itemCount=300
+04-10 16:09:48.646 I/ChainTrace(14512): chart_pull phase=ui_applied symbol=BTCUSDT interval=1h request=1 durationMs=1157 itemCount=300
+04-10 16:09:49.525 I/ChainTrace(14512): stream type=syncEvent gapMs=1018 refreshMarket=true
+04-10 16:09:49.537 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:50.551 I/ChainTrace(14512): stream type=syncEvent gapMs=1026 refreshMarket=true
+04-10 16:09:50.562 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:51.527 I/ChainTrace(14512): stream type=heartbeat gapMs=976 refreshMarket=false
+04-10 16:09:52.533 I/ChainTrace(14512): stream type=syncEvent gapMs=1005 refreshMarket=true
+04-10 16:09:53.633 I/ChainTrace(14512): stream type=heartbeat gapMs=1101 refreshMarket=false
+04-10 16:09:54.531 I/ChainTrace(14512): stream type=syncEvent gapMs=898 refreshMarket=true
+04-10 16:09:55.583 I/ChainTrace(14512): stream type=syncEvent gapMs=1052 refreshMarket=true
+04-10 16:09:56.588 I/ChainTrace(14512): stream type=syncEvent gapMs=1005 refreshMarket=true
+04-10 16:09:56.617 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:57.522 I/ChainTrace(14512): stream type=syncEvent gapMs=934 refreshMarket=true
+04-10 16:09:57.657 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:09:58.618 I/ChainTrace(14512): stream type=syncEvent gapMs=1096 refreshMarket=true
+04-10 16:09:59.674 I/ChainTrace(14512): stream type=heartbeat gapMs=1056 refreshMarket=false
+04-10 16:10:00.596 I/ChainTrace(14512): stream type=syncEvent gapMs=921 refreshMarket=true
+04-10 16:10:01.597 I/ChainTrace(14512): stream type=syncEvent gapMs=1002 refreshMarket=true
+04-10 16:10:01.598 I/ChainTrace(14512): floating_update symbol=BTCUSDT closeTime=1775808599999 repoToFloatingUpdateMs=54954
+04-10 16:10:01.605 I/ChainTrace(14512): floating_render symbol=BTCUSDT closeTime=1775808599999 updateToRenderMs=7 repoToFloatingRenderMs=54961 triggerToFloatingRenderMs=-1
+04-10 16:10:01.621 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:10:02.491 I/ChainTrace(14512): chart_pull phase=start symbol=BTCUSDT interval=1h request=2 durationMs=0 itemCount=300
+04-10 16:10:02.522 I/ChainTrace(14512): stream type=syncEvent gapMs=925 refreshMarket=true
+04-10 16:10:02.522 I/ChainTrace(14512): market_apply symbol=BTCUSDT closeTime=1775808659999 fetchMs=-1 triggerToApplyMs=-1
+04-10 16:10:02.523 I/ChainTrace(14512): market_apply symbol=XAUUSDT closeTime=1775808659999 fetchMs=-1 triggerToApplyMs=-1
+04-10 16:10:02.523 I/ChainTrace(14512): repo_kline symbol=BTCUSDT closeTime=1775808659999 applyToRepoMs=1
+04-10 16:10:02.523 I/ChainTrace(14512): repo_kline symbol=XAUUSDT closeTime=1775808659999 applyToRepoMs=0
+04-10 16:10:02.535 I/ChainTrace(14512): chart_realtime_render symbol=BTCUSDT closeTime=1775808659999 interval=1h repoToChartMs=12 triggerToChartMs=-1
+04-10 16:10:02.645 I/ChainTrace(14512): chart_pull phase=load_done symbol=BTCUSDT interval=1h request=2 durationMs=152 itemCount=300
+04-10 16:10:02.658 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:10:02.668 I/ChainTrace(14512): chart_pull phase=ui_applied symbol=BTCUSDT interval=1h request=2 durationMs=177 itemCount=300

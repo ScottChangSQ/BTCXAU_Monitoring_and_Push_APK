@@ -6,6 +6,7 @@ package com.binance.monitor.ui.account;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.runtime.account.MetricNameTranslator;
 import com.binance.monitor.ui.account.model.AccountMetric;
 
 import org.json.JSONObject;

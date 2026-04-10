@@ -1,0 +1,122 @@
+--------- beginning of main
+04-10 16:12:39.615 I/ChainTrace(14512): stream type=syncEvent gapMs=1092 refreshMarket=true
+04-10 16:12:40.536 I/ChainTrace(14512): stream type=syncEvent gapMs=921 refreshMarket=true
+04-10 16:12:41.649 I/ChainTrace(14512): stream type=syncEvent gapMs=1113 refreshMarket=true
+04-10 16:12:42.527 I/ChainTrace(14512): stream type=syncEvent gapMs=878 refreshMarket=true
+04-10 16:12:42.787 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:12:43.592 I/ChainTrace(14512): stream type=syncEvent gapMs=1065 refreshMarket=true
+04-10 16:12:43.787 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:12:44.618 I/ChainTrace(14512): stream type=syncEvent gapMs=1026 refreshMarket=true
+04-10 16:12:45.673 I/ChainTrace(14512): stream type=heartbeat gapMs=1054 refreshMarket=false
+04-10 16:12:46.523 I/ChainTrace(14512): stream type=syncEvent gapMs=851 refreshMarket=true
+04-10 16:12:47.583 I/ChainTrace(14512): stream type=syncEvent gapMs=1060 refreshMarket=true
+04-10 16:12:48.610 I/ChainTrace(14512): stream type=syncEvent gapMs=1027 refreshMarket=true
+04-10 16:12:49.939 I/ChainTrace(14512): stream type=syncEvent gapMs=1329 refreshMarket=true
+04-10 16:12:50.651 I/ChainTrace(14512): stream type=syncEvent gapMs=712 refreshMarket=true
+04-10 16:12:51.517 I/ChainTrace(14512): stream type=syncEvent gapMs=866 refreshMarket=true
+04-10 16:12:51.957 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:12:52.598 I/ChainTrace(14512): stream type=heartbeat gapMs=1081 refreshMarket=false
+04-10 16:12:53.518 I/ChainTrace(14512): stream type=syncEvent gapMs=920 refreshMarket=true
+04-10 16:12:53.532 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:12:54.677 I/ChainTrace(14512): stream type=syncEvent gapMs=1159 refreshMarket=true
+04-10 16:12:54.692 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:12:55.568 I/ChainTrace(14512): stream type=syncEvent gapMs=891 refreshMarket=true
+04-10 16:12:56.611 I/ChainTrace(14512): stream type=syncEvent gapMs=1043 refreshMarket=true
+04-10 16:12:56.747 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:12:57.543 I/ChainTrace(14512): stream type=syncEvent gapMs=932 refreshMarket=true
+04-10 16:12:58.536 I/ChainTrace(14512): stream type=heartbeat gapMs=993 refreshMarket=false
+04-10 16:12:59.583 I/ChainTrace(14512): stream type=syncEvent gapMs=1047 refreshMarket=true
+04-10 16:13:00.607 I/ChainTrace(14512): stream type=syncEvent gapMs=1024 refreshMarket=true
+04-10 16:13:01.605 I/ChainTrace(14512): stream type=syncEvent gapMs=998 refreshMarket=true
+04-10 16:13:01.726 I/ChainTrace(14512): floating_update symbol=BTCUSDT closeTime=1775808779999 repoToFloatingUpdateMs=59151
+04-10 16:13:01.732 I/ChainTrace(14512): floating_render symbol=BTCUSDT closeTime=1775808779999 updateToRenderMs=6 repoToFloatingRenderMs=59157 triggerToFloatingRenderMs=-1
+04-10 16:13:01.737 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:13:01.744 E/IJankManager(14512): slideSceneEnd unknown scene 1000 mScene:-1
+04-10 16:13:01.745 D/OplusViewDragTouchViewHelper(14512): dispatchTouchView action = 1
+04-10 16:13:01.745 D/ViewRootImplExtImpl(14512): the up motion event handled by client, just return
+04-10 16:13:01.754 D/VRI[IconFinancialAlias](14512): dispatchAppVisibility visible:true mUpcomingWindowFocus:false
+04-10 16:13:01.757 D/ColorModeChangeItem(14512): preExecute mColorMode=0
+04-10 16:13:01.758 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity,window dying
+04-10 16:13:01.758 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity,unregisterSystemUIBroadcastReceiver 
+04-10 16:13:01.759 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity, unregisterSystemUIBroadcastReceiver failed java.lang.IllegalArgumentException: Receiver not registered: android.view.OplusScrollToTopManager$2@47ff11b
+04-10 16:13:01.759 W/WindowOnBackDispatcher(14512): sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@8d57282
+04-10 16:13:01.763 D/HWUI    (14512): RenderProxy::destroy: this=0xb4000070f9a90900, mContext=0xb4000070eeb95280
+04-10 16:13:01.763 D/HWUI    (14512): SkiaVulkanPipeline::setSurface: this=0xb4000070eea4d700, surface=NULL
+04-10 16:13:01.763 D/ViewRootImpl(14512): Skipping stats log for color mode
+04-10 16:13:01.765 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity,window dying
+04-10 16:13:01.765 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity,unregisterSystemUIBroadcastReceiver 
+04-10 16:13:01.765 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity, unregisterSystemUIBroadcastReceiver failed java.lang.IllegalArgumentException: Receiver not registered: android.view.OplusScrollToTopManager$2@c2283f7
+04-10 16:13:01.765 W/WindowOnBackDispatcher(14512): sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@599f4c2
+04-10 16:13:01.766 D/OplusCursorFeedback(14512): editorDetachFromWindow android.widget.Editor@6f1a264
+04-10 16:13:01.766 D/OplusCursorFeedback(14512): editorDetachFromWindow android.widget.Editor@1b4cccd
+04-10 16:13:01.767 D/OplusCursorFeedback(14512): editorDetachFromWindow android.widget.Editor@3efd982
+04-10 16:13:01.767 D/OplusCursorFeedback(14512): editorDetachFromWindow android.widget.Editor@df16893
+04-10 16:13:01.767 D/OplusCursorFeedback(14512): editorDetachFromWindow android.widget.Editor@25880d0
+04-10 16:13:01.767 D/OplusCursorFeedback(14512): editorDetachFromWindow android.widget.Editor@7ce68c9
+04-10 16:13:01.767 D/OplusCursorFeedback(14512): editorDetachFromWindow android.widget.Editor@b460bce
+04-10 16:13:01.767 D/OplusCursorFeedback(14512): editorDetachFromWindow android.widget.Editor@3bffaef
+04-10 16:13:01.768 D/HWUI    (14512): RenderProxy::destroy: this=0xb4000071834a9000, mContext=0xb4000070e4b6c6c0
+04-10 16:13:01.768 D/HWUI    (14512): SkiaVulkanPipeline::setSurface: this=0xb400007183674bc0, surface=NULL
+04-10 16:13:01.773 D/VRI[SettingsActivity](14512): onFocusEvent false
+04-10 16:13:01.773 D/VRI[IconFinancialAlias](14512): setWindowStopped stopped:false
+04-10 16:13:01.774 I/ChainTrace(14512): main_render symbol=BTCUSDT closeTime=1775808299999 repoToMainMs=-1 triggerToMainMs=-1
+04-10 16:13:01.774 I/ChainTrace(14512): main_render symbol=BTCUSDT closeTime=1775808779999 repoToMainMs=59199 triggerToMainMs=-1
+--------- beginning of system
+04-10 16:13:01.775 D/ActivityThread(14512): ComponentInfo{com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias} checkFinished=false 2
+04-10 16:13:01.775 D/ResourcesManagerExtImpl(14512): applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+04-10 16:13:01.779 D/ViewRootImplExtImpl(14512): wrapConfigInfoIntoFlags rotation=0, smallestScreenWidthDp=361, residentWS=false, scenario=0, bounds=Rect(0, 0 - 1264, 2780), relayoutAsync=false, flags=0, newFlags=1457532192, title=com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias
+04-10 16:13:01.781 D/VRI[IconFinancialAlias](14512): relayoutWindow result, sizeChanged:false, surfaceControlChanged:true, transformHintChanged:false, mSurfaceSize:Point(1264, 2780), mLastSurfaceSize:Point(1264, 2780), mWidth:1264, mHeight:2780, requestedWidth:1264, requestedHeight:2780, transformHint:0, installOrientation:0, displayRotation:0, isSurfaceValid:true, attr.flag:-2122252032, tmpFrames:ClientWindowFrames{frame=[0,0][1264,2780] display=[0,0][1264,2780] parentFrame=[0,0][0,0]}, relayoutAsync:false, mSyncSeqId:0
+04-10 16:13:01.781 W/VRI[IconFinancialAlias](14512): updateBlastSurfaceIfNeeded, surfaceSize:Point(1264, 2780), lastSurfaceSize:Point(1264, 2780), format:-3, blastBufferQueue:null
+04-10 16:13:01.781 D/BufferQueueConsumer(14512): [](id:38b000000005,api:0,p:-1,c:14512) connect: controlledByApp=false
+04-10 16:13:01.782 D/BufferQueueConsumer(14512): [VRI[IconFinancialAlias]#5(BLAST Consumer)5](id:38b000000005,api:0,p:-1,c:14512) setMaxAcquiredBufferCount: 2
+04-10 16:13:01.782 D/BufferQueueProducer(14512): [VRI[IconFinancialAlias]#5(BLAST Consumer)5](id:38b000000005,api:1,p:14512,c:14512) connect: api=1 producerControlledByApp=true
+04-10 16:13:01.783 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias)/@0x1e12a49,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:13:01.789 D/BLASTBufferQueue(14512): [VRI[IconFinancialAlias]#5](f:0,a:1) acquireNextBufferLocked size=1264x2780 mFrameNumber=1 applyTransaction=true mTimestamp=808243102503603(auto) mPendingTransactions.size=0 graphicBufferId=62328565399575 transform=0
+04-10 16:13:01.789 D/VRI[IconFinancialAlias](14512): Received frameCommittedCallback lastAttemptedDrawFrameNum=1 didProduceBuffer=true syncBuffer=false
+04-10 16:13:01.789 D/VRI[IconFinancialAlias](14512): draw finished. seqId=0
+04-10 16:13:01.790 D/ResourcesManagerExtImpl(14512): applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+04-10 16:13:01.795 D/VRI[SettingsActivity](14512): dispatchAppVisibility visible:false mUpcomingWindowFocus:false
+04-10 16:13:01.803 D/VRI[SettingsActivity](14512): visibilityChanged oldVisibility=true newVisibility=false
+04-10 16:13:01.803 D/VRI[SettingsActivity](14512): setWindowStopped stopped:true
+04-10 16:13:01.804 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.settings.SettingsActivity,window dying
+04-10 16:13:01.804 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.settings.SettingsActivity,unregisterSystemUIBroadcastReceiver 
+04-10 16:13:01.804 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.ui.settings.SettingsActivity, unregisterSystemUIBroadcastReceiver failed java.lang.IllegalArgumentException: Receiver not registered: android.view.OplusScrollToTopManager$2@86240e2
+04-10 16:13:01.804 W/WindowOnBackDispatcher(14512): sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@51ab39b
+04-10 16:13:01.804 D/HWUI    (14512): RenderProxy::destroy: this=0xb4000070f875ed00, mContext=0xb4000072310967c0
+04-10 16:13:01.804 D/HWUI    (14512): SkiaVulkanPipeline::setSurface: this=0xb400007183769940, surface=NULL
+04-10 16:13:01.807 D/BufferQueueProducer(14512): [VRI[SettingsActivity]#4(BLAST Consumer)4](id:38b000000004,api:1,p:14512,c:14512) disconnect: api 1
+04-10 16:13:01.807 D/ViewRootImpl(14512): Skipping stats log for color mode
+04-10 16:13:01.809 D/VRI[IconFinancialAlias](14512): onFocusEvent true
+04-10 16:13:01.815 D/InsetsController(14512): hide(ime(), fromIme=false)
+04-10 16:13:01.815 I/ImeTracker(14512): com.binance.monitor:53966174: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+04-10 16:13:01.816 D/BLASTBufferQueue(14512): [VRI[SettingsActivity]#4](f:0,a:1) destructor()
+04-10 16:13:01.817 D/BufferQueueConsumer(14512): [VRI[SettingsActivity]#4(BLAST Consumer)4](id:38b000000004,api:0,p:-1,c:14512) disconnect
+04-10 16:13:02.622 I/ChainTrace(14512): stream type=syncEvent gapMs=1017 refreshMarket=true
+04-10 16:13:02.753 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:13:02.813 D/OplusScrollToTopManager(14512): com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias,This com.android.internal.policy.DecorView{a77c5d2 V.E...... R....... 0,0-1264,2780 aid=0 alpha=1.0 viewInfo = }[IconFinancialAlias] change focus to true
+04-10 16:13:03.546 I/ChainTrace(14512): stream type=syncEvent gapMs=924 refreshMarket=true
+04-10 16:13:03.546 I/ChainTrace(14512): market_apply symbol=BTCUSDT closeTime=1775808839999 fetchMs=-1 triggerToApplyMs=-1
+04-10 16:13:03.546 I/ChainTrace(14512): repo_kline symbol=BTCUSDT closeTime=1775808839999 applyToRepoMs=0
+04-10 16:13:03.760 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:13:04.572 I/ChainTrace(14512): stream type=heartbeat gapMs=1026 refreshMarket=false
+04-10 16:13:05.595 I/ChainTrace(14512): stream type=syncEvent gapMs=1023 refreshMarket=true
+04-10 16:13:05.596 I/ChainTrace(14512): market_apply symbol=XAUUSDT closeTime=1775808839999 fetchMs=-1 triggerToApplyMs=-1
+04-10 16:13:05.596 I/ChainTrace(14512): repo_kline symbol=XAUUSDT closeTime=1775808839999 applyToRepoMs=0
+04-10 16:13:06.631 I/ChainTrace(14512): stream type=syncEvent gapMs=1036 refreshMarket=true
+04-10 16:13:07.638 I/ChainTrace(14512): stream type=syncEvent gapMs=1007 refreshMarket=true
+04-10 16:13:07.657 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:13:08.588 I/ChainTrace(14512): stream type=syncEvent gapMs=950 refreshMarket=true
+04-10 16:13:09.584 I/ChainTrace(14512): stream type=heartbeat gapMs=996 refreshMarket=false
+04-10 16:13:10.606 I/ChainTrace(14512): stream type=heartbeat gapMs=1022 refreshMarket=false
+04-10 16:13:11.522 I/ChainTrace(14512): stream type=syncEvent gapMs=916 refreshMarket=true
+04-10 16:13:12.553 I/ChainTrace(14512): stream type=syncEvent gapMs=1031 refreshMarket=true
+04-10 16:13:12.573 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:13:13.578 I/ChainTrace(14512): stream type=heartbeat gapMs=1025 refreshMarket=false
+04-10 16:13:14.621 I/ChainTrace(14512): stream type=syncEvent gapMs=1043 refreshMarket=true
+04-10 16:13:14.638 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:13:15.622 I/ChainTrace(14512): stream type=heartbeat gapMs=1001 refreshMarket=false
+04-10 16:13:16.606 I/ChainTrace(14512): stream type=syncEvent gapMs=984 refreshMarket=true
+04-10 16:13:17.510 I/ChainTrace(14512): stream type=heartbeat gapMs=904 refreshMarket=false
+04-10 16:13:18.508 I/ChainTrace(14512): stream type=syncEvent gapMs=997 refreshMarket=true
+04-10 16:13:18.526 I/SurfaceControl(14512):  setExtendedRangeBrightness sc=Surface(name=)/@0xa122d37,currentBufferRatio=1.0,desiredRatio=1.0
+04-10 16:13:19.529 I/ChainTrace(14512): stream type=syncEvent gapMs=1022 refreshMarket=true

@@ -7,7 +7,7 @@ import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.runtime.AppForegroundTracker;
-import com.binance.monitor.ui.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.theme.ThemeLauncherIconManager;
 
 public class BinanceMonitorApp extends Application {

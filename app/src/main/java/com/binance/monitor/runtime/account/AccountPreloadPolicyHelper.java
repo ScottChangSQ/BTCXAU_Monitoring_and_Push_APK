@@ -2,7 +2,7 @@
  * 账户预加载策略辅助，负责根据前后台状态和快照模式统一计算刷新节奏。
  * 供 AccountStatsPreloadManager 复用，避免页面层和预加载层各自写死时间。
  */
-package com.binance.monitor.ui.account;
+package com.binance.monitor.runtime.account;
 
 import com.binance.monitor.constants.AppConstants;
 

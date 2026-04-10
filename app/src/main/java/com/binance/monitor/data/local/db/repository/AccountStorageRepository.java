@@ -6,6 +6,7 @@ package com.binance.monitor.data.local.db.repository;
 
 import android.content.Context;
 
+import com.binance.monitor.data.local.db.AppDatabase;
 import com.binance.monitor.data.local.db.AppDatabaseProvider;
 import com.binance.monitor.data.local.db.dao.AccountSnapshotDao;
 import com.binance.monitor.data.local.db.dao.TradeHistoryDao;
@@ -17,8 +18,6 @@ import com.binance.monitor.ui.account.model.AccountMetric;
 import com.binance.monitor.ui.account.model.CurvePoint;
 import com.binance.monitor.ui.account.model.PositionItem;
 import com.binance.monitor.ui.account.model.TradeRecordItem;
-import com.binance.monitor.ui.floating.FloatingPositionAggregator;
-import com.binance.monitor.ui.floating.FloatingPositionPnlItem;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -30,18 +29,31 @@ import java.util.Map;
 
 public class AccountStorageRepository {
 
+    private final AppDatabase database;
     private final TradeHistoryDao tradeHistoryDao;
     private final AccountSnapshotDao accountSnapshotDao;
 
     public AccountStorageRepository(Context context) {
+        this(AppDatabaseProvider.getInstance(context));
+    }
+
+    AccountStorageRepository(AppDatabase database) {
         this(
-                AppDatabaseProvider.getInstance(context).tradeHistoryDao(),
-                AppDatabaseProvider.getInstance(context).accountSnapshotDao()
+                database,
+                database == null ? null : database.tradeHistoryDao(),
+                database == null ? null : database.accountSnapshotDao()
         );
     }
 
     AccountStorageRepository(TradeHistoryDao tradeHistoryDao,
                              AccountSnapshotDao accountSnapshotDao) {
+        this(null, tradeHistoryDao, accountSnapshotDao);
+    }
+
+    AccountStorageRepository(AppDatabase database,
+                             TradeHistoryDao tradeHistoryDao,
+                             AccountSnapshotDao accountSnapshotDao) {
+        this.database = database;
         this.tradeHistoryDao = tradeHistoryDao;
         this.accountSnapshotDao = accountSnapshotDao;
     }
@@ -51,6 +63,11 @@ public class AccountStorageRepository {
         if (snapshot == null) {
             return;
         }
+        runInDatabaseTransaction(() -> persistSnapshotInternal(snapshot));
+    }
+
+    // 全量快照写入必须在同一事务里完成，避免多表落库只写一半。
+    private void persistSnapshotInternal(StoredSnapshot snapshot) {
         if (tradeHistoryDao != null) {
             List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades());
             tradeHistoryDao.clearAll();
@@ -86,6 +103,11 @@ public class AccountStorageRepository {
         if (snapshot == null) {
             return;
         }
+        runInDatabaseTransaction(() -> persistV2SnapshotInternal(snapshot));
+    }
+
+    // v2 全量快照需要把交易、持仓、挂单和摘要作为一次原子替换。
+    private void persistV2SnapshotInternal(StoredSnapshot snapshot) {
         if (tradeHistoryDao != null) {
             List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades());
             tradeHistoryDao.clearAll();
@@ -123,6 +145,11 @@ public class AccountStorageRepository {
         if (snapshot == null || accountSnapshotDao == null) {
             return;
         }
+        runInDatabaseTransaction(() -> persistMetaSnapshotInternal(snapshot));
+    }
+
+    // 摘要写入包含读旧值再写新值，同样要保证事务边界完整。
+    private void persistMetaSnapshotInternal(StoredSnapshot snapshot) {
         AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
         metaEntity.id = 1;
@@ -147,6 +174,11 @@ public class AccountStorageRepository {
         if (snapshot == null || accountSnapshotDao == null) {
             return;
         }
+        runInDatabaseTransaction(() -> persistLiveSnapshotInternal(snapshot));
+    }
+
+    // 运行态写入同时改持仓和摘要，不能让两者出现新旧混写。
+    private void persistLiveSnapshotInternal(StoredSnapshot snapshot) {
         accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
         AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
 
@@ -173,6 +205,11 @@ public class AccountStorageRepository {
         if (snapshot == null || accountSnapshotDao == null) {
             return;
         }
+        runInDatabaseTransaction(() -> persistIncrementalSnapshotInternal(snapshot));
+    }
+
+    // 轻量运行态也会跨表改写，并包含 identity 判断，必须整体提交。
+    private void persistIncrementalSnapshotInternal(StoredSnapshot snapshot) {
         accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
         accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
         AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
@@ -209,6 +246,20 @@ public class AccountStorageRepository {
                 identityChanged
         );
         accountSnapshotDao.upsertMeta(metaEntity);
+    }
+
+    // 正式环境走 Room 总事务，测试注入空数据库时退化为直接执行。
+    private void runInDatabaseTransaction(Runnable action) {
+        if (action == null) {
+            return;
+        }
+        if (database == null) {
+            action.run();
+            return;
+        }
+        database.runInTransaction(() -> {
+            action.run();
+        });
     }
 
     // 读取当前数据库中保存的账户快照。
@@ -302,11 +353,6 @@ public class AccountStorageRepository {
             result.add(toTradeModel(entity));
         }
         return result;
-    }
-
-    // 读取悬浮窗需要的按产品盈亏列表。
-    public List<FloatingPositionPnlItem> loadFloatingPositionItems() {
-        return FloatingPositionAggregator.aggregate(loadPositions());
     }
 
     // 清空全部历史交易数据。

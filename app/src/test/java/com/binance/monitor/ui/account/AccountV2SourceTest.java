@@ -13,7 +13,7 @@ public class AccountV2SourceTest {
 
     @Test
     public void accountPreloadManagerShouldDependOnGatewayV2Client() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java");
+        Path file = Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
         assertTrue(source.contains("GatewayV2Client"));

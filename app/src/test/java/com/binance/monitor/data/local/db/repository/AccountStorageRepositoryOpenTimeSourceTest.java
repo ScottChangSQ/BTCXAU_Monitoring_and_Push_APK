@@ -23,6 +23,8 @@ public class AccountStorageRepositoryOpenTimeSourceTest {
         assertTrue(pendingEntitySource.contains("public long openTime;"));
         assertTrue(repositorySource.contains("entity.openTime = item.getOpenTime();"));
         assertTrue(repositorySource.contains("entity.orderId,\n                entity.openTime,\n                entity.quantity,"));
+        assertTrue(!repositorySource.contains("FloatingPositionAggregator"));
+        assertTrue(!repositorySource.contains("loadFloatingPositionItems("));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

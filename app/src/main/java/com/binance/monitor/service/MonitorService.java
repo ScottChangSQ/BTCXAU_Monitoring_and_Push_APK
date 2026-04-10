@@ -27,8 +27,8 @@ import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.runtime.ConnectionStage;
-import com.binance.monitor.ui.account.AccountStatsPreloadManager;
 import com.binance.monitor.runtime.AppForegroundTracker;
+import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.floating.FloatingPositionAggregator;
 import com.binance.monitor.ui.floating.FloatingSymbolCardData;
 import com.binance.monitor.ui.floating.FloatingWindowSnapshot;
@@ -152,6 +152,10 @@ public class MonitorService extends Service {
                 applyFloatingPreferences();
                 logResolvedGatewayAddresses();
                 syncAbnormalConfigAsync();
+                break;
+            case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:
+                clearStreamAccountSnapshot();
+                requestFloatingWindowRefresh(true);
                 break;
             case AppConstants.ACTION_BOOTSTRAP:
             default:

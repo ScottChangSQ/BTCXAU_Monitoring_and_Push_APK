@@ -3,6 +3,8 @@ package com.binance.monitor.ui.account;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.binance.monitor.runtime.account.AccountHistoryRefreshPolicyHelper;
+
 import org.junit.Test;
 
 public class AccountHistoryRefreshPolicyHelperTest {

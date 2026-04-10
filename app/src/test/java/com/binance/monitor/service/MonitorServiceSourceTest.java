@@ -160,6 +160,21 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
+    public void explicitAccountRuntimeClearActionShouldResetStreamSnapshotAndRefreshFloating() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+
+        assertTrue("监控服务应支持显式账户运行态清理动作，避免登出和切号后继续显示旧仓位",
+                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:"));
+        assertTrue("显式账户运行态清理动作应清空 stream 持仓快照",
+                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                clearStreamAccountSnapshot();"));
+        assertTrue("显式账户运行态清理动作后应立即刷新悬浮窗",
+                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                clearStreamAccountSnapshot();\n                requestFloatingWindowRefresh(true);"));
+    }
+
+    @Test
     public void accountRuntimeShouldApplyPublishedSnapshotBeforeHistoryPull() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",

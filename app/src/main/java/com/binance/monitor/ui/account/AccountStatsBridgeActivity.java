@@ -68,6 +68,8 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.ActivityAccountStatsBinding;
 import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionCredentialEncryptor;
+import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.account.MetricNameTranslator;
 import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
@@ -258,7 +260,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private boolean userLoggedIn;
     private boolean gatewayConnected;
     private String loginAccountInput = ACCOUNT;
-    private String loginPasswordInput = "";
     private String loginServerInput = SERVER;
     private RemoteAccountProfile activeSessionAccount;
     private List<RemoteAccountProfile> savedSessionAccounts = new ArrayList<>();
@@ -514,8 +515,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     ? trim(activeSessionAccount.getLogin())
                     : ACCOUNT;
         }
-        // 密码不再从本地持久化恢复，避免继续保留明文副本。
-        loginPasswordInput = "";
         loginServerInput = secureSessionPrefs == null
                 ? trim(prefs.getString(PREF_LOGIN_SERVER, SERVER))
                 : trim(secureSessionPrefs.getDraftServer(prefs.getString(PREF_LOGIN_SERVER, SERVER)));
@@ -734,9 +733,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         container.addView(accountInput);
 
         EditText passwordInput = createLoginField("账户密码", true);
-        if (!trim(loginPasswordInput).isEmpty()) {
-            passwordInput.setText(loginPasswordInput);
-        }
         container.addView(passwordInput);
 
         EditText serverInput = createLoginField("服务器信息", false);
@@ -960,7 +956,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         userLoggedIn = false;
         gatewayConnected = false;
         loading = false;
-        loginPasswordInput = "";
         activeSessionAccount = null;
         connectedAccount = "";
         clearScheduledRefresh();
@@ -983,6 +978,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedLeverageText = "";
         connectedUpdateAtMs = 0L;
         connectedUpdate = "--";
+        requestMonitorServiceAccountRuntimeClear();
         setConnectionStatus(false);
         updateOverviewHeader();
         applyLoggedOutEmptyState();
@@ -1089,16 +1085,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 new AccountRemoteSessionCoordinator.CacheResetter() {
                     @Override
                     public void clearAccountSnapshot() {
-                        snapshotRequestGuard.invalidateSession();
-                        loading = false;
-                        clearRuntimeAccountState();
                         clearPersistedAccountState();
                         runOnUiThread(() -> {
+                            snapshotRequestGuard.invalidateSession();
+                            loading = false;
+                            clearRuntimeAccountState();
                             applyLoggedOutEmptyState();
                             if (preloadManager != null) {
                                 preloadManager.clearLatestCache();
                                 preloadManager.setFullSnapshotActive(true);
                             }
+                            requestMonitorServiceAccountRuntimeClear();
                         });
                     }
 
@@ -1217,7 +1214,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         loginAccountInput = account;
-        loginPasswordInput = password;
         loginServerInput = server;
         if (secureSessionPrefs != null) {
             secureSessionPrefs.saveDraftIdentity(account, server);
@@ -6559,6 +6555,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         Intent intent = new Intent(this, MonitorService.class);
         intent.setAction(action);
         ContextCompat.startForegroundService(this, intent);
+    }
+
+    // 会话切换或退出登录时，显式通知服务清掉流式账户运行态，避免旧仓位短暂回灌。
+    private void requestMonitorServiceAccountRuntimeClear() {
+        sendServiceAction(AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME);
     }
 
     // 首次创建账户页时确保监控服务已启动，避免用户直达账户页时服务未建立主链。

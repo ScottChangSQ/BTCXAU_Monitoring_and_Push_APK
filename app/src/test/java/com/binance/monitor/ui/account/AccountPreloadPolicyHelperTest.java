@@ -6,6 +6,8 @@ package com.binance.monitor.ui.account;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import com.binance.monitor.runtime.account.AccountPreloadPolicyHelper;
+
 import org.junit.Test;
 
 public class AccountPreloadPolicyHelperTest {
