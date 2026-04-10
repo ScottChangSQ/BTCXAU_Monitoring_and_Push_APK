@@ -6,7 +6,7 @@ package com.binance.monitor.ui.floating;
 
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.constants.AppConstants;
-import com.binance.monitor.ui.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.util.ProductSymbolMapper;
 
 import java.util.ArrayList;

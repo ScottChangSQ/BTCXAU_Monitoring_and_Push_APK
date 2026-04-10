@@ -42,6 +42,26 @@ public class SettingsSectionActivitySourceTest {
                 source.contains("viewModel.setMt5GatewayBaseUrl(input);"));
     }
 
+    @Test
+    public void clearCacheShouldRunOnBackgroundExecutorInsteadOfBlockingUiThread() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("设置页应提供独立缓存清理执行器",
+                source.contains("private java.util.concurrent.ExecutorService cacheExecutor;"));
+        assertTrue("页面初始化时应创建缓存清理执行器",
+                source.contains("cacheExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();"));
+        assertTrue("点击清理后应切到后台执行器，而不是主线程直接删库删文件",
+                source.contains(".setPositiveButton(\"清理\", (dialog, which) -> clearCacheDataAsync("));
+        assertTrue("后台清理完成后应切回主线程展示结果",
+                source.contains("runOnUiThread(() -> Toast.makeText("));
+        assertTrue("页面销毁时应关闭缓存清理执行器",
+                source.contains("if (cacheExecutor != null) {")
+                        && source.contains("cacheExecutor.shutdownNow();"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

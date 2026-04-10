@@ -15,7 +15,7 @@ import com.binance.monitor.data.model.v2.AccountHistoryPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.data.model.v2.MarketSeriesPayload;
 import com.binance.monitor.data.model.v2.MarketSnapshotPayload;
-import com.binance.monitor.ui.account.AccountTimeRange;
+import com.binance.monitor.domain.account.AccountTimeRange;
 
 import org.json.JSONArray;
 import org.json.JSONObject;

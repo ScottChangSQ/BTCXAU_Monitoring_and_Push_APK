@@ -27,15 +27,15 @@ public class MonitorServiceSourceTest {
         assertTrue("前台切回时应先判断当前 stream 是否仍健康",
                 source.contains("boolean streamHealthy = isV2StreamHealthy(System.currentTimeMillis());"));
         assertTrue("stream 健康时应直接返回，不再继续重建主链连接",
-                source.contains("if (streamHealthy) {\n            requestFloatingWindowRefresh(false);"));
+                source.contains("if (streamHealthy) {\n            floatingCoordinator.requestRefresh(false);"));
         assertTrue("只有 stream 已失活时才应继续走后面的重建逻辑",
-                source.contains("if (streamHealthy) {\n            requestFloatingWindowRefresh(false);\n            updateConnectionStatus();\n            return;\n        }\n"));
+                source.contains("if (streamHealthy) {\n            floatingCoordinator.requestRefresh(false);\n            updateConnectionStatus();\n            return;\n        }\n"));
         assertFalse("前台切回时不应无条件重建 v2 stream",
                 source.contains("restartV2Stream(\"foreground_resume\");\n        requestForegroundEntryRefresh();"));
         assertFalse("前台切回时不应再主动补拉 /v2/account/snapshot",
                 source.contains("requestAccountRefreshFromV2();"));
         assertTrue("stream 健康时只应切换消费层刷新节奏，不应做全量刷新",
-                source.contains("requestFloatingWindowRefresh(false);"));
+                source.contains("floatingCoordinator.requestRefresh(false);"));
         assertTrue("服务层应维护结构化连接阶段，避免把重连过程误渲染成离线",
                 source.contains("private volatile ConnectionStage v2StreamStage = ConnectionStage.CONNECTING;"));
     }
@@ -171,7 +171,7 @@ public class MonitorServiceSourceTest {
         assertTrue("显式账户运行态清理动作应清空 stream 持仓快照",
                 source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                clearStreamAccountSnapshot();"));
         assertTrue("显式账户运行态清理动作后应立即刷新悬浮窗",
-                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                clearStreamAccountSnapshot();\n                requestFloatingWindowRefresh(true);"));
+                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                clearStreamAccountSnapshot();\n                floatingCoordinator.requestRefresh(true);"));
     }
 
     @Test
@@ -212,7 +212,7 @@ public class MonitorServiceSourceTest {
         );
 
         assertTrue("stream 持仓快照应保留完整列表，避免同产品多笔仓位被覆盖",
-                source.contains("private final List<com.binance.monitor.ui.account.model.PositionItem> streamPositionSnapshot = new ArrayList<>();"));
+                source.contains("private final List<PositionItem> streamPositionSnapshot = new ArrayList<>();"));
         assertTrue("stream 账户快照应用时应追加所有仓位，而不是按 code 覆盖",
                 source.contains("streamPositionSnapshot.add(item);"));
         assertFalse("不应按 code 覆盖 stream 持仓快照",
@@ -231,7 +231,7 @@ public class MonitorServiceSourceTest {
         assertTrue("连接状态未变化时不应重复 setConnectionStatus 和通知刷新",
                 source.contains("if (!status.equals(currentStatus)) {"));
         assertTrue("只有状态变化时才应刷新前台通知",
-                source.contains("refreshForegroundNotification();"));
+                source.contains("foregroundNotificationCoordinator.refreshNotification(status);"));
         assertTrue("状态变化时应通过统一发布入口写回仓库和本地真值",
                 source.contains("publishConnectionStatus(status);"));
         assertTrue("连接状态字符串前应先由统一连接阶段解析器得出当前阶段",
@@ -241,19 +241,35 @@ public class MonitorServiceSourceTest {
     @Test
     public void floatingSnapshotShouldCarryConnectionStageInsteadOfOnlyPassingStatusText() throws Exception {
         String source = readUtf8(
-                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
-                "src/main/java/com/binance/monitor/service/MonitorService.java"
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
         );
 
         assertTrue("悬浮窗快照应带上统一连接阶段，避免 UI 再按字符串猜状态",
-                source.contains("return new FloatingWindowSnapshot(\n                getCurrentConnectionStage(),"));
+                source.contains("return new FloatingWindowSnapshot(\n                dataSource.getCurrentConnectionStage(),"));
+    }
+
+    @Test
+    public void v2StreamPayloadShouldBeParsedOffMainThread() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("stream 消息应先进入后台串行执行器，不能直接把 payload 解析压到主线程",
+                source.contains("executorService.execute(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
+        assertTrue("后台消费完 stream 后，主线程只负责刷新连接状态",
+                source.contains("mainHandler.post(MonitorService.this::updateConnectionStatus);")
+                        || source.contains("mainHandler.post(() -> updateConnectionStatus());"));
+        assertFalse("主线程不应直接执行 handleV2StreamMessage(message)",
+                source.contains("mainHandler.post(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();\n                    try {\n                        handleV2StreamMessage(message);"));
     }
 
     @Test
     public void foregroundNotificationShouldUseStableSignatureToSkipDuplicateNotify() throws Exception {
         String source = readUtf8(
-                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
-                "src/main/java/com/binance/monitor/service/MonitorService.java"
+                "app/src/main/java/com/binance/monitor/service/MonitorForegroundNotificationCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorForegroundNotificationCoordinator.java"
         );
 
         assertTrue("前台通知应缓存上次签名，避免高频重复 notify",

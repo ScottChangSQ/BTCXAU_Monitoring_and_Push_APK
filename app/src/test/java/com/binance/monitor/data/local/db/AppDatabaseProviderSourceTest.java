@@ -21,6 +21,7 @@ public class AppDatabaseProviderSourceTest {
 
         assertTrue(source.contains("Room.databaseBuilder("));
         assertFalse(source.contains("fallbackToDestructiveMigration()"));
+        assertFalse(source.contains("allowMainThreadQueries()"));
     }
 
     @Test

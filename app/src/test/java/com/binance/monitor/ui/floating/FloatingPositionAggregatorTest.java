@@ -9,7 +9,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.binance.monitor.constants.AppConstants;
-import com.binance.monitor.ui.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.PositionItem;
 
 import org.junit.Test;
 

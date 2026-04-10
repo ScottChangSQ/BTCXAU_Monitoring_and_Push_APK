@@ -15,7 +15,7 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
-import com.binance.monitor.ui.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 
 import java.util.ArrayList;

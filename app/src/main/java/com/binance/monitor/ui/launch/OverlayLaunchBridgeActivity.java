@@ -37,7 +37,7 @@ public class OverlayLaunchBridgeActivity extends Activity {
         if (!targetSymbol.isEmpty()) {
             Intent intent = new Intent(this, MarketChartActivity.class);
             intent.putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL, targetSymbol);
-            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(intent);
         }
         finish();

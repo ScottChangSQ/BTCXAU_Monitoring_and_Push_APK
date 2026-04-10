@@ -23,7 +23,7 @@ public class OverlayLaunchBridgeActivitySourceTest {
         assertTrue(source.contains("private void routeToTargetAndFinish()"));
         assertTrue(source.contains("new Intent(this, MarketChartActivity.class)"));
         assertTrue(source.contains("putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL"));
-        assertTrue(source.contains("Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP"));
+        assertTrue(source.contains("Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP"));
         assertTrue(source.contains("finish();"));
     }
 

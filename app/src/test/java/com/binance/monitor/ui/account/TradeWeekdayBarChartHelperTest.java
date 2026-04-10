@@ -2,7 +2,7 @@ package com.binance.monitor.ui.account;
 
 import static org.junit.Assert.assertEquals;
 
-import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 
 import org.junit.Test;
 

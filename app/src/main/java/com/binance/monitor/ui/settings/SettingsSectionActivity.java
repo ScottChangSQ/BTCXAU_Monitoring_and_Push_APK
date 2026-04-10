@@ -45,6 +45,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
     private boolean applying;
     private String sectionKey = SettingsActivity.SECTION_DISPLAY;
     private String sectionTitle = "设置";
+    private java.util.concurrent.ExecutorService cacheExecutor;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -55,11 +56,20 @@ public class SettingsSectionActivity extends AppCompatActivity {
         sectionKey = readExtra(EXTRA_SECTION, SettingsActivity.SECTION_DISPLAY);
         sectionTitle = readExtra(EXTRA_TITLE, "设置");
         viewModel = new ViewModelProvider(this).get(MainViewModel.class);
+        cacheExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
         setupBottomNav();
         setupThemeItems();
         setupActions();
         lockGatewayEntrySection();
         applyVisibleSection();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (cacheExecutor != null) {
+            cacheExecutor.shutdownNow();
+        }
+        super.onDestroy();
     }
 
     @Override
@@ -230,15 +240,29 @@ public class SettingsSectionActivity extends AppCompatActivity {
                 .setTitle("清理缓存")
                 .setMultiChoiceItems(items, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
                 .setNegativeButton("取消", null)
-                .setPositiveButton("清理", (dialog, which) -> clearCacheData(
+                .setPositiveButton("清理", (dialog, which) -> clearCacheDataAsync(
                         CacheSectionClassifier.fromSelection(checked[0], checked[1], checked[2])))
                 .show();
     }
 
-    // 按勾选分类执行缓存清理。
-    private void clearCacheData(CacheSectionClassifier.CacheSelection selection) {
-        if (selection == null) {
+    private void clearCacheDataAsync(CacheSectionClassifier.CacheSelection selection) {
+        if (selection == null || cacheExecutor == null) {
             return;
+        }
+        cacheExecutor.execute(() -> {
+            CacheClearResult result = clearCacheData(selection);
+            runOnUiThread(() -> Toast.makeText(this,
+                    "已清理：历史行情 " + result.marketDeleted
+                            + "，历史交易 " + result.tradeDeleted
+                            + "，运行时文件 " + result.cacheDeleted,
+                    Toast.LENGTH_SHORT).show());
+        });
+    }
+
+    // 按勾选分类执行缓存清理。
+    private CacheClearResult clearCacheData(CacheSectionClassifier.CacheSelection selection) {
+        if (selection == null) {
+            return new CacheClearResult(0, 0, 0);
         }
         int marketDeleted = 0;
         int tradeDeleted = 0;
@@ -255,9 +279,19 @@ public class SettingsSectionActivity extends AppCompatActivity {
             getSharedPreferences(MarketChartActivity.PREF_RUNTIME_NAME, MODE_PRIVATE).edit().clear().apply();
             cacheDeleted = deleteDirectoryChildren(getCacheDir());
         }
-        Toast.makeText(this,
-                "已清理：历史行情 " + marketDeleted + "，历史交易 " + tradeDeleted + "，运行时文件 " + cacheDeleted,
-                Toast.LENGTH_SHORT).show();
+        return new CacheClearResult(marketDeleted, tradeDeleted, cacheDeleted);
+    }
+
+    private static final class CacheClearResult {
+        private final int marketDeleted;
+        private final int tradeDeleted;
+        private final int cacheDeleted;
+
+        private CacheClearResult(int marketDeleted, int tradeDeleted, int cacheDeleted) {
+            this.marketDeleted = marketDeleted;
+            this.tradeDeleted = tradeDeleted;
+            this.cacheDeleted = cacheDeleted;
+        }
     }
 
     // 清理目录下所有子文件。

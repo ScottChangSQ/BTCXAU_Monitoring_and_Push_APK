@@ -63,6 +63,12 @@ import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
 import com.binance.monitor.data.model.v2.session.SessionReceipt;
 import com.binance.monitor.data.model.v2.session.SessionStatusPayload;
 import com.binance.monitor.data.remote.v2.GatewayV2SessionClient;
+import com.binance.monitor.domain.account.AccountTimeRange;
+import com.binance.monitor.domain.account.model.AccountMetric;
+import com.binance.monitor.domain.account.model.AccountSnapshot;
+import com.binance.monitor.domain.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.ActivityAccountStatsBinding;
@@ -77,11 +83,6 @@ import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
 import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
 import com.binance.monitor.ui.account.adapter.StatsMetricAdapter;
 import com.binance.monitor.ui.account.adapter.TradeRecordAdapterV2;
-import com.binance.monitor.ui.account.model.AccountMetric;
-import com.binance.monitor.ui.account.model.AccountSnapshot;
-import com.binance.monitor.ui.account.model.CurvePoint;
-import com.binance.monitor.ui.account.model.PositionItem;
-import com.binance.monitor.ui.account.model.TradeRecordItem;
 import com.binance.monitor.util.ProductSymbolMapper;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
@@ -965,7 +966,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             preloadManager.clearLatestCache();
         }
         clearRuntimeAccountState();
-        clearPersistedAccountState();
+        clearPersistedAccountStateAsync();
         updateSessionProfiles(null, savedSessionAccounts, false);
         if (secureSessionPrefs != null) {
             secureSessionPrefs.saveDraftIdentity(loginAccountInput, loginServerInput);
@@ -1018,6 +1019,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         accountStorageRepository.clearRuntimeSnapshot();
         accountStorageRepository.clearTradeHistory();
+    }
+
+    private void clearPersistedAccountStateAsync() {
+        if (accountStorageRepository == null) {
+            return;
+        }
+        ExecutorService targetExecutor = sessionExecutor != null ? sessionExecutor : ioExecutor;
+        if (targetExecutor == null) {
+            return;
+        }
+        targetExecutor.execute(this::clearPersistedAccountState);
     }
 
     // 构造一个空账户快照，复用现有页面渲染链路统一清空界面。
@@ -1343,7 +1355,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             case SWITCHING:
                 return "正在切换";
             case SYNCING:
-                return "正在同步";
+                return trim(snapshot.getMessage()).isEmpty() ? "正在同步" : trim(snapshot.getMessage());
             case ACTIVE:
                 return "已激活";
             case FAILED:
@@ -2665,141 +2677,163 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 : trim(requestStartCache.getHistoryRevision());
 
         ioExecutor.execute(() -> {
-            AccountStatsPreloadManager.Cache remote = preloadManager == null
-                    ? null
-                    : preloadManager.fetchForUi(fetchRange);
-            AccountSnapshot snapshot;
-            boolean syntheticDisconnectedSnapshot = false;
-            boolean connected;
-            String account;
-            String accountName;
-            String server;
-            String source;
-            String gateway;
-            long updatedAt;
-            String error;
+            try {
+                AccountStatsPreloadManager.Cache remote = preloadManager == null
+                        ? null
+                        : preloadManager.fetchForUi(fetchRange);
+                AccountSnapshot snapshot;
+                boolean syntheticDisconnectedSnapshot = false;
+                boolean connected;
+                String account;
+                String accountName;
+                String server;
+                String source;
+                String gateway;
+                long updatedAt;
+                String error;
 
-            if (remote != null && remote.isConnected()) {
-                boolean loginMatched = isLoginCredentialMatched(remote.getAccount(), remote.getServer());
-                if (loginMatched) {
-                    snapshot = remote.getSnapshot();
-                    connected = true;
-                    account = remote.getAccount().isEmpty()
-                            ? (trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput)
-                            : remote.getAccount();
-                    accountName = account;
-                    server = remote.getServer().isEmpty()
-                            ? (trim(loginServerInput).isEmpty() ? SERVER : loginServerInput)
-                            : remote.getServer();
-                    source = normalizeSource(remote.getSource());
-                    gateway = remote.getGateway().isEmpty() ? "--" : remote.getGateway();
-                    updatedAt = remote.getUpdatedAt() > 0L ? remote.getUpdatedAt() : System.currentTimeMillis();
-                    error = "";
+                if (remote != null && remote.isConnected()) {
+                    boolean loginMatched = isLoginCredentialMatched(remote.getAccount(), remote.getServer());
+                    if (loginMatched) {
+                        snapshot = remote.getSnapshot();
+                        connected = true;
+                        account = remote.getAccount().isEmpty()
+                                ? (trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput)
+                                : remote.getAccount();
+                        accountName = account;
+                        server = remote.getServer().isEmpty()
+                                ? (trim(loginServerInput).isEmpty() ? SERVER : loginServerInput)
+                                : remote.getServer();
+                        source = normalizeSource(remote.getSource());
+                        gateway = remote.getGateway().isEmpty() ? "--" : remote.getGateway();
+                        updatedAt = remote.getUpdatedAt() > 0L ? remote.getUpdatedAt() : System.currentTimeMillis();
+                        error = "";
+                    } else {
+                        snapshot = null;
+                        connected = false;
+                        account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
+                        accountName = account;
+                        server = trim(loginServerInput).isEmpty() ? SERVER : loginServerInput;
+                        source = "登录校验失败";
+                        gateway = remote.getGateway().isEmpty() ? "--" : remote.getGateway();
+                        updatedAt = System.currentTimeMillis();
+                        error = "登录账户或服务器与网关返回不一致";
+                    }
                 } else {
-                    snapshot = null;
+                    // 断线时直接进入空快照态，不再把旧数据伪装成当前真值。
+                    snapshot = buildEmptyAccountSnapshot();
+                    syntheticDisconnectedSnapshot = true;
                     connected = false;
                     account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
                     accountName = account;
                     server = trim(loginServerInput).isEmpty() ? SERVER : loginServerInput;
-                    source = "登录校验失败";
-                    gateway = remote.getGateway().isEmpty() ? "--" : remote.getGateway();
-                    updatedAt = System.currentTimeMillis();
-                    error = "登录账户或服务器与网关返回不一致";
+                    source = remote == null || remote.getSource().trim().isEmpty()
+                            ? "历史数据（网关离线）"
+                            : normalizeSource(remote.getSource());
+                    gateway = remote == null || remote.getGateway().trim().isEmpty()
+                            ? "Gateway offline"
+                            : remote.getGateway();
+                    updatedAt = remote == null || remote.getUpdatedAt() <= 0L
+                            ? System.currentTimeMillis()
+                            : remote.getUpdatedAt();
+                    error = remote == null ? "网关离线" : remote.getError();
                 }
-            } else {
-                // 断线时直接进入空快照态，不再把旧数据伪装成当前真值。
-                snapshot = buildEmptyAccountSnapshot();
-                syntheticDisconnectedSnapshot = true;
-                connected = false;
-                account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
-                accountName = account;
-                server = trim(loginServerInput).isEmpty() ? SERVER : loginServerInput;
-                source = remote == null || remote.getSource().trim().isEmpty()
-                        ? "历史数据（网关离线）"
-                        : normalizeSource(remote.getSource());
-                gateway = remote == null || remote.getGateway().trim().isEmpty()
-                        ? "Gateway offline"
-                        : remote.getGateway();
-                updatedAt = remote == null || remote.getUpdatedAt() <= 0L
-                        ? System.currentTimeMillis()
-                        : remote.getUpdatedAt();
-                error = remote == null ? "网关离线" : remote.getError();
-            }
 
-            final AccountSnapshot finalSnapshot = snapshot;
-            final boolean finalConnected = connected;
-            final String finalAccount = account;
-            final String finalAccountName = accountName;
-            final String finalServer = server;
-            final String finalSource = source;
-            final String finalGateway = gateway;
-            final long finalUpdatedAt = updatedAt;
-            final String finalError = error;
-            final String finalHistoryRevision = remote == null ? "" : remote.getHistoryRevision();
-            final boolean finalSyntheticDisconnectedSnapshot = syntheticDisconnectedSnapshot;
-            final String finalSignature = buildRefreshSignature(
-                    finalSnapshot,
-                    finalHistoryRevision,
-                    finalConnected,
-                    finalAccount,
-                    finalServer
-            );
+                final AccountSnapshot finalSnapshot = snapshot;
+                final boolean finalConnected = connected;
+                final String finalAccount = account;
+                final String finalAccountName = accountName;
+                final String finalServer = server;
+                final String finalSource = source;
+                final String finalGateway = gateway;
+                final long finalUpdatedAt = updatedAt;
+                final String finalError = error;
+                final String finalHistoryRevision = remote == null ? "" : remote.getHistoryRevision();
+                final boolean finalSyntheticDisconnectedSnapshot = syntheticDisconnectedSnapshot;
+                final String finalSignature = buildRefreshSignature(
+                        finalSnapshot,
+                        finalHistoryRevision,
+                        finalConnected,
+                        finalAccount,
+                        finalServer
+                );
 
-            runOnUiThread(() -> {
-                if (!snapshotRequestGuard.shouldApply(requestToken)) {
-                    return;
-                }
-                final boolean finalUnchanged = finalSignature.equals(lastAppliedSnapshotSignature);
-                boolean previousConnected = gatewayConnected;
-                connectedAccount = finalAccount;
-                connectedAccountName = finalAccountName;
-                connectedServer = finalServer;
-                connectedSource = finalSource;
-                connectedGateway = finalGateway;
-                connectedUpdateAtMs = finalUpdatedAt;
-                connectedUpdate = FormatUtils.formatDateTime(finalUpdatedAt);
-                connectedError = finalError;
+                runOnUiThread(() -> {
+                    if (!snapshotRequestGuard.shouldApply(requestToken)) {
+                        return;
+                    }
+                    final boolean finalUnchanged = finalSignature.equals(lastAppliedSnapshotSignature);
+                    boolean previousConnected = gatewayConnected;
+                    connectedAccount = finalAccount;
+                    connectedAccountName = finalAccountName;
+                    connectedServer = finalServer;
+                    connectedSource = finalSource;
+                    connectedGateway = finalGateway;
+                    connectedUpdateAtMs = finalUpdatedAt;
+                    connectedUpdate = FormatUtils.formatDateTime(finalUpdatedAt);
+                    connectedError = finalError;
 
-                if (isOlderThanCurrentSnapshot(finalUpdatedAt)) {
+                    if (isOlderThanCurrentSnapshot(finalUpdatedAt)) {
+                        loading = false;
+                        if (shouldKeepRefreshLoop()) {
+                            scheduleNextSnapshot(dynamicRefreshDelayMs);
+                        }
+                        return;
+                    }
+                    setConnectionStatus(finalConnected);
+                    boolean sessionActivatedNow = finalConnected
+                            && remoteSessionCoordinator != null
+                            && remoteSessionCoordinator.onSnapshotApplied(finalAccount, finalServer);
+                    if (!finalConnected
+                            && remoteSessionCoordinator != null
+                            && remoteSessionCoordinator.isAwaitingSync()) {
+                        if ("登录校验失败".equals(finalSource)) {
+                            remoteSessionCoordinator.markSyncFailed(finalError);
+                        } else if ("历史数据（网关离线）".equals(finalSource)) {
+                            remoteSessionCoordinator.markAwaitingGatewaySync("会话已受理，等待网关上线");
+                        }
+                    }
+                    if (sessionActivatedNow) {
+                        showLoginSuccessBanner();
+                    }
+                    updateOverviewHeader();
+                    logConnectionEvent(finalConnected);
+                    if (shouldApplyFetchedSnapshot(
+                            finalSnapshot,
+                            finalConnected,
+                            finalSyntheticDisconnectedSnapshot,
+                            finalHistoryRevision,
+                            requestStartHistoryRevision)) {
+                        applySnapshot(finalSnapshot, finalConnected);
+                    }
+                    lastAppliedSnapshotSignature = finalSignature;
+                    adjustRefreshCadence(finalConnected, finalUnchanged);
                     loading = false;
                     if (shouldKeepRefreshLoop()) {
                         scheduleNextSnapshot(dynamicRefreshDelayMs);
+                    } else {
+                        clearScheduledRefresh();
                     }
-                    return;
+                    updateOverviewHeader();
+                });
+            } catch (Exception exception) {
+                if (logManager != null) {
+                    logManager.warn("AccountStats snapshot refresh failed: " + exception.getMessage());
                 }
-                setConnectionStatus(finalConnected);
-                boolean sessionActivatedNow = finalConnected
-                        && remoteSessionCoordinator != null
-                        && remoteSessionCoordinator.onSnapshotApplied(finalAccount, finalServer);
-                if (!finalConnected
-                        && remoteSessionCoordinator != null
-                        && remoteSessionCoordinator.isAwaitingSync()
-                        && "登录校验失败".equals(finalSource)) {
-                    remoteSessionCoordinator.markSyncFailed(finalError);
-                }
-                if (sessionActivatedNow) {
-                    showLoginSuccessBanner();
-                }
-                updateOverviewHeader();
-                logConnectionEvent(finalConnected);
-                if (shouldApplyFetchedSnapshot(
-                        finalSnapshot,
-                        finalConnected,
-                        finalSyntheticDisconnectedSnapshot,
-                        finalHistoryRevision,
-                        requestStartHistoryRevision)) {
-                    applySnapshot(finalSnapshot, finalConnected);
-                }
-                lastAppliedSnapshotSignature = finalSignature;
-                adjustRefreshCadence(finalConnected, finalUnchanged);
-                loading = false;
-                if (shouldKeepRefreshLoop()) {
-                    scheduleNextSnapshot(dynamicRefreshDelayMs);
-                } else {
-                    clearScheduledRefresh();
-                }
-                updateOverviewHeader();
-            });
+            } finally {
+                runOnUiThread(() -> {
+                    if (!snapshotRequestGuard.shouldApply(requestToken) || !loading) {
+                        return;
+                    }
+                    loading = false;
+                    if (shouldKeepRefreshLoop()) {
+                        scheduleNextSnapshot(dynamicRefreshDelayMs);
+                    } else {
+                        clearScheduledRefresh();
+                    }
+                    updateOverviewHeader();
+                });
+            }
         });
     }
 

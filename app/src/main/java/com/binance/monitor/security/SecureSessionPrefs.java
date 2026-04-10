@@ -9,12 +9,12 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
-import com.binance.monitor.ui.account.AccountRemoteSessionCoordinator;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -31,15 +31,17 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
-public class SecureSessionPrefs implements AccountRemoteSessionCoordinator.SessionSummaryStore {
+public class SecureSessionPrefs implements SessionSummaryStore {
     private static final String PREF_NAME = "secure_session_prefs";
     private static final String KEY_PAYLOAD = "payload";
     private static final String KEY_IV = "iv";
     private static final String KEYSTORE_NAME = "AndroidKeyStore";
     private static final String KEY_ALIAS = "mt5_remote_session_summary_key";
     private static final int GCM_TAG_BITS = 128;
+    private static final String TAG = "SecureSessionPrefs";
 
     private final SharedPreferences preferences;
+    private volatile String lastStorageError = "";
 
     // 创建安全会话偏好实例。
     public SecureSessionPrefs(@NonNull Context context) {
@@ -97,6 +99,15 @@ public class SecureSessionPrefs implements AccountRemoteSessionCoordinator.Sessi
         return new ArrayList<>(readCache().savedAccounts);
     }
 
+    public boolean hasStorageFailure() {
+        return !lastStorageError.isEmpty();
+    }
+
+    @NonNull
+    public String getLastStorageError() {
+        return lastStorageError;
+    }
+
     // 返回最近输入的账号。
     @NonNull
     public String getDraftAccount(@Nullable String fallback) {
@@ -126,9 +137,11 @@ public class SecureSessionPrefs implements AccountRemoteSessionCoordinator.Sessi
             cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), new GCMParameterSpec(GCM_TAG_BITS, iv));
             byte[] plain = cipher.doFinal(payload);
             JSONObject root = new JSONObject(new String(plain, StandardCharsets.UTF_8));
+            lastStorageError = "";
             return SessionCache.fromJson(root);
-        } catch (Exception ignored) {
-            preferences.edit().remove(KEY_PAYLOAD).remove(KEY_IV).apply();
+        } catch (Exception exception) {
+            lastStorageError = "读取安全会话缓存失败: " + exception.getClass().getSimpleName();
+            Log.w(TAG, lastStorageError, exception);
             return new SessionCache();
         }
     }
@@ -146,7 +159,10 @@ public class SecureSessionPrefs implements AccountRemoteSessionCoordinator.Sessi
                     .putString(KEY_PAYLOAD, encodedPayload)
                     .putString(KEY_IV, encodedIv)
                     .apply();
-        } catch (Exception ignored) {
+            lastStorageError = "";
+        } catch (Exception exception) {
+            lastStorageError = "写入安全会话缓存失败: " + exception.getClass().getSimpleName();
+            Log.w(TAG, lastStorageError, exception);
         }
     }
 

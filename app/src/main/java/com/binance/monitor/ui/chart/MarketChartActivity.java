@@ -58,16 +58,17 @@ import com.binance.monitor.data.remote.v2.GatewayV2TradeClient;
 import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.databinding.DialogTradeCommandBinding;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
-import com.binance.monitor.ui.account.AccountTimeRange;
+import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
 import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
-import com.binance.monitor.ui.account.model.AccountMetric;
-import com.binance.monitor.ui.account.model.AccountSnapshot;
-import com.binance.monitor.ui.account.model.CurvePoint;
-import com.binance.monitor.ui.account.model.PositionItem;
-import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.domain.account.model.AccountMetric;
+import com.binance.monitor.domain.account.model.AccountSnapshot;
+import com.binance.monitor.domain.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
@@ -158,6 +159,8 @@ public class MarketChartActivity extends AppCompatActivity {
     private Future<?> runningTask;
     private Future<?> loadMoreTask;
     private Future<?> progressiveGapFillTask;
+    private Future<?> tradePrepareTask;
+    private Future<?> tradeSubmitTask;
     private long runningTaskStartMs;
     private int requestVersion = 0;
     private final Map<String, List<CandleEntry>> klineCache = new ConcurrentHashMap<>();
@@ -167,8 +170,11 @@ public class MarketChartActivity extends AppCompatActivity {
     private AccountStorageRepository accountStorageRepository;
     private AccountStatsPreloadManager accountStatsPreloadManager;
     private AbnormalRecordManager abnormalRecordManager;
+    private SecureSessionPrefs secureSessionPrefs;
     private Future<?> storedChartOverlayRestoreTask;
     private AccountSnapshot storedChartOverlaySnapshot;
+    private String storedChartOverlayAccount = "";
+    private String storedChartOverlayServer = "";
 
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private ArrayAdapter<String> symbolAdapter;
@@ -312,6 +318,7 @@ public class MarketChartActivity extends AppCompatActivity {
         accountStorageRepository = new AccountStorageRepository(getApplicationContext());
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
         abnormalRecordManager = AbnormalRecordManager.getInstance(getApplicationContext());
+        secureSessionPrefs = new SecureSessionPrefs(getApplicationContext());
         tradeExecutionCoordinator = createTradeExecutionCoordinator();
         ensureChartCacheSchemaCurrent();
         applyIntentSymbol(getIntent(), false);
@@ -365,6 +372,7 @@ public class MarketChartActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         stopAutoRefresh();
+        cancelTradeTasks();
         mainHandler.removeCallbacks(chartOverlayRefreshRunnable);
         accountOverlayRefreshPending = false;
         if (accountStatsPreloadManager != null) {
@@ -390,6 +398,7 @@ public class MarketChartActivity extends AppCompatActivity {
             loadMoreTask = null;
         }
         cancelProgressiveGapFillTask();
+        cancelTradeTasks();
         if (ioExecutor != null) {
             ioExecutor.shutdownNow();
         }
@@ -1109,7 +1118,7 @@ public class MarketChartActivity extends AppCompatActivity {
             return;
         }
         tradeFlowRunning = true;
-        ioExecutor.execute(() -> {
+        tradePrepareTask = ioExecutor.submit(() -> {
             try {
                 AccountStatsPreloadManager.Cache baselineCache = resolveTradeBaselineCache();
                 String accountId = resolveTradeAccountId(baselineCache);
@@ -1125,6 +1134,8 @@ public class MarketChartActivity extends AppCompatActivity {
                 postTradeError(exception.getMessage());
             } catch (Exception exception) {
                 postTradeError("交易准备失败：" + safeTradeMessage(exception.getMessage()));
+            } finally {
+                tradePrepareTask = null;
             }
         });
     }
@@ -1133,6 +1144,10 @@ public class MarketChartActivity extends AppCompatActivity {
     private void handlePreparedTrade(TradeCommand command,
                                      TradeExecutionCoordinator.PreparedTrade preparedTrade,
                                      @Nullable AccountStatsPreloadManager.Cache baselineCache) {
+        if (!canPresentTradeUi()) {
+            tradeFlowRunning = false;
+            return;
+        }
         if (preparedTrade == null) {
             tradeFlowRunning = false;
             showTradeOutcomeDialog("结果未确认", "交易准备失败，请稍后重试");
@@ -1162,15 +1177,23 @@ public class MarketChartActivity extends AppCompatActivity {
             showTradeMessage("交易链路未初始化");
             return;
         }
-        ioExecutor.execute(() -> {
-            TradeExecutionCoordinator.ExecutionResult executionResult =
-                    tradeExecutionCoordinator.submitAfterConfirmation(preparedTrade, baselineCache);
-            mainHandler.post(() -> handleTradeExecutionResult(executionResult));
+        tradeSubmitTask = ioExecutor.submit(() -> {
+            try {
+                TradeExecutionCoordinator.ExecutionResult executionResult =
+                        tradeExecutionCoordinator.submitAfterConfirmation(preparedTrade, baselineCache);
+                mainHandler.post(() -> handleTradeExecutionResult(executionResult));
+            } finally {
+                tradeSubmitTask = null;
+            }
         });
     }
 
     // 根据最终结果给用户明确反馈。
     private void handleTradeExecutionResult(@Nullable TradeExecutionCoordinator.ExecutionResult executionResult) {
+        if (!canPresentTradeUi()) {
+            tradeFlowRunning = false;
+            return;
+        }
         tradeFlowRunning = false;
         if (executionResult == null) {
             showTradeOutcomeDialog("结果未确认", "交易结果缺失，请等待后续刷新");
@@ -1270,6 +1293,10 @@ public class MarketChartActivity extends AppCompatActivity {
     // 把后台线程错误安全回传到主线程。
     private void postTradeError(String message) {
         mainHandler.post(() -> {
+            if (!canPresentTradeUi()) {
+                tradeFlowRunning = false;
+                return;
+            }
             tradeFlowRunning = false;
             showTradeOutcomeDialog("交易未发出", safeTradeMessage(message));
         });
@@ -1277,6 +1304,10 @@ public class MarketChartActivity extends AppCompatActivity {
 
     // 弹出明确结果提示。
     private void showTradeOutcomeDialog(String title, String message) {
+        if (!canPresentTradeUi()) {
+            tradeFlowRunning = false;
+            return;
+        }
         AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle(title)
                 .setMessage(safeTradeMessage(message))
@@ -1288,7 +1319,26 @@ public class MarketChartActivity extends AppCompatActivity {
 
     // 轻量提示已成功收敛的交易结果。
     private void showTradeMessage(String message) {
+        if (!canPresentTradeUi()) {
+            tradeFlowRunning = false;
+            return;
+        }
         Toast.makeText(this, safeTradeMessage(message), Toast.LENGTH_SHORT).show();
+    }
+
+    private boolean canPresentTradeUi() {
+        return !isFinishing() && !isDestroyed() && binding != null;
+    }
+
+    private void cancelTradeTasks() {
+        if (tradePrepareTask != null) {
+            tradePrepareTask.cancel(true);
+            tradePrepareTask = null;
+        }
+        if (tradeSubmitTask != null) {
+            tradeSubmitTask.cancel(true);
+            tradeSubmitTask = null;
+        }
     }
 
     // 统一把交易相关弹窗收口到当前主题面板，避免标题和按钮区域透出底层页面。
@@ -1973,6 +2023,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     }
                     boolean followingLatestViewport = shouldFollowLatestViewportOnRefresh();
                     MarketChartDisplayHelper.DisplayUpdate displayUpdate = MarketChartDisplayHelper.buildDisplayUpdate(
+                            selectedSymbol,
                             reqInterval == null ? "" : reqInterval.key,
                             refreshSeed,
                             finalProcessed,
@@ -3193,6 +3244,7 @@ public class MarketChartActivity extends AppCompatActivity {
                 : accountStatsPreloadManager.getLatestCache();
         AccountSnapshot snapshot = (!sessionActive || cache == null) ? null : cache.getSnapshot();
         if (!sessionActive) {
+            clearStoredChartOverlaySnapshot();
             clearAccountAnnotationsOverlay();
             return;
         }
@@ -3240,11 +3292,14 @@ public class MarketChartActivity extends AppCompatActivity {
             return null;
         }
         if (cache != null && cache.getSnapshot() != null) {
+            syncStoredChartOverlayIdentity(cache.getAccount(), cache.getServer());
             return cache.getSnapshot();
         }
-        if (storedChartOverlaySnapshot != null) {
+        if (storedChartOverlaySnapshot != null && matchesStoredChartOverlayIdentity(resolveActiveSessionAccount(),
+                resolveActiveSessionServer())) {
             return storedChartOverlaySnapshot;
         }
+        clearStoredChartOverlaySnapshot();
         scheduleStoredChartOverlayRestore();
         return null;
     }
@@ -3261,6 +3316,9 @@ public class MarketChartActivity extends AppCompatActivity {
             try {
                 AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository.loadStoredSnapshot();
                 if (!hasStoredChartOverlaySnapshot(storedSnapshot)) {
+                    return;
+                }
+                if (!matchesActiveSessionIdentity(storedSnapshot.getAccount(), storedSnapshot.getServer())) {
                     return;
                 }
                 AccountSnapshot snapshot = toAccountSnapshot(storedSnapshot);
@@ -3284,7 +3342,7 @@ public class MarketChartActivity extends AppCompatActivity {
         if (latestCache != null && latestCache.getSnapshot() != null) {
             return;
         }
-        storedChartOverlaySnapshot = snapshot;
+        syncStoredChartOverlaySnapshot(snapshot, resolveActiveSessionAccount(), resolveActiveSessionServer());
         applyChartOverlaySnapshot(snapshot, null);
     }
 
@@ -3337,6 +3395,7 @@ public class MarketChartActivity extends AppCompatActivity {
 
     // 当没有任何可用账户快照时，统一清空图表上的持仓与挂单标注。
     private void clearAccountAnnotationsOverlay() {
+        clearStoredChartOverlaySnapshot();
         lastAccountOverlaySignature = buildAccountOverlaySignature(
                 accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache()
         );
@@ -3353,8 +3412,71 @@ public class MarketChartActivity extends AppCompatActivity {
         long lastOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
         long cacheUpdatedAt = cache == null ? 0L : cache.getUpdatedAt();
         String historyRevision = cache == null ? "" : cache.getHistoryRevision();
+        String account = cache == null ? resolveActiveSessionAccount() : trimToEmpty(cache.getAccount());
+        String server = cache == null ? resolveActiveSessionServer() : trimToEmpty(cache.getServer());
         return selectedSymbol + "|" + loadedCandles.size() + "|" + firstOpenTime + "|" + lastOpenTime
-                + "|" + cacheUpdatedAt + "|" + historyRevision;
+                + "|" + cacheUpdatedAt + "|" + historyRevision + "|" + account + "|" + server;
+    }
+
+    private void syncStoredChartOverlaySnapshot(@Nullable AccountSnapshot snapshot,
+                                                @Nullable String account,
+                                                @Nullable String server) {
+        storedChartOverlaySnapshot = snapshot;
+        storedChartOverlayAccount = trimToEmpty(account);
+        storedChartOverlayServer = trimToEmpty(server);
+    }
+
+    private void clearStoredChartOverlaySnapshot() {
+        storedChartOverlaySnapshot = null;
+        storedChartOverlayAccount = "";
+        storedChartOverlayServer = "";
+    }
+
+    private void syncStoredChartOverlayIdentity(@Nullable String account, @Nullable String server) {
+        storedChartOverlayAccount = trimToEmpty(account);
+        storedChartOverlayServer = trimToEmpty(server);
+    }
+
+    private boolean matchesStoredChartOverlayIdentity(@Nullable String account, @Nullable String server) {
+        String candidateAccount = trimToEmpty(account);
+        String candidateServer = trimToEmpty(server);
+        if (candidateAccount.isEmpty() || candidateServer.isEmpty()) {
+            return false;
+        }
+        return candidateAccount.equalsIgnoreCase(storedChartOverlayAccount)
+                && candidateServer.equalsIgnoreCase(storedChartOverlayServer);
+    }
+
+    private boolean matchesActiveSessionIdentity(@Nullable String account, @Nullable String server) {
+        String expectedAccount = resolveActiveSessionAccount();
+        String expectedServer = resolveActiveSessionServer();
+        if (expectedAccount.isEmpty() || expectedServer.isEmpty()) {
+            return false;
+        }
+        return expectedAccount.equalsIgnoreCase(trimToEmpty(account))
+                && expectedServer.equalsIgnoreCase(trimToEmpty(server));
+    }
+
+    private String resolveActiveSessionAccount() {
+        if (secureSessionPrefs == null || !ConfigManager.getInstance(this).isAccountSessionActive()) {
+            return "";
+        }
+        return secureSessionPrefs.getActiveAccount() == null
+                ? ""
+                : trimToEmpty(secureSessionPrefs.getActiveAccount().getLogin());
+    }
+
+    private String resolveActiveSessionServer() {
+        if (secureSessionPrefs == null || !ConfigManager.getInstance(this).isAccountSessionActive()) {
+            return "";
+        }
+        return secureSessionPrefs.getActiveAccount() == null
+                ? ""
+                : trimToEmpty(secureSessionPrefs.getActiveAccount().getServer());
+    }
+
+    private String trimToEmpty(@Nullable String value) {
+        return value == null ? "" : value.trim();
     }
 
     // 图表页可见窗口仍有固定时间粒度缺口时，需要继续向左补历史，不能只看窗口长度。

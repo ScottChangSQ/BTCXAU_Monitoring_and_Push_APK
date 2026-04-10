@@ -599,7 +599,7 @@ public class FloatingWindowManager {
         launchIntent.putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_SYMBOL, targetSymbol.trim().toUpperCase());
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         context.startActivity(launchIntent);
     }
 
@@ -613,7 +613,7 @@ public class FloatingWindowManager {
         launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         context.startActivity(launchIntent);
     }
 

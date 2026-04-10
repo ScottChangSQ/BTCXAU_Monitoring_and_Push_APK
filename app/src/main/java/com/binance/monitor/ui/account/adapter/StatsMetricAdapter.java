@@ -13,7 +13,7 @@ import com.binance.monitor.databinding.ItemStatsMetricBinding;
 import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.runtime.account.MetricNameTranslator;
 import com.binance.monitor.ui.account.TradeStatsMetricStyleHelper;
-import com.binance.monitor.ui.account.model.AccountMetric;
+import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import android.text.SpannableString;

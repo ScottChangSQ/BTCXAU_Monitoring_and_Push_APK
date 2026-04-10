@@ -22,4 +22,18 @@ public class SecureSessionPrefsSourceTest {
         assertFalse(source.contains("object.put(\"isActive\", profile.isActive());"));
         assertFalse(source.contains("object.optBoolean(\"isActive\", false)"));
     }
+
+    @Test
+    public void secureSessionPrefsShouldExposeStorageFailureInsteadOfSilentlyDeletingCiphertext() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/security/SecureSessionPrefs.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private volatile String lastStorageError = \"\";"));
+        assertTrue(source.contains("public boolean hasStorageFailure() {"));
+        assertTrue(source.contains("public String getLastStorageError() {"));
+        assertFalse(source.contains("catch (Exception ignored)"));
+        assertFalse(source.contains("preferences.edit().remove(KEY_PAYLOAD).remove(KEY_IV).apply();"));
+    }
 }

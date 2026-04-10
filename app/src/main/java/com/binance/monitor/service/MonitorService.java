@@ -26,6 +26,7 @@ import com.binance.monitor.data.remote.AbnormalGatewayClient;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
 import com.binance.monitor.data.repository.MonitorRepository;
+import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.ConnectionStage;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
@@ -64,14 +65,6 @@ public class MonitorService extends Service {
             scheduleConnectionWatchdog(resolveHeartbeatDelayMs());
         }
     };
-    private final Runnable floatingRefreshRunnable = new Runnable() {
-        @Override
-        public void run() {
-            floatingRefreshScheduled = false;
-            lastFloatingRefreshAt = System.currentTimeMillis();
-            refreshFloatingWindow();
-        }
-    };
 
     private MonitorRepository repository;
     private LogManager logManager;
@@ -85,20 +78,18 @@ public class MonitorService extends Service {
     private GatewayV2StreamClient v2StreamClient;
     private AccountStatsPreloadManager accountStatsPreloadManager;
     private ExecutorService executorService;
+    private MonitorForegroundNotificationCoordinator foregroundNotificationCoordinator;
+    private MonitorFloatingCoordinator floatingCoordinator;
     private boolean pipelineStarted;
-    private boolean foregroundStarted;
-    private long lastFloatingRefreshAt;
-    private boolean floatingRefreshScheduled;
     private volatile boolean v2AccountHistoryRefreshInFlight;
     private final Object accountHistoryRefreshLock = new Object();
     private String pendingAccountHistoryRevision = "";
     private volatile ConnectionStage v2StreamStage = ConnectionStage.CONNECTING;
     private volatile boolean v2StreamConnected;
     private volatile long lastV2StreamMessageAt;
-    private final List<com.binance.monitor.ui.account.model.PositionItem> streamPositionSnapshot = new ArrayList<>();
+    private final List<PositionItem> streamPositionSnapshot = new ArrayList<>();
     private volatile boolean streamAccountSnapshotReceived;
     private volatile long streamPositionsUpdatedAt;
-    private String lastForegroundNotificationSignature = "";
     private String lastPublishedConnectionStatus = "";
     private final Set<String> dispatchedServerAlertIds = new HashSet<>();
 
@@ -118,6 +109,44 @@ public class MonitorService extends Service {
         v2StreamClient = new GatewayV2StreamClient(this);
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(this);
         executorService = Executors.newSingleThreadExecutor();
+        foregroundNotificationCoordinator = new MonitorForegroundNotificationCoordinator(notificationHelper, repository);
+        floatingCoordinator = new MonitorFloatingCoordinator(
+                mainHandler,
+                floatingWindowManager,
+                configManager,
+                repository,
+                new MonitorFloatingCoordinator.DataSource() {
+                    @Override
+                    public AccountStatsPreloadManager.Cache getLatestAccountCache() {
+                        return accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache();
+                    }
+
+                    @Override
+                    public List<PositionItem> copyStreamPositions() {
+                        return copyStreamPositionSnapshot();
+                    }
+
+                    @Override
+                    public boolean hasStreamAccountSnapshot() {
+                        return streamAccountSnapshotReceived;
+                    }
+
+                    @Override
+                    public long getStreamPositionsUpdatedAt() {
+                        return streamPositionsUpdatedAt;
+                    }
+
+                    @Override
+                    public ConnectionStage getCurrentConnectionStage() {
+                        return MonitorService.this.getCurrentConnectionStage();
+                    }
+
+                    @Override
+                    public String getCurrentConnectionStatus() {
+                        return MonitorService.this.getCurrentConnectionStatus();
+                    }
+                }
+        );
         synchronized (dispatchedServerAlertIds) {
             dispatchedServerAlertIds.clear();
             if (abnormalAlertDispatchStore != null) {
@@ -128,7 +157,7 @@ public class MonitorService extends Service {
         repository.setMonitoringEnabled(true);
         logManager.info("服务初始化完成");
         logResolvedGatewayAddresses();
-        applyFloatingPreferences();
+        floatingCoordinator.applyPreferences();
     }
 
     @Override
@@ -137,7 +166,7 @@ public class MonitorService extends Service {
         if (action == null) {
             action = AppConstants.ACTION_BOOTSTRAP;
         }
-        ensureForeground();
+        foregroundNotificationCoordinator.ensureForeground(this::startForeground, getCurrentConnectionStatus());
         startPipelineIfNeeded();
         switch (action) {
             case AppConstants.ACTION_START_MONITORING:
@@ -149,21 +178,21 @@ public class MonitorService extends Service {
                 logManager.info("异常监控已停止，行情继续更新");
                 break;
             case AppConstants.ACTION_REFRESH_CONFIG:
-                applyFloatingPreferences();
+                floatingCoordinator.applyPreferences();
                 logResolvedGatewayAddresses();
                 syncAbnormalConfigAsync();
                 break;
             case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:
                 clearStreamAccountSnapshot();
-                requestFloatingWindowRefresh(true);
+                floatingCoordinator.requestRefresh(true);
                 break;
             case AppConstants.ACTION_BOOTSTRAP:
             default:
                 requestForegroundEntryRefresh();
                 break;
         }
-        refreshForegroundNotification();
-        requestFloatingWindowRefresh(true);
+        foregroundNotificationCoordinator.refreshNotification(getCurrentConnectionStatus());
+        floatingCoordinator.requestRefresh(true);
         return START_STICKY;
     }
 
@@ -183,58 +212,20 @@ public class MonitorService extends Service {
             executorService.shutdownNow();
         }
         mainHandler.removeCallbacksAndMessages(null);
-        if (floatingWindowManager != null) {
-            floatingWindowManager.hide();
-        }
         AppForegroundTracker.getInstance().removeListener(appForegroundListener);
-        foregroundStarted = false;
         serviceRunning = false;
-        notificationHelper.cancelServiceNotification();
+        if (floatingCoordinator != null) {
+            floatingCoordinator.onDestroy();
+        }
+        if (foregroundNotificationCoordinator != null) {
+            foregroundNotificationCoordinator.onDestroy();
+        }
         logManager.info("服务已销毁");
     }
 
     // 返回当前进程内监控服务是否已经创建完成，供入口页避免重复启动。
     public static boolean isServiceRunning() {
         return serviceRunning;
-    }
-
-    private void ensureForeground() {
-        if (notificationHelper == null || repository == null) {
-            return;
-        }
-        String connectionState = getCurrentConnectionStatus();
-        boolean monitoringEnabled = Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue());
-        if (foregroundStarted) {
-            refreshForegroundNotification();
-            return;
-        }
-        String signature = buildForegroundNotificationSignature(connectionState, monitoringEnabled);
-        startForeground(AppConstants.SERVICE_NOTIFICATION_ID,
-                notificationHelper.buildServiceNotification(connectionState, monitoringEnabled));
-        lastForegroundNotificationSignature = signature;
-        foregroundStarted = true;
-    }
-
-    // 刷新前台服务通知文案，保持 Android 认可的持续运行资格。
-    private void refreshForegroundNotification() {
-        if (!foregroundStarted || notificationHelper == null || repository == null) {
-            return;
-        }
-        String connectionState = getCurrentConnectionStatus();
-        boolean monitoringEnabled = Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue());
-        String signature = buildForegroundNotificationSignature(connectionState, monitoringEnabled);
-        if (signature.equals(lastForegroundNotificationSignature)) {
-            return;
-        }
-        notificationHelper.updateServiceNotification(connectionState, monitoringEnabled);
-        lastForegroundNotificationSignature = signature;
-    }
-
-    // 只把真正影响前台通知文案的字段纳入签名，避免重复 notify。
-    private String buildForegroundNotificationSignature(String connectionState, boolean monitoringEnabled) {
-        return (connectionState == null ? "" : connectionState.trim())
-                + "|"
-                + monitoringEnabled;
     }
 
     // 读取当前连接状态真值，优先使用服务内同步状态，避免 postValue 回读滞后。
@@ -287,14 +278,17 @@ public class MonitorService extends Service {
 
             @Override
             public void onMessage(GatewayV2StreamClient.StreamMessage message) {
-                mainHandler.post(() -> {
+                if (executorService == null) {
+                    return;
+                }
+                executorService.execute(() -> {
                     lastV2StreamMessageAt = System.currentTimeMillis();
                     try {
                         handleV2StreamMessage(message);
                     } catch (RuntimeException exception) {
                         logManager.warn("v2 stream payload invalid: " + exception.getMessage());
                     }
-                    updateConnectionStatus();
+                    mainHandler.post(MonitorService.this::updateConnectionStatus);
                 });
             }
 
@@ -333,7 +327,7 @@ public class MonitorService extends Service {
             applyAbnormalSnapshotFromStream(message.getPayload().optJSONObject("changes").optJSONObject("abnormal"));
         }
         if (plan.shouldRefreshFloating()) {
-            requestFloatingWindowRefresh(false);
+            floatingCoordinator.requestRefresh(false);
         }
     }
 
@@ -372,7 +366,7 @@ public class MonitorService extends Service {
                     v2AccountHistoryRefreshInFlight = false;
                 }
                 mainHandler.post(() -> {
-                    requestFloatingWindowRefresh(false);
+                    floatingCoordinator.requestRefresh(false);
                     if (!nextHistoryRevision.isEmpty() && !nextHistoryRevision.equals(safeHistoryRevision)) {
                         requestAccountHistoryRefreshFromV2(nextHistoryRevision);
                     }
@@ -387,6 +381,13 @@ public class MonitorService extends Service {
             streamPositionSnapshot.clear();
             streamAccountSnapshotReceived = false;
             streamPositionsUpdatedAt = 0L;
+        }
+    }
+
+    // 复制一份当前 stream 持仓快照，避免悬浮窗拼装直接暴露内部可变列表。
+    private List<PositionItem> copyStreamPositionSnapshot() {
+        synchronized (streamPositionSnapshot) {
+            return new ArrayList<>(streamPositionSnapshot);
         }
     }
 
@@ -461,7 +462,7 @@ public class MonitorService extends Service {
         if (positions == null) {
             return;
         }
-        List<com.binance.monitor.ui.account.model.PositionItem> mappedPositions = new ArrayList<>();
+        List<com.binance.monitor.domain.account.model.PositionItem> mappedPositions = new ArrayList<>();
         for (int i = 0; i < positions.length(); i++) {
             JSONObject item = positions.optJSONObject(i);
             if (item == null) {
@@ -469,7 +470,7 @@ public class MonitorService extends Service {
             }
             String tradeSymbol = requireCanonicalTradeSymbol(item, "v2 stream position");
             String productName = requireCanonicalProductName(item, tradeSymbol, "v2 stream position");
-            mappedPositions.add(new com.binance.monitor.ui.account.model.PositionItem(
+            mappedPositions.add(new com.binance.monitor.domain.account.model.PositionItem(
                     productName,
                     tradeSymbol,
                     optString(item, "side", ""),
@@ -494,7 +495,7 @@ public class MonitorService extends Service {
         }
         synchronized (streamPositionSnapshot) {
             streamPositionSnapshot.clear();
-            for (com.binance.monitor.ui.account.model.PositionItem item : mappedPositions) {
+            for (com.binance.monitor.domain.account.model.PositionItem item : mappedPositions) {
                 if (item == null || item.getCode() == null || item.getCode().trim().isEmpty()) {
                     continue;
                 }
@@ -518,7 +519,7 @@ public class MonitorService extends Service {
             } catch (Exception exception) {
                 logManager.warn("v2 stream 账户运行态应用失败: " + exception.getMessage());
             } finally {
-                mainHandler.post(() -> requestFloatingWindowRefresh(false));
+                mainHandler.post(() -> floatingCoordinator.requestRefresh(false));
             }
         });
     }
@@ -540,7 +541,7 @@ public class MonitorService extends Service {
     }
 
     private void fetchBootstrapData() {
-        requestFloatingWindowRefresh(true);
+        floatingCoordinator.requestRefresh(true);
     }
 
     // 把当前本地阈值配置推到网关端，保证服务端判断与设置页一致。
@@ -581,7 +582,7 @@ public class MonitorService extends Service {
         }
         boolean streamHealthy = isV2StreamHealthy(System.currentTimeMillis());
         if (streamHealthy) {
-            requestFloatingWindowRefresh(false);
+            floatingCoordinator.requestRefresh(false);
             updateConnectionStatus();
             return;
         }
@@ -607,7 +608,7 @@ public class MonitorService extends Service {
 
     // 统一处理“新进入 APP / 后台回前台”的一次性刷新，避免不同入口刷新不一致。
     private void requestForegroundEntryRefresh() {
-        requestFloatingWindowRefresh(true);
+        floatingCoordinator.requestRefresh(true);
     }
 
     // 安排下一次连接心跳检查。
@@ -759,8 +760,8 @@ public class MonitorService extends Service {
         String currentStatus = getCurrentConnectionStatus();
         if (!status.equals(currentStatus)) {
             publishConnectionStatus(status);
-            refreshForegroundNotification();
-            requestFloatingWindowRefresh(false);
+            foregroundNotificationCoordinator.refreshNotification(status);
+            floatingCoordinator.requestRefresh(false);
         }
     }
 
@@ -775,52 +776,9 @@ public class MonitorService extends Service {
         );
     }
 
-    private void applyFloatingPreferences() {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post(this::applyFloatingPreferences);
-            return;
-        }
-        floatingWindowManager.applyPreferences(
-                configManager.isFloatingEnabled(),
-                configManager.getFloatingAlpha(),
-                configManager.isShowBtc(),
-                configManager.isShowXau()
-        );
-        requestFloatingWindowRefresh(true);
-    }
-
-    private void requestFloatingWindowRefresh(boolean immediate) {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post(() -> requestFloatingWindowRefresh(immediate));
-            return;
-        }
-        long now = System.currentTimeMillis();
-        long elapsed = now - lastFloatingRefreshAt;
-        long throttleMs = resolveFloatingRefreshThrottleMs();
-        if (immediate || elapsed >= throttleMs) {
-            mainHandler.removeCallbacks(floatingRefreshRunnable);
-            floatingRefreshScheduled = false;
-            lastFloatingRefreshAt = now;
-            refreshFloatingWindow();
-            return;
-        }
-        if (floatingRefreshScheduled) {
-            return;
-        }
-        long delay = Math.max(120L, throttleMs - elapsed);
-        floatingRefreshScheduled = true;
-        mainHandler.postDelayed(floatingRefreshRunnable, delay);
-    }
-
     // 读取当前连接心跳节奏。
     private long resolveHeartbeatDelayMs() {
         return MonitorRuntimePolicyHelper.resolveHeartbeatDelayMs(
-                AppForegroundTracker.getInstance().isForeground());
-    }
-
-    // 后台时放慢悬浮窗刷新，减少不必要的主线程绘制。
-    private long resolveFloatingRefreshThrottleMs() {
-        return MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(
                 AppForegroundTracker.getInstance().isForeground());
     }
 
@@ -844,66 +802,6 @@ public class MonitorService extends Service {
                 now,
                 AppConstants.SOCKET_STALE_TIMEOUT_MS
         );
-    }
-
-    private void refreshFloatingWindow() {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post(this::refreshFloatingWindow);
-            return;
-        }
-        FloatingWindowSnapshot snapshot = buildFloatingSnapshot();
-        for (FloatingSymbolCardData card : snapshot.getCards()) {
-            if (card == null) {
-                continue;
-            }
-            ChainLatencyTracer.markFloatingUpdate(card.getCode(), card.getUpdatedAt());
-        }
-        floatingWindowManager.update(snapshot);
-    }
-
-    // 组装一份统一悬浮窗快照，确保所有字段在同一次 UI 刷新中一起变化。
-    private FloatingWindowSnapshot buildFloatingSnapshot() {
-        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
-                ? null
-                : accountStatsPreloadManager.getLatestCache();
-        List<com.binance.monitor.ui.account.model.PositionItem> positions = new ArrayList<>();
-        synchronized (streamPositionSnapshot) {
-            if (!streamPositionSnapshot.isEmpty()) {
-                positions.addAll(streamPositionSnapshot);
-            }
-        }
-        if (!streamAccountSnapshotReceived && positions.isEmpty()) {
-            positions = cache == null || cache.getSnapshot() == null || cache.getSnapshot().getPositions() == null
-                    ? new ArrayList<>()
-                    : cache.getSnapshot().getPositions();
-        }
-        List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
-                positions,
-                repository.getDisplayOverviewKlineSnapshot(),
-                repository.getDisplayPriceSnapshot(),
-                configManager.isShowBtc(),
-                configManager.isShowXau()
-        );
-        return new FloatingWindowSnapshot(
-                getCurrentConnectionStage(),
-                getCurrentConnectionStatus(),
-                Math.max(resolveFloatingUpdatedAt(cards), streamPositionsUpdatedAt),
-                cards
-        );
-    }
-
-    // 从产品卡片里挑出本轮悬浮窗的统一刷新时间。
-    private long resolveFloatingUpdatedAt(List<FloatingSymbolCardData> cards) {
-        long updatedAt = 0L;
-        if (cards == null || cards.isEmpty()) {
-            return updatedAt;
-        }
-        for (FloatingSymbolCardData card : cards) {
-            if (card != null) {
-                updatedAt = Math.max(updatedAt, card.getUpdatedAt());
-            }
-        }
-        return updatedAt;
     }
 
     // 读取字符串字段，空值时使用默认值。

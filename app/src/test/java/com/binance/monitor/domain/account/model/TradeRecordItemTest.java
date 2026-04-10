@@ -1,4 +1,4 @@
-package com.binance.monitor.ui.account.model;
+package com.binance.monitor.domain.account.model;
 
 import static org.junit.Assert.assertEquals;
 

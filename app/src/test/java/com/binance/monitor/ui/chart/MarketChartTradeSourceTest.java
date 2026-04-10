@@ -112,4 +112,21 @@ public class MarketChartTradeSourceTest {
 
         assertTrue(source.contains("if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {"));
     }
+
+    @Test
+    public void tradeCallbacksShouldGuardLifecycleAndCancelOutstandingTasks() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private Future<?> tradePrepareTask;"));
+        assertTrue(source.contains("private Future<?> tradeSubmitTask;"));
+        assertTrue(source.contains("private boolean canPresentTradeUi() {"));
+        assertTrue(source.contains("tradePrepareTask = ioExecutor.submit(() -> {"));
+        assertTrue(source.contains("tradeSubmitTask = ioExecutor.submit(() -> {"));
+        assertTrue(source.contains("protected void onPause() {\n        stopAutoRefresh();"));
+        assertTrue(source.contains("cancelTradeTasks();"));
+        assertTrue(source.contains("if (!canPresentTradeUi()) {\n            tradeFlowRunning = false;\n            return;\n        }"));
+    }
 }

@@ -1,4 +1,7 @@
-package com.binance.monitor.ui.account.model;
+/*
+ * 账户全量快照模型，统一承载指标、曲线、持仓、挂单和交易记录。
+ */
+package com.binance.monitor.domain.account.model;
 
 import java.util.List;
 

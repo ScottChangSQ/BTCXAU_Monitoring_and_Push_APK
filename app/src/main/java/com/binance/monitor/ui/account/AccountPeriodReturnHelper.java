@@ -6,7 +6,7 @@ package com.binance.monitor.ui.account;
 
 import androidx.annotation.Nullable;
 
-import com.binance.monitor.ui.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.CurvePoint;
 
 import java.util.List;
 

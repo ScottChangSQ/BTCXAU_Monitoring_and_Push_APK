@@ -12,7 +12,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemAccountKvBinding;
 import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.runtime.account.MetricNameTranslator;
-import com.binance.monitor.ui.account.model.AccountMetric;
+import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;

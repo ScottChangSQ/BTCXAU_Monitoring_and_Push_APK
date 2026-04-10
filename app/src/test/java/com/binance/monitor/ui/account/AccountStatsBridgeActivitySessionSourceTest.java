@@ -137,6 +137,21 @@ public class AccountStatsBridgeActivitySessionSourceTest {
     }
 
     @Test
+    public void syncingStateShouldExposePreciseMessageAndOfflineSnapshotShouldNotForceFailed() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        );
+
+        assertTrue("syncing 状态应优先展示状态机里的精确文案，而不是永远只显示“正在同步”",
+                source.contains("case SYNCING:\n                return trim(snapshot.getMessage()).isEmpty() ? \"正在同步\" : trim(snapshot.getMessage());"));
+        assertTrue("网关离线但会话仍待同步时，应切到等待网关同步文案，而不是直接判失败",
+                source.contains("remoteSessionCoordinator.markAwaitingGatewaySync(\"会话已受理，等待网关上线\")"));
+        assertFalse("离线历史快照不应继续直接把等待同步态打成失败",
+                source.contains("&& \"登录校验失败\".equals(finalSource)) {\n                    remoteSessionCoordinator.markSyncFailed(finalError);"));
+    }
+
+    @Test
     public void dispatchTouchEventShouldNotStealLoginDialogTouches() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",

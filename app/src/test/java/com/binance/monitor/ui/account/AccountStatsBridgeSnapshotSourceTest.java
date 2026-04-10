@@ -154,4 +154,17 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertTrue(!source.contains("basePositions = new ArrayList<>(connectedPositionCache);"));
         assertTrue(!source.contains("basePendingOrders = new ArrayList<>(connectedPendingCache);"));
     }
+
+    @Test
+    public void requestSnapshotShouldAlwaysReleaseLoadingStateInFinally() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("ioExecutor.execute(() -> {\n            try {"));
+        assertTrue(source.contains("} catch (Exception exception) {"));
+        assertTrue(source.contains("} finally {\n                runOnUiThread(() -> {"));
+        assertTrue(source.contains("loading = false;"));
+    }
 }

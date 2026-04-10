@@ -6,7 +6,7 @@ package com.binance.monitor.ui.account;
 
 import androidx.annotation.NonNull;
 
-import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 
 import java.util.ArrayList;
 import java.util.Calendar;

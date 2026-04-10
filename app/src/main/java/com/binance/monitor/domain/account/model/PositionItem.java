@@ -1,4 +1,7 @@
-package com.binance.monitor.ui.account.model;
+/*
+ * 持仓与挂单通用模型，供账户页、图表页、悬浮窗和持久层复用。
+ */
+package com.binance.monitor.domain.account.model;
 
 public class PositionItem {
     private final String productName;

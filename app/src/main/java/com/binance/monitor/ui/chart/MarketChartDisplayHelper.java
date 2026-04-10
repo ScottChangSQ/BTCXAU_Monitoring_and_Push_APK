@@ -153,18 +153,22 @@ final class MarketChartDisplayHelper {
     }
 
     // 统一生成一次网络回包后的显示计划，避免 Activity 自己散落预览校验、变化判断和跟随最新逻辑。
-    static DisplayUpdate buildDisplayUpdate(@Nullable String intervalKey,
+    static DisplayUpdate buildDisplayUpdate(@Nullable String targetSymbol,
+                                            @Nullable String intervalKey,
                                             @Nullable List<CandleEntry> preview,
                                             @Nullable List<CandleEntry> fetched,
                                             int limit,
                                             @Nullable List<CandleEntry> currentVisible,
                                             boolean autoRefresh,
                                             boolean followingLatestViewport) {
-        List<CandleEntry> safePreview = isSeriesCompatibleForInterval(intervalKey, preview)
-                ? preview
+        List<CandleEntry> filteredPreview = filterSeriesBySymbol(targetSymbol, preview);
+        List<CandleEntry> filteredFetched = filterSeriesBySymbol(targetSymbol, fetched);
+        List<CandleEntry> filteredVisible = filterSeriesBySymbol(targetSymbol, currentVisible);
+        List<CandleEntry> safePreview = isSeriesCompatibleForInterval(intervalKey, filteredPreview)
+                ? filteredPreview
                 : null;
-        List<CandleEntry> toDisplay = mergeDisplaySeriesKeepingHistory(safePreview, fetched, limit);
-        boolean candlesChanged = !isSameSeries(currentVisible, toDisplay);
+        List<CandleEntry> toDisplay = mergeDisplaySeriesKeepingHistory(safePreview, filteredFetched, limit);
+        boolean candlesChanged = !isSameSeries(filteredVisible, toDisplay);
         boolean shouldFollowLatest = autoRefresh && followingLatestViewport;
         return new DisplayUpdate(toDisplay, candlesChanged, shouldFollowLatest);
     }
@@ -181,6 +185,28 @@ final class MarketChartDisplayHelper {
             }
             target.put(item.getOpenTime(), item);
         }
+    }
+
+    // 图表只应展示当前选中品种的 K 线；混入其他品种时必须先在输入侧剔除。
+    private static List<CandleEntry> filterSeriesBySymbol(@Nullable String targetSymbol,
+                                                          @Nullable List<CandleEntry> source) {
+        if (source == null || source.isEmpty()) {
+            return source == null ? null : new ArrayList<>();
+        }
+        String normalizedTarget = normalizeSymbol(targetSymbol);
+        if (normalizedTarget.isEmpty()) {
+            return new ArrayList<>(source);
+        }
+        List<CandleEntry> filtered = new ArrayList<>();
+        for (CandleEntry item : source) {
+            if (item == null) {
+                continue;
+            }
+            if (normalizedTarget.equals(normalizeSymbol(item.getSymbol()))) {
+                filtered.add(item);
+            }
+        }
+        return filtered;
     }
 
     // 给不同周期定义一个“最小合理间距”，用于识别明显串周期的旧缓存。
@@ -250,6 +276,7 @@ final class MarketChartDisplayHelper {
                 return false;
             }
             if (leftItem.getOpenTime() != rightItem.getOpenTime()
+                    || !normalizeSymbol(leftItem.getSymbol()).equals(normalizeSymbol(rightItem.getSymbol()))
                     || leftItem.getCloseTime() != rightItem.getCloseTime()
                     || Double.compare(leftItem.getOpen(), rightItem.getOpen()) != 0
                     || Double.compare(leftItem.getHigh(), rightItem.getHigh()) != 0
@@ -273,5 +300,9 @@ final class MarketChartDisplayHelper {
             return "1M";
         }
         return trimmed.toLowerCase();
+    }
+
+    private static String normalizeSymbol(@Nullable String symbol) {
+        return symbol == null ? "" : symbol.trim().toUpperCase();
     }
 }

@@ -90,6 +90,7 @@ public class FloatingWindowManagerSourceTest {
         assertTrue(source.contains("Intent.FLAG_ACTIVITY_NEW_TASK"));
         assertTrue(source.contains("cardView.setOnClickListener(v -> openChartForCard(card));"));
         assertFalse(source.contains("new Intent(context, MainActivity.class)"));
+        assertFalse(source.contains("Intent.FLAG_ACTIVITY_REORDER_TO_FRONT"));
     }
 
     @Test

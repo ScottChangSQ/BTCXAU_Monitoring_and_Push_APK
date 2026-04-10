@@ -7,8 +7,8 @@ package com.binance.monitor.ui.account;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.binance.monitor.ui.account.model.CurvePoint;
-import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.domain.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 
 import java.util.Calendar;
 import java.util.List;

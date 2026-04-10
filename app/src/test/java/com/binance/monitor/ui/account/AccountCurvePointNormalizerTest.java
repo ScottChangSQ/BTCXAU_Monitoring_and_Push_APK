@@ -6,7 +6,7 @@ package com.binance.monitor.ui.account;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import com.binance.monitor.ui.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.CurvePoint;
 
 import org.junit.Test;
 

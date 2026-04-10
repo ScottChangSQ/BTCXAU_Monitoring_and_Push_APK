@@ -1,4 +1,7 @@
-package com.binance.monitor.ui.account.model;
+/*
+ * 账户指标键值模型，供账户页、运行时缓存和本地持久层复用。
+ */
+package com.binance.monitor.domain.account.model;
 
 public class AccountMetric {
     private final String name;

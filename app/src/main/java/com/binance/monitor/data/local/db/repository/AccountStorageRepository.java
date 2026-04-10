@@ -14,10 +14,10 @@ import com.binance.monitor.data.local.db.entity.AccountSnapshotMetaEntity;
 import com.binance.monitor.data.local.db.entity.PendingOrderSnapshotEntity;
 import com.binance.monitor.data.local.db.entity.PositionSnapshotEntity;
 import com.binance.monitor.data.local.db.entity.TradeHistoryEntity;
-import com.binance.monitor.ui.account.model.AccountMetric;
-import com.binance.monitor.ui.account.model.CurvePoint;
-import com.binance.monitor.ui.account.model.PositionItem;
-import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.domain.account.model.AccountMetric;
+import com.binance.monitor.domain.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 
 import org.json.JSONArray;
 import org.json.JSONObject;

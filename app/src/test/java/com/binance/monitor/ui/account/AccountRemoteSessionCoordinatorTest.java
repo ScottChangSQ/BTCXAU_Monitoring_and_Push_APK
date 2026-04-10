@@ -14,6 +14,7 @@ import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
 import com.binance.monitor.data.model.v2.session.SessionReceipt;
 import com.binance.monitor.data.model.v2.session.SessionStatusPayload;
 import com.binance.monitor.security.SessionCredentialEncryptor;
+import com.binance.monitor.security.SessionSummaryStore;
 
 import org.junit.Test;
 
@@ -166,7 +167,7 @@ public class AccountRemoteSessionCoordinatorTest {
     }
 
     @Test
-    public void switchAcceptedShouldFailWhenStatusFetchFails() {
+    public void switchAcceptedShouldKeepAwaitingSyncWhenStatusFetchFails() throws Exception {
         FakeCacheResetter resetter = new FakeCacheResetter();
         FakeSessionStore store = new FakeSessionStore();
         store.savedAccounts = Collections.singletonList(
@@ -195,24 +196,19 @@ public class AccountRemoteSessionCoordinatorTest {
                 () -> "req-local"
         );
 
-        boolean thrown = false;
-        try {
-            coordinator.switchSavedAccount("acc-7");
-        } catch (IllegalStateException expected) {
-            thrown = true;
-            assertEquals("会话状态确认失败", expected.getMessage());
-        } catch (Exception other) {
-            throw new AssertionError("unexpected exception", other);
-        }
+        AccountRemoteSessionCoordinator.SessionActionResult result = coordinator.switchSavedAccount("acc-7");
 
-        assertTrue(thrown);
-        assertFalse(coordinator.isAwaitingSync());
-        assertFalse(resetter.accountSnapshotCleared);
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
+        assertEquals("acc-7", result.getActiveAccount().getProfileId());
+        assertEquals("76543210", coordinator.getPendingLogin());
+        assertEquals("IC", coordinator.getPendingServer());
+        assertTrue(coordinator.isAwaitingSync());
+        assertTrue(resetter.accountSnapshotCleared);
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.SYNCING, machine.snapshot().getState());
+        assertEquals("会话已受理，等待网关同步确认", machine.snapshot().getMessage());
     }
 
     @Test
-    public void switchAcceptedShouldFailWhenStatusPayloadIsMissing() {
+    public void switchAcceptedShouldKeepAwaitingSyncWhenStatusPayloadIsMissing() throws Exception {
         FakeCacheResetter resetter = new FakeCacheResetter();
         FakeSessionStore store = new FakeSessionStore();
         AccountSessionStateMachine machine = new AccountSessionStateMachine();
@@ -238,24 +234,16 @@ public class AccountRemoteSessionCoordinatorTest {
                 () -> "req-local"
         );
 
-        boolean thrown = false;
-        try {
-            coordinator.switchSavedAccount("acc-9");
-        } catch (IllegalStateException expected) {
-            thrown = true;
-            assertEquals("会话状态缺失", expected.getMessage());
-        } catch (Exception other) {
-            throw new AssertionError("unexpected exception", other);
-        }
+        AccountRemoteSessionCoordinator.SessionActionResult result = coordinator.switchSavedAccount("acc-9");
 
-        assertTrue(thrown);
-        assertFalse(coordinator.isAwaitingSync());
-        assertFalse(resetter.accountSnapshotCleared);
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
+        assertEquals("acc-9", result.getActiveAccount().getProfileId());
+        assertTrue(coordinator.isAwaitingSync());
+        assertTrue(resetter.accountSnapshotCleared);
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.SYNCING, machine.snapshot().getState());
     }
 
     @Test
-    public void switchAcceptedShouldFailWhenStatusResponseIsNotOk() {
+    public void switchAcceptedShouldKeepAwaitingSyncWhenStatusResponseIsNotOk() throws Exception {
         FakeCacheResetter resetter = new FakeCacheResetter();
         FakeSessionStore store = new FakeSessionStore();
         AccountSessionStateMachine machine = new AccountSessionStateMachine();
@@ -288,20 +276,12 @@ public class AccountRemoteSessionCoordinatorTest {
                 () -> "req-local"
         );
 
-        boolean thrown = false;
-        try {
-            coordinator.switchSavedAccount("acc-10");
-        } catch (IllegalStateException expected) {
-            thrown = true;
-            assertEquals("会话状态缺失", expected.getMessage());
-        } catch (Exception other) {
-            throw new AssertionError("unexpected exception", other);
-        }
+        AccountRemoteSessionCoordinator.SessionActionResult result = coordinator.switchSavedAccount("acc-10");
 
-        assertTrue(thrown);
-        assertFalse(coordinator.isAwaitingSync());
-        assertFalse(resetter.accountSnapshotCleared);
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FAILED, machine.snapshot().getState());
+        assertEquals("acc-10", result.getActiveAccount().getProfileId());
+        assertTrue(coordinator.isAwaitingSync());
+        assertTrue(resetter.accountSnapshotCleared);
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.SYNCING, machine.snapshot().getState());
     }
 
     @Test
@@ -595,7 +575,7 @@ public class AccountRemoteSessionCoordinatorTest {
         }
     }
 
-    private static final class FakeSessionStore implements AccountRemoteSessionCoordinator.SessionSummaryStore {
+    private static final class FakeSessionStore implements SessionSummaryStore {
         private RemoteAccountProfile activeAccount;
         private List<RemoteAccountProfile> savedAccounts = Collections.emptyList();
         private boolean active;

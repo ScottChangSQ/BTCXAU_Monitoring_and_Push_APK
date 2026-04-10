@@ -17,7 +17,7 @@ import androidx.core.content.ContextCompat;
 
 import com.binance.monitor.R;
 import com.binance.monitor.ui.theme.UiPaletteManager;
-import com.binance.monitor.ui.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.util.FormatUtils;
 
 import java.text.SimpleDateFormat;

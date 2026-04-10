@@ -1,4 +1,7 @@
-package com.binance.monitor.ui.account.model;
+/*
+ * 成交历史模型，统一承载账户历史与图表交易标注数据。
+ */
+package com.binance.monitor.domain.account.model;
 
 public class TradeRecordItem {
     private final long timestamp;

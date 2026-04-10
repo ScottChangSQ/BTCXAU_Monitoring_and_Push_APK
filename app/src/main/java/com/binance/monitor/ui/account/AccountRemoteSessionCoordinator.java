@@ -12,6 +12,7 @@ import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
 import com.binance.monitor.data.model.v2.session.SessionReceipt;
 import com.binance.monitor.data.model.v2.session.SessionStatusPayload;
 import com.binance.monitor.security.SessionCredentialEncryptor;
+import com.binance.monitor.security.SessionSummaryStore;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,17 +54,6 @@ public final class AccountRemoteSessionCoordinator {
         void clearPositionExpandedState();
 
         void clearTradeExpandedState();
-    }
-
-    public interface SessionSummaryStore {
-        void saveSession(@Nullable RemoteAccountProfile activeAccount,
-                         @NonNull List<RemoteAccountProfile> savedAccounts,
-                         boolean active);
-
-        void clearSession();
-
-        @NonNull
-        List<RemoteAccountProfile> getSavedAccountsSnapshot();
     }
 
     public interface RequestIdGenerator {
@@ -181,7 +171,13 @@ public final class AccountRemoteSessionCoordinator {
         );
         stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SUBMITTING, "正在提交登录");
         SessionReceipt receipt = sessionGateway.login(envelope, request.isRemember());
-        return handleAcceptedReceipt(receipt, "正在同步账户数据");
+        return handleAcceptedReceipt(
+                receipt,
+                "正在同步账户数据",
+                "",
+                request.getLogin(),
+                request.getServer()
+        );
     }
 
     // 切换到服务器已保存账号，成功后立即清理旧缓存并进入同步中。
@@ -192,7 +188,7 @@ public final class AccountRemoteSessionCoordinator {
         }
         stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SWITCHING, "正在切换账户");
         SessionReceipt receipt = sessionGateway.switchAccount(safeProfileId, requestIdGenerator.nextRequestId());
-        return handleAcceptedReceipt(receipt, "正在同步账户数据");
+        return handleAcceptedReceipt(receipt, "正在同步账户数据", safeProfileId, "", "");
     }
 
     // 退出当前远程账号，并同步清理本地缓存和状态。
@@ -240,6 +236,14 @@ public final class AccountRemoteSessionCoordinator {
         stateMachine.markFailed(message == null ? "账户同步失败" : message);
     }
 
+    // 当网关暂时离线但服务器已经受理时，继续保留等待同步态，只更新提示文案。
+    public void markAwaitingGatewaySync(@Nullable String message) {
+        if (!awaitingSync) {
+            return;
+        }
+        stateMachine.markSyncing(pendingProfileId, message == null ? "会话已受理，等待网关上线" : message);
+    }
+
     // 返回当前是否仍在等待新快照。
     public boolean isAwaitingSync() {
         return awaitingSync;
@@ -261,7 +265,10 @@ public final class AccountRemoteSessionCoordinator {
     }
 
     private SessionActionResult handleAcceptedReceipt(@Nullable SessionReceipt receipt,
-                                                      @NonNull String syncingMessage) throws Exception {
+                                                      @NonNull String syncingMessage,
+                                                      @Nullable String profileIdHint,
+                                                      @Nullable String loginHint,
+                                                      @Nullable String serverHint) throws Exception {
         if (receipt == null || !receipt.isOk()) {
             stateMachine.markFailed(resolveFailureMessage(receipt, "会话请求失败"));
             return new SessionActionResult(receipt, null, Collections.emptyList());
@@ -270,14 +277,22 @@ public final class AccountRemoteSessionCoordinator {
         try {
             status = sessionGateway.fetchStatus();
         } catch (Exception fetchError) {
-            awaitingSync = false;
-            stateMachine.markFailed("会话状态确认失败");
-            throw new IllegalStateException("会话状态确认失败", fetchError);
+            return enterAwaitingSyncWithoutStatus(
+                    receipt,
+                    "会话已受理，等待网关同步确认",
+                    profileIdHint,
+                    loginHint,
+                    serverHint
+            );
         }
         if (status == null || !status.isOk()) {
-            awaitingSync = false;
-            stateMachine.markFailed("会话状态缺失");
-            throw new IllegalStateException("会话状态缺失");
+            return enterAwaitingSyncWithoutStatus(
+                    receipt,
+                    "会话已受理，等待网关同步确认",
+                    profileIdHint,
+                    loginHint,
+                    serverHint
+            );
         }
         List<RemoteAccountProfile> savedAccounts = new ArrayList<>(status.getSavedAccounts());
         RemoteAccountProfile activeAccount;
@@ -293,11 +308,42 @@ public final class AccountRemoteSessionCoordinator {
             stateMachine.markFailed("会话账号摘要缺失");
             throw new IllegalStateException("会话账号摘要缺失");
         }
+        return enterAwaitingSync(receipt, activeAccount, savedAccounts, syncingMessage);
+    }
+
+    private SessionActionResult enterAwaitingSyncWithoutStatus(@Nullable SessionReceipt receipt,
+                                                               @NonNull String syncingMessage,
+                                                               @Nullable String profileIdHint,
+                                                               @Nullable String loginHint,
+                                                               @Nullable String serverHint) {
+        RemoteAccountProfile pendingAccount = resolvePendingActiveAccount(
+                receipt,
+                profileIdHint,
+                loginHint,
+                serverHint,
+                sessionSummaryStore.getSavedAccountsSnapshot()
+        );
+        if (!isCanonicalActiveAccountComplete(pendingAccount)) {
+            awaitingSync = false;
+            stateMachine.markFailed("会话账号摘要缺失");
+            throw new IllegalStateException("会话账号摘要缺失");
+        }
+        List<RemoteAccountProfile> savedAccounts = hydrateSavedAccountsSnapshot(
+                pendingAccount,
+                sessionSummaryStore.getSavedAccountsSnapshot()
+        );
+        return enterAwaitingSync(receipt, pendingAccount, savedAccounts, syncingMessage);
+    }
+
+    private SessionActionResult enterAwaitingSync(@Nullable SessionReceipt receipt,
+                                                  @NonNull RemoteAccountProfile activeAccount,
+                                                  @NonNull List<RemoteAccountProfile> savedAccounts,
+                                                  @NonNull String syncingMessage) {
         clearCachesForAccountChange();
         sessionSummaryStore.saveSession(activeAccount, savedAccounts, true);
-        pendingProfileId = activeAccount == null ? "" : activeAccount.getProfileId();
-        pendingLogin = activeAccount == null ? "" : activeAccount.getLogin();
-        pendingServer = activeAccount == null ? "" : activeAccount.getServer();
+        pendingProfileId = activeAccount.getProfileId();
+        pendingLogin = activeAccount.getLogin();
+        pendingServer = activeAccount.getServer();
         awaitingSync = true;
         stateMachine.markSyncing(pendingProfileId, syncingMessage);
         return new SessionActionResult(receipt, activeAccount, savedAccounts);
@@ -352,6 +398,57 @@ public final class AccountRemoteSessionCoordinator {
     }
 
     @Nullable
+    private static RemoteAccountProfile resolvePendingActiveAccount(@Nullable SessionReceipt receipt,
+                                                                    @Nullable String profileIdHint,
+                                                                    @Nullable String loginHint,
+                                                                    @Nullable String serverHint,
+                                                                    @Nullable List<RemoteAccountProfile> savedAccounts) {
+        RemoteAccountProfile receiptAccount = receipt == null ? null : receipt.getActiveAccount();
+        String profileId = preferNonEmpty(
+                receiptAccount == null ? "" : receiptAccount.getProfileId(),
+                profileIdHint
+        );
+        String login = preferNonEmpty(
+                receiptAccount == null ? "" : receiptAccount.getLogin(),
+                resolveLoginFromSavedAccounts(savedAccounts, profileIdHint),
+                loginHint
+        );
+        String server = preferNonEmpty(
+                receiptAccount == null ? "" : receiptAccount.getServer(),
+                resolveServerFromSavedAccounts(savedAccounts, profileIdHint),
+                serverHint
+        );
+        String loginMasked = receiptAccount == null ? "" : receiptAccount.getLoginMasked();
+        String displayName = receiptAccount == null ? "" : receiptAccount.getDisplayName();
+        String state = receiptAccount == null ? "" : receiptAccount.getState();
+        return new RemoteAccountProfile(profileId, login, loginMasked, server, displayName, true, state);
+    }
+
+    @NonNull
+    private static List<RemoteAccountProfile> hydrateSavedAccountsSnapshot(@NonNull RemoteAccountProfile activeAccount,
+                                                                           @Nullable List<RemoteAccountProfile> savedAccounts) {
+        List<RemoteAccountProfile> hydrated = new ArrayList<>();
+        boolean replaced = false;
+        if (savedAccounts != null) {
+            for (RemoteAccountProfile account : savedAccounts) {
+                if (account == null) {
+                    continue;
+                }
+                if (equalsIgnoreCase(account.getProfileId(), activeAccount.getProfileId())) {
+                    hydrated.add(activeAccount);
+                    replaced = true;
+                    continue;
+                }
+                hydrated.add(account);
+            }
+        }
+        if (!replaced) {
+            hydrated.add(activeAccount);
+        }
+        return hydrated;
+    }
+
+    @Nullable
     private static RemoteAccountProfile resolveCanonicalActiveAccount(@Nullable SessionReceipt receipt,
                                                                       @Nullable SessionStatusPayload status) {
         RemoteAccountProfile statusAccount = status == null ? null : status.getActiveAccount();
@@ -387,6 +484,49 @@ public final class AccountRemoteSessionCoordinator {
                 && !safeTrim(account.getProfileId()).isEmpty()
                 && !safeTrim(account.getLogin()).isEmpty()
                 && !safeTrim(account.getServer()).isEmpty();
+    }
+
+    @NonNull
+    private static String preferNonEmpty(@Nullable String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            String trimmed = safeTrim(value);
+            if (!trimmed.isEmpty()) {
+                return trimmed;
+            }
+        }
+        return "";
+    }
+
+    @NonNull
+    private static String resolveLoginFromSavedAccounts(@Nullable List<RemoteAccountProfile> savedAccounts,
+                                                        @Nullable String profileId) {
+        RemoteAccountProfile profile = findSavedAccount(savedAccounts, profileId);
+        return profile == null ? "" : safeTrim(profile.getLogin());
+    }
+
+    @NonNull
+    private static String resolveServerFromSavedAccounts(@Nullable List<RemoteAccountProfile> savedAccounts,
+                                                         @Nullable String profileId) {
+        RemoteAccountProfile profile = findSavedAccount(savedAccounts, profileId);
+        return profile == null ? "" : safeTrim(profile.getServer());
+    }
+
+    @Nullable
+    private static RemoteAccountProfile findSavedAccount(@Nullable List<RemoteAccountProfile> savedAccounts,
+                                                         @Nullable String profileId) {
+        String safeProfileId = safeTrim(profileId);
+        if (safeProfileId.isEmpty() || savedAccounts == null) {
+            return null;
+        }
+        for (RemoteAccountProfile profile : savedAccounts) {
+            if (profile != null && equalsIgnoreCase(profile.getProfileId(), safeProfileId)) {
+                return profile;
+            }
+        }
+        return null;
     }
 
     @NonNull

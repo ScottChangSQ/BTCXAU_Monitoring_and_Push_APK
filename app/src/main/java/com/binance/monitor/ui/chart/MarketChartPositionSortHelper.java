@@ -6,7 +6,7 @@ package com.binance.monitor.ui.chart;
 
 import androidx.annotation.Nullable;
 
-import com.binance.monitor.ui.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.PositionItem;
 
 import java.util.ArrayList;
 import java.util.Comparator;

@@ -152,6 +152,7 @@ public class MarketChartDisplayHelperTest {
         );
 
         MarketChartDisplayHelper.DisplayUpdate update = MarketChartDisplayHelper.buildDisplayUpdate(
+                "BTCUSDT",
                 "15m",
                 preview,
                 fetched,
@@ -186,6 +187,7 @@ public class MarketChartDisplayHelperTest {
         );
 
         MarketChartDisplayHelper.DisplayUpdate update = MarketChartDisplayHelper.buildDisplayUpdate(
+                "BTCUSDT",
                 "1M",
                 preview,
                 fetched,
@@ -200,6 +202,39 @@ public class MarketChartDisplayHelperTest {
         assertEquals(2, update.toDisplay.size());
         assertEquals(200d, update.toDisplay.get(0).getClose(), 0.0001d);
         assertEquals(210d, update.toDisplay.get(1).getClose(), 0.0001d);
+    }
+
+    @Test
+    public void buildDisplayUpdateShouldIgnoreCandlesFromDifferentSymbol() {
+        List<CandleEntry> currentVisible = Arrays.asList(
+                candle("BTCUSDT", 1_000L, 101d),
+                candle("BTCUSDT", 2_000L, 102d)
+        );
+        List<CandleEntry> preview = Arrays.asList(
+                candle("BTCUSDT", 1_000L, 101d),
+                candle("XAUUSD", 2_000L, 999d)
+        );
+        List<CandleEntry> fetched = Arrays.asList(
+                candle("XAUUSD", 2_000L, 888d),
+                candle("BTCUSDT", 3_000L, 103d)
+        );
+
+        MarketChartDisplayHelper.DisplayUpdate update = MarketChartDisplayHelper.buildDisplayUpdate(
+                "BTCUSDT",
+                "1m",
+                preview,
+                fetched,
+                10,
+                currentVisible,
+                false,
+                false
+        );
+
+        assertEquals(2, update.toDisplay.size());
+        assertEquals("BTCUSDT", update.toDisplay.get(0).getSymbol());
+        assertEquals("BTCUSDT", update.toDisplay.get(1).getSymbol());
+        assertEquals(101d, update.toDisplay.get(0).getClose(), 0.0001d);
+        assertEquals(103d, update.toDisplay.get(1).getClose(), 0.0001d);
     }
 
     @Test
@@ -293,8 +328,12 @@ public class MarketChartDisplayHelperTest {
     }
 
     private CandleEntry candle(long openTime, double close) {
+        return candle("BTCUSDT", openTime, close);
+    }
+
+    private CandleEntry candle(String symbol, long openTime, double close) {
         return new CandleEntry(
-                "BTCUSDT",
+                symbol,
                 openTime,
                 openTime + 999L,
                 close - 1d,

@@ -2,7 +2,7 @@ package com.binance.monitor.ui.chart;
 
 import static org.junit.Assert.assertEquals;
 
-import com.binance.monitor.ui.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.PositionItem;
 
 import org.junit.Test;
 

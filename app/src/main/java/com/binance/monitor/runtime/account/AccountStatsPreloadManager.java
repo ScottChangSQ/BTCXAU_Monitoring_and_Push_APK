@@ -15,12 +15,12 @@ import com.binance.monitor.data.model.v2.AccountHistoryPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.runtime.AppForegroundTracker;
-import com.binance.monitor.ui.account.AccountTimeRange;
-import com.binance.monitor.ui.account.model.AccountMetric;
-import com.binance.monitor.ui.account.model.AccountSnapshot;
-import com.binance.monitor.ui.account.model.CurvePoint;
-import com.binance.monitor.ui.account.model.PositionItem;
-import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.domain.account.AccountTimeRange;
+import com.binance.monitor.domain.account.model.AccountMetric;
+import com.binance.monitor.domain.account.model.AccountSnapshot;
+import com.binance.monitor.domain.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 
 import org.json.JSONArray;
 import org.json.JSONObject;

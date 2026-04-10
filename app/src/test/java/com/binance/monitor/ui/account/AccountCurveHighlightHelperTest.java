@@ -8,7 +8,7 @@ import static org.junit.Assert.assertNotNull;
 
 import com.binance.monitor.ui.account.CurveAnalyticsHelper.DailyReturnPoint;
 import com.binance.monitor.ui.account.CurveAnalyticsHelper.DrawdownPoint;
-import com.binance.monitor.ui.account.model.CurvePoint;
+import com.binance.monitor.domain.account.model.CurvePoint;
 
 import org.junit.Test;
 

@@ -2,8 +2,8 @@ package com.binance.monitor.ui.account;
 
 import static org.junit.Assert.assertEquals;
 
-import com.binance.monitor.ui.account.model.AccountMetric;
-import com.binance.monitor.ui.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.AccountMetric;
+import com.binance.monitor.domain.account.model.PositionItem;
 
 import org.junit.Test;
 

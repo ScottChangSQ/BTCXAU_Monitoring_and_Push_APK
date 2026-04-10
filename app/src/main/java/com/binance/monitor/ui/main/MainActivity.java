@@ -20,6 +20,7 @@ import android.widget.SpinnerAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
@@ -61,6 +62,7 @@ import java.util.UUID;
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQUEST_CODE_NOTIFICATION = 100;
+    private static final String STATE_SELECTED_SYMBOL = "state_selected_symbol";
 
     private static final class ConnectionDetailRowHolder {
         private final View row;
@@ -111,6 +113,7 @@ public class MainActivity extends AppCompatActivity {
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         ensureMonitorServiceStarted();
+        restoreSelectedSymbol(savedInstanceState);
 
         viewModel = new ViewModelProvider(this).get(MainViewModel.class);
         recordAdapter = new AbnormalRecordAdapter();
@@ -130,6 +133,12 @@ public class MainActivity extends AppCompatActivity {
         loadSymbolConfig(selectedSymbol);
         applyPaletteStyles();
         promptNotificationPermissionIfNeeded();
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString(STATE_SELECTED_SYMBOL, selectedSymbol);
     }
 
     @Override
@@ -615,6 +624,16 @@ public class MainActivity extends AppCompatActivity {
         syncSymbolSelector();
         loadSymbolConfig(normalized);
         renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
+    }
+
+    private void restoreSelectedSymbol(@Nullable Bundle savedInstanceState) {
+        if (savedInstanceState == null) {
+            return;
+        }
+        String restored = savedInstanceState.getString(STATE_SELECTED_SYMBOL, AppConstants.SYMBOL_BTC);
+        if (!TextUtils.isEmpty(restored)) {
+            selectedSymbol = restored.trim().toUpperCase(java.util.Locale.ROOT);
+        }
     }
 
     // 把最新价格快照转成不可空 map，避免恢复页面时重复判空分支。

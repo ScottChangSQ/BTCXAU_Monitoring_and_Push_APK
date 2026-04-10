@@ -14,11 +14,11 @@ import com.binance.monitor.data.model.v2.trade.TradeCheckResult;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
 import com.binance.monitor.data.model.v2.trade.TradeReceipt;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
-import com.binance.monitor.ui.account.AccountTimeRange;
-import com.binance.monitor.ui.account.model.AccountMetric;
-import com.binance.monitor.ui.account.model.AccountSnapshot;
-import com.binance.monitor.ui.account.model.PositionItem;
-import com.binance.monitor.ui.account.model.TradeRecordItem;
+import com.binance.monitor.domain.account.AccountTimeRange;
+import com.binance.monitor.domain.account.model.AccountMetric;
+import com.binance.monitor.domain.account.model.AccountSnapshot;
+import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 
 import org.json.JSONObject;
 import org.junit.Test;
