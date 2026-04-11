@@ -97,6 +97,15 @@ public class AccountStatsPreloadManager {
         if (cache != null || !isAccountSessionActive()) {
             return cache;
         }
+        return null;
+    }
+
+    // 在后台线程里把本地已持久化快照回填到内存缓存，避免页面首帧同步读库。
+    public Cache hydrateLatestCacheFromStorage() {
+        Cache cache = latestCache;
+        if (cache != null || !isAccountSessionActive()) {
+            return cache;
+        }
         AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository.loadStoredSnapshot();
         if (!hasStoredSnapshotContent(storedSnapshot)) {
             return null;

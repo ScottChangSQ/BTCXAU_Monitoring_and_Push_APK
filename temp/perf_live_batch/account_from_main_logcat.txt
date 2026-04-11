@@ -1,0 +1,899 @@
+--------- beginning of main
+04-11 12:30:03.088  8338  8706 D LocalImageResolver: Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-11 12:30:03.089  8338  8338 D OplusNotificationDateTimeView: setTime mSettingTimeMillis 1775881802989, mSettingLocalDateTime 2026-04-11T12:30:00.989
+04-11 12:30:03.091  8338  8706 D LocalImageResolver: Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-11 12:30:03.091  8338  8338 D OplusNotificationDateTimeView: setTime mSettingTimeMillis 1775881802989, mSettingLocalDateTime 2026-04-11T12:30:00.989
+04-11 12:30:03.093  8338  8338 I SystemUi--Notification: OplusNotificationTempla-->resolveContentMargin: marginTop=112 isChildInGroup=false hasSubtitle=true params.topMargin=112
+04-11 12:30:03.094  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34161)(cct, lux, ir)[5971.13, 137.06, 56.249958] (r, g, b, c)[6433.71, 4375.04, 2785.81, 12219.83]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29499
+04-11 12:30:03.095  8338  8338 W SystemUi--Notification: OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-11 12:30:03.101  8338  8338 E LockScreenNotificationDispatcherImp: updateNotificationListOnKg size:0
+04-11 12:30:03.104  8338  8338 W SystemUi--Notification: OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-11 12:30:03.104  8338  8338 I SystemUi--Notification: LockScreenNotificationDispatcherImp-->updateNotificationListOnKg resultCode: 0
+04-11 12:30:03.204  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:03.212  2181 23599 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-11 12:30:03.212  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:03.213  2258  2258 D SensorFeature: write 39 bytes:929018560311181,929018614514619,29500,0
+04-11 12:30:03.213  2113  2241 I sensors-hal: get_display_brightness:825, light_iface: set screenshot_info [929018560311181,929018614514619,29500,0]
+04-11 12:30:03.236 27488 27488 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: gfxinfo
+--------- beginning of system
+04-11 12:30:03.238  3590  8467 D ActivityManager: freezer override set to true
+04-11 12:30:03.238  3590  7335 D ActivityManager: reportOneUidFrozenStateChanged uid 10294 frozen = false
+04-11 12:30:03.239  3590  8467 D ActivityManager: sync unfroze 27799 com.coloros.alarmclock for 19
+04-11 12:30:03.240  3590  8467 D ActivityManager: sync unfroze 12677 com.google.android.webview:webview_service for 19
+04-11 12:30:03.240  3590  8467 D ActivityManager: sync unfroze 14376 com.android.rkpdapp for 19
+04-11 12:30:03.241  3590  8467 D ActivityManager: sync unfroze 17796 com.coloros.ocs.opencapabilityservice:ocs for 19
+04-11 12:30:03.241  3590  8467 D ActivityManager: sync unfroze 15448 com.coloros.alarmclock:clockWidget for 19
+04-11 12:30:03.242  3590  8467 D ActivityManager: sync unfroze 21483 com.android.cellbroadcastreceiver.module for 19
+04-11 12:30:03.242  3590  8467 D ActivityManager: sync unfroze 22212 com.android.DeviceAsWebcam for 19
+04-11 12:30:03.242  3590  8467 D ActivityManager: sync unfroze 22292 com.google.android.projection.gearhead:shared for 19
+04-11 12:30:03.242  3590  8467 D ActivityManager: sync unfroze 4267 com.oplus.romupdate for 19
+04-11 12:30:03.243  3590  8467 D ActivityManager: sync unfroze 27201 com.heytap.htms:kit_hlog for 19
+04-11 12:30:03.244  3590  8467 D ActivityManager: sync unfroze 10944 com.heytap.htms for 19
+04-11 12:30:03.244  3590  8467 D ActivityManager: sync unfroze 27289 com.heytap.htms:sysintegrity for 19
+04-11 12:30:03.244  3590  8467 D ActivityManager: freezer override callers: 27488/2000 com.android.server.am.ActivityManagerService$GraphicsBinder.dump:2380 android.os.Binder.doDump:1085 android.os.Binder.dump:1075 android.os.Binder.onTransact:945 android.os.Binder.execTransactInternal:1444 
+04-11 12:30:03.245  3590  7335 D ActivityManager: reportOneUidFrozenStateChanged uid 10265 frozen = false
+04-11 12:30:03.245  3590  7335 D ActivityManager: reportOneUidFrozenStateChanged uid 10290 frozen = false
+04-11 12:30:03.245  3590  7335 D ActivityManager: reportOneUidFrozenStateChanged uid 10177 frozen = false
+04-11 12:30:03.245  3590  7335 D ActivityManager: reportOneUidFrozenStateChanged uid 10276 frozen = false
+04-11 12:30:03.246  3590  7335 D ActivityManager: reportOneUidFrozenStateChanged uid 10264 frozen = false
+04-11 12:30:03.246  3590  7335 D ActivityManager: reportOneUidFrozenStateChanged uid 10186 frozen = false
+04-11 12:30:03.246  3590  7335 D ActivityManager: reportOneUidFrozenStateChanged uid 10176 frozen = false
+04-11 12:30:03.246 10944 10944 I MSP-LOG-APP-MspCore: action = com.heytap.htms.sub_process_start
+04-11 12:30:03.246 27289 27289 I env_DeviceStrategy: wifi disconnect
+04-11 12:30:03.246 10944 10944 I MSP-LOG-APP-MspCore: subProcessName start, onReceive | com.heytap.htms:kit_hlog
+04-11 12:30:03.246 10944 10944 I MSP-LOG-APP-MspCore: action = com.heytap.htms.sub_process_start
+04-11 12:30:03.246 10944 10944 I MSP-LOG-APP-MspCore: subProcessName start, onReceive | com.heytap.htms:sysintegrity
+04-11 12:30:03.249  3590  8467 D ActivityManager: freezer override set to false
+04-11 12:30:03.249  3590  8467 D ActivityManager: Async freezing 27799 com.coloros.alarmclock
+04-11 12:30:03.249  3590  8467 D ActivityManager: Async freezing 12677 com.google.android.webview:webview_service
+04-11 12:30:03.249  3590  8467 D ActivityManager: Async freezing 14376 com.android.rkpdapp
+04-11 12:30:03.249  3590  8467 D ActivityManager: Async freezing 17796 com.coloros.ocs.opencapabilityservice:ocs
+04-11 12:30:03.249  3590  8467 D ActivityManager: Async freezing 15448 com.coloros.alarmclock:clockWidget
+04-11 12:30:03.250  3590  8467 D ActivityManager: Async freezing 21483 com.android.cellbroadcastreceiver.module
+04-11 12:30:03.250  3590  8467 D ActivityManager: Async freezing 22212 com.android.DeviceAsWebcam
+04-11 12:30:03.250  3590  8467 D ActivityManager: Async freezing 22292 com.google.android.projection.gearhead:shared
+04-11 12:30:03.250  3590  8467 D ActivityManager: Async freezing 4267 com.oplus.romupdate
+04-11 12:30:03.250  3590  8467 D ActivityManager: Async freezing 27201 com.heytap.htms:kit_hlog
+04-11 12:30:03.250  3590  8467 D ActivityManager: Async freezing 10944 com.heytap.htms
+04-11 12:30:03.250  3590  8467 D ActivityManager: Async freezing 27289 com.heytap.htms:sysintegrity
+04-11 12:30:03.250  3590  8467 D ActivityManager: freezer override callers: 27488/2000 com.android.server.am.ActivityManagerService$GraphicsBinder.dump:2386 android.os.Binder.doDump:1085 android.os.Binder.dump:1075 android.os.Binder.onTransact:945 android.os.Binder.execTransactInternal:1444 
+04-11 12:30:03.251 15448 15448 D ClockTag_AlarmClockApplication: onTrimMemory: 40
+04-11 12:30:03.255  3438  3988 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:03.255  2727  3986 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:03.255  2727  3986 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:03.255  3438  3988 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:03.255  3438  3988 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:03.255  2727  3986 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:03.255  2727  3986 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:03.255  3438  3988 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:03.255  3438  3988 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:03.255  2727  3986 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:03.255  2727  2826 D VsProxy : handleMessage msg is 2420
+04-11 12:30:03.255  3438  3485 D VsProxy : handleMessage msg is 2420
+04-11 12:30:03.255  2727  2826 D VsProxy : handleQosPeriodReportInd for instance 0 data_len 145
+04-11 12:30:03.255  3438  3485 D VsProxy : handleQosPeriodReportInd for instance 1 data_len 193
+04-11 12:30:03.255 14034 14747 D SubsysRadioIndication[0]: radioQosPeriodReportInd result [8, -83, -90, -42, -50, 14, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 61, 8, -52, -99, -42, -50, 14, 16, 5, 24, -64, -92, 38, 32, -22, 6, 40, -94, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -10, -1, -1, -1, -1, -1, -1, -1, -1, 1, 56, 9, 64, -94, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -95, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 29, 8, -57, -20, -92, -50, 14, 16, 5, 34, 19, 8, -64, -92, 38, 16, -22, 6, 24, 78, 32, 13, 40, -117, -32, -94, -93, 2, 48, 2, 90, 0, 98, 10, 8, -41, -26, -92, -50, 14, 16, 3, 24, 5, 122, 15, 8, -8, -24, -92, -50, 14, 16, -52, 2, 24, -21, 1, 32, -90, 9]
+04-11 12:30:03.255 14034   947 D SubsysRadioIndication[1]: radioQosPeriodReportInd result [8, -83, -90, -42, -50, 14, 18, 8, 8, -31, -92, -42, -50, 14, 72, 1, 26, 12, 8, -2, -93, -42, -50, 14, 16, 1, 40, 1, 56, 90, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 83, 8, -31, -92, -42, -50, 14, 16, 5, 24, -98, -23, 30, 32, -54, 1, 40, -92, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -12, -1, -1, -1, -1, -1, -1, -1, -1, 1, 56, 1, 64, -94, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -92, -1, -1, -1, -1, -1, -1, -1, -1, 1, 80, -97, -1, -1, -1, -1, -1, -1, -1, -1, 1, 88, -95, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 31, 8, -114, -41, -49, -50, 14, 16, 5, 24, 2, 34, 19, 8, -98, -23, 30, 16, -54, 1, 24, 41, 32, 13, 40, -126, -128, -52, -67, 21, 48, 2, 90, 0, 98, 10, 8, -85, -54, -73, -50, 14, 16, 3, 24, 5, 122, 15, 8, -19, -91, -42, -50, 14, 16, -7, 1, 24, -1, 1, 32, -12, 8]
+04-11 12:30:03.255 14034 14034 D NetworkService[0]: handleMessage what:1005
+04-11 12:30:03.255 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo2{5G, 627264/874, EndcState=0, Band=78, DLBW=13, Rsrp=-94, Rsrq=-10, Snr=9, SvcStatus=3, ULPDCPNumDataPdu=-1, ULPDCPNumDropPdu=-1, ULPDCPTput=-1, ULRLCNumDataPdu=-1, ULRLCNumRetxPdu=-1, ULGrant=-1, ULBSR=-1, ULBler=-1, DLPDCPNumDataPdu=-1, DLPDCPTput=-1, DLRLCNumDataPdu=-1, DLRLCNumRetxPdu=-1, DLRLCNumDropPdu=-1, DLMACPaddingBytes=-1, DLPdcpNumMissToUppPdu=-1, DLBler=-1, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=0, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=332, Mtpl=235, PathLoss=1190, CellLoad=0}
+04-11 12:30:03.255 14034 14034 D NetworkService[0]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:03.255 14034 14034 D NetworkService[1]: handleMessage what:1005
+04-11 12:30:03.255 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo1{5G, 504990/202, EndcState=2, Band=41, DLBW=13, Rsrp=-92, Rsrq=-12, Snr=1, SvcStatus=3, ULPDCPNumDataPdu=0, ULPDCPNumDropPdu=0, ULPDCPTput=0, ULRLCNumDataPdu=0, ULRLCNumRetxPdu=0, ULGrant=0, ULBSR=0, ULBler=1, DLPDCPNumDataPdu=1, DLPDCPTput=90, DLRLCNumDataPdu=1, DLRLCNumRetxPdu=0, DLRLCNumDropPdu=0, DLMACPaddingBytes=0, DLPdcpNumMissToUppPdu=0, DLBler=0, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=0, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=249, Mtpl=255, PathLoss=1140, CellLoad=0}
+04-11 12:30:03.255 14034 14034 D NetworkService[1]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:03.255 14034 14034 D AtomModemKpiInfo: handleMessage what:1001
+04-11 12:30:03.255 14034 14034 D AtomModemKpiInfo: analyseQosInfo success
+04-11 12:30:03.256 27799 27799 D ClockTag_AlarmClockApplication: onTrimMemory: 40
+04-11 12:30:03.261 27201 27222 W JavaBinder: BinderProxy is being destroyed but the application did not call unlinkToDeath to unlink all of its death recipients beforehand.  Releasing leaked death recipient: com.opos.process.bridge.client.BinderManager$2$1
+04-11 12:30:03.261  1311  1311 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+04-11 12:30:03.261  1311  1311 E KeyMasterHalDevice: abort_operation
+04-11 12:30:03.261  1311  1311 E KeyMasterHalDevice: ret: -28
+04-11 12:30:03.261 27201 27222 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+04-11 12:30:03.332  2399  3162 D VRR [OTI]: handleIdle from 1 to 0
+04-11 12:30:03.332  2399  3162 D VRR [OTI-HW]: isStateReady 0
+04-11 12:30:03.332  2399  3162 D VRR [OTI-HW]: keep rate.
+04-11 12:30:03.332  3590  8031 D GestureLog_OplusMultiPointerDetector: onTouchEvent------>start, mCurNumPointers=1, mCurrStatus=0 mIsDownIntervalTimeout=true, action=0 downTime=881162705 deviceId=-1
+04-11 12:30:03.333  3590  8291 I [UAH_CLIENT]: UahEventAcquire, cmdid:37, pkg:none, identity:OplusUAwareInputHelper
+04-11 12:30:03.333  3590  3863 D PowerManagerService: userActivityNoUpdateLocked: groupId=0, eventTime=881162705, event=touch, flags=0x0, uid=1000
+04-11 12:30:03.333 32357 32357 E IJankManager: slideSceneEnd unknown scene 1000 mScene:-1
+04-11 12:30:03.333  3590  3863 D PowerManagerService: userActivityNoUpdateLocked: groupId=0, eventTime=881162705, event=touch, flags=0x0, uid=1000
+04-11 12:30:03.333  3590  8291 D UAH-UahAdaptHelper: adaptSetNotification identity = OplusUAwareInputHelpersrc = 1000 , type 0 ,p1 = -1 ,p2 = -1 ,p3 = -1 ,p4 =
+04-11 12:30:03.334  3590  8291 I [UAH_CLIENT]: uahRuleCtl, ruleId:1000, status:0
+04-11 12:30:03.334  3590  3863 D PowerManagerService: userActivityNoUpdateLocked: groupId=0, eventTime=881162705, event=touch, flags=0x0, uid=1000
+04-11 12:30:03.335  3590  8291 D UAH-UahAdaptHelper: adaptSetNotification identity = OplusUAwareInputHelpersrc = 1000 , type 1 ,p1 = -1 ,p2 = -1 ,p3 = -1 ,p4 =
+04-11 12:30:03.335 32357 32357 D OplusViewDragTouchViewHelper: dispatchTouchView action = 1
+04-11 12:30:03.335  3590  8291 I [UAH_CLIENT]: uahRuleCtl, ruleId:1000, status:1
+04-11 12:30:03.335  3590  3863 D PowerManagerService: userActivityNoUpdateLocked: groupId=0, eventTime=881162705, event=touch, flags=0x0, uid=1000
+04-11 12:30:03.335 32357 32357 D ViewRootImplExtImpl: the up motion event handled by client, just return
+04-11 12:30:03.335 15031 15220 D ShellSubscriberWorkerThread: the first 8 bytes empty, and RestData length > 8 
+04-11 12:30:03.336  3590  7998 I [UAH_CLIENT]: UahEventAcquire, cmdid:2, pkg:none, identity:com.android.server.wm
+04-11 12:30:03.337  3590  8467 D WindowManager: NFW_setClientVisible:ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity clientVisible:true
+04-11 12:30:03.337  3590  8467 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@1020978a does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+04-11 12:30:03.338  3590  8467 D OplusCompatModeManagerService: getRequestedConfigurationOrientation  res:1,req:1,config.old:0,config.new:0,ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1}
+04-11 12:30:03.338  3590  8467 D OplusCompatModeManagerService:  onPreActivityRecordConfigurationChanged {0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=undefined mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+04-11 12:30:03.338  3590  8467 D OplusCompatModeManagerService:  disable:true,valid:false,computeReq:1,isGameRatio:false
+04-11 12:30:03.338  3590  8467 D OplusCompatModeManagerService:  getOverrideMinAspectRatioForCompatMode: 0.0 getRawOverrideMinAspectRatioForCompatMode: 0.0
+04-11 12:30:03.338  3590  8467 D OplusCompatModeManagerService:  ar : ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} displayId:-1 inCompatMode: false
+04-11 12:30:03.338  3590  8467 D OplusCompatModeManagerService: isDefaultDisplay true oldRect: Rect(0, 0 - 0, 0) newRect Rect(0, 0 - 0, 0)
+04-11 12:30:03.338  3590  8467 D OplusCompatModeManagerService: reloadCompactRatio mParWorldContainer.isEnabledParallelWindow(pkg):false,mParWorldContainer.isDisabledCompactWindow:false,isUIAutoLayout:false, isFullOrientation: false
+04-11 12:30:03.338  3590  8467 D FlexibleTaskController: isSupportFlexibleWindow target = com.binance.monitor/.ui.account.AccountStatsBridgeActivity callPkg = FlexibleTaskController support = true ,caller = 3590
+04-11 12:30:03.338  3590  8467 D ActivityStarterExtImpl: checkOpMode: 3
+04-11 12:30:03.338  3590  3830 W QosScheduler: executeSceneQosStrategy failed! qos feature no enable
+04-11 12:30:03.338  3590  8467 D FlexibleWindowManagerService: isIgnoreAppearedAcrossTask:false
+04-11 12:30:03.338  3590  8467 D ActivityStarterExtImpl: setForceUpdateWindow, targetTask = Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor} r = ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} notFinish =false
+04-11 12:30:03.339  3590  8467 D FlexibleWindowManagerService: isIgnoreAppearedAcrossTask:false
+04-11 12:30:03.339  3590  8467 D FlexibleTaskController: adjustOptionsForFlexibleTask skip adjust options reason:4
+04-11 12:30:03.339  3590  8467 I InsensibleTaskController: adjustOptionsForInsensibleTask targetTask is resuse so not pureInsensibleOptions
+04-11 12:30:03.339  3590  8467 D FlexibleTaskController: isSupportFlexibleWindow target = com.binance.monitor/.ui.account.AccountStatsBridgeActivity callPkg = FlexibleTaskController support = true ,caller = 3590
+04-11 12:30:03.339  3590  8467 D FlexibleWindowManagerService: no reused task found for ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1}
+04-11 12:30:03.339  3590  8467 D ActivityStarterExtImpl: isLaunchingRootActivity = false
+04-11 12:30:03.339  3590  8467 D ActivityStarterExtImpl: resume targetTask isVisibleRequested is true or in SkipCheckedList, need resume:targetTask=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}
+04-11 12:30:03.339  3590  8480 I OPM     : handleActivityStart : ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1}
+04-11 12:30:03.339  3590  8467 D ActivityTaskManager: setAppVisibility(Token{cc82d04 ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}}}, visible=false):  visible=true mVisibleRequested=true
+04-11 12:30:03.339  3590  8467 D ActivityTaskManager: setVisibility(Token{cc82d04 ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}}}, visible=false) defer commitVisibility for transition collecting
+04-11 12:30:03.339  3590  8467 D ActivityTrigger: ActivityTrigger activityPauseTrigger 
+04-11 12:30:03.341  3590  8467 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.341  8338  8381 V WindowManagerShell: Transition requested (#27129): android.os.BinderProxy@86a6b59 TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=13089 effectiveUid=10512 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.binance.monitor/.launcher.IconFinancialAlias mCallingUid=10214 } baseActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.main.MainActivity} topActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} origActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias} realActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.main.MainActivity}
+04-11 12:30:03.341  8338  8381 V WindowManagerShell:  numActivities=2 lastActiveTime=929018753 supportsSplitScreenMultiWindow=true supportsMultiWindow=true supportsPocketStudioMultiWindow=true isInFlexibleEmbedded = false uid = 10512 pid = 32357 resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@1db031e} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 140 - 0, 0)
+04-11 12:30:03.341  8338  8381 V WindowManagerShell:  topActivityInfo=ActivityInfo{c67a7ff com.binance.monitor.ui.account.AccountStatsBridgeActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=false isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(330, 828 - 935, 2092) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0
+04-11 12:30:03.341  8338  8381 V WindowManagerShell:  appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityInOplusCompatMode=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityAppBounds=Rect(0, 140 - 1264, 2780) isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null topActivityLetterboxInsets=Rect(0, 0 - 0, 0)
+04-11 12:30:03.341  8338  8381 V WindowManagerShell:  mOplusExtraBundle = Bundle[mParcelledData.dataSize=1540]}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 27129 }
+04-11 12:30:03.341  8338  8381 D ShellSplitScreen: logExit: no-op, mLoggerSessionId is null
+04-11 12:30:03.342  3590  8467 I ActivityTaskManager: START u0 {flg=0x24000000 xflg=0x4 cmp=com.binance.monitor/.ui.account.AccountStatsBridgeActivity mCallingUid=10512} with LAUNCH_MULTIPLE from uid 10512 (sr=29562262) (BAL_ALLOW_VISIBLE_WINDOW (callingUid has visible window)) result code=3
+04-11 12:30:03.342  8338  8381 D WindowManagerShell: onActivityRestartAttempt: topActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}, wasVisible=false
+04-11 12:30:03.344  3590  8467 I OplusAccessController: enter isIgnoreAppSwitchActivity
+04-11 12:30:03.344  3590  8467 I OplusAccessController: enter isIgnoreAppSwitchActivity and intent != null
+04-11 12:30:03.344  3590  8467 I OplusAccessController: enter isIgnoreAppSwitchActivity and componentName != null
+04-11 12:30:03.344  3590  8467 I OplusAccessController: enter isIgnoreAppSwitchActivity and packageName&activity is not Empty
+04-11 12:30:03.344  3590  8467 D RefreshRate: boostRefreshId choose max:currentRefreshRate:90.0 targetRefreshRate:60.0 mCurrentPickRate:90.0
+04-11 12:30:03.344  3590  8467 D RefreshRate: Trigger app switch boost, ar=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089},currDisplayRate=90.0,boostId=1
+04-11 12:30:03.345  3590  8467 D RefreshRate: setDisplayConfigSpecs complete: targetMode={id=3, width=1264, height=2780, fps=90.0, vsync=90.0, synthetic=false, alternativeRefreshRates=[60.000004, 120.00001, 120.00001], supportedHdrTypes=[1, 2, 3, 4]},srcMode={id=3, width=1264, height=2780, fps=90.0, vsync=90.0, synthetic=false, alternativeRefreshRates=[60.000004, 120.00001, 120.00001], supportedHdrTypes=[1, 2, 3, 4]},sfModId=2,rate=90.0
+04-11 12:30:03.345  3590  8467 D RefreshRate: startAppSwitchBoost targetMode={id=3, width=1264, height=2780, fps=90.0, vsync=90.0, synthetic=false, alternativeRefreshRates=[60.000004, 120.00001, 120.00001], supportedHdrTypes=[1, 2, 3, 4]} record=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}: votes=PRIORITY_START_ANIMATION_BOOST -> Vote{mRefreshRate=90.0, mMinRefreshRate=90.0, mRequestSource=null};PRIORITY_WINDOW_REQUEST -> Vote{mRefreshRate=90.0, mMinRefreshRate=90.0, mRequestSource=null};
+04-11 12:30:03.345  3590  3875 D RefreshRate: do setDisplayConfigSpecs  
+04-11 12:30:03.345  3590  8467 D ActivityTaskManager: setAppVisibility(Token{8c15a0a ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}}, visible=true):  visible=false mVisibleRequested=false
+04-11 12:30:03.345  3590  7959 D BackgroundInstallControlService: Package event received: 0
+04-11 12:30:03.345  2399  9261 D SurfaceFlinger: VRR [SurfaceFlinger] setDesiredDisplayModeSpecs, from process 3590, 2, 0, primaryRanges = [ 90.000000, 90.000000, 90.000000, 90.000000 ], appRequestRanges = [ 90.000000, 90.000000, 90.000000 90.000000 ]
+04-11 12:30:03.345  3590  8467 D WindowManager: NFW_setClientVisible:ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} clientVisible:true
+04-11 12:30:03.345  3590  3646 W SurfaceFlingerPuller: Failed to pull atom 150134 from surfaceflinger. Success is 0, binder status is EX_NONE
+04-11 12:30:03.345  3590  8467 D ActivityTaskManager: setVisibility(Token{8c15a0a ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}}, visible=true) defer commitVisibility for transition collecting
+04-11 12:30:03.345 32357 31946 D VRI[AccountStatsBridgeActivity]: dispatchAppVisibility visible:true mUpcomingWindowFocus:false
+04-11 12:30:03.345  3590  3875 D DisplayModeDirector: setAppRequest displayId : 0  modeId: 3  requestedRefreshRate: 90.0  requestedMinRefreshRateRange: 90.0  requestedMaxRefreshRateRange: 90.0
+04-11 12:30:03.345  2013  2036 E statsd  : Stats puller failed for tag: 150134 at 929018758706911
+04-11 12:30:03.345  3590  8480 I OPM     : handlePackageLaunched pkg: com.binance.monitor, uid: 10512, pid: 32357
+04-11 12:30:03.345  3590  8467 D ActivityTaskManager: NFW_setLastResumedActivityUncheckLocked:true r:ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} currentFocus:Window{a8a1046 u0 com.binance.monitor/com.binance.monitor.ui.main.MainActivity}
+04-11 12:30:03.345  3590  8467 D WindowManager: NFW_findFocusedWindowIfNeeded:null mCurrentFocus:Window{a8a1046 u0 com.binance.monitor/com.binance.monitor.ui.main.MainActivity}
+04-11 12:30:03.345  3590  8467 D WindowManager: attachImeScreenshotOnTargetIfNeeded, mImeHiding = false, requestedVisibleTypes = -9
+04-11 12:30:03.345  3590  8467 V WindowManager: Changing focus from Window{a8a1046 u0 com.binance.monitor/com.binance.monitor.ui.main.MainActivity} to null,diplayid=0
+04-11 12:30:03.346  3590  8467 D FlexibleTaskController: isFullToFlexibleAnimating: false
+04-11 12:30:03.346  3590  8467 D WindowManager: rotation(ROTATION_0) no changed  displayId = 0, lastOrientation = 1
+04-11 12:30:03.346  3590  8467 I TaskOrganizerController: onTaskInfoChanged taskid 13089 config { mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0}
+04-11 12:30:03.346  3590  8467 D OplusFlexibleDragToSplitAnimController: visibleFlexibleTaskInfos delete:13089
+04-11 12:30:03.346  3590  8467 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+04-11 12:30:03.346  3590  8467 I FlexibleWindowManagerService: onFlexibleWindowTaskInfoChanged, return for cur task not embedded
+04-11 12:30:03.346  8338  8381 D ShellTaskOrganizerExt: visibleFlexibleTaskInfos delete:13089
+04-11 12:30:03.346  8338  8381 D ShellTaskOrganizerExt: isOnCanvas size:0
+04-11 12:30:03.346  8338  8381 D ShellTaskOrganizerExt: isOnThreeFlexibleCanvas size:0
+04-11 12:30:03.346  3590  8467 D OplusFeatureColorMode: ColorMode getColorMode =0
+04-11 12:30:03.346  3590  8467 D ColorDisplayServiceExtImpl: getWCGVersion1App, packageName=com.binance.monitor, sSupportWCG1 = true, sSupportWCG3 = false, nRet = 0
+04-11 12:30:03.347  3590  8467 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.347  3590  8467 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.347  3590  8467 D DisplayModeDirector: setAppRequest displayId : 0  modeId: 3  requestedRefreshRate: 0.0  requestedMinRefreshRateRange: 0.0  requestedMaxRefreshRateRange: 90.0
+04-11 12:30:03.347  3590  3875 D VRR [OPlusRefreshRateService]:  setDirectorStates [flag: 1, state: 1, directorStateOff: 1]
+04-11 12:30:03.347  2399  8068 D VRR [RefreshRateDirector]: updateState mState = 0
+04-11 12:30:03.347 32357 31946 D ColorModeChangeItem: preExecute mColorMode=0
+04-11 12:30:03.348  3590  8591 D OplusAppSwitchRuleInfo: generateActivityEnterInfo - launch_source_type =  , launch_source_traceid = 
+04-11 12:30:03.348  3590  8591 D OplusAppSwitchRuleInfo: generateActivityEnterInfo - launch_source_type =  , launch_source_traceid = 
+04-11 12:30:03.348  2399  2399 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+04-11 12:30:03.348  3590  3796 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.348  3590  7959 D BackgroundInstallControlService: Package event received: 0
+04-11 12:30:03.348  2013  2036 E statsd  : Stats puller failed for tag: 150134 at 929018762143838
+04-11 12:30:03.349  2399  8068 I OplusPerfCollect: OplusPerfCollect onPullAtom
+04-11 12:30:03.349  2399  8068 I OplusPerfCollect: OplusPerfCollect OplusVrrInfoRecord clear
+04-11 12:30:03.349  3590  3795 D FlexibleTaskController: not in list
+04-11 12:30:03.349  2013  2036 I statsd  : An anomaly (104240000001) (42)0x10000->10512[I] (42)0x20000->com.binance.monitor[S] (42)0x30000->.ui.account.AccountStatsBridgeActivity[S]  has occurred! Informing subscribers.
+04-11 12:30:03.349 10250 16907 E midasd  : getTotalFlipsFromSf mCurFrameCount: 11743500
+04-11 12:30:03.350 10250 16907 I midasd  : DisplayAgent updateDisplayDevInfo getRenderFps mFps:90 mRenderFps:20 mWidth:1264 mHeight:2780
+04-11 12:30:03.360  3590  8467 I InputDispatcher: updateFocusedWindow,  on display 0, reason: NO_WINDOW, result:   FocusedWindows: <none>
+04-11 12:30:03.360  2113 20704 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 136.8,cct 5879.0,brl/algo/ir 1310.0/2.0/57.2,pwm/dc 0.0/0.0,rgbc 6436.200684/4364.037598/2763.738281/12198.846680,ts 929018601648016,cnt 34170,flag 95036
+04-11 12:30:03.360  3590  7333 D FusionLightNextGen: process end reported = 1, mode: 0, cnt: 397455, lux 87.9, cct 6331.8, r/g/b/c: 6436.2/4364.0/2763.7/12198.8, R/G/B: 144.0/140.0/129.0, bri 1310.0, match 1.00, ir 0.072252, conf 5.0, ts 929018601648016
+04-11 12:30:03.360  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34166)(cct, lux, ir)[5879.00, 136.77, 57.227203] (r, g, b, c)[6436.20, 4357.44, 2772.57, 12163.88]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29500
+04-11 12:30:03.443  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:03.461 32357 32357 D VRI[MainActivity]: onFocusEvent false
+04-11 12:30:03.461 32357 32357 D VRI[AccountStatsBridgeActivity]: setWindowStopped stopped:false
+04-11 12:30:03.462 32357 32357 D ActivityThread: ComponentInfo{com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} checkFinished=false 2
+04-11 12:30:03.462 32357 32357 D ResourcesManagerExtImpl: applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+04-11 12:30:03.514  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:03.514  2258  2258 D SensorFeature: write 39 bytes:929018560311181,929018927677900,29501,0
+04-11 12:30:03.627 32357 32357 I SurfaceControl:  setExtendedRangeBrightness sc=Surface(name=)/@0x6fc43b4,currentBufferRatio=1.0,desiredRatio=1.0
+04-11 12:30:03.627  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34171)(cct, lux, ir)[5919.37, 135.76, 58.460224] (r, g, b, c)[6381.38, 4335.44, 2754.91, 12142.90]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29501
+04-11 12:30:03.627  3590  8847 V WindowManager: Relayout Window{83978a2 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x429 , apr = 0, vsysui=, x=-407, y=2142
+04-11 12:30:03.627  3590  8847 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.627  3590  8847 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.645 32357 32357 D ViewRootImplExtImpl: wrapConfigInfoIntoFlags rotation=0, smallestScreenWidthDp=361, residentWS=false, scenario=0, bounds=Rect(0, 0 - 1264, 2780), relayoutAsync=false, flags=0, newFlags=1457532192, title=com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity
+04-11 12:30:03.646  3590  8847 V WindowManager: Relayout Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}: viewVisibility=0, oldvis=8, req=1264x2780 , apr = 0, vsysui=, x=0, y=0
+04-11 12:30:03.646  3590  8847 I WindowManager: Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} state from NO_SURFACE to DRAW_PENDING; reason: resetDrawState
+04-11 12:30:03.646  3590  8847 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.646  3590  8847 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.647  3590  8847 D WindowManager: NFW_findFocusedWindowIfNeeded:Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} mCurrentFocus:null
+04-11 12:30:03.647  3590  8847 V WindowManager: Changing focus from null to Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity},diplayid=0
+04-11 12:30:03.647  3590  3875 D VRR [OPlusSurfaceFlingerController]:  setComplexSceneEnable : false
+04-11 12:30:03.647  3590  7998 I [UAH_CLIENT]: uahRuleCtl, ruleId:206, status:3
+04-11 12:30:03.647  3590  8847 D Theia.NoFocusWindow: FocusWindowErrorScene cancelCheckFreezeScreen
+04-11 12:30:03.647  3590  8847 W TheiaWindowMonitor: [check] focusedWindow is null or enable is false
+04-11 12:30:03.648 32357 32357 D VRI[AccountStatsBridgeActivity]: relayoutWindow result, sizeChanged:false, surfaceControlChanged:true, transformHintChanged:false, mSurfaceSize:Point(1264, 2780), mLastSurfaceSize:Point(1264, 2780), mWidth:1264, mHeight:2780, requestedWidth:1264, requestedHeight:2780, transformHint:0, installOrientation:0, displayRotation:0, isSurfaceValid:true, attr.flag:-2122252032, tmpFrames:ClientWindowFrames{frame=[0,0][1264,2780] display=[0,0][1264,2780] parentFrame=[0,0][0,0]}, relayoutAsync:false, mSyncSeqId:0
+04-11 12:30:03.648 32357 32357 W VRI[AccountStatsBridgeActivity]: updateBlastSurfaceIfNeeded, surfaceSize:Point(1264, 2780), lastSurfaceSize:Point(1264, 2780), format:-3, blastBufferQueue:null
+04-11 12:30:03.648  3590  3796 D SurfaceComposerClient: Transaction::apply InputWindowCommands.focusRequests timestamp=881163022379068, windowName=fecae5 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity
+04-11 12:30:03.648 32357 32357 D BufferQueueConsumer: [](id:7e650000004b,api:0,p:-1,c:32357) connect: controlledByApp=false
+04-11 12:30:03.648 32357 32357 D BufferQueueConsumer: [VRI[AccountStatsBridgeActivity]#75(BLAST Consumer)75](id:7e650000004b,api:0,p:-1,c:32357) setMaxAcquiredBufferCount: 2
+04-11 12:30:03.648 32357 32399 D BufferQueueProducer: [VRI[AccountStatsBridgeActivity]#75(BLAST Consumer)75](id:7e650000004b,api:1,p:32357,c:32357) connect: api=1 producerControlledByApp=true
+04-11 12:30:03.649 32357 32357 I SurfaceControl:  setExtendedRangeBrightness sc=Surface(name=com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity)/@0x536487f,currentBufferRatio=1.0,desiredRatio=1.0
+04-11 12:30:03.659  2399  3200 D SurfaceFlinger: updateWinowInfo=1, setFocusedWindow timestamp=881163022379068, windowName=fecae5 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity
+04-11 12:30:03.659  3590  8467 I InputDispatcher: NFW_setFocusedWindow, fecae5 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity on display 0, same as the previous:0
+04-11 12:30:03.670 32357 32399 D BLASTBufferQueue: [VRI[AccountStatsBridgeActivity]#75](f:0,a:1) acquireNextBufferLocked size=1264x2780 mFrameNumber=1 applyTransaction=true mTimestamp=881163044958860(auto) mPendingTransactions.size=0 graphicBufferId=138972256797436 transform=0
+04-11 12:30:03.670 32357 32399 D VRI[AccountStatsBridgeActivity]: Received frameCommittedCallback lastAttemptedDrawFrameNum=1 didProduceBuffer=true syncBuffer=false
+04-11 12:30:03.671 32357 32357 D VRI[AccountStatsBridgeActivity]: draw finished. seqId=0
+04-11 12:30:03.671  3590  8847 D WindowManager: onSyncFinishedDrawing: Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+04-11 12:30:03.671 32357 32357 D ResourcesManagerExtImpl: applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+04-11 12:30:03.671  3590  8847 I WindowManager: finishDrawing skipLayout:false,syncSeqId=0,mPrepareSyncSeqId=0 Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} com.android.server.wm.WindowManagerService.finishDrawingWindow:3217 com.android.server.wm.Session.finishDrawing:399 android.view.IWindowSession$Stub.onTransact:793 
+04-11 12:30:03.671  3590  8847 I WindowManager: Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} state from DRAW_PENDING to COMMIT_DRAW_PENDING; reason: finishDrawingLocked
+04-11 12:30:03.671  3590  3796 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.672  3590  3796 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.672  3590  3796 I WindowManager: Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} state from COMMIT_DRAW_PENDING to READY_TO_SHOW; reason: commitFinishDrawingLocked
+04-11 12:30:03.672  3590  3796 D CoreBackPreview:  return markWindowHasDrawn mComposed: false  mWaitTransition: false
+04-11 12:30:03.672  3590  3796 D ActivityTaskManager: Clearing startingData for activity=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} mStartingData=null mStartingSurface=null
+04-11 12:30:03.672  3590  3796 D QuickBackInputPolicy: setAppLaunchEndTime update timePair=Pair{ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} 881163046}
+04-11 12:30:03.672  3590  3796 D ActivityTaskManager: commitVisibility: ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}: visible=true visibleRequested=true, isInTransition=true 
+04-11 12:30:03.672  3590  3796 D CoreBackPreview:  return markWindowHasDrawn mComposed: false  mWaitTransition: false
+04-11 12:30:03.672  3590  3796 D ActivityTaskManager: Clearing startingData for activity=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} mStartingData=null mStartingSurface=null
+04-11 12:30:03.672  3590  3796 I WindowManager: Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} state from READY_TO_SHOW to HAS_DRAWN; reason: performShowLocked
+04-11 12:30:03.672  3590  3796 D CoreBackPreview:  return markWindowHasDrawn mComposed: false  mWaitTransition: false
+04-11 12:30:03.672  3590  3796 E OplusAppQuickStart_AppQuickStartController: not start from launcher transition:27129
+04-11 12:30:03.672  3590  3796 D Transition: collectOrderChanges onTopTasksEnd: [Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}], reportedOnTop:null, mOnTopTasksStart: [Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}], TDA child: [Task{2ae848 #3 type=undefined}, Task{59d6dd0 #13088 type=standard A=10306:com.binance.dev}, Task{100415c #13133 type=standard A=10397:com.v2ray.ang}, Task{1abb46b #12626 type=standard A=10345:com.tencent.mm}, Task{1b9ad4c #1 type=home}, Task{7fffd36 #13163 type=standard A=10515:com.mobilecodex.nativeapp}, Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}]
+04-11 12:30:03.673  3590  3796 D OplusFlexibleActivityTransitionManager: fixTransitType type result:1, targets: [ChangeInfo{1b2145 container=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}} flags=0x0}, ChangeInfo{e609a container=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} flags=0x0}]
+04-11 12:30:03.673  3590  3796 D OplusTransitionAnimationManager: activityRecordCount1fullScreenArBeHindStartingWindow null
+04-11 12:30:03.673  3590  3796 D OplusTransitionAnimationManager: activityRecordCount1fullScreenArBeHindStartingWindow null
+04-11 12:30:03.673  3590  3796 D QuickBackInputPolicy: resetInputInterceptState for remoteTransition: false
+04-11 12:30:03.673  3590  3796 D OplusTransitionController: onTransactionReady, transition: 27129, info: {id=27129 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089})/@0x81d16f6 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 bc=fffef7ff component=com.binance.monitor/.ui.main.MainActivity opt={t=FROM_STYLE mUserId=0}},{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089})/@0xb59f93f sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 bc=fffef7ff component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=FROM_STYLE mUserId=0}}] 
+04-11 12:30:03.673  3590  3796 D OplusTransitionController: extendInfo=[
+04-11 12:30:03.673  3590  3796 D OplusTransitionController:  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-11 12:30:03.673  3590  3796 D OplusTransitionController: , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=13089, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=27129, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-11 12:30:03.673  3590  3796 D OplusTransitionController: , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}, targets : [ChangeInfo{1b2145 container=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}} flags=0x0}, ChangeInfo{e609a container=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} flags=0x0}], participants: {ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}}, ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}, ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1}}
+04-11 12:30:03.674 15031 15220 I Quality-ScreenOnOffLogProcessor: withInScreenOnOffRange mIsScreenOn:true refTime:1775881803341 mRecentScreenOnTime:1775878373956 mRecentScreenOffTime:1775878373425
+04-11 12:30:03.674  3590  3792 V WindowManager: Sent Transition (#27129) createdAt=04-11 12:30:03.338 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=13089 effectiveUid=10512 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.binance.monitor/.launcher.IconFinancialAlias mCallingUid=10214 } baseActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.main.MainActivity} topActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} origActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias} realActivity=ComponentInfo{com.binance.monitor/com.binance.monitor.ui.main.MainActivity}
+04-11 12:30:03.674  3590  3792 V WindowManager:  numActivities=2 lastActiveTime=929018753 supportsSplitScreenMultiWindow=true supportsMultiWindow=true supportsPocketStudioMultiWindow=true isInFlexibleEmbedded = false uid = 10512 pid = 32357 resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{8f51364 Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 140 - 0, 0)
+04-11 12:30:03.674  3590  3792 V WindowManager:  topActivityInfo=ActivityInfo{37eea5b com.binance.monitor.ui.account.AccountStatsBridgeActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=false isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(330, 828 - 935, 2092) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0
+04-11 12:30:03.674  3590  3792 V WindowManager:  appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityInOplusCompatMode=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityAppBounds=Rect(0, 140 - 1264, 2780) isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null topActivityLetterboxInsets=Rect(0, 0 - 0, 0)
+04-11 12:30:03.674  3590  3792 V WindowManager:  mOplusExtraBundle = Bundle[{androidx.flexible.taskFrame=Rect(0, 0 - 0, 0), topOpaqueSystemBarsAppearance=0, androidx.flexible.Alpha=1.0, androidx.activity.task.attach.blur=0, androidx.activity.LaunchInsensible=0, androidx.activity.LaunchCornerRadius=0, key_flexible_task_state=0, topActivitySupportAppInnerSplit=false, key_flexible_task_animating_type=-1, key_flexible_task_root_activity_processname=com.binance.monitor, androidx.activity.LaunchScenario=0, is_oplus_clone_task=false, flexible_super_mini_state=false, topRunningActivityHash=95862188, androidx.activity.LaunchScale=1.0, androidx.activity.LaunchShadowRadius=0, is_transient_hide_for_task_info=false, key_flexible_task_root_activity_pid=32357, key_flexible_task_root_activity_uid=10512}]}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 27129 }
+04-11 12:30:03.674  8338  2032 V WindowManagerShell: onTransitionReady(transaction=15418935202795)
+04-11 12:30:03.674  3590  3796 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.674  3590  3792 V WindowManager:     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+04-11 12:30:03.674  3590  3792 V WindowManager:     info={id=27129 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+04-11 12:30:03.674  3590  3792 V WindowManager:         {m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089})/@0x81d16f6 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.main.MainActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},
+04-11 12:30:03.674  3590  3792 V WindowManager:         {m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089})/@0xb59f93f sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}
+04-11 12:30:03.674  3590  3792 V WindowManager:     ] 
+04-11 12:30:03.674  3590  3792 V WindowManager: extendInfo=[
+04-11 12:30:03.674  3590  3792 V WindowManager:  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-11 12:30:03.674  3590  3792 V WindowManager: , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=13089, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=27129, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-11 12:30:03.674  3590  3792 V WindowManager: , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-11 12:30:03.674  8338  8381 V WindowManagerShell: onTransitionReady (#27129) android.os.BinderProxy@86a6b59: {id=27129 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+04-11 12:30:03.674  8338  8381 V WindowManagerShell:         {m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089})/@0xb8c69cc sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.main.MainActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},
+04-11 12:30:03.674  8338  8381 V WindowManagerShell:         {m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089})/@0x2cd6415 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}
+04-11 12:30:03.674  8338  8381 V WindowManagerShell:     ] 
+04-11 12:30:03.674  8338  8381 V WindowManagerShell: extendInfo=[
+04-11 12:30:03.674  8338  8381 V WindowManagerShell:  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-11 12:30:03.674  8338  8381 V WindowManagerShell: , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=13089, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=27129, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-11 12:30:03.674  8338  8381 V WindowManagerShell: , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-11 12:30:03.674  8338  8381 D OplusShellTransition: dispatchReady, active:(#27129) android.os.BinderProxy@86a6b59@0, isSync=false, track:com.android.wm.shell.transition.Transitions$Track@f3fa59b
+04-11 12:30:03.674  3590  3796 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.674  8338  8381 D OplusShellTransition: Abort transition (#27129) android.os.BinderProxy@86a6b59@0 WMCore requested. reason: 0; abortTransition: false
+04-11 12:30:03.674  8338  8381 V WindowManagerShell: Playing animation for (#27129) android.os.BinderProxy@86a6b59@0
+04-11 12:30:03.674  8338  8381 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: start OnePuttTransition animation, info = {id=27129 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089})/@0xb8c69cc sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.main.MainActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089})/@0x2cd6415 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: extendInfo=[
+04-11 12:30:03.675  8338  8381 V WindowManagerShell:  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=13089, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=27129, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-11 12:30:03.675 32357 32357 I ChainTrace: stream type=syncEvent gapMs=919 refreshMarket=true
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler:  performAnimation transition:android.os.BinderProxy@86a6b59 ,info:{id=27129 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089})/@0xb8c69cc sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.main.MainActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089})/@0x2cd6415 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler: extendInfo=[
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler:  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler: , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=13089, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=27129, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler: , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-11 12:30:03.675 32357 32357 I ChainTrace: market_apply symbol=BTCUSDT closeTime=1775881859999 fetchMs=-1 triggerToApplyMs=-1
+04-11 12:30:03.675 32357 32357 I ChainTrace: repo_kline symbol=BTCUSDT closeTime=1775881859999 applyToRepoMs=0
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler:  no need handler this transitionInfo: {id=27129 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089})/@0xb8c69cc sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.main.MainActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089})/@0x2cd6415 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler: extendInfo=[
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler:  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler: , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=13089, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=27129, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-11 12:30:03.675  8338  8381 D FlexibleTaskTransitionHandler: , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: Transition doesn't have explicit remote, search filters for match for {id=27129 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089})/@0xb8c69cc sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.main.MainActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089})/@0x2cd6415 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: extendInfo=[
+04-11 12:30:03.675  8338  8381 V WindowManagerShell:  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=13089, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=27129, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-11 12:30:03.675  8338  8381 V WindowManagerShell:  Checking filter Pair{{types=[] flags=0x0] notFlags=0x100 checks=[{atype=home independent=true modes=[OPEN,TO_FRONT] flags=NONE mustBeTask=false order=TOP topActivity=ComponentInfo{com.android.launcher/com.android.launcher.Launcher} launchCookie=null windowingMode=undefined},{atype=standard independent=true modes=[CLOSE,TO_BACK] flags=NONE mustBeTask=false order=ANY topActivity=null launchCookie=null windowingMode=undefined}]} RemoteTransition { remoteTransition = android.window.IRemoteTransition$Stub$Proxy@a5bfc11, appThread = android.app.IApplicationThread$Stub$Proxy@61db176, debugName = QuickstepLaunchHome }}
+04-11 12:30:03.675  8338  8381 V WindowManagerShell:  Delegate animation for (#27129) to null
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: start default transition animation, info = {id=27129 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089})/@0xb8c69cc sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.main.MainActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}},{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089})/@0x2cd6415 sb=Rect(0, 0 - 1264, 2780) eb=Rect(0, 0 - 1264, 2780) epz=Point(1264, 2780) d=0 component=com.binance.monitor/.ui.account.AccountStatsBridgeActivity opt={t=CUSTOM enterResId=0 changeResId=0 exitResId=0 mUserId=0}}] 
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: extendInfo=[
+04-11 12:30:03.675  8338  8381 V WindowManagerShell:  OplusTransitionExtendedInfo{mTmpFinishT=null, mInOplusCompatMode=false, mIsProcessRunning=false, mHasMismatchBoundsTarget=false, mRecentsController=null, mRemoteTransition=null, mIsTranslucentActivityToHome=false, mAvoidInterceptKeyEventToHome=false, mIsFromHome=false, mParentLeash=null, mBackAnimClosingLeash=null, mIsOplusAnimRes=false, mKeepBgForContinuous=false, mIsBalAllow=false, mTaskNotInRecent=false, mIsPredictiveBackAnim=false, mIsMergedWithPredictive=false, mIsLaunchFromSpruce=false, mIsLaunchFromDrive=false, mGlobalSearchPageSwitch=false, mNeedNoAlphaGlobalSearchScene=false, mAssistScreenShowing=false, mSwipeUpBrowserScreenShowing=false, mUserIdTransition=-1
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: , mInRemoteScene=false, mInPreReady=false, mPreStart=false, mToken=null, mAbortByRemoteFromHome=false, mShellApplyToken=null, mRequestTransitionTaskId=13089, mAbortTransitionOnShell=0, mStartFromShortcut=false, mRemovedTaskId=-1, mTransitionInterruptType=0, mMergeSecondTaskId=-1, mTaskIdStartFromRecents=0, mTransitionId=27129, mCanUseSpringSlideAnim=false, mTransitionLaunchFrom=0, mFoldChangeType=-1, mAnimStartingPosition=[0, 0, 0, 0], mIsOpeningStkDialogActivity=false, mSecondaryHomeToFrontWhenUnFolding=false, mIsNeedApplyStartTForEmbedded=false
+04-11 12:30:03.675  8338  8381 V WindowManagerShell: , mNeedCanvasExitAnim=false, mMergeSecondTaskAnimation=false, mIsLaunchUnityStart=false, mIsLaunchFromAssistantByDefault=false, mSkipRemoteTransitionfalse, mIsStartFromKeyguard=false flags=0x0, mWCT=null, mIsOpenMergeToInValidPredictive=false, mPromoteTaskWhenKeyguard-1, mRootLayerZOrderArray={}}]}
+04-11 12:30:03.675  8338  8381 D FSS_OplusFoldSwitchStateObserver: cancelAnimationIfNeedWhenFolding: foldChangeType = -1
+04-11 12:30:03.675  8338  8381 D OplusShellTransition: canCustomizeAppTransition, isGlobalSearchPageSwitch = false, swipeUpBrowserPageSwitch = false, onlyHasTranslucentActivity = false, pkgName = com.binance.monitor
+04-11 12:30:03.675  8338  8381 D OplusShellTransition: This page has its own override animation, enterResId = 0, closeResId = 0, pkgName = com.binance.monitor
+04-11 12:30:03.675  8338  8381 D OplusShellTransition: checkAndLoadCustomAnimation packageName =:com.binance.monitor,transit =:2,enter =:true,animResId =:0
+04-11 12:30:03.675  8338  8381 D OplusShellTransition: canCustomizeAppTransition, isGlobalSearchPageSwitch = false, swipeUpBrowserPageSwitch = false, onlyHasTranslucentActivity = false, pkgName = com.binance.monitor
+04-11 12:30:03.675  8338  8381 D OplusShellTransition: This page has its own override animation, enterResId = 0, closeResId = 0, pkgName = com.binance.monitor
+04-11 12:30:03.675  8338  8381 D OplusShellTransition: checkAndLoadCustomAnimation packageName =:com.binance.monitor,transit =:2,enter =:false,animResId =:0
+04-11 12:30:03.675  8338  8381 D OplusShellTransition: addBackgroundColorOnTask, , isTaskLevelTransition = false, hasBgAlready = false
+04-11 12:30:03.675  8338  8381 D OplusShellTransition: DefaultTransitionHandler#onAnimFinish=> transition=android.os.BinderProxy@86a6b59, backAnimContinue=false
+04-11 12:30:03.676  8338  8381 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#27129) android.os.BinderProxy@86a6b59@0
+04-11 12:30:03.676  8338  8381 D SplitScreen-->AppLockManager: setStartFromSafeControl mStartFromSafeControl=false
+04-11 12:30:03.676  8338  8381 D ShellTaskOrganizerExt: adjust change for exiting mini task: -1
+04-11 12:30:03.676  3590  8847 D Transition: finishTransition ar ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}}, isVisibleRequested=false, state=STOPPING, visibleAtTransitionEndTokens={ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}}, this=TransitionRecord{b1ceba7 id=27129 track=0 type=OPEN flags=0x0 state=2 c=[
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{5476854 container=Display{#0 state=ON size=1264x2780 ROTATION_0} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{1b2145 container=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{e609a container=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{62933fd container=DefaultTaskDisplayArea@136308155 flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{1068f2 container=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{4229b43 container=ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition: ]
+04-11 12:30:03.676  3590  8847 D Transition: }
+04-11 12:30:03.676  3590  8847 D ActivityTaskManager: commitVisibility: ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}}: visible=false visibleRequested=false, isInTransition=false 
+04-11 12:30:03.676  3590  8847 D WindowManager: NFW_setClientVisible:ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}} clientVisible:false
+04-11 12:30:03.676  3590  8847 I WindowManager: Window{a8a1046 u0 com.binance.monitor/com.binance.monitor.ui.main.MainActivity} state from HAS_DRAWN to DRAW_PENDING; reason: resetDrawState
+04-11 12:30:03.676  3590  8847 D Transition: finishTransition ar ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}, isVisibleRequested=true, state=RESUMED, visibleAtTransitionEndTokens={ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}}, this=TransitionRecord{b1ceba7 id=27129 track=0 type=OPEN flags=0x0 state=2 c=[
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{5476854 container=Display{#0 state=ON size=1264x2780 ROTATION_0} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{1b2145 container=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{e609a container=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{62933fd container=DefaultTaskDisplayArea@136308155 flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{1068f2 container=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition:    ChangeInfo{4229b43 container=ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} flags=0x0}
+04-11 12:30:03.676  3590  8847 D Transition: ]
+04-11 12:30:03.676  3590  8847 D Transition: }
+04-11 12:30:03.676 32357 32421 D VRI[MainActivity]: dispatchAppVisibility visible:false mUpcomingWindowFocus:false
+04-11 12:30:03.677  3590  8847 I OplusAppSwitchManagerService:  handleAppVisible , r = ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}
+04-11 12:30:03.677  3590  8847 D OplusTransitionController: finishTransition, transition: TransitionRecord{b1ceba7 id=27129 track=0 type=OPEN flags=0x0 state=4 c=[
+04-11 12:30:03.677  3590  8847 D OplusTransitionController:    ChangeInfo{5476854 container=Display{#0 state=ON size=1264x2780 ROTATION_0} flags=0x0}
+04-11 12:30:03.677  3590  8847 D OplusTransitionController:    ChangeInfo{1b2145 container=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}} flags=0x0}
+04-11 12:30:03.677  3590  8847 D OplusTransitionController:    ChangeInfo{e609a container=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} flags=0x0}
+04-11 12:30:03.677  3590  8847 D OplusTransitionController:    ChangeInfo{62933fd container=DefaultTaskDisplayArea@136308155 flags=0x0}
+04-11 12:30:03.677  3590  8847 D OplusTransitionController:    ChangeInfo{1068f2 container=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor} flags=0x0}
+04-11 12:30:03.677  3590  8847 D OplusTransitionController:    ChangeInfo{4229b43 container=ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} flags=0x0}
+04-11 12:30:03.677  3590  8847 D OplusTransitionController: ]
+04-11 12:30:03.677  3590  8847 D OplusTransitionController: }
+04-11 12:30:03.677  3590  8847 D FlexibleTaskTransitionController:  finishTransition pendingRecentToFlexibleTask:null,isRotationTransition:false ,pendingRecentToFlexible:null ,transition:TransitionRecord{b1ceba7 id=27129 track=0 type=OPEN flags=0x0 state=4 c=[
+04-11 12:30:03.677  3590  8847 D FlexibleTaskTransitionController:    ChangeInfo{5476854 container=Display{#0 state=ON size=1264x2780 ROTATION_0} flags=0x0}
+04-11 12:30:03.677  3590  8847 D FlexibleTaskTransitionController:    ChangeInfo{1b2145 container=ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}} flags=0x0}
+04-11 12:30:03.677  3590  8847 D FlexibleTaskTransitionController:    ChangeInfo{e609a container=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089} flags=0x0}
+04-11 12:30:03.677  3590  8847 D FlexibleTaskTransitionController:    ChangeInfo{62933fd container=DefaultTaskDisplayArea@136308155 flags=0x0}
+04-11 12:30:03.677  3590  8847 D FlexibleTaskTransitionController:    ChangeInfo{1068f2 container=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor} flags=0x0}
+04-11 12:30:03.677  3590  8847 D FlexibleTaskTransitionController:    ChangeInfo{4229b43 container=ActivityRecord{190111732 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t-1} flags=0x0}
+04-11 12:30:03.677  3590  8847 D FlexibleTaskTransitionController: ]
+04-11 12:30:03.677  3590  8847 D FlexibleTaskTransitionController: }
+04-11 12:30:03.677  3590  8847 D TransitionControllerExtImpl: NFW_send RECOMPUTE_FOCUS in finishTransition
+04-11 12:30:03.677  3590  3830 W UserAwareMgr: event can not be released, id: 5005, count: 2, releasePid: 3590
+04-11 12:30:03.677  8338  8381 D ShellTaskOrganizer: onTransitionFinish, isRecent:false
+04-11 12:30:03.677  8338  8381 V WindowManagerShell: Track 0 became idle
+04-11 12:30:03.677  8338  8381 V WindowManagerShell: All active transition animations finished
+04-11 12:30:03.677  8338  8381 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@423c8cd
+04-11 12:30:03.677  8338  8381 D OplusShellTransition: dispatchTransition, animated mHandler: com.android.wm.shell.transition.DefaultTransitionHandler@423c8cd
+04-11 12:30:03.677  8338  8381 V WindowManagerShell: Track 0 became idle
+04-11 12:30:03.677  8338  8381 V WindowManagerShell: All active transition animations finished
+04-11 12:30:03.678  3590  3796 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.678  3590  3875 D VRR [OPlusRefreshRateService]:  setDirectorStates [flag: 1, state: 0, directorStateOff: 0]
+04-11 12:30:03.678  2399  8068 D VRR [RefreshRateDirector]: updateState mState = 1
+04-11 12:30:03.678  3590  3795 D WindowManager: NFW_findFocusedWindowIfNeeded:Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} mCurrentFocus:Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+04-11 12:30:03.681  3590  8467 I BLASTSyncEngine: onCommitted syncId: 27129, timeout: false ran: false
+04-11 12:30:03.681  3590  8467 D Transition: finishTransaction-onCommitted syncId=27129
+04-11 12:30:03.682 32357 32357 D VRI[MainActivity]: visibilityChanged oldVisibility=true newVisibility=false
+04-11 12:30:03.682 32357 32357 D VRI[MainActivity]: setWindowStopped stopped:true
+04-11 12:30:03.682  3590  8467 I InputDispatcher: updateFocusedWindow, fecae5 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity on display 0, reason: Window became focusable. Previous reason: NOT_VISIBLE, result:   FocusedWindows:
+04-11 12:30:03.682  3590  8467 I InputDispatcher:     displayId=0, name='fecae5 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity'
+04-11 12:30:03.683 32357 32357 D OplusScrollToTopManager: com.binance.monitor/com.binance.monitor.ui.main.MainActivity,window dying
+04-11 12:30:03.683 32357 32357 D OplusScrollToTopManager: com.binance.monitor/com.binance.monitor.ui.main.MainActivity,unregisterSystemUIBroadcastReceiver 
+04-11 12:30:03.683 32357 32357 D OplusScrollToTopManager: com.binance.monitor/com.binance.monitor.ui.main.MainActivity, unregisterSystemUIBroadcastReceiver failed java.lang.IllegalArgumentException: Receiver not registered: android.view.OplusScrollToTopManager$2@1360ce9
+04-11 12:30:03.683 32357 32357 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@d5126d1
+04-11 12:30:03.683  3590  8467 D CoreBackPreview: Window{a8a1046 u0 com.binance.monitor/com.binance.monitor.ui.main.MainActivity}: Setting back callback null
+04-11 12:30:03.683 32357 32357 D OplusCursorFeedback: editorDetachFromWindow android.widget.Editor@128ad6e
+04-11 12:30:03.683 32357 32357 D OplusCursorFeedback: editorDetachFromWindow android.widget.Editor@43d8c0f
+04-11 12:30:03.684 32357 32357 D OplusCursorFeedback: editorDetachFromWindow android.widget.Editor@17b649c
+04-11 12:30:03.684 32357 32357 D HWUI    : RenderProxy::destroy: this=0xb4000070f8922100, mContext=0xb400007236a54dc0
+04-11 12:30:03.684 32357 32399 D HWUI    : SkiaVulkanPipeline::setSurface: this=0xb4000070edbb1680, surface=NULL
+04-11 12:30:03.684 32357 32399 D BufferQueueProducer: [VRI[MainActivity]#74(BLAST Consumer)74](id:7e650000004a,api:1,p:32357,c:32357) disconnect: api 1
+04-11 12:30:03.684 32357 32357 D ViewRootImpl: Skipping stats log for color mode
+04-11 12:30:03.685  3590  8847 I WindowManager: Window{a8a1046 u0 com.binance.monitor/com.binance.monitor.ui.main.MainActivity} state from DRAW_PENDING to NO_SURFACE; reason: destroySurface
+04-11 12:30:03.685  3590  8847 I ImeTracker: system_server:9a96eb99: onRequestHide at ORIGIN_SERVER reason IME_REQUESTED_CHANGED_LISTENER fromUser false
+04-11 12:30:03.685  3590  7380 I ImeTracker: system_server:9a96eb99: onCancelled at PHASE_SERVER_SHOULD_HIDE
+04-11 12:30:03.685  3590  8847 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.686  3590  8847 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.686  3590  8847 D WindowManager: NFW_findFocusedWindowIfNeeded:Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity} mCurrentFocus:Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+04-11 12:30:03.686  3590  3796 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.686 32357 32357 D VRI[AccountStatsBridgeActivity]: onFocusEvent true
+04-11 12:30:03.686  3590  8847 D ActivityTaskManager: removeAppToken: ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t13089 f}} delayed=false parent=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor} animating=false Callers=com.android.server.wm.DisplayContent.removeAppToken:1759 com.android.server.wm.ActivityRecord.removeFromHistory:4970 com.android.server.wm.ActivityRecord.destroyed:5060 com.android.server.wm.ActivityClientController.activityDestroyed:339 
+04-11 12:30:03.687  3590  7959 D BackgroundInstallControlService: Package event received: 0
+04-11 12:30:03.688  3590  7380 D InputMethodManagerService: isSecurity: attribute.packageName = com.binance.monitor mCurMethodId = com.sohu.inputmethod.sogou/.SogouIME isSecurity = false ( enable = true needShow = false inBlackList = false isExist = true )
+04-11 12:30:03.688  3590  7380 I ImeTracker: com.binance.monitor:7b6f36a9: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+04-11 12:30:03.689 32357 32357 D InsetsController: hide(ime(), fromIme=false)
+04-11 12:30:03.689 32357 32357 I ImeTracker: com.binance.monitor:7b6f36a9: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+04-11 12:30:03.690  3590  8467 I ImeTracker: system_server:94ca5399: onRequestHide at ORIGIN_SERVER reason IME_REQUESTED_CHANGED_LISTENER fromUser false
+04-11 12:30:03.690  3590  7380 I ImeTracker: system_server:94ca5399: onCancelled at PHASE_SERVER_SHOULD_HIDE
+04-11 12:30:03.690  3590  3796 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:03.694 32357 32421 D BLASTBufferQueue: [VRI[MainActivity]#74](f:0,a:1) destructor()
+04-11 12:30:03.694 32357 32421 D BufferQueueConsumer: [VRI[MainActivity]#74(BLAST Consumer)74](id:7e650000004a,api:0,p:-1,c:32357) disconnect
+04-11 12:30:03.701  3590  8280 I Osense-BaseDecisionMaker: notifySceneToAthenaPolicy: SCENE_ACTIVITY_IDLE, bundle: Bundle[{scene=SCENE_ACTIVITY_IDLE}]
+04-11 12:30:03.727  2280  2331 D BatteryChargeControl: bcc get no support from charging protocol
+04-11 12:30:03.734  2399  3162 D VRR [OTI]: handleIdle from 0 to 1
+04-11 12:30:03.734  2399  3162 D VRR [OTI-HW]: isStateReady 0
+04-11 12:30:03.734  2399  3162 D VRR [OTI-HW]: keep rate.
+04-11 12:30:03.795 11607 11620 W putmethod.sogou: Reducing the number of considered missed Gc histogram windows from 268 to 100
+04-11 12:30:03.801  2181 23599 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-11 12:30:03.801  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:03.801  2258  2258 D SensorFeature: write 39 bytes:929019193600539,929019204711650,29502,0
+04-11 12:30:03.804 11607 11622 W System  : A resource failed to call AbstractCursor.close. 
+04-11 12:30:03.826  4482  4680 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:03.827  4482  4659 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:03.827  1254 27519 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:03.827  1254 27521 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:03.854 14034 15313 D CommonApp-264-10512: transport layer data is invalid
+04-11 12:30:03.855 14034 15313 D CommonApp-255-10512: commonScoreStrategy scenarios low package
+04-11 12:30:03.855 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:03.855 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:03.855 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:03.876  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:03.894  2113 20704 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 135.0,cct 5878.9,brl/algo/ir 1310.0/2.0/57.4,pwm/dc 0.0/0.0,rgbc 6189.517090/4188.068359/2651.157959/11702.314453,ts 929019212274005,cnt 34180,flag 95038
+04-11 12:30:03.894  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34176)(cct, lux, ir)[5878.86, 134.99, 57.394913] (r, g, b, c)[6236.86, 4229.86, 2679.85, 11823.53]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29502
+04-11 12:30:03.895  3590  9788 I AICCTModule: SensorFilter: brightness threshold 1.2 screenNit is 88.015 ave enviroment lux is 86.868965 luxForNit 85.61601demarcationPoint200.0 result is false
+04-11 12:30:03.895  3590  9788 I AICCTModule: SensorFilter: findSecondNearestValue, sensorValue: 6337.2876 nearestMaxValue:6331.7896 secondNearestValue: 6331.7896
+04-11 12:30:03.895  3590  9788 I AICCTModule: SensorFilter: findSecondNearestValue, sensorValue: 87.30163 nearestMaxValue:86.97702 secondNearestValue: 86.97702
+04-11 12:30:03.926  2113 17888 I sensors-hal: handle_sns_std_sensor_event:114, oplus rgb_rear sample: (cct, lux, ir, x, y)[10083, 21, 288, 259, 324]
+04-11 12:30:03.926  2113 17888 I sensors-hal: handle_sns_std_sensor_event:116, oplus rgb_rear sample: (r, g, b, c w)[857, 1757, 396, 507, 0]
+04-11 12:30:03.986 14034 15457 D AppSenseConfig: getIgnoreAppList: [com.android.launcher, com.android.contacts, com.oplus.wirelesssettings, com.coloros.alarmclock, com.coloros.calculator, com.coloros.calendar, com.coloros.phonemanager, com.android.settings, com.android.phone, com.oplus.nas, com.oplus.nhs, com.oplus.appdetail, com.android.permissioncontroller, com.oplus.pscanvas, com.oplus.autotest.test.ctp, com.android.systemui, com.android.systemui.overlay.fingerprint.anim.fy, com.android.systemui.overlay.fingerprint.anim.qy, com.android.systemui.overlay.fingerprint.anim.sw, com.android.systemui.overlay.fingerprint.anim.xw, com.android.systemui.overlay.fingerprint.anim.ccyh, com.android.systemui.overlay.fingerprint.anim.halo, com.android.systemui.overlay.fingerprint.anim.jslz, com.android.systemui.overlay.fingerprint.anim.none, com.android.systemui.overlay.fingerprint.anim.xklc]
+04-11 12:30:03.986 14034 15457 D AppSenseConfig: getIgnoreAppList: [com.android.launcher, com.android.contacts, com.oplus.wirelesssettings, com.coloros.alarmclock, com.coloros.calculator, com.coloros.calendar, com.coloros.phonemanager, com.android.settings, com.android.phone, com.oplus.nas, com.oplus.nhs, com.oplus.appdetail, com.android.permissioncontroller, com.oplus.pscanvas, com.oplus.autotest.test.ctp, com.android.systemui, com.android.systemui.overlay.fingerprint.anim.fy, com.android.systemui.overlay.fingerprint.anim.qy, com.android.systemui.overlay.fingerprint.anim.sw, com.android.systemui.overlay.fingerprint.anim.xw, com.android.systemui.overlay.fingerprint.anim.ccyh, com.android.systemui.overlay.fingerprint.anim.halo, com.android.systemui.overlay.fingerprint.anim.jslz, com.android.systemui.overlay.fingerprint.anim.none, com.android.systemui.overlay.fingerprint.anim.xklc]
+04-11 12:30:03.986 14034 15457 D AppSenseConfig: getIgnoreAppList: [com.android.launcher, com.android.contacts, com.oplus.wirelesssettings, com.coloros.alarmclock, com.coloros.calculator, com.coloros.calendar, com.coloros.phonemanager, com.android.settings, com.android.phone, com.oplus.nas, com.oplus.nhs, com.oplus.appdetail, com.android.permissioncontroller, com.oplus.pscanvas, com.oplus.autotest.test.ctp, com.android.systemui, com.android.systemui.overlay.fingerprint.anim.fy, com.android.systemui.overlay.fingerprint.anim.qy, com.android.systemui.overlay.fingerprint.anim.sw, com.android.systemui.overlay.fingerprint.anim.xw, com.android.systemui.overlay.fingerprint.anim.ccyh, com.android.systemui.overlay.fingerprint.anim.halo, com.android.systemui.overlay.fingerprint.anim.jslz, com.android.systemui.overlay.fingerprint.anim.none, com.android.systemui.overlay.fingerprint.anim.xklc]
+04-11 12:30:03.987 14034 15457 D ActivityAdapter: taskChange: pre: 1, cur: 1, changed:true
+04-11 12:30:03.988 14034 15457 D ActivityAdapter: notifyActivityQuery: [com.binance.monitor; com.binance.monitor.ui.account.AccountStatsBridgeActivity; 1; COMMON; 10512]
+04-11 12:30:03.988 14034 15457 D OPlusFrontAppManager: useAdapterResult, pkg=com.binance.monitor,activity=com.binance.monitor.ui.account.AccountStatsBridgeActivity,result=true
+04-11 12:30:03.988 14034 15457 D OPlusFrontAppManager: decide -->> [com.binance.monitor; com.binance.monitor.ui.account.AccountStatsBridgeActivity; 1; COMMON; 10512]
+04-11 12:30:03.988 14034 15457 D ConferenceScene: pkg:com.binance.monitor, activity:com.binance.monitor.ui.account.AccountStatsBridgeActivity, appSense:COMMON
+04-11 12:30:03.988 14034 15457 D ConferenceScene: pkg:com.binance.monitor, activity:com.binance.monitor.ui.main.MainActivity, appSense:COMMON
+04-11 12:30:03.988 14034 15297 D CellMap/GameLatencyMapService: handleAppSceneChange: [{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}]
+04-11 12:30:03.989 14034 15297 D CellMap/QoeMapService: handleAppSceneChange: [{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}]
+04-11 12:30:03.989 14034 15297 D CellMap/QoeMapService: handleAppSceneChange update: 0
+04-11 12:30:03.989 14034 15313 D Subsys-ScoreAppManager: handleMessage what:2
+04-11 12:30:03.989 14034 15313 D Subsys-ScoreAppManager: EVENT_ID_APP_SENSE_CHANGE  onFrontActivityChanged
+04-11 12:30:03.989 14034 15313 D Subsys-ScoreAppManager: appSceneChange fgAppUnits size 1 fgAppUnits [{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}] mLastNetworkList[255, 264]
+04-11 12:30:03.989 14034 15313 D Subsys-ScoreAppManager: createApp
+04-11 12:30:03.989 14034 15313 D Subsys-ScoreAppManager: createApp
+04-11 12:30:03.989 14034 14034 D AtomHighLoadSenseInfo: handleMessage what:1000
+04-11 12:30:03.989 14034 15313 D Subsys-ScoreAppManager: unit: {pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}
+04-11 12:30:03.989 14034 14034 D AtomHighLoadSenseInfo: handleAppSenseChanged original mode:{live:0,video:0,voice call:0,video call:0,live host:0,meeting:0}
+04-11 12:30:03.989 14034 14034 D AtomHighLoadSenseInfo: handleAppSenseChanged appInfoUnit:{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}
+04-11 12:30:03.989 14034 14034 D AtomNetworkScoreInfo: handleMessage: 1006
+04-11 12:30:03.989 14034 14034 D AtomNetworkScoreInfo: top app size: 1
+04-11 12:30:03.989 14034 15313 D CommonApp-255-10512: DefaultState EVENT_SCENARIOS_CHANGE
+04-11 12:30:03.989 14034 14034 D AtomNetworkScoreInfo: Front app state: 1
+04-11 12:30:03.989 14034 15313 D CommonApp-255-10512: scene=COMMON pn=com.binance.monitor
+04-11 12:30:03.989 14034 14034 D AtomModemKpiInfo: handleMessage what:1000
+04-11 12:30:03.989 14034 15313 D CommonApp-264-10512: DefaultState EVENT_SCENARIOS_CHANGE
+04-11 12:30:03.989 14034 15313 D CommonApp-264-10512: scene=COMMON pn=com.binance.monitor
+04-11 12:30:03.990 14034 14034 D SceneService: handleMessage what:1004
+04-11 12:30:03.990 14034 14034 D SceneService: notifyAppSceneChanged original mode:{live:0,video:0,voice call:0,video call:0,live host:0,game:0,meeting:0,news:0,file transfer:0},appInfoUnit:[{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}]
+04-11 12:30:03.990 14034 14034 D ExtremeCommService: handleMessage what:1012
+04-11 12:30:03.990 14034 14034 D ExtremeCommService: updateAppInfo appInfoUnit: com.binance.monitor, winMode:1
+04-11 12:30:03.990 14034 14034 D FrontAppsEvent: receive msg:1001
+04-11 12:30:03.990 14034 14034 D FrontAppsEvent: onAppSceneUpdate, infoList:[{pkgName:com.binance.monitor,activityName:,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}]
+04-11 12:30:03.991 14034 15457 D AppSenseService: notifySenseEvent: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512},
+04-11 12:30:03.991  3590  3795 D AppSenseClient: handleMessage: 100
+04-11 12:30:03.991  3590  3795 D AppSenseClient: handleSenseEvent appInfoUnits: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512},
+04-11 12:30:03.991  8498  8498 D AppSenseClient: handleMessage: 100
+04-11 12:30:03.991  8406  8866 D AppSenseClient: handleMessage: 100
+04-11 12:30:03.991  3590  3795 D AppSenseClient: handleSenseEvent clients: 1
+04-11 12:30:03.991  3590  3795 D AppSenseClient: handleSenseEvent clientId: 224279445
+04-11 12:30:03.991  8498  8498 D AppSenseClient: handleSenseEvent appInfoUnits: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512},
+04-11 12:30:03.991  8406  8866 D AppSenseClient: handleSenseEvent appInfoUnits: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512},
+04-11 12:30:03.991  8406  8866 D AppSenseClient: handleSenseEvent clients: 1
+04-11 12:30:03.991  8498  8498 D AppSenseClient: handleSenseEvent clients: 1
+04-11 12:30:03.991  8406  8866 D AppSenseClient: handleSenseEvent clientId: 101737326
+04-11 12:30:03.991  8498  8498 D AppSenseClient: handleSenseEvent clientId: 74017188
+04-11 12:30:03.991  3590  3795 D AppSenseClient: notifyAppChanges: [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}]
+04-11 12:30:03.991  8406  8866 D AppSenseClient: notifyAppChanges: [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}]
+04-11 12:30:03.991  8498  8498 D AppSenseClient: notifyAppChanges: [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}]
+04-11 12:30:03.991  8498  8498 D NhsAppSenseListener: onAppChanged, app list size: 1
+04-11 12:30:03.991 13839 14411 D AppSenseClient: handleMessage: 100
+04-11 12:30:03.991 13839 14411 D AppSenseClient: handleSenseEvent appInfoUnits: {pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512},
+04-11 12:30:03.991 13839 14411 D AppSenseClient: handleSenseEvent clients: 1
+04-11 12:30:03.991 13839 14411 D AppSenseClient: handleSenseEvent clientId: 106466519
+04-11 12:30:03.992 13839 14411 D AppSenseClient: notifyAppChanges: [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}]
+04-11 12:30:03.992 13839 14411 D NAS-DataSceneEvent: onAppChanged, app list size: 1
+04-11 12:30:03.992 13839 14411 D NAS-DataSceneEvent: updateAppSenseChange [{pkgName:com.binance.monitor,activityName:com.binance.monitor.ui.account.AccountStatsBridgeActivity,winMode:1,event:COMMON,type:0,subEvent:0,pid:32357,uid:10512}]
+04-11 12:30:03.992 13839 14674 D OplusLinkBoostSceneManager: handleAppSceneChange: live broadcast off
+04-11 12:30:03.993 13839 14698 E OplusNetlinkConnect: parse rsp msg failed!Message missing required fields: header
+04-11 12:30:04.022  3438  4039 D QmiClient: qmiServiceEventCallback recv msg id 47
+04-11 12:30:04.022  3438  4039 D QmiClient: enter -mServiceType 10 onQmiServiceEventCallback msgId 47
+04-11 12:30:04.022  3438  4039 D QmiClient: onQmiServiceEventCallback - enter. msgId=47
+04-11 12:30:04.022  3438  3488 D OttProxy: handleMessage msg is 3001
+04-11 12:30:04.022 14034 14747 D SubsysRadioIndication[1]: radioLinkLatencyInfoInd
+04-11 12:30:04.022 14034 14747 D SubsysRadioIndication[1]: notify enter
+04-11 12:30:04.023 14034 14034 D NetworkService[1]: handleMessage what:1008
+04-11 12:30:04.023 14034 14034 D NetworkService[1]: EVENT_REG_LINK_LATENCY_INFO_CHANGE ulLatency:10758
+04-11 12:30:04.137  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:04.144  2181 26958 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-11 12:30:04.145  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:04.145  2258  2258 D SensorFeature: write 39 bytes:929019493088056,929019547312275,29503,0
+04-11 12:30:04.162  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34181)(cct, lux, ir)[5833.71, 128.22, 58.427063] (r, g, b, c)[5910.44, 3985.70, 2518.71, 11140.51]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29503
+04-11 12:30:04.267  3438  3988 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:04.267  3438  3988 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:04.267  3438  3988 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:04.267  3438  3988 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:04.267  3438  3988 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:04.267  2727  3986 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:04.267  2727  3986 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:04.267  2727  3986 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:04.267  2727  3986 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:04.267  2727  3986 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:04.268  3438  3485 D VsProxy : handleMessage msg is 2420
+04-11 12:30:04.268  3438  3485 D VsProxy : handleQosPeriodReportInd for instance 1 data_len 204
+04-11 12:30:04.268  2727  2826 D VsProxy : handleMessage msg is 2420
+04-11 12:30:04.268  2727  2826 D VsProxy : handleQosPeriodReportInd for instance 0 data_len 145
+04-11 12:30:04.268 14034 14747 D SubsysRadioIndication[0]: radioQosPeriodReportInd result [8, -96, -82, -42, -50, 14, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 61, 8, -52, -99, -42, -50, 14, 16, 5, 24, -64, -92, 38, 32, -22, 6, 40, -94, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -10, -1, -1, -1, -1, -1, -1, -1, -1, 1, 56, 9, 64, -94, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -95, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 29, 8, -57, -20, -92, -50, 14, 16, 5, 34, 19, 8, -64, -92, 38, 16, -22, 6, 24, 78, 32, 13, 40, -117, -32, -94, -93, 2, 48, 2, 90, 0, 98, 10, 8, -41, -26, -92, -50, 14, 16, 3, 24, 5, 122, 15, 8, -8, -24, -92, -50, 14, 16, -52, 2, 24, -21, 1, 32, -90, 9]
+04-11 12:30:04.269 14034 14034 D NetworkService[0]: handleMessage what:1005
+04-11 12:30:04.269 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo2{5G, 627264/874, EndcState=0, Band=78, DLBW=13, Rsrp=-94, Rsrq=-10, Snr=9, SvcStatus=3, ULPDCPNumDataPdu=-1, ULPDCPNumDropPdu=-1, ULPDCPTput=-1, ULRLCNumDataPdu=-1, ULRLCNumRetxPdu=-1, ULGrant=-1, ULBSR=-1, ULBler=-1, DLPDCPNumDataPdu=-1, DLPDCPTput=-1, DLRLCNumDataPdu=-1, DLRLCNumRetxPdu=-1, DLRLCNumDropPdu=-1, DLMACPaddingBytes=-1, DLPdcpNumMissToUppPdu=-1, DLBler=-1, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=0, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=332, Mtpl=235, PathLoss=1190, CellLoad=0}
+04-11 12:30:04.269 14034 14034 D NetworkService[0]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:04.269 14034 14034 D AtomModemKpiInfo: handleMessage what:1001
+04-11 12:30:04.269 14034 14034 D AtomModemKpiInfo: analyseQosInfo success
+04-11 12:30:04.269 14034 14747 D SubsysRadioIndication[1]: radioQosPeriodReportInd result [8, -96, -82, -42, -50, 14, 18, 20, 8, -58, -83, -42, -50, 14, 16, 5, 32, -79, 5, 40, 5, 56, -73, 1, 64, 19, 72, 1, 26, 13, 8, -58, -83, -42, -50, 14, 16, 3, 40, 4, 56, -94, 7, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 81, 8, -125, -83, -42, -50, 14, 16, 5, 24, -98, -23, 30, 32, -54, 1, 40, -93, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -12, -1, -1, -1, -1, -1, -1, -1, -1, 1, 64, -94, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -92, -1, -1, -1, -1, -1, -1, -1, -1, 1, 80, -99, -1, -1, -1, -1, -1, -1, -1, -1, 1, 88, -95, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 31, 8, -114, -41, -49, -50, 14, 16, 5, 24, 2, 34, 19, 8, -98, -23, 30, 16, -54, 1, 24, 41, 32, 13, 40, -126, -128, -52, -67, 21, 48, 2, 90, 0, 98, 10, 8, -85, -54, -73, -50, 14, 16, 3, 24, 5, 122, 15, 8, -61, -85, -42, -50, 14, 16, -9, 1, 24, -1, 1, 32, -2, 8]
+04-11 12:30:04.270 14034 14034 D NetworkService[1]: handleMessage what:1005
+04-11 12:30:04.270 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo1{5G, 504990/202, EndcState=2, Band=41, DLBW=13, Rsrp=-93, Rsrq=-12, Snr=0, SvcStatus=3, ULPDCPNumDataPdu=5, ULPDCPNumDropPdu=0, ULPDCPTput=689, ULRLCNumDataPdu=5, ULRLCNumRetxPdu=0, ULGrant=183, ULBSR=19, ULBler=1, DLPDCPNumDataPdu=4, DLPDCPTput=930, DLRLCNumDataPdu=3, DLRLCNumRetxPdu=0, DLRLCNumDropPdu=0, DLMACPaddingBytes=0, DLPdcpNumMissToUppPdu=0, DLBler=0, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=10, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=247, Mtpl=255, PathLoss=1150, CellLoad=0}
+04-11 12:30:04.270 14034 14034 D NetworkService[1]: tryReportModemUlTPutGuarantee: clear calculator
+04-11 12:30:04.270 14034 14034 D NetworkService[1]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:04.270 14034 14034 D AtomModemKpiInfo: handleMessage what:1001
+04-11 12:30:04.270 14034 14034 D AtomModemKpiInfo: analyseQosInfo success
+04-11 12:30:04.279  3590  7167 D osense.compress: com.v2ray.ang do shrink, target ratio = 83, final ratio = 90, cur ratio = 76
+04-11 12:30:04.371  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:04.447  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:04.447  2258  2258 D SensorFeature: write 39 bytes:929019493088056,929019860151910,29504,0
+04-11 12:30:04.450  2113 20704 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 124.1,cct 5792.2,brl/algo/ir 1310.0/2.0/58.3,pwm/dc 0.0/0.0,rgbc 5823.229004/3937.312012/2481.183838/10988.986328,ts 929019811892443,cnt 34190,flag 95040
+04-11 12:30:04.450  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34186)(cct, lux, ir)[5792.20, 124.09, 58.270195] (r, g, b, c)[5810.77, 3932.91, 2485.60, 10979.66]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29504
+04-11 12:30:04.468  3590  8061 V WindowManager: Relayout Window{83978a2 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x429 , apr = 0, vsysui=, x=-407, y=2142
+04-11 12:30:04.468 32357 32357 I SurfaceControl:  setExtendedRangeBrightness sc=Surface(name=)/@0x6fc43b4,currentBufferRatio=1.0,desiredRatio=1.0
+04-11 12:30:04.468  3590  7998 I [UAH_CLIENT]: uahRuleCtl, ruleId:206, status:3
+04-11 12:30:04.468  3590  8061 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:04.469  3590  8061 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:04.469  3590  3875 D VRR [OPlusSurfaceFlingerController]:  setComplexSceneEnable : false
+04-11 12:30:04.493 13839 14674 D UlPriorityPolicyForeground: match: config has not com.binance.monitor
+04-11 12:30:04.569  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:04.603 32357 32357 I ChainTrace: stream type=syncEvent gapMs=928 refreshMarket=true
+04-11 12:30:04.603 32357 32357 I ChainTrace: market_apply symbol=XAUUSDT closeTime=1775881859999 fetchMs=-1 triggerToApplyMs=-1
+04-11 12:30:04.603 32357 32357 I ChainTrace: repo_kline symbol=XAUUSDT closeTime=1775881859999 applyToRepoMs=0
+04-11 12:30:04.690 32357 32378 D OplusScrollToTopManager: com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity,This com.android.internal.policy.DecorView{a9b7d3f V.E...... R....... 0,0-1264,2780 aid=10 alpha=1.0 viewInfo = }[AccountStatsBridgeActivity] change focus to true
+04-11 12:30:04.694  3590  7333 D FusionLightNextGen: process end reported = 1, mode: 0, cnt: 397460, lux 74.2, cct 6236.4, r/g/b/c: 5823.2/3937.3/2481.2/10989.0, R/G/B: 144.0/140.0/129.0, bri 1310.0, match 1.00, ir 0.076440, conf 5.0, ts 929019890244839
+04-11 12:30:04.694  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34191)(cct, lux, ir)[5705.25, 122.96, 59.802242] (r, g, b, c)[5855.62, 3963.71, 2494.43, 10998.31]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29504
+04-11 12:30:04.702  2280  2323 D vendor.oplus.hardware.charger-V10-service: ret_value:120, read content:,307,307,4340,4339,26,93,95,1,1,0,494,5023,95,1,4480,600,500,0,0,9500,0,0,1,0,2,0,0,0,1,5868,96,0,4662,5046,0,0,0,0,0,0
+04-11 12:30:04.702  2280  2323 D vendor.oplus.hardware.charger-V10-service: gmtime: 2026-04-11-12-30-04
+04-11 12:30:04.703  2280  2323 D vendor.oplus.hardware.charger-V10-service: usb_online:1, ac_online:-2147483648, wireless_online:-2147483648
+04-11 12:30:04.727  2280  2331 D BatteryChargeControl: bcc get no support from charging protocol
+04-11 12:30:04.769  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:04.827  4482  4680 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:04.827  4482  4659 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:04.829  1254 27535 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:04.829  1254 27536 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:04.849  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:04.855  2181 26958 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-11 12:30:04.856  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:04.856  2258  2258 D SensorFeature: write 39 bytes:929020204174775,929020258351754,29505,0
+04-11 12:30:04.878 14034 15313 D CommonApp-264-10512: transport layer data is invalid
+04-11 12:30:04.880 14034 15313 D CommonApp-255-10512: commonScoreStrategy scenarios 5 mdnsScore=0
+04-11 12:30:04.880 14034 15313 D CommonApp-255-10512: notifyScoreChange appScene COMMON score 100
+04-11 12:30:04.880 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:04.880 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:04.880 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:04.960  2113 20704 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 123.3,cct 5772.3,brl/algo/ir 1310.0/2.0/59.2,pwm/dc 0.0/0.0,rgbc 5868.080566/3959.308350/2503.258301/11028.615234,ts 929020245020724,cnt 34200,flag 95041
+04-11 12:30:04.960  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34196)(cct, lux, ir)[5772.32, 123.28, 59.171597] (r, g, b, c)[5845.65, 3941.71, 2485.60, 10998.31]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29505
+04-11 12:30:04.962  3590  9788 I AICCTModule: SensorFilter: brightness threshold 1.2 screenNit is 88.015 ave enviroment lux is 74.309456 luxForNit 85.39506demarcationPoint200.0 result is false
+04-11 12:30:04.962  3590  9788 I AICCTModule: SensorFilter: findSecondNearestValue, sensorValue: 6331.7896 nearestMaxValue:6315.783 secondNearestValue: 6315.783
+04-11 12:30:04.962  3590  9788 I AICCTModule: SensorFilter: findSecondNearestValue, sensorValue: 86.97702 nearestMaxValue:82.82453 secondNearestValue: 82.82453
+04-11 12:30:05.047  3438  4039 D QmiClient: qmiServiceEventCallback recv msg id 47
+04-11 12:30:05.047  3438  4039 D QmiClient: enter -mServiceType 10 onQmiServiceEventCallback msgId 47
+04-11 12:30:05.047  3438  4039 D QmiClient: onQmiServiceEventCallback - enter. msgId=47
+04-11 12:30:05.048  3438  3488 D OttProxy: handleMessage msg is 3001
+04-11 12:30:05.048 14034 14747 D SubsysRadioIndication[1]: radioLinkLatencyInfoInd
+04-11 12:30:05.048 14034 14747 D SubsysRadioIndication[1]: notify enter
+04-11 12:30:05.048 14034 14034 D NetworkService[1]: handleMessage what:1008
+04-11 12:30:05.048 14034 14034 D NetworkService[1]: EVENT_REG_LINK_LATENCY_INFO_CHANGE ulLatency:9763
+04-11 12:30:05.053  3590  7344 V AlarmManager: sending alarm Alarm{2427dab type 1 origWhen 1775881805053 whenElapsed 929020467 android} uid 1000 whenElapsed 929020467 windowLength 0 maxWhenElapsed 929020467 repeatInterval 0 action null component null tag StorgaeBandInfoAlarmTag flags 0x9 procName system_server
+04-11 12:30:05.054  3590 10338 E OplusStorageUFSBandwidth: storage_io_metrics_path is /proc/oplus_storage/io_metrics/forever/
+04-11 12:30:05.055  3590 10338 E OplusStorageUFSBandwidth: Bandwidth - Read: 1.50 MB/s, Write: 0.00 MB/s
+04-11 12:30:05.055  3590 10338 E OplusStorageUFSBandwidth: Task time: 1ms
+04-11 12:30:05.059  3590 10338 E OplusStorageUFSBandwidth: Alarm set to trigger in 10 seconds
+04-11 12:30:05.158  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:05.158  2258  2258 D SensorFeature: write 39 bytes:929020204174775,929020571185556,29506,0
+04-11 12:30:05.227  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34201)(cct, lux, ir)[5768.20, 124.20, 58.657917] (r, g, b, c)[5970.24, 4018.70, 2536.37, 11182.47]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29506
+04-11 12:30:05.297  2727  3986 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:05.297  2727  3986 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:05.297  2727  3986 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:05.297  2727  3986 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:05.297  2727  3986 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:05.297  3438  3988 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:05.297  3438  3988 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:05.297  3438  3988 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:05.297  3438  3988 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:05.297  3438  3988 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:05.297  2727  2826 D VsProxy : handleMessage msg is 2420
+04-11 12:30:05.297  2727  2826 D VsProxy : handleQosPeriodReportInd for instance 0 data_len 145
+04-11 12:30:05.298  3438  3485 D VsProxy : handleMessage msg is 2420
+04-11 12:30:05.298  3438  3485 D VsProxy : handleQosPeriodReportInd for instance 1 data_len 204
+04-11 12:30:05.298 14034 14747 D SubsysRadioIndication[1]: radioQosPeriodReportInd result [8, -90, -74, -42, -50, 14, 18, 13, 8, -19, -76, -42, -50, 14, 16, 5, 32, -59, 2, 40, 5, 26, 13, 8, -44, -75, -42, -50, 14, 16, 3, 40, 2, 56, -91, 2, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 83, 8, -45, -75, -42, -50, 14, 16, 5, 24, -98, -23, 30, 32, -54, 1, 40, -94, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -13, -1, -1, -1, -1, -1, -1, -1, -1, 1, 56, 1, 64, -95, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -95, -1, -1, -1, -1, -1, -1, -1, -1, 1, 80, -98, -1, -1, -1, -1, -1, -1, -1, -1, 1, 88, -95, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 31, 8, -114, -41, -49, -50, 14, 16, 5, 24, 2, 34, 19, 8, -98, -23, 30, 16, -54, 1, 24, 41, 32, 13, 40, -126, -128, -52, -67, 21, 48, 2, 90, 0, 98, 10, 8, -85, -54, -73, -50, 14, 16, 3, 24, 5, 122, 20, 8, -35, -77, -42, -50, 14, 16, -1, -1, 1, 24, -1, -1, 1, 32, -1, -1, -1, -1, 15]
+04-11 12:30:05.299 14034   947 D SubsysRadioIndication[0]: radioQosPeriodReportInd result [8, -90, -74, -42, -50, 14, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 61, 8, -39, -79, -42, -50, 14, 16, 5, 24, -64, -92, 38, 32, -22, 6, 40, -98, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -12, -1, -1, -1, -1, -1, -1, -1, -1, 1, 56, 3, 64, -104, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -98, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 29, 8, -57, -20, -92, -50, 14, 16, 5, 34, 19, 8, -64, -92, 38, 16, -22, 6, 24, 78, 32, 13, 40, -117, -32, -94, -93, 2, 48, 2, 90, 0, 98, 10, 8, -41, -26, -92, -50, 14, 16, 3, 24, 5, 122, 15, 8, -8, -24, -92, -50, 14, 16, -52, 2, 24, -21, 1, 32, -90, 9]
+04-11 12:30:05.299 14034 14034 D NetworkService[1]: handleMessage what:1005
+04-11 12:30:05.299 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo1{5G, 504990/202, EndcState=2, Band=41, DLBW=13, Rsrp=-94, Rsrq=-13, Snr=1, SvcStatus=3, ULPDCPNumDataPdu=5, ULPDCPNumDropPdu=0, ULPDCPTput=325, ULRLCNumDataPdu=5, ULRLCNumRetxPdu=0, ULGrant=0, ULBSR=0, ULBler=0, DLPDCPNumDataPdu=2, DLPDCPTput=293, DLRLCNumDataPdu=3, DLRLCNumRetxPdu=0, DLRLCNumDropPdu=0, DLMACPaddingBytes=0, DLPdcpNumMissToUppPdu=0, DLBler=0, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=9, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=32767, Mtpl=32767, PathLoss=-1, CellLoad=0}
+04-11 12:30:05.299 14034 14034 D NetworkService[1]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:05.299 14034 14034 D NetworkService[0]: handleMessage what:1005
+04-11 12:30:05.299 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo2{5G, 627264/874, EndcState=0, Band=78, DLBW=13, Rsrp=-98, Rsrq=-12, Snr=3, SvcStatus=3, ULPDCPNumDataPdu=-1, ULPDCPNumDropPdu=-1, ULPDCPTput=-1, ULRLCNumDataPdu=-1, ULRLCNumRetxPdu=-1, ULGrant=-1, ULBSR=-1, ULBler=-1, DLPDCPNumDataPdu=-1, DLPDCPTput=-1, DLRLCNumDataPdu=-1, DLRLCNumRetxPdu=-1, DLRLCNumDropPdu=-1, DLMACPaddingBytes=-1, DLPdcpNumMissToUppPdu=-1, DLBler=-1, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=0, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=332, Mtpl=235, PathLoss=1190, CellLoad=0}
+04-11 12:30:05.299 14034 14034 D NetworkService[0]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:05.299 14034 14034 D AtomModemKpiInfo: handleMessage what:1001
+04-11 12:30:05.299 14034 14034 D AtomModemKpiInfo: analyseQosInfo success
+04-11 12:30:05.338  3590  3830 W QosScheduler: executeSceneQosStrategy failed! qos feature no enable
+04-11 12:30:05.399  2187  2298 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: chk_core_online_poll_loop() 748: poll() has timed out for /sys/kernel/msm_performance/events/cpu_hotplug
+04-11 12:30:05.399  2187  2298 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: chk_core_online_poll_loop() 743: Block on poll()
+04-11 12:30:05.421  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:05.461  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:05.461  2258  2258 D SensorFeature: write 39 bytes:929020204174775,929020873655243,29507,0
+04-11 12:30:05.468  3590  8061 V WindowManager: Relayout Window{83978a2 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x429 , apr = 0, vsysui=, x=-407, y=2142
+04-11 12:30:05.468 32357 32357 I SurfaceControl:  setExtendedRangeBrightness sc=Surface(name=)/@0x6fc43b4,currentBufferRatio=1.0,desiredRatio=1.0
+04-11 12:30:05.468  3590  8061 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:05.468  3590  8061 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:05.493  2113 20704 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 125.0,cct 5773.6,brl/algo/ir 1310.0/2.0/59.7,pwm/dc 0.0/0.0,rgbc 6059.945801/4069.289062/2565.067139/11394.603516,ts 929020856041089,cnt 34210,flag 95043
+04-11 12:30:05.494  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34206)(cct, lux, ir)[5773.59, 124.99, 59.664303] (r, g, b, c)[6035.03, 4058.29, 2567.27, 11352.64]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 29507
+04-11 12:30:05.557  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:05.638 32357 32357 I ChainTrace: stream type=syncEvent gapMs=1035 refreshMarket=true
+04-11 12:30:05.678 32357 32367 I binance.monitor: _Desupression native alloc  gc_urgency: 67355expectation: 139555 native bytes: 50962112
+04-11 12:30:05.712 15031 15220 D ShellSubscriberWorkerThread: the first 8 bytes empty, and RestData length > 8 
+04-11 12:30:05.727  2280  2331 D BatteryChargeControl: bcc get no support from charging protocol
+04-11 12:30:05.731 32357 32392 I binance.monitor: Waiting for a blocking GC ProfileSaver
+04-11 12:30:05.755 32357 32392 I binance.monitor: WaitForGcToComplete blocked ProfileSaver on Background for 23.737ms
+04-11 12:30:05.757 32357 32399 D HWUI    : SkiaVulkanPipeline::setSurface: this=0xb4000070edbb1680, surface=NULL
+04-11 12:30:05.767 10330 10351 I ostats_tpd: stats_write, records atomId:100100, event_id:903, cpu:0, values: 903-0-1-213-(cpu-1-0-1)-26-0-1
+04-11 12:30:05.767 10385 10443 I ThermalEngine: VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-0-1 92300
+04-11 12:30:05.768 10330 10351 I ostats_tpd: stats_write, records atomId:100100, event_id:903, cpu:1, values: 903-0-1-10614-(cpu-1-0-1)-26-0-1
+04-11 12:30:05.778 10385 10645 I ThermalEngine: ACTION: CPU - Setting CPU[6] to 3
+04-11 12:30:05.788 10385 10645 I ThermalEngine: ACTION: CPU - Setting CPU[6] to 0
+04-11 12:30:05.795 10385 10443 I ThermalEngine: VIRTUAL-CPU-L-PID, Update received trip sensor cpu-1-0-1 79500
+04-11 12:30:05.828  4482  4680 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:05.828  4482  4659 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:05.829  1254 27544 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:05.829  1254 27545 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:05.836  2181 23599 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-11 12:30:05.836  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:05.836  2258  2258 D SensorFeature: write 39 bytes:929021203362535,929021239913212,29508,0
+04-11 12:30:05.838  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34211)(cct, lux, ir)[5780.96, 127.68, 59.451408] (r, g, b, c)[6281.71, 4240.86, 2686.48, 11888.81]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 131072
+04-11 12:30:05.902 14034 15313 D CommonApp-264-10512: transport layer data is invalid
+04-11 12:30:05.905 14034 15313 D CommonApp-255-10512: commonScoreStrategy scenarios low package
+04-11 12:30:05.905 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:05.905 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:05.905 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:05.921  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:05.926  2113 17888 I sensors-hal: handle_sns_std_sensor_event:114, oplus rgb_rear sample: (cct, lux, ir, x, y)[10058, 21, 273, 259, 325]
+04-11 12:30:05.926  2113 17888 I sensors-hal: handle_sns_std_sensor_event:116, oplus rgb_rear sample: (r, g, b, c w)[847, 1730, 387, 474, 0]
+04-11 12:30:06.001  3590  8061 D NotificationService--OplusNotificationFixHelper: fixAppIcon: pkg=com.v2ray.ang
+04-11 12:30:06.001  3590  8061 D NotificationService--OplusNotificationFixHelper: fixAppIcon: appIcon = null, pkg = com.v2ray.ang
+04-11 12:30:06.001  3590  8061 D NotificationService--NotificationRecord: isSupportRearLight , isRearLight = false mLedRM = false isMultilLed = false
+04-11 12:30:06.002  3590  8061 I OplusStatusBarManagerServiceEnhance:  getTopIsFullscreen mTopIsFullscreen: false
+04-11 12:30:06.002  3590  8061 W ActivityManager: Permission Denial: getTopApplicationInfo from pid=18198, uid=10397 requires oplus.permission.OPLUS_COMPONENT_SAFE
+04-11 12:30:06.002  3590  8061 E OplusNotificationCenter: getForegroundApplication exception
+04-11 12:30:06.003  3590  3590 D NotificationService--OplusNotificationManagerServiceExtImpl: isForwardToAssistants: true, case : Is local notification
+04-11 12:30:06.003  3590  3590 D NotificationService: This application enqueue notifications is need postDelayed mcsAssistantDelayTime: 50
+04-11 12:30:06.033  3438  4039 D QmiClient: qmiServiceEventCallback recv msg id 47
+04-11 12:30:06.033  3438  4039 D QmiClient: enter -mServiceType 10 onQmiServiceEventCallback msgId 47
+04-11 12:30:06.033  3438  4039 D QmiClient: onQmiServiceEventCallback - enter. msgId=47
+04-11 12:30:06.033  3438  3488 D OttProxy: handleMessage msg is 3001
+04-11 12:30:06.034 14034   947 D SubsysRadioIndication[1]: radioLinkLatencyInfoInd
+04-11 12:30:06.034 14034   947 D SubsysRadioIndication[1]: notify enter
+04-11 12:30:06.034 14034 14034 D NetworkService[1]: handleMessage what:1008
+04-11 12:30:06.034 14034 14034 D NetworkService[1]: EVENT_REG_LINK_LATENCY_INFO_CHANGE ulLatency:6577
+04-11 12:30:06.038  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34216)(cct, lux, ir)[5853.05, 133.47, 58.741829] (r, g, b, c)[6334.04, 4289.25, 2708.55, 11993.71]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 95044
+04-11 12:30:06.039  3590  7333 D FusionLightNextGen: process end reported = 1, mode: 0, cnt: 397465, lux 85.8, cct 6276.0, r/g/b/c: 6334.0/4289.3/2708.6/11993.7, R/G/B: 144.0/140.0/129.0, bri 1310.0, match 1.00, ir 0.072408, conf 5.0, ts 929021233970464
+04-11 12:30:06.063  8338  8338 I SystemUi--Notification: OplusLiveAlertNotificationsRepository-->onRankingApplied
+04-11 12:30:06.067  8338  8338 I PluginSeedling--Track: RequestHandler-->notificationUpdated 0|com.v2ray.ang|1|null|10397 postTime: 1775881806001
+04-11 12:30:06.068  8338  8338 E LockScreenNotificationDispatcherImp: updateNotificationListOnKg size:0
+04-11 12:30:06.074  8338  8338 W SystemUi--Notification: OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-11 12:30:06.074  8338  8338 I SystemUi--Notification: LockScreenNotificationDispatcherImp-->updateNotificationListOnKg resultCode: 0
+04-11 12:30:06.100  8338  8706 D LocalImageResolver: Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-11 12:30:06.103  8338  8338 D OplusNotificationDateTimeView: setTime mSettingTimeMillis 1775881805996, mSettingLocalDateTime 2026-04-11T12:30:00.996
+04-11 12:30:06.111  8338  8706 D LocalImageResolver: Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-11 12:30:06.113  8338  8338 D OplusNotificationDateTimeView: setTime mSettingTimeMillis 1775881805996, mSettingLocalDateTime 2026-04-11T12:30:00.996
+04-11 12:30:06.119  8338  8706 D LocalImageResolver: Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+04-11 12:30:06.119  8338  8338 D OplusNotificationDateTimeView: setTime mSettingTimeMillis 1775881805996, mSettingLocalDateTime 2026-04-11T12:30:00.996
+04-11 12:30:06.125  8338  8338 I SystemUi--Notification: OplusNotificationTempla-->resolveContentMargin: marginTop=112 isChildInGroup=false hasSubtitle=true params.topMargin=112
+04-11 12:30:06.126  3590  9788 I AICCTModule: SensorFilter: brightness threshold 1.2 screenNit is 88.015 ave enviroment lux is 80.62736 luxForNit 85.478966demarcationPoint200.0 result is false
+04-11 12:30:06.126  3590  9788 I AICCTModule: SensorFilter: findSecondNearestValue, sensorValue: 6315.783 nearestMaxValue:6275.9746 secondNearestValue: 6275.9746
+04-11 12:30:06.126  3590  9788 I AICCTModule: SensorFilter: findSecondNearestValue, sensorValue: 82.82453 nearestMaxValue:85.766335 secondNearestValue: 85.766335
+04-11 12:30:06.127  8338  8338 W SystemUi--Notification: OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-11 12:30:06.128  8338  8338 E LockScreenNotificationDispatcherImp: updateNotificationListOnKg size:0
+04-11 12:30:06.133  8338  8338 W SystemUi--Notification: OplusNotificationGroupExtImpl-->setChildrenExpanded: groupHeader is null
+04-11 12:30:06.133  8338  8338 I SystemUi--Notification: LockScreenNotificationDispatcherImp-->updateNotificationListOnKg resultCode: 0
+04-11 12:30:06.173  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:06.176  2181 23599 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-11 12:30:06.176  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:06.176  2258  2258 D SensorFeature: write 39 bytes:929021525675139,929021578725972,29509,0
+04-11 12:30:06.258 13839 14712 I SmartDataSwitchStateManager: handle message:7
+04-11 12:30:06.258 13839 14712 I SmartDataSwitchSM: [DisableState]Handle msg: 2
+04-11 12:30:06.258 13839 14712 I SmartDataSwitchSM: [DisableState]handle state change, reason:DataScoreLow
+04-11 12:30:06.293  2113 20704 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 141.0,cct 5982.9,brl/algo/ir 1310.0/2.0/55.3,pwm/dc 0.0/0.0,rgbc 6670.425293/4511.411621/2871.903809/12681.392578,ts 929021556066401,cnt 34220,flag 29509
+04-11 12:30:06.294  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34221)(cct, lux, ir)[5982.88, 141.01, 55.337627] (r, g, b, c)[6677.90, 4515.81, 2876.32, 12662.74]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 95045
+04-11 12:30:06.327  2727  3986 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:06.327  2727  3986 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:06.327  2727  3986 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:06.327  2727  3986 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:06.327  3438  3988 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:06.327  2727  3986 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:06.327  3438  3988 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:06.327  3438  3988 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:06.327  3438  3988 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:06.327  3438  3988 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:06.327  2727  2826 D VsProxy : handleMessage msg is 2420
+04-11 12:30:06.327  3438  3485 D VsProxy : handleMessage msg is 2420
+04-11 12:30:06.327  2727  2826 D VsProxy : handleQosPeriodReportInd for instance 0 data_len 145
+04-11 12:30:06.327  3438  3485 D VsProxy : handleQosPeriodReportInd for instance 1 data_len 205
+04-11 12:30:06.328 14034   947 D SubsysRadioIndication[0]: radioQosPeriodReportInd result [8, -84, -66, -42, -50, 14, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 61, 8, -39, -79, -42, -50, 14, 16, 5, 24, -64, -92, 38, 32, -22, 6, 40, -98, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -12, -1, -1, -1, -1, -1, -1, -1, -1, 1, 56, 3, 64, -104, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -98, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 29, 8, -57, -20, -92, -50, 14, 16, 5, 34, 19, 8, -64, -92, 38, 16, -22, 6, 24, 78, 32, 13, 40, -117, -32, -94, -93, 2, 48, 2, 90, 0, 98, 10, 8, -41, -26, -92, -50, 14, 16, 3, 24, 5, 122, 15, 8, -8, -24, -92, -50, 14, 16, -52, 2, 24, -21, 1, 32, -90, 9]
+04-11 12:30:06.328 14034 14747 D SubsysRadioIndication[1]: radioQosPeriodReportInd result [8, -84, -66, -42, -50, 14, 18, 14, 8, -58, -68, -42, -50, 14, 16, 1, 32, 53, 40, 1, 72, 1, 26, 13, 8, -41, -70, -42, -50, 14, 16, 1, 40, 1, 56, -127, 4, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 83, 8, -26, -67, -42, -50, 14, 16, 5, 24, -98, -23, 30, 32, -54, 1, 40, -97, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -14, -1, -1, -1, -1, -1, -1, -1, -1, 1, 56, 2, 64, -98, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -97, -1, -1, -1, -1, -1, -1, -1, -1, 1, 80, -103, -1, -1, -1, -1, -1, -1, -1, -1, 1, 88, -98, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 31, 8, -114, -41, -49, -50, 14, 16, 5, 24, 2, 34, 19, 8, -98, -23, 30, 16, -54, 1, 24, 41, 32, 13, 40, -126, -128, -52, -67, 21, 48, 2, 90, 0, 98, 10, 8, -85, -54, -73, -50, 14, 16, 3, 24, 5, 122, 20, 8, -58, -68, -42, -50, 14, 16, -1, -1, 1, 24, -1, -1, 1, 32, -1, -1, -1, -1, 15]
+04-11 12:30:06.328 14034 14034 D NetworkService[0]: handleMessage what:1005
+04-11 12:30:06.328 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo2{5G, 627264/874, EndcState=0, Band=78, DLBW=13, Rsrp=-98, Rsrq=-12, Snr=3, SvcStatus=3, ULPDCPNumDataPdu=-1, ULPDCPNumDropPdu=-1, ULPDCPTput=-1, ULRLCNumDataPdu=-1, ULRLCNumRetxPdu=-1, ULGrant=-1, ULBSR=-1, ULBler=-1, DLPDCPNumDataPdu=-1, DLPDCPTput=-1, DLRLCNumDataPdu=-1, DLRLCNumRetxPdu=-1, DLRLCNumDropPdu=-1, DLMACPaddingBytes=-1, DLPdcpNumMissToUppPdu=-1, DLBler=-1, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=0, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=332, Mtpl=235, PathLoss=1190, CellLoad=0}
+04-11 12:30:06.328 14034 14034 D NetworkService[0]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:06.328 14034 14034 D NetworkService[1]: handleMessage what:1005
+04-11 12:30:06.328 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo1{5G, 504990/202, EndcState=2, Band=41, DLBW=13, Rsrp=-97, Rsrq=-14, Snr=2, SvcStatus=3, ULPDCPNumDataPdu=1, ULPDCPNumDropPdu=0, ULPDCPTput=53, ULRLCNumDataPdu=1, ULRLCNumRetxPdu=0, ULGrant=0, ULBSR=0, ULBler=1, DLPDCPNumDataPdu=1, DLPDCPTput=513, DLRLCNumDataPdu=1, DLRLCNumRetxPdu=0, DLRLCNumDropPdu=0, DLMACPaddingBytes=0, DLPdcpNumMissToUppPdu=0, DLBler=0, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=6, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=32767, Mtpl=32767, PathLoss=-1, CellLoad=0}
+04-11 12:30:06.328 14034 14034 D NetworkService[1]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:06.329 14034 14034 D AtomModemKpiInfo: handleMessage what:1001
+04-11 12:30:06.329 14034 14034 D AtomModemKpiInfo: analyseQosInfo success
+04-11 12:30:06.421  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:06.477  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:06.478  2258  2258 D SensorFeature: write 39 bytes:929021525675139,929021891023732,29510,0
+04-11 12:30:06.478 32357 32357 I SurfaceControl:  setExtendedRangeBrightness sc=Surface(name=)/@0x6fc43b4,currentBufferRatio=1.0,desiredRatio=1.0
+04-11 12:30:06.479  3590  8061 V WindowManager: Relayout Window{83978a2 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x429 , apr = 0, vsysui=, x=-407, y=2142
+04-11 12:30:06.479  3590  8061 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:06.480  3590  8061 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:06.560  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34226)(cct, lux, ir)[5962.22, 143.43, 56.054340] (r, g, b, c)[6660.46, 4507.01, 2871.90, 12648.76]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 95046
+04-11 12:30:06.577  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:06.602 32357 32357 I ChainTrace: stream type=syncEvent gapMs=964 refreshMarket=true
+04-11 12:30:06.728  2280  2331 D BatteryChargeControl: bcc get no support from charging protocol
+04-11 12:30:06.753 14034 14034 D SubsysEventListenerManager-SubsysTelephonyCallback[1]: onSignalStrengthsChanged
+04-11 12:30:06.754  8338  8520 I SystemUi--Statusbar: MobileConnectionRepositoryImpl-->subId:1 isSoftSimCard:false slotId:1
+04-11 12:30:06.755  8338  8338 D Tile.OplusCellularTile: refreshState: tile not listening, ignore
+04-11 12:30:06.783  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:06.829  4482  4680 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:06.829  4482  4659 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:06.831  1254 27558 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:06.831  1254 27559 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:06.861  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:06.866  2181 23599 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-11 12:30:06.866  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:06.867  2258  2258 D SensorFeature: write 39 bytes:929022214300347,929022268436284,29511,0
+04-11 12:30:06.870  2113 20704 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 139.7,cct 5977.7,brl/algo/ir 1310.0/2.0/56.4,pwm/dc 0.0/0.0,rgbc 6381.382324/4328.843750/2746.078613/12100.939453,ts 929022199808641,cnt 34230,flag 29511
+04-11 12:30:06.870  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34231)(cct, lux, ir)[5977.72, 139.71, 56.395981] (r, g, b, c)[6378.89, 4326.64, 2746.08, 12117.26]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 95047
+04-11 12:30:06.874 11891 11912 I OplusLog_main_host: [IPhoneConnectionProvider] call: method = get_bound_iphone, callingUid = 10098, callingPid = 11972, callingPackage = com.heytap.accessory
+04-11 12:30:06.875 11891 11961 D OplusLog_DeviceKit_com.oplus.linker: [SynergyDeviceManager-244736775] queryOriginalDeviceList from: com.oplus.linker, [11, 12, 6, 10, 8, 16], com.oplus.linker.datalayer.local.LocalDbRepositoryDelegate$getAllSynergyDeviceInfoWithProperty$2$1@7371ccb
+04-11 12:30:06.878 11891 11961 D OplusLog_DeviceKit_com.oplus.linker: [OpDeviceServiceClient-244736775] queryOriginalDeviceList onResult: []
+04-11 12:30:06.927 14034 15313 D CommonApp-264-10512: transport layer data is invalid
+04-11 12:30:06.928 14034 15313 D CommonApp-255-10512: commonScoreStrategy scenarios low package
+04-11 12:30:06.929 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:06.929 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:06.929 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:07.021  3438  4039 D QmiClient: qmiServiceEventCallback recv msg id 47
+04-11 12:30:07.021  3438  4039 D QmiClient: enter -mServiceType 10 onQmiServiceEventCallback msgId 47
+04-11 12:30:07.021  3438  4039 D QmiClient: onQmiServiceEventCallback - enter. msgId=47
+04-11 12:30:07.022  3438  3488 D OttProxy: handleMessage msg is 3001
+04-11 12:30:07.022 14034 14747 D SubsysRadioIndication[1]: radioLinkLatencyInfoInd
+04-11 12:30:07.022 14034 14747 D SubsysRadioIndication[1]: notify enter
+04-11 12:30:07.023 14034 14034 D NetworkService[1]: handleMessage what:1008
+04-11 12:30:07.023 14034 14034 D NetworkService[1]: EVENT_REG_LINK_LATENCY_INFO_CHANGE ulLatency:6760
+04-11 12:30:07.055  3590  7344 W OPLUS_LOG_LOAD: ==LOGS PROG INFO, prog(system_server) ==
+04-11 12:30:07.055  3590  7344 V AlarmManager: sending alarm Alarm{4c6f723 type 1 origWhen 1775881807055 whenElapsed 929022469 android} uid 1000 whenElapsed 929022469 windowLength 0 maxWhenElapsed 929022469 repeatInterval 0 action null component null tag StorgaeBandInfoAlarmTag flags 0x9 procName system_server
+04-11 12:30:07.057  3590 10338 E OplusStorageUFSBandwidth: storage_io_metrics_path is /proc/oplus_storage/io_metrics/forever/
+04-11 12:30:07.058  3590 10338 E OplusStorageUFSBandwidth: Bandwidth - Read: 0.00 MB/s, Write: 0.50 MB/s
+04-11 12:30:07.058  3590 10338 E OplusStorageUFSBandwidth: Task time: 2ms
+04-11 12:30:07.060  3590 10338 E OplusStorageUFSBandwidth: Alarm set to trigger in 10 seconds
+04-11 12:30:07.093  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34236)(cct, lux, ir)[5912.62, 135.68, 56.659531] (r, g, b, c)[6363.94, 4306.85, 2737.25, 12051.98]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 95047
+04-11 12:30:07.173  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:07.173  2258  2258 D SensorFeature: write 39 bytes:929022214300347,929022585204722,29512,0
+04-11 12:30:07.328  3590  9788 I AICCTModule: SensorFilter: brightness threshold 1.2 screenNit is 88.015 ave enviroment lux is 92.858604 luxForNit 85.86823demarcationPoint200.0 result is false
+04-11 12:30:07.328  3590  9788 I AICCTModule: SensorFilter: findSecondNearestValue, sensorValue: 6275.9746 nearestMaxValue:6397.506 secondNearestValue: 6397.506
+04-11 12:30:07.328  3590  9788 I AICCTModule: SensorFilter: findSecondNearestValue, sensorValue: 85.766335 nearestMaxValue:92.85861 secondNearestValue: 92.85861
+04-11 12:30:07.359  2113 20704 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 134.3,cct 5922.0,brl/algo/ir 1310.0/2.0/57.5,pwm/dc 0.0/0.0,rgbc 6309.121582/4271.653320/2717.381836/11961.071289,ts 929022555291766,cnt 34240,flag 29512
+04-11 12:30:07.359  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34241)(cct, lux, ir)[5921.98, 134.30, 57.467422] (r, g, b, c)[6301.65, 4273.85, 2706.34, 11935.43]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 95048
+04-11 12:30:07.359  3590  7333 D FusionLightNextGen: process end reported = 1, mode: 0, cnt: 397470, lux 84.9, cct 6333.7, r/g/b/c: 6301.6/4273.9/2706.3/11935.4, R/G/B: 144.0/140.0/129.0, bri 1310.0, match 1.00, ir 0.073403, conf 5.0, ts 929022566362755
+04-11 12:30:07.376  3438  3988 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:07.377  3438  3988 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:07.377  3438  3988 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:07.377  3438  3988 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:07.377  3438  3988 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:07.377  2727  3986 D QmiClient: qmiServiceEventCallback recv msg id 1099
+04-11 12:30:07.377  2727  3986 D QmiClient: enter -mServiceType 4 onQmiServiceEventCallback msgId 1099
+04-11 12:30:07.377  2727  3986 D QmiClient: onQmiServiceEventCallback - enter. msgId=1099
+04-11 12:30:07.377  2727  3986 D QmiVsClientEvent: QosPeriodReportInd MSG IND data_len 2052
+04-11 12:30:07.377  2727  3986 D QmiVsClientEvent: qmiVsClientNotifyQosPeriodReportIndEvent - RADIO_EVENT_QOS_PERIOD_REPORT_NOTIFY_IND
+04-11 12:30:07.377  3438  3485 D VsProxy : handleMessage msg is 2420
+04-11 12:30:07.377  3438  3485 D VsProxy : handleQosPeriodReportInd for instance 1 data_len 205
+04-11 12:30:07.377  2727  2826 D VsProxy : handleMessage msg is 2420
+04-11 12:30:07.378 14034 14747 D SubsysRadioIndication[1]: radioQosPeriodReportInd result [8, -58, -58, -42, -50, 14, 18, 14, 8, -53, -61, -42, -50, 14, 16, 1, 32, 53, 40, 1, 72, 1, 26, 13, 8, -110, -60, -42, -50, 14, 16, 1, 40, 1, 56, -65, 1, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 83, 8, -91, -59, -42, -50, 14, 16, 5, 24, -98, -23, 30, 32, -54, 1, 40, -94, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -13, -1, -1, -1, -1, -1, -1, -1, -1, 1, 56, 1, 64, -95, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -94, -1, -1, -1, -1, -1, -1, -1, -1, 1, 80, -99, -1, -1, -1, -1, -1, -1, -1, -1, 1, 88, -100, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 31, 8, -114, -41, -49, -50, 14, 16, 5, 24, 2, 34, 19, 8, -98, -23, 30, 16, -54, 1, 24, 41, 32, 13, 40, -126, -128, -52, -67, 21, 48, 2, 90, 0, 98, 10, 8, -85, -54, -73, -50, 14, 16, 3, 24, 5, 122, 20, 8, -110, -60, -42, -50, 14, 16, -1, -1, 1, 24, -1, -1, 1, 32, -1, -1, -1, -1, 15]
+04-11 12:30:07.378  2727  2826 D VsProxy : handleQosPeriodReportInd for instance 0 data_len 145
+04-11 12:30:07.378 14034 14034 D NetworkService[1]: handleMessage what:1005
+04-11 12:30:07.379 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo1{5G, 504990/202, EndcState=2, Band=41, DLBW=13, Rsrp=-94, Rsrq=-13, Snr=1, SvcStatus=3, ULPDCPNumDataPdu=1, ULPDCPNumDropPdu=0, ULPDCPTput=53, ULRLCNumDataPdu=1, ULRLCNumRetxPdu=0, ULGrant=0, ULBSR=0, ULBler=1, DLPDCPNumDataPdu=1, DLPDCPTput=191, DLRLCNumDataPdu=1, DLRLCNumRetxPdu=0, DLRLCNumDropPdu=0, DLMACPaddingBytes=0, DLPdcpNumMissToUppPdu=0, DLBler=0, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=6, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=32767, Mtpl=32767, PathLoss=-1, CellLoad=0}
+04-11 12:30:07.379 14034 14034 D NetworkService[1]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:07.379 14034 14034 D AtomModemKpiInfo: handleMessage what:1001
+04-11 12:30:07.379 14034 14034 D AtomModemKpiInfo: analyseQosInfo success
+04-11 12:30:07.379 14034 14747 D SubsysRadioIndication[0]: radioQosPeriodReportInd result [8, -58, -58, -42, -50, 14, 34, 12, 8, -84, -69, -57, -50, 14, 16, 4, 24, 1, 32, 3, 58, 61, 8, -79, -59, -42, -50, 14, 16, 5, 24, -64, -92, 38, 32, -22, 6, 40, -98, -1, -1, -1, -1, -1, -1, -1, -1, 1, 48, -12, -1, -1, -1, -1, -1, -1, -1, -1, 1, 56, 5, 64, -104, -1, -1, -1, -1, -1, -1, -1, -1, 1, 72, -98, -1, -1, -1, -1, -1, -1, -1, -1, 1, 66, 29, 8, -57, -20, -92, -50, 14, 16, 5, 34, 19, 8, -64, -92, 38, 16, -22, 6, 24, 78, 32, 13, 40, -117, -32, -94, -93, 2, 48, 2, 90, 0, 98, 10, 8, -41, -26, -92, -50, 14, 16, 3, 24, 5, 122, 15, 8, -8, -24, -92, -50, 14, 16, -52, 2, 24, -21, 1, 32, -90, 9]
+04-11 12:30:07.379 14034 14034 D NetworkService[0]: handleMessage what:1005
+04-11 12:30:07.380 14034 14034 D RadioAtomTracker: parseQosPeriodData ModemQos:CellularQosInfo2{5G, 627264/874, EndcState=0, Band=78, DLBW=13, Rsrp=-98, Rsrq=-12, Snr=5, SvcStatus=3, ULPDCPNumDataPdu=-1, ULPDCPNumDropPdu=-1, ULPDCPTput=-1, ULRLCNumDataPdu=-1, ULRLCNumRetxPdu=-1, ULGrant=-1, ULBSR=-1, ULBler=-1, DLPDCPNumDataPdu=-1, DLPDCPTput=-1, DLRLCNumDataPdu=-1, DLRLCNumRetxPdu=-1, DLRLCNumDropPdu=-1, DLMACPaddingBytes=-1, DLPdcpNumMissToUppPdu=-1, DLBler=-1, RlfCount=0, CellChangeCount=0, IsRedirectionOccur=0, IsDualSimConflict=0, Latency=0, Sub1RrcState=1, Sub2RrcState=3, RachCount=0, CalcPower=332, Mtpl=235, PathLoss=1190, CellLoad=0}
+04-11 12:30:07.380 14034 14034 D NetworkService[0]: EVENT_REG_QOS_PERIOD_REPORT_IND_CHANGED ENTER
+04-11 12:30:07.380 14034 14034 D AtomModemKpiInfo: handleMessage what:1001
+04-11 12:30:07.380 14034 14034 D AtomModemKpiInfo: analyseQosInfo success
+04-11 12:30:07.429  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:07.475  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:07.475  2258  2258 D SensorFeature: write 39 bytes:929022214300347,929022888674357,29513,0
+04-11 12:30:07.477  3590  8061 V WindowManager: Relayout Window{83978a2 u0 com.binance.monitor}: viewVisibility=0, oldvis=0, req=315x429 , apr = 0, vsysui=, x=-407, y=2142
+04-11 12:30:07.477 32357 32357 I SurfaceControl:  setExtendedRangeBrightness sc=Surface(name=)/@0x6fc43b4,currentBufferRatio=1.0,desiredRatio=1.0
+04-11 12:30:07.477  3590  8061 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:07.477  3590  8061 D InsetsSourceProvider: updateSourceFrameForServerVisibility mandatorySystemGestures EMPTY_RECT
+04-11 12:30:07.569  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:07.630  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34246)(cct, lux, ir)[5923.56, 133.08, 57.698853] (r, g, b, c)[6279.22, 4251.86, 2690.89, 11893.47]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 95049
+04-11 12:30:07.715 32357 32357 I ChainTrace: stream type=syncEvent gapMs=1113 refreshMarket=true
+04-11 12:30:07.730  2280  2331 D BatteryChargeControl: bcc get no support from charging protocol
+04-11 12:30:07.783  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:07.830  4482  4680 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:07.831  4482  4659 W ServiceManagerCppClient: Waited one second for SystemClearService (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+04-11 12:30:07.832  1254 27570 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:07.833  1254 27571 W libc    : Unable to set property "ctl.interface_start" to "aidl/SystemClearService": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+04-11 12:30:07.861  2181  2506 I SDM     : DisplayBuiltIn::IdlePowerCollapse: IPC received, disabling partial update for one frame
+04-11 12:30:07.866  2181 23599 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+04-11 12:30:07.866  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:07.866  2258  2258 D SensorFeature: write 39 bytes:929023214300138,929023268551388,29514,0
+04-11 12:30:07.892  2113 20704 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 134.6,cct 5874.7,brl/algo/ir 1310.0/2.0/58.0,pwm/dc 0.0/0.0,rgbc 6388.857422/4315.645996/2750.493896/12084.621094,ts 929023243754422,cnt 34250,flag 29514
+04-11 12:30:07.893  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34251)(cct, lux, ir)[5874.74, 134.56, 57.977062] (r, g, b, c)[6368.92, 4300.25, 2737.25, 12058.98]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 95050
+04-11 12:30:07.929  2113 17888 I sensors-hal: handle_sns_std_sensor_event:114, oplus rgb_rear sample: (cct, lux, ir, x, y)[9289, 26, 272, 266, 333]
+04-11 12:30:07.929  2113 17888 I sensors-hal: handle_sns_std_sensor_event:116, oplus rgb_rear sample: (r, g, b, c w)[1039, 2075, 401, 565, 0]
+04-11 12:30:07.951 14034 15313 D CommonApp-264-10512: transport layer data is invalid
+04-11 12:30:07.952 14034 15313 D CommonApp-255-10512: commonScoreStrategy scenarios low package
+04-11 12:30:07.952 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:07.952 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:07.952 14034 15313 D ScorePolicy: handleScoreChanged: []
+04-11 12:30:08.000 17904 17935 W OPLUS_LOG_LOAD: ==LOGS PROG INFO, prog(com.oplus.camera) ==
+04-11 12:30:08.000 17904 17935 I APS_ALOG: flushRoutine g_immediateFlush=0 g_pendingCount=0 g_oobCount=0
+04-11 12:30:08.024  3438  4039 D QmiClient: qmiServiceEventCallback recv msg id 47
+04-11 12:30:08.024  3438  4039 D QmiClient: enter -mServiceType 10 onQmiServiceEventCallback msgId 47
+04-11 12:30:08.024  3438  4039 D QmiClient: onQmiServiceEventCallback - enter. msgId=47
+04-11 12:30:08.025  3438  3488 D OttProxy: handleMessage msg is 3001
+04-11 12:30:08.025 14034 14747 D SubsysRadioIndication[1]: radioLinkLatencyInfoInd
+04-11 12:30:08.025 14034 14747 D SubsysRadioIndication[1]: notify enter
+04-11 12:30:08.026 14034 14034 D NetworkService[1]: handleMessage what:1008
+04-11 12:30:08.026 14034 14034 D NetworkService[1]: EVENT_REG_LINK_LATENCY_INFO_CHANGE ulLatency:7126
+04-11 12:30:08.099  3590  7166 I OplusCpuLimitManager: OplusCpuHighLoad: request instant cpu load
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: write /dev/memcg/memory.force_shrink_file failed
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: java.io.IOException: write failed: EBUSY (Device or resource busy)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at libcore.io.IoBridge.write(IoBridge.java:651)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at java.io.FileOutputStream.write(FileOutputStream.java:436)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.writeBytes(StreamEncoder.java:233)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.implFlushBuffer(StreamEncoder.java:309)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.implFlush(StreamEncoder.java:313)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.flush(StreamEncoder.java:153)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at java.io.OutputStreamWriter.flush(OutputStreamWriter.java:248)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at com.android.server.oplus.osense.utils.OsenseCommonUtils.writeFile(OsenseCommonUtils.java:154)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at com.android.server.am.OplusOsenseCompressAction.doGlobalShrink(OplusOsenseCompressAction.java:1887)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at com.android.server.am.OplusOsenseCompressAction.-$$Nest$mdoGlobalShrink(Unknown Source:0)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at com.android.server.am.OplusOsenseCompressAction$CompressHandler.handleMessage(OplusOsenseCompressAction.java:1335)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at android.os.Handler.dispatchMessage(Handler.java:115)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at android.os.Looper.loopOnce(Looper.java:302)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at android.os.Looper.loop(Looper.java:412)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: Caused by: android.system.ErrnoException: write failed: EBUSY (Device or resource busy)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at libcore.io.Linux.writeBytes(Native Method)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at libcore.io.Linux.write(Linux.java:336)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at libcore.io.ForwardingOs.write(ForwardingOs.java:948)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at libcore.io.BlockGuardOs.write(BlockGuardOs.java:448)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	at libcore.io.IoBridge.write(IoBridge.java:646)
+04-11 12:30:08.101  3590  7166 E OsenseCommonUtils: 	... 14 more
+04-11 12:30:08.101  3590  7166 I OplusCpuLimitManager: OplusCpuHighLoad: release instant cpu load
+04-11 12:30:08.116 13843 14368 D gaia-GaiaConnectChecker: start connect check++
+04-11 12:30:08.170  2258  2258 D SensorFeature: name=ssc_screenshot_info ,index = 22
+04-11 12:30:08.170  2258  2258 D SensorFeature: write 39 bytes:929023214300138,929023581767690,29515,0
+04-11 12:30:08.174  2113 17862 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (34256)(cct, lux, ir)[5897.50, 135.25, 57.375729] (r, g, b, c)[6356.46, 4313.45, 2732.83, 12035.67]                 (pwm, hbm, brl, algo)[0.0 0.0 1310.0 2.0], flag 95051
+04-11 12:30:08.401  2187  2298 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: chk_core_online_poll_loop() 748: poll() has timed out for /sys/kernel/msm_performance/events/cpu_hotplug
+04-11 12:30:08.402  2187  2298 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: chk_core_online_poll_loop() 743: Block on poll()

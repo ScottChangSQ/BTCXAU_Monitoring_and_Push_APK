@@ -214,6 +214,23 @@ public final class ChainLatencyTracer {
         pruneLocked(now);
     }
 
+    // 记录账户页主线程渲染链路各阶段耗时，定位首帧或切回时最重的页面段落。
+    public static synchronized void markAccountRenderPhase(@Nullable String accountKey,
+                                                           String phase,
+                                                           long durationMs,
+                                                           int tradeCount,
+                                                           int positionCount,
+                                                           int curveCount) {
+        long now = SystemClock.elapsedRealtime();
+        Log.i(TAG, "account_render phase=" + safe(phase)
+                + " account=" + safe(accountKey)
+                + " durationMs=" + Math.max(0L, durationMs)
+                + " trades=" + Math.max(0, tradeCount)
+                + " positions=" + Math.max(0, positionCount)
+                + " curves=" + Math.max(0, curveCount));
+        pruneLocked(now);
+    }
+
     private static TracePoint getOrCreateLocked(String symbol, long closeTimeMs, long nowMs) {
         String key = buildKey(symbol, closeTimeMs);
         TracePoint point = TRACE_POINTS.get(key);

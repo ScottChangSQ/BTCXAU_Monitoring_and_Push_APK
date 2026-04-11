@@ -1,0 +1,32 @@
+  * Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor U=0 visible=true visibleRequested=true mode=fullscreen translucent=false sz=1}
+    topResumedActivity=ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}
+    * Hist  #0: ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}
+      packageName=com.binance.monitor processName=com.binance.monitor
+      app=ProcessRecord{6e2a459 32357:com.binance.monitor/u0a512}
+      Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 xflg=0x4 cmp=com.binance.monitor/.launcher.IconFinancialAlias bnds=[345,1817][633,2133] (has extras) mCallingUid=10214 }
+      rootOfTask=true task=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}
+      taskAffinity=10512:com.binance.monitor
+      mActivityComponent=com.binance.monitor/.ui.main.MainActivity
+      baseDir=/data/app/~~dliypaAjzJWdqoXlwru2BQ==/com.binance.monitor-0HkLqIfoW62fR1MIczvwqg==/base.apk
+      dataDir=/data/user/0/com.binance.monitor
+      windows=[Window{b52e3af u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}]
+    Resumed: ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}
+  ResumedActivity: ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}
+  topDisplayFocusedRootTask=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}
+  deepestLastOrientationSource=ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}
+  mCurrentFocus=Window{b52e3af u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}
+  mFocusedApp=ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}
+      mPreferredTopFocusableRootTask=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}
+      mLastFocusedRootTask=Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}
+      * Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor U=0 visible=true visibleRequested=true mode=fullscreen translucent=false sz=1}
+        * ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}
+    mFocusedWindow=Window{b52e3af u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}
+    mTopFullscreenOpaqueWindowState=Window{b52e3af u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}
+    mSystemBarColorApps={ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}}
+      Window{b52e3af u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}
+      Window{b52e3af u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}:
+        mControlTarget=Window{b52e3af u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}
+        mControlTarget=Window{b52e3af u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}
+        mControlTarget=Window{b52e3af u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}
+        (fullscreen) Task{a10d0a5 #13089 type=standard A=10512:com.binance.monitor}
+  VisibleActivityProcess:[ ProcessRecord{6e2a459 32357:com.binance.monitor/u0a512}]

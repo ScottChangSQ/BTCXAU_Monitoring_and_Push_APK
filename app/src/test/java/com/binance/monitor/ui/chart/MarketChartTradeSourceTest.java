@@ -14,25 +14,24 @@ public class MarketChartTradeSourceTest {
 
     @Test
     public void chartActivityShouldWireTradeCoordinatorIntoChartPanel() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        String coordinatorSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
 
-        assertTrue(source.contains("GatewayV2TradeClient"));
-        assertTrue(source.contains("TradeExecutionCoordinator"));
-        assertTrue(source.contains("chartPositionAdapter.setActionListener"));
-        assertTrue(source.contains("chartPendingOrderAdapter.setActionListener"));
-        assertTrue(source.contains("binding.btnChartTradeBuy.setOnClickListener"));
-        assertTrue(source.contains("binding.btnChartTradeSell.setOnClickListener"));
-        assertTrue(source.contains("binding.btnChartTradePending.setOnClickListener"));
-        assertTrue(source.contains("tradeExecutionCoordinator.prepareExecution("));
-        assertTrue(source.contains("tradeExecutionCoordinator.submitAfterConfirmation("));
-        assertTrue(source.contains("applyDialogSurface(dialog);"));
+        assertTrue(activitySource.contains("private MarketChartTradeDialogCoordinator tradeDialogCoordinator;"));
+        assertTrue(activitySource.contains("tradeDialogCoordinator = new MarketChartTradeDialogCoordinator("));
+        assertTrue(activitySource.contains("chartPositionAdapter.setActionListener"));
+        assertTrue(activitySource.contains("chartPendingOrderAdapter.setActionListener"));
+        assertTrue(activitySource.contains("binding.btnChartTradeBuy.setOnClickListener"));
+        assertTrue(activitySource.contains("binding.btnChartTradeSell.setOnClickListener"));
+        assertTrue(activitySource.contains("binding.btnChartTradePending.setOnClickListener"));
+        assertTrue(coordinatorSource.contains("tradeExecutionCoordinator.prepareExecution("));
+        assertTrue(coordinatorSource.contains("tradeExecutionCoordinator.submitAfterConfirmation("));
+        assertTrue(coordinatorSource.contains("applyDialogSurface(dialog);"));
     }
 
     @Test
     public void chartActivityShouldBuildAllPhaseOneTradeCommands() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
 
         assertTrue(source.contains("TradeCommandFactory.openMarket("));
         assertTrue(source.contains("TradeCommandFactory.pendingAdd("));
@@ -55,8 +54,7 @@ public class MarketChartTradeSourceTest {
 
     @Test
     public void chartActivityShouldShowAcceptedTitleWhenTradeIsAcceptedButNotSettled() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
 
         assertTrue(source.contains("交易已受理"));
         assertTrue(source.contains("getStateMachine().getStep() == TradeCommandStateMachine.Step.ACCEPTED"));
@@ -75,8 +73,7 @@ public class MarketChartTradeSourceTest {
 
     @Test
     public void pendingOrderTypeSpinnerShouldUseProjectStyledAdapterLayouts() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
 
         assertFalse(source.contains("android.R.layout.simple_spinner_item"));
         assertFalse(source.contains("android.R.layout.simple_spinner_dropdown_item"));
@@ -85,12 +82,11 @@ public class MarketChartTradeSourceTest {
 
     @Test
     public void tradeDialogActionTextsShouldUseWhiteTextForDarkDialogSurface() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("private ArrayAdapter<String> createTradeActionMenuAdapter(String[] actions) {"));
+        assertTrue(source.contains("private ArrayAdapter<String> createTradeActionMenuAdapter(@NonNull String[] actions) {"));
         assertTrue(source.contains(".setAdapter(createTradeActionMenuAdapter(actions), (menuDialog, which) -> {"));
         assertTrue(source.contains("textView.setTextColor(Color.WHITE);"));
         assertTrue(source.contains("private void styleTradeOrderTypeSpinnerItem(@Nullable View view) {"));
@@ -115,18 +111,25 @@ public class MarketChartTradeSourceTest {
 
     @Test
     public void tradeCallbacksShouldGuardLifecycleAndCancelOutstandingTasks() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+        String coordinatorSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("private Future<?> tradePrepareTask;"));
-        assertTrue(source.contains("private Future<?> tradeSubmitTask;"));
-        assertTrue(source.contains("private boolean canPresentTradeUi() {"));
-        assertTrue(source.contains("tradePrepareTask = ioExecutor.submit(() -> {"));
-        assertTrue(source.contains("tradeSubmitTask = ioExecutor.submit(() -> {"));
-        assertTrue(source.contains("protected void onPause() {\n        stopAutoRefresh();"));
-        assertTrue(source.contains("cancelTradeTasks();"));
-        assertTrue(source.contains("if (!canPresentTradeUi()) {\n            tradeFlowRunning = false;\n            return;\n        }"));
+        assertTrue(coordinatorSource.contains("private Future<?> tradePrepareTask;"));
+        assertTrue(coordinatorSource.contains("private Future<?> tradeSubmitTask;"));
+        assertTrue(coordinatorSource.contains("private boolean canPresentTradeUi() {"));
+        assertTrue(coordinatorSource.contains("tradePrepareTask = ioExecutor.submit(() -> {"));
+        assertTrue(coordinatorSource.contains("tradeSubmitTask = ioExecutor.submit(() -> {"));
+        assertTrue(activitySource.contains("protected void onPause() {\n        stopAutoRefresh();"));
+        assertTrue(activitySource.contains("tradeDialogCoordinator.cancelTradeTasks();"));
+        assertTrue(coordinatorSource.contains("if (!canPresentTradeUi()) {\n            tradeFlowRunning = false;\n            return;\n        }"));
+    }
+
+    private static String readUtf8(String candidate) throws Exception {
+        Path path = Paths.get(candidate);
+        return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
     }
 }

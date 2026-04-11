@@ -99,7 +99,8 @@
                 android:id="@+id/cardCurveSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap">
+                android:layout_marginTop="@dimen/page_section_gap"
+                android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -377,30 +378,38 @@
                         android:textSize="12sp"
                         android:visibility="gone" />
 
-                    <com.binance.monitor.ui.account.PositionRatioChartView
-                        android:id="@+id/positionRatioChartView"
-                        android:layout_width="match_parent"
-                        android:layout_height="104dp"
-                        android:layout_marginTop="0dp" />
-
-                    <com.binance.monitor.ui.account.DrawdownChartView
-                        android:id="@+id/drawdownChartView"
-                        android:layout_width="match_parent"
-                        android:layout_height="112dp"
-                        android:layout_marginTop="0dp" />
-
-                    <com.binance.monitor.ui.account.DailyReturnChartView
-                        android:id="@+id/dailyReturnChartView"
-                        android:layout_width="match_parent"
-                        android:layout_height="126dp"
-                        android:layout_marginTop="0dp" />
-
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/recyclerCurveIndicators"
+                    <LinearLayout
+                        android:id="@+id/layoutCurveSecondarySection"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_12"
-                        android:nestedScrollingEnabled="false" />
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <com.binance.monitor.ui.account.PositionRatioChartView
+                            android:id="@+id/positionRatioChartView"
+                            android:layout_width="match_parent"
+                            android:layout_height="104dp"
+                            android:layout_marginTop="0dp" />
+
+                        <com.binance.monitor.ui.account.DrawdownChartView
+                            android:id="@+id/drawdownChartView"
+                            android:layout_width="match_parent"
+                            android:layout_height="112dp"
+                            android:layout_marginTop="0dp" />
+
+                        <com.binance.monitor.ui.account.DailyReturnChartView
+                            android:id="@+id/dailyReturnChartView"
+                            android:layout_width="match_parent"
+                            android:layout_height="126dp"
+                            android:layout_marginTop="0dp" />
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/recyclerCurveIndicators"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_12"
+                            android:nestedScrollingEnabled="false" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -408,7 +417,8 @@
                 android:id="@+id/cardReturnStatsSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap">
+                android:layout_marginTop="@dimen/page_section_gap"
+                android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -738,9 +748,11 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardTradeRecordsSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap">
+                android:layout_marginTop="@dimen/page_section_gap"
+                android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -998,10 +1010,12 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardTradeStatsSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/page_section_gap"
-                android:layout_marginBottom="8dp">
+                android:layout_marginBottom="8dp"
+                android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"

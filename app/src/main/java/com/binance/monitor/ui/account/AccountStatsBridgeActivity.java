@@ -15,6 +15,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.InputType;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
@@ -29,6 +30,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
@@ -89,6 +91,7 @@ import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
+import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 import com.binance.monitor.ui.widget.TradeScrollBarView;
@@ -206,6 +209,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private SessionCredentialEncryptor sessionCredentialEncryptor;
     private AccountSessionStateMachine sessionStateMachine;
     private AccountRemoteSessionCoordinator remoteSessionCoordinator;
+    private AccountSnapshotRefreshCoordinator snapshotRefreshCoordinator;
 
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
     private final AccountSnapshotRequestGuard snapshotRequestGuard = new AccountSnapshotRequestGuard();
@@ -289,19 +293,39 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private long scheduledRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private int unchangedRefreshStreak = 0;
     private boolean draggingTradeScrollBar;
+    private boolean secondarySectionsAttached;
+    private boolean deferredSecondaryRenderPending;
+    private boolean deferredSecondarySectionAttachPosted;
+    private boolean firstFrameCompleted;
+    private boolean firstFrameCompletionPosted;
+    private volatile boolean storedSnapshotRestorePending;
     private final Runnable hideLoginSuccessBannerRunnable = this::hideLoginSuccessBannerNow;
+    private final Runnable deferredSecondarySectionAttachRunnable = () -> {
+        deferredSecondarySectionAttachPosted = false;
+        if (isFinishing() || isDestroyed() || binding == null) {
+            return;
+        }
+        attachDeferredSecondarySections();
+        renderDeferredSnapshotSectionsIfNeeded();
+    };
+    @Nullable
+    private ViewTreeObserver.OnDrawListener firstFrameDrawListener;
     private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {
         if (cache == null || isFinishing() || isDestroyed() || loading) {
             return;
         }
-        applyPreloadedCacheIfAvailable();
+        if (snapshotRefreshCoordinator != null) {
+            snapshotRefreshCoordinator.applyPreloadedCacheIfAvailable();
+        }
     };
 
     private final Runnable refreshRunnable = new Runnable() {
         @Override
         public void run() {
             clearScheduledRefresh();
-            requestSnapshot();
+            if (snapshotRefreshCoordinator != null) {
+                snapshotRefreshCoordinator.requestSnapshot();
+            }
         }
     };
 
@@ -313,13 +337,288 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     };
 
+    // 装配账户页快照刷新协调器，让刷新编排与页面渲染职责分开。
+    private AccountSnapshotRefreshCoordinator.Host createSnapshotRefreshHost() {
+        return new AccountSnapshotRefreshCoordinator.Host() {
+            @Override
+            public boolean isLoading() {
+                return loading;
+            }
+
+            @Override
+            public void setLoading(boolean value) {
+                loading = value;
+            }
+
+            @Override
+            public boolean isUserLoggedIn() {
+                return userLoggedIn;
+            }
+
+            @Override
+            public boolean isFinishingOrDestroyed() {
+                return isFinishing() || isDestroyed();
+            }
+
+            @Override
+            public boolean isAccountSessionReady() {
+                return AccountStatsBridgeActivity.this.isAccountSessionReady();
+            }
+
+            @Override
+            public AccountStatsPreloadManager.Cache resolveCurrentSessionCache() {
+                return AccountStatsBridgeActivity.this.resolveCurrentSessionCache();
+            }
+
+            @Override
+            public void applyLoggedOutEmptyState() {
+                AccountStatsBridgeActivity.this.applyLoggedOutEmptyState();
+            }
+
+            @Override
+            public void clearScheduledRefresh() {
+                AccountStatsBridgeActivity.this.clearScheduledRefresh();
+            }
+
+            @Override
+            public void updateOverviewHeader() {
+                AccountStatsBridgeActivity.this.updateOverviewHeader();
+            }
+
+            @Override
+            public boolean hasRenderableCurrentSessionState() {
+                return AccountStatsBridgeActivity.this.hasRenderableCurrentSessionState();
+            }
+
+            @Override
+            public boolean shouldKeepRefreshLoop() {
+                return AccountStatsBridgeActivity.this.shouldKeepRefreshLoop();
+            }
+
+            @Override
+            public long getDynamicRefreshDelayMs() {
+                return dynamicRefreshDelayMs;
+            }
+
+            @Override
+            public void scheduleNextSnapshot(long delayMs) {
+                AccountStatsBridgeActivity.this.scheduleNextSnapshot(delayMs);
+            }
+
+            @Override
+            public boolean shouldBootstrapRemoteSession() {
+                return AccountStatsBridgeActivity.this.shouldBootstrapRemoteSession();
+            }
+
+            @Override
+            public void refreshRemoteSessionStatus(boolean requestSnapshotAfter) {
+                AccountStatsBridgeActivity.this.refreshRemoteSessionStatus(requestSnapshotAfter);
+            }
+
+            @Override
+            public void applyCacheMeta(@NonNull AccountStatsPreloadManager.Cache cache) {
+                AccountStatsBridgeActivity.this.applyCacheMeta(cache);
+            }
+
+            @Override
+            public void logConnectionEvent(boolean connected) {
+                AccountStatsBridgeActivity.this.logConnectionEvent(connected);
+            }
+
+            @NonNull
+            @Override
+            public String buildRefreshSignature(@Nullable AccountSnapshot snapshot,
+                                                @Nullable String historyRevision,
+                                                boolean connected,
+                                                @Nullable String account,
+                                                @Nullable String server) {
+                return AccountStatsBridgeActivity.this.buildRefreshSignature(
+                        snapshot,
+                        historyRevision,
+                        connected,
+                        account,
+                        server
+                );
+            }
+
+            @NonNull
+            @Override
+            public String getLastAppliedSnapshotSignature() {
+                return lastAppliedSnapshotSignature;
+            }
+
+            @Override
+            public void setLastAppliedSnapshotSignature(@NonNull String signature) {
+                lastAppliedSnapshotSignature = signature;
+            }
+
+            @Override
+            public boolean isOlderThanCurrentSnapshot(long incomingUpdatedAt) {
+                return AccountStatsBridgeActivity.this.isOlderThanCurrentSnapshot(incomingUpdatedAt);
+            }
+
+            @Override
+            public boolean isLoginCredentialMatched(@Nullable String remoteAccount, @Nullable String remoteServer) {
+                return AccountStatsBridgeActivity.this.isLoginCredentialMatched(remoteAccount, remoteServer);
+            }
+
+            @NonNull
+            @Override
+            public AccountSnapshot buildEmptyAccountSnapshot() {
+                return AccountStatsBridgeActivity.this.buildEmptyAccountSnapshot();
+            }
+
+            @NonNull
+            @Override
+            public String normalizeSource(@Nullable String source) {
+                return AccountStatsBridgeActivity.this.normalizeSource(source);
+            }
+
+            @NonNull
+            @Override
+            public String getLoginAccountInput() {
+                return loginAccountInput;
+            }
+
+            @NonNull
+            @Override
+            public String getLoginServerInput() {
+                return loginServerInput;
+            }
+
+            @NonNull
+            @Override
+            public String getDefaultAccount() {
+                return ACCOUNT;
+            }
+
+            @NonNull
+            @Override
+            public String getDefaultServer() {
+                return SERVER;
+            }
+
+            @Override
+            public void applyConnectedMeta(boolean connected,
+                                           @NonNull String account,
+                                           @NonNull String accountName,
+                                           @NonNull String server,
+                                           @NonNull String source,
+                                           @NonNull String gateway,
+                                           long updatedAt,
+                                           @NonNull String error) {
+                connectedAccount = account;
+                connectedAccountName = accountName;
+                connectedServer = server;
+                connectedSource = source;
+                connectedGateway = gateway;
+                connectedUpdateAtMs = updatedAt;
+                connectedUpdate = FormatUtils.formatDateTime(updatedAt);
+                connectedError = error;
+            }
+
+            @Override
+            public void setConnectionStatus(boolean connected) {
+                AccountStatsBridgeActivity.this.setConnectionStatus(connected);
+            }
+
+            @Override
+            public boolean onSnapshotApplied(@NonNull String account, @NonNull String server) {
+                return remoteSessionCoordinator != null
+                        && remoteSessionCoordinator.onSnapshotApplied(account, server);
+            }
+
+            @Override
+            public boolean isAwaitingSync() {
+                return remoteSessionCoordinator != null && remoteSessionCoordinator.isAwaitingSync();
+            }
+
+            @Override
+            public void markSyncFailed(@NonNull String message) {
+                if (remoteSessionCoordinator != null) {
+                    remoteSessionCoordinator.markSyncFailed(message);
+                }
+            }
+
+            @Override
+            public void markAwaitingGatewaySync(@NonNull String message) {
+                if (remoteSessionCoordinator != null) {
+                    remoteSessionCoordinator.markAwaitingGatewaySync(message);
+                }
+            }
+
+            @Override
+            public void showLoginSuccessBanner() {
+                AccountStatsBridgeActivity.this.showLoginSuccessBanner();
+            }
+
+            @Override
+            public void applySnapshot(@NonNull AccountSnapshot snapshot, boolean remoteConnected) {
+                AccountStatsBridgeActivity.this.applySnapshot(snapshot, remoteConnected);
+            }
+
+            @Override
+            public boolean shouldApplyFetchedSnapshot(@Nullable AccountSnapshot snapshot,
+                                                      boolean remoteConnected,
+                                                      boolean syntheticDisconnectedSnapshot,
+                                                      @Nullable String incomingHistoryRevision,
+                                                      @Nullable String requestStartHistoryRevision) {
+                return AccountStatsBridgeActivity.this.shouldApplyFetchedSnapshot(
+                        snapshot,
+                        remoteConnected,
+                        syntheticDisconnectedSnapshot,
+                        incomingHistoryRevision,
+                        requestStartHistoryRevision
+                );
+            }
+
+            @Override
+            public void adjustRefreshCadence(boolean connected, boolean unchanged) {
+                AccountStatsBridgeActivity.this.adjustRefreshCadence(connected, unchanged);
+            }
+
+            @Override
+            public AccountStatsPreloadManager.Cache fetchForUi(@NonNull AccountTimeRange range) {
+                return preloadManager == null ? null : preloadManager.fetchForUi(range);
+            }
+
+            @Override
+            public void executeIo(@NonNull Runnable action) {
+                if (ioExecutor != null) {
+                    ioExecutor.execute(action);
+                }
+            }
+
+            @Override
+            public void runOnUiThread(@NonNull Runnable action) {
+                AccountStatsBridgeActivity.this.runOnUiThread(action);
+            }
+
+            @Override
+            public void logWarning(@NonNull String message) {
+                if (logManager != null) {
+                    logManager.warn(message);
+                }
+            }
+        };
+    }
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        long onCreateStartedAt = SystemClock.elapsedRealtime();
+        long stageStartedAt = onCreateStartedAt;
         binding = ActivityAccountStatsBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        registerFirstFrameCompletionListener();
         ensureMonitorServiceStarted();
+        traceAccountRenderPhase("on_create_inflate_and_content",
+                stageStartedAt,
+                0,
+                0,
+                0);
 
+        stageStartedAt = SystemClock.elapsedRealtime();
         preloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
         accountStorageRepository = new AccountStorageRepository(getApplicationContext());
         logManager = LogManager.getInstance(getApplicationContext());
@@ -330,9 +629,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         sessionCredentialEncryptor = new SessionCredentialEncryptor();
         sessionStateMachine = new AccountSessionStateMachine();
         remoteSessionCoordinator = buildRemoteSessionCoordinator();
+        snapshotRefreshCoordinator = new AccountSnapshotRefreshCoordinator(createSnapshotRefreshHost());
         activeSessionAccount = secureSessionPrefs.getActiveAccount();
         savedSessionAccounts = new ArrayList<>(secureSessionPrefs.getSavedAccounts());
+        traceAccountRenderPhase("on_create_runtime_init",
+                stageStartedAt,
+                0,
+                0,
+                0);
 
+        stageStartedAt = SystemClock.elapsedRealtime();
         overviewAdapter = new AccountMetricAdapter();
         indicatorAdapter = new AccountMetricAdapter();
         positionAggregateAdapter = new PositionAggregateAdapter();
@@ -340,8 +646,21 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         pendingOrderAdapter = new PendingOrderAdapter();
         tradeAdapter = new TradeRecordAdapterV2();
         statsAdapter = new StatsMetricAdapter();
+        traceAccountRenderPhase("on_create_adapter_init",
+                stageStartedAt,
+                0,
+                0,
+                0);
 
+        stageStartedAt = SystemClock.elapsedRealtime();
         restoreUiState();
+        traceAccountRenderPhase("on_create_restore_ui_state",
+                stageStartedAt,
+                0,
+                0,
+                0);
+
+        stageStartedAt = SystemClock.elapsedRealtime();
         setupBottomNav();
         placeCurveSectionToBottom();
         setupRecyclers();
@@ -355,12 +674,36 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setupDatePickers();
         setupCurveInteraction();
         setupOverviewHeader();
+        traceAccountRenderPhase("on_create_setup_static_ui",
+                stageStartedAt,
+                0,
+                0,
+                0);
+
+        stageStartedAt = SystemClock.elapsedRealtime();
         bindLocalMeta();
+        traceAccountRenderPhase("on_create_bind_local_meta",
+                stageStartedAt,
+                0,
+                0,
+                0);
+
+        stageStartedAt = SystemClock.elapsedRealtime();
         applyPaletteStyles();
         applyPrivacyMaskState();
         snapshotLoopEnabled = true;
         enterAccountScreen(true);
         startOverviewHeaderTicker();
+        traceAccountRenderPhase("on_create_enter_account_screen",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                allCurvePoints.size());
+        traceAccountRenderPhase("on_create_total",
+                onCreateStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                allCurvePoints.size());
     }
 
     @Override
@@ -384,6 +727,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         clearScheduledRefresh();
         stopOverviewHeaderTicker();
         binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
+        binding.scrollAccountStats.removeCallbacks(deferredSecondarySectionAttachRunnable);
+        deferredSecondarySectionAttachPosted = false;
+        clearFirstFrameCompletionListener();
         hideLoginSuccessBannerNow();
         if (preloadManager != null) {
             preloadManager.removeCacheListener(preloadCacheListener);
@@ -954,6 +1300,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     // 远程 logout 成功后，再在本地收口页面状态。
     private void applyLoggedOutSessionState() {
         snapshotRequestGuard.invalidateSession();
+        if (snapshotRefreshCoordinator != null) {
+            snapshotRefreshCoordinator.invalidateSession();
+        }
         userLoggedIn = false;
         gatewayConnected = false;
         loading = false;
@@ -1100,6 +1449,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                         clearPersistedAccountState();
                         runOnUiThread(() -> {
                             snapshotRequestGuard.invalidateSession();
+                            if (snapshotRefreshCoordinator != null) {
+                                snapshotRefreshCoordinator.invalidateSession();
+                            }
                             loading = false;
                             clearRuntimeAccountState();
                             applyLoggedOutEmptyState();
@@ -1462,6 +1814,144 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     }
 
+    // 监听账户页第一次真正绘制完成，再开始挂载首屏之外的长列表和图表区块。
+    private void registerFirstFrameCompletionListener() {
+        if (binding == null || firstFrameCompleted || firstFrameDrawListener != null) {
+            return;
+        }
+        firstFrameDrawListener = new ViewTreeObserver.OnDrawListener() {
+            @Override
+            public void onDraw() {
+                if (firstFrameCompletionPosted) {
+                    return;
+                }
+                firstFrameCompletionPosted = true;
+                if (binding == null) {
+                    return;
+                }
+                binding.scrollAccountStats.post(() -> {
+                    clearFirstFrameCompletionListener();
+                    markFirstFrameCompleted();
+                });
+            }
+        };
+        binding.scrollAccountStats.getViewTreeObserver().addOnDrawListener(firstFrameDrawListener);
+    }
+
+    // 首帧完成后立刻允许补挂次屏区块，保证剩余内容在首帧之后继续渲染。
+    private void markFirstFrameCompleted() {
+        if (firstFrameCompleted) {
+            return;
+        }
+        firstFrameCompleted = true;
+        scheduleDeferredSecondarySectionAttach();
+    }
+
+    // 首帧监听器只需要触发一次，页面离开前主动清理避免重复回调。
+    private void clearFirstFrameCompletionListener() {
+        if (binding == null || firstFrameDrawListener == null) {
+            return;
+        }
+        ViewTreeObserver observer = binding.scrollAccountStats.getViewTreeObserver();
+        if (observer.isAlive()) {
+            observer.removeOnDrawListener(firstFrameDrawListener);
+        }
+        firstFrameDrawListener = null;
+        firstFrameCompletionPosted = false;
+    }
+
+    // 首屏先只保留可见区块，次屏区块等首帧完成后再挂载，减少账户页首次测量和绘制成本。
+    private void scheduleDeferredSecondarySectionAttach() {
+        if (binding == null
+                || secondarySectionsAttached
+                || deferredSecondarySectionAttachPosted
+                || !firstFrameCompleted) {
+            return;
+        }
+        deferredSecondarySectionAttachPosted = true;
+        binding.scrollAccountStats.post(deferredSecondarySectionAttachRunnable);
+    }
+
+    // 首帧完成后再把次屏区块挂回页面，避免首进账户页时一次性测量整张长页面。
+    private void attachDeferredSecondarySections() {
+        if (binding == null || secondarySectionsAttached) {
+            return;
+        }
+        long stageStartedAt = SystemClock.elapsedRealtime();
+        binding.cardCurveSection.setVisibility(View.VISIBLE);
+        binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);
+        binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
+        binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);
+        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+        secondarySectionsAttached = true;
+        traceAccountRenderPhase("attach_secondary_sections",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                allCurvePoints.size());
+    }
+
+    // 次屏区块挂载后再统一补一次渲染，保证页面数据最终完整。
+    private void renderDeferredSnapshotSectionsIfNeeded() {
+        if (!secondarySectionsAttached || !deferredSecondaryRenderPending) {
+            return;
+        }
+        renderDeferredSnapshotSections();
+    }
+
+    // 渲染首屏之外的统计、表格和交易区块，避免它们参与第一帧竞争。
+    private void renderDeferredSnapshotSections() {
+        deferredSecondaryRenderPending = false;
+
+        long stageStartedAt = SystemClock.elapsedRealtime();
+        updateTradeProductOptions();
+        traceAccountRenderPhase("bind_overview_and_filters",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                allCurvePoints.size());
+
+        stageStartedAt = SystemClock.elapsedRealtime();
+        renderReturnStatsTable(allCurvePoints);
+        traceAccountRenderPhase("render_returns_table",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                allCurvePoints.size());
+
+        stageStartedAt = SystemClock.elapsedRealtime();
+        applyCurrentCurveRangeFromAllPoints();
+        traceAccountRenderPhase("apply_curve_range",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
+
+        stageStartedAt = SystemClock.elapsedRealtime();
+        refreshTradeStats();
+        traceAccountRenderPhase("refresh_trade_stats",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
+
+        stageStartedAt = SystemClock.elapsedRealtime();
+        refreshPositions();
+        traceAccountRenderPhase("refresh_positions",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
+
+        stageStartedAt = SystemClock.elapsedRealtime();
+        refreshTrades(false);
+        traceAccountRenderPhase("refresh_trades",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
+    }
+
     // 账户统计页不再用整页遮罩，而是统一切到局部打码 + 图表占位态。
     private void applyPrivacyMaskState() {
         if (binding == null) {
@@ -1485,11 +1975,24 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.holdingDurationDistributionView.setMasked(masked);
         updateAccountPrivacyToggle(masked);
         updateOverviewHeader();
-        renderReturnStatsTable(allCurvePoints);
-        applyCurrentCurveRangeFromAllPoints();
-        refreshTradeStats();
-        refreshPositions();
-        refreshTrades(false);
+        if (!hasImmediateAccountContent()) {
+            return;
+        }
+        deferredSecondaryRenderPending = true;
+        if (secondarySectionsAttached) {
+            renderDeferredSnapshotSections();
+        } else {
+            scheduleDeferredSecondarySectionAttach();
+        }
+    }
+
+    // 首屏还没有任何可见账户真值时，不再为了打码切换提前重刷整页次屏区块。
+    private boolean hasImmediateAccountContent() {
+        return !lastAppliedSnapshotSignature.isEmpty()
+                || !latestOverviewMetrics.isEmpty()
+                || !baseTrades.isEmpty()
+                || !basePositions.isEmpty()
+                || !allCurvePoints.isEmpty();
     }
 
     private boolean isPrivacyMasked() {
@@ -2406,6 +2909,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             applyCacheMeta(cache);
             return;
         }
+        scheduleStoredSnapshotRestoreIfNeeded();
         String defaultAccount = activeSessionAccount != null && !trim(activeSessionAccount.getLogin()).isEmpty()
                 ? trim(activeSessionAccount.getLogin())
                 : loginAccountInput;
@@ -2431,59 +2935,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void applyPreloadedCacheIfAvailable() {
-        if (!isAccountSessionReady()) {
-            applyLoggedOutEmptyState();
-            return;
+        if (snapshotRefreshCoordinator != null) {
+            snapshotRefreshCoordinator.applyPreloadedCacheIfAvailable();
         }
-        AccountStatsPreloadManager.Cache cache = resolveCurrentSessionCache();
-        if (cache == null || cache.getSnapshot() == null) {
-            return;
-        }
-        long updateAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
-        if (isOlderThanCurrentSnapshot(updateAt)) {
-            return;
-        }
-        applyCacheMeta(cache);
-        updateOverviewHeader();
-        logConnectionEvent(cache.isConnected());
-        String cacheSignature = buildRefreshSignature(
-                cache.getSnapshot(),
-                cache.getHistoryRevision(),
-                cache.isConnected(),
-                connectedAccount,
-                connectedServer
-        );
-        if (cacheSignature.equals(lastAppliedSnapshotSignature)) {
-            return;
-        }
-        applySnapshot(cache.getSnapshot(), cache.isConnected());
-        lastAppliedSnapshotSignature = cacheSignature;
     }
 
     // 账户页进入前台时只消费已有会话真值与缓存；只有当前页确实没有可渲染状态时才重新 bootstrap。
     private void enterAccountScreen(boolean coldStart) {
-        applyPreloadedCacheIfAvailable();
-        if (!userLoggedIn) {
-            clearScheduledRefresh();
-            setConnectionStatus(false);
-            updateOverviewHeader();
-            return;
+        scheduleStoredSnapshotRestoreIfNeeded();
+        if (snapshotRefreshCoordinator != null) {
+            snapshotRefreshCoordinator.enterAccountScreen(coldStart);
         }
-        if (hasRenderableCurrentSessionState()) {
-            if (shouldKeepRefreshLoop()) {
-                scheduleNextSnapshot(dynamicRefreshDelayMs);
-            }
-            updateOverviewHeader();
-            return;
-        }
-        if (!coldStart && loading) {
-            return;
-        }
-        if (shouldBootstrapRemoteSession()) {
-            refreshRemoteSessionStatus(true);
-            return;
-        }
-        requestForegroundEntrySnapshot();
     }
 
     // 只要当前页已有本账户可渲染快照，就不应把切页/回前台误当成一次新的页面 bootstrap。
@@ -2508,6 +2970,42 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return null;
         }
         return cache;
+    }
+
+    // 内存缓存为空时，后台恢复本地已持久化快照，避免切页首帧同步读库。
+    private void scheduleStoredSnapshotRestoreIfNeeded() {
+        if (!isAccountSessionReady()
+                || preloadManager == null
+                || ioExecutor == null
+                || ioExecutor.isShutdown()
+                || storedSnapshotRestorePending) {
+            return;
+        }
+        if (resolveCurrentSessionCache() != null) {
+            return;
+        }
+        storedSnapshotRestorePending = true;
+        ioExecutor.execute(() -> {
+            AccountStatsPreloadManager.Cache storedCache = null;
+            try {
+                storedCache = preloadManager.hydrateLatestCacheFromStorage();
+            } finally {
+                AccountStatsPreloadManager.Cache finalStoredCache = storedCache;
+                runOnUiThread(() -> {
+                    storedSnapshotRestorePending = false;
+                    if (isFinishing() || isDestroyed() || finalStoredCache == null) {
+                        return;
+                    }
+                    if (!isPreloadedCacheForCurrentSession(finalStoredCache)) {
+                        if (preloadManager != null && finalStoredCache == preloadManager.getLatestCache()) {
+                            preloadManager.clearLatestCache();
+                        }
+                        return;
+                    }
+                    applyPreloadedCacheIfAvailable();
+                });
+            }
+        });
     }
 
     // 当前页首帧先消费缓存元数据，避免先把连接态写成未连接再被真实快照纠正。
@@ -2645,196 +3143,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 页面首次进入和应用回到前台时，都立即拉一次账户总计，避免只显示旧缓存。
     private void requestForegroundEntrySnapshot() {
-        if (!userLoggedIn) {
-            clearScheduledRefresh();
-            return;
+        if (snapshotRefreshCoordinator != null) {
+            snapshotRefreshCoordinator.requestForegroundEntrySnapshot();
         }
-        clearScheduledRefresh();
-        if (loading) {
-            return;
-        }
-        requestSnapshot();
     }
 
     private void requestSnapshot() {
-        if (!userLoggedIn) {
-            loading = false;
-            gatewayConnected = false;
-            setConnectionStatus(false);
-            clearScheduledRefresh();
-            updateOverviewHeader();
-            return;
+        if (snapshotRefreshCoordinator != null) {
+            snapshotRefreshCoordinator.requestSnapshot();
         }
-        if (loading) {
-            return;
-        }
-        loading = true;
-        final AccountSnapshotRequestGuard.RequestToken requestToken = snapshotRequestGuard.openRequest();
-        AccountTimeRange fetchRange = AccountTimeRange.ALL;
-        AccountStatsPreloadManager.Cache requestStartCache = resolveCurrentSessionCache();
-        final String requestStartHistoryRevision = requestStartCache == null
-                ? ""
-                : trim(requestStartCache.getHistoryRevision());
-
-        ioExecutor.execute(() -> {
-            try {
-                AccountStatsPreloadManager.Cache remote = preloadManager == null
-                        ? null
-                        : preloadManager.fetchForUi(fetchRange);
-                AccountSnapshot snapshot;
-                boolean syntheticDisconnectedSnapshot = false;
-                boolean connected;
-                String account;
-                String accountName;
-                String server;
-                String source;
-                String gateway;
-                long updatedAt;
-                String error;
-
-                if (remote != null && remote.isConnected()) {
-                    boolean loginMatched = isLoginCredentialMatched(remote.getAccount(), remote.getServer());
-                    if (loginMatched) {
-                        snapshot = remote.getSnapshot();
-                        connected = true;
-                        account = remote.getAccount().isEmpty()
-                                ? (trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput)
-                                : remote.getAccount();
-                        accountName = account;
-                        server = remote.getServer().isEmpty()
-                                ? (trim(loginServerInput).isEmpty() ? SERVER : loginServerInput)
-                                : remote.getServer();
-                        source = normalizeSource(remote.getSource());
-                        gateway = remote.getGateway().isEmpty() ? "--" : remote.getGateway();
-                        updatedAt = remote.getUpdatedAt() > 0L ? remote.getUpdatedAt() : System.currentTimeMillis();
-                        error = "";
-                    } else {
-                        snapshot = null;
-                        connected = false;
-                        account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
-                        accountName = account;
-                        server = trim(loginServerInput).isEmpty() ? SERVER : loginServerInput;
-                        source = "登录校验失败";
-                        gateway = remote.getGateway().isEmpty() ? "--" : remote.getGateway();
-                        updatedAt = System.currentTimeMillis();
-                        error = "登录账户或服务器与网关返回不一致";
-                    }
-                } else {
-                    // 断线时直接进入空快照态，不再把旧数据伪装成当前真值。
-                    snapshot = buildEmptyAccountSnapshot();
-                    syntheticDisconnectedSnapshot = true;
-                    connected = false;
-                    account = trim(loginAccountInput).isEmpty() ? ACCOUNT : loginAccountInput;
-                    accountName = account;
-                    server = trim(loginServerInput).isEmpty() ? SERVER : loginServerInput;
-                    source = remote == null || remote.getSource().trim().isEmpty()
-                            ? "历史数据（网关离线）"
-                            : normalizeSource(remote.getSource());
-                    gateway = remote == null || remote.getGateway().trim().isEmpty()
-                            ? "Gateway offline"
-                            : remote.getGateway();
-                    updatedAt = remote == null || remote.getUpdatedAt() <= 0L
-                            ? System.currentTimeMillis()
-                            : remote.getUpdatedAt();
-                    error = remote == null ? "网关离线" : remote.getError();
-                }
-
-                final AccountSnapshot finalSnapshot = snapshot;
-                final boolean finalConnected = connected;
-                final String finalAccount = account;
-                final String finalAccountName = accountName;
-                final String finalServer = server;
-                final String finalSource = source;
-                final String finalGateway = gateway;
-                final long finalUpdatedAt = updatedAt;
-                final String finalError = error;
-                final String finalHistoryRevision = remote == null ? "" : remote.getHistoryRevision();
-                final boolean finalSyntheticDisconnectedSnapshot = syntheticDisconnectedSnapshot;
-                final String finalSignature = buildRefreshSignature(
-                        finalSnapshot,
-                        finalHistoryRevision,
-                        finalConnected,
-                        finalAccount,
-                        finalServer
-                );
-
-                runOnUiThread(() -> {
-                    if (!snapshotRequestGuard.shouldApply(requestToken)) {
-                        return;
-                    }
-                    final boolean finalUnchanged = finalSignature.equals(lastAppliedSnapshotSignature);
-                    boolean previousConnected = gatewayConnected;
-                    connectedAccount = finalAccount;
-                    connectedAccountName = finalAccountName;
-                    connectedServer = finalServer;
-                    connectedSource = finalSource;
-                    connectedGateway = finalGateway;
-                    connectedUpdateAtMs = finalUpdatedAt;
-                    connectedUpdate = FormatUtils.formatDateTime(finalUpdatedAt);
-                    connectedError = finalError;
-
-                    if (isOlderThanCurrentSnapshot(finalUpdatedAt)) {
-                        loading = false;
-                        if (shouldKeepRefreshLoop()) {
-                            scheduleNextSnapshot(dynamicRefreshDelayMs);
-                        }
-                        return;
-                    }
-                    setConnectionStatus(finalConnected);
-                    boolean sessionActivatedNow = finalConnected
-                            && remoteSessionCoordinator != null
-                            && remoteSessionCoordinator.onSnapshotApplied(finalAccount, finalServer);
-                    if (!finalConnected
-                            && remoteSessionCoordinator != null
-                            && remoteSessionCoordinator.isAwaitingSync()) {
-                        if ("登录校验失败".equals(finalSource)) {
-                            remoteSessionCoordinator.markSyncFailed(finalError);
-                        } else if ("历史数据（网关离线）".equals(finalSource)) {
-                            remoteSessionCoordinator.markAwaitingGatewaySync("会话已受理，等待网关上线");
-                        }
-                    }
-                    if (sessionActivatedNow) {
-                        showLoginSuccessBanner();
-                    }
-                    updateOverviewHeader();
-                    logConnectionEvent(finalConnected);
-                    if (shouldApplyFetchedSnapshot(
-                            finalSnapshot,
-                            finalConnected,
-                            finalSyntheticDisconnectedSnapshot,
-                            finalHistoryRevision,
-                            requestStartHistoryRevision)) {
-                        applySnapshot(finalSnapshot, finalConnected);
-                    }
-                    lastAppliedSnapshotSignature = finalSignature;
-                    adjustRefreshCadence(finalConnected, finalUnchanged);
-                    loading = false;
-                    if (shouldKeepRefreshLoop()) {
-                        scheduleNextSnapshot(dynamicRefreshDelayMs);
-                    } else {
-                        clearScheduledRefresh();
-                    }
-                    updateOverviewHeader();
-                });
-            } catch (Exception exception) {
-                if (logManager != null) {
-                    logManager.warn("AccountStats snapshot refresh failed: " + exception.getMessage());
-                }
-            } finally {
-                runOnUiThread(() -> {
-                    if (!snapshotRequestGuard.shouldApply(requestToken) || !loading) {
-                        return;
-                    }
-                    loading = false;
-                    if (shouldKeepRefreshLoop()) {
-                        scheduleNextSnapshot(dynamicRefreshDelayMs);
-                    } else {
-                        clearScheduledRefresh();
-                    }
-                    updateOverviewHeader();
-                });
-            }
-        });
     }
 
     // 页面自己合成的断线空快照只用于“完全无可渲染状态”的场景，不能覆盖当前已展示的真实持仓。
@@ -2928,7 +3245,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         appendStringToken(builder, connected ? "1" : "0");
         appendStringToken(builder, trim(account).toLowerCase(Locale.ROOT));
         appendStringToken(builder, trim(server).toLowerCase(Locale.ROOT));
-        appendStringToken(builder, trim(historyRevision));
+        // 页面是否需要重画只看可渲染真值，不把服务端 revision 元数据算进来。
         if (snapshot == null) {
             return builder.toString();
         }
@@ -3494,6 +3811,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void applySnapshot(AccountSnapshot snapshot, boolean remoteConnected) {
+        long applySnapshotStartedAt = SystemClock.elapsedRealtime();
         List<PositionItem> snapshotPositions = snapshot.getPositions() == null
                 ? new ArrayList<>()
                 : new ArrayList<>(snapshot.getPositions());
@@ -3539,15 +3857,68 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedLeverageText = extractLeverageText(latestOverviewMetrics);
         updateOverviewHeader();
 
+        long stageStartedAt = SystemClock.elapsedRealtime();
         List<AccountMetric> overview = buildOverviewMetrics(latestOverviewMetrics);
+        traceAccountRenderPhase("build_overview",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                allCurvePoints.size());
 
+        stageStartedAt = SystemClock.elapsedRealtime();
         overviewAdapter.submitList(overview);
-        updateTradeProductOptions();
-        renderReturnStatsTable(allCurvePoints);
-        applyCurrentCurveRangeFromAllPoints();
-        refreshTradeStats();
-        refreshPositions();
-        refreshTrades(false);
+        traceAccountRenderPhase("bind_overview_and_filters",
+                stageStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                allCurvePoints.size());
+
+        deferredSecondaryRenderPending = true;
+        if (secondarySectionsAttached) {
+            renderDeferredSnapshotSections();
+        } else {
+            scheduleDeferredSecondarySectionAttach();
+        }
+        traceAccountRenderPhase("apply_snapshot_total",
+                applySnapshotStartedAt,
+                baseTrades.size(),
+                basePositions.size(),
+                allCurvePoints.size());
+    }
+
+    // 统一输出账户页主线程阶段耗时，便于真机点击后直接定位最重的一段。
+    private void traceAccountRenderPhase(String phase,
+                                         long stageStartedAt,
+                                         int tradeCount,
+                                         int positionCount,
+                                         int curveCount) {
+        ChainLatencyTracer.markAccountRenderPhase(
+                buildAccountTraceKey(),
+                phase,
+                SystemClock.elapsedRealtime() - stageStartedAt,
+                tradeCount,
+                positionCount,
+                curveCount
+        );
+    }
+
+    // 账户页性能日志按账号@服务器聚合，方便区分不同远程会话。
+    private String buildAccountTraceKey() {
+        String account = trim(connectedAccount);
+        if (account.isEmpty() && activeSessionAccount != null) {
+            account = trim(activeSessionAccount.getLogin());
+        }
+        if (account.isEmpty()) {
+            account = trim(loginAccountInput);
+        }
+        String server = trim(connectedServer);
+        if (server.isEmpty() && activeSessionAccount != null) {
+            server = trim(activeSessionAccount.getServer());
+        }
+        if (server.isEmpty()) {
+            server = trim(loginServerInput);
+        }
+        return account + "@" + server;
     }
 
     private void replaceCurveHistory(List<CurvePoint> source) {
@@ -4098,6 +4469,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             );
         }
         binding.equityCurveView.setPoints(effectivePoints);
+        defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
+        binding.tvCurveMeta.setText(isPrivacyMasked()
+                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
+                : defaultCurveMeta);
+        if (!secondarySectionsAttached) {
+            return;
+        }
         binding.positionRatioChartView.setViewport(viewportStartTs, viewportEndTs);
         binding.positionRatioChartView.setPoints(effectivePoints);
         displayedDrawdownPoints = CurveAnalyticsHelper.buildDrawdownSeries(effectivePoints);
@@ -4106,10 +4484,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.drawdownChartView.setPoints(displayedDrawdownPoints);
         binding.dailyReturnChartView.setViewport(viewportStartTs, viewportEndTs);
         binding.dailyReturnChartView.setPoints(displayedDailyReturnPoints);
-        defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
-        binding.tvCurveMeta.setText(isPrivacyMasked()
-                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
-                : defaultCurveMeta);
         clearSharedCurveHighlight();
         indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));
     }

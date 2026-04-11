@@ -1,0 +1,16 @@
+    mLastPausedActivity: ActivityRecord{29562262 u0 com.binance.monitor/.ui.main.MainActivity t-1 f}}
+    topResumedActivity=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}
+    * Hist  #1: ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}
+      Intent { flg=0x24000000 xflg=0x4 cmp=com.binance.monitor/.ui.account.AccountStatsBridgeActivity mCallingUid=10512 }
+      mActivityComponent=com.binance.monitor/.ui.account.AccountStatsBridgeActivity
+    * Hist  #0: ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}
+      Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 xflg=0x4 cmp=com.binance.monitor/.launcher.IconFinancialAlias bnds=[345,1817][633,2133] (has extras) mCallingUid=10214 }
+      mActivityComponent=com.binance.monitor/.ui.main.MainActivity
+    Resumed: ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}
+  ResumedActivity: ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}
+  deepestLastOrientationSource=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}
+  mCurrentFocus=Window{fecae5 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+  mFocusedApp=ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}
+        * ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}
+        * ActivityRecord{259948047 u0 com.binance.monitor/.launcher.IconFinancialAlias t13089}
+    mSystemBarColorApps={ActivityRecord{95862188 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13089}}

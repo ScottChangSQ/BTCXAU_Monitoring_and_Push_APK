@@ -1,0 +1,843 @@
+---- TIME 2026/4/11 12:49:39 ----
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)
+Display #0 (activities from top to bottom):
+  * Task{51980d0 #13173 type=standard A=10512:com.binance.monitor U=0 visible=true visibleRequested=true mode=fullscreen translucent=false sz=2}
+    mLastPausedActivity: ActivityRecord{243849602 u0 com.binance.monitor/.ui.main.MainActivity t13173}
+    mLastNonFullscreenBounds=Rect(330, 828 - 935, 2092)
+    isSleeping=false
+    topResumedActivity=ActivityRecord{217059451 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13173}
+    * Hist  #1: ActivityRecord{217059451 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13173}
+      packageName=com.binance.monitor processName=com.binance.monitor
+      launchedFromUid=10512 launchedFromPackage=com.binance.monitor launchedFromFeature=null userId=0
+      app=ProcessRecord{57416da 12586:com.binance.monitor/u0a512}
+      Intent { flg=0x24000000 xflg=0x4 cmp=com.binance.monitor/.ui.account.AccountStatsBridgeActivity mCallingUid=10512 }
+      rootOfTask=false task=Task{51980d0 #13173 type=standard A=10512:com.binance.monitor}
+      taskAffinity=10512:com.binance.monitor
+      mActivityComponent=com.binance.monitor/.ui.account.AccountStatsBridgeActivity
+      baseDir=/data/app/~~F9PKiSM1k8An_VU3ytAInQ==/com.binance.monitor-TrDnlQykTSfaD1qIxjRJbQ==/base.apk
+      dataDir=/data/user/0/com.binance.monitor
+      stateNotNeeded=false componentSpecified=true mActivityType=standard
+      compat={560dpi} theme=0x7f11022d
+      mLastReportedConfigurations:
+        mGlobalConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.12988 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        mOverrideConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      mLastReportedActivityWindowInfo=ActivityWindowInfo{isEmbedded=false, taskBounds=Rect(0, 0 - 1264, 2780), taskFragmentBounds=Rect(0, 0 - 1264, 2780)}
+      CurrentConfiguration={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      RequestedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=undefined mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      ResolvedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir sw361dp w361dp h754dp ?density ?lsize ?long ?ldr ?wideColorGamut port ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=undefined mAlwaysOnTop=undefined mRotation=undefined} s.2 ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      taskDescription: label="null" icon=null iconResource=/0 iconFilename=null primaryColor=ff23a8f2
+        backgroundColor=fffef7ff statusBarColor=ff061018 navigationBarColor=ff0d1b24
+       backgroundColorFloating=ffffffff
+      launchFailed=false launchCount=1 lastLaunchTime=-8s331ms
+      mHaveState=false mIcicle=null
+      state=RESUMED delayedResume=false finishing=false
+      keysPaused=false inHistory=true idle=true
+      occludesParent=true mNoDisplay=false immersive=false launchMode=0
+      mActivityType=standard
+      isVisibleRequested() =true
+      windows=[Window{7a6edc8 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}]
+      windowType=2
+      providesOrientation=true
+      mOccludesParent=true
+      overrideOrientation=SCREEN_ORIENTATION_PORTRAIT
+      requestedOrientation=SCREEN_ORIENTATION_PORTRAIT
+      mVisibleRequested=true mVisible=true mClientVisible=true reportedDrawn=true reportedVisible=true
+      mNumInterestingWindows=1 mNumDrawnWindows=1 allDrawn=true)
+      startingData=null firstWindowDrawn=true
+      nowVisible=true lastVisibleTime=-7s378ms
+      resizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION
+      mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+      supportsSizeChanges=SIZE_CHANGES_UNSUPPORTED_METADATA
+      configChanges=0x3
+      neverSandboxDisplayApis=false
+      alwaysSandboxDisplayApis=false
+      isTransparentPolicyRunning=false
+      areBoundsLetterboxed=false
+      isLetterboxRunning=false
+      mRootLockActivity=false
+      mShowWhenLocked=false
+      mLaunchedFromMultiSearch=false
+    * Hist  #0: ActivityRecord{243849602 u0 com.binance.monitor/.ui.main.MainActivity t13173}
+      packageName=com.binance.monitor processName=com.binance.monitor
+      launchedFromUid=2000 launchedFromPackage=com.android.shell launchedFromFeature=null userId=0
+      app=ProcessRecord{57416da 12586:com.binance.monitor/u0a512}
+      Intent { flg=0x10000000 xflg=0x4 cmp=com.binance.monitor/.ui.main.MainActivity mCallingUid=2000 }
+      rootOfTask=true task=Task{51980d0 #13173 type=standard A=10512:com.binance.monitor}
+      taskAffinity=10512:com.binance.monitor
+      mActivityComponent=com.binance.monitor/.ui.main.MainActivity
+      baseDir=/data/app/~~F9PKiSM1k8An_VU3ytAInQ==/com.binance.monitor-TrDnlQykTSfaD1qIxjRJbQ==/base.apk
+      dataDir=/data/user/0/com.binance.monitor
+      stateNotNeeded=false componentSpecified=true mActivityType=standard
+      compat={560dpi} theme=0x7f11022d
+      mLastReportedConfigurations:
+        mGlobalConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.12988 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        mOverrideConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      mLastReportedActivityWindowInfo=ActivityWindowInfo{isEmbedded=false, taskBounds=Rect(0, 0 - 1264, 2780), taskFragmentBounds=Rect(0, 0 - 1264, 2780)}
+      CurrentConfiguration={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      RequestedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=standard mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      ResolvedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir sw361dp w361dp h754dp ?density ?lsize ?long ?ldr ?wideColorGamut port ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=undefined mAlwaysOnTop=undefined mRotation=undefined} s.2 ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      taskDescription: label="null" icon=null iconResource=/0 iconFilename=null primaryColor=ff23a8f2
+        backgroundColor=fffef7ff statusBarColor=ff061018 navigationBarColor=ff0d1b24
+       backgroundColorFloating=ffffffff
+      launchFailed=false launchCount=0 lastLaunchTime=-40s88ms
+      mHaveState=true mIcicle=Bundle[mParcelledData.dataSize=11448]
+      state=STOPPED delayedResume=false finishing=false
+      keysPaused=false inHistory=true idle=true
+      occludesParent=true mNoDisplay=false immersive=false launchMode=0
+      mActivityType=standard
+      isVisibleRequested() =false
+      windows=[Window{68623f9 u0 com.binance.monitor/com.binance.monitor.ui.main.MainActivity}]
+      windowType=2
+      providesOrientation=true
+      mOccludesParent=true
+      overrideOrientation=SCREEN_ORIENTATION_PORTRAIT
+      requestedOrientation=SCREEN_ORIENTATION_PORTRAIT
+      mVisibleRequested=false mVisible=false mClientVisible=false reportedDrawn=false reportedVisible=false
+      mAppStopped=true
+      mNumInterestingWindows=1 mNumDrawnWindows=1 allDrawn=false)
+      nowVisible=false lastVisibleTime=-39s362ms
+      resizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION
+      mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+      supportsSizeChanges=SIZE_CHANGES_UNSUPPORTED_METADATA
+      configChanges=0x3
+      neverSandboxDisplayApis=false
+      alwaysSandboxDisplayApis=false
+      isTransparentPolicyRunning=false
+      areBoundsLetterboxed=false
+      isLetterboxRunning=false
+      mRootLockActivity=false
+      mShowWhenLocked=false
+      mLaunchedFromMultiSearch=false
+
+  * Task{7fffd36 #13163 type=standard A=10515:com.mobilecodex.nativeapp U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+    mLastPausedActivity: ActivityRecord{223848952 u0 com.mobilecodex.nativeapp/.MainActivity t13163}
+    mLastNonFullscreenBounds=Rect(330, 828 - 935, 2092)
+    isSleeping=false
+    * Hist  #0: ActivityRecord{223848952 u0 com.mobilecodex.nativeapp/.MainActivity t13163}
+      packageName=com.mobilecodex.nativeapp processName=com.mobilecodex.nativeapp
+      launchedFromUid=10214 launchedFromPackage=com.android.launcher launchedFromFeature=null userId=0
+      app=ProcessRecord{912fcec 21078:com.mobilecodex.nativeapp/u0a515}
+      Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 xflg=0x4 cmp=com.mobilecodex.nativeapp/.MainActivity bnds=[68,881][356,1197] (has extras) mCallingUid=10214 }
+      rootOfTask=true task=Task{7fffd36 #13163 type=standard A=10515:com.mobilecodex.nativeapp}
+      taskAffinity=10515:com.mobilecodex.nativeapp
+      mActivityComponent=com.mobilecodex.nativeapp/.MainActivity
+      baseDir=/data/app/~~vNnrjU9h-sZ7pWAjVg2-Vw==/com.mobilecodex.nativeapp-cA8_cPVFrIk9Us19vluV0A==/base.apk
+      dataDir=/data/user/0/com.mobilecodex.nativeapp
+      stateNotNeeded=false componentSpecified=true mActivityType=standard
+      compat={560dpi} theme=0x7f10021b
+      mLastReportedConfigurations:
+        mGlobalConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.12984 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        mOverrideConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      mLastReportedActivityWindowInfo=ActivityWindowInfo{isEmbedded=false, taskBounds=Rect(0, 0 - 1264, 2780), taskFragmentBounds=Rect(0, 0 - 1264, 2780)}
+      CurrentConfiguration={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      RequestedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=standard mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      ResolvedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=undefined mAlwaysOnTop=undefined mRotation=undefined} s.2 ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      taskDescription: label="null" icon=null iconResource=/0 iconFilename=null primaryColor=ff023c69
+        backgroundColor=ff303030 statusBarColor=ffffffff navigationBarColor=0
+       backgroundColorFloating=ff424242
+      launchFailed=false launchCount=0 lastLaunchTime=-29m18s659ms
+      launchCookie=android.os.BinderProxy@a06124d
+      mHaveState=true mIcicle=Bundle[mParcelledData.dataSize=4676]
+      state=STOPPED delayedResume=false finishing=false
+      keysPaused=false inHistory=true idle=true
+      occludesParent=true mNoDisplay=false immersive=false launchMode=2
+      mActivityType=standard
+      isVisibleRequested() =false
+      windows=[Window{178c95e u0 com.mobilecodex.nativeapp/com.mobilecodex.nativeapp.MainActivity}]
+      windowType=2
+      providesOrientation=true
+      mOccludesParent=true
+      overrideOrientation=SCREEN_ORIENTATION_PORTRAIT
+      requestedOrientation=SCREEN_ORIENTATION_PORTRAIT
+      mVisibleRequested=false mVisible=false mClientVisible=false reportedDrawn=false reportedVisible=false
+      mAppStopped=true
+      mNumInterestingWindows=1 mNumDrawnWindows=1 allDrawn=false)
+      nowVisible=false lastVisibleTime=-57s155ms
+      resizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION
+      mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+      supportsSizeChanges=SIZE_CHANGES_UNSUPPORTED_METADATA
+      configChanges=0x7b3
+      neverSandboxDisplayApis=false
+      alwaysSandboxDisplayApis=false
+      isTransparentPolicyRunning=false
+      areBoundsLetterboxed=false
+      isLetterboxRunning=false
+      mRootLockActivity=false
+      mShowWhenLocked=false
+       UNIVERSAL_RESIZABLE_BY_DEFAULT ENABLE:= true 
+      mLaunchedFromMultiSearch=false
+
+  * Task{1b9ad4c #1 type=home U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+    * Task{735fad8 #2 type=undefined I=com.android.launcher/.Launcher U=0 rootTaskId=1 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+      mLastPausedActivity: ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}
+      mLastNonFullscreenBounds=Rect(330, 828 - 935, 2092)
+      isSleeping=false
+      * Hist  #0: ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}
+        packageName=com.android.launcher processName=com.android.launcher
+        launchedFromUid=0 launchedFromPackage=null launchedFromFeature=null userId=0
+        app=ProcessRecord{2c68881 8730:com.android.launcher/u0a214}
+        Intent { act=android.intent.action.MAIN cat=[android.intent.category.HOME] flg=0x10000100 cmp=com.android.launcher/.Launcher (has extras) mCallingUid=1000 }
+        rootOfTask=true task=Task{735fad8 #2 type=undefined I=com.android.launcher/.Launcher}
+        taskAffinity=null
+        mActivityComponent=com.android.launcher/.Launcher
+        baseDir=/system_ext/priv-app/OplusLauncher/OplusLauncher.apk
+        dataDir=/data/user_de/0/com.android.launcher
+        stateNotNeeded=true componentSpecified=true mActivityType=home
+        compat={560dpi} theme=0x7f140276
+        mLastReportedConfigurations:
+          mGlobalConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.12773 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+          mOverrideConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=home mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.41 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        mLastReportedActivityWindowInfo=ActivityWindowInfo{isEmbedded=false, taskBounds=Rect(0, 0 - 1264, 2780), taskFragmentBounds=Rect(0, 0 - 1264, 2780)}
+        CurrentConfiguration={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=home mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.41 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        RequestedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=home mAlwaysOnTop=undefined mRotation=undefined} as.10 ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        taskDescription: label="null" icon=null iconResource=/0 iconFilename=null primaryColor=ffffffff
+          backgroundColor=fffafafa statusBarColor=0 navigationBarColor=0
+         backgroundColorFloating=ffffffff
+        launchFailed=false launchCount=0 lastLaunchTime=-10d5h4m27s888ms
+        mHaveState=true mIcicle=Bundle[mParcelledData.dataSize=17156]
+        state=STOPPED delayedResume=false finishing=false
+        keysPaused=false inHistory=true idle=true
+        occludesParent=true mNoDisplay=false immersive=false launchMode=2
+        mActivityType=home
+        isVisibleRequested() =false
+        windows=[Window{763c9b2 u0 com.android.launcher/com.android.launcher.Launcher}]
+        windowType=2
+        providesOrientation=true
+        mOccludesParent=true
+        overrideOrientation=SCREEN_ORIENTATION_NOSENSOR
+        requestedOrientation=SCREEN_ORIENTATION_NOSENSOR
+        mVisibleRequested=false mVisible=false mClientVisible=false reportedDrawn=true reportedVisible=true
+        mAppStopped=true
+        mNumInterestingWindows=1 mNumDrawnWindows=1 allDrawn=true)
+        nowVisible=true lastVisibleTime=-1h21m47s294ms
+        connections={ConnectionRecord{171bdfc u0 CR OOM com.coloros.assistantscreen/com.oplus.assistantscreen.drag.AssistantDragService:@e9d4d03 flags=0x11}, ConnectionRecord{4243632 u0 CR com.android.launcher/com.android.keyguardservice.KeyGuardDismissedService:@2a2ee3d flags=0x1}}
+        resizeMode=RESIZE_MODE_RESIZEABLE
+        mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+        supportsSizeChanges=SIZE_CHANGES_UNSUPPORTED_METADATA
+        configChanges=0x40001df3
+        neverSandboxDisplayApis=false
+        alwaysSandboxDisplayApis=false
+        isTransparentPolicyRunning=false
+        areBoundsLetterboxed=false
+        isLetterboxRunning=false
+        mRootLockActivity=false
+        mShowWhenLocked=false
+         UNIVERSAL_RESIZABLE_BY_DEFAULT ENABLE:= true 
+        allowRestrictedResizability() := true 
+        mLaunchedFromMultiSearch=false
+
+  * Task{1abb46b #12626 type=standard A=10345:com.tencent.mm U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+    mLastPausedActivity: ActivityRecord{240062920 u0 com.tencent.mm/.ui.LauncherUI t12626}
+    mLastNonFullscreenBounds=Rect(330, 828 - 935, 2092)
+    isSleeping=false
+    * Hist  #0: ActivityRecord{240062920 u0 com.tencent.mm/.ui.LauncherUI t12626}
+      packageName=com.tencent.mm processName=com.tencent.mm
+      launchedFromUid=10214 launchedFromPackage=com.android.launcher launchedFromFeature=null userId=0
+      app=ProcessRecord{dbba2b9 9059:com.tencent.mm/u0a345}
+      Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10300000 xflg=0x4 cmp=com.tencent.mm/.ui.LauncherUI (has extras) mCallingUid=1000 }
+      rootOfTask=true task=Task{1abb46b #12626 type=standard A=10345:com.tencent.mm}
+      taskAffinity=10345:com.tencent.mm
+      mActivityComponent=com.tencent.mm/.ui.LauncherUI
+      baseDir=/data/app/~~owTPo9p9MTQek_C-FT3wwg==/com.tencent.mm-RXNNAGtekRmIh7QwBZ5trQ==/base.apk
+      dataDir=/data/user/0/com.tencent.mm
+      stateNotNeeded=false componentSpecified=true mActivityType=standard
+      compat={560dpi} theme=0x7f1102ad
+      mLastReportedConfigurations:
+        mGlobalConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.11412 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        mOverrideConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      mLastReportedActivityWindowInfo=ActivityWindowInfo{isEmbedded=false, taskBounds=Rect(0, 0 - 1264, 2780), taskFragmentBounds=Rect(0, 0 - 1264, 2780)}
+      CurrentConfiguration={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.6 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      RequestedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=standard mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      ResolvedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir sw361dp w361dp h754dp ?density ?lsize ?long ?ldr ?wideColorGamut port ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=standard mAlwaysOnTop=undefined mRotation=undefined} s.6 ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      taskDescription: label="null" icon=null iconResource=/0 iconFilename=null primaryColor=ff212121
+        backgroundColor=ff303030 statusBarColor=ff111111 navigationBarColor=ff1e1e1e
+       backgroundColorFloating=ff424242
+      launchFailed=false launchCount=0 lastLaunchTime=-18h31m38s222ms
+      launchCookie=android.os.BinderProxy@a8aab26
+      mHaveState=true mIcicle=Bundle[mParcelledData.dataSize=192]
+      state=STOPPED delayedResume=false finishing=false
+      keysPaused=false inHistory=true idle=true
+      occludesParent=true mNoDisplay=false immersive=false launchMode=1
+      mActivityType=standard
+      isVisibleRequested() =false
+      windows=[Window{e0de363 u0 com.tencent.mm/com.tencent.mm.ui.LauncherUI}]
+      windowType=2
+      providesOrientation=true
+      mOccludesParent=true
+      overrideOrientation=SCREEN_ORIENTATION_PORTRAIT
+      requestedOrientation=SCREEN_ORIENTATION_PORTRAIT
+      mVisibleRequested=false mVisible=false mClientVisible=false reportedDrawn=false reportedVisible=false
+      mAppStopped=true
+      mNumInterestingWindows=1 mNumDrawnWindows=1 allDrawn=false)
+      nowVisible=false lastVisibleTime=-1h1m6s503ms
+      connections={ConnectionRecord{ae6ccad u0 CR IMP WACT com.tencent.mm/.plugin.appbrand.loading.AppBrandProcessTriggerService0:@66e35c4 flags=0xc1}}
+      resizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION
+      mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+      supportsSizeChanges=SIZE_CHANGES_UNSUPPORTED_METADATA
+      configChanges=0xda3
+      neverSandboxDisplayApis=false
+      alwaysSandboxDisplayApis=false
+      isTransparentPolicyRunning=false
+      areBoundsLetterboxed=false
+      isLetterboxRunning=false
+      mRootLockActivity=false
+      mShowWhenLocked=false
+      mLaunchedFromMultiSearch=false
+
+  * Task{100415c #13133 type=standard A=10397:com.v2ray.ang U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+    mLastNonFullscreenBounds=Rect(330, 828 - 935, 2092)
+    isSleeping=false
+    * Hist  #0: ActivityRecord{239307822 u0 com.v2ray.ang/.ui.MainActivity t13133}
+      packageName=com.v2ray.ang processName=com.v2ray.ang
+      launchedFromUid=10397 launchedFromPackage=com.v2ray.ang launchedFromFeature=null userId=0
+      app=null
+      Intent { flg=0x10000000 xflg=0x4 cmp=com.v2ray.ang/.ui.MainActivity mCallingUid=1000 mRealCallingUid=10216 mRealCallingPid=8338 }
+      rootOfTask=true task=Task{100415c #13133 type=standard A=10397:com.v2ray.ang}
+      taskAffinity=10397:com.v2ray.ang
+      mActivityComponent=com.v2ray.ang/.ui.MainActivity
+      baseDir=/data/app/~~PP6f4bDFFQYTfwflxbHKvQ==/com.v2ray.ang-rcpzqzFPXGCQPJm5y9Xexw==/base.apk
+      dataDir=/data/user/0/com.v2ray.ang
+      stateNotNeeded=false componentSpecified=true mActivityType=standard
+      compat={560dpi} theme=0x7f14000d
+      mLastReportedConfigurations:
+        mGlobalConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.12078 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        mOverrideConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      mLastReportedActivityWindowInfo=ActivityWindowInfo{isEmbedded=false, taskBounds=Rect(0, 0 - 1264, 2780), taskFragmentBounds=Rect(0, 0 - 1264, 2780)}
+      CurrentConfiguration={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.6 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      RequestedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=standard mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      taskDescription: label="null" icon=null iconResource=/0 iconFilename=null primaryColor=ffc0c0c0
+        backgroundColor=ff1c1b1f statusBarColor=ff1c1b1f navigationBarColor=ff1c1b1f
+       backgroundColorFloating=ff424242
+      launchFailed=false launchCount=0 lastLaunchTime=-11h18m41s41ms
+      mHaveState=true mIcicle=Bundle[mParcelledData.dataSize=8248]
+      state=DESTROYED delayedResume=false finishing=false
+      keysPaused=false inHistory=true idle=false
+      occludesParent=true mNoDisplay=false immersive=false launchMode=2
+      mActivityType=standard
+      isVisibleRequested() =false
+      windows=[]
+      windowType=2
+      providesOrientation=true
+      mOccludesParent=true
+      overrideOrientation=SCREEN_ORIENTATION_UNSPECIFIED
+      requestedOrientation=SCREEN_ORIENTATION_UNSPECIFIED
+      mVisibleRequested=false mVisible=false mClientVisible=false reportedDrawn=false reportedVisible=false
+      mAppStopped=true
+      mNumInterestingWindows=1 mNumDrawnWindows=1 allDrawn=false)
+      nowVisible=false lastVisibleTime=-11h18m40s922ms
+      resizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION
+      mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+      supportsSizeChanges=SIZE_CHANGES_UNSUPPORTED_METADATA
+      configChanges=0x3
+      neverSandboxDisplayApis=false
+      alwaysSandboxDisplayApis=false
+      isTransparentPolicyRunning=false
+      mRootLockActivity=false
+      mShowWhenLocked=false
+       UNIVERSAL_RESIZABLE_BY_DEFAULT ENABLE:= true 
+      mLaunchedFromMultiSearch=false
+
+  * Task{59d6dd0 #13088 type=standard A=10306:com.binance.dev U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=2}
+    mLastNonFullscreenBounds=Rect(330, 828 - 935, 2092)
+    isSleeping=false
+    * Hist  #1: ActivityRecord{198451427 u0 com.binance.dev/com.finance.marketdetail.feature.business.um.marketdetail.UMClassicMarketDetailActivity t13088}
+      packageName=com.binance.dev processName=com.binance.dev
+      launchedFromUid=10306 launchedFromPackage=com.binance.dev launchedFromFeature=null userId=0
+      app=null
+      Intent { xflg=0x4 cmp=com.binance.dev/com.finance.marketdetail.feature.business.um.marketdetail.UMClassicMarketDetailActivity (has extras) mCallingUid=10306 }
+      rootOfTask=false task=Task{59d6dd0 #13088 type=standard A=10306:com.binance.dev}
+      taskAffinity=10306:com.binance.dev
+      mActivityComponent=com.binance.dev/com.finance.marketdetail.feature.business.um.marketdetail.UMClassicMarketDetailActivity
+      baseDir=/data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/base.apk
+      dataDir=/data/user/0/com.binance.dev
+      splitDir=[/data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_agora.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_agora.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_agora.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_config.en.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_config.zh.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcConnect.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcConnect.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcConnect.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcTrustWallet.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcTrustWallet.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcTrustWallet.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_liquid.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_liquid.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_liquid.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_liquid.config.zh.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_major.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_major.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_major.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mediaKit.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mediaKit.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mediaKit.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mpc.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mpc.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mpc.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_persona.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_persona.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_persona.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_sumsub.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_sumsub.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_trade.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_trade.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_uqudo.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_uqudo.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_uqudo.config.xxxhdpi.apk]
+      stateNotNeeded=false componentSpecified=true mActivityType=standard
+      compat={560dpi} theme=0x7f160177
+      mLastReportedConfigurations:
+        mGlobalConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.11931 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        mOverrideConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      mLastReportedActivityWindowInfo=ActivityWindowInfo{isEmbedded=false, taskBounds=Rect(0, 0 - 1264, 2780), taskFragmentBounds=Rect(0, 0 - 1264, 2780)}
+      CurrentConfiguration={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.6 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      RequestedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=undefined mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      ResolvedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir sw361dp w361dp h754dp ?density ?lsize ?long ?ldr ?wideColorGamut port ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=undefined mAlwaysOnTop=undefined mRotation=undefined} s.6 ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      taskDescription: label="" icon=null iconResource=com.binance.dev/0 iconFilename=null primaryColor=ff2196f3
+        backgroundColor=ff303030 statusBarColor=ff202630 navigationBarColor=ff202630
+       backgroundColorFloating=ff424242
+      launchFailed=false launchCount=0 lastLaunchTime=-13h52m59s407ms
+      mHaveState=true mIcicle=Bundle[mParcelledData.dataSize=43184]
+      state=DESTROYED delayedResume=false finishing=false
+      keysPaused=false inHistory=true idle=false
+      occludesParent=true mNoDisplay=false immersive=false launchMode=0
+      mActivityType=standard
+      isVisibleRequested() =false
+      windows=[]
+      windowType=2
+      providesOrientation=true
+      mOccludesParent=true
+      overrideOrientation=SCREEN_ORIENTATION_PORTRAIT
+      requestedOrientation=SCREEN_ORIENTATION_PORTRAIT
+      mVisibleRequested=false mVisible=false mClientVisible=false reportedDrawn=false reportedVisible=false
+      mAppStopped=true
+      mNumInterestingWindows=1 mNumDrawnWindows=1 allDrawn=false)
+      nowVisible=false lastVisibleTime=-13h52m58s305ms
+      resizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION
+      mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+      supportsSizeChanges=SIZE_CHANGES_UNSUPPORTED_METADATA
+      configChanges=0x400044b7
+      neverSandboxDisplayApis=false
+      alwaysSandboxDisplayApis=false
+      isTransparentPolicyRunning=false
+      mRootLockActivity=false
+      mShowWhenLocked=false
+      mLaunchedFromMultiSearch=false
+    * Hist  #0: ActivityRecord{267855309 u0 com.binance.dev/com.eaas.launcher.activities.main.MainActivity t13088}
+      packageName=com.binance.dev processName=com.binance.dev
+      launchedFromUid=10214 launchedFromPackage=com.android.launcher launchedFromFeature=null userId=0
+      app=null
+      Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 xflg=0x4 cmp=com.binance.dev/com.eaas.launcher.activities.main.MainActivity bnds=[816,1661][1167,2015] (has extras) mCallingUid=10214 }
+      rootOfTask=true task=Task{59d6dd0 #13088 type=standard A=10306:com.binance.dev}
+      taskAffinity=10306:com.binance.dev
+      mActivityComponent=com.binance.dev/com.eaas.launcher.activities.main.MainActivity
+      baseDir=/data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/base.apk
+      dataDir=/data/user/0/com.binance.dev
+      splitDir=[/data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_agora.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_agora.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_agora.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_config.en.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_config.zh.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcConnect.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcConnect.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcConnect.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcTrustWallet.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcTrustWallet.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_libMpcTrustWallet.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_liquid.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_liquid.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_liquid.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_liquid.config.zh.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_major.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_major.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_major.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mediaKit.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mediaKit.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mediaKit.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mpc.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mpc.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_mpc.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_persona.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_persona.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_persona.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_sumsub.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_sumsub.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_trade.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_trade.config.xxxhdpi.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_uqudo.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_uqudo.config.arm64_v8a.apk, /data/app/~~EqfMaXLT49_LsWQjnX_3fA==/com.binance.dev-GYVtXvD0TEAvZ1_OaA4ELg==/split_uqudo.config.xxxhdpi.apk]
+      stateNotNeeded=false componentSpecified=true mActivityType=standard
+      compat={560dpi} theme=0x7f160012
+      mLastReportedConfigurations:
+        mGlobalConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.11867 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+        mOverrideConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.2 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      mLastReportedActivityWindowInfo=ActivityWindowInfo{isEmbedded=false, taskBounds=Rect(0, 0 - 1264, 2780), taskFragmentBounds=Rect(0, 0 - 1264, 2780)}
+      CurrentConfiguration={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h754dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.6 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      RequestedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=standard mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      ResolvedOverrideConfiguration={0.0 ?mcc??mnc ?localeList ?layoutDir sw361dp w361dp h754dp ?density ?lsize ?long ?ldr ?wideColorGamut port ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=Rect(0, 140 - 1264, 2780) mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=undefined mActivityType=standard mAlwaysOnTop=undefined mRotation=undefined} s.6 ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      taskDescription: label="null" icon=null iconResource=/0 iconFilename=null primaryColor=ff1f2833
+        backgroundColor=ff303030 statusBarColor=0 navigationBarColor=ff202630
+       backgroundColorFloating=ff424242
+      launchFailed=false launchCount=0 lastLaunchTime=-16h12m18s258ms
+      launchCookie=android.os.BinderProxy@71a3948
+      mHaveState=true mIcicle=Bundle[mParcelledData.dataSize=31076]
+      state=DESTROYED delayedResume=false finishing=false
+      keysPaused=false inHistory=true idle=false
+      occludesParent=true mNoDisplay=false immersive=false launchMode=1
+      mActivityType=standard
+      isVisibleRequested() =false
+      windows=[]
+      windowType=2
+      providesOrientation=true
+      mOccludesParent=true
+      overrideOrientation=SCREEN_ORIENTATION_PORTRAIT
+      requestedOrientation=SCREEN_ORIENTATION_PORTRAIT
+      mVisibleRequested=false mVisible=false mClientVisible=false reportedDrawn=false reportedVisible=false
+      mAppStopped=true
+      mNumInterestingWindows=1 mNumDrawnWindows=1 allDrawn=false)
+      nowVisible=false lastVisibleTime=-16h12m17s724ms
+      resizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION
+      mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+      supportsSizeChanges=SIZE_CHANGES_UNSUPPORTED_METADATA
+      configChanges=0x40004fb7
+      neverSandboxDisplayApis=false
+      alwaysSandboxDisplayApis=false
+      isTransparentPolicyRunning=false
+      mRootLockActivity=false
+      mShowWhenLocked=false
+      mLaunchedFromMultiSearch=false
+
+  * Task{2ae848 #3 type=undefined U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=2}
+    mCreatedByOrganizer=true
+    * Task{8fb35de #5 type=undefined U=0 rootTaskId=3 visible=false visibleRequested=false mode=multi-window translucent=true sz=0}
+      mBounds=Rect(0, 2780 - 1264, 4170)
+      mCreatedByOrganizer=true
+      isSleeping=false
+    * Task{1247860 #4 type=undefined U=0 rootTaskId=3 visible=false visibleRequested=false mode=multi-window translucent=true sz=0}
+      mCreatedByOrganizer=true
+      isSleeping=false
+
+  Resumed activities in task display areas (from top to bottom):
+    Resumed: ActivityRecord{217059451 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13173}
+
+  ResumedActivity: ActivityRecord{217059451 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13173}
+
+ActivityTaskSupervisor state:
+  topDisplayFocusedRootTask=Task{51980d0 #13173 type=standard A=10512:com.binance.monitor}
+  Display: mDisplayId=0 (organized)
+    init=1264x2780 560dpi mMinSizeOfResizeableTaskDp=220 cur=1264x2780 app=1264x2780 rng=1264x1264-2780x2780
+mIsDensityForced=false
+    deferred=false mLayoutNeeded=false
+  mLastOrientationSource=WindowedMagnification:0:64@118809049
+  deepestLastOrientationSource=ActivityRecord{217059451 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13173}
+  overrideConfig={1.15 ??mcc??mnc [zh_CN,en_US] ldltr sw361dp w361dp h794dp 560dpi nrml long hdr widecg port night finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1264, 2780) mAppBounds=Rect(0, 0 - 1264, 2780) mMaxBounds=Rect(0, 0 - 1264, 2780) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.10 s.12661 fontWeightAdjustment=0mThemeChanged= 1, mThemeChangedFlags= 1, mFlipFont= 0, mScenario= 0, mAccessibleChanged= -1, mUxIconConfig= 1e177014640920, mMaterialColor= 100040017, mUserId= 0, mFontUserId= 0, mFontVariationSettings= 11d7, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= 8.0, mDarkModeDialogBgMaxL= 27.0, mDarkModeForegroundMinL= 100.0, mOplusConfigType= 1, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= 2, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+  ignoreOrientationRequest=false
+  mLayoutSeq=849990
+  mCurrentFocus=Window{7a6edc8 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+  mFocusedApp=ActivityRecord{217059451 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13173}
+
+  mHoldScreenWindow=null
+  mObscuringWindow=null
+  mLastWakeLockHoldingWindow=null
+  mLastWakeLockObscuringWindow=null
+
+  displayId=0
+  mWallpaperTarget=null
+  mLastWallpaperZoomOut=1.0
+  token WallpaperWindowToken{3abc1ac showWhenLocked=false}:
+    mWallpaperX=0.33333334
+    mWallpaperY=0.5
+    mWallpaperXStep=0.33333334
+    mWallpaperYStep=1.0
+    mWallpaperDisplayOffsetX=NA
+    mWallpaperDisplayOffsetY=NA
+  token WallpaperWindowToken{a06f6f8 showWhenLocked=true}:
+    mWallpaperX=NA
+    mWallpaperY=NA
+    mWallpaperXStep=NA
+    mWallpaperYStep=NA
+    mWallpaperDisplayOffsetX=NA
+    mWallpaperDisplayOffsetY=NA
+
+  mSystemGestureExclusion=SkRegion()
+
+  Display areas in top down Z order:
+    * Leaf:100:100
+    * HideDisplayCutout:65:99
+      * OneHanded:67:99
+        * AppZoomOut:67:99
+          * Leaf:67:99
+      * AppZoomOut:66:66
+        * Leaf:66:66
+      * OneHanded:65:65
+        * AppZoomOut:65:65
+          * Leaf:65:65
+    * WindowedMagnification:0:64
+      * HideDisplayCutout:58:64
+        * OneHanded:58:64
+          * AppZoomOut:58:64
+            * Leaf:58:64
+      * Leaf:56:57
+      * HideDisplayCutout:18:55
+        * OneHanded:18:55
+          * Leaf:55:55
+          * AppZoomOut:20:54
+            * Leaf:20:54
+          * Leaf:19:19
+          * AppZoomOut:18:18
+            * Leaf:18:18
+      * OneHanded:17:17
+        * Leaf:17:17
+      * HideDisplayCutout:16:16
+        * OneHanded:16:16
+          * AppZoomOut:16:16
+            * Leaf:16:16
+      * OneHanded:15:15
+        * Leaf:15:15
+      * HideDisplayCutout:0:14
+        * OneHanded:0:14
+          * AppZoomOut:2:14
+            * ImePlaceholder:13:14
+              * ImeContainer
+            * Leaf:3:12
+            * DefaultTaskDisplayArea (organized)
+          * Leaf:1:1
+          * AppZoomOut:0:0
+            * Leaf:0:0
+
+  Task display areas in top down Z order:
+    TaskDisplayArea DefaultTaskDisplayArea
+      overrideConfig={0.0 ?mcc??mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mMaxBounds=Rect(0, 0 - 0, 0) mDisplayRotation=undefined mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=undefined} ?fontWeightAdjustmentmThemeChanged= 0, mThemeChangedFlags= 0, mFlipFont= 0, mScenario= -1, mAccessibleChanged= 0, mUxIconConfig= 0, mMaterialColor= ffffffffffffffff, mUserId= -1, mFontUserId= -1, mFontVariationSettings= ffffffff, mFoldingAngle = -1.0, mIconPackName= , mDarkModeBackgroundMaxL= -1.0, mDarkModeDialogBgMaxL= -1.0, mDarkModeForegroundMinL= -1.0, mOplusConfigType= 0, mOplusChangedConfigs= 0, OpSans= -1, mBurmeseFontFlag= -1, mFlag= 0, mExtraFlag= 0, mFlexibleActivitySuitable= -1, mPuttDisplayFlag= -1}
+      mPreferredTopFocusableRootTask=Task{51980d0 #13173 type=standard A=10512:com.binance.monitor}
+      mLastFocusedRootTask=Task{51980d0 #13173 type=standard A=10512:com.binance.monitor}
+      Application tokens in top down Z order:
+      * Task{51980d0 #13173 type=standard A=10512:com.binance.monitor U=0 visible=true visibleRequested=true mode=fullscreen translucent=false sz=2}
+        bounds=[0,0][1264,2780]
+        * ActivityRecord{217059451 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13173}
+        * ActivityRecord{243849602 u0 com.binance.monitor/.ui.main.MainActivity t13173}
+      * Task{7fffd36 #13163 type=standard A=10515:com.mobilecodex.nativeapp U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+        bounds=[0,0][1264,2780]
+        * ActivityRecord{223848952 u0 com.mobilecodex.nativeapp/.MainActivity t13163}
+      * Task{1b9ad4c #1 type=home U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+        bounds=[0,0][1264,2780]
+        * Task{735fad8 #2 type=undefined I=com.android.launcher/.Launcher U=0 rootTaskId=1 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+          bounds=[0,0][1264,2780]
+          * ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}
+      * Task{1abb46b #12626 type=standard A=10345:com.tencent.mm U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+        bounds=[0,0][1264,2780]
+        * ActivityRecord{240062920 u0 com.tencent.mm/.ui.LauncherUI t12626}
+      * Task{100415c #13133 type=standard A=10397:com.v2ray.ang U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=1}
+        bounds=[0,0][1264,2780]
+        * ActivityRecord{239307822 u0 com.v2ray.ang/.ui.MainActivity t13133}
+      * Task{59d6dd0 #13088 type=standard A=10306:com.binance.dev U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=2}
+        bounds=[0,0][1264,2780]
+        * ActivityRecord{198451427 u0 com.binance.dev/com.finance.marketdetail.feature.business.um.marketdetail.UMClassicMarketDetailActivity t13088}
+        * ActivityRecord{267855309 u0 com.binance.dev/com.eaas.launcher.activities.main.MainActivity t13088}
+      * Task{2ae848 #3 type=undefined U=0 visible=false visibleRequested=false mode=fullscreen translucent=true sz=2}
+        bounds=[0,0][1264,2780]
+        * Task{8fb35de #5 type=undefined U=0 rootTaskId=3 visible=false visibleRequested=false mode=multi-window translucent=true sz=0}
+          bounds=[0,2780][1264,4170]
+        * Task{1247860 #4 type=undefined U=0 rootTaskId=3 visible=false visibleRequested=false mode=multi-window translucent=true sz=0}
+          bounds=[0,0][1264,2780]
+
+  rootHomeTask=Task=1
+
+  PinnedTaskController
+    mIsImeShowing=false
+    mImeHeight=0
+    mMinAspectRatio=0.41841003
+    mMaxAspectRatio=2.39
+
+  DisplayFrames w=1264 h=2780 r=0
+
+  DisplayPolicy
+    mCarDockEnablesAccelerometer=true mDeskDockEnablesAccelerometer=true
+    mDockMode=EXTRA_DOCK_STATE_UNDOCKED mLidState=LID_ABSENT
+    mAwake=true mScreenOnEarly=true mScreenOnFully=true
+    mKeyguardDrawComplete=true mWindowManagerDrawComplete=true
+    mHdmiPlugged=false
+ mPersistentVrModeEnabled=false
+    mLastBehavior=DEFAULT
+    mShowingDream=false mDreamingLockscreen=false
+    mStatusBar=Window{a8fdb65 u0 StatusBar}
+    mExpandedPanel=Window{b286cda u0 NotificationShade}
+    isKeyguardShowing=false
+    mNavigationBar=Window{a17f29a u0 NavigationBar_displayId_0}
+    mNavBarOpacityMode=2
+    mNavigationBarCanMove=false
+    mHasBottomNavigationBar=false
+    mLeftGestureHost=Window{a17f29a u0 NavigationBar_displayId_0}
+    mTopGestureHost=Window{a8fdb65 u0 StatusBar}
+    mRightGestureHost=Window{a17f29a u0 NavigationBar_displayId_0}
+    mFocusedWindow=Window{7a6edc8 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+    mTopFullscreenOpaqueWindowState=Window{7a6edc8 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+    mSystemBarColorApps={ActivityRecord{217059451 u0 com.binance.monitor/.ui.account.AccountStatsBridgeActivity t13173}}
+    mLastStatusBarAppearanceRegions=
+      AppearanceRegion{ bounds=[0,0][1264,2780]}
+    mLastLetterboxDetails=
+    mStatusBarBackgroundWindows=
+      Window{7a6edc8 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+    mTopIsFullscreen=false
+    mImeInsetsConsumed=false
+    mForceShowNavigationBarEnabled=false mAllowLockscreenWhenOn=false
+    mRemoteInsetsControllerControlsSystemBars=false
+    mDecorInsetsInfo:
+      ROTATION_0={nonDecorInsets=[0,0][0,0], overrideNonDecorInsets=[0,140][0,0], configInsets=[0,0][0,0], overrideConfigInsets=[0,140][0,0], nonDecorFrame=[0,0][1264,2780], overrideNonDecorFrame=[0,140][1264,2780], configFrame=[0,0][1264,2780], overrideConfigFrame=[0,140][1264,2780]}
+      ROTATION_90={nonDecorInsets=[0,0][0,0], overrideNonDecorInsets=[140,0][0,0], configInsets=[0,0][0,0], overrideConfigInsets=[140,0][0,0], nonDecorFrame=[0,0][2780,1264], overrideNonDecorFrame=[140,0][2780,1264], configFrame=[0,0][2780,1264], overrideConfigFrame=[140,0][2780,1264]}
+      ROTATION_180={nonDecorInsets=[0,0][0,0], overrideNonDecorInsets=[0,0][0,140], configInsets=[0,0][0,0], overrideConfigInsets=[0,0][0,140], nonDecorFrame=[0,0][1264,2780], overrideNonDecorFrame=[0,0][1264,2640], configFrame=[0,0][1264,2780], overrideConfigFrame=[0,0][1264,2640]}
+      ROTATION_270={nonDecorInsets=[0,0][0,0], overrideNonDecorInsets=[0,0][140,0], configInsets=[0,0][0,0], overrideConfigInsets=[0,0][140,0], nonDecorFrame=[0,0][2780,1264], overrideNonDecorFrame=[0,0][2640,1264], configFrame=[0,0][2780,1264], overrideConfigFrame=[0,0][2640,1264]}
+    SystemGestures:
+      mDisplayCutoutTouchableRegionSize=42
+      mSwipeStartThreshold=Rect(84, 182 - 84, 84)
+      mSwipeDistanceThreshold=84
+
+  DisplayRotation
+    mCurrentAppOrientation=SCREEN_ORIENTATION_PORTRAIT
+    mLastOrientation=1
+    mRotation=0 mDeferredRotationPauseCount=0
+    mLandscapeRotation=ROTATION_90 mSeascapeRotation=ROTATION_270
+    mPortraitRotation=ROTATION_0 mUpsideDownRotation=ROTATION_180
+    mSupportAutoRotation=true
+    mDemoRotationLock=false
+    mDemoRotation=1
+    hookIsWifiDisplayConnected=false
+    hookGetWifiDisplayRotation()=-1
+    mLockRotationTagList={}
+    isRotationFrozen=true
+    currentUserId=0
+    WindowOrientationListener
+      mEnabled=true
+      mCurrentRotation=ROTATION_0
+      mSensorType=null
+      mSensor={Sensor name="device_orient  Non-wakeup", vendor="oplus", version=1, type=27, maxRange=1.0, resolution=1.0, power=0.001, minDelay=0}
+      mRate=2
+      OrientationSensorJudge
+        mDesiredRotation=ROTATION_0
+        mProposedRotation=ROTATION_0
+        mTouching=false
+        mTouchEndedTimestampNanos=930186832531777
+        mLastRotationResolution=0
+
+    mCarDockRotation=-1 mDeskDockRotation=-1
+    mUserRotationMode=USER_ROTATION_LOCKED mUserRotation=ROTATION_0 mCameraRotationMode=0 mAllowAllRotations=false
+    mDemoHdmiRotation=ROTATION_90 mDemoHdmiRotationLock=false mUndockedHdmiRotation=-1
+    mLidOpenRotation=-1
+    mFixedToUserRotation=false
+    getSuggestRotationForBracketMode=-1
+    shouldSuggestEnterBracketMode=-1
+    mUserRotationChanging=false
+    mLastReqUserRotationMode=1
+    mLastReqUserRotation=0
+
+    RotationHistory
+      04-09 17:59:59.711 ROTATION_0 to ROTATION_270
+        source=ActivityRecord{213393576 u0 com.microsoft.emmx/com.microsoft.ruby.Main t12931} SCREEN_ORIENTATION_UNSPECIFIED
+        mode=USER_ROTATION_FREE user=ROTATION_0 sensor=ROTATION_270
+      04-09 18:00:02.835 ROTATION_270 to ROTATION_0
+        source=ActivityRecord{213393576 u0 com.microsoft.emmx/com.microsoft.ruby.Main t12931} SCREEN_ORIENTATION_UNSPECIFIED
+        mode=USER_ROTATION_FREE user=ROTATION_0 sensor=ROTATION_0
+      04-10 14:51:45.213 ROTATION_0 to ROTATION_90
+        source=ActivityRecord{205102270 u0 com.tencent.mm/.ui.LauncherUI t12626} SCREEN_ORIENTATION_USER
+        mode=USER_ROTATION_FREE user=ROTATION_0 sensor=ROTATION_90
+      04-10 14:51:52.778 ROTATION_90 to ROTATION_0
+        source=ActivityRecord{205102270 u0 com.tencent.mm/.ui.LauncherUI t12626} SCREEN_ORIENTATION_USER
+        mode=USER_ROTATION_FREE user=ROTATION_0 sensor=ROTATION_0
+      04-10 14:51:53.311 ROTATION_0 to ROTATION_90
+        source=ActivityRecord{205102270 u0 com.tencent.mm/.ui.LauncherUI t12626} SCREEN_ORIENTATION_USER
+        mode=USER_ROTATION_FREE user=ROTATION_0 sensor=ROTATION_90
+      04-10 14:52:02.702 ROTATION_90 to ROTATION_0
+        source=ActivityRecord{205102270 u0 com.tencent.mm/.ui.LauncherUI t12626} SCREEN_ORIENTATION_USER
+        mode=USER_ROTATION_FREE user=ROTATION_0 sensor=ROTATION_0
+      04-10 15:14:52.087 ROTATION_0 to ROTATION_90
+        source=ActivityRecord{215510305 u0 com.microsoft.emmx/org.chromium.chrome.browser.ChromeTabbedActivity t13041} SCREEN_ORIENTATION_UNSPECIFIED
+        mode=USER_ROTATION_FREE user=ROTATION_0 sensor=ROTATION_90
+      04-10 15:14:52.673 ROTATION_90 to ROTATION_0
+        source=ActivityRecord{215510305 u0 com.microsoft.emmx/org.chromium.chrome.browser.ChromeTabbedActivity t13041} SCREEN_ORIENTATION_UNSPECIFIED
+        mode=USER_ROTATION_FREE user=ROTATION_0 sensor=ROTATION_0
+
+        RotationLockHistory
+          04-11 01:53:52.973: mode=USER_ROTATION_FREE, rotation=ROTATION_0, caller=MonkeyRotationEven#injectEvent
+          04-11 03:17:38.261: mode=USER_ROTATION_LOCKED, rotation=ROTATION_0, caller=MonkeyRotationEven#injectEvent
+          04-11 03:17:38.265: mode=USER_ROTATION_FREE, rotation=ROTATION_0, caller=MonkeyRotationEven#injectEvent
+          04-11 03:34:59.145: mode=USER_ROTATION_FREE, rotation=ROTATION_0, caller=UiAutomationConnection#restoreRotationStateLocked
+          04-11 03:41:34.922: mode=USER_ROTATION_LOCKED, rotation=ROTATION_0, caller=RotationLockTile#handleClick
+          04-11 12:28:39.748: mode=USER_ROTATION_LOCKED, rotation=ROTATION_0, caller=UiAutomationConnection#restoreRotationStateLocked
+          04-11 12:47:44.789: mode=USER_ROTATION_LOCKED, rotation=ROTATION_0, caller=UiAutomationConnection#restoreRotationStateLocked
+          04-11 12:49:01.478: mode=USER_ROTATION_LOCKED, rotation=ROTATION_0, caller=UiAutomationConnection#restoreRotationStateLocked
+
+  InputConsumers:
+    name=recents_animation_input_consumer pid=8730 user=UserHandle{0}
+
+  WindowInsetsStateController
+    InsetsState
+      mDisplayFrame=Rect(0, 0 - 1264, 2780)
+      mDisplayCutout=DisplayCutout{insets=Rect(0, 140 - 0, 0) waterfall=Insets{left=0, top=0, right=0, bottom=0} boundingRect={Bounds=[Rect(0, 0 - 0, 0), Rect(594, 0 - 670, 140), Rect(0, 0 - 0, 0), Rect(0, 0 - 0, 0)]} cutoutPathParserInfo={CutoutPathParserInfo{displayWidth=1264 displayHeight=2780 physicalDisplayWidth=1264 physicalDisplayHeight=2780 density={3.5} cutoutSpec={M -38,0 L -38,140 L 38,140 L 38,0 Z} rotation={0} scale={1.0} physicalPixelDisplaySizeRatio={1.0}}} sideOverrides={}}
+      mRoundedCorners=RoundedCorners{[RoundedCorner{position=TopLeft, radius=115, center=Point(115, 115)}, RoundedCorner{position=TopRight, radius=115, center=Point(1149, 115)}, RoundedCorner{position=BottomRight, radius=115, center=Point(1149, 2665)}, RoundedCorner{position=BottomLeft, radius=115, center=Point(115, 2665)}]}
+      mRoundedCornerFrame=Rect(0, 0 - 0, 0)
+      mPrivacyIndicatorBounds=PrivacyIndicatorBounds {static bounds=Rect(998, 0 - 1278, 140) rotation=0}
+      mDisplayShape=DisplayShape{ spec=1406003047 displayWidth=1264 displayHeight=2780 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}
+        InsetsSource id=beaf0000 type=statusBars frame=[0,0][1264,140] visible=true flags= sideHint=TOP boundingRects=null
+        InsetsSource id=beaf0005 type=mandatorySystemGestures frame=[0,0][1264,182] visible=true flags= sideHint=TOP boundingRects=null
+        InsetsSource id=beaf0006 type=tappableElement frame=[0,0][1264,140] visible=true flags= sideHint=TOP boundingRects=null
+        InsetsSource id=3 type=ime frame=[0,0][0,0] visibleFrame=[0,1832][1264,2780] visible=false flags= sideHint=NONE boundingRects=null
+        InsetsSource id=27 type=displayCutout frame=[0,0][1264,140] visible=true flags= sideHint=TOP boundingRects=null
+        InsetsSource id=3c940001 type=navigationBars frame=[0,2780][1264,2780] visible=true flags=SUPPRESS_SCRIM sideHint=NONE boundingRects=null
+        InsetsSource id=3c940004 type=systemGestures frame=[0,0][105,2780] visible=true flags= sideHint=LEFT boundingRects=null
+        InsetsSource id=3c940005 type=mandatorySystemGestures frame=[0,0][0,0] visible=true flags= sideHint=NONE boundingRects=null
+        InsetsSource id=3c940006 type=tappableElement frame=[0,0][0,0] visible=true flags= sideHint=NONE boundingRects=null
+        InsetsSource id=3c940024 type=systemGestures frame=[1159,0][1264,2780] visible=true flags= sideHint=RIGHT boundingRects=null
+    Control map:
+      Window{7a6edc8 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}:
+        InsetsSourceControl: {3 mType=ime mSurfacePosition=Point(0, 140) mInsetsHint=Insets{left=0, top=0, right=0, bottom=948}}
+        InsetsSourceControl: {beaf0000 mType=statusBars initiallyVisible mSurfacePosition=Point(0, 0) mInsetsHint=Insets{left=0, top=140, right=0, bottom=0}}
+        InsetsSourceControl: {3c940001 mType=navigationBars initiallyVisible mSurfacePosition=Point(0, 2626) mInsetsHint=Insets{left=0, top=0, right=0, bottom=0}}
+    InsetsSourceProviders:
+      InsetsSourceProvider
+        mSource=InsetsSource id=3c940024 type=systemGestures frame=[1159,0][1264,2780] visible=true flags= sideHint=RIGHT boundingRects=null
+        mSourceFrame=Rect(1159, 0 - 1264, 2780)
+        mIsLeashInitialized=false mHasPendingPosition=false
+        mWindowContainer=Window{a17f29a u0 NavigationBar_displayId_0}
+      InsetsSourceProvider
+        mSource=InsetsSource id=3c940006 type=tappableElement frame=[0,0][0,0] visible=true flags= sideHint=NONE boundingRects=null
+        mSourceFrame=Rect(0, 0 - 0, 0)
+        mIsLeashInitialized=false mHasPendingPosition=false
+        mWindowContainer=Window{a17f29a u0 NavigationBar_displayId_0}
+      InsetsSourceProvider
+        mSource=InsetsSource id=3c940005 type=mandatorySystemGestures frame=[0,0][0,0] visible=true flags= sideHint=NONE boundingRects=null
+        mSourceFrame=Rect(0, 2668 - 1264, 2780)
+        mIsLeashInitialized=false mHasPendingPosition=false
+        mWindowContainer=Window{a17f29a u0 NavigationBar_displayId_0}
+      InsetsSourceProvider
+        mSource=InsetsSource id=3c940004 type=systemGestures frame=[0,0][105,2780] visible=true flags= sideHint=LEFT boundingRects=null
+        mSourceFrame=Rect(0, 0 - 105, 2780)
+        mIsLeashInitialized=false mHasPendingPosition=false
+        mWindowContainer=Window{a17f29a u0 NavigationBar_displayId_0}
+      InsetsSourceProvider
+        mSource=InsetsSource id=3c940001 type=navigationBars frame=[0,2780][1264,2780] visible=true flags=SUPPRESS_SCRIM sideHint=NONE boundingRects=null
+        mSourceFrame=Rect(0, 2780 - 1264, 2780)
+        mControl=InsetsSourceControl mId=3c940001 mType=navigationBars mLeash=Surface(name=Surface(name=a17f29a NavigationBar_displayId_0)/@0x4c9f688 - animation-leash of insets_animation)/@0xb211e74 mInitiallyVisible=true mSurfacePosition=Point(0, 2626) mInsetsHint=Insets{left=0, top=0, right=0, bottom=0} mSkipAnimationOnce=false mImeStatsToken=null
+        mInsetsHint=Insets{left=0, top=0, right=0, bottom=0}
+        mIsLeashInitialized=true mHasPendingPosition=false
+        mWindowContainer=Window{a17f29a u0 NavigationBar_displayId_0}
+        mAdapter=ControlAdapter mCapturedLeash=Surface(name=Surface(name=a17f29a NavigationBar_displayId_0)/@0x4c9f688 - animation-leash of insets_animation)/@0xb211e74
+        mControlTarget=Window{7a6edc8 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+      ImeInsetsSourceProvider
+        mSource=InsetsSource id=3 type=ime frame=[0,0][0,0] visibleFrame=[0,1832][1264,2780] visible=false flags= sideHint=NONE boundingRects=null
+        mSourceFrame=Rect(0, 1832 - 1264, 2780)
+        mControl=InsetsSourceControl mId=3 mType=ime mLeash=Surface(name=Surface(name=182078 InputMethod)/@0xd3997b6 - animation-leash of insets_animation)/@0xcb2a6e6 mInitiallyVisible=false mSurfacePosition=Point(0, 140) mInsetsHint=Insets{left=0, top=0, right=0, bottom=948} mSkipAnimationOnce=false mImeStatsToken=null
+        mInsetsHint=Insets{left=0, top=0, right=0, bottom=948}
+        mIsLeashInitialized=true mHasPendingPosition=false
+        mWindowContainer=Window{182078 u0 InputMethod}
+        mAdapter=ControlAdapter mCapturedLeash=Surface(name=Surface(name=182078 InputMethod)/@0xd3997b6 - animation-leash of insets_animation)/@0xcb2a6e6
+        mControlTarget=Window{7a6edc8 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+        mImeShowing=false mLastDrawn=false        showImePostLayout not scheduled, mImeRequester=null
+
+      InsetsSourceProvider
+        mSource=InsetsSource id=beaf0006 type=tappableElement frame=[0,0][1264,140] visible=true flags= sideHint=TOP boundingRects=null
+        mSourceFrame=Rect(0, 0 - 1264, 140)
+        mIsLeashInitialized=false mHasPendingPosition=false
+        mWindowContainer=Window{a8fdb65 u0 StatusBar}
+      InsetsSourceProvider
+        mSource=InsetsSource id=beaf0005 type=mandatorySystemGestures frame=[0,0][1264,182] visible=true flags= sideHint=TOP boundingRects=null
+        mSourceFrame=Rect(0, 0 - 1264, 182)
+        mIsLeashInitialized=false mHasPendingPosition=false
+        mWindowContainer=Window{a8fdb65 u0 StatusBar}
+      InsetsSourceProvider
+        mSource=InsetsSource id=beaf0000 type=statusBars frame=[0,0][1264,140] visible=true flags= sideHint=TOP boundingRects=null
+        mSourceFrame=Rect(0, 0 - 1264, 140)
+        mControl=InsetsSourceControl mId=beaf0000 mType=statusBars mLeash=Surface(name=Surface(name=a8fdb65 StatusBar)/@0xb100446 - animation-leash of insets_animation)/@0xe2b5c12 mInitiallyVisible=true mSurfacePosition=Point(0, 0) mInsetsHint=Insets{left=0, top=140, right=0, bottom=0} mSkipAnimationOnce=false mImeStatsToken=null
+        mInsetsHint=Insets{left=0, top=140, right=0, bottom=0}
+        mIsLeashInitialized=true mHasPendingPosition=false
+        mWindowContainer=Window{a8fdb65 u0 StatusBar}
+        mAdapter=ControlAdapter mCapturedLeash=Surface(name=Surface(name=a8fdb65 StatusBar)/@0xb100446 - animation-leash of insets_animation)/@0xe2b5c12
+        mControlTarget=Window{7a6edc8 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}
+  InsetsPolicy
+    status: WINDOW_STATE_SHOWING
+    nav: WINDOW_STATE_SHOWING
+
+    TransitionController:
+        mPlayingTransitions:0
+      mWaitingTransitions:0
+    BLASTSyncEngine:
+       hasPendingSyncSets:false
+       mActiveSyncs.size():0
+  flexibleActivityImeAnimationState=AnimationState{mAnimatingBounds=Rect(0, 0 - 0, 0), mRunningAnimation=null, mState=STATE_UNDEFINED, mAppliedCropY=0}
+  FlexibleTaskController:
+    mLayoutInfoMap:0
+    mFlexibleTasks:
+  DisplayType:1
+  DcCreateStack:null
+  KeyguardController:
+    mKeyguardShowing=false
+    mAodShowing=false
+    mKeyguardGoingAway=false
+   KeyguardShowing=false AodShowing=false KeyguardGoingAway=false DismissalRequested=false  Occluded=false DismissingKeyguardActivity=null TurnScreenOnActivity=null at display=0 mTopOccludesActivity=null
+    mDismissalRequested=false
+
+  LockTaskController:
+    mLockTaskModeState=NONE
+    mLockTaskModeTasks=
+    mLockTaskPackages (userId:packages)=
+
+    OplusLockTaskController:
+      mLockDeviceMode=false
+  mCurTaskIdForUser={0=13173}
+  mUserRootTaskInFront={}
+  mVisibilityTransactionDepth=0
+  isHomeRecentsComponent=true
+  mNoHistoryActivities=[]
+
+  TaskOrganizerController:
+      android.window.ITaskOrganizer$Stub$Proxy@e12aa39 uid=10216 (active):
+        (fullscreen) Task{1b9ad4c #1 type=home}
+        (fullscreen) Task{2ae848 #3 type=undefined}
+        (multi-window) Task{1247860 #4 type=undefined}
+        (multi-window) Task{8fb35de #5 type=undefined}
+        (fullscreen) Task{1abb46b #12626 type=standard A=10345:com.tencent.mm}
+        (fullscreen) Task{59d6dd0 #13088 type=standard A=10306:com.binance.dev}
+        (fullscreen) Task{100415c #13133 type=standard A=10397:com.v2ray.ang}
+        (fullscreen) Task{7fffd36 #13163 type=standard A=10515:com.mobilecodex.nativeapp}
+        (fullscreen) Task{51980d0 #13173 type=standard A=10512:com.binance.monitor}
+
+  TaskFragmentOrganizerController:
+    TaskFragmentOrganizerState:
+       mOrganizer:android.window.ITaskFragmentOrganizer$Stub$Proxy@ee6087e
+       mOrganizerPid:8406,mOrganizerUid=1001
+  VisibleActivityProcess:[ ProcessRecord{57416da 12586:com.binance.monitor/u0a512}]
+  NumNonAppVisibleWindowUidMap:[ 10512:1 10216:2]
+  SleepTokens={}

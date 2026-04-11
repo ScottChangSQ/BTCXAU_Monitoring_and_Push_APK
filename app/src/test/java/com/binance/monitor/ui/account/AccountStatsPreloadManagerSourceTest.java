@@ -164,12 +164,24 @@ public class AccountStatsPreloadManagerSourceTest {
     }
 
     @Test
-    public void preloadManagerShouldHydrateMemoryCacheFromStoredSnapshotWhenEmpty() throws Exception {
+    public void preloadManagerShouldKeepGetLatestCacheAsMemoryOnlyAccessor() throws Exception {
         String source = new String(
                 Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
+        assertTrue(source.contains("public Cache getLatestCache() {\n        Cache cache = latestCache;\n        if (cache != null || !isAccountSessionActive()) {\n            return cache;\n        }\n        return null;\n    }"));
+        assertFalse(source.contains("public Cache getLatestCache() {\n        Cache cache = latestCache;\n        if (cache != null || !isAccountSessionActive()) {\n            return cache;\n        }\n        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository.loadStoredSnapshot();"));
+    }
+
+    @Test
+    public void preloadManagerShouldExposeBackgroundHydrationFromStoredSnapshot() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("public Cache hydrateLatestCacheFromStorage() {"));
         assertTrue(source.contains("AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository.loadStoredSnapshot();"));
         assertTrue(source.contains("Cache hydratedCache = buildCache(storedSnapshot, storedSnapshot.getHistoryRevision());"));
         assertTrue(source.contains("latestCache = hydratedCache;"));
