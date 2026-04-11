@@ -12,6 +12,7 @@ import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
 import com.binance.monitor.data.model.v2.session.SessionReceipt;
 import com.binance.monitor.data.model.v2.session.SessionStatusPayload;
 import com.binance.monitor.security.SessionCredentialEncryptor;
+import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.security.SessionSummaryStore;
 
 import java.util.ArrayList;
@@ -316,12 +317,13 @@ public final class AccountRemoteSessionCoordinator {
                                                                @Nullable String profileIdHint,
                                                                @Nullable String loginHint,
                                                                @Nullable String serverHint) {
+        SessionSummarySnapshot sessionSummary = sessionSummaryStore.loadSessionSummary();
         RemoteAccountProfile pendingAccount = resolvePendingActiveAccount(
                 receipt,
                 profileIdHint,
                 loginHint,
                 serverHint,
-                sessionSummaryStore.getSavedAccountsSnapshot()
+                sessionSummary.getSavedAccountsSnapshot()
         );
         if (!isCanonicalActiveAccountComplete(pendingAccount)) {
             awaitingSync = false;
@@ -330,7 +332,7 @@ public final class AccountRemoteSessionCoordinator {
         }
         List<RemoteAccountProfile> savedAccounts = hydrateSavedAccountsSnapshot(
                 pendingAccount,
-                sessionSummaryStore.getSavedAccountsSnapshot()
+                sessionSummary.getSavedAccountsSnapshot()
         );
         return enterAwaitingSync(receipt, pendingAccount, savedAccounts, syncingMessage);
     }

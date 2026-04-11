@@ -17,7 +17,9 @@ public class MarketChartWarmDisplaySourceTest {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("return aggregated;"));
+        assertTrue(source.contains("CandleAggregationHelper.retainClosedTargetCandles("));
+        assertTrue(source.contains("return closedAggregated;"));
+        assertFalse(source.contains("aggregated.size() < 2"));
         assertFalse(source.contains("bestSourceDurationMs"));
     }
 }

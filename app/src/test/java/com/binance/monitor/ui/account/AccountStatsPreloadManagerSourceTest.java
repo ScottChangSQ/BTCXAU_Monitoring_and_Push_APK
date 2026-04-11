@@ -79,7 +79,7 @@ public class AccountStatsPreloadManagerSourceTest {
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot cachedSnapshot =\n                    accountStorageRepository.loadStoredSnapshot();"));
+        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot cachedSnapshot =\n                    loadStoredSnapshotForWorkerThread();"));
         assertTrue(source.contains("Cache cache = buildCache(cachedSnapshot, resolvedRevision);"));
     }
 
@@ -90,8 +90,8 @@ public class AccountStatsPreloadManagerSourceTest {
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot storedSnapshot =\n                    accountStorageRepository.loadStoredSnapshot();"));
-        assertTrue(source.contains("int storedTradeCount = accountStorageRepository.loadTrades().size();"));
+        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot storedSnapshot =\n                    loadStoredSnapshotForWorkerThread();"));
+        assertTrue(source.contains("int storedTradeCount = loadStoredTradeCountForWorkerThread();"));
         assertTrue(source.contains("String cachedHistoryRevision = previous == null\n                    ? storedSnapshot.getHistoryRevision()\n                    : previous.getHistoryRevision();"));
     }
 
@@ -182,7 +182,7 @@ public class AccountStatsPreloadManagerSourceTest {
         ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue(source.contains("public Cache hydrateLatestCacheFromStorage() {"));
-        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository.loadStoredSnapshot();"));
+        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot storedSnapshot = loadStoredSnapshotForWorkerThread();"));
         assertTrue(source.contains("Cache hydratedCache = buildCache(storedSnapshot, storedSnapshot.getHistoryRevision());"));
         assertTrue(source.contains("latestCache = hydratedCache;"));
     }
@@ -247,5 +247,36 @@ public class AccountStatsPreloadManagerSourceTest {
 
         assertTrue(source.contains("baseSnapshot == null ? new ArrayList<>() : baseSnapshot.getPendingOrders()"));
         assertFalse(source.contains("parsePositionItems(historyPayload == null ? null : historyPayload.getOrders(), true)"));
+    }
+
+    @Test
+    public void preloadManagerShouldGuardSynchronousStorageReadsBehindWorkerThreadAssertion() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private void assertWorkerThreadForStorageAccess(String operation) {"));
+        assertTrue(source.contains("if (Looper.myLooper() == Looper.getMainLooper()) {"));
+        assertTrue(source.contains("throw new IllegalStateException(\"AccountStatsPreloadManager synchronous storage access must stay off main thread: \" + operation);"));
+        assertTrue(source.contains("private AccountStorageRepository.StoredSnapshot loadStoredSnapshotForWorkerThread() {"));
+        assertTrue(source.contains("assertWorkerThreadForStorageAccess(\"loadStoredSnapshot\");"));
+        assertTrue(source.contains("private int loadStoredTradeCountForWorkerThread() {"));
+        assertTrue(source.contains("assertWorkerThreadForStorageAccess(\"loadTrades\");"));
+        assertFalse(source.contains("AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository.loadStoredSnapshot();"));
+        assertFalse(source.contains("AccountStorageRepository.StoredSnapshot cachedSnapshot =\n                    accountStorageRepository.loadStoredSnapshot();"));
+        assertFalse(source.contains("int storedTradeCount = accountStorageRepository.loadTrades().size();"));
+    }
+
+    @Test
+    public void preloadManagerShouldUseAtomicLoadingGateForScheduledFetch() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private final AtomicBoolean loading = new AtomicBoolean(false);"));
+        assertTrue(source.contains("if (!loading.compareAndSet(false, true)) {\n            return;\n        }"));
+        assertTrue(source.contains("loading.set(false);"));
     }
 }

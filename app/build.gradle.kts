@@ -1,5 +1,8 @@
+import org.gradle.api.plugins.quality.Checkstyle
+
 plugins {
     alias(libs.plugins.android.application)
+    id("checkstyle")
 }
 
 val mt5GatewayBaseUrl = "https://tradeapp.ltd"
@@ -55,6 +58,40 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+checkstyle {
+    toolVersion = "10.17.0"
+    isIgnoreFailures = false
+}
+
+tasks.register<Checkstyle>("auditCriticalCheckstyle") {
+    description = "对本轮审计整改关键链路执行低误报静态检查。"
+    group = "verification"
+    configFile = rootProject.file("config/checkstyle/audit-critical.xml")
+    setSource(
+        files(
+            "src/main/java/com/binance/monitor/service/MonitorService.java",
+            "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+            "src/main/java/com/binance/monitor/service/MonitorForegroundNotificationCoordinator.java",
+            "src/main/java/com/binance/monitor/service/account/AccountHistoryRefreshGate.java",
+            "src/main/java/com/binance/monitor/service/stream/V2StreamSequenceGuard.java",
+            "src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java",
+            "src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java",
+            "src/main/java/com/binance/monitor/ui/launch/OverlayLaunchBridgeActivity.java",
+            "src/main/java/com/binance/monitor/ui/account/AccountDeferredSnapshotRenderHelper.java",
+            "src/main/java/com/binance/monitor/ui/account/session/AccountSessionRestoreHelper.java"
+        )
+    )
+    classpath = files()
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+}
+
+tasks.named("check") {
+    dependsOn("auditCriticalCheckstyle")
 }
 
 dependencies {

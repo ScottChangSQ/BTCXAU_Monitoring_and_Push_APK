@@ -12,6 +12,10 @@ import java.util.List;
 
 public interface SessionSummaryStore {
 
+    // 读取最近一次安全会话摘要，显式区分空缓存与读取失败。
+    @NonNull
+    SessionSummarySnapshot loadSessionSummary();
+
     // 保存当前激活账号和已保存账号列表摘要。
     void saveSession(@Nullable RemoteAccountProfile activeAccount,
                      @NonNull List<RemoteAccountProfile> savedAccounts,

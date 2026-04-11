@@ -194,14 +194,31 @@ public class MonitorServiceSourceTest {
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("历史补拉并发期间应暂存后到的新 revision，不能直接丢弃",
-                source.contains("private String pendingAccountHistoryRevision = \"\";"));
-        assertTrue("已有历史补拉进行中时，应把最新 revision 记下来等待续跑",
-                source.contains("pendingAccountHistoryRevision = safeHistoryRevision;"));
-        assertTrue("当前补拉结束后应读取暂存 revision 决定是否续跑",
-                source.contains("String nextHistoryRevision;"));
-        assertTrue("如果期间来了不同的 revision，应在当前补拉结束后继续补最新一版",
-                source.contains("if (!nextHistoryRevision.isEmpty() && !nextHistoryRevision.equals(safeHistoryRevision)) {"));
+        assertTrue("历史补拉并发状态应收口到独立 gate，避免 lock + volatile + 字符串散落在服务里",
+                source.contains("private final AccountHistoryRefreshGate accountHistoryRefreshGate = new AccountHistoryRefreshGate();"));
+        assertTrue("进入历史补拉前应通过 gate 判定是启动还是排队",
+                source.contains("AccountHistoryRefreshGate.StartDecision startDecision = accountHistoryRefreshGate.tryStart(safeHistoryRevision);"));
+        assertTrue("已有历史补拉进行中时，应通过 gate 统一结束当前分支",
+                source.contains("if (!startDecision.shouldStart()) {\n            return;\n        }"));
+        assertTrue("当前补拉结束后应通过 gate 统一读取待续跑 revision",
+                source.contains("AccountHistoryRefreshGate.FinishDecision finishDecision = accountHistoryRefreshGate.finish(safeHistoryRevision);"));
+        assertTrue("如果期间来了不同 revision，应按 gate 给出的结果续跑",
+                source.contains("if (finishDecision.shouldContinue()) {\n                        requestAccountHistoryRefreshFromV2(finishDecision.getNextRevision());"));
+    }
+
+    @Test
+    public void streamMessageHandlingShouldUseMonotonicBusSeqGuard() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("服务层应维护独立的 stream 顺序守卫，避免旧消息回写主链状态",
+                source.contains("private final V2StreamSequenceGuard v2StreamSequenceGuard = new V2StreamSequenceGuard();"));
+        assertTrue("新连接建立后应重置顺序守卫，允许接收新的 stream 序列",
+                source.contains("if (v2StreamConnected) {\n                        v2StreamSequenceGuard.reset();"));
+        assertTrue("消费 stream 消息前应先按 busSeq 判断是否仍是当前有效序列",
+                source.contains("if (!v2StreamSequenceGuard.shouldApply(message.getBusSeq())) {\n            return;\n        }"));
     }
 
     @Test
@@ -291,6 +308,23 @@ public class MonitorServiceSourceTest {
                 source.contains("private void publishConnectionStatus(String status) {"));
         assertTrue("连接状态去重应读取服务内当前真值，而不是直接依赖 postValue 回读结果",
                 source.contains("String currentStatus = getCurrentConnectionStatus();"));
+    }
+
+    @Test
+    public void onDestroyShouldReleaseForegroundAndFloatingLifecycleChains() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("服务销毁时应清掉主线程挂起回调",
+                source.contains("mainHandler.removeCallbacksAndMessages(null);"));
+        assertTrue("服务销毁时应移除应用前后台监听",
+                source.contains("AppForegroundTracker.getInstance().removeListener(appForegroundListener);"));
+        assertTrue("服务销毁时应关闭悬浮窗协调器",
+                source.contains("if (floatingCoordinator != null) {\n            floatingCoordinator.onDestroy();"));
+        assertTrue("服务销毁时应关闭前台通知协调器",
+                source.contains("if (foregroundNotificationCoordinator != null) {\n            foregroundNotificationCoordinator.onDestroy();"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

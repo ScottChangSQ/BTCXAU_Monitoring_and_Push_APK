@@ -1,97 +1,35 @@
 # CONTEXT
 
 ## 当前正在做什么
-- 当前在做“切换到账户统计 / 其他 Tab 页发卡”的 Phase 1 根因排查，目标是先确定最该优先减重的链路，再拆修复任务。
-- 本轮已补完账户页定点性能日志：`AccountStatsBridgeActivity` 已接入 `ChainTrace account_render` 阶段日志，并完成新一轮真机点击复测。
-- 本轮已完成一项性能修复：账户页“是否需要重画”的签名不再包含 `historyRevision` 元数据，避免本地恢复快照与后续同内容缓存只因 revision 变化而重复重画。
-- 当前在执行新的结构性修复计划；`R1-R6` 已全部完成并完成本轮源码 / 回归验证。
-- 已确认真机 + 已部署 HTTPS 服务器的人工联调记录仍成立；本轮继续以当前源码和测试为准，不再相信旧文档里“P1-P5 已全部闭合”的表述。
-- 本轮已完成 `R5`：`AccountTimeRange`、`AccountMetric`、`AccountSnapshot`、`CurvePoint`、`PositionItem`、`TradeRecordItem` 已整体下沉到 `domain.account` / `domain.account.model`；`SecureSessionPrefs` 改为实现独立的 `SessionSummaryStore`，不再反向实现 `ui.account` 内部接口；旧路径 source test 也已同步修正。
-- 本轮已完成 `R6`：`MonitorService` 已抽出 `MonitorForegroundNotificationCoordinator` 与 `MonitorFloatingCoordinator`；`AccountStatsBridgeActivity` 已抽出 `AccountSnapshotRefreshCoordinator` 统一处理预加载消费、前台进入、主动快照请求和回包裁决；`MarketChartActivity` 已抽出 `MarketChartTradeDialogCoordinator` 统一处理交易菜单、表单、异步执行和结果反馈。
-- `P1` 已完成：旧演示链路已从主源码移除，`AccountStatsPreloadManager` 与相关 helper 已下沉到 `runtime.account`，`AccountStorageRepository` 已去掉对悬浮窗聚合的直接依赖。
-- `P2` 已完成：登录流程不再在 Activity 内缓存明文密码；切账号页面态收口已切回主线程；登出/切号时会显式通知 `MonitorService` 清流式账户运行态。
-- `P3` 已完成：账户历史改为沿 `nextCursor` 拉满全量分页；本地账户快照持久化已收口到仓库层总事务。
-- `P4` 已完成：已从历史记录恢复出“账户页主动刷新 / 交易后强刷新、同签名跳过重画、旧 history 回包拦截、瞬时断线空快照不清空当前可渲染持仓”等条目，并确认当前工作树代码与测试已闭合。
-- `P5` 已完成：已从历史记录恢复出“图表页普通 tab 返回不重置 transport、长周期前台恢复按分钟边界刷新、设置页 tab 切换不再 finish、异常标注层输入未变化不重复重建”等条目，并确认当前工作树代码与测试已闭合。
-- 旧记录里“当前 5 个批次均已完成”的表述需要重新核对；本轮多模型审计已确认至少还存在数据库主线程访问、设置页主线程清理缓存、图表页跨品种混图风险、悬浮窗返回栈不一致、安全会话缓存静默删数据等未闭合问题。
+- 当前已完成一次“多模型独立智能体 + 主线复验”的全量任务复核。
+- 当前基线：本轮复核中发现并修复了 4 个真实问题，App 与服务端全量自动化验证已重新通过。
+- 当前已完成最新 APK 编译、真机安装和 Windows 服务器部署目录重建。
 
 ## 上次停在哪个位置
-- 本轮性能排查已确认：设置页本身切入逻辑很轻，账户页与图表页在 `onResume`/首帧阶段都存在明显主线程重活；当前更像“切 Tab 触发跨 Activity + 任务栈整理后，账户页/图表页首帧继续做重计算和重绘”的复合成本，而不是设置页单点问题。
-- 当前已补到的硬证据：
-  - 顶层 Tab 统一用 `FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP`，且 `AccountStatsBridgeActivity` / `MarketChartActivity` / `SettingsActivity` / `MainActivity` 在清单里都未声明 `launchMode`，说明切 Tab 本质是跨 Activity 导航并伴随任务栈整理。
-  - 账户页 `onResume -> enterAccountScreen -> applyPreloadedCacheIfAvailable -> resolveCurrentSessionCache -> preloadManager.getLatestCache()` 会在内存缓存缺失时同步触发 `AccountStorageRepository.loadStoredSnapshot()`，即首帧可能直接卡在 Room 读库。
-  - 账户页 `applySnapshot()` 主线程连续执行 `buildOverviewMetrics`、`renderReturnStatsTable`、`applyCurrentCurveRangeFromAllPoints`、`refreshTradeStats`、`refreshPositions`、`refreshTrades(false)`，其中包含多次集合复制/排序、图表数据重算和 `TableLayout.removeAllViews()` 后重建。
-  - 图表页 `onResume()` 会先 `restoreChartOverlayFromLatestCacheOrEmpty()`，命中快照后立刻 `applyChartOverlaySnapshot()` 重建持仓/挂单/历史成交叠加层；随后 `enterChartScreen()` 仍会 `refreshChartOverlays()`，并在需要时 `requestKlines()`。
-- 本轮尝试 fresh ADB 量化时，`adb devices -l` 返回空，暂未拿到新的真机时序；旧日志 `temp/chart_log.txt` 仍显示图表页首轮 `chart_pull phase=start -> ui_applied` 约 `1157ms`。
-- 上次停在“`R1-R4` 已完成，`R5/R6` 还没开始”的判断。
-- 本轮已完成真机联调：设备 `7fab54c4 / PKR110` 在线，客户端 `com.binance.monitor 1.0.0` 已安装并运行，`https://tradeapp.ltd/health` 返回 `200`，服务端 `bundleFingerprint` 与 `dist/windows_server_bundle/bundle_manifest.json` 一致。
-- 人工联调覆盖了 `行情监控`、`行情持仓`、`账户统计`、`设置` 四个主 tab，真机可读到真实 HTTPS 数据；账户页展示真实资产、盈亏和交易记录，图表页展示 `BTCUSDT` 真实 K 线与刷新倒计时，首页展示实时连接状态。
-- `设置 -> 行情监控` 往返时日志里出现 `window dying`，但结合源码与现有 `TopLevelTabNavigationSourceTest` 可确认这是当前顶层 tab 采用 `CLEAR_TOP + SINGLE_TOP` 主动清理目标页上层任务栈的既定行为，不是新的阻塞缺陷；随后再进账户页时真实数据可继续正常返回。
-- 本轮停在：`R6` 已完成三段连续职责拆分并通过合并验证；当前停在已更新源码约束测试、等待用户决定是否继续推进下一轮审计或提交阶段。
-- 当前停在账户页第二轮定点日志结论：
-  - `temp/perf_after_fix_20260411` 原始文件已确认有效，之前 `summary.tsv` 全 0 是摘要脚本提取失败，不是 APK 安装失败。
-  - 修复后从主页面点击到账户页，`Displayed com.binance.monitor/.ui.account.AccountStatsBridgeActivity` 仍约 `+945ms ~ +968ms`，`gfxinfo` 仍在 `41% ~ 52%` jank，说明“首帧同步读库”不是主因。
-  - 新增 `ChainTrace account_render` 显示：`on_create_total` 约 `389ms`，其中 `on_create_enter_account_screen` 约 `257ms`；`apply_snapshot_total` 约 `179ms`，单段最重的是 `refresh_trade_stats` 约 `70ms`，其次是 `refresh_trades` 约 `32ms`、`apply_curve_range` 约 `20ms`。
-  - 结合系统日志，账户页仍有大块时间花在首次布局/绘制：Activity `START` 到 `Displayed` 约 `945ms`，而 `on_create_total + apply_snapshot_total` 仍不足以解释全部时长，日志里还出现 `HWUI Davey 788ms / 948ms`；当前根因链已收敛为“巨型页面首屏布局绘制 + 快照应用后的主线程图表/统计/列表重算”。
-- 当前停在账户页第三轮修复验证结论：
-  - 新增修复后复测目录：`temp/perf_account_trace_20260411_signature_fix`。
-  - 修复前首进账户页会在 `Displayed` 之前连续出现两次 `apply_snapshot_total`（约 `215ms` + `147ms`），确认存在“同内容快照重复重画”。
-  - 去掉 `historyRevision` 对页面去重签名的影响后，`Displayed` 前只剩一次 `apply_snapshot_total`（约 `228ms`）；`Displayed` 从约 `+1s200ms` 降到约 `+1s52ms`，`gfxinfo` 从约 `35.71%` jank 降到约 `32.61%` jank。
-  - 当前剩余主因已进一步收敛为两段：一是 `on_create_total` 仍约 `473ms`，二是 `on_create_total` 结束到 `Displayed` 之间仍有约 `200ms ~ 250ms` 的首次布局/绘制成本；页面内最重单段仍是 `refresh_trade_stats`（约 `88ms`）和 `refresh_trades`（约 `37ms`）。
+- 上次停在按模块并行复核所有 Task：账户/安全、图表/悬浮窗/导航、网关/部署、台账/文档四条线并行推进。
+- 本轮已完成主线整合、冲突消解、源码测试更新、统一回归、文档口径统一，以及 APK / 部署目录更新；当前停在执行结果收口。
 
 ## 近期关键决定和原因
-- 针对“切 Tab 卡顿”问题继续坚持“证据优先，不先改代码”原则：先拆成 `导航/任务栈成本`、`账户页首帧成本`、`图表页首帧成本` 三条证据链，再决定谁先减重。
-- 当前阶段先不把“切 Tab 慢”直接归因为导航方式本身；只有在账户页/图表页首帧重活被量化后，才决定是否需要继续改顶层导航形态。
-- 在没有 fresh 真机连接的情况下，先以当前源码链路和已有 `temp/*.txt` 日志交叉定性；待设备重新在线后，再补 `adb shell am start -W` / `gfxinfo` / `logcat` 量化，不根据体感下结论。
-- 修复按 `P1 -> P5` 批次顺序执行，但每个批次内部按同一条链路一起收口，避免留下临时兼容层。
-- `P1` 采用“严格迁移，不保留兼容壳”原则：直接删除旧演示 Activity/Repository，运行时组件直接迁包，不保留旧 UI 包转发层。
-- 运行时和 UI 共用的账户 helper 一并下沉到 `runtime.account`，避免只挪主类、依赖仍留在 UI 包里的半修状态。
-- `P2` 采用“显式动作 + 主线程收口”原则：不靠隐式缓存失效或页面刷新兜底，而是新增明确的服务动作清理账户运行态。
-- `P3` 采用“第一页单值字段固定为准 + 列表字段全量分页拼接”原则：`overviewMetrics/curveIndicators/statsMetrics/accountMeta/serverTime` 固定取第一页，`trades/orders/curvePoints` 按服务端分页顺序全部拼接，不做启发式裁剪或本地推断。
-- `P3` 的持久化事务边界收口在 `AccountStorageRepository`：由仓库统一调用 `RoomDatabase.runInTransaction(...)`，不再依赖多个 DAO 小事务拼接成“伪原子写入”。
-- `P4/P5` 的原始批次文档在仓库内未单独保留，本轮改为以 `README.md` 2026-04-08 / 2026-04-09 的最终 BUG review / 最终收口记录为准，再用对应 SourceTest / UnitTest 反向核对代码真值，避免根据记忆补批次。
-- `P4` 归为“账户页刷新与展示收口”，`P5` 归为“图表 / 设置 / 生命周期收口”；分批验证时按短命令分组执行，避免一次性长命令卡住。
-- 真机联调阶段继续沿用“证据优先”原则：每进一个主页面都同时抓 UI dump 与进程日志，再结合服务健康接口回看，不根据体感判断是否联通。
-- 对 `设置 -> 行情监控` 的销毁日志不按“新 bug”直接定性，而是先回查顶层 tab 导航源码与已有 SourceTest；确认当前实现明确要求使用 `CLEAR_TOP + SINGLE_TOP` 清理上层隐藏页面后，再以是否出现真实数据丢失或异常重启感作为真机判定标准。
-- 本轮重新审计时，不再把 `CONTEXT.md` 中的“已闭合”表述视为事实；必须以当前工作树源码和测试证据为准。
-- 多模型重新核查后，已确认“文档结论”和“当前源码”存在偏差；后续若继续修复，应以本轮审计列出的未闭合问题单为起点。
-- `R5` 采用“共享模型一次性整包下沉 + import 全量切换 + 删除旧路径”原则：不保留旧 `ui.account.model` 兼容壳，不走双轨。
-- 远程会话摘要存储接口采用“从 UI 类中剥离到安全层独立契约”原则：`SecureSessionPrefs` 直接实现 `security.SessionSummaryStore`，避免 `security -> ui.account` 反向依赖。
-- `R6` 先从 `MonitorService` 开始，按“整段职责链整块抽走”原则处理：前台通知和悬浮窗两段各自下沉到 coordinator，Service 不保留同名薄转发方法。
-- `R6` 继续沿用“整段职责链整块抽走”原则：账户页不把刷新编排留在 `Activity`，图表页不把交易菜单/表单/异步执行留在 `Activity`，旧 source test 也同步迁到新的职责边界上，避免为了让旧测试通过而把逻辑塞回页面类。
-- 账户页性能排查继续坚持“先量化再修”：第一段先去掉主线程读库，第二段不直接猜 UI，而是补 `ChainTrace account_render` 定点日志，把 `onCreate`、`enterAccountScreen`、`applySnapshot` 分段量出来后再决定结构性减重入口。
-- 账户页“是否需要重画”的判定改为只按可渲染真值去重，不再把 `historyRevision` 这种元数据算进签名；原因是本地恢复快照与后续实时缓存可能内容相同但 revision 不同，若按 revision 判重会导致无意义的第二次首屏重画。
-- 当前不采用“首帧先空白、后补数据”这类延迟加载补丁；若继续修复，应优先做可验证的结构性减重，例如拆分账户页首屏布局职责、把交易统计/曲线派生计算移出主线程。
+- 图表页 `onNewIntent -> applyIntentSymbol(..., true)` 改为先 `invalidateChartDisplayContext()` 再重拉；原因是切换展示上下文时，必须先失效旧 symbol 的显示状态，不能靠后续请求结果“自然覆盖”。
+- 账户页新增 `refreshSessionStorageErrorFromPrefs()`，把本地会话摘要读写错误改成实时同步状态；原因是“曾经失败”不能继续被页面展示成“当前仍失败”。
+- 服务端把 `MT5_INIT_TIMEOUT_MS` 的上限从 `50000` 放宽到 `120000`，并新增部署契约测试；原因是部署样例允许 `90000`，服务端不应静默截断用户显式配置。
+- 旧 source test 改为校验真实职责位置：账户快照刷新链看 `AccountSnapshotRefreshCoordinator`，悬浮窗 overview K 线消费看 `MonitorFloatingCoordinator`；原因是测试必须跟随职责边界，而不是继续盯旧 Activity/Service 字符串位置。
+- 台账与文档口径重新收口到“16 条原始建议、11 条正式整改队列、P2-4 已闭合移出”；原因是当前代码已经能区分空缓存与读取失败，且 UI 错误状态也已同步闭合。
+- README 最终口径改为“本轮复核与修复已收口，但正式整改台账仍余 P0-1 / P1-1 / P2-2”；原因是要把“已完成的收口工作”和“仍待执行的正式整改项”明确分开，避免描述性结论过度外推。
+- APK 交付口径固定为当前工作区 `:app:assembleDebug` 产物，并直接安装到当前在线设备 `7fab54c4`；原因是本次需求是立即下发最新版安装包到已连接手机。
+- 服务器部署目录通过 `python scripts/build_windows_server_bundle.py` 重建到 `dist/windows_server_bundle`；原因是要确保待上传目录与当前仓库代码同步，而不是沿用旧 bundle。
 
 ## 当前验证状态
-- `P1` 编译验证通过：`.\gradlew.bat :app:compileDebugJavaWithJavac`
-- `P1` 定向单测通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPreloadPolicyHelperTest" --tests "com.binance.monitor.ui.account.AccountHistoryRefreshPolicyHelperTest" --tests "com.binance.monitor.ui.account.MetricNameTranslatorTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.ui.account.AccountV2SourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionAnnotationSourceTest" --tests "com.binance.monitor.ui.trade.TradeExecutionCoordinatorTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryOpenTimeSourceTest"`
-- `P2` 编译验证通过：`.\gradlew.bat :app:compileDebugJavaWithJavac`
-- `P2` 定向单测通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.MonitorServiceFallbackCleanupSourceTest"`
-- `P3` 编译验证通过：`.\gradlew.bat :app:compileDebugJavaWithJavac`
-- `P3` 定向单测通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositorySourceTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryOpenTimeSourceTest"`
-- `P4` 定向单测通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityV2RefreshSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityV2SourceTest" --tests "com.binance.monitor.ui.account.AccountSessionStateMachineTest" --tests "com.binance.monitor.ui.trade.TradeExecutionCoordinatorTest"`
-- `P5` 定向单测通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperAdditionalTest" --tests "com.binance.monitor.ui.chart.MarketChartV2SourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionAnnotationSourceTest" --tests "com.binance.monitor.ui.settings.SettingsTabNavigationSourceTest"`
-- 真机环境验证通过：`adb devices -l` 可见设备 `7fab54c4 / PKR110`，`adb shell dumpsys package com.binance.monitor | Select-String "versionName|versionCode|lastUpdateTime"` 显示 `versionName=1.0.0`、`lastUpdateTime=2026-04-10 12:15:24`。
-- 服务健康验证通过：`Invoke-WebRequest https://tradeapp.ltd/health` 返回 `200`，`bundleFingerprint=e8ee797f7991c62a6af9f22ede91e302d6fa8c5228851eff1e31024198d07012`；与 `dist/windows_server_bundle/bundle_manifest.json` 一致。
-- 真机首页联调通过：`temp/monitor_dump.xml` 显示“监控工作台 / 实时连接正常 / 更新时间 2026-04-10 16:13:22（1秒/1秒）”和实时行情指标。
-- 真机图表页联调通过：`temp/chart_dump.xml` 显示 `BTCUSDT`、`共300根K线，更新时间：16:10:04`、刷新倒计时和交易按钮；`temp/chart_log.txt` 未见崩溃栈。
-- 真机设置页联调通过：`temp/settings_dump.xml` 显示设置首页全部主入口；`temp/settings_log.txt` 未见崩溃栈。
-- 真机账户页联调通过：`temp/account_dump.xml` 与 `temp/account_return_dump.xml` 均显示“账户-7400048（400x）/ 已连接账户 / 总资产 $19,087.90 / 累计盈亏 +$4,068.45 / 当日盈亏 +$155.28”及多条真实交易记录，说明主链往返后账户数据仍能稳定回显。
-- `R1` 定向验证通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartDisplayHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.main.MainActivityStateRestoreSourceTest"`
-- `R2` 定向验证通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest"`
-- 账户页定点日志源码约束通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest"`
-- 账户页 signature 去重修复已重新安装真机并复测：`temp/perf_account_trace_20260411_rerun` 为修复前基线，`temp/perf_account_trace_20260411_signature_fix` 为修复后结果。
-- `R3` 定向验证通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.data.local.db.AppDatabaseProviderSourceTest" --tests "com.binance.monitor.ui.settings.SettingsSectionActivitySourceTest" --tests "com.binance.monitor.security.SecureSessionPrefsSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest"`
-- `R4` 定向验证通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.launch.OverlayLaunchBridgeActivitySourceTest" --tests "com.binance.monitor.ui.floating.FloatingWindowManagerSourceTest" --tests "com.binance.monitor.ui.navigation.TopLevelTabNavigationSourceTest" --tests "com.binance.monitor.ui.settings.SettingsTabNavigationSourceTest"`
-- 当前合并验证通过：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartDisplayHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.main.MainActivityStateRestoreSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.data.local.db.AppDatabaseProviderSourceTest" --tests "com.binance.monitor.ui.settings.SettingsSectionActivitySourceTest" --tests "com.binance.monitor.security.SecureSessionPrefsSourceTest" --tests "com.binance.monitor.ui.launch.OverlayLaunchBridgeActivitySourceTest" --tests "com.binance.monitor.ui.floating.FloatingWindowManagerSourceTest" --tests "com.binance.monitor.ui.navigation.TopLevelTabNavigationSourceTest" --tests "com.binance.monitor.ui.settings.SettingsTabNavigationSourceTest"`
-- `R5` 编译验证通过：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:compileDebugUnitTestJavaWithJavac`
-- `R5` 分段验证通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.architecture.AccountDomainDependencySourceTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositorySourceTest" --tests "com.binance.monitor.security.SecureSessionPrefsSourceTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest" --tests "com.binance.monitor.domain.account.model.TradeRecordItemTest"`
-- `R5` 共享模型回归通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerTest" --tests "com.binance.monitor.ui.account.AccountStatsPreloadManagerSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.trade.TradeExecutionCoordinatorTest" --tests "com.binance.monitor.ui.floating.FloatingPositionAggregatorTest" --tests "com.binance.monitor.ui.chart.HistoricalTradeAnnotationBuilderTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionSortHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSupportTest" --tests "com.binance.monitor.ui.account.AccountOverviewMetricsCalculatorTest" --tests "com.binance.monitor.ui.account.AccountOverviewDailyMetricsCalculatorTest" --tests "com.binance.monitor.ui.account.AccountOverviewCumulativeMetricsCalculatorTest" --tests "com.binance.monitor.ui.account.AccountCurvePointNormalizerTest" --tests "com.binance.monitor.ui.account.CurveAnalyticsHelperTest" --tests "com.binance.monitor.ui.account.AccountPeriodReturnHelperTest" --tests "com.binance.monitor.ui.account.TradeWeekdayStatsHelperTest" --tests "com.binance.monitor.ui.account.TradeWeekdayBarChartHelperTest" --tests "com.binance.monitor.ui.account.TradeDistributionAnalyticsTest" --tests "com.binance.monitor.ui.account.TradeVisibilityDiagnosticsHelperTest" --tests "com.binance.monitor.ui.account.AccountLeverageResolverTest" --tests "com.binance.monitor.ui.account.AccountCurveHighlightHelperTest" --tests "com.binance.monitor.ui.account.CurveSeriesInterpolationHelperTest"`
-- `R6` MonitorService 拆分验证通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.service.MonitorServiceCoordinatorSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.architecture.AccountDomainDependencySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionAnnotationSourceTest"`
-- `R6` 账户页 / 图表页新 source test 通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeCoordinatorSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeCoordinatorSourceTest"`
-- `R6` 账户页 / 图表页回归通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.trade.TradeExecutionCoordinatorTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.MonitorServiceCoordinatorSourceTest"`
-- `R6` 合并验证通过：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:compileDebugUnitTestJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeCoordinatorSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeCoordinatorSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.trade.TradeExecutionCoordinatorTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.MonitorServiceCoordinatorSourceTest" --tests "com.binance.monitor.architecture.AccountDomainDependencySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionAnnotationSourceTest"`
-- 账户页性能定点日志编译通过：`.\gradlew.bat :app:compileDebugJavaWithJavac`
-- 账户页性能定点日志 source test 通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest"`
-- 新一轮真机复测产物已生成：`temp/perf_account_trace_20260411`
+- App 全量验证通过：`.\gradlew.bat :app:auditCriticalCheckstyle :app:compileDebugJavaWithJavac :app:testDebugUnitTest`，结果 `BUILD SUCCESSFUL`。
+- 服务端全量验证通过：`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v`，结果 `Ran 229 tests ... OK`。
+- APK 已重新编译：`.\gradlew.bat :app:assembleDebug`，结果 `BUILD SUCCESSFUL`。
+- 真机安装已完成：`adb -s 7fab54c4 install -r app\\build\\outputs\\apk\\debug\\app-debug.apk`，结果 `Success`。
+- 部署目录已更新：`python scripts/build_windows_server_bundle.py` 输出 `dist/windows_server_bundle`，目录时间 `2026-04-11 20:21:37`。
+- 本轮新增真实修复点已包含在全量验证中：
+  - 图表 `onNewIntent` 切品种数据边界收口
+  - 账户页本地会话摘要错误状态实时同步
+  - 部署超时配置 `MT5_INIT_TIMEOUT_MS=90000` 契约
+  - 旧源码约束测试迁移到当前真实职责边界
+- 文档口径说明：
+  - `README.md / CONTEXT.md / AUDIT_REMEDIATION_LEDGER.md` 现已统一按正式整改台账表述。
+  - `MULTI_AGENT_AUDIT_REPORT.md` 保留为原始审计报告，不再直接作为执行口径；后续执行以 `AUDIT_REMEDIATION_LEDGER.md` 为准。

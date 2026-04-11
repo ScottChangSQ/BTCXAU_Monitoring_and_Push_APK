@@ -27,12 +27,12 @@ public class MonitorServiceMarketOverviewSourceTest {
     @Test
     public void floatingWindowShouldConsumeClosedMinuteOverviewSnapshot() throws Exception {
         String source = readUtf8(
-                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
-                "src/main/java/com/binance/monitor/service/MonitorService.java"
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
         );
 
-        assertTrue(source.contains("repository.getDisplayOverviewKlineSnapshot()"));
-        assertTrue(!source.contains("FloatingPositionAggregator.buildSymbolCards(\n                positions,\n                repository.getDisplayKlineSnapshot(),"));
+        assertTrue(source.contains("repository == null ? null : repository.getDisplayOverviewKlineSnapshot()"));
+        assertTrue(!source.contains("repository.getDisplayKlineSnapshot()"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

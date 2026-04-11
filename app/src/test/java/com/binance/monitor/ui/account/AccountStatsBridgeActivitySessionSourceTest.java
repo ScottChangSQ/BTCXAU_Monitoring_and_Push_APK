@@ -179,6 +179,56 @@ public class AccountStatsBridgeActivitySessionSourceTest {
                         && source.contains("activeLoginDialog = null;"));
     }
 
+    @Test
+    public void restoreUiStateShouldUseSessionRestoreHelperAndPersistStorageFailureMessage() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        );
+
+        assertTrue("账户页恢复链应统一先读取会话摘要快照",
+                source.contains("SessionSummarySnapshot sessionSummary = secureSessionPrefs == null")
+                        && source.contains("secureSessionPrefs.loadSessionSummary();"));
+        assertTrue("账户页恢复链应委托给独立 helper，而不是在 Activity 内继续拼装细节",
+                source.contains("AccountSessionRestoreHelper.RestoreResult restoredSession = AccountSessionRestoreHelper.restore("));
+        assertTrue("helper 结果应回填页面字段，包括本地会话摘要错误信息",
+                source.contains("sessionStorageError = restoredSession.getStorageError();"));
+    }
+
+    @Test
+    public void connectionDialogShouldExposeSessionStorageFailureSeparately() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        );
+
+        assertTrue("账户页应显式保存本地会话摘要读取错误，供弹窗展示",
+                source.contains("private String sessionStorageError = \"\";"));
+        assertTrue("连接详情弹窗应把本地会话摘要错误单独展示，避免继续误判为空缓存",
+                source.contains("if (!sessionStorageError.isEmpty()) {")
+                        && source.contains("createConnectionDetailRow(\"本地会话摘要\""));
+    }
+
+    @Test
+    public void sessionSummaryWritesShouldRefreshDisplayedStorageErrorState() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("账户页应提供统一入口，同步本地会话摘要最近一次读写错误",
+                source.contains("private void refreshSessionStorageErrorFromPrefs() {")
+                        && source.contains("sessionStorageError = trim(secureSessionPrefs.getLastStorageError());"));
+        assertTrue("登录输入草稿写回后也应刷新错误状态，避免旧失败文案残留",
+                source.contains("secureSessionPrefs.saveDraftIdentity(account, server);\n            refreshSessionStorageErrorFromPrefs();"));
+        assertTrue("登出后保存草稿时也应刷新错误状态，避免连接详情继续显示旧错误",
+                source.contains("secureSessionPrefs.saveDraftIdentity(loginAccountInput, loginServerInput);\n            refreshSessionStorageErrorFromPrefs();"));
+        assertTrue("页面持久化输入草稿后也应刷新错误状态，避免设置保存后仍显示旧失败",
+                source.contains("editor.apply();\n        if (secureSessionPrefs != null) {\n            secureSessionPrefs.saveDraftIdentity(loginAccountInput, loginServerInput);\n            refreshSessionStorageErrorFromPrefs();\n        }\n    }"));
+        assertTrue("active/saved accounts 摘要写回后也应刷新错误状态，避免成功恢复后仍展示旧失败",
+                source.contains("secureSessionPrefs.saveSession(activeAccount, savedSessionAccounts, active);\n            refreshSessionStorageErrorFromPrefs();"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

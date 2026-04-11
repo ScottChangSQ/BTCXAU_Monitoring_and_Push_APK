@@ -87,10 +87,24 @@ public class FloatingWindowManagerSourceTest {
 
         assertTrue(source.contains("new Intent(context, OverlayLaunchBridgeActivity.class)"));
         assertTrue(source.contains("putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_SYMBOL"));
+        assertTrue(source.contains("putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_DESTINATION"));
         assertTrue(source.contains("Intent.FLAG_ACTIVITY_NEW_TASK"));
         assertTrue(source.contains("cardView.setOnClickListener(v -> openChartForCard(card));"));
         assertFalse(source.contains("new Intent(context, MainActivity.class)"));
         assertFalse(source.contains("Intent.FLAG_ACTIVITY_REORDER_TO_FRONT"));
+    }
+
+    @Test
+    public void fallbackOpenMainScreenShouldAlsoGoThroughBridgeActivity() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private void openMainScreen() {"));
+        assertTrue(source.contains("new Intent(context, OverlayLaunchBridgeActivity.class)"));
+        assertTrue(source.contains("putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_DESTINATION, OverlayLaunchBridgeActivity.TARGET_DESTINATION_HOME)"));
+        assertFalse(source.contains("getLaunchIntentForPackage(context.getPackageName())"));
     }
 
     @Test
@@ -113,5 +127,24 @@ public class FloatingWindowManagerSourceTest {
 
         assertFalse(source.contains("} catch (Exception ignored) {\n            return;\n        }"));
         assertTrue(source.contains("windowAdded = false;"));
+    }
+
+    @Test
+    public void destroyShouldCutOffAllPendingHandlerCallbacksAndReleaseViewReferences() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private boolean destroyed;"));
+        assertTrue(source.contains("private final Runnable forceBlinkRelayoutRunnable = new Runnable() {"));
+        assertTrue(source.contains("public void destroy() {"));
+        assertTrue(source.contains("destroyed = true;"));
+        assertTrue(source.contains("handler.removeCallbacksAndMessages(null);"));
+        assertTrue(source.contains("hideWindowInternal();"));
+        assertTrue(source.contains("binding = null;"));
+        assertTrue(source.contains("layoutParams = null;"));
+        assertTrue(source.contains("handler.removeCallbacks(forceBlinkRelayoutRunnable);"));
+        assertFalse(source.contains("root.post(() -> {"));
     }
 }

@@ -291,6 +291,20 @@
                         android:visibility="invisible" />
 
                     <Button
+                        android:id="@+id/btnTogglePositionOverlays"
+                        android:layout_width="wrap_content"
+                        android:layout_height="25dp"
+                        android:layout_gravity="top|start"
+                        android:background="@android:color/transparent"
+                        android:minWidth="0dp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:text="@string/chart_position_overlays_on"
+                        android:textAllCaps="false"
+                        android:textColor="@color/text_primary"
+                        android:textSize="10sp" />
+
+                    <Button
                         android:id="@+id/btnToggleHistoryTrades"
                         android:layout_width="wrap_content"
                         android:layout_height="25dp"

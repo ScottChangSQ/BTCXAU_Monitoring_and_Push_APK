@@ -3,6 +3,7 @@
 import sys
 import types
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event, Thread
 from unittest import mock
@@ -254,6 +255,21 @@ class SummaryResponseTests(unittest.TestCase):
             self.assertEqual(1775214286619, value)
         finally:
             server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+
+    def test_deal_time_ms_normalizes_mt5_server_timezone_wall_clock(self):
+        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+        original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
+        try:
+            server_v2.MT5_TIME_OFFSET_MINUTES = 0
+            server_v2.MT5_SERVER_TIMEZONE = "Europe/Athens"
+            deal = types.SimpleNamespace(time_msc=1775818406271, time=0)
+
+            value = server_v2._deal_time_ms(deal)
+
+            self.assertEqual(1775807606271, value)
+        finally:
+            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+            server_v2.MT5_SERVER_TIMEZONE = original_timezone
 
     def test_map_trades_applies_configured_offset_to_open_and_close_times(self):
         original_mt5 = server_v2.mt5
@@ -1813,6 +1829,52 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(28_800_000 + 100_000 + 60_000 - 1, samples[0]["timestamp"])
         self.assertEqual(101.5, samples[0]["price"])
         self.assertEqual("BTCUSD", samples[0]["symbol"])
+
+    def test_fetch_curve_price_samples_from_mt5_should_normalize_server_timezone_wall_clock(self):
+        original_mt5 = server_v2.mt5
+        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+        original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
+
+        captured = {}
+
+        class _FakeMt5:
+            TIMEFRAME_M1 = 1
+
+            @staticmethod
+            def symbol_select(symbol, enable):
+                captured["symbol_select"] = (symbol, enable)
+                return True
+
+            @staticmethod
+            def copy_rates_range(symbol, timeframe, date_from, date_to):
+                captured["copy_rates_range"] = (symbol, timeframe, date_from, date_to)
+                return [
+                    {"time": 1775818380, "close": 101.5},
+                    {"time": 1775818440, "close": 102.5},
+                ]
+
+        server_v2.mt5 = _FakeMt5()
+        server_v2.MT5_TIME_OFFSET_MINUTES = 0
+        server_v2.MT5_SERVER_TIMEZONE = "Europe/Athens"
+        try:
+            samples = server_v2._fetch_curve_price_samples("BTCUSD", 1775807600000, 1775807720000)
+        finally:
+            server_v2.mt5 = original_mt5
+            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+            server_v2.MT5_SERVER_TIMEZONE = original_timezone
+
+        self.assertEqual(("BTCUSD", True), captured["symbol_select"])
+        self.assertEqual("BTCUSD", captured["copy_rates_range"][0])
+        self.assertEqual(1, captured["copy_rates_range"][1])
+        self.assertEqual(datetime(2026, 4, 10, 10, 53, 20, tzinfo=timezone.utc), captured["copy_rates_range"][2])
+        self.assertEqual(datetime(2026, 4, 10, 10, 55, 20, tzinfo=timezone.utc), captured["copy_rates_range"][3])
+        self.assertEqual(
+            [
+                {"timestamp": 1775807639999, "symbol": "BTCUSD", "price": 101.5},
+                {"timestamp": 1775807699999, "symbol": "BTCUSD", "price": 102.5},
+            ],
+            samples,
+        )
 
     def test_rebuild_curve_keeps_final_snapshot_point_in_non_decreasing_order(self):
         helper = getattr(server_v2, "_replay_curve_from_history", None)

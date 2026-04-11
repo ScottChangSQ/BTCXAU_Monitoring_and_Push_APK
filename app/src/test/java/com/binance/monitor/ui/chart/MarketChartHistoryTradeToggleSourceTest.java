@@ -15,11 +15,13 @@ public class MarketChartHistoryTradeToggleSourceTest {
     @Test
     public void historyTradeOverlayShouldBeControlledByOwnToggleOnly() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
 
         assertTrue(source.contains("private void toggleHistoryTradeVisibility()"));
         assertTrue(source.contains("showHistoryTrades = !showHistoryTrades;"));
-        assertTrue(source.contains("binding.klineChartView.setOverlayVisibility(!masked, !masked, showHistoryTrades, !masked);"));
+        assertTrue(source.contains("binding.klineChartView.setOverlayVisibility(\n                !masked && showPositionOverlays,\n                !masked && showPositionOverlays,\n                showHistoryTrades,\n                !masked && showPositionOverlays);"));
         assertFalse(source.contains("!masked && showHistoryTrades"));
     }
 }

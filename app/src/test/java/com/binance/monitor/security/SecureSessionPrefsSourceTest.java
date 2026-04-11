@@ -30,10 +30,13 @@ public class SecureSessionPrefsSourceTest {
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("private volatile String lastStorageError = \"\";"));
-        assertTrue(source.contains("public boolean hasStorageFailure() {"));
-        assertTrue(source.contains("public String getLastStorageError() {"));
+        assertTrue(source.contains("public SessionSummarySnapshot loadSessionSummary() {"));
+        assertTrue(source.contains("return readSessionSummary();"));
+        assertTrue(source.contains("private SessionSummarySnapshot readSessionSummary() {"));
+        assertTrue(source.contains("return SessionSummarySnapshot.empty();"));
+        assertTrue(source.contains("return SessionSummarySnapshot.storageFailure(lastStorageError);"));
         assertFalse(source.contains("catch (Exception ignored)"));
+        assertFalse(source.contains("return new SessionCache();"));
         assertFalse(source.contains("preferences.edit().remove(KEY_PAYLOAD).remove(KEY_IV).apply();"));
     }
 }

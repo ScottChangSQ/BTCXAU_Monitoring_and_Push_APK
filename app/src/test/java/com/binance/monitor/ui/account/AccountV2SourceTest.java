@@ -13,12 +13,25 @@ public class AccountV2SourceTest {
 
     @Test
     public void accountPreloadManagerShouldDependOnGatewayV2Client() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java",
+                "src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java"
+        );
 
         assertTrue(source.contains("GatewayV2Client"));
         assertTrue(source.contains("applyPublishedAccountRuntime("));
-        assertTrue(source.contains("fetchAccountHistory(AccountTimeRange.ALL"));
-        assertTrue(source.contains("persistIncrementalSnapshot"));
+        assertTrue(source.contains("fetchAccountHistory(range,"));
+        assertTrue(source.contains("persistIncrementalSnapshot("));
+    }
+
+    private static String readUtf8(String... candidates) throws Exception {
+        Path workingDir = Paths.get(System.getProperty("user.dir"));
+        for (String candidate : candidates) {
+            Path path = workingDir.resolve(candidate).normalize();
+            if (Files.exists(path)) {
+                return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+            }
+        }
+        throw new IllegalStateException("找不到 AccountStatsPreloadManager.java");
     }
 }

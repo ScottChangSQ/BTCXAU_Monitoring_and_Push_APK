@@ -10,13 +10,17 @@ import android.os.Bundle;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 
 import java.util.Locale;
 
 public class OverlayLaunchBridgeActivity extends Activity {
 
+    public static final String EXTRA_TARGET_DESTINATION = "extra_target_destination";
     public static final String EXTRA_TARGET_SYMBOL = "extra_target_symbol";
+    public static final String TARGET_DESTINATION_CHART = "chart";
+    public static final String TARGET_DESTINATION_HOME = "home";
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -33,15 +37,32 @@ public class OverlayLaunchBridgeActivity extends Activity {
 
     // 接到悬浮窗路由后立即转发到目标图表页，并结束自身避免停留在任务栈里。
     private void routeToTargetAndFinish() {
+        String targetDestination = resolveTargetDestination(getIntent());
         String targetSymbol = resolveTargetSymbol(getIntent());
-        if (!targetSymbol.isEmpty()) {
-            Intent intent = new Intent(this, MarketChartActivity.class);
-            intent.putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL, targetSymbol);
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            startActivity(intent);
+        if (TARGET_DESTINATION_HOME.equals(targetDestination)) {
+            routeToHome();
+        } else if (!targetSymbol.isEmpty()) {
+            routeToChart(targetSymbol);
+        } else {
+            routeToHome();
         }
         finish();
         overridePendingTransition(0, 0);
+    }
+
+    // 跳到指定产品图表页，并复用现有顶层任务栈。
+    private void routeToChart(String targetSymbol) {
+        Intent intent = new Intent(this, MarketChartActivity.class);
+        intent.putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL, targetSymbol);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+    }
+
+    // 回到主页面，并保持与顶层 Tab 一致的返回栈语义。
+    private void routeToHome() {
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
     }
 
     // 统一标准化产品代码，避免悬浮窗和图表页之间出现大小写不一致。
@@ -54,5 +75,17 @@ public class OverlayLaunchBridgeActivity extends Activity {
             return "";
         }
         return raw.trim().toUpperCase(Locale.ROOT);
+    }
+
+    // 统一解析悬浮窗目标页，未知值时默认走图表页语义。
+    private String resolveTargetDestination(@Nullable Intent intent) {
+        if (intent == null) {
+            return TARGET_DESTINATION_CHART;
+        }
+        String raw = intent.getStringExtra(EXTRA_TARGET_DESTINATION);
+        if (raw == null || raw.trim().isEmpty()) {
+            return TARGET_DESTINATION_CHART;
+        }
+        return raw.trim().toLowerCase(Locale.ROOT);
     }
 }

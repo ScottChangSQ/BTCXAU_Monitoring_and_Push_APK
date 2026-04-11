@@ -52,7 +52,7 @@ public class AccountStatsPreloadManager {
 
     private volatile Cache latestCache;
     private volatile boolean started;
-    private volatile boolean loading;
+    private final AtomicBoolean loading = new AtomicBoolean(false);
     private volatile boolean liveScreenActive;
     private volatile boolean fullSnapshotActive;
     private volatile long nextDelayMs = AppConstants.ACCOUNT_REFRESH_INTERVAL_MS;
@@ -106,7 +106,7 @@ public class AccountStatsPreloadManager {
         if (cache != null || !isAccountSessionActive()) {
             return cache;
         }
-        AccountStorageRepository.StoredSnapshot storedSnapshot = accountStorageRepository.loadStoredSnapshot();
+        AccountStorageRepository.StoredSnapshot storedSnapshot = loadStoredSnapshotForWorkerThread();
         if (!hasStoredSnapshotContent(storedSnapshot)) {
             return null;
         }
@@ -256,10 +256,9 @@ public class AccountStatsPreloadManager {
 
     // 刷新一次预加载节奏；账户真值由 stream 直接写入，本方法不再主动拉 snapshot。
     private void fetchOnce() {
-        if (loading) {
+        if (!loading.compareAndSet(false, true)) {
             return;
         }
-        loading = true;
         try {
             if (!isAccountSessionActive()) {
                 accountStorageRepository.clearRuntimeSnapshot();
@@ -276,7 +275,7 @@ public class AccountStatsPreloadManager {
                 updateLatestCache(buildFailureCache(previous, exception.getMessage()));
             }
         } finally {
-            loading = false;
+            loading.set(false);
         }
     }
 
@@ -297,7 +296,7 @@ public class AccountStatsPreloadManager {
                     buildStoredSnapshotFromPublishedRuntime(accountRuntimeSnapshot, publishedAt);
             accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
             AccountStorageRepository.StoredSnapshot cachedSnapshot =
-                    accountStorageRepository.loadStoredSnapshot();
+                    loadStoredSnapshotForWorkerThread();
             String resolvedRevision = resolveHistoryRevisionFromPublishedRuntime(accountRuntimeSnapshot);
             Cache cache = buildCache(cachedSnapshot, resolvedRevision);
             nextDelayMs = resolveRefreshDelayMs();
@@ -332,11 +331,11 @@ public class AccountStatsPreloadManager {
             }
             Cache previous = latestCache;
             AccountStorageRepository.StoredSnapshot storedSnapshot =
-                    accountStorageRepository.loadStoredSnapshot();
+                    loadStoredSnapshotForWorkerThread();
             String cachedHistoryRevision = previous == null
                     ? storedSnapshot.getHistoryRevision()
                     : previous.getHistoryRevision();
-            int storedTradeCount = accountStorageRepository.loadTrades().size();
+            int storedTradeCount = loadStoredTradeCountForWorkerThread();
             boolean hasStoredTradeHistory = storedTradeCount > 0;
             boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
                     remoteHistoryRevision,
@@ -396,11 +395,11 @@ public class AccountStatsPreloadManager {
             String remoteHistoryRevision = resolveRemoteHistoryRevision(snapshotPayload);
             Cache previous = latestCache;
             AccountStorageRepository.StoredSnapshot storedSnapshot =
-                    accountStorageRepository.loadStoredSnapshot();
+                    loadStoredSnapshotForWorkerThread();
             String cachedHistoryRevision = previous == null
                     ? storedSnapshot.getHistoryRevision()
                     : previous.getHistoryRevision();
-            int storedTradeCount = accountStorageRepository.loadTrades().size();
+            int storedTradeCount = loadStoredTradeCountForWorkerThread();
             boolean hasStoredTradeHistory = storedTradeCount > 0;
             boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
                     remoteHistoryRevision,
@@ -421,7 +420,7 @@ public class AccountStatsPreloadManager {
                         buildStoredSnapshotFromSnapshotOnly(snapshotPayload);
                 accountStorageRepository.persistIncrementalSnapshot(incrementalSnapshot);
                 AccountStorageRepository.StoredSnapshot cachedSnapshot =
-                        accountStorageRepository.loadStoredSnapshot();
+                        loadStoredSnapshotForWorkerThread();
                 String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, null);
                 cache = buildCache(cachedSnapshot, resolvedRevision);
             }
@@ -559,7 +558,7 @@ public class AccountStatsPreloadManager {
                                                                                        AccountHistoryPayload historyPayload,
                                                                                        String historyRevision) {
         AccountStorageRepository.StoredSnapshot baseSnapshot = runtimeSnapshot == null
-                ? accountStorageRepository.loadStoredSnapshot()
+                ? loadStoredSnapshotForWorkerThread()
                 : runtimeSnapshot;
         JSONObject historyMeta = historyPayload == null ? new JSONObject() : historyPayload.getAccountMeta();
         String account = resolveIdentityField(baseSnapshot == null ? "" : baseSnapshot.getAccount(), historyMeta, "login");
@@ -666,6 +665,25 @@ public class AccountStatsPreloadManager {
                 System.currentTimeMillis(),
                 resolvedHistoryRevision
         );
+    }
+
+    // 同步读库只允许在后台线程执行，调用点若退回主线程必须立刻暴露。
+    private void assertWorkerThreadForStorageAccess(String operation) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            throw new IllegalStateException("AccountStatsPreloadManager synchronous storage access must stay off main thread: " + operation);
+        }
+    }
+
+    // 统一收口同步快照读取，避免调用点绕过线程边界检查。
+    private AccountStorageRepository.StoredSnapshot loadStoredSnapshotForWorkerThread() {
+        assertWorkerThreadForStorageAccess("loadStoredSnapshot");
+        return accountStorageRepository.loadStoredSnapshot();
+    }
+
+    // 统一收口同步成交历史读取，避免调用点绕过线程边界检查。
+    private int loadStoredTradeCountForWorkerThread() {
+        assertWorkerThreadForStorageAccess("loadTrades");
+        return accountStorageRepository.loadTrades().size();
     }
 
     // 冷启动时如果内存缓存还没被 stream 填充，就先从本地已保存快照恢复页面。

@@ -59,6 +59,7 @@ import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.databinding.DialogTradeCommandBinding;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.security.SecureSessionPrefs;
+import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
@@ -106,12 +107,13 @@ public class MarketChartActivity extends AppCompatActivity {
     public static final String PREF_RUNTIME_NAME = "market_chart_runtime";
     private static final String PREF_KEY_SELECTED_INTERVAL = "selected_interval";
     private static final String PREF_KEY_SHOW_HISTORY_TRADES = "show_history_trades";
+    private static final String PREF_KEY_SHOW_POSITION_OVERLAYS = "show_position_overlays";
     private static final String PREF_KEY_POSITION_SORT = "position_sort";
     private static final String PREF_KEY_CHART_CACHE_SCHEMA_VERSION = "chart_cache_schema_version";
     private static final int CHART_CACHE_SCHEMA_VERSION = 2;
 
     private static final int HISTORY_PERSIST_LIMIT = 5_000;
-    private static final int RESTORE_WINDOW_LIMIT = 300;
+    private static final int RESTORE_WINDOW_LIMIT = 240;
     private static final int HISTORY_PAGE_LIMIT = 300;
     private static final int GAP_FILL_MAX_ROUNDS = 8;
     private static final long CHART_OVERLAY_REFRESH_DEBOUNCE_MS = 120L;
@@ -190,6 +192,7 @@ public class MarketChartActivity extends AppCompatActivity {
     private boolean showRsi;
     private boolean showKdj;
     private boolean showHistoryTrades = true;
+    private boolean showPositionOverlays = true;
     private int maPeriod = 20;
     private int emaPeriod = 12;
     private int sraPeriod = 14;
@@ -292,6 +295,7 @@ public class MarketChartActivity extends AppCompatActivity {
         applyIntentSymbol(getIntent(), false);
         restoreSelectedInterval();
         restoreHistoryTradeVisibility();
+        restorePositionOverlayVisibility();
         restoreChartPositionSort();
         if (abnormalRecordManager != null) {
             abnormalRecordManager.getRecordsLiveData().observe(this, records -> {
@@ -431,21 +435,27 @@ public class MarketChartActivity extends AppCompatActivity {
             binding.klineChartView.scrollToLatest();
             updateScrollToLatestButtonPosition();
         });
+        binding.btnTogglePositionOverlays.setOnClickListener(v -> togglePositionOverlayVisibility());
         binding.btnToggleHistoryTrades.setOnClickListener(v -> toggleHistoryTradeVisibility());
         binding.btnScrollToLatest.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updateScrollToLatestButtonPosition());
         binding.tvChartRefreshCountdown.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updateRefreshCountdownPosition());
+        binding.btnTogglePositionOverlays.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                updatePositionOverlayButtonPosition());
         binding.btnToggleHistoryTrades.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updateHistoryTradeButtonPosition());
         binding.klineChartView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
         {
             updateRefreshCountdownPosition();
             updateScrollToLatestButtonPosition();
+            updatePositionOverlayButtonPosition();
             updateHistoryTradeButtonPosition();
         });
         binding.btnScrollToLatest.setVisibility(android.view.View.INVISIBLE);
+        updatePositionOverlayToggleButton();
         updateHistoryTradeToggleButton();
+        updatePositionOverlayButtonPosition();
         updateHistoryTradeButtonPosition();
         refreshChartOverlays();
     }
@@ -456,7 +466,12 @@ public class MarketChartActivity extends AppCompatActivity {
             return;
         }
         boolean masked = SensitiveDisplayMasker.isEnabled(this);
-        binding.klineChartView.setOverlayVisibility(!masked, !masked, showHistoryTrades, !masked);
+        binding.klineChartView.setOverlayVisibility(
+                !masked && showPositionOverlays,
+                !masked && showPositionOverlays,
+                showHistoryTrades,
+                !masked && showPositionOverlays);
+        updatePositionOverlayToggleButton();
         updateHistoryTradeToggleButton();
         updateChartPositionPanel(lastChartPositions, lastChartPendingOrders, lastChartTotalAsset);
     }
@@ -537,6 +552,7 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         syncSymbolSelector();
         if (triggerReload) {
+            invalidateChartDisplayContext();
             requestKlines();
             scheduleNextAutoRefresh();
         }
@@ -1189,6 +1205,7 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         selectedSymbol = symbol.trim().toUpperCase(Locale.ROOT);
         syncSymbolSelector();
+        invalidateChartDisplayContext();
         requestKlines();
         scheduleNextAutoRefresh();
     }
@@ -1200,6 +1217,7 @@ public class MarketChartActivity extends AppCompatActivity {
         selectedInterval = option;
         persistSelectedInterval();
         updateIntervalButtons();
+        invalidateChartDisplayContext();
         requestKlines();
         scheduleNextAutoRefresh();
     }
@@ -1574,10 +1592,15 @@ public class MarketChartActivity extends AppCompatActivity {
                     targetKey,
                     targetInterval.limit
             );
-            if (aggregated.isEmpty()) {
+            List<CandleEntry> closedAggregated = CandleAggregationHelper.retainClosedTargetCandles(
+                    aggregated,
+                    targetKey,
+                    System.currentTimeMillis()
+            );
+            if (closedAggregated.isEmpty()) {
                 continue;
             }
-            return aggregated;
+            return closedAggregated;
         }
         return new ArrayList<>();
     }
@@ -1992,6 +2015,25 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.klineChartView.setCandles(new ArrayList<>());
         refreshChartOverlays();
         binding.tvChartInfo.setText(R.string.chart_info_empty);
+    }
+
+    // 切产品或切周期时，先失效上一组图表上下文，避免旧数据挂在新选择下继续显示。
+    private void invalidateChartDisplayContext() {
+        activeDataKey = "";
+        loadedCandles.clear();
+        lastAbnormalOverlaySignature = "";
+        lastAccountOverlaySignature = "";
+        if (binding == null || binding.klineChartView == null) {
+            return;
+        }
+        binding.klineChartView.setCandles(new ArrayList<>());
+        binding.klineChartView.setPositionAnnotations(new ArrayList<>());
+        binding.klineChartView.setPendingAnnotations(new ArrayList<>());
+        binding.klineChartView.setHistoryTradeAnnotations(new ArrayList<>());
+        binding.klineChartView.setAggregateCostAnnotation(null);
+        updateChartPositionPanel(new ArrayList<>(), new ArrayList<>(), 0d);
+        binding.tvChartInfo.setText(R.string.chart_info_empty);
+        updateStateCount();
     }
 
     // 左滑分页成功后统一更新内存、缓存、图表和叠加层，避免分页成功分支继续散写状态更新。
@@ -2810,13 +2852,14 @@ public class MarketChartActivity extends AppCompatActivity {
 
     // 用轻量签名识别账户叠加层是否真的变化，避免无效重算。
     private String buildAccountOverlaySignature(@Nullable AccountStatsPreloadManager.Cache cache) {
+        String chartDataKey = buildCacheKey(selectedSymbol, selectedInterval);
         long firstOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(0).getOpenTime();
         long lastOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
         long cacheUpdatedAt = cache == null ? 0L : cache.getUpdatedAt();
         String historyRevision = cache == null ? "" : cache.getHistoryRevision();
         String account = cache == null ? resolveActiveSessionAccount() : trimToEmpty(cache.getAccount());
         String server = cache == null ? resolveActiveSessionServer() : trimToEmpty(cache.getServer());
-        return selectedSymbol + "|" + loadedCandles.size() + "|" + firstOpenTime + "|" + lastOpenTime
+        return chartDataKey + "|" + loadedCandles.size() + "|" + firstOpenTime + "|" + lastOpenTime
                 + "|" + cacheUpdatedAt + "|" + historyRevision + "|" + account + "|" + server;
     }
 
@@ -2863,18 +2906,20 @@ public class MarketChartActivity extends AppCompatActivity {
         if (secureSessionPrefs == null || !ConfigManager.getInstance(this).isAccountSessionActive()) {
             return "";
         }
-        return secureSessionPrefs.getActiveAccount() == null
+        SessionSummarySnapshot sessionSummary = secureSessionPrefs.loadSessionSummary();
+        return sessionSummary.getActiveAccount() == null
                 ? ""
-                : trimToEmpty(secureSessionPrefs.getActiveAccount().getLogin());
+                : trimToEmpty(sessionSummary.getActiveAccount().getLogin());
     }
 
     private String resolveActiveSessionServer() {
         if (secureSessionPrefs == null || !ConfigManager.getInstance(this).isAccountSessionActive()) {
             return "";
         }
-        return secureSessionPrefs.getActiveAccount() == null
+        SessionSummarySnapshot sessionSummary = secureSessionPrefs.loadSessionSummary();
+        return sessionSummary.getActiveAccount() == null
                 ? ""
-                : trimToEmpty(secureSessionPrefs.getActiveAccount().getServer());
+                : trimToEmpty(sessionSummary.getActiveAccount().getServer());
     }
 
     private String trimToEmpty(@Nullable String value) {
@@ -3518,6 +3563,12 @@ public class MarketChartActivity extends AppCompatActivity {
         showHistoryTrades = preferences.getBoolean(PREF_KEY_SHOW_HISTORY_TRADES, true);
     }
 
+    // 恢复图上持仓相关标注显示开关，避免用户每次重进都重新设置。
+    private void restorePositionOverlayVisibility() {
+        SharedPreferences preferences = getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE);
+        showPositionOverlays = preferences.getBoolean(PREF_KEY_SHOW_POSITION_OVERLAYS, true);
+    }
+
     // 恢复持仓明细排序选项，避免每次进入都回到默认排序。
     private void restoreChartPositionSort() {
         SharedPreferences preferences = getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE);
@@ -3541,6 +3592,14 @@ public class MarketChartActivity extends AppCompatActivity {
                 .apply();
     }
 
+    // 持久化图上持仓相关标注显示开关。
+    private void persistPositionOverlayVisibility() {
+        getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_KEY_SHOW_POSITION_OVERLAYS, showPositionOverlays)
+                .apply();
+    }
+
     // 持久化持仓明细排序规则，保证下次进入仍沿用用户上一次选择。
     private void persistChartPositionSort() {
         getSharedPreferences(PREF_RUNTIME_NAME, MODE_PRIVATE)
@@ -3554,6 +3613,29 @@ public class MarketChartActivity extends AppCompatActivity {
         showHistoryTrades = !showHistoryTrades;
         persistHistoryTradeVisibility();
         applyPrivacyMaskState();
+    }
+
+    // 切换 K 线图当前仓位相关标注显示状态，不影响历史成交和下方持仓面板。
+    private void togglePositionOverlayVisibility() {
+        showPositionOverlays = !showPositionOverlays;
+        persistPositionOverlayVisibility();
+        applyPrivacyMaskState();
+    }
+
+    private void updatePositionOverlayToggleButton() {
+        if (binding == null || binding.btnTogglePositionOverlays == null) {
+            return;
+        }
+        binding.btnTogglePositionOverlays.setText(showPositionOverlays
+                ? R.string.chart_position_overlays_on
+                : R.string.chart_position_overlays_off);
+        UiPaletteManager.styleInlineTextButton(
+                binding.btnTogglePositionOverlays,
+                showPositionOverlays,
+                UiPaletteManager.resolve(this),
+                10f
+        );
+        updatePositionOverlayButtonPosition();
     }
 
     private void updateHistoryTradeToggleButton() {
@@ -3599,19 +3681,14 @@ public class MarketChartActivity extends AppCompatActivity {
                 pricePaneRightPx,
                 pricePaneBottomPx
         );
-        KlineOverlayButtonLayoutHelper.Bounds volumeBounds = new KlineOverlayButtonLayoutHelper.Bounds(
-                volumePaneLeftPx,
-                volumePaneTopPx,
-                volumePaneRightPx,
-                volumePaneBottomPx
-        );
         KlineOverlayButtonLayoutHelper.Position position =
-                KlineOverlayButtonLayoutHelper.resolveHistoryTradeButtonPosition(
+                KlineOverlayButtonLayoutHelper.resolveBottomLeftStackedButtonPosition(
                         priceBounds,
-                        volumeBounds,
                         buttonWidth,
                         buttonHeight,
-                        dpToPx(2f)
+                        dpToPx(2f),
+                        0,
+                        dpToPx(4f)
                 );
         android.widget.FrameLayout.LayoutParams params =
                 (android.widget.FrameLayout.LayoutParams) binding.btnToggleHistoryTrades.getLayoutParams();
@@ -3629,6 +3706,61 @@ public class MarketChartActivity extends AppCompatActivity {
         params.rightMargin = 0;
         params.bottomMargin = 0;
         binding.btnToggleHistoryTrades.setLayoutParams(params);
+        return true;
+    }
+
+    private boolean updatePositionOverlayButtonPosition() {
+        if (binding == null || binding.btnTogglePositionOverlays == null) {
+            return false;
+        }
+        int buttonWidth = binding.btnTogglePositionOverlays.getWidth();
+        int buttonHeight = binding.btnTogglePositionOverlays.getHeight();
+        if (buttonWidth <= 0 || buttonHeight <= 0) {
+            ViewGroup.LayoutParams rawParams = binding.btnTogglePositionOverlays.getLayoutParams();
+            if (rawParams != null) {
+                if (buttonWidth <= 0 && rawParams.width > 0) {
+                    buttonWidth = rawParams.width;
+                }
+                if (buttonHeight <= 0 && rawParams.height > 0) {
+                    buttonHeight = rawParams.height;
+                }
+            }
+            if (buttonWidth <= 0 || buttonHeight <= 0) {
+                binding.btnTogglePositionOverlays.post(this::updatePositionOverlayButtonPosition);
+                return false;
+            }
+        }
+        KlineOverlayButtonLayoutHelper.Bounds priceBounds = new KlineOverlayButtonLayoutHelper.Bounds(
+                pricePaneLeftPx,
+                pricePaneTopPx,
+                pricePaneRightPx,
+                pricePaneBottomPx
+        );
+        KlineOverlayButtonLayoutHelper.Position position =
+                KlineOverlayButtonLayoutHelper.resolveBottomLeftStackedButtonPosition(
+                        priceBounds,
+                        buttonWidth,
+                        buttonHeight,
+                        dpToPx(2f),
+                        1,
+                        dpToPx(4f)
+                );
+        android.widget.FrameLayout.LayoutParams params =
+                (android.widget.FrameLayout.LayoutParams) binding.btnTogglePositionOverlays.getLayoutParams();
+        int targetGravity = Gravity.TOP | Gravity.START;
+        if (params.gravity == targetGravity
+                && params.leftMargin == position.left
+                && params.topMargin == position.top
+                && params.rightMargin == 0
+                && params.bottomMargin == 0) {
+            return true;
+        }
+        params.gravity = targetGravity;
+        params.leftMargin = position.left;
+        params.topMargin = position.top;
+        params.rightMargin = 0;
+        params.bottomMargin = 0;
+        binding.btnTogglePositionOverlays.setLayoutParams(params);
         return true;
     }
 
@@ -3684,6 +3816,7 @@ public class MarketChartActivity extends AppCompatActivity {
                 binding.btnIndicatorVolume, binding.btnIndicatorMacd, binding.btnIndicatorStochRsi, binding.btnIndicatorBoll,
                 binding.btnIndicatorMa, binding.btnIndicatorEma, binding.btnIndicatorSra,
                 binding.btnIndicatorAvl, binding.btnIndicatorRsi, binding.btnIndicatorKdj,
+                binding.btnTogglePositionOverlays,
                 binding.btnToggleHistoryTrades,
                 binding.btnChartTradeBuy, binding.btnChartTradeSell, binding.btnChartTradePending
         };
@@ -3753,6 +3886,7 @@ public class MarketChartActivity extends AppCompatActivity {
         updateIntervalButtons();
         updateIndicatorButtons();
         updateTradeActionButtons();
+        updatePositionOverlayToggleButton();
         updateHistoryTradeToggleButton();
         applyPrivacyMaskState();
     }

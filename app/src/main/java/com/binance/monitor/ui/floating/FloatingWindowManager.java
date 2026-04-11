@@ -27,8 +27,6 @@ import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import androidx.core.content.ContextCompat;
-
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.LayoutFloatingWindowBinding;
@@ -36,7 +34,6 @@ import com.binance.monitor.runtime.ConnectionStage;
 import com.binance.monitor.ui.launch.OverlayLaunchBridgeActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.ChainLatencyTracer;
-import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.PermissionHelper;
 import com.binance.monitor.util.ProductSymbolMapper;
 import com.binance.monitor.util.SensitiveDisplayMasker;
@@ -50,6 +47,21 @@ public class FloatingWindowManager {
     private final WindowManager windowManager;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final int dragSlopPx;
+    private final Runnable forceBlinkRelayoutRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (binding == null) {
+                return;
+            }
+            View root = binding.getRoot();
+            if (root == null) {
+                return;
+            }
+            requestImmediateWindowRelayout();
+            root.setVisibility(View.VISIBLE);
+            applyMiniBlinkState(true);
+        }
+    };
 
     private LayoutFloatingWindowBinding binding;
     private WindowManager.LayoutParams layoutParams;
@@ -74,6 +86,7 @@ public class FloatingWindowManager {
     private int lastDragLayoutX = Integer.MIN_VALUE;
     private int lastDragLayoutY = Integer.MIN_VALUE;
     private DragAndClickListener dragAndClickListener;
+    private boolean destroyed;
 
     public FloatingWindowManager(Context context) {
         this.context = context.getApplicationContext();
@@ -85,6 +98,9 @@ public class FloatingWindowManager {
     public void applyPreferences(boolean enabled, int alphaPercent, boolean showBtc, boolean showXau) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             handler.post(() -> applyPreferences(enabled, alphaPercent, showBtc, showXau));
+            return;
+        }
+        if (destroyed) {
             return;
         }
         this.enabled = enabled;
@@ -112,6 +128,9 @@ public class FloatingWindowManager {
             handler.post(() -> update(copy));
             return;
         }
+        if (destroyed) {
+            return;
+        }
         FloatingWindowSnapshot normalized = snapshot == null
                 ? new FloatingWindowSnapshot(ConnectionStage.CONNECTING, "", 0L, new ArrayList<>())
                 : snapshot;
@@ -129,6 +148,9 @@ public class FloatingWindowManager {
     // 异常发生时让最小化方块闪烁，方便后台感知。
     public void notifyAbnormalEvent(String symbol) {
         handler.post(() -> {
+            if (destroyed) {
+                return;
+            }
             miniBlinkEndAt = Math.max(miniBlinkEndAt, System.currentTimeMillis() + 10_000L);
             if (minimized) {
                 startMiniBlink();
@@ -142,6 +164,26 @@ public class FloatingWindowManager {
             handler.post(this::hide);
             return;
         }
+        hideWindowInternal();
+    }
+
+    // 销毁时切断所有主线程回调与 view 引用，避免服务结束后仍残留悬浮窗回调链。
+    public void destroy() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post(this::destroy);
+            return;
+        }
+        destroyed = true;
+        handler.removeCallbacksAndMessages(null);
+        hideWindowInternal();
+        binding = null;
+        layoutParams = null;
+        dragAndClickListener = null;
+    }
+
+    // 统一收口悬浮窗隐藏逻辑，供普通隐藏和最终销毁共用。
+    private void hideWindowInternal() {
+        handler.removeCallbacks(forceBlinkRelayoutRunnable);
         handler.removeCallbacks(miniBlinkRunnable);
         miniBlinkActive = false;
         miniBlinkDimmed = false;
@@ -163,7 +205,7 @@ public class FloatingWindowManager {
     }
 
     private void showIfPossible() {
-        if (!enabled || !PermissionHelper.canDrawOverlays(context)) {
+        if (destroyed || !enabled || !PermissionHelper.canDrawOverlays(context)) {
             return;
         }
         ensureBinding();
@@ -238,6 +280,9 @@ public class FloatingWindowManager {
     }
 
     private void render() {
+        if (destroyed) {
+            return;
+        }
         if (!enabled) {
             hide();
             return;
@@ -489,14 +534,8 @@ public class FloatingWindowManager {
             View root = binding.getRoot();
             root.setVisibility(View.INVISIBLE);
             applyWindowModeVisibility();
-            root.post(() -> {
-                if (binding == null) {
-                    return;
-                }
-                requestImmediateWindowRelayout();
-                root.setVisibility(View.VISIBLE);
-                applyMiniBlinkState(true);
-            });
+            handler.removeCallbacks(forceBlinkRelayoutRunnable);
+            handler.post(forceBlinkRelayoutRunnable);
             return;
         }
         applyWindowModeVisibility();
@@ -596,6 +635,7 @@ public class FloatingWindowManager {
             return;
         }
         Intent launchIntent = new Intent(context, OverlayLaunchBridgeActivity.class);
+        launchIntent.putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_DESTINATION, OverlayLaunchBridgeActivity.TARGET_DESTINATION_CHART);
         launchIntent.putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_SYMBOL, targetSymbol.trim().toUpperCase());
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -603,14 +643,10 @@ public class FloatingWindowManager {
         context.startActivity(launchIntent);
     }
 
-    // 兜底只在产品代码缺失时回主界面，避免悬浮窗点击完全失效。
+    // 产品代码缺失时也统一走桥接页回主页，保证悬浮窗导航返回栈口径一致。
     private void openMainScreen() {
-        Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-        if (launchIntent == null) {
-            return;
-        }
-        launchIntent.setAction(Intent.ACTION_MAIN);
-        launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        Intent launchIntent = new Intent(context, OverlayLaunchBridgeActivity.class);
+        launchIntent.putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_DESTINATION, OverlayLaunchBridgeActivity.TARGET_DESTINATION_HOME);
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_SINGLE_TOP
                 | Intent.FLAG_ACTIVITY_CLEAR_TOP);

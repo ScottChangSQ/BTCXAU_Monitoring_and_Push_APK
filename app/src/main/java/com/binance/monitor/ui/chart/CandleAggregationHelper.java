@@ -80,6 +80,28 @@ final class CandleAggregationHelper {
         return new ArrayList<>(aggregated.subList(aggregated.size() - safeLimit, aggregated.size()));
     }
 
+    // 预显示只保留已经闭合的目标周期 K 线，未走完整个时间桶的末尾数据不能先上屏。
+    static List<CandleEntry> retainClosedTargetCandles(@Nullable List<CandleEntry> source,
+                                                       @Nullable String intervalKey,
+                                                       long nowMs) {
+        if (source == null || source.isEmpty() || intervalKey == null || intervalKey.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<CandleEntry> result = new ArrayList<>();
+        Calendar calendar = Calendar.getInstance(UTC);
+        for (CandleEntry candle : source) {
+            if (candle == null) {
+                continue;
+            }
+            long bucketCloseTime = resolveBucketCloseTime(candle.getOpenTime(), intervalKey, calendar);
+            if (bucketCloseTime <= 0L || candle.getCloseTime() < bucketCloseTime || bucketCloseTime >= nowMs) {
+                continue;
+            }
+            result.add(candle);
+        }
+        return result;
+    }
+
     // 把最新一根已收盘的小周期 K 线合并进当前展示序列，只处理向前推进和同桶补齐。
     static List<CandleEntry> mergeClosedBaseCandle(@Nullable List<CandleEntry> existing,
                                                    @Nullable CandleEntry incoming,
@@ -203,6 +225,41 @@ final class CandleAggregationHelper {
             return calendar.getTimeInMillis();
         }
         return openTimeMs;
+    }
+
+    private static long resolveBucketCloseTime(long openTimeMs, String intervalKey, Calendar calendar) {
+        long bucketStart = resolveBucketStart(openTimeMs, intervalKey, calendar);
+        long nextBucketStart = resolveNextBucketStart(bucketStart, intervalKey, calendar);
+        if (nextBucketStart <= bucketStart) {
+            return bucketStart;
+        }
+        return nextBucketStart - 1L;
+    }
+
+    private static long resolveNextBucketStart(long bucketStartMs, String intervalKey, Calendar calendar) {
+        String normalized = intervalKey == null ? "" : intervalKey.trim();
+        long fixedIntervalMs = resolveFixedIntervalMs(normalized);
+        if (fixedIntervalMs > 0L) {
+            return bucketStartMs + fixedIntervalMs;
+        }
+        calendar.setTimeInMillis(bucketStartMs);
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+        if ("1w".equalsIgnoreCase(normalized)) {
+            calendar.add(Calendar.DAY_OF_MONTH, 7);
+            return calendar.getTimeInMillis();
+        }
+        if ("1M".equalsIgnoreCase(normalized)) {
+            calendar.add(Calendar.MONTH, 1);
+            return calendar.getTimeInMillis();
+        }
+        if ("1y".equalsIgnoreCase(normalized)) {
+            calendar.add(Calendar.YEAR, 1);
+            return calendar.getTimeInMillis();
+        }
+        return bucketStartMs;
     }
 
     private static long resolveFixedIntervalMs(String intervalKey) {

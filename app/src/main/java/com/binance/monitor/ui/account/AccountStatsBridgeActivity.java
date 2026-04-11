@@ -76,6 +76,7 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.ActivityAccountStatsBinding;
 import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionCredentialEncryptor;
+import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.runtime.account.MetricNameTranslator;
 import com.binance.monitor.service.MonitorService;
@@ -83,6 +84,7 @@ import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
 import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
+import com.binance.monitor.ui.account.session.AccountSessionRestoreHelper;
 import com.binance.monitor.ui.account.adapter.StatsMetricAdapter;
 import com.binance.monitor.ui.account.adapter.TradeRecordAdapterV2;
 import com.binance.monitor.util.ProductSymbolMapper;
@@ -266,6 +268,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private boolean gatewayConnected;
     private String loginAccountInput = ACCOUNT;
     private String loginServerInput = SERVER;
+    private String sessionStorageError = "";
     private RemoteAccountProfile activeSessionAccount;
     private List<RemoteAccountProfile> savedSessionAccounts = new ArrayList<>();
     private final List<CurvePoint> curveHistory = new ArrayList<>();
@@ -296,6 +299,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private boolean secondarySectionsAttached;
     private boolean deferredSecondaryRenderPending;
     private boolean deferredSecondarySectionAttachPosted;
+    private int deferredSecondaryRenderRevision;
     private boolean firstFrameCompleted;
     private boolean firstFrameCompletionPosted;
     private volatile boolean storedSnapshotRestorePending;
@@ -630,8 +634,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         sessionStateMachine = new AccountSessionStateMachine();
         remoteSessionCoordinator = buildRemoteSessionCoordinator();
         snapshotRefreshCoordinator = new AccountSnapshotRefreshCoordinator(createSnapshotRefreshHost());
-        activeSessionAccount = secureSessionPrefs.getActiveAccount();
-        savedSessionAccounts = new ArrayList<>(secureSessionPrefs.getSavedAccounts());
         traceAccountRenderPhase("on_create_runtime_init",
                 stageStartedAt,
                 0,
@@ -852,26 +854,28 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         tradeSortDescending = prefs.getBoolean(PREF_FILTER_SORT_DESC, true);
         boolean persistedLoginEnabled = prefs.getBoolean(PREF_LOGIN_ENABLED, false);
         boolean sessionActive = ConfigManager.getInstance(getApplicationContext()).isAccountSessionActive();
-        boolean cachedSessionActive = secureSessionPrefs != null && secureSessionPrefs.isSessionMarkedActive();
-        userLoggedIn = (persistedLoginEnabled || cachedSessionActive) && sessionActive;
-        loginAccountInput = secureSessionPrefs == null
-                ? trim(prefs.getString(PREF_LOGIN_ACCOUNT, ACCOUNT))
-                : trim(secureSessionPrefs.getDraftAccount(prefs.getString(PREF_LOGIN_ACCOUNT, ACCOUNT)));
-        if (loginAccountInput.isEmpty()) {
-            loginAccountInput = activeSessionAccount != null && !trim(activeSessionAccount.getLogin()).isEmpty()
-                    ? trim(activeSessionAccount.getLogin())
-                    : ACCOUNT;
-        }
-        loginServerInput = secureSessionPrefs == null
-                ? trim(prefs.getString(PREF_LOGIN_SERVER, SERVER))
-                : trim(secureSessionPrefs.getDraftServer(prefs.getString(PREF_LOGIN_SERVER, SERVER)));
-        if (loginServerInput.isEmpty()) {
-            loginServerInput = activeSessionAccount != null && !trim(activeSessionAccount.getServer()).isEmpty()
-                    ? trim(activeSessionAccount.getServer())
-                    : SERVER;
-        }
-        if (secureSessionPrefs != null) {
-            savedSessionAccounts = new ArrayList<>(secureSessionPrefs.getSavedAccounts());
+        SessionSummarySnapshot sessionSummary = secureSessionPrefs == null
+                ? SessionSummarySnapshot.empty()
+                : secureSessionPrefs.loadSessionSummary();
+        AccountSessionRestoreHelper.RestoreResult restoredSession = AccountSessionRestoreHelper.restore(
+                new AccountSessionRestoreHelper.RestoreRequest(
+                        sessionSummary,
+                        persistedLoginEnabled,
+                        sessionActive,
+                        prefs.getString(PREF_LOGIN_ACCOUNT, ACCOUNT),
+                        prefs.getString(PREF_LOGIN_SERVER, SERVER),
+                        ACCOUNT,
+                        SERVER
+                )
+        );
+        userLoggedIn = restoredSession.isUserLoggedIn();
+        activeSessionAccount = restoredSession.getActiveSessionAccount();
+        savedSessionAccounts = restoredSession.getSavedSessionAccounts();
+        loginAccountInput = restoredSession.getLoginAccountInput();
+        loginServerInput = restoredSession.getLoginServerInput();
+        sessionStorageError = restoredSession.getStorageError();
+        if (!sessionStorageError.isEmpty() && logManager != null) {
+            logManager.warn(sessionStorageError);
         }
 
         if (selectedTradeProductFilter == null || selectedTradeProductFilter.trim().isEmpty()) {
@@ -926,6 +930,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         editor.apply();
         if (secureSessionPrefs != null) {
             secureSessionPrefs.saveDraftIdentity(loginAccountInput, loginServerInput);
+            refreshSessionStorageErrorFromPrefs();
         }
     }
 
@@ -991,6 +996,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 AccountStatsPrivacyFormatter.maskValue(connectedGateway, masked), palette));
         content.addView(createConnectionDetailRow("更新时间信息",
                 AccountStatsPrivacyFormatter.maskValue(connectedUpdate, masked), palette));
+        if (!sessionStorageError.isEmpty()) {
+            content.addView(createConnectionDetailRow("本地会话摘要",
+                    AccountStatsPrivacyFormatter.maskValue(sessionStorageError, masked), palette));
+        }
         if (!connectedError.isEmpty()) {
             content.addView(createConnectionDetailRow("失败原因",
                     AccountStatsPrivacyFormatter.maskValue(connectedError, masked), palette));
@@ -1319,6 +1328,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         updateSessionProfiles(null, savedSessionAccounts, false);
         if (secureSessionPrefs != null) {
             secureSessionPrefs.saveDraftIdentity(loginAccountInput, loginServerInput);
+            refreshSessionStorageErrorFromPrefs();
         }
         sessionStateMachine.reset();
         connectedError = "";
@@ -1581,6 +1591,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         loginServerInput = server;
         if (secureSessionPrefs != null) {
             secureSessionPrefs.saveDraftIdentity(account, server);
+            refreshSessionStorageErrorFromPrefs();
         }
         sessionExecutor.execute(() -> {
             logRemoteSessionDebug("submitRemoteLogin 后台任务已启动: account=" + account
@@ -1669,7 +1680,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         savedSessionAccounts = savedAccounts == null ? new ArrayList<>() : new ArrayList<>(savedAccounts);
         if (secureSessionPrefs != null) {
             secureSessionPrefs.saveSession(activeAccount, savedSessionAccounts, active);
+            refreshSessionStorageErrorFromPrefs();
         }
+    }
+
+    // 每次本地会话摘要读写后都同步错误状态，避免页面继续展示过期失败信息。
+    private void refreshSessionStorageErrorFromPrefs() {
+        if (secureSessionPrefs == null) {
+            sessionStorageError = "";
+            return;
+        }
+        sessionStorageError = trim(secureSessionPrefs.getLastStorageError());
     }
 
     // 用新的远程账号摘要覆盖页面当前账号身份。
@@ -1902,9 +1923,74 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     // 渲染首屏之外的统计、表格和交易区块，避免它们参与第一帧竞争。
     private void renderDeferredSnapshotSections() {
         deferredSecondaryRenderPending = false;
+        scheduleDeferredSecondarySectionRender();
+    }
 
+    // 次级区块统一切到后台准备数据，主线程只负责最终绑定。
+    private void scheduleDeferredSecondarySectionRender() {
+        if (binding == null || ioExecutor == null || ioExecutor.isShutdown()) {
+            return;
+        }
+        DeferredSecondaryRenderRequest request = buildDeferredSecondaryRenderRequest();
+        int renderRevision = ++deferredSecondaryRenderRevision;
+        ioExecutor.execute(() -> {
+            try {
+                AccountDeferredSnapshotRenderHelper.PreparedSnapshotSections prepared =
+                        AccountDeferredSnapshotRenderHelper.prepare(request.toHelperRequest());
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed() || binding == null || renderRevision != deferredSecondaryRenderRevision) {
+                        return;
+                    }
+                    applyDeferredSecondaryRenderResult(request, prepared);
+                });
+            } catch (Exception exception) {
+                if (logManager != null) {
+                    logManager.warn("Deferred secondary render failed: " + exception.getMessage());
+                }
+            }
+        });
+    }
+
+    // 冻结一次次级区块刷新所需的状态，避免后台线程读取到中途变化的 UI 选择。
+    private DeferredSecondaryRenderRequest buildDeferredSecondaryRenderRequest() {
+        String product = selectedTradeProductFilter == null || selectedTradeProductFilter.trim().isEmpty()
+                ? FILTER_PRODUCT
+                : selectedTradeProductFilter;
+        String side = selectedTradeSideFilter == null || selectedTradeSideFilter.trim().isEmpty()
+                ? FILTER_SIDE
+                : selectedTradeSideFilter;
+        String sort = selectedTradeSortFilter == null || selectedTradeSortFilter.trim().isEmpty()
+                ? FILTER_SORT
+                : selectedTradeSortFilter;
+        String normalizedSort = FILTER_SORT.equals(sort)
+                ? normalizeSortValue(lastExplicitTradeSortMode)
+                : normalizeSortValue(sort);
+        return new DeferredSecondaryRenderRequest(
+                new ArrayList<>(latestStatsMetrics),
+                new ArrayList<>(baseTrades),
+                new ArrayList<>(allCurvePoints),
+                selectedRange,
+                manualCurveRangeEnabled,
+                manualCurveRangeStartMs,
+                manualCurveRangeEndMs,
+                tradePnlSideMode,
+                tradeWeekdayBasis,
+                product,
+                FILTER_PRODUCT.equals(product),
+                side,
+                FILTER_SIDE.equals(side),
+                sort,
+                normalizedSort,
+                tradeSortDescending
+        );
+    }
+
+    // 把后台准备好的结果一次性绑定到次级区块，避免主线程重复计算。
+    private void applyDeferredSecondaryRenderResult(DeferredSecondaryRenderRequest request,
+                                                    AccountDeferredSnapshotRenderHelper.PreparedSnapshotSections prepared) {
         long stageStartedAt = SystemClock.elapsedRealtime();
-        updateTradeProductOptions();
+        updateTradeProductOptions(prepared.getTradeProducts(), request.tradeProductFilter);
+        updateTradeFilterDisplayTexts(request.tradeProductFilter, request.tradeSideFilter, request.rawSortSelection);
         traceAccountRenderPhase("bind_overview_and_filters",
                 stageStartedAt,
                 baseTrades.size(),
@@ -1920,7 +2006,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 allCurvePoints.size());
 
         stageStartedAt = SystemClock.elapsedRealtime();
-        applyCurrentCurveRangeFromAllPoints();
+        manualCurveRangeEnabled = prepared.getCurveProjection().isManualRangeApplied();
+        syncRangeInputsWithDisplayedCurve(prepared.getCurveProjection().getDisplayedCurvePoints());
+        applyPreparedCurveProjection(prepared.getCurveProjection());
         traceAccountRenderPhase("apply_curve_range",
                 stageStartedAt,
                 baseTrades.size(),
@@ -1928,7 +2016,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
 
         stageStartedAt = SystemClock.elapsedRealtime();
-        refreshTradeStats();
+        bindTradeAnalytics(prepared.getTradeStatsMetrics(),
+                prepared.getTradePnlEntries(),
+                prepared.getTradeScatterPoints(),
+                prepared.getHoldingDurationBuckets(),
+                prepared.getTradeWeekdayEntries(),
+                prepared.getTradePnlTotal());
         traceAccountRenderPhase("refresh_trade_stats",
                 stageStartedAt,
                 baseTrades.size(),
@@ -1944,7 +2037,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
 
         stageStartedAt = SystemClock.elapsedRealtime();
-        refreshTrades(false);
+        bindFilteredTrades(prepared.getFilteredTrades(),
+                prepared.getTradeSummary(),
+                false,
+                request.tradeProductFilter,
+                request.tradeSideFilter,
+                request.normalizedSort);
         traceAccountRenderPhase("refresh_trades",
                 stageStartedAt,
                 baseTrades.size(),
@@ -3810,6 +3908,110 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         private double price;
     }
 
+    // 次级区块后台计算请求，冻结一次渲染所需的筛选条件和数据快照。
+    private static final class DeferredSecondaryRenderRequest {
+        private final List<AccountMetric> latestStatsMetrics;
+        private final List<TradeRecordItem> baseTrades;
+        private final List<CurvePoint> allCurvePoints;
+        private final AccountTimeRange selectedRange;
+        private final boolean manualCurveRangeEnabled;
+        private final long manualCurveRangeStartMs;
+        private final long manualCurveRangeEndMs;
+        private final TradePnlSideMode tradePnlSideMode;
+        private final TradeWeekdayBasis tradeWeekdayBasis;
+        private final String tradeProductFilter;
+        private final boolean allProducts;
+        private final String tradeSideFilter;
+        private final boolean allSides;
+        private final String rawSortSelection;
+        private final String normalizedSort;
+        private final boolean tradeSortDescending;
+
+        private DeferredSecondaryRenderRequest(List<AccountMetric> latestStatsMetrics,
+                                               List<TradeRecordItem> baseTrades,
+                                               List<CurvePoint> allCurvePoints,
+                                               AccountTimeRange selectedRange,
+                                               boolean manualCurveRangeEnabled,
+                                               long manualCurveRangeStartMs,
+                                               long manualCurveRangeEndMs,
+                                               TradePnlSideMode tradePnlSideMode,
+                                               TradeWeekdayBasis tradeWeekdayBasis,
+                                               String tradeProductFilter,
+                                               boolean allProducts,
+                                               String tradeSideFilter,
+                                               boolean allSides,
+                                               String rawSortSelection,
+                                               String normalizedSort,
+                                               boolean tradeSortDescending) {
+            this.latestStatsMetrics = latestStatsMetrics;
+            this.baseTrades = baseTrades;
+            this.allCurvePoints = allCurvePoints;
+            this.selectedRange = selectedRange;
+            this.manualCurveRangeEnabled = manualCurveRangeEnabled;
+            this.manualCurveRangeStartMs = manualCurveRangeStartMs;
+            this.manualCurveRangeEndMs = manualCurveRangeEndMs;
+            this.tradePnlSideMode = tradePnlSideMode;
+            this.tradeWeekdayBasis = tradeWeekdayBasis;
+            this.tradeProductFilter = tradeProductFilter;
+            this.allProducts = allProducts;
+            this.tradeSideFilter = tradeSideFilter;
+            this.allSides = allSides;
+            this.rawSortSelection = rawSortSelection;
+            this.normalizedSort = normalizedSort;
+            this.tradeSortDescending = tradeSortDescending;
+        }
+
+        // 转成纯计算 helper 可直接消费的请求结构。
+        private AccountDeferredSnapshotRenderHelper.PrepareRequest toHelperRequest() {
+            return new AccountDeferredSnapshotRenderHelper.PrepareRequest(
+                    latestStatsMetrics,
+                    baseTrades,
+                    allCurvePoints,
+                    selectedRange,
+                    manualCurveRangeEnabled,
+                    manualCurveRangeStartMs,
+                    manualCurveRangeEndMs,
+                    toHelperTradePnlSideMode(tradePnlSideMode),
+                    toHelperTradeWeekdayBasis(tradeWeekdayBasis),
+                    new AccountDeferredSnapshotRenderHelper.TradeFilterRequest(
+                            tradeProductFilter,
+                            allProducts,
+                            tradeSideFilter,
+                            allSides,
+                            toHelperSortMode(normalizedSort),
+                            tradeSortDescending
+                    )
+            );
+        }
+
+        private static AccountDeferredSnapshotRenderHelper.TradePnlSideMode toHelperTradePnlSideMode(TradePnlSideMode source) {
+            if (source == TradePnlSideMode.BUY) {
+                return AccountDeferredSnapshotRenderHelper.TradePnlSideMode.BUY;
+            }
+            if (source == TradePnlSideMode.SELL) {
+                return AccountDeferredSnapshotRenderHelper.TradePnlSideMode.SELL;
+            }
+            return AccountDeferredSnapshotRenderHelper.TradePnlSideMode.ALL;
+        }
+
+        private static AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis toHelperTradeWeekdayBasis(TradeWeekdayBasis source) {
+            if (source == TradeWeekdayBasis.OPEN_TIME) {
+                return AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.OPEN_TIME;
+            }
+            return AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.CLOSE_TIME;
+        }
+
+        private static AccountDeferredSnapshotRenderHelper.SortMode toHelperSortMode(String normalizedSort) {
+            if (SORT_OPEN_TIME.equals(normalizedSort)) {
+                return AccountDeferredSnapshotRenderHelper.SortMode.OPEN_TIME;
+            }
+            if (SORT_PROFIT.equals(normalizedSort)) {
+                return AccountDeferredSnapshotRenderHelper.SortMode.PROFIT;
+            }
+            return AccountDeferredSnapshotRenderHelper.SortMode.CLOSE_TIME;
+        }
+    }
+
     private void applySnapshot(AccountSnapshot snapshot, boolean remoteConnected) {
         long applySnapshotStartedAt = SystemClock.elapsedRealtime();
         List<PositionItem> snapshotPositions = snapshot.getPositions() == null
@@ -4223,22 +4425,40 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void refreshTradeStats() {
-        boolean masked = isPrivacyMasked();
-        statsAdapter.submitList(buildTradeStatsMetrics(latestStatsMetrics));
-        List<TradePnlBarChartView.Entry> entries = buildTradePnlChartEntries(baseTrades, tradePnlSideMode);
-        binding.tradePnlBarChart.setEntries(entries);
-        List<TradeRecordItem> scopedTrades = filterTradesBySideMode(baseTrades, tradePnlSideMode);
-        List<TradeRecordItem> distributionTrades = filterTradeDistributionSymbols(scopedTrades);
-        binding.tradeDistributionScatterView.setPoints(
-                CurveAnalyticsHelper.buildTradeScatterPoints(distributionTrades, allCurvePoints));
-        binding.holdingDurationDistributionView.setBuckets(
-                CurveAnalyticsHelper.buildHoldingDurationDistribution(scopedTrades));
-        refreshTradeWeekdayStats(scopedTrades);
+        AccountDeferredSnapshotRenderHelper.TradeAnalytics tradeAnalytics =
+                AccountDeferredSnapshotRenderHelper.buildTradeAnalytics(
+                        latestStatsMetrics,
+                        baseTrades,
+                        toHelperTradePnlSideMode(tradePnlSideMode),
+                        toHelperTradeWeekdayBasis(tradeWeekdayBasis),
+                        allCurvePoints
+                );
+        bindTradeAnalytics(
+                tradeAnalytics.getTradeStatsMetrics(),
+                tradeAnalytics.getTradePnlEntries(),
+                tradeAnalytics.getTradeScatterPoints(),
+                tradeAnalytics.getHoldingDurationBuckets(),
+                tradeAnalytics.getTradeWeekdayEntries(),
+                tradeAnalytics.getTradePnlTotal()
+        );
+    }
 
-        double totalPnl = 0d;
-        for (TradePnlBarChartView.Entry entry : entries) {
-            totalPnl += entry.pnl;
-        }
+    // 把已准备好的交易统计结果绑定到页面，避免 UI 层再做集合遍历。
+    private void bindTradeAnalytics(List<AccountMetric> tradeStatsMetrics,
+                                    List<TradePnlBarChartView.Entry> entries,
+                                    List<CurveAnalyticsHelper.TradeScatterPoint> tradeScatterPoints,
+                                    List<CurveAnalyticsHelper.DurationBucket> holdingDurationBuckets,
+                                    List<TradeWeekdayBarChartHelper.Entry> weekdayEntries,
+                                    double totalPnl) {
+        boolean masked = isPrivacyMasked();
+        statsAdapter.submitList(tradeStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(tradeStatsMetrics));
+        binding.tradePnlBarChart.setEntries(entries == null ? new ArrayList<>() : new ArrayList<>(entries));
+        binding.tradeDistributionScatterView.setPoints(
+                tradeScatterPoints == null ? new ArrayList<>() : new ArrayList<>(tradeScatterPoints));
+        binding.holdingDurationDistributionView.setBuckets(
+                holdingDurationBuckets == null ? new ArrayList<>() : new ArrayList<>(holdingDurationBuckets));
+        binding.tradeWeekdayBarChart.setEntries(
+                weekdayEntries == null ? new ArrayList<>() : new ArrayList<>(weekdayEntries));
         String sideLabel;
         if (tradePnlSideMode == TradePnlSideMode.BUY) {
             sideLabel = "买入";
@@ -4351,23 +4571,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void applyCurrentCurveRangeFromAllPoints() {
-        if (manualCurveRangeEnabled) {
-            List<CurvePoint> manual = filterCurveByManualRange(
-                    allCurvePoints,
-                    manualCurveRangeStartMs,
-                    manualCurveRangeEndMs
-            );
-            if (manual.size() >= 2) {
-                displayedCurvePoints = manual;
-                syncRangeInputsWithDisplayedCurve(displayedCurvePoints);
-                renderCurveWithIndicators(displayedCurvePoints);
-                return;
-            }
-            manualCurveRangeEnabled = false;
-        }
-        displayedCurvePoints = filterCurveByRange(allCurvePoints, selectedRange);
-        syncRangeInputsWithDisplayedCurve(displayedCurvePoints);
-        renderCurveWithIndicators(displayedCurvePoints);
+        AccountDeferredSnapshotRenderHelper.CurveProjection curveProjection =
+                AccountDeferredSnapshotRenderHelper.buildCurveProjection(
+                        allCurvePoints,
+                        selectedRange,
+                        manualCurveRangeEnabled,
+                        manualCurveRangeStartMs,
+                        manualCurveRangeEndMs
+                );
+        manualCurveRangeEnabled = curveProjection.isManualRangeApplied();
+        syncRangeInputsWithDisplayedCurve(curveProjection.getDisplayedCurvePoints());
+        applyPreparedCurveProjection(curveProjection);
     }
 
     private void syncRangeInputsWithDisplayedCurve(List<CurvePoint> points) {
@@ -4483,6 +4697,62 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.drawdownChartView.setViewport(viewportStartTs, viewportEndTs);
         binding.drawdownChartView.setPoints(displayedDrawdownPoints);
         binding.dailyReturnChartView.setViewport(viewportStartTs, viewportEndTs);
+        binding.dailyReturnChartView.setPoints(displayedDailyReturnPoints);
+        clearSharedCurveHighlight();
+        indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));
+    }
+
+    // 绑定后台已准备好的曲线投影结果，避免主线程再次重复推导附图。
+    private void applyPreparedCurveProjection(AccountDeferredSnapshotRenderHelper.CurveProjection curveProjection) {
+        if (curveProjection == null) {
+            renderCurveWithIndicators(new ArrayList<>());
+            return;
+        }
+        List<CurvePoint> effectivePoints = curveProjection.getDisplayedCurvePoints() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(curveProjection.getDisplayedCurvePoints());
+        displayedCurvePoints = effectivePoints;
+        CurveAnalyticsHelper.DrawdownSegment drawdownSegment = curveProjection.getDrawdownSegment();
+        curveBaseBalance = curveProjection.getCurveBaseBalance();
+        binding.equityCurveView.setBaseBalance(curveBaseBalance);
+        if (drawdownSegment == null) {
+            binding.equityCurveView.setDrawdownHighlight(0L, 0L, 0d, 0d);
+        } else {
+            binding.equityCurveView.setDrawdownHighlight(
+                    drawdownSegment.getPeakTimestamp(),
+                    drawdownSegment.getValleyTimestamp(),
+                    drawdownSegment.getPeakEquity(),
+                    drawdownSegment.getValleyEquity()
+            );
+        }
+        binding.equityCurveView.setPoints(effectivePoints);
+        defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
+        binding.tvCurveMeta.setText(isPrivacyMasked()
+                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
+                : defaultCurveMeta);
+        if (!secondarySectionsAttached) {
+            return;
+        }
+        binding.positionRatioChartView.setViewport(
+                curveProjection.getViewportStartTs(),
+                curveProjection.getViewportEndTs()
+        );
+        binding.positionRatioChartView.setPoints(effectivePoints);
+        displayedDrawdownPoints = curveProjection.getDrawdownPoints() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(curveProjection.getDrawdownPoints());
+        displayedDailyReturnPoints = curveProjection.getDailyReturnPoints() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(curveProjection.getDailyReturnPoints());
+        binding.drawdownChartView.setViewport(
+                curveProjection.getViewportStartTs(),
+                curveProjection.getViewportEndTs()
+        );
+        binding.drawdownChartView.setPoints(displayedDrawdownPoints);
+        binding.dailyReturnChartView.setViewport(
+                curveProjection.getViewportStartTs(),
+                curveProjection.getViewportEndTs()
+        );
         binding.dailyReturnChartView.setPoints(displayedDailyReturnPoints);
         clearSharedCurveHighlight();
         indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));
@@ -6458,7 +6728,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (collapseExpanded && tradeAdapter != null) {
             tradeAdapter.collapseAllExpandedRows();
         }
-        List<TradeRecordItem> filtered = new ArrayList<>();
         String product = (String) binding.spinnerTradeProduct.getSelectedItem();
         String side = (String) binding.spinnerTradeSide.getSelectedItem();
         String sort = (String) binding.spinnerTradeSort.getSelectedItem();
@@ -6478,33 +6747,78 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         String normalizedSort = FILTER_SORT.equals(sort)
                 ? normalizeSortValue(lastExplicitTradeSortMode)
                 : normalizeSortValue(sort);
+        List<TradeRecordItem> filtered = AccountDeferredSnapshotRenderHelper.buildFilteredTrades(
+                baseTrades,
+                buildTradeFilterRequest(product, side, normalizedSort)
+        );
+        bindFilteredTrades(
+                filtered,
+                AccountDeferredSnapshotRenderHelper.buildTradeSummary(filtered),
+                scrollToTop,
+                product,
+                side,
+                normalizedSort
+        );
+    }
 
-        for (TradeRecordItem item : baseTrades) {
-            if (!FILTER_PRODUCT.equals(product) && !item.getCode().equalsIgnoreCase(product)) {
-                continue;
-            }
-            if (!FILTER_SIDE.equals(side) && !item.getSide().equalsIgnoreCase(normalizeSide(side))) {
-                continue;
-            }
-            filtered.add(item);
+    // 统一构建交易列表筛选请求，保持同步刷新和后台准备走同一套规则。
+    private AccountDeferredSnapshotRenderHelper.TradeFilterRequest buildTradeFilterRequest(String product,
+                                                                                           String side,
+                                                                                           String normalizedSort) {
+        return new AccountDeferredSnapshotRenderHelper.TradeFilterRequest(
+                product,
+                FILTER_PRODUCT.equals(product),
+                side,
+                FILTER_SIDE.equals(side),
+                toHelperSortMode(normalizedSort),
+                tradeSortDescending
+        );
+    }
+
+    // 页面枚举映射到后台计算 helper，避免两套方向口径分叉。
+    private AccountDeferredSnapshotRenderHelper.TradePnlSideMode toHelperTradePnlSideMode(TradePnlSideMode sideMode) {
+        if (sideMode == TradePnlSideMode.BUY) {
+            return AccountDeferredSnapshotRenderHelper.TradePnlSideMode.BUY;
         }
+        if (sideMode == TradePnlSideMode.SELL) {
+            return AccountDeferredSnapshotRenderHelper.TradePnlSideMode.SELL;
+        }
+        return AccountDeferredSnapshotRenderHelper.TradePnlSideMode.ALL;
+    }
+
+    // 页面枚举映射到后台计算 helper，避免星期统计时间基准分叉。
+    private AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis toHelperTradeWeekdayBasis(TradeWeekdayBasis basis) {
+        if (basis == TradeWeekdayBasis.OPEN_TIME) {
+            return AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.OPEN_TIME;
+        }
+        return AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.CLOSE_TIME;
+    }
+
+    // 页面排序标签映射到后台计算 helper，保持同步刷新和异步准备同口径。
+    private AccountDeferredSnapshotRenderHelper.SortMode toHelperSortMode(String normalizedSort) {
         if (SORT_OPEN_TIME.equals(normalizedSort)) {
-            filtered.sort((a, b) -> Long.compare(resolveOpenTime(a), resolveOpenTime(b)));
-        } else if (SORT_PROFIT.equals(normalizedSort)) {
-            filtered.sort((a, b) -> Double.compare(a.getProfit(), b.getProfit()));
-        } else {
-            filtered.sort((a, b) -> Long.compare(resolveCloseTime(a), resolveCloseTime(b)));
+            return AccountDeferredSnapshotRenderHelper.SortMode.OPEN_TIME;
         }
-        if (tradeSortDescending) {
-            java.util.Collections.reverse(filtered);
+        if (SORT_PROFIT.equals(normalizedSort)) {
+            return AccountDeferredSnapshotRenderHelper.SortMode.PROFIT;
         }
+        return AccountDeferredSnapshotRenderHelper.SortMode.CLOSE_TIME;
+    }
+
+    // 把已计算好的交易列表和摘要一次性绑定到页面。
+    private void bindFilteredTrades(List<TradeRecordItem> filtered,
+                                    AccountDeferredSnapshotRenderHelper.TradeSummary tradeSummary,
+                                    boolean scrollToTop,
+                                    String product,
+                                    String side,
+                                    String normalizedSort) {
         logTradeFilterVisibility(filtered, product, side, normalizedSort);
-        tradeAdapter.submitList(filtered);
+        tradeAdapter.submitList(filtered == null ? new ArrayList<>() : new ArrayList<>(filtered));
         binding.recyclerTrades.post(this::updateTradeScrollHandle);
         if (scrollToTop) {
             scrollTradesToTop();
         }
-        updateTradePnlSummary(filtered, product, side, FILTER_DATE);
+        updateTradePnlSummary(tradeSummary, product, side, FILTER_DATE);
     }
 
     private List<TradeRecordItem> filterTradeDistributionSymbols(List<TradeRecordItem> source) {
@@ -6623,16 +6937,23 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                        String productFilter,
                                        String sideFilter,
                                        String dateFilter) {
+        updateTradePnlSummary(
+                AccountDeferredSnapshotRenderHelper.buildTradeSummary(trades),
+                productFilter,
+                sideFilter,
+                dateFilter
+        );
+    }
+
+    // 使用已汇总好的交易摘要绑定盈亏区，避免主线程重复求和。
+    private void updateTradePnlSummary(AccountDeferredSnapshotRenderHelper.TradeSummary tradeSummary,
+                                       String productFilter,
+                                       String sideFilter,
+                                       String dateFilter) {
         boolean masked = isPrivacyMasked();
-        double total = 0d;
-        double storageTotal = 0d;
-        int tradeCount = trades == null ? 0 : trades.size();
-        if (trades != null) {
-            for (TradeRecordItem item : trades) {
-                total += item.getProfit();
-                storageTotal += item.getStorageFee();
-            }
-        }
+        int tradeCount = tradeSummary == null ? 0 : tradeSummary.getTradeCount();
+        double total = tradeSummary == null ? 0d : tradeSummary.getTradeProfitTotal();
+        double storageTotal = tradeSummary == null ? 0d : tradeSummary.getTradeStorageTotal();
         boolean mismatch = Math.abs(total - latestCumulativePnl) >= TRADE_PNL_ZERO_THRESHOLD;
         if (isDefaultTradeFilters(productFilter, sideFilter, dateFilter)
                 && logManager != null
@@ -6713,20 +7034,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (current == null || current.trim().isEmpty()) {
             current = FILTER_PRODUCT;
         }
+        updateTradeProductOptions(AccountDeferredSnapshotRenderHelper.buildTradeProducts(baseTrades), current);
+    }
 
-        List<String> products = new ArrayList<>();
-        for (TradeRecordItem item : baseTrades) {
-            String code = trim(item.getCode()).toUpperCase(Locale.ROOT);
-            if (code.isEmpty() || products.contains(code)) {
-                continue;
-            }
-            products.add(code);
-        }
-        products.sort(String::compareToIgnoreCase);
-
+    // 把已准备好的产品列表绑定到筛选框，避免首帧后再次遍历全部交易。
+    private void updateTradeProductOptions(List<String> products, String current) {
         List<String> options = new ArrayList<>();
         options.add(FILTER_PRODUCT);
-        options.addAll(products);
+        if (products != null) {
+            options.addAll(products);
+        }
         ArrayAdapter<String> adapter = createTradeFilterAdapter(options.toArray(new String[0]));
         binding.spinnerTradeProduct.setAdapter(adapter);
         setSpinnerSelectionByValue(binding.spinnerTradeProduct, current);

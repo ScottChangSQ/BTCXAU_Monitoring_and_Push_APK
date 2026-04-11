@@ -30,11 +30,9 @@ import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.ConnectionStage;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
-import com.binance.monitor.ui.floating.FloatingPositionAggregator;
-import com.binance.monitor.ui.floating.FloatingSymbolCardData;
-import com.binance.monitor.ui.floating.FloatingWindowSnapshot;
+import com.binance.monitor.service.account.AccountHistoryRefreshGate;
+import com.binance.monitor.service.stream.V2StreamSequenceGuard;
 import com.binance.monitor.ui.floating.FloatingWindowManager;
-import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.GatewayUrlResolver;
 import com.binance.monitor.util.NotificationHelper;
@@ -42,7 +40,6 @@ import com.binance.monitor.util.NotificationHelper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -81,9 +78,8 @@ public class MonitorService extends Service {
     private MonitorForegroundNotificationCoordinator foregroundNotificationCoordinator;
     private MonitorFloatingCoordinator floatingCoordinator;
     private boolean pipelineStarted;
-    private volatile boolean v2AccountHistoryRefreshInFlight;
-    private final Object accountHistoryRefreshLock = new Object();
-    private String pendingAccountHistoryRevision = "";
+    private final AccountHistoryRefreshGate accountHistoryRefreshGate = new AccountHistoryRefreshGate();
+    private final V2StreamSequenceGuard v2StreamSequenceGuard = new V2StreamSequenceGuard();
     private volatile ConnectionStage v2StreamStage = ConnectionStage.CONNECTING;
     private volatile boolean v2StreamConnected;
     private volatile long lastV2StreamMessageAt;
@@ -266,6 +262,7 @@ public class MonitorService extends Service {
                     v2StreamStage = event == null ? ConnectionStage.CONNECTING : event.getStage();
                     v2StreamConnected = event != null && event.isConnected();
                     if (v2StreamConnected) {
+                        v2StreamSequenceGuard.reset();
                         lastV2StreamMessageAt = System.currentTimeMillis();
                     }
                     String message = event == null ? "" : event.getMessage();
@@ -309,6 +306,9 @@ public class MonitorService extends Service {
         if (message == null) {
             return;
         }
+        if (!v2StreamSequenceGuard.shouldApply(message.getBusSeq())) {
+            return;
+        }
         V2StreamRefreshPlanner.RefreshPlan plan = V2StreamRefreshPlanner.plan(
                 message.getType(),
                 message.getPayload()
@@ -339,36 +339,25 @@ public class MonitorService extends Service {
                 || accountStatsPreloadManager == null) {
             return;
         }
-        synchronized (accountHistoryRefreshLock) {
-            if (v2AccountHistoryRefreshInFlight) {
-                pendingAccountHistoryRevision = safeHistoryRevision;
-                return;
-            }
-            v2AccountHistoryRefreshInFlight = true;
-            pendingAccountHistoryRevision = "";
+        AccountHistoryRefreshGate.StartDecision startDecision = accountHistoryRefreshGate.tryStart(safeHistoryRevision);
+        if (!startDecision.shouldStart()) {
+            return;
         }
         executorService.execute(() -> {
             try {
                 AccountStatsPreloadManager.Cache cache =
-                        accountStatsPreloadManager.refreshHistoryForRevision(safeHistoryRevision);
+                        accountStatsPreloadManager.refreshHistoryForRevision(startDecision.getRevision());
                 if (cache == null) {
                     clearStreamAccountSnapshot();
                 }
             } catch (Exception exception) {
                 logManager.warn("v2 stream 账户历史补拉失败: " + exception.getMessage());
             } finally {
-                String nextHistoryRevision;
-                synchronized (accountHistoryRefreshLock) {
-                    nextHistoryRevision = pendingAccountHistoryRevision == null
-                            ? ""
-                            : pendingAccountHistoryRevision.trim();
-                    pendingAccountHistoryRevision = "";
-                    v2AccountHistoryRefreshInFlight = false;
-                }
+                AccountHistoryRefreshGate.FinishDecision finishDecision = accountHistoryRefreshGate.finish(safeHistoryRevision);
                 mainHandler.post(() -> {
                     floatingCoordinator.requestRefresh(false);
-                    if (!nextHistoryRevision.isEmpty() && !nextHistoryRevision.equals(safeHistoryRevision)) {
-                        requestAccountHistoryRefreshFromV2(nextHistoryRevision);
+                    if (finishDecision.shouldContinue()) {
+                        requestAccountHistoryRefreshFromV2(finishDecision.getNextRevision());
                     }
                 });
             }

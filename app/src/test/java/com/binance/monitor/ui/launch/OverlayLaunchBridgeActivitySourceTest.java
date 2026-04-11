@@ -18,12 +18,18 @@ public class OverlayLaunchBridgeActivitySourceTest {
                 "src/main/java/com/binance/monitor/ui/launch/OverlayLaunchBridgeActivity.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
+        assertTrue(source.contains("public static final String EXTRA_TARGET_DESTINATION"));
+        assertTrue(source.contains("public static final String TARGET_DESTINATION_CHART"));
+        assertTrue(source.contains("public static final String TARGET_DESTINATION_HOME"));
         assertTrue(source.contains("public static final String EXTRA_TARGET_SYMBOL"));
         assertTrue(source.contains("routeToTargetAndFinish();"));
         assertTrue(source.contains("private void routeToTargetAndFinish()"));
+        assertTrue(source.contains("private void routeToChart(String targetSymbol)"));
         assertTrue(source.contains("new Intent(this, MarketChartActivity.class)"));
         assertTrue(source.contains("putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL"));
-        assertTrue(source.contains("Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP"));
+        assertTrue(source.contains("private void routeToHome()"));
+        assertTrue(source.contains("new Intent(this, MainActivity.class)"));
+        assertTrue(source.contains("intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);"));
         assertTrue(source.contains("finish();"));
     }
 

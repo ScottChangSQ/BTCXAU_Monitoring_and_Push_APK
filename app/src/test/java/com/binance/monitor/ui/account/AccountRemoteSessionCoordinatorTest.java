@@ -14,6 +14,7 @@ import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
 import com.binance.monitor.data.model.v2.session.SessionReceipt;
 import com.binance.monitor.data.model.v2.session.SessionStatusPayload;
 import com.binance.monitor.security.SessionCredentialEncryptor;
+import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.security.SessionSummaryStore;
 
 import org.junit.Test;
@@ -580,6 +581,11 @@ public class AccountRemoteSessionCoordinatorTest {
         private List<RemoteAccountProfile> savedAccounts = Collections.emptyList();
         private boolean active;
         private boolean cleared;
+
+        @Override
+        public SessionSummarySnapshot loadSessionSummary() {
+            return SessionSummarySnapshot.ready(active, activeAccount, savedAccounts, "", "");
+        }
 
         @Override
         public void saveSession(RemoteAccountProfile activeAccount,

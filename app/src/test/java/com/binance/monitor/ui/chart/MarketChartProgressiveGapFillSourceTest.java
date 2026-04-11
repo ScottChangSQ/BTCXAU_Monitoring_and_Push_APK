@@ -16,7 +16,7 @@ public class MarketChartProgressiveGapFillSourceTest {
     public void chartActivityShouldUseCompactRestoreWindow() throws Exception {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
 
-        assertTrue(source.contains("private static final int RESTORE_WINDOW_LIMIT = 300;"));
+        assertTrue(source.contains("private static final int RESTORE_WINDOW_LIMIT = 240;"));
         assertTrue(source.contains("private static final int HISTORY_PAGE_LIMIT = 300;"));
         assertFalse(source.contains("private static final int FULL_WINDOW_LIMIT = 1500;"));
     }

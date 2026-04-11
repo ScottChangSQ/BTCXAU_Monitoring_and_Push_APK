@@ -16,24 +16,37 @@ public class AccountStatsBridgeActivityV2SourceTest {
 
     @Test
     public void accountStatsBridgeActivityShouldRequestUiRefreshThroughPreloadManager() throws Exception {
-        String source = readUtf8(
+        String activitySource = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
         );
+        String coordinatorSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java"
+        );
 
-        assertTrue("账户统计页应通过预加载管理器触发一次 v2 优先的主动刷新",
-                source.contains("preloadManager.fetchForUi(fetchRange)"));
+        assertTrue("账户统计页应把快照刷新链委托给协调器",
+                activitySource.contains("snapshotRefreshCoordinator = new AccountSnapshotRefreshCoordinator("));
+        assertTrue("协调器 Host 应继续通过预加载管理器触发一次 v2 优先的主动刷新",
+                activitySource.contains("return preloadManager == null ? null : preloadManager.fetchForUi(range);"));
+        assertTrue("协调器内部应统一走预加载管理器的 fetchForUi(AccountTimeRange.ALL)",
+                coordinatorSource.contains("host.fetchForUi(AccountTimeRange.ALL);"));
     }
 
     @Test
     public void requestSnapshotShouldStopDirectLegacyGatewayFetch() throws Exception {
-        String source = readUtf8(
+        String activitySource = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
         );
+        String coordinatorSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java"
+        );
 
         assertTrue("账户统计页不应继续自己直连旧 MT5 网关抓快照",
-                !source.contains("gatewayClient.fetch(fetchRange)"));
+                !activitySource.contains("gatewayClient.fetch(fetchRange)")
+                        && !coordinatorSource.contains("gatewayClient.fetch(fetchRange)"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

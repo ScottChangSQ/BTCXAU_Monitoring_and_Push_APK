@@ -50,10 +50,16 @@ public class SecureSessionPrefs implements SessionSummaryStore {
     }
 
     @Override
+    @NonNull
+    public SessionSummarySnapshot loadSessionSummary() {
+        return readSessionSummary();
+    }
+
+    @Override
     public void saveSession(@Nullable RemoteAccountProfile activeAccount,
                             @NonNull List<RemoteAccountProfile> savedAccounts,
                             boolean active) {
-        SessionCache cache = readCache();
+        SessionCache cache = loadCacheForWrite();
         cache.active = active;
         cache.activeAccount = activeAccount;
         cache.savedAccounts = savedAccounts == null ? new ArrayList<>() : new ArrayList<>(savedAccounts);
@@ -62,7 +68,7 @@ public class SecureSessionPrefs implements SessionSummaryStore {
 
     @Override
     public void clearSession() {
-        SessionCache cache = readCache();
+        SessionCache cache = loadCacheForWrite();
         cache.active = false;
         cache.activeAccount = null;
         writeCache(cache);
@@ -70,7 +76,7 @@ public class SecureSessionPrefs implements SessionSummaryStore {
 
     // 保存最近输入的账号和服务器，便于下次打开面板时直接回填。
     public void saveDraftIdentity(@Nullable String account, @Nullable String server) {
-        SessionCache cache = readCache();
+        SessionCache cache = loadCacheForWrite();
         cache.draftAccount = safeText(account);
         cache.draftServer = safeText(server);
         writeCache(cache);
@@ -78,25 +84,25 @@ public class SecureSessionPrefs implements SessionSummaryStore {
 
     // 返回当前是否缓存了激活会话标记。
     public boolean isSessionMarkedActive() {
-        return readCache().active;
+        return loadSessionSummary().isSessionMarkedActive();
     }
 
     // 返回最近一次激活账号摘要。
     @Nullable
     public RemoteAccountProfile getActiveAccount() {
-        return readCache().activeAccount;
+        return loadSessionSummary().getActiveAccount();
     }
 
     // 返回最近一次已保存账号列表缓存。
     @NonNull
     public List<RemoteAccountProfile> getSavedAccounts() {
-        return Collections.unmodifiableList(readCache().savedAccounts);
+        return Collections.unmodifiableList(loadSessionSummary().getSavedAccountsSnapshot());
     }
 
     @Override
     @NonNull
     public List<RemoteAccountProfile> getSavedAccountsSnapshot() {
-        return new ArrayList<>(readCache().savedAccounts);
+        return loadSessionSummary().getSavedAccountsSnapshot();
     }
 
     public boolean hasStorageFailure() {
@@ -111,24 +117,25 @@ public class SecureSessionPrefs implements SessionSummaryStore {
     // 返回最近输入的账号。
     @NonNull
     public String getDraftAccount(@Nullable String fallback) {
-        String value = safeText(readCache().draftAccount);
+        String value = loadSessionSummary().getDraftAccount();
         return value.isEmpty() ? safeText(fallback) : value;
     }
 
     // 返回最近输入的服务器。
     @NonNull
     public String getDraftServer(@Nullable String fallback) {
-        String value = safeText(readCache().draftServer);
+        String value = loadSessionSummary().getDraftServer();
         return value.isEmpty() ? safeText(fallback) : value;
     }
 
-    // 读取并解密本地会话缓存。
+    // 读取并解密本地会话缓存，显式区分空缓存和读取失败。
     @NonNull
-    private SessionCache readCache() {
+    private SessionSummarySnapshot readSessionSummary() {
         String encodedPayload = safeText(preferences.getString(KEY_PAYLOAD, ""));
         String encodedIv = safeText(preferences.getString(KEY_IV, ""));
         if (encodedPayload.isEmpty() || encodedIv.isEmpty()) {
-            return new SessionCache();
+            lastStorageError = "";
+            return SessionSummarySnapshot.empty();
         }
         try {
             byte[] iv = Base64.getDecoder().decode(encodedIv);
@@ -137,13 +144,27 @@ public class SecureSessionPrefs implements SessionSummaryStore {
             cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), new GCMParameterSpec(GCM_TAG_BITS, iv));
             byte[] plain = cipher.doFinal(payload);
             JSONObject root = new JSONObject(new String(plain, StandardCharsets.UTF_8));
+            SessionCache cache = SessionCache.fromJson(root);
             lastStorageError = "";
-            return SessionCache.fromJson(root);
+            return SessionSummarySnapshot.ready(
+                    cache.active,
+                    cache.activeAccount,
+                    cache.savedAccounts,
+                    cache.draftAccount,
+                    cache.draftServer
+            );
         } catch (Exception exception) {
             lastStorageError = "读取安全会话缓存失败: " + exception.getClass().getSimpleName();
             Log.w(TAG, lastStorageError, exception);
-            return new SessionCache();
+            return SessionSummarySnapshot.storageFailure(lastStorageError);
         }
+    }
+
+    // 写入前统一把当前可读缓存转回可变对象，失败时明确从空结构重新开始。
+    @NonNull
+    private SessionCache loadCacheForWrite() {
+        SessionSummarySnapshot snapshot = loadSessionSummary();
+        return SessionCache.fromSnapshot(snapshot);
     }
 
     // 加密并写回本地会话缓存。
@@ -241,6 +262,21 @@ public class SecureSessionPrefs implements SessionSummaryStore {
                     }
                 }
             }
+            return cache;
+        }
+
+        // 从只读快照恢复成可写缓存对象，供后续写回统一复用。
+        @NonNull
+        static SessionCache fromSnapshot(@Nullable SessionSummarySnapshot snapshot) {
+            SessionCache cache = new SessionCache();
+            if (snapshot == null || snapshot.hasStorageFailure()) {
+                return cache;
+            }
+            cache.active = snapshot.isSessionMarkedActive();
+            cache.activeAccount = snapshot.getActiveAccount();
+            cache.savedAccounts = snapshot.getSavedAccountsSnapshot();
+            cache.draftAccount = safeText(snapshot.getDraftAccount());
+            cache.draftServer = safeText(snapshot.getDraftServer());
             return cache;
         }
 

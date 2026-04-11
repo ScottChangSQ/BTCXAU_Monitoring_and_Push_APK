@@ -15,6 +15,7 @@ from statistics import mean, pstdev
 from threading import Condition, Event, Lock, RLock, Thread
 import time
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import uvicorn
 from dotenv import load_dotenv
@@ -77,12 +78,15 @@ MT5_INIT_TIMEOUT_MS = _read_bounded_env_int(
     "MT5_INIT_TIMEOUT_MS",
     default=50000,
     minimum=1000,
-    maximum=50000,
+    # 部署脚本与 .env.example 允许更长的初始化/登录超时（例如 90s）。
+    # 这里不应把用户显式配置静默截断到 50s，否则会造成“部署口径和服务端真值不一致”。
+    maximum=120000,
 )
 try:
     MT5_TIME_OFFSET_MINUTES = int(os.getenv("MT5_TIME_OFFSET_MINUTES", "0"))
 except Exception:
     MT5_TIME_OFFSET_MINUTES = 0
+MT5_SERVER_TIMEZONE = os.getenv("MT5_SERVER_TIMEZONE", "").strip()
 HOST = os.getenv("GATEWAY_HOST", "0.0.0.0")
 PORT = int(os.getenv("GATEWAY_PORT", "8787"))
 GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull | ea
@@ -873,17 +877,48 @@ def _stop_v2_bus_producer() -> None:
         v2_bus_producer_started = False
 
 def _apply_mt5_time_offset_ms(value: int) -> int:
-    """按配置补偿 MT5 返回时间与本地展示口径之间的固定偏移。"""
+    """把 MT5 服务器 wall-clock 毫秒时间归一化成 UTC 毫秒时间。"""
     if value <= 0:
         return 0
+    zoneinfo = _resolve_mt5_server_zoneinfo()
+    if zoneinfo is not None:
+        wall_clock = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc).replace(tzinfo=None)
+        localized = wall_clock.replace(tzinfo=zoneinfo)
+        return int(localized.astimezone(timezone.utc).timestamp() * 1000)
     return int(value + MT5_TIME_OFFSET_MINUTES * 60 * 1000)
 
 
 def _strip_mt5_time_offset_ms(value: int) -> int:
-    """把展示口径时间还原回 MT5 原始时间轴。"""
+    """把 UTC 毫秒时间还原成 MT5 服务器 wall-clock 毫秒时间。"""
     if value <= 0:
         return 0
+    zoneinfo = _resolve_mt5_server_zoneinfo()
+    if zoneinfo is not None:
+        utc_time = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
+        server_local = utc_time.astimezone(zoneinfo)
+        wall_clock_as_utc = datetime(
+            server_local.year,
+            server_local.month,
+            server_local.day,
+            server_local.hour,
+            server_local.minute,
+            server_local.second,
+            server_local.microsecond,
+            tzinfo=timezone.utc,
+        )
+        return int(wall_clock_as_utc.timestamp() * 1000)
     return int(value - MT5_TIME_OFFSET_MINUTES * 60 * 1000)
+
+
+def _resolve_mt5_server_zoneinfo() -> Optional[ZoneInfo]:
+    """解析 MT5 服务器时区配置；配置非法时直接抛出明确错误。"""
+    server_timezone = str(MT5_SERVER_TIMEZONE or "").strip()
+    if not server_timezone:
+        return None
+    try:
+        return ZoneInfo(server_timezone)
+    except Exception as exc:
+        raise ValueError(f"无效的 MT5_SERVER_TIMEZONE 配置：{server_timezone}") from exc
 
 
 def _deal_time_ms(deal: Any) -> int:
@@ -4969,6 +5004,7 @@ def health():
             "mt5ConfiguredServer": SERVER,
             "mt5PathEnv": PATH or "",
             "mt5TimeOffsetMinutes": MT5_TIME_OFFSET_MINUTES,
+            "mt5ServerTimezone": MT5_SERVER_TIMEZONE,
             "mt5LastConnectedPath": mt5_last_connected_path,
             "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
             "eaSnapshotFresh": _is_ea_snapshot_fresh(),
@@ -5019,6 +5055,7 @@ def source_status():
         "mt5ConfiguredServer": SERVER,
         "mt5PathEnv": PATH or "",
         "mt5TimeOffsetMinutes": MT5_TIME_OFFSET_MINUTES,
+        "mt5ServerTimezone": MT5_SERVER_TIMEZONE,
         "mt5LastConnectedPath": mt5_last_connected_path,
         "mt5DiscoveredTerminalCandidates": MT5_TERMINAL_CANDIDATES[:6],
         "eaSnapshotFresh": _is_ea_snapshot_fresh(),

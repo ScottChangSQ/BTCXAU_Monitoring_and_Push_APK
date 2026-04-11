@@ -1,6 +1,7 @@
 package com.binance.monitor.ui.account;
 
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 import org.junit.Test;
 
@@ -95,7 +96,8 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertTrue(source.contains("overviewAdapter.submitList(overview);"));
         assertTrue(!source.contains("overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics));"));
         assertTrue(source.contains("indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));"));
-        assertTrue(source.contains("statsAdapter.submitList(buildTradeStatsMetrics(latestStatsMetrics));"));
+        assertTrue(source.contains("bindTradeAnalytics("));
+        assertTrue(source.contains("statsAdapter.submitList(tradeStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(tradeStatsMetrics));"));
     }
 
     @Test
@@ -261,5 +263,23 @@ public class AccountStatsBridgeSnapshotSourceTest {
 
         assertTrue(activitySource.contains("private boolean hasImmediateAccountContent()"));
         assertTrue(activitySource.contains("if (!hasImmediateAccountContent()) {\n            return;\n        }"));
+    }
+
+    @Test
+    public void deferredSecondaryRenderShouldPrepareHeavySectionsOffMainThread() throws Exception {
+        String activitySource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(activitySource.contains("private int deferredSecondaryRenderRevision;"));
+        assertTrue(activitySource.contains("private void scheduleDeferredSecondarySectionRender()"));
+        assertTrue(activitySource.contains("private DeferredSecondaryRenderRequest buildDeferredSecondaryRenderRequest()"));
+        assertTrue(activitySource.contains("private void applyDeferredSecondaryRenderResult("));
+        assertTrue(activitySource.contains("AccountDeferredSnapshotRenderHelper.prepare(request.toHelperRequest())"));
+        assertTrue(activitySource.contains("ioExecutor.execute(() -> {"));
+        assertFalse(activitySource.contains("private void renderDeferredSnapshotSections() {\n        deferredSecondaryRenderPending = false;\n\n        long stageStartedAt = SystemClock.elapsedRealtime();\n        updateTradeProductOptions();"));
+        assertFalse(activitySource.contains("stageStartedAt = SystemClock.elapsedRealtime();\n        refreshTradeStats();"));
+        assertFalse(activitySource.contains("stageStartedAt = SystemClock.elapsedRealtime();\n        refreshTrades(false);"));
+        assertFalse(activitySource.contains("stageStartedAt = SystemClock.elapsedRealtime();\n        applyCurrentCurveRangeFromAllPoints();"));
     }
 }

@@ -95,6 +95,22 @@ public class AccountDomainDependencySourceTest {
                 secureSessionPrefs.contains("import com.binance.monitor.ui.account.AccountRemoteSessionCoordinator;"));
     }
 
+    @Test
+    public void auditHelpersShouldLiveInDedicatedPackages() throws Exception {
+        assertTrue("账户页会话恢复助手应落到 session 子包",
+                exists("app/src/main/java/com/binance/monitor/ui/account/session/AccountSessionRestoreHelper.java",
+                        "src/main/java/com/binance/monitor/ui/account/session/AccountSessionRestoreHelper.java"));
+        assertTrue("账户页次级渲染助手应保留在账户页包内，避免为整理包结构而打破包级职责边界",
+                exists("app/src/main/java/com/binance/monitor/ui/account/AccountDeferredSnapshotRenderHelper.java",
+                        "src/main/java/com/binance/monitor/ui/account/AccountDeferredSnapshotRenderHelper.java"));
+        assertTrue("账户历史补拉 gate 应落到 service.account 子包",
+                exists("app/src/main/java/com/binance/monitor/service/account/AccountHistoryRefreshGate.java",
+                        "src/main/java/com/binance/monitor/service/account/AccountHistoryRefreshGate.java"));
+        assertTrue("stream 顺序守卫应落到 service.stream 子包",
+                exists("app/src/main/java/com/binance/monitor/service/stream/V2StreamSequenceGuard.java",
+                        "src/main/java/com/binance/monitor/service/stream/V2StreamSequenceGuard.java"));
+    }
+
     private static boolean exists(String... candidates) {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

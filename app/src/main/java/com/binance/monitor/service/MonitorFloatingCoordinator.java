@@ -124,7 +124,7 @@ final class MonitorFloatingCoordinator {
         floatingRefreshScheduled = false;
         lastFloatingRefreshAt = 0L;
         if (floatingWindowManager != null) {
-            floatingWindowManager.hide();
+            floatingWindowManager.destroy();
         }
     }
 

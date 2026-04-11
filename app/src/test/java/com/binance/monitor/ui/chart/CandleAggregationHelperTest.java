@@ -4,6 +4,7 @@
 package com.binance.monitor.ui.chart;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.binance.monitor.data.model.CandleEntry;
@@ -215,6 +216,59 @@ public class CandleAggregationHelperTest {
         assertEquals(102d, merged.getClose(), 1e-9);
         assertEquals(6d, merged.getVolume(), 1e-9);
         assertEquals(60d, merged.getQuoteVolume(), 1e-9);
+    }
+
+    @Test
+    public void retainClosedTargetCandlesShouldKeepSingleClosedWeeklyBucket() {
+        long weekStart = 1_700_006_400_000L;
+        List<CandleEntry> aggregated = Arrays.asList(
+                new CandleEntry(
+                        "BTCUSDT",
+                        weekStart,
+                        weekStart + 7L * 24L * 60L * 60_000L - 1L,
+                        100d,
+                        110d,
+                        95d,
+                        108d,
+                        21d,
+                        210d
+                )
+        );
+
+        List<CandleEntry> retained = CandleAggregationHelper.retainClosedTargetCandles(
+                aggregated,
+                "1w",
+                weekStart + 8L * 24L * 60L * 60_000L
+        );
+
+        assertEquals(1, retained.size());
+        assertEquals(weekStart, retained.get(0).getOpenTime());
+    }
+
+    @Test
+    public void retainClosedTargetCandlesShouldDropTrailingOpenWeeklyBucket() {
+        long weekStart = 1_700_006_400_000L;
+        List<CandleEntry> aggregated = Arrays.asList(
+                new CandleEntry(
+                        "BTCUSDT",
+                        weekStart,
+                        weekStart + 2L * 24L * 60L * 60_000L - 1L,
+                        100d,
+                        105d,
+                        98d,
+                        103d,
+                        6d,
+                        60d
+                )
+        );
+
+        List<CandleEntry> retained = CandleAggregationHelper.retainClosedTargetCandles(
+                aggregated,
+                "1w",
+                weekStart + 2L * 24L * 60L * 60_000L
+        );
+
+        assertTrue(retained.isEmpty());
     }
 
     private CandleEntry candle(long openTime,

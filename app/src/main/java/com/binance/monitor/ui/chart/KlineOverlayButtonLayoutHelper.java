@@ -1,6 +1,6 @@
 /*
  * K 线悬浮按钮布局辅助，负责按主图与 VOL 图的实际坐标计算按钮落点。
- * 供 MarketChartActivity 统一放置“历史成交 开/关”等图层按钮。
+ * 供 MarketChartActivity 统一放置“历史成交 开/关”“当前仓位 开/关”等图层按钮。
  */
 package com.binance.monitor.ui.chart;
 
@@ -43,19 +43,21 @@ final class KlineOverlayButtonLayoutHelper {
     private KlineOverlayButtonLayoutHelper() {
     }
 
-    // 历史成交开关始终贴在 K 线主图左下角，不再跟随 VOL 附图移动。
+    // 左下角图层开关统一按堆叠层级定位，最底部贴主图左下角，其余按钮依次向上排布。
     @NonNull
-    static Position resolveHistoryTradeButtonPosition(Bounds priceBounds,
-                                                      Bounds volumeBounds,
-                                                      int buttonWidth,
-                                                      int buttonHeight,
-                                                      int insetPx) {
+    static Position resolveBottomLeftStackedButtonPosition(Bounds priceBounds,
+                                                           int buttonWidth,
+                                                           int buttonHeight,
+                                                           int insetPx,
+                                                           int stackIndex,
+                                                           int spacingPx) {
         Bounds anchor = priceBounds;
         if (anchor == null || anchor.isEmpty()) {
             return new Position(0, 0);
         }
         int left = Math.max(0, anchor.left + Math.max(0, insetPx));
-        int top = Math.max(0, anchor.bottom - Math.max(0, buttonHeight) - Math.max(0, insetPx));
+        int verticalOffset = Math.max(0, stackIndex) * (Math.max(0, buttonHeight) + Math.max(0, spacingPx));
+        int top = Math.max(0, anchor.bottom - Math.max(0, buttonHeight) - Math.max(0, insetPx) - verticalOffset);
         return new Position(left, top);
     }
 }

@@ -1,6 +1,6 @@
 # BTC/XAU 异常交易监控 Android App
 
-一个用于监控 BTC / XAU 行情、展示 MT5 账户状态、接收异常提醒的 Android App + Python 网关项目。当前仓库内 1-6 步主链收口、BUG review 收口和最终自动化验收均已完成，App 与服务端已经统一到单入口、单真值、纯消费展示的结构。
+一个用于监控 BTC / XAU 行情、展示 MT5 账户状态、接收异常提醒的 Android App + Python 网关项目。当前仓库内 1-6 步主链收口、BUG review 收口和本轮全量自动化复核已经完成，App 与服务端已经统一到单入口、单真值、纯消费展示的结构；正式整改仍以 `AUDIT_REMEDIATION_LEDGER.md` 中尚未闭合的条目为准。
 
 ## 项目功能简介
 
@@ -23,6 +23,7 @@
 - 账户统计页命中同签名预加载缓存时，不再重复整页 `applySnapshot()`，切页返回时不会再把总览、曲线、持仓和成交区整套重画一遍
 - 设置首页和设置子页切换到底部其他 tab 时，不再通过 `finish()` 销毁自己，tab 切换语义已统一为前台切换
 - 服务端 `v2_account` 账户 helper 也已经收口为严格 canonical 字段消费，只接受显式 `productId / marketSymbol / tradeSymbol / productName`
+- 网关侧 MT5 时间主链现在优先按 `MT5_SERVER_TIMEZONE` 把服务器 wall-clock 时间归一化成 UTC；历史成交、账户曲线和 K 线图成交标记不再各自补时区
 - 会话链已经收口为服务端单真值，当前激活账号只认 `status.activeAccount`
 - 历史、曲线、比例补算和启发式归并已经从主链移除，页面只基于服务端给出的标准数据做展示
 - 服务端轻快照主链不再展开全量历史，但会返回 `accountMeta.historyRevision`（由成交历史 canonical digest 生成），供 App 只在历史修订号变化时补拉全量历史；缓存 miss 也不再并发放大
@@ -80,6 +81,7 @@
 - 行情监控主界面的概览指标现在固定消费服务端 `latestClosedCandle`，不再误用当前分钟未闭合 patch
 - 本地仓储已经停止把旧历史、旧曲线、轻量快照拼回当前真值；轻量快照刷新时只保留上一轮全量历史的展示结果，不再把历史区清空
 - 服务端 `v2/account/history` 已经停止旧别名兼容、价格回填和启发式成交归并
+- 服务端 MT5 时间归一化现在优先按 `MT5_SERVER_TIMEZONE` 做服务器时区换算；历史成交、账户曲线和图表成交标记不再各自用固定分钟差补时间
 - 服务端 `v2/session/*` 已完成登录、切换、退出、状态查询、公钥获取的最小闭环
 - 会话字段名已经统一只认 `activeAccount / active`，不再消费 `account / isActive` 旧别名
 - BTC/XAU 产品映射已经统一收口，悬浮窗、图表、异常链、统计分析都不再靠字符串猜品种
@@ -169,7 +171,7 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
   账户页入口，负责消费账户运行态、历史和会话状态。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountOverviewCumulativeMetricsCalculator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountOverviewCumulativeMetricsCalculator.java)
   账户累计指标真值辅助工具，负责按“曲线优先，其次历史成交 + 当前持仓”的规则决定是否输出累计盈亏、累计收益率。
-- [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPreloadManager.java)
+- [app/src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java)
   账户页预加载管理器，负责应用运行态并按 `historyRevision` 管理历史缓存；内存缓存为空时会回退到本地已持久化 revision 判断是否需要全量补拉。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountRemoteSessionCoordinator.java)
   账户页远程会话协调器，负责登录、切换、退出和切换后收口。
@@ -205,15 +207,15 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 
 ## 待办事项
 
-- 真机 + 已部署 HTTPS 服务器的人工作业联调还需要做一次最终现场确认
+- 正式整改台账仍待执行：P0-1 账户页首帧性能、P1-1 AccountStatsBridgeActivity 拆分、P2-2 并发收口；仓库外仍保留一次“真机 + 已部署 HTTPS 服务器”的现场人工联调记录
 - 部署现场需要再次确认域名、证书、443 放行和 `/v2/session/*` 的 HTTPS 暴露状态
 
 ## 阶段验收说明
 
-- 当前 1-6 步代码收口已经完成，自动化验收已经通过
-- 2026-04-10 最终收口复核：仓库内所有任务已完成代码与文档收口；当前唯一不在仓库内闭合范围中的事项，是“真机 + 已部署 HTTPS 服务器”的现场人工联调记录
-- App 最终总验收已通过：执行上面的 App 总验收命令，结果为 `BUILD SUCCESSFUL`
-- 服务端最终总验收已通过：执行上面的服务端总验收命令，结果为 `Ran 135 tests ... OK`
+- 当前 1-6 步代码收口已经完成，最近一轮多模型复核与真实问题修复也已完成
+- 2026-04-11 最终收口复核：本轮复核、修复、测试与文档同步已收口；正式整改台账仍保留 P0-1 / P1-1 / P2-2 三项仓库内待办，仓库外仍保留“真机 + 已部署 HTTPS 服务器”的现场人工联调记录
+- App 最终总验收已通过：执行 `.\gradlew.bat :app:auditCriticalCheckstyle :app:compileDebugJavaWithJavac :app:testDebugUnitTest`，结果为 `BUILD SUCCESSFUL`
+- 服务端最终总验收已通过：执行 `python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v`，结果为 `Ran 229 tests ... OK`
 - 2026-04-08 新增验证：启动脚本去噪回归、Windows bundle 回归、App 入口固定回归均已通过
 - 2026-04-08 新增验证：轻快照去全历史扫描、轻快照 single-flight、bundle 指纹校验、websocket 验收链均已通过
 - 2026-04-08 新增验证：`logged_out` 状态下 `v2/stream` 不再触发 MT5，同步链回归通过
@@ -234,4 +236,4 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - 2026-04-10 本轮新增验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.data.local.db.AppDatabaseProviderSourceTest" --tests "com.binance.monitor.data.local.db.repository.AccountStorageRepositoryTest" --tests "com.binance.monitor.ui.account.AccountOverviewCumulativeMetricsCalculatorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeOverviewSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionAnnotationSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartV2SourceTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest"` 已通过，覆盖“累计指标真值覆盖、图表页首帧账户叠加恢复、当前持仓/挂单 annotation 明细链”这一组约束
 - 2026-04-10 本轮新增验证：`.\gradlew.bat :app:assembleDebug` 已通过，最新 APK 已输出到 `app/build/outputs/apk/debug/app-debug.apk`
 - 2026-04-10 最终 BUG review 与任务收口新增验证：`.\gradlew.bat :app:testDebugUnitTest` 已通过；`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py"` 已通过，结果为 `Ran 226 tests ... OK`
-- 当前唯一未完成的是“真机 + 已部署 HTTPS 服务器”的人工联调记录
+- 2026-04-11 全量复核新增验证：修复了图表页 `onNewIntent` 切品种旧上下文未先失效、账户页本地会话摘要旧错误残留、部署样例 `MT5_INIT_TIMEOUT_MS=90000` 被服务端静默截断，以及旧 source test 未跟随职责下沉的问题；`.\gradlew.bat :app:auditCriticalCheckstyle :app:compileDebugJavaWithJavac :app:testDebugUnitTest` 已通过；`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 已通过，结果为 `Ran 229 tests ... OK`

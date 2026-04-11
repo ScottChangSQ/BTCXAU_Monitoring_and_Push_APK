@@ -7,19 +7,18 @@ import org.junit.Test;
 public class KlineOverlayButtonLayoutHelperTest {
 
     @Test
-    public void resolveHistoryTradeButtonPositionShouldPinToPricePaneBottomLeftEvenWhenVolumePaneExists() {
+    public void resolveBottomLeftStackedButtonPositionShouldPinHistoryTradeToPricePaneBottomLeft() {
         KlineOverlayButtonLayoutHelper.Bounds priceBounds =
                 new KlineOverlayButtonLayoutHelper.Bounds(20, 10, 220, 150);
-        KlineOverlayButtonLayoutHelper.Bounds volumeBounds =
-                new KlineOverlayButtonLayoutHelper.Bounds(20, 150, 220, 220);
 
         KlineOverlayButtonLayoutHelper.Position position =
-                KlineOverlayButtonLayoutHelper.resolveHistoryTradeButtonPosition(
+                KlineOverlayButtonLayoutHelper.resolveBottomLeftStackedButtonPosition(
                         priceBounds,
-                        volumeBounds,
                         60,
                         20,
-                        2
+                        2,
+                        0,
+                        4
                 );
 
         assertEquals(22, position.left);
@@ -27,20 +26,21 @@ public class KlineOverlayButtonLayoutHelperTest {
     }
 
     @Test
-    public void resolveHistoryTradeButtonPositionShouldFallbackToPricePaneWhenVolumeHidden() {
+    public void resolveBottomLeftStackedButtonPositionShouldPlacePositionToggleAboveHistoryTrade() {
         KlineOverlayButtonLayoutHelper.Bounds priceBounds =
                 new KlineOverlayButtonLayoutHelper.Bounds(20, 10, 220, 150);
 
         KlineOverlayButtonLayoutHelper.Position position =
-                KlineOverlayButtonLayoutHelper.resolveHistoryTradeButtonPosition(
+                KlineOverlayButtonLayoutHelper.resolveBottomLeftStackedButtonPosition(
                         priceBounds,
-                        KlineOverlayButtonLayoutHelper.Bounds.empty(),
                         60,
                         20,
-                        2
+                        2,
+                        1,
+                        4
                 );
 
         assertEquals(22, position.left);
-        assertEquals(128, position.top);
+        assertEquals(104, position.top);
     }
 }
