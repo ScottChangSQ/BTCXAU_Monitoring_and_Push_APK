@@ -1,0 +1,58 @@
+--------- beginning of system
+04-11 20:56:25.060  3590  9024 D ActivityTaskManager: setAppVisibility(Token{e95e916 ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}}, visible=true):  visible=false mVisibleRequested=false
+04-11 20:56:25.061  3590  9024 D ActivityTaskManager: setVisibility(Token{e95e916 ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}}, visible=true) defer commitVisibility for transition collecting
+04-11 20:56:25.066  3590  9024 D ActivityTaskManager: commitVisibility: ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}: visible=true visibleRequested=true, isInTransition=true 
+04-11 20:56:25.162  3590  8311 D ActivityTaskManager: Skipping, invisible task: Task{735fad8 #2 type=undefined I=com.android.launcher/.Launcher}
+04-11 20:56:25.162  3590  8311 D ActivityTaskManager: after skip size:9,pre-Filtered:com.binance.monitor # com.mobilecodex.nativeapp # com.tencent.mm # com.android.contacts # com.coloros.filemanager # com.tencent.mm # com.xingin.xhs # com.xunmeng.pinduoduo # com.ss.android.ugc.aweme # 
+04-11 20:56:25.164  3590  8311 D ActivityTaskManager: onWindowFocusChanged Task{735fad8 #2 type=undefined I=com.android.launcher/.Launcher} would transfer to compact
+04-11 20:56:25.164  3590  8311 D ActivityTaskManager: NFW_setLastResumedActivityUncheckLocked:true r:ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2} currentFocus:Window{87c9d33 u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}
+--------- beginning of main
+04-11 20:56:25.305 13143 13223 I ChainTrace: stream type=syncEvent gapMs=992 refreshMarket=true
+04-11 20:56:26.363  3590  8779 D ActivityTaskManager: onWindowFocusChanged Task{f118194 #13202 type=standard A=10512:com.binance.monitor} would transfer to compact
+04-11 20:56:26.363  3590  8779 D ActivityTaskManager: NFW_setLastResumedActivityUncheckLocked:true r:ActivityRecord{216241062 u0 com.binance.monitor/.launcher.IconFinancialAlias t13202} currentFocus:Window{763c9b2 u0 com.android.launcher/com.android.launcher.Launcher}
+04-11 20:56:26.369  3590  8779 D ActivityTaskManager: setAppVisibility(Token{e95e916 ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}}, visible=false):  visible=true mVisibleRequested=true
+04-11 20:56:26.369  3590  8779 D ActivityTaskManager: setVisibility defer change visibility for:ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2} visible:false
+04-11 20:56:26.369  3590  8779 D ActivityTaskManager: setVisibility(Token{e95e916 ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}}, visible=false) defer commitVisibility for inFinishingTransition
+04-11 20:56:26.373  3590  8779 D ActivityTaskManager: commitVisibility: ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}: visible=false visibleRequested=false, isInTransition=false 
+04-11 20:56:26.374  3590  8779 D ActivityTaskManager: setVisibility after transition for:ActivityRecord{75462386 u0 com.android.launcher/.Launcher t2}
+04-11 20:56:27.308 13143 13223 I ChainTrace: stream type=syncEvent gapMs=2003 refreshMarket=true
+04-11 20:56:29.308 13143 13223 I ChainTrace: stream type=syncEvent gapMs=2000 refreshMarket=true
+04-11 20:56:30.315 13143 13223 I ChainTrace: stream type=syncEvent gapMs=1007 refreshMarket=true
+04-11 20:56:32.313 13143 13223 I ChainTrace: stream type=syncEvent gapMs=1998 refreshMarket=true
+04-11 20:56:33.312 13143 13223 I ChainTrace: stream type=syncEvent gapMs=999 refreshMarket=true
+04-11 20:56:35.315 13143 13223 I ChainTrace: stream type=syncEvent gapMs=2003 refreshMarket=true
+04-11 20:56:36.316 13143 13223 I ChainTrace: stream type=syncEvent gapMs=1001 refreshMarket=true
+04-11 20:56:36.895  3590  9134 D ActivityTaskManager: validateStartingWindowTheme:  Pkg=com.binance.monitor, Translucent=false, Floating=false, ShowWallpaper=false, Disable=false, LaunchSource=4, Prev=null, LaunchedFromPackage=com.binance.monitor
+04-11 20:56:36.895  3590  9134 D ActivityTaskManager: addStartingWindow for ActivityRecord{173095470 u0 com.binance.monitor/.ui.chart.MarketChartActivity t13202}, mainWin=null, state=INITIALIZING, isKeyguardLocked=false, isKeyguardGoingAway=false
+04-11 20:56:36.895  3590  9134 D ActivityTaskManager: getStartingWindowType: , newTask=false, taskSwitch=false, processRunning=true, allowTaskSnapshot=true, activityCreated=false, activityAllDrawn=false, snapshot exist: false
+04-11 20:56:36.897  3590  9134 I ActivityTaskManager: START u0 {flg=0x24000000 xflg=0x4 cmp=com.binance.monitor/.ui.chart.MarketChartActivity mCallingUid=10512} with LAUNCH_MULTIPLE from uid 10512 (sr=216241062) (BAL_ALLOW_VISIBLE_WINDOW (callingUid has visible window)) result code=0
+04-11 20:56:36.900  3590  9134 I ActivityTaskManager: The Process com.binance.monitor Already Exists in BG. So sending its PID: 13143
+04-11 20:56:36.901  3590  9134 D ActivityTaskManager: setAppVisibility(Token{9489f5c ActivityRecord{173095470 u0 com.binance.monitor/.ui.chart.MarketChartActivity t13202}}, visible=true):  visible=false mVisibleRequested=false
+04-11 20:56:36.901  3590  9134 D ActivityTaskManager: setVisibility(Token{9489f5c ActivityRecord{173095470 u0 com.binance.monitor/.ui.chart.MarketChartActivity t13202}}, visible=true) defer commitVisibility for transition collecting
+04-11 20:56:36.901  3590  9134 D ActivityTaskManager: setAppVisibility(Token{c67743d ActivityRecord{216241062 u0 com.binance.monitor/.launcher.IconFinancialAlias t13202}}, visible=false):  visible=true mVisibleRequested=true
+04-11 20:56:36.901  3590  9134 D ActivityTaskManager: setVisibility(Token{c67743d ActivityRecord{216241062 u0 com.binance.monitor/.launcher.IconFinancialAlias t13202}}, visible=false) defer commitVisibility for transition collecting
+04-11 20:56:36.901  3590  9134 D ActivityTaskManager: setAppVisibility(Token{9489f5c ActivityRecord{173095470 u0 com.binance.monitor/.ui.chart.MarketChartActivity t13202}}, visible=true):  visible=false mVisibleRequested=true
+04-11 20:56:36.901  3590  9134 D ActivityTaskManager: setVisibility(Token{9489f5c ActivityRecord{173095470 u0 com.binance.monitor/.ui.chart.MarketChartActivity t13202}}, visible=true) defer commitVisibility for transition collecting
+04-11 20:56:36.903  3590  9134 D ActivityTaskManager: NFW_setLastResumedActivityUncheckLocked:true r:ActivityRecord{173095470 u0 com.binance.monitor/.ui.chart.MarketChartActivity t13202} currentFocus:Window{87c9d33 u0 com.binance.monitor/com.binance.monitor.launcher.IconFinancialAlias}
+04-11 20:56:37.048 13143 13143 I ChainTrace: chart_realtime_render symbol=BTCUSDT closeTime=1775912219999 interval=1m repoToChartMs=29736 triggerToChartMs=-1
+04-11 20:56:37.288 13143 13143 I ChainTrace: chart_pull phase=start symbol=BTCUSDT interval=1m request=1 durationMs=0 itemCount=1
+04-11 20:56:37.291 13143 13143 I Choreographer: Skipped 33 frames!  The application may be doing too much work on its main thread.
+04-11 20:56:37.300 13143 13223 I ChainTrace: stream type=syncEvent gapMs=984 refreshMarket=true
+04-11 20:56:37.343  3590  3796 D ActivityTaskManager: Clearing startingData for activity=ActivityRecord{173095470 u0 com.binance.monitor/.ui.chart.MarketChartActivity t13202} mStartingData=null mStartingSurface=null
+04-11 20:56:37.344  3590  3796 D ActivityTaskManager: commitVisibility: ActivityRecord{173095470 u0 com.binance.monitor/.ui.chart.MarketChartActivity t13202}: visible=true visibleRequested=true, isInTransition=true 
+04-11 20:56:37.344  3590  3796 D ActivityTaskManager: Clearing startingData for activity=ActivityRecord{173095470 u0 com.binance.monitor/.ui.chart.MarketChartActivity t13202} mStartingData=null mStartingSurface=null
+04-11 20:56:37.346  3590  3792 I ActivityTaskManager: Displayed com.binance.monitor/.ui.chart.MarketChartActivity for user 0: +454ms
+04-11 20:56:37.348  3590  8061 D ActivityTaskManager: commitVisibility: ActivityRecord{216241062 u0 com.binance.monitor/.launcher.IconFinancialAlias t13202}: visible=false visibleRequested=false, isInTransition=false 
+04-11 20:56:38.307 13143 13223 I ChainTrace: stream type=syncEvent gapMs=1007 refreshMarket=true
+04-11 20:56:39.115 13143 19034 I ChainTrace: chart_pull phase=load_done symbol=BTCUSDT interval=1m request=1 durationMs=1827 itemCount=240
+04-11 20:56:39.216 13143 13143 I ChainTrace: chart_pull phase=ui_applied symbol=BTCUSDT interval=1m request=1 durationMs=1928 itemCount=240
+04-11 20:56:39.315 13143 13223 I ChainTrace: stream type=syncEvent gapMs=1008 refreshMarket=true
+04-11 20:56:40.308 13143 13223 I ChainTrace: stream type=syncEvent gapMs=993 refreshMarket=true
+04-11 20:56:42.309 13143 13223 I ChainTrace: stream type=syncEvent gapMs=2001 refreshMarket=true
+04-11 20:56:43.312 13143 13223 I ChainTrace: stream type=syncEvent gapMs=1003 refreshMarket=true
+04-11 20:56:45.309 13143 13223 I ChainTrace: stream type=syncEvent gapMs=1997 refreshMarket=true
+04-11 20:56:51.337 13143 13223 I ChainTrace: stream type=syncEvent gapMs=6028 refreshMarket=true
+04-11 20:56:52.322 13143 13223 I ChainTrace: stream type=syncEvent gapMs=985 refreshMarket=true
+04-11 20:56:55.322 13143 13223 I ChainTrace: stream type=syncEvent gapMs=3000 refreshMarket=false
+04-11 20:56:56.307 13143 13223 I ChainTrace: stream type=syncEvent gapMs=985 refreshMarket=true
+04-11 20:56:57.327 13143 13223 I ChainTrace: stream type=syncEvent gapMs=1020 refreshMarket=true

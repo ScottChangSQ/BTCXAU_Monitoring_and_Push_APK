@@ -171,7 +171,7 @@ class AdminPanelTests(unittest.TestCase):
         self.assertIn("toggleLogsBtn", script)
         self.assertIn("logsBox.classList.toggle('expanded')", script)
 
-    def test_build_admin_state_should_surface_port_online_fallback_and_time_offset_warning(self):
+    def test_build_admin_state_should_surface_port_online_fallback_and_timezone_warning(self):
         with mock.patch.object(admin_panel, "load_env_map", return_value={}), mock.patch.object(
             admin_panel, "resolve_gateway_url", return_value="http://127.0.0.1:8787"
         ), mock.patch.object(
@@ -189,14 +189,14 @@ class AdminPanelTests(unittest.TestCase):
         ), mock.patch.object(
             admin_panel,
             "request_gateway_json",
-            side_effect=[RuntimeError("timed out"), {"mt5TimeOffsetMinutes": 180}],
+            side_effect=[RuntimeError("timed out"), {"mt5TimeOffsetMinutes": 0, "mt5ServerTimezone": ""}],
         ):
             state = admin_panel.build_admin_state()
 
         self.assertTrue(state["gatewayHealth"]["portOnline"])
         self.assertEqual("端口在线", state["gatewayHealth"]["statusText"])
         self.assertIn("timed out", state["gatewayHealth"]["warning"])
-        self.assertIn("180", state["gatewaySource"]["mt5TimeOffsetWarning"])
+        self.assertIn("MT5_SERVER_TIMEZONE", state["gatewaySource"]["mt5ServerTimezoneWarning"])
 
     def test_decorate_gateway_payload_should_surface_session_summary_fields(self):
         payload = admin_panel.decorate_gateway_payload(

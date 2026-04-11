@@ -18,12 +18,13 @@
 - APP 从后台回前台、或点悬浮窗切回主界面时，主链不再按“重新打开 APP”处理；只有 stream 真失活时才重建连接，正常情况下只切换刷新节奏
 - 图表页从其他 tab 返回前台时，已收口为“恢复消费节奏”而不是“重新启动页面链路”：普通返回不再在 `onResume()` 里重置 V2 transport，也不再由图表页切账户全量快照节奏
 - 图表页当前持仓/挂单叠加层首帧现在会优先恢复最近一次本地已持久化快照，不再因为内存缓存尚未回填就先清空“当前持仓”
+- 图表页切到“行情持仓”时，实时尾部和持仓叠加层现在会等主图首帧真正画出来后再释放，不再抢在首屏前一起压主线程
 - K 线图当前持仓、挂单、历史成交、异常记录现在共用统一 annotation 明细消费链；当前持仓/挂单线支持查看开仓时间、数量、浮盈亏、止盈止损等详情
 - 图表页 `1w / 1M / 1y` 长周期恢复前台时，若当前窗口仍新鲜则不再立刻重拉；后续自动刷新也不再走快速 fallback，而是对齐到下一次分钟边界
 - 账户统计页命中同签名预加载缓存时，不再重复整页 `applySnapshot()`，切页返回时不会再把总览、曲线、持仓和成交区整套重画一遍
 - 设置首页和设置子页切换到底部其他 tab 时，不再通过 `finish()` 销毁自己，tab 切换语义已统一为前台切换
 - 服务端 `v2_account` 账户 helper 也已经收口为严格 canonical 字段消费，只接受显式 `productId / marketSymbol / tradeSymbol / productName`
-- 网关侧 MT5 时间主链现在优先按 `MT5_SERVER_TIMEZONE` 把服务器 wall-clock 时间归一化成 UTC；历史成交、账户曲线和 K 线图成交标记不再各自补时区
+- 网关侧 MT5 时间主链现在只按 `MT5_SERVER_TIMEZONE` 把服务器 wall-clock 时间归一化成 UTC；App 只按设备本地时区显示，历史成交、账户曲线和 K 线图成交标记不再各自补时区
 - 会话链已经收口为服务端单真值，当前激活账号只认 `status.activeAccount`
 - 历史、曲线、比例补算和启发式归并已经从主链移除，页面只基于服务端给出的标准数据做展示
 - 服务端轻快照主链不再展开全量历史，但会返回 `accountMeta.historyRevision`（由成交历史 canonical digest 生成），供 App 只在历史修订号变化时补拉全量历史；缓存 miss 也不再并发放大
@@ -81,7 +82,7 @@
 - 行情监控主界面的概览指标现在固定消费服务端 `latestClosedCandle`，不再误用当前分钟未闭合 patch
 - 本地仓储已经停止把旧历史、旧曲线、轻量快照拼回当前真值；轻量快照刷新时只保留上一轮全量历史的展示结果，不再把历史区清空
 - 服务端 `v2/account/history` 已经停止旧别名兼容、价格回填和启发式成交归并
-- 服务端 MT5 时间归一化现在优先按 `MT5_SERVER_TIMEZONE` 做服务器时区换算；历史成交、账户曲线和图表成交标记不再各自用固定分钟差补时间
+- 服务端 MT5 时间归一化现在只按 `MT5_SERVER_TIMEZONE` 做服务器时区换算；App 不再参与纠偏，`MT5_TIME_OFFSET_MINUTES` 只保留健康面板旧值展示
 - 服务端 `v2/session/*` 已完成登录、切换、退出、状态查询、公钥获取的最小闭环
 - 会话字段名已经统一只认 `activeAccount / active`，不再消费 `account / isActive` 旧别名
 - BTC/XAU 产品映射已经统一收口，悬浮窗、图表、异常链、统计分析都不再靠字符串猜品种
@@ -237,3 +238,4 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - 2026-04-10 本轮新增验证：`.\gradlew.bat :app:assembleDebug` 已通过，最新 APK 已输出到 `app/build/outputs/apk/debug/app-debug.apk`
 - 2026-04-10 最终 BUG review 与任务收口新增验证：`.\gradlew.bat :app:testDebugUnitTest` 已通过；`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py"` 已通过，结果为 `Ran 226 tests ... OK`
 - 2026-04-11 全量复核新增验证：修复了图表页 `onNewIntent` 切品种旧上下文未先失效、账户页本地会话摘要旧错误残留、部署样例 `MT5_INIT_TIMEOUT_MS=90000` 被服务端静默截断，以及旧 source test 未跟随职责下沉的问题；`.\gradlew.bat :app:auditCriticalCheckstyle :app:compileDebugJavaWithJavac :app:testDebugUnitTest` 已通过；`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 已通过，结果为 `Ran 229 tests ... OK`
+- 2026-04-11 图表切页卡顿专项验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartStartupGateTest" --tests "com.binance.monitor.ui.chart.MarketChartStartupGateSourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartStartupGateTest" --tests "com.binance.monitor.ui.chart.MarketChartStartupGateSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartOverlayRestoreSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartV2SourceTest"` 已通过；`.\gradlew.bat :app:assembleDebug` 与 `adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 已通过；串行 ADB 复测显示 `Displayed MarketChartActivity +175ms`，且 `chart_realtime_render` 已晚于首屏显示发生

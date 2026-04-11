@@ -1,5 +1,6 @@
 """MT5 网关摘要响应测试。"""
 
+from contextlib import contextmanager
 import sys
 import types
 import unittest
@@ -89,6 +90,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import server_v2  # noqa: E402
+
+
+@contextmanager
+def _configured_mt5_server_timezone(timezone_name: str = "UTC"):
+    """在测试里显式声明 MT5 服务器时区，避免依赖空配置。"""
+    original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+    original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
+    try:
+        server_v2.MT5_TIME_OFFSET_MINUTES = 0
+        server_v2.MT5_SERVER_TIMEZONE = timezone_name
+        yield
+    finally:
+        server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+        server_v2.MT5_SERVER_TIMEZONE = original_timezone
 
 
 class SummaryResponseTests(unittest.TestCase):
@@ -232,29 +247,19 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(836.66, account_meta["marginLevel"])
         self.assertEqual(55.0, account_meta["profit"])
 
-    def test_deal_time_ms_applies_configured_offset_minutes(self):
+    def test_deal_time_ms_should_require_mt5_server_timezone(self):
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+        original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
         try:
-            server_v2.MT5_TIME_OFFSET_MINUTES = 480
+            server_v2.MT5_TIME_OFFSET_MINUTES = 180
+            server_v2.MT5_SERVER_TIMEZONE = ""
             deal = types.SimpleNamespace(time_msc=1775151432000, time=0)
 
-            value = server_v2._deal_time_ms(deal)
-
-            self.assertEqual(1775180232000, value)
+            with self.assertRaisesRegex(ValueError, "MT5_SERVER_TIMEZONE"):
+                server_v2._deal_time_ms(deal)
         finally:
             server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
-
-    def test_deal_time_ms_supports_negative_offset_minutes(self):
-        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
-        try:
-            server_v2.MT5_TIME_OFFSET_MINUTES = -180
-            deal = types.SimpleNamespace(time_msc=1775225086619, time=0)
-
-            value = server_v2._deal_time_ms(deal)
-
-            self.assertEqual(1775214286619, value)
-        finally:
-            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+            server_v2.MT5_SERVER_TIMEZONE = original_timezone
 
     def test_deal_time_ms_normalizes_mt5_server_timezone_wall_clock(self):
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
@@ -271,9 +276,10 @@ class SummaryResponseTests(unittest.TestCase):
             server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
             server_v2.MT5_SERVER_TIMEZONE = original_timezone
 
-    def test_map_trades_applies_configured_offset_to_open_and_close_times(self):
+    def test_map_trades_should_normalize_open_and_close_times_with_server_timezone(self):
         original_mt5 = server_v2.mt5
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+        original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
 
         class _FakeMt5:
             @staticmethod
@@ -318,20 +324,23 @@ class SummaryResponseTests(unittest.TestCase):
                 return types.SimpleNamespace(trade_contract_size=1.0)
 
         server_v2.mt5 = _FakeMt5()
-        server_v2.MT5_TIME_OFFSET_MINUTES = 480
+        server_v2.MT5_TIME_OFFSET_MINUTES = 0
+        server_v2.MT5_SERVER_TIMEZONE = "Europe/Athens"
         try:
             trades = server_v2._map_trades("1d")
         finally:
             server_v2.mt5 = original_mt5
             server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+            server_v2.MT5_SERVER_TIMEZONE = original_timezone
 
         self.assertEqual(1, len(trades))
-        self.assertEqual(1775174628613, trades[0]["openTime"])
-        self.assertEqual(1775178421284, trades[0]["closeTime"])
+        self.assertEqual(1775135028613, trades[0]["openTime"])
+        self.assertEqual(1775138821284, trades[0]["closeTime"])
 
-    def test_map_trades_supports_negative_offset_for_recent_closed_trade(self):
+    def test_map_trades_should_fail_when_server_timezone_missing(self):
         original_mt5 = server_v2.mt5
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+        original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
 
         class _FakeMt5:
             @staticmethod
@@ -376,16 +385,15 @@ class SummaryResponseTests(unittest.TestCase):
                 return types.SimpleNamespace(trade_contract_size=1.0)
 
         server_v2.mt5 = _FakeMt5()
-        server_v2.MT5_TIME_OFFSET_MINUTES = -180
+        server_v2.MT5_TIME_OFFSET_MINUTES = 0
+        server_v2.MT5_SERVER_TIMEZONE = ""
         try:
-            trades = server_v2._map_trades("1d")
+            with self.assertRaisesRegex(ValueError, "MT5_SERVER_TIMEZONE"):
+                server_v2._map_trades("1d")
         finally:
             server_v2.mt5 = original_mt5
             server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
-
-        self.assertEqual(1, len(trades))
-        self.assertEqual(1775214286619, trades[0]["openTime"])
-        self.assertEqual(1775214342404, trades[0]["closeTime"])
+            server_v2.MT5_SERVER_TIMEZONE = original_timezone
 
     def test_map_trade_deals_should_order_same_second_deals_by_millisecond_timestamp(self):
         original_mt5 = server_v2.mt5
@@ -428,11 +436,12 @@ class SummaryResponseTests(unittest.TestCase):
             comment="close",
         )
 
-        server_v2.mt5 = _FakeMt5()
-        try:
-            trades = server_v2._map_trade_deals([close_deal, open_deal])
-        finally:
-            server_v2.mt5 = original_mt5
+        with _configured_mt5_server_timezone("UTC"):
+            server_v2.mt5 = _FakeMt5()
+            try:
+                trades = server_v2._map_trade_deals([close_deal, open_deal])
+            finally:
+                server_v2.mt5 = original_mt5
 
         self.assertEqual(1, len(trades))
         self.assertEqual(1775225086100, trades[0]["openTime"])
@@ -481,11 +490,12 @@ class SummaryResponseTests(unittest.TestCase):
             comment="open",
         )
 
-        server_v2.mt5 = _FakeMt5()
-        try:
-            trades = server_v2._map_trade_deals([close_deal, open_deal])
-        finally:
-            server_v2.mt5 = original_mt5
+        with _configured_mt5_server_timezone("UTC"):
+            server_v2.mt5 = _FakeMt5()
+            try:
+                trades = server_v2._map_trade_deals([close_deal, open_deal])
+            finally:
+                server_v2.mt5 = original_mt5
 
         self.assertEqual(1, len(trades))
         self.assertEqual(66878.63, trades[0]["openPrice"])
@@ -624,11 +634,12 @@ class SummaryResponseTests(unittest.TestCase):
             def symbol_info(symbol):
                 return types.SimpleNamespace(trade_contract_size=1.0)
 
-        server_v2.mt5 = _FakeMt5()
-        try:
-            trade_count = server_v2._light_snapshot_trade_count()
-        finally:
-            server_v2.mt5 = original_mt5
+        with _configured_mt5_server_timezone("UTC"):
+            server_v2.mt5 = _FakeMt5()
+            try:
+                trade_count = server_v2._light_snapshot_trade_count()
+            finally:
+                server_v2.mt5 = original_mt5
 
         self.assertEqual(1, trade_count)
 
@@ -679,11 +690,12 @@ class SummaryResponseTests(unittest.TestCase):
             def symbol_info(symbol):
                 return types.SimpleNamespace(trade_contract_size=1.0)
 
-        server_v2.mt5 = _FakeMt5()
-        try:
-            trades = server_v2._map_trades("1d")
-        finally:
-            server_v2.mt5 = original_mt5
+        with _configured_mt5_server_timezone("UTC"):
+            server_v2.mt5 = _FakeMt5()
+            try:
+                trades = server_v2._map_trades("1d")
+            finally:
+                server_v2.mt5 = original_mt5
 
         self.assertEqual([], trades)
         self.assertIsNotNone(_FakeMt5.captured_from)
@@ -846,11 +858,12 @@ class SummaryResponseTests(unittest.TestCase):
             def symbol_info(symbol):
                 return types.SimpleNamespace(trade_contract_size=1.0)
 
-        server_v2.mt5 = _FakeMt5()
-        try:
-            trades = server_v2._map_trades("1d")
-        finally:
-            server_v2.mt5 = original_mt5
+        with _configured_mt5_server_timezone("UTC"):
+            server_v2.mt5 = _FakeMt5()
+            try:
+                trades = server_v2._map_trades("1d")
+            finally:
+                server_v2.mt5 = original_mt5
 
         self.assertEqual(2, len(trades))
         ordered = sorted(trades, key=lambda item: item["openTime"])
@@ -908,11 +921,12 @@ class SummaryResponseTests(unittest.TestCase):
             def symbol_info(symbol):
                 return types.SimpleNamespace(trade_contract_size=1.0)
 
-        server_v2.mt5 = _FakeMt5()
-        try:
-            trades = server_v2._map_trades("1d")
-        finally:
-            server_v2.mt5 = original_mt5
+        with _configured_mt5_server_timezone("UTC"):
+            server_v2.mt5 = _FakeMt5()
+            try:
+                trades = server_v2._map_trades("1d")
+            finally:
+                server_v2.mt5 = original_mt5
 
         self.assertEqual(1, len(trades))
         trade = trades[0]
@@ -968,11 +982,12 @@ class SummaryResponseTests(unittest.TestCase):
             def symbol_info(symbol):
                 return types.SimpleNamespace(trade_contract_size=1.0)
 
-        server_v2.mt5 = _FakeMt5()
-        try:
-            trades = server_v2._map_trades("7d")
-        finally:
-            server_v2.mt5 = original_mt5
+        with _configured_mt5_server_timezone("UTC"):
+            server_v2.mt5 = _FakeMt5()
+            try:
+                trades = server_v2._map_trades("7d")
+            finally:
+                server_v2.mt5 = original_mt5
 
         self.assertEqual(1, len(trades))
         trade = trades[0]
@@ -1792,9 +1807,10 @@ class SummaryResponseTests(unittest.TestCase):
             "历史采样点应反映持仓浮盈亏，不能继续让净值等于结余",
         )
 
-    def test_fetch_curve_price_samples_from_mt5_should_use_trade_symbol_and_apply_time_offset(self):
+    def test_fetch_curve_price_samples_from_mt5_should_use_trade_symbol_and_normalize_server_timezone(self):
         original_mt5 = server_v2.mt5
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+        original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
 
         captured = {}
 
@@ -1810,23 +1826,27 @@ class SummaryResponseTests(unittest.TestCase):
             def copy_rates_range(symbol, timeframe, date_from, date_to):
                 captured["copy_rates_range"] = (symbol, timeframe, date_from, date_to)
                 return [
-                    {"time": 100, "close": 101.5},
-                    {"time": 101, "close": 102.5},
+                    {"time": 1775818380, "close": 101.5},
+                    {"time": 1775818440, "close": 102.5},
                 ]
 
         server_v2.mt5 = _FakeMt5()
-        server_v2.MT5_TIME_OFFSET_MINUTES = 480
+        server_v2.MT5_TIME_OFFSET_MINUTES = 0
+        server_v2.MT5_SERVER_TIMEZONE = "Europe/Athens"
         try:
-            samples = server_v2._fetch_curve_price_samples("BTCUSD", 28_900_000, 29_200_000)
+            samples = server_v2._fetch_curve_price_samples("BTCUSD", 1775807600000, 1775807720000)
         finally:
             server_v2.mt5 = original_mt5
             server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+            server_v2.MT5_SERVER_TIMEZONE = original_timezone
 
         self.assertEqual(("BTCUSD", True), captured["symbol_select"])
         self.assertEqual("BTCUSD", captured["copy_rates_range"][0])
         self.assertEqual(1, captured["copy_rates_range"][1])
         self.assertEqual(2, len(samples))
-        self.assertEqual(28_800_000 + 100_000 + 60_000 - 1, samples[0]["timestamp"])
+        self.assertEqual(datetime(2026, 4, 10, 10, 53, 20, tzinfo=timezone.utc), captured["copy_rates_range"][2])
+        self.assertEqual(datetime(2026, 4, 10, 10, 55, 20, tzinfo=timezone.utc), captured["copy_rates_range"][3])
+        self.assertEqual(1775807639999, samples[0]["timestamp"])
         self.assertEqual(101.5, samples[0]["price"])
         self.assertEqual("BTCUSD", samples[0]["symbol"])
 
@@ -2056,22 +2076,23 @@ class SummaryResponseTests(unittest.TestCase):
             def symbol_info(symbol):
                 return types.SimpleNamespace(trade_contract_size=1.0)
 
-        try:
-            server_v2.mt5 = _Mt5()
-            server_v2._is_mt5_configured = lambda: True
-            server_v2._ensure_mt5 = lambda: None
-            server_v2._shutdown_mt5 = lambda: None
-            server_v2._map_positions = lambda: []
-            server_v2._map_pending_orders = lambda: []
+        with _configured_mt5_server_timezone("UTC"):
+            try:
+                server_v2.mt5 = _Mt5()
+                server_v2._is_mt5_configured = lambda: True
+                server_v2._ensure_mt5 = lambda: None
+                server_v2._shutdown_mt5 = lambda: None
+                server_v2._map_positions = lambda: []
+                server_v2._map_pending_orders = lambda: []
 
-            snapshot = server_v2._snapshot_from_mt5_light()
-        finally:
-            server_v2.mt5 = original_mt5
-            server_v2._is_mt5_configured = original_is_mt5_configured
-            server_v2._ensure_mt5 = original_ensure_mt5
-            server_v2._shutdown_mt5 = original_shutdown_mt5
-            server_v2._map_positions = original_map_positions
-            server_v2._map_pending_orders = original_map_pending_orders
+                snapshot = server_v2._snapshot_from_mt5_light()
+            finally:
+                server_v2.mt5 = original_mt5
+                server_v2._is_mt5_configured = original_is_mt5_configured
+                server_v2._ensure_mt5 = original_ensure_mt5
+                server_v2._shutdown_mt5 = original_shutdown_mt5
+                server_v2._map_positions = original_map_positions
+                server_v2._map_pending_orders = original_map_pending_orders
 
         self.assertGreaterEqual(history_call["get"], 1)
         self.assertEqual(0, history_call["total"])

@@ -21,6 +21,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.BaseAdapter;
@@ -263,6 +264,10 @@ public class MarketChartActivity extends AppCompatActivity {
             }
         }
     };
+    private final MarketChartStartupGate startupGate = new MarketChartStartupGate();
+    @Nullable
+    private ViewTreeObserver.OnDrawListener pendingStartupDrawListener;
+    private String pendingStartupDrawKey = "";
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -297,6 +302,7 @@ public class MarketChartActivity extends AppCompatActivity {
         restoreHistoryTradeVisibility();
         restorePositionOverlayVisibility();
         restoreChartPositionSort();
+        startupGate.resetForDataKey(buildCacheKey(selectedSymbol, selectedInterval));
         if (abnormalRecordManager != null) {
             abnormalRecordManager.getRecordsLiveData().observe(this, records -> {
                 abnormalRecords = records == null ? new ArrayList<>() : new ArrayList<>(records);
@@ -360,6 +366,7 @@ public class MarketChartActivity extends AppCompatActivity {
         stopAutoRefresh();
         mainHandler.removeCallbacks(chartOverlayRefreshRunnable);
         accountOverlayRefreshPending = false;
+        clearStartupPrimaryDrawObserver();
         if (accountStatsPreloadManager != null) {
             accountStatsPreloadManager.removeCacheListener(accountCacheListener);
         }
@@ -1750,13 +1757,17 @@ public class MarketChartActivity extends AppCompatActivity {
         if (!matchesSelectedSymbol(latestKline.getSymbol())) {
             return;
         }
+        String key = buildCacheKey(selectedSymbol, selectedInterval);
+        if (startupGate.shouldDeferUntilPrimaryDisplay(key)) {
+            startupGate.replacePendingRealtime(key, () -> applyRealtimeChartTail(latestKline));
+            return;
+        }
         CandleEntry realtimeBaseCandle = toRealtimeCandleEntry(latestKline);
         List<CandleEntry> minuteCandles = mergeRealtimeMinuteCache(realtimeBaseCandle);
         List<CandleEntry> realtimeDisplay = buildRealtimeDisplayCandles(realtimeBaseCandle, minuteCandles);
         if (realtimeDisplay.isEmpty()) {
             return;
         }
-        String key = buildCacheKey(selectedSymbol, selectedInterval);
         List<CandleEntry> mergedDisplay = MarketChartDisplayHelper.mergeRealtimeTail(loadedCandles, realtimeDisplay);
         if (mergedDisplay.isEmpty()) {
             return;
@@ -1945,14 +1956,17 @@ public class MarketChartActivity extends AppCompatActivity {
         if (updateMemoryCache) {
             klineCache.put(key, new ArrayList<>(candles));
         }
+        scheduleStartupPrimaryDrawObserver(key);
         if (keepViewport) {
             binding.klineChartView.setCandlesKeepingViewport(loadedCandles);
             if (shouldFollowLatest && !binding.klineChartView.hasActiveCrosshair()) {
                 binding.klineChartView.scrollToLatest();
             }
+            flushStartupDeferredWorkAfterPrimaryCommit(key);
             return;
         }
         binding.klineChartView.setCandles(loadedCandles);
+        flushStartupDeferredWorkAfterPrimaryCommit(key);
     }
 
     // 十字线激活时说明用户正在查看某根K线，自动刷新此时不应再抢焦点跟随最新值。
@@ -2023,6 +2037,8 @@ public class MarketChartActivity extends AppCompatActivity {
         loadedCandles.clear();
         lastAbnormalOverlaySignature = "";
         lastAccountOverlaySignature = "";
+        startupGate.resetForDataKey(buildCacheKey(selectedSymbol, selectedInterval));
+        clearStartupPrimaryDrawObserver();
         if (binding == null || binding.klineChartView == null) {
             return;
         }
@@ -2704,6 +2720,11 @@ public class MarketChartActivity extends AppCompatActivity {
             clearAccountAnnotationsOverlay();
             return;
         }
+        String key = buildCacheKey(selectedSymbol, selectedInterval);
+        if (startupGate.shouldDeferUntilPrimaryDisplay(key)) {
+            startupGate.replacePendingOverlay(key, () -> applyChartOverlaySnapshot(snapshot, cache));
+            return;
+        }
         applyChartOverlaySnapshot(snapshot, cache);
     }
 
@@ -2723,6 +2744,11 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         // 会话仍有效但缓存尚未回填时，保留当前页面状态，避免首帧先闪成空白。
         if (snapshot == null) {
+            return;
+        }
+        String key = buildCacheKey(selectedSymbol, selectedInterval);
+        if (startupGate.shouldDeferUntilPrimaryDisplay(key)) {
+            startupGate.replacePendingOverlay(key, () -> applyChartOverlaySnapshot(snapshot, cache));
             return;
         }
         applyChartOverlaySnapshot(snapshot, cache);
@@ -2823,6 +2849,71 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.klineChartView.setAggregateCostAnnotation(buildAggregateCostAnnotation(positions));
         lastAccountOverlaySignature = buildAccountOverlaySignature(cache);
         updateChartPositionPanel(positions, pendingOrders, totalAsset);
+    }
+
+    // 启动阶段先确认主序列已经提交到图表视图，但仍要等到首帧真正绘制后才能放开增量更新。
+    private void flushStartupDeferredWorkAfterPrimaryCommit(@Nullable String key) {
+        List<Runnable> pending = startupGate.onPrimaryDisplayCommitted(key);
+        runStartupDeferredWork(pending);
+    }
+
+    // 只有主图首帧真正画出来后，实时尾部和账户叠加层才允许开始消费。
+    private void flushStartupDeferredWorkAfterPrimaryDraw(@Nullable String key) {
+        List<Runnable> pending = startupGate.onPrimaryDisplayDrawn(key);
+        runStartupDeferredWork(pending);
+    }
+
+    private void runStartupDeferredWork(@Nullable List<Runnable> pending) {
+        if (pending == null || pending.isEmpty()) {
+            return;
+        }
+        for (Runnable item : pending) {
+            if (item != null) {
+                item.run();
+            }
+        }
+    }
+
+    // 为当前 key 注册一次性首帧绘制监听，确保启动期的增量更新只会在主图真正出现在屏幕上后释放。
+    private void scheduleStartupPrimaryDrawObserver(@Nullable String key) {
+        if (binding == null || binding.klineChartView == null || key == null || key.trim().isEmpty()) {
+            return;
+        }
+        if (!startupGate.shouldDeferUntilPrimaryDisplay(key)) {
+            clearStartupPrimaryDrawObserver();
+            return;
+        }
+        if (key.equals(pendingStartupDrawKey) && pendingStartupDrawListener != null) {
+            return;
+        }
+        clearStartupPrimaryDrawObserver();
+        pendingStartupDrawKey = key;
+        pendingStartupDrawListener = new ViewTreeObserver.OnDrawListener() {
+            @Override
+            public void onDraw() {
+                if (binding == null || binding.klineChartView == null) {
+                    clearStartupPrimaryDrawObserver();
+                    return;
+                }
+                String drawKey = pendingStartupDrawKey;
+                binding.klineChartView.post(() -> {
+                    clearStartupPrimaryDrawObserver();
+                    flushStartupDeferredWorkAfterPrimaryDraw(drawKey);
+                });
+            }
+        };
+        binding.klineChartView.getViewTreeObserver().addOnDrawListener(pendingStartupDrawListener);
+    }
+
+    private void clearStartupPrimaryDrawObserver() {
+        if (binding != null && binding.klineChartView != null && pendingStartupDrawListener != null) {
+            ViewTreeObserver observer = binding.klineChartView.getViewTreeObserver();
+            if (observer.isAlive()) {
+                observer.removeOnDrawListener(pendingStartupDrawListener);
+            }
+        }
+        pendingStartupDrawListener = null;
+        pendingStartupDrawKey = "";
     }
 
     // 只要本地已经落过账户叠加层必需数据，就允许首帧直接恢复，避免当前持仓先空白。

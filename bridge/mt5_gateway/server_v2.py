@@ -881,11 +881,9 @@ def _apply_mt5_time_offset_ms(value: int) -> int:
     if value <= 0:
         return 0
     zoneinfo = _resolve_mt5_server_zoneinfo()
-    if zoneinfo is not None:
-        wall_clock = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc).replace(tzinfo=None)
-        localized = wall_clock.replace(tzinfo=zoneinfo)
-        return int(localized.astimezone(timezone.utc).timestamp() * 1000)
-    return int(value + MT5_TIME_OFFSET_MINUTES * 60 * 1000)
+    wall_clock = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc).replace(tzinfo=None)
+    localized = wall_clock.replace(tzinfo=zoneinfo)
+    return int(localized.astimezone(timezone.utc).timestamp() * 1000)
 
 
 def _strip_mt5_time_offset_ms(value: int) -> int:
@@ -893,28 +891,26 @@ def _strip_mt5_time_offset_ms(value: int) -> int:
     if value <= 0:
         return 0
     zoneinfo = _resolve_mt5_server_zoneinfo()
-    if zoneinfo is not None:
-        utc_time = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
-        server_local = utc_time.astimezone(zoneinfo)
-        wall_clock_as_utc = datetime(
-            server_local.year,
-            server_local.month,
-            server_local.day,
-            server_local.hour,
-            server_local.minute,
-            server_local.second,
-            server_local.microsecond,
-            tzinfo=timezone.utc,
-        )
-        return int(wall_clock_as_utc.timestamp() * 1000)
-    return int(value - MT5_TIME_OFFSET_MINUTES * 60 * 1000)
+    utc_time = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
+    server_local = utc_time.astimezone(zoneinfo)
+    wall_clock_as_utc = datetime(
+        server_local.year,
+        server_local.month,
+        server_local.day,
+        server_local.hour,
+        server_local.minute,
+        server_local.second,
+        server_local.microsecond,
+        tzinfo=timezone.utc,
+    )
+    return int(wall_clock_as_utc.timestamp() * 1000)
 
 
-def _resolve_mt5_server_zoneinfo() -> Optional[ZoneInfo]:
-    """解析 MT5 服务器时区配置；配置非法时直接抛出明确错误。"""
+def _resolve_mt5_server_zoneinfo() -> ZoneInfo:
+    """解析 MT5 服务器时区配置；缺失或非法时直接抛出明确错误。"""
     server_timezone = str(MT5_SERVER_TIMEZONE or "").strip()
     if not server_timezone:
-        return None
+        raise ValueError("MT5_SERVER_TIMEZONE 未配置，无法把 MT5 原始时间统一归一化为 UTC。")
     try:
         return ZoneInfo(server_timezone)
     except Exception as exc:

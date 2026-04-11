@@ -33,7 +33,9 @@
 - [app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java)
   APP 安全会话偏好，负责用 Android Keystore 加密保存最近一次远程会话摘要和已保存账号列表缓存；logout 时只清当前激活账号，不清已保存账号摘要。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
-  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏和右上角刷新/延迟信息；当前最终真值只认服务端 `candles + latestPatch`，本地只保留 `ChartHistoryRepository + 内存窗口` 这一层图表缓存。图表账户叠加层恢复时，会在内存缓存 miss 时回退到 Room 已持久化快照，避免首帧把当前持仓先清空。
+  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏和右上角刷新/延迟信息；当前最终真值只认服务端 `candles + latestPatch`，本地只保留 `ChartHistoryRepository + 内存窗口` 这一层图表缓存。图表账户叠加层恢复时，会在内存缓存 miss 时回退到 Room 已持久化快照，避免首帧把当前持仓先清空；图表启动阶段现在还会用 `MarketChartStartupGate + 首帧绘制监听` 把实时尾部和账户叠加层延后到主图首帧真正完成后再释放。
+- [app/src/main/java/com/binance/monitor/ui/chart/MarketChartStartupGate.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartStartupGate.java)
+  图表启动门控，负责统一管理“主序列已提交 / 主图首帧已绘制”两个阶段；只有两者都成立后，才允许释放实时尾部和账户叠加层这类依赖主图的增量更新。
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java)
   K 线绘制控件，负责主图、副图、指标、右侧留白、异常点胶囊、成本线和缩放交互；当前持仓、挂单、历史成交、异常记录都通过统一 annotation 明细链进入高亮详情弹窗。
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineViewportHelper.java)
@@ -261,13 +263,14 @@
 - 仓库内已失联的 `AccountStatsLiveActivity + Mt5GatewayClient` 旧账户页链路已直接删除；原因是它们不再属于任何业务入口，却仍保留 `/v1` 账户快照与本地补位逻辑，继续保留只会制造维护误导。
 - 账户展示链当前收口成“服务端指标直出 + 页面只在能证明真值时做有限覆盖”；原因是 `overviewMetrics / curveIndicators / statsMetrics` 主体仍由服务端给出，但 `累计盈亏 / 累计收益率` 这类字段在 APP 端已有完整曲线或历史成交真值时，可以严格覆盖；继续完全禁用或继续无条件覆盖，都会制造新的错误口径。
 - 图表页账户叠加层恢复链当前收口成“先内存，再 Room 持久化快照”；原因是 tab 切换或重新进入图表页时，问题根因是本地首帧主动清空，而不是上游真值不存在。
+- 图表页启动门控当前收口成“主序列提交 + 主图首帧绘制”双阶段规则；原因是“何时允许实时尾部和持仓标注开始消费”必须由图表实际完成首帧来定义，不能再靠条数阈值、延时或局部稳定化补丁。
 - 账户历史与曲线主链当前只接受服务端标准时间和价格字段；原因是客户端再做秒转毫秒、`timestamp -> open/close time`、`price -> open/close price` 这类补位，会把纯消费链重新拉回本地拼装。
 - 会话收口当前采用“login/switch 成功后必须 `fetchStatus()`，且只认 `status.activeAccount`”；原因是 `receipt/status/本地 saved account/输入值` 多路拼装会继续制造账号身份分裂。
 - 当 `receipt.activeAccount` 与 `status.activeAccount` 冲突时直接失败；原因是这代表服务器会话真值未闭合，前端不能自行猜测哪一个才是目标账号。
 - MT5 数据链路拆成摘要、轻实时持仓、挂单增量、成交增量、曲线追加，减少日常流量和重复全量请求。
 - 网关快照缓存改成“按最近使用裁剪 + EA 新鲜时短时平滑续用”；原因是这样能同时压住 `snapshot/sync` 缓存的内存占用，并减少固定轮询下缓存命中与重建交替造成的延迟抖动。
 - `server_v2.py` 的历史成交映射改成“按成交顺序 + FIFO 开仓库存”配对；原因是多次加仓、部分平仓、反手时，不能再用单个生命周期均价去覆盖全部平仓记录。
-- MT5 历史成交时间改成“网关优先按 `MT5_SERVER_TIMEZONE` 把服务器 wall-clock 时间归一化成 UTC，`MT5_TIME_OFFSET_MINUTES` 仅保留旧环境兼容”；原因是固定分钟差只能压住局部现象，严格口径应从时间语义源头统一，才能让交易列表、历史成交点和账户曲线共用同一条时间轴。
+- MT5 历史成交时间改成“网关只按 `MT5_SERVER_TIMEZONE` 把服务器 wall-clock 时间归一化成 UTC，`MT5_TIME_OFFSET_MINUTES` 仅保留健康面板旧值展示”；原因是固定分钟差只能压住局部现象，严格口径应从时间语义源头统一，才能让交易列表、历史成交点和账户曲线共用同一条时间轴。
 - 图表页实时刷新改成“未收盘分钟线先进本地分钟底稿，再覆盖当前周期最新尾部”；原因是这样既能补上 1 分钟实时 K 线，也能继续沿用本地多周期缓存减少切周期卡顿。
 - 服务端异常同步 `HTTP 404` 改成客户端一次识别后暂停轮询；原因是接口未部署时继续固定频率请求只会刷日志和浪费流量。
 - 服务器管理 UI 独立为 `admin_panel.py` 控制台服务，而不是塞进 `server_v2.py` 本体；原因是这样即便主网关被停止或重启，控制台仍可继续提供浏览器入口，才能真正完成“启动 / 停止 / 重启网关”这类操作。

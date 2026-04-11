@@ -1,5 +1,6 @@
 """v2 网关契约测试。"""
 
+from contextlib import contextmanager
 import sys
 import types
 import unittest
@@ -86,6 +87,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import server_v2  # noqa: E402
+
+
+@contextmanager
+def _configured_mt5_server_timezone(timezone_name: str = "UTC"):
+    """在测试里显式声明 MT5 服务器时区，避免依赖空配置。"""
+    original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+    original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
+    try:
+        server_v2.MT5_TIME_OFFSET_MINUTES = 0
+        server_v2.MT5_SERVER_TIMEZONE = timezone_name
+        yield
+    finally:
+        server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+        server_v2.MT5_SERVER_TIMEZONE = original_timezone
 
 
 class V2ContractTests(unittest.TestCase):
@@ -526,8 +541,9 @@ class V2ContractTests(unittest.TestCase):
             orders_get=lambda: [],
         )
 
-        with mock.patch.object(server_v2, "mt5", fake_mt5):
-            payload = server_v2._map_positions()
+        with _configured_mt5_server_timezone("UTC"):
+            with mock.patch.object(server_v2, "mt5", fake_mt5):
+                payload = server_v2._map_positions()
 
         self.assertEqual(1710000000123, payload[0]["openTime"])
 

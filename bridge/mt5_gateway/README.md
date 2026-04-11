@@ -33,9 +33,9 @@
    - `MT5_LOGIN=12345678`
    - `MT5_PASSWORD=your_investor_password`
    - `MT5_SERVER=ICMarketsSC-MT5-6`
+   - `MT5_SERVER_TIMEZONE=Europe/Athens`
 3. 建议同时确认：
    - `MT5_PATH=C:\Program Files\MetaTrader 5\terminal64.exe`
-   - `MT5_SERVER_TIMEZONE=Europe/Athens`
    - `MT5_TIME_OFFSET_MINUTES=0`
    - `MT5_SERVER_ALIASES=ICMarketsSC-MT5-6,ICMarketsSC-MT5-5,ICMarketsSC-MT5`
    - `GATEWAY_HOST=127.0.0.1`
@@ -48,8 +48,8 @@
 
 说明：
 - 如果网关前面还有 Caddy / Nginx，建议 `GATEWAY_HOST` 固定为 `127.0.0.1`，不要直接对公网暴露 `8787`。
-- 历史成交、持仓、挂单和账户曲线现在优先按 `MT5_SERVER_TIMEZONE` 把 MT5 服务器 wall-clock 时间归一化为 UTC 毫秒时间；这样 K 线图标记、交易列表和曲线会共用同一条严格时间轴。
-- `MT5_TIME_OFFSET_MINUTES` 仅保留给旧环境做固定分钟差兼容；新部署优先填写真实时区，不再把固定分钟差当默认真值。
+- `MT5_SERVER_TIMEZONE` 现在是必填项；服务端会在网关时间源头把 MT5 服务器 wall-clock 时间统一归一化为 UTC 毫秒，App 不再参与时间纠偏，只按设备本地时区显示。
+- `MT5_TIME_OFFSET_MINUTES` 仅保留给健康面板展示旧分钟差信息，不再参与历史时间归一化，也不能替代真实时区配置。
 - 这个网关现在也可直接转发 Binance REST / WebSocket，方便 App 统一只连韩国服务器。
 - EA 推送活跃时，网关会在短时间内平滑续用最近一次快照缓存，减少固定轮询下“一快一慢”交替；同时快照缓存会按最近使用裁剪，避免历史范围缓存长期堆积占内存。
 

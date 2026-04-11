@@ -566,9 +566,12 @@ def decorate_gateway_payload(payload: Dict[str, Any], fallback_state: Optional[D
         "savedAccountCount": int(session_state.get("savedAccountCount") or 0),
     }
     offset_minutes = int(safe_payload.get("mt5TimeOffsetMinutes", 0) or 0)
-    if offset_minutes != 0:
+    server_timezone = str(safe_payload.get("mt5ServerTimezone", "") or "").strip()
+    if not server_timezone:
+        safe_payload["mt5ServerTimezoneWarning"] = "当前未配置 MT5_SERVER_TIMEZONE，MT5 历史时间归一化将无法成立。"
+    elif offset_minutes != 0:
         safe_payload["mt5TimeOffsetWarning"] = (
-            f"当前 MT5_TIME_OFFSET_MINUTES={offset_minutes}，历史成交时间会整体偏移 {abs(offset_minutes)} 分钟"
+            f"当前 MT5_TIME_OFFSET_MINUTES={offset_minutes}；严格时间链只认 MT5_SERVER_TIMEZONE，该分钟偏移不应再作为真值。"
         )
     if fallback_state and str(safe_payload.get("error", "") or "").strip():
         safe_payload.setdefault("portOnline", bool(fallback_state.get("running", False)))
