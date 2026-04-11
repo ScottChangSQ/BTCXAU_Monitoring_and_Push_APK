@@ -43,4 +43,25 @@ public class MarketChartPositionSummarySourceTest {
         assertTrue(source.contains("MarketChartPositionSortHelper.buildOptionLabels()"));
         assertTrue(source.contains("filteredPositions = MarketChartPositionSortHelper.sortPositions(filteredPositions, selectedPositionSort);"));
     }
+
+    @Test
+    public void chartActivityShouldOwnRealtimeOverviewTogetherWithPositionPanel() throws Exception {
+        Path activityFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        Path layoutFile = Paths.get("src/main/res/layout/activity_market_chart.xml");
+        String activitySource = new String(Files.readAllBytes(activityFile), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+        String layoutSource = new String(Files.readAllBytes(layoutFile), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(activitySource.contains("private AccountMetricAdapter chartOverviewAdapter;"));
+        assertTrue(activitySource.contains("binding.recyclerChartOverview.setLayoutManager(new GridLayoutManager(this, 2));"));
+        assertTrue(activitySource.contains("binding.recyclerChartOverview.setAdapter(chartOverviewAdapter);"));
+        assertTrue(activitySource.contains("private void updateChartOverviewSection("));
+        assertTrue(activitySource.contains("updateChartOverviewSection(snapshot);"));
+        assertTrue(layoutSource.contains("@+id/tvChartOverviewTitle"));
+        assertTrue(layoutSource.contains("@+id/tvChartOverviewMeta"));
+        assertTrue(layoutSource.contains("@+id/recyclerChartOverview"));
+    }
 }

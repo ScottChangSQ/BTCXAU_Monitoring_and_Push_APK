@@ -1,0 +1,24 @@
+Tasks: 1 total,   0 running,   1 sleeping,   0 stopped,   0 zombie
+  Mem:    11117M total,    10690M used,      427M free,        1M buffers
+ Swap:     6655M total,     5283M used,     1372M free,     2929M cached
+800%cpu  15%user   0%nice  19%sys 759%idle   0%iow   7%irq   0%sirq   0%host
+  PID USER         PR  NI VIRT  RES  SHR S[%CPU] %MEM     TIME+ ARGS
+ 5877 u0_a512      10 -10 8.6G 306M 139M S  0.0   2.7   0:06.48 com.binance.monitor
+
+
+
+Tasks: 1 total,   0 running,   1 sleeping,   0 stopped,   0 zombie
+  Mem:    11117M total,    10691M used,      425M free,        1M buffers
+ Swap:     6655M total,     5283M used,     1372M free,     2929M cached
+800%cpu  15%user   1%nice  18%sys 760%idle   0%iow   5%irq   1%sirq   0%host
+  PID USER         PR  NI VIRT  RES  SHR S[%CPU] %MEM     TIME+ ARGS
+ 5877 u0_a512      10 -10 8.6G 306M 139M S  2.0   2.7   0:06.48 com.binance.monitor
+
+
+
+Tasks: 1 total,   0 running,   1 sleeping,   0 stopped,   0 zombie
+  Mem:    11117M total,    10694M used,      423M free,        1M buffers
+ Swap:     6655M total,     5283M used,     1372M free,     2934M cached
+800%cpu   6%user   0%nice  14%sys 774%idle   0%iow   5%irq   1%sirq   0%host
+  PID USER         PR  NI VIRT  RES  SHR S[%CPU] %MEM     TIME+ ARGS
+ 5877 u0_a512      10 -10 8.6G 306M 139M S  1.0   2.7   0:06.50 com.binance.monitor

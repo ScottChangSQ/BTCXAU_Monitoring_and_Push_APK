@@ -92,9 +92,8 @@ public class AccountStatsBridgeSnapshotSourceTest {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("List<AccountMetric> overview = buildOverviewMetrics(latestOverviewMetrics);"));
-        assertTrue(source.contains("overviewAdapter.submitList(overview);"));
-        assertTrue(!source.contains("overviewAdapter.submitList(buildOverviewMetrics(latestOverviewMetrics));"));
+        assertFalse(source.contains("overviewAdapter.submitList("));
+        assertFalse(source.contains("buildOverviewMetrics(latestOverviewMetrics)"));
         assertTrue(source.contains("indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));"));
         assertTrue(source.contains("bindTradeAnalytics("));
         assertTrue(source.contains("statsAdapter.submitList(tradeStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(tradeStatsMetrics));"));
@@ -198,11 +197,10 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertTrue(source.contains("traceAccountRenderPhase(\"on_create_bind_local_meta\""));
         assertTrue(source.contains("traceAccountRenderPhase(\"on_create_enter_account_screen\""));
         assertTrue(source.contains("traceAccountRenderPhase(\"on_create_total\""));
-        assertTrue(source.contains("traceAccountRenderPhase(\"build_overview\""));
+        assertTrue(source.contains("traceAccountRenderPhase(\"attach_secondary_sections\""));
         assertTrue(source.contains("traceAccountRenderPhase(\"render_returns_table\""));
         assertTrue(source.contains("traceAccountRenderPhase(\"apply_curve_range\""));
         assertTrue(source.contains("traceAccountRenderPhase(\"refresh_trade_stats\""));
-        assertTrue(source.contains("traceAccountRenderPhase(\"refresh_positions\""));
         assertTrue(source.contains("traceAccountRenderPhase(\"refresh_trades\""));
         assertTrue(source.contains("traceAccountRenderPhase(\"apply_snapshot_total\""));
         assertTrue(source.contains("ChainLatencyTracer.markAccountRenderPhase("));
@@ -240,7 +238,6 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertTrue(activitySource.contains("firstFrameCompletionPosted = true;"));
         assertTrue(activitySource.contains("clearFirstFrameCompletionListener();"));
         assertTrue(activitySource.contains("markFirstFrameCompleted();"));
-        assertTrue(activitySource.contains("binding.cardCurveSection.setVisibility(View.VISIBLE);"));
         assertTrue(activitySource.contains("binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);"));
         assertTrue(activitySource.contains("binding.cardReturnStatsSection.setVisibility(View.VISIBLE);"));
         assertTrue(activitySource.contains("binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);"));
@@ -252,7 +249,7 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertTrue(layoutSource.contains("android:id=\"@+id/cardTradeStatsSection\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/cardReturnStatsSection\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/layoutCurveSecondarySection\"\n"));
-        assertTrue(layoutSource.contains("android:visibility=\"gone\""));
+        assertTrue(layoutSource.contains("android:id=\"@+id/layoutCurveSecondarySection\"\n"));
     }
 
     @Test
@@ -263,6 +260,34 @@ public class AccountStatsBridgeSnapshotSourceTest {
 
         assertTrue(activitySource.contains("private boolean hasImmediateAccountContent()"));
         assertTrue(activitySource.contains("if (!hasImmediateAccountContent()) {\n            return;\n        }"));
+    }
+
+    @Test
+    public void accountPageShouldNoLongerOwnRealtimeOverviewOrPositionSections() throws Exception {
+        String activitySource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+        String layoutSource = new String(Files.readAllBytes(
+                Paths.get("src/main/res/layout/activity_account_stats.xml")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertFalse(activitySource.contains("private final Runnable overviewHeaderTicker"));
+        assertFalse(activitySource.contains("refreshHandler.post(overviewHeaderTicker);"));
+        assertFalse(activitySource.contains("binding.recyclerOverview.setLayoutManager"));
+        assertFalse(activitySource.contains("binding.recyclerPositionByProduct.setLayoutManager"));
+        assertFalse(activitySource.contains("binding.recyclerPositions.setLayoutManager"));
+        assertFalse(activitySource.contains("binding.recyclerPendingOrders.setLayoutManager"));
+        assertFalse(activitySource.contains("private void refreshPositions()"));
+        assertFalse(activitySource.contains("private List<AccountMetric> buildOverviewMetrics("));
+        assertFalse(activitySource.contains("private String formatRefreshMetaText()"));
+
+        assertFalse(layoutSource.contains("@+id/tvAccountOverviewTitle"));
+        assertFalse(layoutSource.contains("@+id/tvAccountMeta"));
+        assertFalse(layoutSource.contains("@+id/recyclerOverview"));
+        assertFalse(layoutSource.contains("@+id/cardCurrentPositions"));
+        assertFalse(layoutSource.contains("@+id/recyclerPositionByProduct"));
+        assertFalse(layoutSource.contains("@+id/recyclerPositions"));
+        assertFalse(layoutSource.contains("@+id/recyclerPendingOrders"));
     }
 
     @Test
