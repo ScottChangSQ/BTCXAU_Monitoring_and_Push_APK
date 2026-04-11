@@ -1,0 +1,1 @@
+  mCurrentFocus=Window{46ec808 u0 com.binance.monitor/com.binance.monitor.ui.main.MainActivity}
