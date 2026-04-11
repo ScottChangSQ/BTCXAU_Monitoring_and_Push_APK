@@ -238,6 +238,8 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertTrue(activitySource.contains("firstFrameCompletionPosted = true;"));
         assertTrue(activitySource.contains("clearFirstFrameCompletionListener();"));
         assertTrue(activitySource.contains("markFirstFrameCompleted();"));
+        assertFalse(activitySource.contains("binding.cardCurveSection.setVisibility(View.VISIBLE);"));
+        assertTrue(activitySource.contains("renderCurveWithIndicators(resolveImmediateCurvePoints());"));
         assertTrue(activitySource.contains("binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);"));
         assertTrue(activitySource.contains("binding.cardReturnStatsSection.setVisibility(View.VISIBLE);"));
         assertTrue(activitySource.contains("binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);"));

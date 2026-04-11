@@ -39,6 +39,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.drawable.DrawableCompat;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.binance.monitor.R;
@@ -62,6 +63,8 @@ import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
+import com.binance.monitor.ui.account.AccountOverviewMetricsHelper;
+import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
 import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
@@ -215,12 +218,14 @@ public class MarketChartActivity extends AppCompatActivity {
     private final SimpleDateFormat stateTimeFormat = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
     private final DecimalFormat qtyFormat = new DecimalFormat("0.####");
     private final DecimalFormat pnlFormat = new DecimalFormat("0.##");
+    private AccountMetricAdapter chartOverviewAdapter;
     private PositionAggregateAdapter chartPositionAggregateAdapter;
     private PositionAdapterV2 chartPositionAdapter;
     private PendingOrderAdapter chartPendingOrderAdapter;
     private final List<PositionItem> lastChartPositions = new ArrayList<>();
     private final List<PositionItem> lastChartPendingOrders = new ArrayList<>();
     private double lastChartTotalAsset;
+    private long lastChartOverviewUpdatedAtMs;
     private MarketChartPositionSortHelper.SortOption selectedPositionSort =
             MarketChartPositionSortHelper.SortOption.OPEN_TIME_DESC;
     private int pricePaneLeftPx;
@@ -798,10 +803,13 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private void setupChartPositionPanel() {
+        chartOverviewAdapter = new AccountMetricAdapter();
         chartPositionAggregateAdapter = new PositionAggregateAdapter();
         chartPositionAdapter = new PositionAdapterV2();
         chartPendingOrderAdapter = new PendingOrderAdapter();
         ArrayAdapter<String> positionSortAdapter = createPositionSortAdapter();
+        binding.recyclerChartOverview.setLayoutManager(new GridLayoutManager(this, 2));
+        binding.recyclerChartOverview.setAdapter(chartOverviewAdapter);
         binding.recyclerChartPositionByProduct.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerChartPositionByProduct.setAdapter(chartPositionAggregateAdapter);
         binding.recyclerChartPositions.setLayoutManager(new LinearLayoutManager(this));
@@ -926,6 +934,7 @@ public class MarketChartActivity extends AppCompatActivity {
                                           List<PositionItem> pendingOrders,
                                           double totalAsset) {
         if (binding == null
+                || chartOverviewAdapter == null
                 || chartPositionAggregateAdapter == null
                 || chartPositionAdapter == null
                 || chartPendingOrderAdapter == null) {
@@ -2147,6 +2156,32 @@ public class MarketChartActivity extends AppCompatActivity {
         }
     }
 
+    // 图表页统一承接实时账户总览，避免账户页继续维护另一份高频总览区块。
+    private void updateChartOverviewSection(@Nullable AccountSnapshot snapshot) {
+        if (binding == null || chartOverviewAdapter == null) {
+            return;
+        }
+        boolean masked = SensitiveDisplayMasker.isEnabled(this);
+        chartOverviewAdapter.setMasked(masked);
+        binding.tvChartOverviewTitle.setText("账户总览");
+        if (snapshot == null) {
+            chartOverviewAdapter.submitList(new ArrayList<>());
+            binding.tvChartOverviewMeta.setText("更新时间 --");
+            return;
+        }
+        chartOverviewAdapter.submitList(AccountOverviewMetricsHelper.buildOverviewMetrics(
+                snapshot.getOverviewMetrics(),
+                snapshot.getPositions(),
+                snapshot.getTrades(),
+                snapshot.getCurvePoints(),
+                System.currentTimeMillis(),
+                TimeZone.getTimeZone("Asia/Shanghai")
+        ));
+        binding.tvChartOverviewMeta.setText(lastChartOverviewUpdatedAtMs > 0L
+                ? "更新时间 " + FormatUtils.formatDateTime(lastChartOverviewUpdatedAtMs)
+                : "更新时间 --");
+    }
+
     // 年线自动缺口补拉仍走月线底稿，再聚合成年桶，保持时间桶语义和手动翻页一致。
     private void runYearGapFill(String reqSymbol,
                                 IntervalOption reqInterval,
@@ -2843,11 +2878,15 @@ public class MarketChartActivity extends AppCompatActivity {
                 ? Collections.emptyList()
                 : snapshot.getPendingOrders();
         double totalAsset = resolveChartTotalAsset(snapshot);
+        lastChartOverviewUpdatedAtMs = cache == null
+                ? 0L
+                : (cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt());
         binding.klineChartView.setPositionAnnotations(buildPositionAnnotations(positions, trades));
         binding.klineChartView.setPendingAnnotations(buildPendingAnnotations(pendingOrders, trades));
         binding.klineChartView.setHistoryTradeAnnotations(buildHistoricalTradeAnnotations(trades));
         binding.klineChartView.setAggregateCostAnnotation(buildAggregateCostAnnotation(positions));
         lastAccountOverlaySignature = buildAccountOverlaySignature(cache);
+        updateChartOverviewSection(snapshot);
         updateChartPositionPanel(positions, pendingOrders, totalAsset);
     }
 
@@ -2931,6 +2970,7 @@ public class MarketChartActivity extends AppCompatActivity {
     // 当没有任何可用账户快照时，统一清空图表上的持仓与挂单标注。
     private void clearAccountAnnotationsOverlay() {
         clearStoredChartOverlaySnapshot();
+        lastChartOverviewUpdatedAtMs = 0L;
         lastAccountOverlaySignature = buildAccountOverlaySignature(
                 accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache()
         );
@@ -2938,6 +2978,7 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.klineChartView.setPendingAnnotations(new ArrayList<>());
         binding.klineChartView.setHistoryTradeAnnotations(new ArrayList<>());
         binding.klineChartView.setAggregateCostAnnotation(null);
+        updateChartOverviewSection(null);
         updateChartPositionPanel(new ArrayList<>(), new ArrayList<>(), 0d);
     }
 

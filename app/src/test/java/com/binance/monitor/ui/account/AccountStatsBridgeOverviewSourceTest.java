@@ -1,67 +1,45 @@
 package com.binance.monitor.ui.account;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class AccountStatsBridgeOverviewSourceTest {
 
     @Test
-    public void buildOverviewMetricsShouldExposeMarginLabelInOverviewSecondRow() throws Exception {
-        String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")),
-                StandardCharsets.UTF_8
-        );
+    public void overviewMetricsHelperShouldOwnOverviewMetricAssembly() throws Exception {
+        Path helperFile = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountOverviewMetricsHelper.java");
+        String source = new String(Files.readAllBytes(helperFile), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
 
-        assertTrue(source.contains("new AccountMetric(\"保证金\""));
-    }
-
-    @Test
-    public void currentPositionSummaryShouldNotAddStorageFeeToTotalPnl() throws Exception {
-        String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")),
-                StandardCharsets.UTF_8
-        );
-
-        assertTrue(!source.contains("item.getTotalPnL() + item.getStorageFee()"));
-    }
-
-    @Test
-    public void overviewHeaderShouldSkipUnchangedTitleRender() throws Exception {
-        String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")),
-                StandardCharsets.UTF_8
-        );
-
-        assertTrue(source.contains("private String lastOverviewTitleSignature = \"\";"));
-        assertTrue(source.contains("if (!titleSignature.equals(lastOverviewTitleSignature)) {"));
-    }
-
-    @Test
-    public void buildOverviewMetricsShouldOverrideDailyMetricsWithAppLocalTruth() throws Exception {
-        String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")),
-                StandardCharsets.UTF_8
-        );
-
+        assertTrue(source.contains("public static List<AccountMetric> buildOverviewMetrics("));
+        assertTrue(source.contains("AccountOverviewMetricsCalculator.calculate("));
         assertTrue(source.contains("AccountOverviewDailyMetricsCalculator.calculate("));
+        assertTrue(source.contains("AccountOverviewCumulativeMetricsCalculator.calculate("));
+    }
+
+    @Test
+    public void overviewMetricsHelperShouldApplyCanonicalOverridesAndStableOrder() throws Exception {
+        Path helperFile = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountOverviewMetricsHelper.java");
+        String source = new String(Files.readAllBytes(helperFile), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"可用预付款\""));
+        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"保证金\""));
+        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓盈亏\""));
+        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓收益率\""));
         assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"当日盈亏\""));
         assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"当日收益率\""));
-    }
-
-    @Test
-    public void buildOverviewMetricsShouldUseStableDisplayOrder() throws Exception {
-        String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")),
-                StandardCharsets.UTF_8
-        ).replace("\r\n", "\n").replace('\r', '\n');
-
         assertTrue(source.contains("return sortOverviewMetricsForDisplay(result);"));
-        assertTrue(source.contains("private List<AccountMetric> sortOverviewMetricsForDisplay(List<AccountMetric> metrics) {"));
+        assertTrue(source.contains("private static List<AccountMetric> sortOverviewMetricsForDisplay(@Nullable List<AccountMetric> metrics) {"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"总资产\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"净资产\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"可用预付款\");"));
@@ -75,26 +53,12 @@ public class AccountStatsBridgeOverviewSourceTest {
     }
 
     @Test
-    public void buildOverviewMetricsShouldFillPositionMetricsFromCanonicalSnapshot() throws Exception {
-        String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")),
-                StandardCharsets.UTF_8
-        );
+    public void activityShouldNoLongerOwnOverviewMetricAssembly() throws Exception {
+        Path activityFile = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
+        String source = new String(Files.readAllBytes(activityFile), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("AccountOverviewMetricsCalculator.calculate("));
-        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓盈亏\""));
-        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓收益率\""));
-    }
-
-    @Test
-    public void buildOverviewMetricsShouldKeepCanonicalCumulativeMetricsFromSnapshot() throws Exception {
-        String source = new String(
-                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")),
-                StandardCharsets.UTF_8
-        );
-
-        assertTrue(source.contains("AccountOverviewCumulativeMetricsCalculator.calculate("));
-        assertTrue(source.contains("if (cumulativeValues.hasCumulativePnlTruth()) {"));
-        assertTrue(source.contains("if (cumulativeValues.hasCumulativeReturnRateTruth()) {"));
+        assertFalse(source.contains("private List<AccountMetric> buildOverviewMetrics("));
+        assertFalse(source.contains("private List<AccountMetric> sortOverviewMetricsForDisplay("));
+        assertFalse(source.contains("private String extractLeverageText("));
     }
 }

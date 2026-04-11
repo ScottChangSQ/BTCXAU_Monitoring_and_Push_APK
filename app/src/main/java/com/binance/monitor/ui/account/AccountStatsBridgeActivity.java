@@ -1,6 +1,6 @@
 /*
- * 账户统计桥接页，负责账户总览、持仓、交易记录与刷新状态的统一展示。
- * 该页面同时对接网关快照、历史缓存和本地筛选交互。
+ * 账户统计桥接页，负责历史分析、交易记录与统计图表展示。
+ * 该页面只保留历史分析链路，并对接网关快照、历史缓存和本地筛选交互。
  */
 package com.binance.monitor.ui.account;
 
@@ -81,9 +81,6 @@ import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.runtime.account.MetricNameTranslator;
 import com.binance.monitor.service.MonitorService;
 import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
-import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
-import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
-import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
 import com.binance.monitor.ui.account.session.AccountSessionRestoreHelper;
 import com.binance.monitor.ui.account.adapter.StatsMetricAdapter;
 import com.binance.monitor.ui.account.adapter.TradeRecordAdapterV2;
@@ -196,11 +193,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private ActivityAccountStatsBinding binding;
     private AccountStatsPreloadManager preloadManager;
     private AccountStorageRepository accountStorageRepository;
-    private AccountMetricAdapter overviewAdapter;
     private AccountMetricAdapter indicatorAdapter;
-    private PositionAggregateAdapter positionAggregateAdapter;
-    private PositionAdapterV2 positionAdapter;
-    private PendingOrderAdapter pendingOrderAdapter;
     private TradeRecordAdapterV2 tradeAdapter;
     private StatsMetricAdapter statsAdapter;
     private LogManager logManager;
@@ -248,7 +241,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private List<CurvePoint> displayedCurvePoints = new ArrayList<>();
     private List<CurveAnalyticsHelper.DrawdownPoint> displayedDrawdownPoints = new ArrayList<>();
     private List<CurveAnalyticsHelper.DailyReturnPoint> displayedDailyReturnPoints = new ArrayList<>();
-    private List<AccountMetric> latestOverviewMetrics = new ArrayList<>();
     private List<AccountMetric> latestCurveIndicators = new ArrayList<>();
     private List<AccountMetric> latestStatsMetrics = new ArrayList<>();
     private String defaultCurveMeta = "--";
@@ -261,7 +253,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String connectedSource = "历史数据（网关离线）";
     private String connectedGateway = "--";
     private String connectedUpdate = "--";
-    private String connectedLeverageText = "";
     private String connectedError = "";
     private String dataQualitySummary = "";
     private boolean userLoggedIn;
@@ -273,8 +264,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private List<RemoteAccountProfile> savedSessionAccounts = new ArrayList<>();
     private final List<CurvePoint> curveHistory = new ArrayList<>();
     private final List<TradeRecordItem> tradeHistory = new ArrayList<>();
-    private List<PositionItem> connectedPositionCache = new ArrayList<>();
-    private List<PositionItem> connectedPendingCache = new ArrayList<>();
     private final Map<String, PositionLogState> lastPositionLogStates = new HashMap<>();
     private final Map<String, PendingLogState> lastPendingLogStates = new HashMap<>();
     private final Set<String> knownTradeOpenLogKeys = new HashSet<>();
@@ -290,8 +279,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String lastTradeVisibilitySnapshotSignature = "";
     private String lastTradeFilterVisibilitySignature = "";
     private String lastAppliedSnapshotSignature = "";
-    private String lastOverviewTitleSignature = "";
-    private String lastOverviewMetaText = "";
     private long dynamicRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private long scheduledRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private int unchangedRefreshStreak = 0;
@@ -330,14 +317,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             if (snapshotRefreshCoordinator != null) {
                 snapshotRefreshCoordinator.requestSnapshot();
             }
-        }
-    };
-
-    private final Runnable overviewHeaderTicker = new Runnable() {
-        @Override
-        public void run() {
-            updateOverviewHeader();
-            refreshHandler.postDelayed(this, 1_000L);
         }
     };
 
@@ -641,11 +620,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 0);
 
         stageStartedAt = SystemClock.elapsedRealtime();
-        overviewAdapter = new AccountMetricAdapter();
         indicatorAdapter = new AccountMetricAdapter();
-        positionAggregateAdapter = new PositionAggregateAdapter();
-        positionAdapter = new PositionAdapterV2();
-        pendingOrderAdapter = new PendingOrderAdapter();
         tradeAdapter = new TradeRecordAdapterV2();
         statsAdapter = new StatsMetricAdapter();
         traceAccountRenderPhase("on_create_adapter_init",
@@ -664,7 +639,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         stageStartedAt = SystemClock.elapsedRealtime();
         setupBottomNav();
-        placeCurveSectionToBottom();
         setupRecyclers();
         setupFilters();
         configureToggleButtonsV2();
@@ -676,6 +650,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setupDatePickers();
         setupCurveInteraction();
         setupOverviewHeader();
+        placeCurveSectionToBottom();
         traceAccountRenderPhase("on_create_setup_static_ui",
                 stageStartedAt,
                 0,
@@ -695,7 +670,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         applyPrivacyMaskState();
         snapshotLoopEnabled = true;
         enterAccountScreen(true);
-        startOverviewHeaderTicker();
         traceAccountRenderPhase("on_create_enter_account_screen",
                 stageStartedAt,
                 baseTrades.size(),
@@ -720,14 +694,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         snapshotLoopEnabled = true;
         enterAccountScreen(false);
-        startOverviewHeaderTicker();
     }
 
     @Override
     protected void onPause() {
         snapshotLoopEnabled = false;
         clearScheduledRefresh();
-        stopOverviewHeaderTicker();
         binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
         binding.scrollAccountStats.removeCallbacks(deferredSecondarySectionAttachRunnable);
         deferredSecondarySectionAttachPosted = false;
@@ -745,7 +717,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     protected void onDestroy() {
         snapshotLoopEnabled = false;
         clearScheduledRefresh();
-        stopOverviewHeaderTicker();
         if (binding != null && binding.tvLoginSuccessBanner != null) {
             binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
         }
@@ -1335,7 +1306,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedSource = "未登录";
         connectedGateway = "--";
         connectedAccountName = "";
-        connectedLeverageText = "";
         connectedUpdateAtMs = 0L;
         connectedUpdate = "--";
         requestMonitorServiceAccountRuntimeClear();
@@ -1352,11 +1322,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         baseTrades = new ArrayList<>();
         allCurvePoints = new ArrayList<>();
         displayedCurvePoints = new ArrayList<>();
-        latestOverviewMetrics = new ArrayList<>();
         latestCurveIndicators = new ArrayList<>();
         latestStatsMetrics = new ArrayList<>();
-        connectedPositionCache = new ArrayList<>();
-        connectedPendingCache = new ArrayList<>();
         curveHistory.clear();
         tradeHistory.clear();
         lastPositionLogStates.clear();
@@ -1406,7 +1373,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 登出后立即切回彻底空态，避免列表或图表继续残留上一账户数据。
     private void applyLoggedOutEmptyState() {
-        latestOverviewMetrics = new ArrayList<>();
         latestCurveIndicators = new ArrayList<>();
         latestStatsMetrics = new ArrayList<>();
         AccountSnapshot emptySnapshot = buildEmptyAccountSnapshot();
@@ -1418,7 +1384,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 connectedAccount,
                 connectedServer
         );
-        overviewAdapter.submitList(buildDisconnectedOverviewMetrics());
     }
 
     // 组装远程会话协调器，把网络、加密、本地缓存清理串到统一入口。
@@ -1487,12 +1452,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
                     @Override
                     public void clearPendingExpandedState() {
-                        runOnUiThread(() -> pendingOrderAdapter.submitList(new ArrayList<>()));
+                        // 账户页已不再展示挂单列表，这里无需额外清理列表展开态。
                     }
 
                     @Override
                     public void clearPositionExpandedState() {
-                        runOnUiThread(() -> positionAdapter.submitList(new ArrayList<>()));
+                        // 账户页已不再展示持仓列表，这里无需额外清理列表展开态。
                     }
 
                     @Override
@@ -1808,22 +1773,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setupRecyclers() {
-        binding.recyclerOverview.setLayoutManager(new GridLayoutManager(this, 2));
-        binding.recyclerOverview.setAdapter(overviewAdapter);
-
         binding.recyclerCurveIndicators.setLayoutManager(new GridLayoutManager(this, 3));
         binding.recyclerCurveIndicators.setAdapter(indicatorAdapter);
-
-        binding.recyclerPositionByProduct.setLayoutManager(new LinearLayoutManager(this));
-        binding.recyclerPositionByProduct.setAdapter(positionAggregateAdapter);
-
-        binding.recyclerPositions.setLayoutManager(new LinearLayoutManager(this));
-        binding.recyclerPositions.setItemAnimator(null);
-        binding.recyclerPositions.setAdapter(positionAdapter);
-
-        binding.recyclerPendingOrders.setLayoutManager(new LinearLayoutManager(this));
-        binding.recyclerPendingOrders.setItemAnimator(null);
-        binding.recyclerPendingOrders.setAdapter(pendingOrderAdapter);
 
         binding.recyclerTrades.setLayoutManager(new LinearLayoutManager(this));
         binding.recyclerTrades.setItemAnimator(null);
@@ -1899,7 +1850,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         long stageStartedAt = SystemClock.elapsedRealtime();
-        binding.cardCurveSection.setVisibility(View.VISIBLE);
         binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);
         binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
         binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);
@@ -2029,14 +1979,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
 
         stageStartedAt = SystemClock.elapsedRealtime();
-        refreshPositions();
-        traceAccountRenderPhase("refresh_positions",
-                stageStartedAt,
-                baseTrades.size(),
-                basePositions.size(),
-                displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
-
-        stageStartedAt = SystemClock.elapsedRealtime();
         bindFilteredTrades(prepared.getFilteredTrades(),
                 prepared.getTradeSummary(),
                 false,
@@ -2056,11 +1998,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         boolean masked = isPrivacyMasked();
-        overviewAdapter.setMasked(masked);
         indicatorAdapter.setMasked(masked);
-        positionAggregateAdapter.setMasked(masked);
-        positionAdapter.setMasked(masked);
-        pendingOrderAdapter.setMasked(masked);
         tradeAdapter.setMasked(masked);
         statsAdapter.setMasked(masked);
         binding.tradeWeekdayBarChart.setMasked(masked);
@@ -2087,10 +2025,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     // 首屏还没有任何可见账户真值时，不再为了打码切换提前重刷整页次屏区块。
     private boolean hasImmediateAccountContent() {
         return !lastAppliedSnapshotSignature.isEmpty()
-                || !latestOverviewMetrics.isEmpty()
                 || !baseTrades.isEmpty()
-                || !basePositions.isEmpty()
-                || !allCurvePoints.isEmpty();
+                || !allCurvePoints.isEmpty()
+                || !latestCurveIndicators.isEmpty()
+                || !latestStatsMetrics.isEmpty();
     }
 
     private boolean isPrivacyMasked() {
@@ -3023,7 +2961,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedGateway = "--";
         connectedUpdateAtMs = System.currentTimeMillis();
         connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
-        connectedLeverageText = "";
         connectedError = "";
         dataQualitySummary = "";
         gatewayConnected = false;
@@ -3149,50 +3086,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void updateOverviewHeader() {
-        boolean masked = isPrivacyMasked();
-        boolean disconnected = !userLoggedIn && !gatewayConnected;
-        String title = disconnected
-                ? "账户总览（未连接）"
-                : AccountStatsPrivacyFormatter.formatOverviewTitle(
-                AccountOverviewTitleHelper.resolveDisplayAccount(
-                        connectedAccount,
-                        connectedAccountName,
-                        ACCOUNT
-                ),
-                masked);
-        String titleSignature = disconnected
-                + "|"
-                + masked
-                + "|"
-                + title
-                + "|"
-                + connectedLeverageText;
-        if (!titleSignature.equals(lastOverviewTitleSignature)) {
-            if (!masked && !connectedLeverageText.isEmpty()) {
-                String leverageText = "（" + connectedLeverageText + "）";
-                SpannableStringBuilder builder = new SpannableStringBuilder(title).append(leverageText);
-                int leverageStart = builder.length() - leverageText.length();
-                builder.setSpan(new AbsoluteSizeSpan(12, true),
-                        leverageStart,
-                        builder.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                builder.setSpan(new ForegroundColorSpan(ContextCompat.getColor(this, R.color.text_secondary)),
-                        leverageStart,
-                        builder.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                binding.tvAccountOverviewTitle.setText(builder);
-            } else {
-                binding.tvAccountOverviewTitle.setText(title);
-            }
-            lastOverviewTitleSignature = titleSignature;
-        }
-        String metaText = disconnected
-                ? "更新时间 --"
-                : AccountStatsPrivacyFormatter.formatRefreshMeta(formatRefreshMetaText(), masked);
-        if (!metaText.equals(lastOverviewMetaText)) {
-            binding.tvAccountMeta.setText(metaText);
-            lastOverviewMetaText = metaText;
-        }
+        // 账户页已不再承载实时总览头部，连接状态由曲线卡右上角和会话状态单独展示。
     }
 
     private boolean isAccountSessionReady() {
@@ -3212,31 +3106,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         refreshHandler.removeCallbacks(refreshRunnable);
         nextRefreshAtMs = 0L;
         scheduledRefreshDelayMs = 0L;
-    }
-
-    private void startOverviewHeaderTicker() {
-        refreshHandler.removeCallbacks(overviewHeaderTicker);
-        refreshHandler.post(overviewHeaderTicker);
-    }
-
-    private void stopOverviewHeaderTicker() {
-        refreshHandler.removeCallbacks(overviewHeaderTicker);
-    }
-
-    private String formatRefreshMetaText() {
-        long nowMs = System.currentTimeMillis();
-        long updateAt = connectedUpdateAtMs > 0L ? connectedUpdateAtMs : nowMs;
-        long intervalSeconds = AccountRefreshMetaHelper.resolveIntervalSeconds(
-                scheduledRefreshDelayMs,
-                dynamicRefreshDelayMs
-        );
-        long remainSeconds = AccountRefreshMetaHelper.resolveRemainingSeconds(
-                nextRefreshAtMs,
-                nowMs,
-                intervalSeconds,
-                loading
-        );
-        return FormatUtils.formatDateTime(updateAt) + "（" + remainSeconds + "秒/" + intervalSeconds + "秒）";
     }
 
     // 页面首次进入和应用回到前台时，都立即拉一次账户总计，避免只显示旧缓存。
@@ -4029,19 +3898,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         replaceTradeHistory(snapshotTrades);
         replaceCurveHistory(snapshotCurves);
-        latestOverviewMetrics = snapshot.getOverviewMetrics() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getOverviewMetrics());
         latestCurveIndicators = snapshot.getCurveIndicators() == null
                 ? new ArrayList<>()
                 : new ArrayList<>(snapshot.getCurveIndicators());
         latestStatsMetrics = snapshot.getStatsMetrics() == null
                 ? new ArrayList<>()
                 : new ArrayList<>(snapshot.getStatsMetrics());
-        if (remoteConnected) {
-            connectedPositionCache = new ArrayList<>(snapshotPositions);
-            connectedPendingCache = new ArrayList<>(snapshotPending);
-        }
 
         basePositions = snapshotPositions;
         basePendingOrders = snapshotPending;
@@ -4053,27 +3915,20 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         baseTrades = new ArrayList<>(effectiveTrades);
         baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
         allCurvePoints = normalizeCurvePoints(effectiveCurves);
+        AccountOverviewCumulativeMetricsCalculator.OverviewCumulativeValues cumulativeValues =
+                AccountOverviewCumulativeMetricsCalculator.calculate(
+                        baseTrades,
+                        basePositions,
+                        allCurvePoints
+                );
+        latestCumulativePnl = cumulativeValues.hasCumulativePnlTruth()
+                ? cumulativeValues.getCumulativePnl()
+                : 0d;
+        renderCurveWithIndicators(resolveImmediateCurvePoints());
         logTradeVisibilitySnapshot(snapshotTrades, effectiveTrades, baseTrades);
         logAccountSnapshotEvents(basePositions, basePendingOrders, baseTrades, remoteConnected);
         ensureReturnStatsAnchor();
-        connectedLeverageText = extractLeverageText(latestOverviewMetrics);
         updateOverviewHeader();
-
-        long stageStartedAt = SystemClock.elapsedRealtime();
-        List<AccountMetric> overview = buildOverviewMetrics(latestOverviewMetrics);
-        traceAccountRenderPhase("build_overview",
-                stageStartedAt,
-                baseTrades.size(),
-                basePositions.size(),
-                allCurvePoints.size());
-
-        stageStartedAt = SystemClock.elapsedRealtime();
-        overviewAdapter.submitList(overview);
-        traceAccountRenderPhase("bind_overview_and_filters",
-                stageStartedAt,
-                baseTrades.size(),
-                basePositions.size(),
-                allCurvePoints.size());
 
         deferredSecondaryRenderPending = true;
         if (secondarySectionsAttached) {
@@ -4188,240 +4043,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private List<CurvePoint> normalizeCurvePoints(List<CurvePoint> source) {
         return AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);
-    }
-
-    private List<AccountMetric> buildOverviewMetrics(List<AccountMetric> snapshotOverview) {
-        if (snapshotOverview != null && !snapshotOverview.isEmpty()) {
-            List<AccountMetric> result = new ArrayList<>(snapshotOverview);
-            double totalAsset = metricValue(snapshotOverview, "总资产", "Total Asset", "Total Assets");
-            double netAsset = metricValue(snapshotOverview, "净资产", "当前净值", "净值", "Current Equity", "Net Asset");
-            AccountOverviewMetricsCalculator.OverviewValues overviewValues =
-                    AccountOverviewMetricsCalculator.calculate(
-                            totalAsset,
-                            netAsset,
-                            snapshotOverview,
-                            basePositions
-                    );
-            replaceOrAppendOverviewMetric(result, "可用预付款",
-                    FormatUtils.formatPriceWithUnit(overviewValues.getFreePrepayment()));
-            replaceOrAppendOverviewMetric(result, "保证金",
-                    FormatUtils.formatPriceWithUnit(overviewValues.getPrepayment()));
-            replaceOrAppendOverviewMetric(result, "持仓盈亏", signedMoney(overviewValues.getPositionPnl()));
-            replaceOrAppendOverviewMetric(result, "持仓收益率", percent(overviewValues.getPositionPnlRate()));
-            AccountOverviewDailyMetricsCalculator.OverviewDailyValues dailyValues =
-                    AccountOverviewDailyMetricsCalculator.calculate(
-                            baseTrades,
-                            allCurvePoints,
-                            System.currentTimeMillis(),
-                            BEIJING_TIME_ZONE
-                    );
-            replaceOrAppendOverviewMetric(result, "当日盈亏", signedMoney(dailyValues.getTodayPnl()));
-            replaceOrAppendOverviewMetric(result, "当日收益率", percent(dailyValues.getTodayReturnRate()));
-            AccountOverviewCumulativeMetricsCalculator.OverviewCumulativeValues cumulativeValues =
-                    AccountOverviewCumulativeMetricsCalculator.calculate(
-                            baseTrades,
-                            basePositions,
-                            allCurvePoints
-                    );
-            if (cumulativeValues.hasCumulativePnlTruth()) {
-                replaceOrAppendOverviewMetric(result, "累计盈亏", signedMoney(cumulativeValues.getCumulativePnl()));
-            }
-            if (cumulativeValues.hasCumulativeReturnRateTruth()) {
-                replaceOrAppendOverviewMetric(result, "累计收益率", percent(cumulativeValues.getCumulativeReturnRate()));
-            }
-            latestCumulativePnl = metricValue(result, "累计盈亏");
-            return sortOverviewMetricsForDisplay(result);
-        }
-        latestCumulativePnl = 0d;
-        if (!userLoggedIn && !gatewayConnected) {
-            return sortOverviewMetricsForDisplay(buildDisconnectedOverviewMetrics());
-        }
-        return sortOverviewMetricsForDisplay(new ArrayList<>());
-    }
-
-    // 用 APP 本地真值覆盖账户概览里的目标指标，缺项时追加到列表末尾。
-    private void replaceOrAppendOverviewMetric(List<AccountMetric> metrics,
-                                               String targetName,
-                                               String targetValue) {
-        if (metrics == null || targetName == null || targetName.trim().isEmpty()) {
-            return;
-        }
-        String normalizedTarget = trim(targetName);
-        for (int i = 0; i < metrics.size(); i++) {
-            AccountMetric metric = metrics.get(i);
-            if (metric == null) {
-                continue;
-            }
-            String currentName = trim(MetricNameTranslator.toChinese(metric.getName()));
-            if (!currentName.equalsIgnoreCase(normalizedTarget)) {
-                continue;
-            }
-            metrics.set(i, new AccountMetric(targetName, targetValue));
-            return;
-        }
-        metrics.add(new AccountMetric(targetName, targetValue));
-    }
-
-    // 退出登录后账户概览统一显示为空值，避免误把默认值当成真实账户数据。
-    private List<AccountMetric> buildDisconnectedOverviewMetrics() {
-        List<AccountMetric> result = new ArrayList<>();
-        result.add(new AccountMetric("总资产", "--"));
-        result.add(new AccountMetric("净资产", "--"));
-        result.add(new AccountMetric("可用预付款", "--"));
-        result.add(new AccountMetric("保证金", "--"));
-        result.add(new AccountMetric("持仓盈亏", "--"));
-        result.add(new AccountMetric("持仓收益率", "--"));
-        result.add(new AccountMetric("当日盈亏", "--"));
-        result.add(new AccountMetric("当日收益率", "--"));
-        result.add(new AccountMetric("累计盈亏", "--"));
-        result.add(new AccountMetric("累计收益率", "--"));
-        return result;
-    }
-
-    // 账户概览统一按固定 5 行顺序展示，不再跟随上游返回顺序或附带字段漂移。
-    private List<AccountMetric> sortOverviewMetricsForDisplay(List<AccountMetric> metrics) {
-        if (metrics == null || metrics.isEmpty()) {
-            return new ArrayList<>();
-        }
-        Map<String, List<AccountMetric>> metricsByKey = new LinkedHashMap<>();
-        for (AccountMetric metric : metrics) {
-            if (metric == null) {
-                continue;
-            }
-            String displayKey = normalizeOverviewMetricDisplayKey(metric.getName());
-            List<AccountMetric> bucket = metricsByKey.get(displayKey);
-            if (bucket == null) {
-                bucket = new ArrayList<>();
-                metricsByKey.put(displayKey, bucket);
-            }
-            bucket.add(metric);
-        }
-        List<AccountMetric> ordered = new ArrayList<>();
-        Set<AccountMetric> appended = new HashSet<>();
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "总资产");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "净资产");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "可用预付款");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "保证金");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "累计盈亏");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "累计收益率");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "当日盈亏");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "当日收益率");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "持仓盈亏");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "持仓收益率");
-        return ordered;
-    }
-
-    // 从同一语义分组里挑出最适合展示的那一项，并把同组别名一并视为已消费。
-    private void appendOverviewMetricInDisplayOrder(List<AccountMetric> ordered,
-                                                    Map<String, List<AccountMetric>> metricsByKey,
-                                                    Set<AccountMetric> appended,
-                                                    String key) {
-        List<AccountMetric> bucket = metricsByKey.get(key);
-        if (bucket == null || bucket.isEmpty()) {
-            return;
-        }
-        AccountMetric chosen = chooseOverviewMetricForDisplay(bucket, key);
-        if (chosen == null) {
-            return;
-        }
-        ordered.add(chosen);
-        appended.addAll(bucket);
-    }
-
-    // 同一组里优先选与目标展示名完全一致的指标，避免“保证金/预付款”等别名随机漂移。
-    @Nullable
-    private AccountMetric chooseOverviewMetricForDisplay(List<AccountMetric> bucket, String targetKey) {
-        if (bucket == null || bucket.isEmpty()) {
-            return null;
-        }
-        for (AccountMetric metric : bucket) {
-            if (metric == null) {
-                continue;
-            }
-            String normalizedName = trim(MetricNameTranslator.toChinese(metric.getName()));
-            if (normalizedName.equalsIgnoreCase(targetKey)) {
-                return metric;
-            }
-        }
-        return bucket.get(0);
-    }
-
-    // 把服务端不同命名口径统一折叠成页面固定展示位。
-    private String normalizeOverviewMetricDisplayKey(String rawName) {
-        String name = trim(MetricNameTranslator.toChinese(rawName));
-        if (name.isEmpty()) {
-            return "";
-        }
-        if ("当前净值".equalsIgnoreCase(name) || "净值".equalsIgnoreCase(name)) {
-            return "净资产";
-        }
-        if ("可用资金".equalsIgnoreCase(name) || "可用保证金".equalsIgnoreCase(name)) {
-            return "可用预付款";
-        }
-        if ("预付款".equalsIgnoreCase(name)
-                || "保证金".equalsIgnoreCase(name)
-                || "保证金金额".equalsIgnoreCase(name)
-                || "Margin".equalsIgnoreCase(name)
-                || "Margin Amount".equalsIgnoreCase(name)) {
-            return "保证金";
-        }
-        return name;
-    }
-
-    private double metricValue(List<AccountMetric> metrics, String... names) {
-        if (metrics == null || metrics.isEmpty() || names == null || names.length == 0) {
-            return 0d;
-        }
-        for (AccountMetric metric : metrics) {
-            if (metric == null) {
-                continue;
-            }
-            String name = trim(MetricNameTranslator.toChinese(metric.getName()));
-            for (String candidate : names) {
-                if (candidate == null) {
-                    continue;
-                }
-                String query = trim(candidate);
-                if (name.equalsIgnoreCase(query) || name.contains(query) || query.contains(name)) {
-                    return parseNumber(metric.getValue());
-                }
-            }
-        }
-        return 0d;
-    }
-
-    private String extractLeverageText(List<AccountMetric> metrics) {
-        return AccountLeverageResolver.formatDisplayLeverage(metrics);
-    }
-
-    private double parseNumber(String raw) {
-        if (raw == null || raw.trim().isEmpty()) {
-            return 0d;
-        }
-        StringBuilder builder = new StringBuilder();
-        boolean dot = false;
-        boolean sign = false;
-        for (int i = 0; i < raw.length(); i++) {
-            char c = raw.charAt(i);
-            if ((c == '+' || c == '-') && !sign && builder.length() == 0) {
-                builder.append(c);
-                sign = true;
-                continue;
-            }
-            if (Character.isDigit(c)) {
-                builder.append(c);
-                continue;
-            }
-            if (c == '.' && !dot) {
-                builder.append(c);
-                dot = true;
-            }
-        }
-        try {
-            return Double.parseDouble(builder.toString());
-        } catch (Exception ignored) {
-            return 0d;
-        }
     }
 
     private void refreshTradeStats() {
@@ -4582,6 +4203,24 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         manualCurveRangeEnabled = curveProjection.isManualRangeApplied();
         syncRangeInputsWithDisplayedCurve(curveProjection.getDisplayedCurvePoints());
         applyPreparedCurveProjection(curveProjection);
+    }
+
+    // 首屏先只解析当前范围下的主曲线点，避免等待次级区块后台结果后才看到历史曲线。
+    private List<CurvePoint> resolveImmediateCurvePoints() {
+        if (manualCurveRangeEnabled) {
+            List<CurvePoint> manualPoints = filterCurveByManualRange(
+                    allCurvePoints,
+                    manualCurveRangeStartMs,
+                    manualCurveRangeEndMs
+            );
+            if (manualPoints.size() >= 2) {
+                syncRangeInputsWithDisplayedCurve(manualPoints);
+                return manualPoints;
+            }
+        }
+        List<CurvePoint> rangedPoints = filterCurveByRange(allCurvePoints, selectedRange);
+        syncRangeInputsWithDisplayedCurve(rangedPoints);
+        return rangedPoints;
     }
 
     private void syncRangeInputsWithDisplayedCurve(List<CurvePoint> points) {
@@ -6587,114 +6226,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 
-    private void refreshPositions() {
-        boolean masked = isPrivacyMasked();
-        List<PositionItem> list = new ArrayList<>(basePositions);
-        list.sort(Comparator.comparing(PositionItem::getProductName));
-
-        positionAggregateAdapter.setMasked(masked);
-        positionAdapter.setMasked(masked);
-        pendingOrderAdapter.setMasked(masked);
-        positionAggregateAdapter.submitList(buildPositionAggregates(list));
-        positionAdapter.submitList(list);
-
-        List<PositionItem> pendingOrders = new ArrayList<>(basePendingOrders);
-        pendingOrders.sort((a, b) -> Double.compare(b.getPendingLots(), a.getPendingLots()));
-        pendingOrderAdapter.submitList(pendingOrders);
-
-        int pendingVisibility = pendingOrders.isEmpty() ? View.GONE : View.VISIBLE;
-        binding.tvPendingOrdersTitle.setVisibility(pendingVisibility);
-        binding.recyclerPendingOrders.setVisibility(pendingVisibility);
-
-        double totalPnl = 0d;
-        for (PositionItem item : list) {
-            totalPnl += item.getTotalPnL();
-        }
-        double totalMarketValue = 0d;
-        for (PositionItem item : list) {
-            totalMarketValue += Math.max(0d, Math.abs(item.getMarketValue()));
-        }
-        double ratio = safeDivide(totalPnl, Math.max(1d, totalMarketValue));
-        binding.tvPositionPnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-        if (masked) {
-            binding.tvPositionPnlSummary.setText("全周期总计盈亏（持仓）: **** | 持仓收益率: ****");
-        } else {
-            binding.tvPositionPnlSummary.setText(buildPositionPnlSummary(totalPnl, ratio));
-        }
-    }
-
-    private List<PositionAggregateAdapter.AggregateItem> buildPositionAggregates(List<PositionItem> list) {
-        Map<String, PositionAggregate> grouped = new LinkedHashMap<>();
-        for (PositionItem item : list) {
-            String side = normalizeSideCn(item.getSide());
-            String key = item.getCode() + "|" + side;
-            PositionAggregate aggregate = grouped.get(key);
-            if (aggregate == null) {
-                aggregate = new PositionAggregate(item.getProductName(), side);
-                grouped.put(key, aggregate);
-            }
-            double quantity = Math.max(0d, Math.abs(item.getQuantity()));
-            aggregate.totalQuantity += quantity;
-            aggregate.weightedCostAmount += quantity * item.getCostPrice();
-            aggregate.weightedQuantity += quantity;
-            aggregate.totalPnl += item.getTotalPnL();
-        }
-
-        List<PositionAggregateAdapter.AggregateItem> result = new ArrayList<>();
-        for (PositionAggregate aggregate : grouped.values()) {
-            double avgCost = aggregate.weightedQuantity <= 0d
-                    ? 0d
-                    : aggregate.weightedCostAmount / aggregate.weightedQuantity;
-            result.add(new PositionAggregateAdapter.AggregateItem(
-                    aggregate.productName,
-                    aggregate.side,
-                    aggregate.totalQuantity,
-                    avgCost,
-                    aggregate.totalPnl
-            ));
-        }
-        return result;
-    }
-
-    private CharSequence buildPositionPnlSummary(double totalPnl, double ratio) {
-        String pnlText = signedMoney(totalPnl);
-        String ratioText = percent(ratio);
-        String summary = String.format(Locale.getDefault(),
-                "全周期总计盈亏（持仓）: %s | 持仓收益率: %s",
-                pnlText,
-                ratioText);
-        SpannableStringBuilder spannable = new SpannableStringBuilder(summary);
-
-        int pnlColor = resolveSignedValueColor(totalPnl);
-        int ratioColor = resolveSignedValueColor(ratio);
-        int pnlStart = summary.indexOf(pnlText);
-        if (pnlStart >= 0) {
-            spannable.setSpan(new ForegroundColorSpan(pnlColor),
-                    pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new AbsoluteSizeSpan(18, true),
-                    pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        int ratioStart = summary.lastIndexOf(ratioText);
-        if (ratioStart >= 0) {
-            spannable.setSpan(new ForegroundColorSpan(ratioColor),
-                    ratioStart, ratioStart + ratioText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            spannable.setSpan(new AbsoluteSizeSpan(16, true),
-                    ratioStart, ratioStart + ratioText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        return spannable;
-    }
-
-    private List<PositionItem> buildPendingOrders(List<PositionItem> list) {
-        List<PositionItem> pending = new ArrayList<>();
-        for (PositionItem item : list) {
-            if (item.getPendingCount() > 0 || item.getPendingLots() > 0d) {
-                pending.add(item);
-            }
-        }
-        pending.sort((a, b) -> Double.compare(b.getPendingLots(), a.getPendingLots()));
-        return pending;
-    }
-
     private String buildTradeDedupeKey(TradeRecordItem item) {
         if (item.getDealTicket() > 0L) {
             return "deal|" + item.getDealTicket();
@@ -7252,16 +6783,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return side;
     }
 
-    private String normalizeSideCn(String side) {
-        if ("buy".equalsIgnoreCase(side) || "买入".equals(side)) {
-            return "买入";
-        }
-        if ("sell".equalsIgnoreCase(side) || "卖出".equals(side)) {
-            return "卖出";
-        }
-        return side;
-    }
-
     private void openMarketMonitor() {
         Intent intent = new Intent(this, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -7374,17 +6895,4 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-    private static class PositionAggregate {
-        private final String productName;
-        private final String side;
-        private double totalQuantity;
-        private double weightedCostAmount;
-        private double weightedQuantity;
-        private double totalPnl;
-
-        private PositionAggregate(String productName, String side) {
-            this.productName = productName;
-            this.side = side;
-        }
-    }
 }

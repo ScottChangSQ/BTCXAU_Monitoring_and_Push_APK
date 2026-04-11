@@ -679,6 +679,29 @@
                     android:text="暂无挂单"
                     android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
                     android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tvChartOverviewTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="账户总览"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+
+                <TextView
+                    android:id="@+id/tvChartOverviewMeta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="更新时间 --"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerChartOverview"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:nestedScrollingEnabled="false" />
             </LinearLayout>
 
             <View

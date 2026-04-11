@@ -33,7 +33,7 @@
 - [app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java)
   APP 安全会话偏好，负责用 Android Keystore 加密保存最近一次远程会话摘要和已保存账号列表缓存；logout 时只清当前激活账号，不清已保存账号摘要。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
-  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏和右上角刷新/延迟信息；当前最终真值只认服务端 `candles + latestPatch`，本地只保留 `ChartHistoryRepository + 内存窗口` 这一层图表缓存。图表账户叠加层恢复时，会在内存缓存 miss 时回退到 Room 已持久化快照，避免首帧把当前持仓先清空；图表启动阶段现在还会用 `MarketChartStartupGate + 首帧绘制监听` 把实时尾部和账户叠加层延后到主图首帧真正完成后再释放。
+  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏、右上角刷新/延迟信息，以及当前持仓面板里的实时账户总览；当前最终真值只认服务端 `candles + latestPatch`，本地只保留 `ChartHistoryRepository + 内存窗口` 这一层图表缓存。图表账户叠加层恢复时，会在内存缓存 miss 时回退到 Room 已持久化快照，避免首帧把当前持仓先清空；图表启动阶段现在还会用 `MarketChartStartupGate + 首帧绘制监听` 把实时尾部和账户叠加层延后到主图首帧真正完成后再释放。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartStartupGate.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartStartupGate.java)
   图表启动门控，负责统一管理“主序列已提交 / 主图首帧已绘制”两个阶段；只有两者都成立后，才允许释放实时尾部和账户叠加层这类依赖主图的增量更新。
 - [app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java)
@@ -47,7 +47,9 @@
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java)
   缩放方向判定工具，负责把双指手势分成横向、纵向和斜向整体缩放。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
-  账户统计页入口，负责账户概览、收益统计、净值/结余主图、附图、交易分布、交易记录、隐私小眼睛和登录成功提示动画；当前主动刷新已统一改走 `AccountStatsPreloadManager.fetchForUi(...)`，并已接入远程账号会话面板。
+  账户统计页入口，负责历史分析、收益统计、净值/结余主图、附图、交易分布、交易记录、隐私小眼睛和登录成功提示动画；实时账户总览与当前持仓已从该页迁出，不再在这里做高频区块渲染。当前主动刷新已统一改走 `AccountStatsPreloadManager.fetchForUi(...)`，并已接入远程账号会话面板。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountOverviewMetricsHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountOverviewMetricsHelper.java)
+  账户总览指标组装工具，负责把服务端 overview、当前持仓、历史成交和净值曲线整理成固定顺序的账户总览列表；当前由图表页复用，避免账户页和图表页各自维护一套总览口径。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountDeferredSnapshotRenderHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountDeferredSnapshotRenderHelper.java)
   账户页次级区块后台计算助手，负责把交易统计、交易筛选和曲线投影整理成可直接绑定的结果；当前保留在 `ui.account` 包内，因为它依赖账户页内部包级工具，不为整理目录而扩大可见性。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountOverviewCumulativeMetricsCalculator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountOverviewCumulativeMetricsCalculator.java)

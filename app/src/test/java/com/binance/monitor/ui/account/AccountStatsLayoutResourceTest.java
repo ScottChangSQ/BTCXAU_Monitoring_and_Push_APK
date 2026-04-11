@@ -10,6 +10,7 @@ import org.junit.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -101,6 +102,25 @@ public class AccountStatsLayoutResourceTest {
         NodeList themedPickers = document.getElementsByTagName("com.binance.monitor.ui.widget.ThemedNumberPicker");
         assertEquals("5", String.valueOf(platformPickers.getLength()));
         assertEquals("0", String.valueOf(themedPickers.getLength()));
+    }
+
+    // 历史分析和收益统计应落在账户统计页底部，避免打断交易记录与交易统计的阅读顺序。
+    @Test
+    public void activityAccountStatsShouldMoveCurveAndReturnSectionsToBottomAtStartup() throws Exception {
+        Path sourceFile = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
+        String source = new String(Files.readAllBytes(sourceFile), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        int onCreateStart = source.indexOf("protected void onCreate(@Nullable Bundle savedInstanceState) {");
+        int onResumeStart = source.indexOf("@Override\n    protected void onResume()");
+        String onCreateMethod = source.substring(onCreateStart, onResumeStart);
+
+        assertTrue("onCreate 应调用底部重排逻辑", onCreateMethod.contains("placeCurveSectionToBottom();"));
+        assertTrue("应保留历史分析卡片重排方法", source.contains("private void placeCurveSectionToBottom() {"));
+        assertTrue("重排方法应先移除历史分析卡片", source.contains("container.removeView(binding.cardCurveSection);"));
+        assertTrue("重排方法应把历史分析卡片重新追加到底部", source.contains("container.addView(binding.cardCurveSection);"));
+        assertTrue("重排方法应把收益统计卡片跟随追加到底部", source.contains("container.addView(returnStatsSection);"));
     }
 
     // 按当前工作目录自动解析项目资源文件，兼容根目录和 app 模块目录两种执行入口。

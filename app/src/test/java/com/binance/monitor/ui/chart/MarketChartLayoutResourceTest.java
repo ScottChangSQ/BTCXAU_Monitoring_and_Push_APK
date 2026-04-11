@@ -1,10 +1,12 @@
 package com.binance.monitor.ui.chart;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 import org.w3c.dom.Document;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -30,6 +32,25 @@ public class MarketChartLayoutResourceTest {
         assertEquals("wrap_content", sortSpinner.getAttribute("android:layout_width"));
         assertEquals("@android:color/transparent", sortSpinner.getAttribute("android:background"));
         assertEquals("dropdown", sortSpinner.getAttribute("android:spinnerMode"));
+    }
+
+    @Test
+    public void activityMarketChartShouldPlaceOverviewBlockAfterPositionAndPendingSections() throws Exception {
+        Path layoutFile = resolveProjectFile(
+                "app/src/main/res/layout/activity_market_chart.xml",
+                "src/main/res/layout/activity_market_chart.xml"
+        );
+        String xml = new String(Files.readAllBytes(layoutFile), StandardCharsets.UTF_8);
+
+        int overviewTitleIndex = xml.indexOf("android:id=\"@+id/tvChartOverviewTitle\"");
+        int pendingTitleIndex = xml.indexOf("android:id=\"@+id/tvChartPendingOrdersTitle\"");
+        int pendingEmptyIndex = xml.indexOf("android:id=\"@+id/tvChartPendingOrdersEmpty\"");
+
+        assertTrue("必须先找到账户概览标题", overviewTitleIndex >= 0);
+        assertTrue("必须先找到挂单标题", pendingTitleIndex >= 0);
+        assertTrue("必须先找到挂单空态提示", pendingEmptyIndex >= 0);
+        assertTrue("账户概览应放在挂单标题之后", overviewTitleIndex > pendingTitleIndex);
+        assertTrue("账户概览应放在挂单区块末尾之后", overviewTitleIndex > pendingEmptyIndex);
     }
 
     private static Path resolveProjectFile(String... candidates) {

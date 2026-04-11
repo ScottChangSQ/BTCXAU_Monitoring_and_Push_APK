@@ -40,16 +40,8 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
+                        android:gravity="end|center_vertical"
                         android:orientation="horizontal">
-
-                        <TextView
-                            android:id="@+id/tvAccountOverviewTitle"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="账户总览（账号）"
-                            android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
                         <androidx.appcompat.widget.AppCompatImageView
                             android:id="@+id/ivAccountPrivacyToggle"
@@ -76,22 +68,6 @@
                             android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/tvAccountMeta"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:text="更新时间 --"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/recyclerOverview"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:nestedScrollingEnabled="false" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -651,98 +627,6 @@
                         android:layout_marginTop="4dp"
                         android:textColor="@color/text_secondary"
                         android:textSize="11sp"
-                        android:visibility="gone" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardCurrentPositions"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
-                android:visibility="gone">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingTop="@dimen/card_content_padding"
-                    android:paddingBottom="@dimen/card_content_padding"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="当前持仓"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
-
-                    <TextView
-                        android:id="@+id/tvPositionPnlSummary"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:textColor="@color/text_primary"
-                        android:textSize="14sp" />
-
-                    <TextView
-                        android:id="@+id/tvPositionAggregateTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:text="按产品汇总"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
-
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/recyclerPositionByProduct"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:nestedScrollingEnabled="false" />
-
-                    <TextView
-                        android:id="@+id/tvPositionDetailTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:text="持仓明细"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
-
-                    <Spinner
-                        android:id="@+id/spinnerPositionSort"
-                        android:layout_width="0dp"
-                        android:layout_height="0dp"
-                        android:visibility="gone" />
-
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/recyclerPositions"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:nestedScrollingEnabled="false" />
-
-                    <TextView
-                        android:id="@+id/tvPendingOrdersTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="挂单信息"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
-
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/recyclerPendingOrders"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:nestedScrollingEnabled="false" />
-
-                    <TextView
-                        android:id="@+id/tvPositionCostSummary"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
                         android:visibility="gone" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

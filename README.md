@@ -19,6 +19,7 @@
 - 图表页从其他 tab 返回前台时，已收口为“恢复消费节奏”而不是“重新启动页面链路”：普通返回不再在 `onResume()` 里重置 V2 transport，也不再由图表页切账户全量快照节奏
 - 图表页当前持仓/挂单叠加层首帧现在会优先恢复最近一次本地已持久化快照，不再因为内存缓存尚未回填就先清空“当前持仓”
 - 图表页切到“行情持仓”时，实时尾部和持仓叠加层现在会等主图首帧真正画出来后再释放，不再抢在首屏前一起压主线程
+- 实时账户总览现在只保留在图表页“当前持仓 / 挂单”面板，账户统计页只保留历史分析，不再双页重复维护同一块高频总览
 - K 线图当前持仓、挂单、历史成交、异常记录现在共用统一 annotation 明细消费链；当前持仓/挂单线支持查看开仓时间、数量、浮盈亏、止盈止损等详情
 - 图表页 `1w / 1M / 1y` 长周期恢复前台时，若当前窗口仍新鲜则不再立刻重拉；后续自动刷新也不再走快速 fallback，而是对齐到下一次分钟边界
 - 账户统计页命中同签名预加载缓存时，不再重复整页 `applySnapshot()`，切页返回时不会再把总览、曲线、持仓和成交区整套重画一遍
@@ -94,6 +95,7 @@
 - 前后台切换和悬浮窗切回主界面现在只改变刷新节奏，不再无条件重建 stream 或立刻触发账户页全量预加载
 - 行情持仓页普通 tab 返回现在只恢复页面消费节奏；长周期窗口改为按上游分钟源节奏刷新，不再制造“像重新打开页面”一样的重复拉取体感
 - 底部 tab 切换语义现已统一，设置页切走时不再先销毁再重建
+- 图表页当前持仓面板现已统一承接实时账户总览，账户统计页不再保留实时总览和当前持仓残留渲染链
 
 ## 本地运行方法
 
@@ -239,3 +241,4 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - 2026-04-10 最终 BUG review 与任务收口新增验证：`.\gradlew.bat :app:testDebugUnitTest` 已通过；`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py"` 已通过，结果为 `Ran 226 tests ... OK`
 - 2026-04-11 全量复核新增验证：修复了图表页 `onNewIntent` 切品种旧上下文未先失效、账户页本地会话摘要旧错误残留、部署样例 `MT5_INIT_TIMEOUT_MS=90000` 被服务端静默截断，以及旧 source test 未跟随职责下沉的问题；`.\gradlew.bat :app:auditCriticalCheckstyle :app:compileDebugJavaWithJavac :app:testDebugUnitTest` 已通过；`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 已通过，结果为 `Ran 229 tests ... OK`
 - 2026-04-11 图表切页卡顿专项验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartStartupGateTest" --tests "com.binance.monitor.ui.chart.MarketChartStartupGateSourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartStartupGateTest" --tests "com.binance.monitor.ui.chart.MarketChartStartupGateSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartOverlayRestoreSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartV2SourceTest"` 已通过；`.\gradlew.bat :app:assembleDebug` 与 `adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 已通过；串行 ADB 复测显示 `Displayed MarketChartActivity +175ms`，且 `chart_realtime_render` 已晚于首屏显示发生
+- 2026-04-12 账户页/图表页职责迁移补收口：移除了账户统计页内残留的实时总览/持仓渲染代码，把账户总览组装逻辑收口到 `AccountOverviewMetricsHelper` 并由图表页当前持仓面板复用；`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeOverviewSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionSummarySourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac` 已通过
