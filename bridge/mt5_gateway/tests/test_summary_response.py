@@ -1,7 +1,10 @@
 """MT5 网关摘要响应测试。"""
 
 from contextlib import contextmanager
+import json
+import os
 import sys
+import tempfile
 import types
 import unittest
 from datetime import datetime, timezone
@@ -247,21 +250,7 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(836.66, account_meta["marginLevel"])
         self.assertEqual(55.0, account_meta["profit"])
 
-    def test_deal_time_ms_should_require_mt5_server_timezone(self):
-        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
-        original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
-        try:
-            server_v2.MT5_TIME_OFFSET_MINUTES = 180
-            server_v2.MT5_SERVER_TIMEZONE = ""
-            deal = types.SimpleNamespace(time_msc=1775151432000, time=0)
-
-            with self.assertRaisesRegex(ValueError, "MT5_SERVER_TIMEZONE"):
-                server_v2._deal_time_ms(deal)
-        finally:
-            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
-            server_v2.MT5_SERVER_TIMEZONE = original_timezone
-
-    def test_deal_time_ms_normalizes_mt5_server_timezone_wall_clock(self):
+    def test_deal_time_ms_should_normalize_mt5_server_wall_clock_timestamp(self):
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
         original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
         try:
@@ -276,7 +265,36 @@ class SummaryResponseTests(unittest.TestCase):
             server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
             server_v2.MT5_SERVER_TIMEZONE = original_timezone
 
-    def test_map_trades_should_normalize_open_and_close_times_with_server_timezone(self):
+    def test_position_and_order_time_ms_should_normalize_mt5_server_wall_clock_timestamp(self):
+        original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
+        original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
+        try:
+            server_v2.MT5_TIME_OFFSET_MINUTES = 0
+            server_v2.MT5_SERVER_TIMEZONE = "Europe/Athens"
+            position = types.SimpleNamespace(time_msc=1775818406271, time=0)
+            order = types.SimpleNamespace(time_setup_msc=1775818467890, time_setup=0)
+
+            position_value = server_v2._position_time_ms(position)
+            order_value = server_v2._order_open_time_ms(order)
+
+            self.assertEqual(1775807606271, position_value)
+            self.assertEqual(1775807667890, order_value)
+        finally:
+            server_v2.MT5_TIME_OFFSET_MINUTES = original_offset
+            server_v2.MT5_SERVER_TIMEZONE = original_timezone
+
+    def test_resolve_mt5_server_zoneinfo_should_accept_asia_seoul(self):
+        original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
+        try:
+            server_v2.MT5_SERVER_TIMEZONE = "Asia/Seoul"
+
+            zoneinfo = server_v2._resolve_mt5_server_zoneinfo()
+
+            self.assertEqual("Asia/Seoul", getattr(zoneinfo, "key", ""))
+        finally:
+            server_v2.MT5_SERVER_TIMEZONE = original_timezone
+
+    def test_map_trades_should_normalize_mt5_server_wall_clock_open_and_close_times(self):
         original_mt5 = server_v2.mt5
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
         original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
@@ -1064,7 +1082,8 @@ class SummaryResponseTests(unittest.TestCase):
             ],
         }
 
-        snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
+        with _configured_mt5_server_timezone("UTC"):
+            snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
 
         self.assertEqual(2, len(snapshot["trades"]))
         self.assertEqual(100000, snapshot["trades"][0]["openTime"])
@@ -1137,7 +1156,8 @@ class SummaryResponseTests(unittest.TestCase):
             ],
         }
 
-        snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
+        with _configured_mt5_server_timezone("UTC"):
+            snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
 
         self.assertEqual(
             [{"timestamp": 200000, "equity": 1008.0, "balance": 1008.0}],
@@ -1213,7 +1233,8 @@ class SummaryResponseTests(unittest.TestCase):
             ],
         }
 
-        snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
+        with _configured_mt5_server_timezone("UTC"):
+            snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
 
         self.assertEqual(
             [
@@ -1222,6 +1243,76 @@ class SummaryResponseTests(unittest.TestCase):
             ],
             snapshot["curvePoints"],
         )
+
+    def test_normalize_snapshot_should_normalize_ea_trade_times_with_server_timezone(self):
+        payload = {
+            "accountMeta": {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 EA Push",
+                "updatedAt": 1775303081955,
+            },
+            "trades": [
+                {
+                    "timestamp": 1775149621284,
+                    "productName": "BTCUSD",
+                    "code": "BTCUSD",
+                    "side": "Sell",
+                    "price": 66451.66,
+                    "openPrice": 66636.06,
+                    "closePrice": 66451.66,
+                    "quantity": 0.01,
+                    "amount": 664.52,
+                    "contractSize": 1.0,
+                    "fee": 0.0,
+                    "commission": 0.0,
+                    "profit": 1.84,
+                    "openTime": 1775145828613,
+                    "closeTime": 1775149621284,
+                    "storageFee": 0.0,
+                    "swap": 0.0,
+                    "dealTicket": 1779633102,
+                    "orderId": 1786019259,
+                    "positionId": 1786015308,
+                    "entryType": 1,
+                    "dealType": 1,
+                }
+            ],
+        }
+
+        with _configured_mt5_server_timezone("Europe/Athens"):
+            snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
+
+        self.assertEqual(1775138821284, snapshot["trades"][0]["timestamp"])
+        self.assertEqual(1775135028613, snapshot["trades"][0]["openTime"])
+        self.assertEqual(1775138821284, snapshot["trades"][0]["closeTime"])
+
+    def test_normalize_snapshot_should_normalize_ea_curve_and_position_times_with_server_timezone(self):
+        payload = {
+            "accountMeta": {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 EA Push",
+                "updatedAt": 1775303081955,
+            },
+            "curvePoints": [
+                {"timestamp": 1775149621284, "equity": 1008.0, "balance": 1008.0},
+            ],
+            "positions": [
+                {"productName": "BTCUSD", "code": "BTCUSD", "side": "Buy", "openTime": 1775145828613},
+            ],
+            "pendingOrders": [
+                {"productName": "BTCUSD", "code": "BTCUSD", "side": "Buy", "openTime": 1775145828613},
+            ],
+            "trades": [],
+        }
+
+        with _configured_mt5_server_timezone("Europe/Athens"):
+            snapshot = server_v2._normalize_snapshot(payload, "MT5 EA Push")
+
+        self.assertEqual(1775138821284, snapshot["curvePoints"][0]["timestamp"])
+        self.assertEqual(1775135028613, snapshot["positions"][0]["openTime"])
+        self.assertEqual(1775135028613, snapshot["pendingOrders"][0]["openTime"])
 
     def test_trim_cache_entries_locked_keeps_newest_entries_only(self):
         helper = getattr(server_v2, "_trim_cache_entries_locked", None)
@@ -1807,7 +1898,7 @@ class SummaryResponseTests(unittest.TestCase):
             "历史采样点应反映持仓浮盈亏，不能继续让净值等于结余",
         )
 
-    def test_fetch_curve_price_samples_from_mt5_should_use_trade_symbol_and_normalize_server_timezone(self):
+    def test_fetch_curve_price_samples_from_mt5_should_query_server_wall_clock_window(self):
         original_mt5 = server_v2.mt5
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
         original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
@@ -1850,7 +1941,7 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertEqual(101.5, samples[0]["price"])
         self.assertEqual("BTCUSD", samples[0]["symbol"])
 
-    def test_fetch_curve_price_samples_from_mt5_should_normalize_server_timezone_wall_clock(self):
+    def test_fetch_curve_price_samples_from_mt5_should_normalize_server_wall_clock_timestamps(self):
         original_mt5 = server_v2.mt5
         original_offset = getattr(server_v2, "MT5_TIME_OFFSET_MINUTES", 0)
         original_timezone = getattr(server_v2, "MT5_SERVER_TIMEZONE", "")
@@ -1951,6 +2042,9 @@ class SummaryResponseTests(unittest.TestCase):
         original_cache_ms = getattr(server_v2, "HEALTH_CACHE_MS", 5000)
         original_now_ms = server_v2._now_ms
         original_mt5_last_connected_path = getattr(server_v2, "mt5_last_connected_path", "")
+        original_login = getattr(server_v2, "LOGIN", 0)
+        original_password = getattr(server_v2, "PASSWORD", "")
+        original_server = getattr(server_v2, "SERVER", "")
 
         class _HealthyMt5:
             @staticmethod
@@ -1970,25 +2064,32 @@ class SummaryResponseTests(unittest.TestCase):
             def last_error():
                 raise AssertionError("health should not call mt5.last_error()")
 
-        try:
-            server_v2.health_status_cache.clear()
-            server_v2.HEALTH_CACHE_MS = 1
-            values = iter([1_000, 1_005])
-            server_v2._now_ms = lambda: next(values)
-            server_v2.mt5_last_connected_path = "<auto>"
+        with _configured_mt5_server_timezone():
+            try:
+                server_v2.health_status_cache.clear()
+                server_v2.HEALTH_CACHE_MS = 1
+                values = iter([1_000, 1_005])
+                server_v2._now_ms = lambda: next(values)
+                server_v2.mt5_last_connected_path = "<auto>"
+                server_v2.LOGIN = 7400048
+                server_v2.PASSWORD = "demo"
+                server_v2.SERVER = "ICMarketsSC-MT5-6"
 
-            server_v2.mt5 = _HealthyMt5()
-            healthy = server_v2.health()
+                server_v2.mt5 = _HealthyMt5()
+                healthy = server_v2.health()
 
-            server_v2.mt5 = _BrokenMt5()
-            broken = server_v2.health()
-        finally:
-            server_v2.mt5 = original_mt5
-            server_v2.health_status_cache.clear()
-            server_v2.health_status_cache.update(original_cache)
-            server_v2.HEALTH_CACHE_MS = original_cache_ms
-            server_v2._now_ms = original_now_ms
-            server_v2.mt5_last_connected_path = original_mt5_last_connected_path
+                server_v2.mt5 = _BrokenMt5()
+                broken = server_v2.health()
+            finally:
+                server_v2.mt5 = original_mt5
+                server_v2.health_status_cache.clear()
+                server_v2.health_status_cache.update(original_cache)
+                server_v2.HEALTH_CACHE_MS = original_cache_ms
+                server_v2._now_ms = original_now_ms
+                server_v2.mt5_last_connected_path = original_mt5_last_connected_path
+                server_v2.LOGIN = original_login
+                server_v2.PASSWORD = original_password
+                server_v2.SERVER = original_server
 
         self.assertTrue(healthy["ok"])
         self.assertTrue(broken["ok"])
@@ -2000,6 +2101,44 @@ class SummaryResponseTests(unittest.TestCase):
         self.assertTrue(healthy.get("bundleFingerprint"))
         self.assertIsInstance(healthy.get("bundleGeneratedAt"), str)
         self.assertTrue(healthy.get("bundleGeneratedAt"))
+
+    def test_load_bundle_runtime_info_should_prefer_explicit_manifest_env_path(self):
+        original_module_file = server_v2.__file__
+        original_manifest_env = os.environ.get("MT5_BUNDLE_MANIFEST_PATH")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            explicit_manifest_path = temp_root / "current-bundle" / "bundle_manifest.json"
+            explicit_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            explicit_manifest_path.write_text(
+                json.dumps(
+                    {
+                        "bundleFingerprint": "expected-bundle-fingerprint",
+                        "generatedAt": "2026-04-12T22:30:00+00:00",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            # 模拟运行文件不在 bundle 目录内，验证启动链提供的显式 manifest 路径优先级更高。
+            detached_server_path = temp_root / "detached-runtime" / "server_v2.py"
+            detached_server_path.parent.mkdir(parents=True, exist_ok=True)
+            detached_server_path.write_text("# fake server entry\n", encoding="utf-8")
+
+            try:
+                server_v2.__file__ = str(detached_server_path)
+                os.environ["MT5_BUNDLE_MANIFEST_PATH"] = str(explicit_manifest_path)
+                runtime_info = server_v2._load_bundle_runtime_info()
+            finally:
+                server_v2.__file__ = original_module_file
+                if original_manifest_env is None:
+                    os.environ.pop("MT5_BUNDLE_MANIFEST_PATH", None)
+                else:
+                    os.environ["MT5_BUNDLE_MANIFEST_PATH"] = original_manifest_env
+
+        self.assertEqual("expected-bundle-fingerprint", runtime_info.get("bundleFingerprint"))
+        self.assertEqual("2026-04-12T22:30:00+00:00", runtime_info.get("bundleGeneratedAt"))
 
     def test_snapshot_from_mt5_light_should_expose_trade_count_without_building_full_history(self):
         original_mt5 = server_v2.mt5

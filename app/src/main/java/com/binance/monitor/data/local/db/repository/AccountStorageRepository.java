@@ -25,9 +25,12 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class AccountStorageRepository {
+    private static final String IDENTITY_SEPARATOR = "|";
+    private static final String STORAGE_KEY_SEPARATOR = "||";
 
     private final AppDatabase database;
     private final TradeHistoryDao tradeHistoryDao;
@@ -68,9 +71,13 @@ public class AccountStorageRepository {
 
     // 全量快照写入必须在同一事务里完成，避免多表落库只写一半。
     private void persistSnapshotInternal(StoredSnapshot snapshot) {
+        String account = safe(snapshot.getAccount());
+        String server = safe(snapshot.getServer());
+        String identityPrefix = buildIdentityPrefix(account, server);
+        AccountSnapshotMetaEntity existingMeta = loadMetaByIdentity(account, server);
         if (tradeHistoryDao != null) {
-            List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades());
-            tradeHistoryDao.clearAll();
+            List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades(), identityPrefix);
+            tradeHistoryDao.clearAll(identityPrefix);
             if (!trades.isEmpty()) {
                 tradeHistoryDao.upsertAll(trades);
             }
@@ -78,15 +85,15 @@ public class AccountStorageRepository {
         if (accountSnapshotDao == null) {
             return;
         }
-        accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
-        accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
+        accountSnapshotDao.replacePositions(identityPrefix, toPositionEntities(snapshot.getPositions(), identityPrefix));
+        accountSnapshotDao.replacePendingOrders(identityPrefix, toPendingEntities(snapshot.getPendingOrders(), identityPrefix));
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
-        metaEntity.id = 1;
+        metaEntity.id = resolveMetaId(existingMeta);
         metaEntity.connected = snapshot.isConnected();
         metaEntity.updatedAt = snapshot.getUpdatedAt();
         metaEntity.fetchedAt = snapshot.getFetchedAt();
-        metaEntity.account = safe(snapshot.getAccount());
-        metaEntity.server = safe(snapshot.getServer());
+        metaEntity.account = account;
+        metaEntity.server = server;
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
@@ -108,9 +115,13 @@ public class AccountStorageRepository {
 
     // v2 全量快照需要把交易、持仓、挂单和摘要作为一次原子替换。
     private void persistV2SnapshotInternal(StoredSnapshot snapshot) {
+        String account = safe(snapshot.getAccount());
+        String server = safe(snapshot.getServer());
+        String identityPrefix = buildIdentityPrefix(account, server);
+        AccountSnapshotMetaEntity existingMeta = loadMetaByIdentity(account, server);
         if (tradeHistoryDao != null) {
-            List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades());
-            tradeHistoryDao.clearAll();
+            List<TradeHistoryEntity> trades = toTradeEntities(snapshot.getTrades(), identityPrefix);
+            tradeHistoryDao.clearAll(identityPrefix);
             if (!trades.isEmpty()) {
                 tradeHistoryDao.upsertAll(trades);
             }
@@ -118,17 +129,16 @@ public class AccountStorageRepository {
         if (accountSnapshotDao == null) {
             return;
         }
-        accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
-        accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
-        AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
+        accountSnapshotDao.replacePositions(identityPrefix, toPositionEntities(snapshot.getPositions(), identityPrefix));
+        accountSnapshotDao.replacePendingOrders(identityPrefix, toPendingEntities(snapshot.getPendingOrders(), identityPrefix));
 
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
-        metaEntity.id = 1;
+        metaEntity.id = resolveMetaId(existingMeta);
         metaEntity.connected = snapshot.isConnected();
         metaEntity.updatedAt = snapshot.getUpdatedAt();
         metaEntity.fetchedAt = snapshot.getFetchedAt();
-        metaEntity.account = safe(snapshot.getAccount());
-        metaEntity.server = safe(snapshot.getServer());
+        metaEntity.account = account;
+        metaEntity.server = server;
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
@@ -150,14 +160,16 @@ public class AccountStorageRepository {
 
     // 摘要写入包含读旧值再写新值，同样要保证事务边界完整。
     private void persistMetaSnapshotInternal(StoredSnapshot snapshot) {
-        AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
+        String account = safe(snapshot.getAccount());
+        String server = safe(snapshot.getServer());
+        AccountSnapshotMetaEntity existingMeta = loadMetaByIdentity(account, server);
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
-        metaEntity.id = 1;
+        metaEntity.id = resolveMetaId(existingMeta);
         metaEntity.connected = snapshot.isConnected();
         metaEntity.updatedAt = snapshot.getUpdatedAt();
         metaEntity.fetchedAt = snapshot.getFetchedAt();
-        metaEntity.account = safe(snapshot.getAccount());
-        metaEntity.server = safe(snapshot.getServer());
+        metaEntity.account = account;
+        metaEntity.server = server;
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
@@ -179,16 +191,19 @@ public class AccountStorageRepository {
 
     // 运行态写入同时改持仓和摘要，不能让两者出现新旧混写。
     private void persistLiveSnapshotInternal(StoredSnapshot snapshot) {
-        accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
-        AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
+        String account = safe(snapshot.getAccount());
+        String server = safe(snapshot.getServer());
+        String identityPrefix = buildIdentityPrefix(account, server);
+        accountSnapshotDao.replacePositions(identityPrefix, toPositionEntities(snapshot.getPositions(), identityPrefix));
+        AccountSnapshotMetaEntity existingMeta = loadMetaByIdentity(account, server);
 
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
-        metaEntity.id = 1;
+        metaEntity.id = resolveMetaId(existingMeta);
         metaEntity.connected = snapshot.isConnected();
         metaEntity.updatedAt = snapshot.getUpdatedAt();
         metaEntity.fetchedAt = snapshot.getFetchedAt();
-        metaEntity.account = safe(snapshot.getAccount());
-        metaEntity.server = safe(snapshot.getServer());
+        metaEntity.account = account;
+        metaEntity.server = server;
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
@@ -210,40 +225,39 @@ public class AccountStorageRepository {
 
     // 轻量运行态也会跨表改写，并包含 identity 判断，必须整体提交。
     private void persistIncrementalSnapshotInternal(StoredSnapshot snapshot) {
-        accountSnapshotDao.replacePositions(toPositionEntities(snapshot.getPositions()));
-        accountSnapshotDao.replacePendingOrders(toPendingEntities(snapshot.getPendingOrders()));
-        AccountSnapshotMetaEntity existingMeta = accountSnapshotDao.loadMeta();
-        boolean identityChanged = isSnapshotIdentityChanged(existingMeta, snapshot);
-        if (identityChanged && tradeHistoryDao != null) {
-            tradeHistoryDao.clearAll();
-        }
+        String account = safe(snapshot.getAccount());
+        String server = safe(snapshot.getServer());
+        String identityPrefix = buildIdentityPrefix(account, server);
+        accountSnapshotDao.replacePositions(identityPrefix, toPositionEntities(snapshot.getPositions(), identityPrefix));
+        accountSnapshotDao.replacePendingOrders(identityPrefix, toPendingEntities(snapshot.getPendingOrders(), identityPrefix));
+        AccountSnapshotMetaEntity existingMeta = loadMetaByIdentity(account, server);
 
         AccountSnapshotMetaEntity metaEntity = new AccountSnapshotMetaEntity();
-        metaEntity.id = 1;
+        metaEntity.id = resolveMetaId(existingMeta);
         metaEntity.connected = snapshot.isConnected();
         metaEntity.updatedAt = snapshot.getUpdatedAt();
         metaEntity.fetchedAt = snapshot.getFetchedAt();
-        metaEntity.account = safe(snapshot.getAccount());
-        metaEntity.server = safe(snapshot.getServer());
+        metaEntity.account = account;
+        metaEntity.server = server;
         metaEntity.source = safe(snapshot.getSource());
         metaEntity.gateway = safe(snapshot.getGateway());
         metaEntity.error = safe(snapshot.getError());
-        metaEntity.historyRevision = resolveIncrementalHistoryRevision(existingMeta, snapshot, identityChanged);
+        metaEntity.historyRevision = resolveIncrementalHistoryRevision(existingMeta, snapshot, false);
         metaEntity.overviewMetricsJson = metricsToJsonString(snapshot.getOverviewMetrics());
         metaEntity.curveIndicatorsJson = resolveIncrementalMetricsJson(
                 snapshot.getCurveIndicators(),
                 existingMeta == null ? "[]" : safe(existingMeta.curveIndicatorsJson),
-                identityChanged
+                false
         );
         metaEntity.statsMetricsJson = resolveIncrementalMetricsJson(
                 snapshot.getStatsMetrics(),
                 existingMeta == null ? "[]" : safe(existingMeta.statsMetricsJson),
-                identityChanged
+                false
         );
         metaEntity.curvePointsJson = resolveIncrementalCurvePointsJson(
                 snapshot.getCurvePoints(),
                 existingMeta == null ? "[]" : safe(existingMeta.curvePointsJson),
-                identityChanged
+                false
         );
         accountSnapshotDao.upsertMeta(metaEntity);
     }
@@ -264,9 +278,6 @@ public class AccountStorageRepository {
 
     // 读取当前数据库中保存的账户快照。
     public StoredSnapshot loadStoredSnapshot() {
-        List<TradeRecordItem> trades = loadTrades();
-        List<PositionItem> positions = loadPositions();
-        List<PositionItem> pendingOrders = loadPendingOrders();
         AccountSnapshotMetaEntity meta = accountSnapshotDao == null ? null : accountSnapshotDao.loadMeta();
         if (meta == null) {
             return new StoredSnapshot(
@@ -281,9 +292,37 @@ public class AccountStorageRepository {
                     new ArrayList<>(),
                     new ArrayList<>(),
                     new ArrayList<>(),
-                    positions,
-                    pendingOrders,
-                    trades,
+                    new ArrayList<>(),
+                    new ArrayList<>(),
+                    new ArrayList<>(),
+                    new ArrayList<>()
+            );
+        }
+        return loadStoredSnapshot(meta.account, meta.server);
+    }
+
+    // 按账号身份读取对应分区的账户快照。
+    public StoredSnapshot loadStoredSnapshot(String account, String server) {
+        List<TradeRecordItem> trades = loadTrades(account, server);
+        List<PositionItem> positions = loadPositions(account, server);
+        List<PositionItem> pendingOrders = loadPendingOrders(account, server);
+        AccountSnapshotMetaEntity meta = loadMetaByIdentity(account, server);
+        if (meta == null) {
+            return new StoredSnapshot(
+                    false,
+                    safe(account),
+                    safe(server),
+                    "",
+                    "",
+                    0L,
+                    "",
+                    0L,
+                    new ArrayList<>(),
+                    new ArrayList<>(),
+                    new ArrayList<>(),
+                    new ArrayList<>(),
+                    new ArrayList<>(),
+                    new ArrayList<>(),
                     new ArrayList<>()
             );
         }
@@ -309,11 +348,20 @@ public class AccountStorageRepository {
 
     // 读取当前持仓列表。
     public List<PositionItem> loadPositions() {
+        AccountSnapshotMetaEntity meta = accountSnapshotDao == null ? null : accountSnapshotDao.loadMeta();
+        if (meta == null) {
+            return new ArrayList<>();
+        }
+        return loadPositions(meta.account, meta.server);
+    }
+
+    // 按账号身份读取当前持仓列表。
+    public List<PositionItem> loadPositions(String account, String server) {
         List<PositionItem> result = new ArrayList<>();
         if (accountSnapshotDao == null) {
             return result;
         }
-        List<PositionSnapshotEntity> entities = accountSnapshotDao.loadPositions();
+        List<PositionSnapshotEntity> entities = accountSnapshotDao.loadPositions(buildIdentityPrefix(account, server));
         if (entities == null) {
             return result;
         }
@@ -325,11 +373,20 @@ public class AccountStorageRepository {
 
     // 读取当前挂单列表。
     public List<PositionItem> loadPendingOrders() {
+        AccountSnapshotMetaEntity meta = accountSnapshotDao == null ? null : accountSnapshotDao.loadMeta();
+        if (meta == null) {
+            return new ArrayList<>();
+        }
+        return loadPendingOrders(meta.account, meta.server);
+    }
+
+    // 按账号身份读取当前挂单列表。
+    public List<PositionItem> loadPendingOrders(String account, String server) {
         List<PositionItem> result = new ArrayList<>();
         if (accountSnapshotDao == null) {
             return result;
         }
-        List<PendingOrderSnapshotEntity> entities = accountSnapshotDao.loadPendingOrders();
+        List<PendingOrderSnapshotEntity> entities = accountSnapshotDao.loadPendingOrders(buildIdentityPrefix(account, server));
         if (entities == null) {
             return result;
         }
@@ -341,11 +398,20 @@ public class AccountStorageRepository {
 
     // 读取全部历史交易。
     public List<TradeRecordItem> loadTrades() {
+        AccountSnapshotMetaEntity meta = accountSnapshotDao == null ? null : accountSnapshotDao.loadMeta();
+        if (meta == null) {
+            return new ArrayList<>();
+        }
+        return loadTrades(meta.account, meta.server);
+    }
+
+    // 按账号身份读取交易历史。
+    public List<TradeRecordItem> loadTrades(String account, String server) {
         List<TradeRecordItem> result = new ArrayList<>();
         if (tradeHistoryDao == null) {
             return result;
         }
-        List<TradeHistoryEntity> entities = tradeHistoryDao.loadAll();
+        List<TradeHistoryEntity> entities = tradeHistoryDao.loadAll(buildIdentityPrefix(account, server));
         if (entities == null) {
             return result;
         }
@@ -363,12 +429,28 @@ public class AccountStorageRepository {
         return tradeHistoryDao.clearAll();
     }
 
+    // 清空某个身份分区下的历史交易数据。
+    public int clearTradeHistory(String account, String server) {
+        if (tradeHistoryDao == null) {
+            return 0;
+        }
+        return tradeHistoryDao.clearAll(buildIdentityPrefix(account, server));
+    }
+
     // 清空运行时账户快照。
     public void clearRuntimeSnapshot() {
         if (accountSnapshotDao == null) {
             return;
         }
         accountSnapshotDao.clearRuntime();
+    }
+
+    // 清空某个身份分区下的运行时账户快照。
+    public void clearRuntimeSnapshot(String account, String server) {
+        if (accountSnapshotDao == null) {
+            return;
+        }
+        accountSnapshotDao.clearRuntime(safe(account), safe(server), buildIdentityPrefix(account, server));
     }
 
     // 合并旧交易和新交易，并按稳定键去重。
@@ -420,7 +502,7 @@ public class AccountStorageRepository {
         return "";
     }
 
-    private List<TradeHistoryEntity> toTradeEntities(List<TradeRecordItem> trades) {
+    private List<TradeHistoryEntity> toTradeEntities(List<TradeRecordItem> trades, String identityPrefix) {
         List<TradeHistoryEntity> result = new ArrayList<>();
         if (trades == null) {
             return result;
@@ -434,7 +516,7 @@ public class AccountStorageRepository {
                 continue;
             }
             TradeHistoryEntity entity = new TradeHistoryEntity();
-            entity.tradeKey = tradeKey;
+            entity.tradeKey = buildScopedStorageKey(identityPrefix, tradeKey);
             entity.timestamp = item.getTimestamp();
             entity.productName = safe(item.getProductName());
             entity.code = safe(item.getCode());
@@ -459,7 +541,7 @@ public class AccountStorageRepository {
         return result;
     }
 
-    private List<PositionSnapshotEntity> toPositionEntities(List<PositionItem> positions) {
+    private List<PositionSnapshotEntity> toPositionEntities(List<PositionItem> positions, String identityPrefix) {
         List<PositionSnapshotEntity> result = new ArrayList<>();
         if (positions == null) {
             return result;
@@ -471,7 +553,7 @@ public class AccountStorageRepository {
             }
             PositionSnapshotEntity entity = new PositionSnapshotEntity();
             fillPositionEntity(entity, item, buildUniqueSnapshotKey(
-                    buildPositionKey(item),
+                    buildScopedStorageKey(identityPrefix, buildPositionKey(item)),
                     keyOccurrences
             ));
             result.add(entity);
@@ -479,7 +561,7 @@ public class AccountStorageRepository {
         return result;
     }
 
-    private List<PendingOrderSnapshotEntity> toPendingEntities(List<PositionItem> pendingOrders) {
+    private List<PendingOrderSnapshotEntity> toPendingEntities(List<PositionItem> pendingOrders, String identityPrefix) {
         List<PendingOrderSnapshotEntity> result = new ArrayList<>();
         if (pendingOrders == null) {
             return result;
@@ -491,7 +573,7 @@ public class AccountStorageRepository {
             }
             PendingOrderSnapshotEntity entity = new PendingOrderSnapshotEntity();
             fillPendingEntity(entity, item, buildUniqueSnapshotKey(
-                    buildPendingKey(item),
+                    buildScopedStorageKey(identityPrefix, buildPendingKey(item)),
                     keyOccurrences
             ));
             result.add(entity);
@@ -815,6 +897,40 @@ public class AccountStorageRepository {
 
     private static String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    private AccountSnapshotMetaEntity loadMetaByIdentity(String account, String server) {
+        if (accountSnapshotDao == null) {
+            return null;
+        }
+        return accountSnapshotDao.loadMeta(safe(account), safe(server));
+    }
+
+    private int resolveMetaId(AccountSnapshotMetaEntity existingMeta) {
+        if (existingMeta != null && existingMeta.id > 0) {
+            return existingMeta.id;
+        }
+        if (accountSnapshotDao == null) {
+            return 1;
+        }
+        return Math.max(1, accountSnapshotDao.loadMaxMetaId() + 1);
+    }
+
+    private String buildIdentityPrefix(String account, String server) {
+        return buildIdentityKey(account, server) + STORAGE_KEY_SEPARATOR;
+    }
+
+    private String buildIdentityKey(String account, String server) {
+        String safeAccount = safe(account).trim();
+        String safeServer = safe(server).trim().toLowerCase(Locale.ROOT);
+        return safeAccount.length() + IDENTITY_SEPARATOR + safeAccount
+                + IDENTITY_SEPARATOR
+                + safeServer.length() + IDENTITY_SEPARATOR + safeServer;
+    }
+
+    private String buildScopedStorageKey(String identityPrefix, String baseKey) {
+        String safeBaseKey = isBlank(baseKey) ? "snapshot" : baseKey;
+        return identityPrefix + safeBaseKey;
     }
 
     private static String escapeJson(String value) {

@@ -97,6 +97,51 @@ public class AccountDeferredSnapshotRenderHelperTest {
         assertTrue(prepared.getTradeWeekdayEntries().size() > 0);
     }
 
+    @Test
+    public void prepareShouldBuildFallbackTradeStatsMetricsWhenSnapshotMetricsAreMissing() {
+        List<CurvePoint> curvePoints = Arrays.asList(
+                new CurvePoint(1_000L, 100_000d, 100_000d, 0.10d),
+                new CurvePoint(2_000L, 102_000d, 101_500d, 0.20d),
+                new CurvePoint(3_000L, 101_000d, 100_800d, 0.15d),
+                new CurvePoint(4_000L, 103_000d, 102_500d, 0.05d)
+        );
+        TradeRecordItem buyTrade = buildTrade(
+                "BTCUSD", "Buy", 1_000L, 3_000L, 12d, -1.5d, 100d, 112d
+        );
+        TradeRecordItem sellTrade = buildTrade(
+                "BTCUSD", "Sell", 2_000L, 4_000L, -4d, -0.5d, 110d, 100d
+        );
+
+        AccountDeferredSnapshotRenderHelper.PreparedSnapshotSections prepared =
+                AccountDeferredSnapshotRenderHelper.prepare(
+                        new AccountDeferredSnapshotRenderHelper.PrepareRequest(
+                                Arrays.asList(),
+                                Arrays.asList(buyTrade, sellTrade),
+                                curvePoints,
+                                AccountTimeRange.ALL,
+                                false,
+                                0L,
+                                0L,
+                                AccountDeferredSnapshotRenderHelper.TradePnlSideMode.ALL,
+                                AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.CLOSE_TIME,
+                                new AccountDeferredSnapshotRenderHelper.TradeFilterRequest(
+                                        "全部产品",
+                                        true,
+                                        "全部方向",
+                                        true,
+                                        AccountDeferredSnapshotRenderHelper.SortMode.CLOSE_TIME,
+                                        true
+                                )
+                        )
+                );
+
+        assertTrue(prepared.getTradeStatsMetrics().size() >= 6);
+        assertEquals("累计收益额", prepared.getTradeStatsMetrics().get(0).getName());
+        assertEquals("累计收益率", prepared.getTradeStatsMetrics().get(1).getName());
+        assertEquals("总交易次数", prepared.getTradeStatsMetrics().get(2).getName());
+        assertEquals("买入次数", prepared.getTradeStatsMetrics().get(3).getName());
+    }
+
     private static TradeRecordItem buildTrade(String code,
                                               String side,
                                               long openTime,

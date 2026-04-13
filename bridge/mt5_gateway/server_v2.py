@@ -15,7 +15,7 @@ from statistics import mean, pstdev
 from threading import Condition, Event, Lock, RLock, Thread
 import time
 from typing import Any, Dict, List, Optional, Tuple
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import uvicorn
 from dotenv import load_dotenv
@@ -69,9 +69,9 @@ def _read_bounded_env_int(name: str, default: int, minimum: Optional[int] = None
     return int(value)
 
 
-LOGIN = int(os.getenv("MT5_LOGIN", "7400048"))
-PASSWORD = os.getenv("MT5_PASSWORD", "_fWsAeW1")
-SERVER = os.getenv("MT5_SERVER", "ICMarketsSC-MT5-6")
+LOGIN = os.getenv("MT5_LOGIN", "").strip()
+PASSWORD = os.getenv("MT5_PASSWORD", "").strip()
+SERVER = os.getenv("MT5_SERVER", "").strip()
 PATH = os.getenv("MT5_PATH", "").strip() or None
 SERVER_ALIASES_RAW = os.getenv("MT5_SERVER_ALIASES", "").strip()
 MT5_INIT_TIMEOUT_MS = _read_bounded_env_int(
@@ -193,15 +193,21 @@ if hasattr(app, "on_event"):
 
 
 def _load_bundle_runtime_info() -> Dict[str, str]:
-    """读取部署包运行指纹；开发源码运行时回退到当前主文件指纹。"""
+    """读取部署包运行指纹；优先使用启动链显式传入的 manifest 路径。"""
     server_file = Path(__file__).resolve()
-    manifest_path = server_file.parents[1] / "bundle_manifest.json"
+    explicit_manifest_path = os.getenv("MT5_BUNDLE_MANIFEST_PATH", "").strip()
+    if explicit_manifest_path:
+        manifest_path = Path(explicit_manifest_path).expanduser()
+    else:
+        manifest_path = server_file.parents[1] / "bundle_manifest.json"
     default_generated_at = datetime.fromtimestamp(server_file.stat().st_mtime, timezone.utc).isoformat()
     default_fingerprint = hashlib.sha256(server_file.read_bytes()).hexdigest()
     if not manifest_path.exists():
         return {
             "bundleFingerprint": default_fingerprint,
             "bundleGeneratedAt": default_generated_at,
+            "bundleManifestPath": str(manifest_path),
+            "bundleScriptPath": str(server_file),
         }
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -209,16 +215,22 @@ def _load_bundle_runtime_info() -> Dict[str, str]:
         return {
             "bundleFingerprint": default_fingerprint,
             "bundleGeneratedAt": default_generated_at,
+            "bundleManifestPath": str(manifest_path),
+            "bundleScriptPath": str(server_file),
         }
     return {
         "bundleFingerprint": str(payload.get("bundleFingerprint") or default_fingerprint),
         "bundleGeneratedAt": str(payload.get("generatedAt") or default_generated_at),
+        "bundleManifestPath": str(manifest_path),
+        "bundleScriptPath": str(server_file),
     }
 
 
 BUNDLE_RUNTIME_INFO = _load_bundle_runtime_info()
 BUNDLE_FINGERPRINT = str(BUNDLE_RUNTIME_INFO.get("bundleFingerprint") or "")
 BUNDLE_GENERATED_AT = str(BUNDLE_RUNTIME_INFO.get("bundleGeneratedAt") or "")
+BUNDLE_MANIFEST_PATH = str(BUNDLE_RUNTIME_INFO.get("bundleManifestPath") or "")
+BUNDLE_SCRIPT_PATH = str(BUNDLE_RUNTIME_INFO.get("bundleScriptPath") or "")
 
 
 def _now_ms() -> int:
@@ -877,7 +889,7 @@ def _stop_v2_bus_producer() -> None:
         v2_bus_producer_started = False
 
 def _apply_mt5_time_offset_ms(value: int) -> int:
-    """把 MT5 服务器 wall-clock 毫秒时间归一化成 UTC 毫秒时间。"""
+    """把 EA 快照里的 MT5 服务器 wall-clock 毫秒时间归一化成 UTC 毫秒时间。"""
     if value <= 0:
         return 0
     zoneinfo = _resolve_mt5_server_zoneinfo()
@@ -913,8 +925,22 @@ def _resolve_mt5_server_zoneinfo() -> ZoneInfo:
         raise ValueError("MT5_SERVER_TIMEZONE 未配置，无法把 MT5 原始时间统一归一化为 UTC。")
     try:
         return ZoneInfo(server_timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(
+            f"MT5_SERVER_TIMEZONE 无法解析：{server_timezone}。"
+            "请确认服务器已安装 IANA 时区数据；Windows 部署包需随网关安装 tzdata 依赖。"
+        ) from exc
     except Exception as exc:
         raise ValueError(f"无效的 MT5_SERVER_TIMEZONE 配置：{server_timezone}") from exc
+
+
+def _resolve_gateway_readiness_error() -> str:
+    """严格检查网关关键配置是否齐备，避免坏部署被健康检查误判成可用。"""
+    if not _is_mt5_configured():
+        return "MT5 登录凭据未配置，网关不会连接 MT5。"
+    if not str(MT5_SERVER_TIMEZONE or "").strip():
+        return "MT5_SERVER_TIMEZONE 未配置，账户接口不可用。"
+    return ""
 
 
 def _deal_time_ms(deal: Any) -> int:
@@ -2026,6 +2052,25 @@ def _clear_session_related_runtime_state() -> None:
         light_snapshot_build_condition.notify_all()
     with trade_request_lock:
         trade_request_store.clear()
+
+
+def _invalidate_account_runtime_cache_after_trade_commit() -> None:
+    """成交成功后立刻作废账户相关快照缓存，保证下一次 revision 重新按真值构建。"""
+    with snapshot_cache_lock:
+        snapshot_build_cache.clear()
+        snapshot_sync_cache.clear()
+        v2_sync_state.clear()
+        health_status_cache.clear()
+        light_snapshot_build_condition.notify_all()
+
+
+def _publish_account_trade_commit_sync_state() -> None:
+    """成交成功后立即发布最新 bus 状态，推动客户端尽快看到新的 historyRevision。"""
+    try:
+        _v2_bus_publish_current_state()
+    except Exception as exc:
+        sys.stderr.write(f"[v2_trade_submit] publish current state failed: {exc}\n")
+        sys.stderr.flush()
 
 
 def _build_session_summary() -> Dict[str, Any]:
@@ -3680,6 +3725,45 @@ def _normalize_ea_snapshot_trades(account_meta: Dict[str, Any], trades: List[Dic
     return rebuilt if rebuilt else trades
 
 
+def _is_ea_push_snapshot_source(account_meta: Dict[str, Any], source_fallback: str) -> bool:
+    """统一判断当前快照是否来自 EA 推送链。"""
+    source = str((account_meta or {}).get("source", "") or "").strip()
+    fallback = str(source_fallback or "").strip()
+    return "MT5 EA Push" in source or "MT5 EA Push" in fallback
+
+
+def _normalize_ea_snapshot_time_field(item: Dict[str, Any], key: str) -> None:
+    """把 EA 快照里的 MT5 原始毫秒时间统一归一化成 UTC 毫秒时间。"""
+    if not isinstance(item, dict):
+        return
+    value = int(item.get(key, 0) or 0)
+    if value <= 0:
+        return
+    item[key] = _apply_mt5_time_offset_ms(value)
+
+
+def _normalize_ea_snapshot_time_fields(account_meta: Dict[str, Any],
+                                       source_fallback: str,
+                                       payload: Dict[str, Any]) -> None:
+    """统一修正 EA 推送快照里的时间字段，避免成交历史和图表继续直接消费券商墙上时间。"""
+    if not _is_ea_push_snapshot_source(account_meta, source_fallback):
+        return
+
+    for point in payload.get("curvePoints") or []:
+        _normalize_ea_snapshot_time_field(point, "timestamp")
+
+    for position in payload.get("positions") or []:
+        _normalize_ea_snapshot_time_field(position, "openTime")
+
+    for order in payload.get("pendingOrders") or []:
+        _normalize_ea_snapshot_time_field(order, "openTime")
+
+    for trade in payload.get("trades") or []:
+        _normalize_ea_snapshot_time_field(trade, "timestamp")
+        _normalize_ea_snapshot_time_field(trade, "openTime")
+        _normalize_ea_snapshot_time_field(trade, "closeTime")
+
+
 def _overview_metric_value(metrics: List[Dict[str, Any]], *names: str) -> float:
     if not metrics or not names:
         return 0.0
@@ -3853,6 +3937,7 @@ def _normalize_snapshot(payload: Optional[Dict], source_fallback: str) -> Dict:
     data["pendingOrders"] = [_enrich_position_symbol_fields(dict(item)) for item in (data.get("pendingOrders") or [])]
     data["trades"] = [_enrich_trade_symbol_fields(dict(item)) for item in (data.get("trades") or [])]
     data["statsMetrics"] = data.get("statsMetrics") or []
+    _normalize_ea_snapshot_time_fields(account_meta, source_fallback, data)
     account_meta["historyRevision"] = _build_history_revision_from_snapshot(data)
     return data
 
@@ -4994,6 +5079,8 @@ def health():
             "gatewayMode": GATEWAY_MODE,
             "bundleFingerprint": BUNDLE_FINGERPRINT,
             "bundleGeneratedAt": BUNDLE_GENERATED_AT,
+            "bundleManifestPath": BUNDLE_MANIFEST_PATH,
+            "bundleScriptPath": BUNDLE_SCRIPT_PATH,
             "mt5PackageAvailable": mt5 is not None,
             "mt5Configured": _is_mt5_configured(),
             "mt5ConfiguredLogin": str(LOGIN),
@@ -5017,6 +5104,10 @@ def health():
             "mt5ProbeDeferred": True,
             "lastError": "",
         }
+        readiness_error = _resolve_gateway_readiness_error()
+        if readiness_error:
+            info["ok"] = False
+            info["lastError"] = readiness_error
         with snapshot_cache_lock:
             health_status_cache["payload"] = _clone_json_value(info)
             health_status_cache["builtAt"] = now_ms
@@ -5045,6 +5136,8 @@ def source_status():
         "gatewayMode": GATEWAY_MODE,
         "bundleFingerprint": BUNDLE_FINGERPRINT,
         "bundleGeneratedAt": BUNDLE_GENERATED_AT,
+        "bundleManifestPath": BUNDLE_MANIFEST_PATH,
+        "bundleScriptPath": BUNDLE_SCRIPT_PATH,
         "mt5PackageAvailable": mt5 is not None,
         "mt5Configured": _is_mt5_configured(),
         "mt5ConfiguredLogin": str(LOGIN),
@@ -5435,6 +5528,9 @@ def v2_trade_submit(payload: Dict[str, Any]):
         idempotent=False,
     )
     _store_trade_request_result(request_id, command_digest, response)
+    if send_error is None:
+        _invalidate_account_runtime_cache_after_trade_commit()
+        _publish_account_trade_commit_sync_state()
     return response
 
 

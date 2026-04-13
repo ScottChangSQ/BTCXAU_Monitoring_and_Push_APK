@@ -333,6 +333,8 @@ final class AccountSnapshotRefreshCoordinator {
                     if (!finalConnected && host.isAwaitingSync()) {
                         if ("登录校验失败".equals(finalSource)) {
                             host.markSyncFailed(finalError);
+                        } else if (!trim(finalError).isEmpty() && !"历史数据（网关离线）".equals(finalSource)) {
+                            host.markSyncFailed(finalError);
                         } else if ("历史数据（网关离线）".equals(finalSource)) {
                             host.markAwaitingGatewaySync("会话已受理，等待网关上线");
                         }

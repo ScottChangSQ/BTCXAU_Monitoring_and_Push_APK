@@ -13,47 +13,48 @@ import java.nio.file.Paths;
 public class MarketChartTradeSourceTest {
 
     @Test
-    public void chartActivityShouldWireTradeCoordinatorIntoChartPanel() throws Exception {
+    public void chartActivityShouldWireTradeCoordinatorIntoThreeActionButtons() throws Exception {
         String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
         String coordinatorSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
 
         assertTrue(activitySource.contains("private MarketChartTradeDialogCoordinator tradeDialogCoordinator;"));
+        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION = \"extra_trade_action\";"));
+        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION_CLOSE_POSITION = \"close_position\";"));
+        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION_MODIFY_POSITION = \"modify_position\";"));
+        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION_MODIFY_PENDING = \"modify_pending\";"));
+        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION_CANCEL_PENDING = \"cancel_pending\";"));
         assertTrue(activitySource.contains("tradeDialogCoordinator = new MarketChartTradeDialogCoordinator("));
-        assertTrue(activitySource.contains("chartPositionAdapter.setActionListener"));
-        assertTrue(activitySource.contains("chartPendingOrderAdapter.setActionListener"));
         assertTrue(activitySource.contains("binding.btnChartTradeBuy.setOnClickListener"));
         assertTrue(activitySource.contains("binding.btnChartTradeSell.setOnClickListener"));
         assertTrue(activitySource.contains("binding.btnChartTradePending.setOnClickListener"));
+        assertTrue(activitySource.contains("consumePendingTradeActionIfNeeded();"));
+        assertFalse(activitySource.contains("chartPositionAdapter.setActionListener"));
+        assertFalse(activitySource.contains("chartPendingOrderAdapter.setActionListener"));
         assertTrue(coordinatorSource.contains("tradeExecutionCoordinator.prepareExecution("));
         assertTrue(coordinatorSource.contains("tradeExecutionCoordinator.submitAfterConfirmation("));
         assertTrue(coordinatorSource.contains("applyDialogSurface(dialog);"));
     }
 
     @Test
-    public void chartActivityShouldBuildAllPhaseOneTradeCommands() throws Exception {
+    public void chartTradeCoordinatorShouldStillOwnCanonicalTradeCommandBuilders() throws Exception {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
 
         assertTrue(source.contains("TradeCommandFactory.openMarket("));
         assertTrue(source.contains("TradeCommandFactory.pendingAdd("));
+        assertTrue(source.contains("TradeCommandFactory.pendingModify("));
         assertTrue(source.contains("TradeCommandFactory.closePosition("));
         assertTrue(source.contains("TradeCommandFactory.pendingCancel("));
         assertTrue(source.contains("TradeCommandFactory.modifyTpSl("));
         assertTrue(source.contains("MarketChartTradeSupport.toTradeSymbol("));
         assertTrue(source.contains("MarketChartTradeSupport.resolveReferencePrice("));
+        assertTrue(source.contains("if (action == ChartTradeAction.CLOSE_POSITION) {"));
+        assertTrue(source.contains("if (action == ChartTradeAction.PENDING_MODIFY) {"));
+        assertTrue(source.contains("if (action == ChartTradeAction.PENDING_CANCEL) {"));
         assertTrue(source.contains("将按服务器实时价执行"));
     }
 
     @Test
-    public void chartActivityShouldNotBlockModifyTpSlOnlyBecauseTicketOrReferencePriceIsMissing() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
-
-        assertFalse(source.contains("当前持仓缺少 positionTicket，无法改单"));
-        assertFalse(source.contains("缺少参考价格，暂时不能改单"));
-    }
-
-    @Test
-    public void chartActivityShouldShowAcceptedTitleWhenTradeIsAcceptedButNotSettled() throws Exception {
+    public void chartTradeCoordinatorShouldShowAcceptedTitleWhenTradeIsAcceptedButNotSettled() throws Exception {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
 
         assertTrue(source.contains("交易已受理"));
@@ -61,52 +62,19 @@ public class MarketChartTradeSourceTest {
     }
 
     @Test
-    public void tradeDialogLayoutShouldUseDedicatedContainerAndLargerFieldHeight() throws Exception {
-        Path file = Paths.get("src/main/res/layout/dialog_trade_command.xml");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
-
-        assertTrue(source.contains("NestedScrollView") || source.contains("ScrollView"));
-        assertTrue(source.contains("@drawable/bg_trade_dialog_surface"));
-        assertTrue(source.contains("@dimen/control_height_lg"));
-        assertTrue(source.contains("android:id=\"@+id/tvTradeCommandHint\"\n            android:layout_width=\"match_parent\"\n            android:layout_height=\"wrap_content\"\n            android:textColor=\"@color/text_primary\""));
-    }
-
-    @Test
-    public void pendingOrderTypeSpinnerShouldUseProjectStyledAdapterLayouts() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
-
-        assertFalse(source.contains("android.R.layout.simple_spinner_item"));
-        assertFalse(source.contains("android.R.layout.simple_spinner_dropdown_item"));
-        assertTrue(source.contains("dialogBinding.spinnerTradeOrderType.setAdapter("));
-    }
-
-    @Test
-    public void tradeDialogActionTextsShouldUseWhiteTextForDarkDialogSurface() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java")
+    public void tradeDialogLayoutShouldUseDedicatedContainerAndStyledSpinner() throws Exception {
+        String layoutSource = readUtf8("src/main/res/layout/dialog_trade_command.xml");
+        String coordinatorSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("private ArrayAdapter<String> createTradeActionMenuAdapter(@NonNull String[] actions) {"));
-        assertTrue(source.contains(".setAdapter(createTradeActionMenuAdapter(actions), (menuDialog, which) -> {"));
-        assertTrue(source.contains("textView.setTextColor(Color.WHITE);"));
-        assertTrue(source.contains("private void styleTradeOrderTypeSpinnerItem(@Nullable View view) {"));
-    }
-
-    @Test
-    public void positionRowLayoutShouldExposeVisibleActionButton() throws Exception {
-        Path file = Paths.get("src/main/res/layout/item_position.xml");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
-
-        assertTrue(source.contains("btnPositionAction"));
-        assertFalse(source.contains("tvExpandHint"));
-    }
-
-    @Test
-    public void chartPositionPanelShouldFilterRowsByCurrentChartSymbolLikeAnnotations() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
-
-        assertTrue(source.contains("if (!matchesSelectedSymbol(item.getCode(), item.getProductName())) {"));
+        assertTrue(layoutSource.contains("NestedScrollView") || layoutSource.contains("ScrollView"));
+        assertTrue(layoutSource.contains("@drawable/bg_trade_dialog_surface"));
+        assertTrue(layoutSource.contains("@dimen/control_height_lg"));
+        assertFalse(coordinatorSource.contains("android.R.layout.simple_spinner_item"));
+        assertFalse(coordinatorSource.contains("android.R.layout.simple_spinner_dropdown_item"));
+        assertTrue(coordinatorSource.contains("dialogBinding.spinnerTradeOrderType.setAdapter("));
+        assertTrue(coordinatorSource.contains("private void styleTradeOrderTypeSpinnerItem(@Nullable View view) {"));
     }
 
     @Test
@@ -123,13 +91,33 @@ public class MarketChartTradeSourceTest {
         assertTrue(coordinatorSource.contains("private boolean canPresentTradeUi() {"));
         assertTrue(coordinatorSource.contains("tradePrepareTask = ioExecutor.submit(() -> {"));
         assertTrue(coordinatorSource.contains("tradeSubmitTask = ioExecutor.submit(() -> {"));
-        assertTrue(activitySource.contains("protected void onPause() {\n        stopAutoRefresh();"));
         assertTrue(activitySource.contains("tradeDialogCoordinator.cancelTradeTasks();"));
         assertTrue(coordinatorSource.contains("if (!canPresentTradeUi()) {\n            tradeFlowRunning = false;\n            return;\n        }"));
     }
 
-    private static String readUtf8(String candidate) throws Exception {
-        Path path = Paths.get(candidate);
+    @Test
+    public void pendingIntentTradeActionShouldWaitForCacheReadyInsteadOfBeingConsumedPrematurely() throws Exception {
+        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(activitySource.contains("private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> {\n        scheduleChartOverlayRefresh();\n        consumePendingTradeActionIfNeeded();\n    };"));
+        assertTrue(activitySource.contains("if (snapshot == null) {\n            return;\n        }"));
+        assertTrue(activitySource.contains("if (targetItem == null) {\n            Toast.makeText(this, \"未找到目标持仓或挂单，暂时不能执行该操作\", Toast.LENGTH_SHORT).show();\n            lastConsumedTradeActionToken = token;\n            return;\n        }"));
+    }
+
+    @Test
+    public void targetSymbolFromExternalTradeShortcutShouldBeNormalizedToMarketSymbol() throws Exception {
+        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(activitySource.contains("import com.binance.monitor.util.ProductSymbolMapper;"));
+        assertTrue(activitySource.contains("return ProductSymbolMapper.toMarketSymbol(raw);"));
+    }
+
+    private static String readUtf8(String relativePath) throws Exception {
+        Path path = Paths.get(relativePath);
         return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
     }
 }

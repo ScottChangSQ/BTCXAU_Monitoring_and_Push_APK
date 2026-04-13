@@ -14,6 +14,9 @@ import org.json.JSONObject;
 import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
@@ -33,12 +36,13 @@ public class SessionCredentialEncryptorTest {
         KeyPair pair = buildRsaKeyPair();
         String pem = toPublicPem(pair);
         SessionCredentialEncryptor encryptor = new SessionCredentialEncryptor();
+        char[] password = "secret".toCharArray();
 
         SessionCredentialEncryptor.LoginEnvelope envelope = encryptor.encrypt(
                 pem,
                 "key-1",
                 "12345678",
-                "secret",
+                password,
                 "ICMarketsSC-MT5-6",
                 true,
                 1775400000000L
@@ -51,6 +55,9 @@ public class SessionCredentialEncryptorTest {
         assertTrue(envelope.getEncryptedKey().length() > 0);
         assertTrue(envelope.getEncryptedPayload().length() > 0);
         assertTrue(envelope.getIv().length() > 0);
+        for (char value : password) {
+            assertEquals('\0', value);
+        }
     }
 
     @Test
@@ -58,12 +65,14 @@ public class SessionCredentialEncryptorTest {
         KeyPair pair = buildRsaKeyPair();
         String pem = toPublicPem(pair);
         SessionCredentialEncryptor encryptor = new SessionCredentialEncryptor();
+        char[] firstPassword = "secret-pass".toCharArray();
+        char[] secondPassword = "secret-pass".toCharArray();
 
         SessionCredentialEncryptor.LoginEnvelope first = encryptor.encrypt(
                 pem,
                 "key-2",
                 "87654321",
-                "secret-pass",
+                firstPassword,
                 "ICMarketsSC-MT5-6",
                 false,
                 1775400000111L
@@ -72,7 +81,7 @@ public class SessionCredentialEncryptorTest {
                 pem,
                 "key-2",
                 "87654321",
-                "secret-pass",
+                secondPassword,
                 "ICMarketsSC-MT5-6",
                 false,
                 1775400000111L
@@ -91,6 +100,22 @@ public class SessionCredentialEncryptorTest {
 
         JSONObject plainSecond = decryptPayload(second, pair.getPrivate());
         assertNotEquals(plain.optString("nonce"), plainSecond.optString("nonce"));
+        for (char value : firstPassword) {
+            assertEquals('\0', value);
+        }
+        for (char value : secondPassword) {
+            assertEquals('\0', value);
+        }
+    }
+
+    @Test
+    public void encryptShouldAvoidBuildingPasswordStringCopies() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/security/SessionCredentialEncryptor.java");
+
+        assertFalse(source.contains("new String(password)"));
+        assertFalse(source.contains("plainPayload.toString()"));
+        assertTrue(source.contains("plainPayload = buildPlainPayloadBytes("));
+        assertTrue(source.contains("writeJsonChars(writer, password == null ? new char[0] : password);"));
     }
 
     private static KeyPair buildRsaKeyPair() throws Exception {
@@ -130,5 +155,11 @@ public class SessionCredentialEncryptorTest {
         aesCipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(aesKey, "AES"), new GCMParameterSpec(128, iv));
         byte[] plain = aesCipher.doFinal(encryptedPayload);
         return new JSONObject(new String(plain, StandardCharsets.UTF_8));
+    }
+
+    private static String readUtf8(String relativePath) throws Exception {
+        Path root = Paths.get("").toAbsolutePath();
+        Path path = root.resolve(relativePath);
+        return new String(Files.readAllBytes(path), StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 }

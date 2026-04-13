@@ -661,6 +661,22 @@
             android:textSize="10.5sp" />
 
         <TextView
+            android:id="@+id/tabAccountPosition"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"
+            android:drawablePadding="2dp"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:paddingTop="6dp"
+            android:paddingBottom="4dp"
+            android:text="@string/nav_account_position"
+            android:textColor="@color/text_secondary"
+            android:textSize="10.5sp" />
+
+        <TextView
             android:id="@+id/tabAccountStats"
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -688,7 +704,7 @@
             android:maxLines="1"
             android:paddingTop="6dp"
             android:paddingBottom="4dp"
-            android:text="设置"
+            android:text="@string/nav_settings"
             android:textColor="@color/text_secondary"
             android:textSize="10.5sp" />
     </LinearLayout>

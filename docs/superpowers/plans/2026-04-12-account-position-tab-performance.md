@@ -8,6 +8,12 @@
 
 **Tech Stack:** Java、XML、ViewBinding、RecyclerView、JUnit4、Gradle、adb/gfxinfo/logcat
 
+## Status Update (2026-04-12)
+
+- `Task 1` 到 `Task 5` 的结构改造与本地验证已完成，相关页面、读模型、差异刷新、图表叠加快照、账户统计页职责收口都已落地。
+- `Task 6` 中 `assembleDebug`、`README.md / ARCHITECTURE.md / CONTEXT.md` 更新已完成。
+- `Task 6` 中 `adb install`、真机 `gfxinfo / logcat / batterystats` 复测仍未完成；当前阻塞原因是本机 `adb devices` 无在线设备，无法伪造验收结果。
+
 ---
 
 ### Task 1: 固化 5 Tab 导航与新页面入口

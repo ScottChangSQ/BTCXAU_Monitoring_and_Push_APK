@@ -1,6 +1,6 @@
 # BTC/XAU 异常交易监控 Android App
 
-一个用于监控 BTC / XAU 行情、展示 MT5 账户状态、接收异常提醒的 Android App + Python 网关项目。当前仓库内 1-6 步主链收口、BUG review 收口和本轮全量自动化复核已经完成，App 与服务端已经统一到单入口、单真值、纯消费展示的结构；正式整改仍以 `AUDIT_REMEDIATION_LEDGER.md` 中尚未闭合的条目为准。
+一个用于监控 BTC / XAU 行情、展示 MT5 账户状态、接收异常提醒的 Android App + Python 网关项目。当前仓库内“5 Tab + 账户持仓页 + 图表页轻量化”正式方案、BUG review 修复和本轮自动化复核已经收口完成；App 与服务端已经统一到单入口、单真值、纯消费展示的结构。`2026-04-12` 已补齐“真机 + 已部署 HTTPS 服务器”现场复测，真实设备为 `7fab54c4`，证据目录为 `temp/cpu_battery_20260412_account_position_tab`；`2026-04-13` 又完成一轮最终 BUG review 收口，管理面板进程控制已改为按可执行文件路径精确识别，无用 Agent 也已回收完毕。
 
 ## 项目功能简介
 
@@ -19,7 +19,8 @@
 - 图表页从其他 tab 返回前台时，已收口为“恢复消费节奏”而不是“重新启动页面链路”：普通返回不再在 `onResume()` 里重置 V2 transport，也不再由图表页切账户全量快照节奏
 - 图表页当前持仓/挂单叠加层首帧现在会优先恢复最近一次本地已持久化快照，不再因为内存缓存尚未回填就先清空“当前持仓”
 - 图表页切到“行情持仓”时，实时尾部和持仓叠加层现在会等主图首帧真正画出来后再释放，不再抢在首屏前一起压主线程
-- 实时账户总览现在只保留在图表页“当前持仓 / 挂单”面板，账户统计页只保留历史分析，不再双页重复维护同一块高频总览
+- 底部导航现已固定为 5 个 Tab：`行情监控 / 行情持仓 / 账户持仓 / 账户统计 / 设置`
+- 实时账户总览、当前持仓、挂单现在统一迁到独立的“账户持仓”页；图表页只保留 K 线主体、图上标注、轻量摘要和交易按钮，账户统计页只保留历史分析
 - K 线图当前持仓、挂单、历史成交、异常记录现在共用统一 annotation 明细消费链；当前持仓/挂单线支持查看开仓时间、数量、浮盈亏、止盈止损等详情
 - 图表页 `1w / 1M / 1y` 长周期恢复前台时，若当前窗口仍新鲜则不再立刻重拉；后续自动刷新也不再走快速 fallback，而是对齐到下一次分钟边界
 - 账户统计页命中同签名预加载缓存时，不再重复整页 `applySnapshot()`，切页返回时不会再把总览、曲线、持仓和成交区整套重画一遍
@@ -27,6 +28,11 @@
 - 服务端 `v2_account` 账户 helper 也已经收口为严格 canonical 字段消费，只接受显式 `productId / marketSymbol / tradeSymbol / productName`
 - 网关侧 MT5 时间主链现在只按 `MT5_SERVER_TIMEZONE` 把服务器 wall-clock 时间归一化成 UTC；App 只按设备本地时区显示，历史成交、账户曲线和 K 线图成交标记不再各自补时区
 - 会话链已经收口为服务端单真值，当前激活账号只认 `status.activeAccount`
+- APP 会话 accepted 现在只会进入 syncing，只有新账号快照真正对齐后才写 active，本地不再提前激活伪成功状态
+- APP 登录密码链路已改成 `char[]` 短生命周期传递，构造请求、加密和提交后都会清零，不再在页面或协调器里长时间保留明文 `String`
+- 图表页交易链对 `positionTicket` 已做三层硬校验，平仓 / 改 TP/SL 缺目标时会在客户端直接拒绝
+- 交易命令已受理但账户强刷还未收敛时，页面提示改为“已受理，等待同步”，不再误报成“结果未确认”
+- 监控服务入口已统一收口到 `MonitorServiceController`，监控开关也改成真实持久化，应用重启或开机不会再把用户主动关闭的监控偷偷打开
 - 历史、曲线、比例补算和启发式归并已经从主链移除，页面只基于服务端给出的标准数据做展示
 - 服务端轻快照主链不再展开全量历史，但会返回 `accountMeta.historyRevision`（由成交历史 canonical digest 生成），供 App 只在历史修订号变化时补拉全量历史；缓存 miss 也不再并发放大
 - 服务端轻快照增加会话代次保护（`session_snapshot_epoch`），会话切换期间构建出的旧快照不会写回新会话缓存
@@ -47,6 +53,8 @@
 - 会话主链：服务端负责远程账号登录、切换、退出和激活账号确认；App 只消费 `activeAccount / active` 这组 canonical 字段
 - 产品命名主链：市场侧统一为 `BTCUSDT / XAUUSDT`，交易侧统一为 `BTCUSD / XAUUSD`，跨层映射集中在 `ProductSymbolMapper`
 - 安全链路：远程登录使用 `rsa-oaep+aes-gcm`，服务器端账号档案使用 Windows DPAPI，客户端本地会话摘要使用 Android Keystore
+- 本地账户缓存链：`AccountStorageRepository` 现已按 `account + server` 分区保存历史交易、持仓、挂单和摘要，不再用单槽位覆盖其他账户
+- 运行时边界：`MonitorServiceController` 统一分发服务动作，`ConfigManager` 统一保存监控开关真值，`V2StreamSequenceGuard` 采用“成功应用后再 commit busSeq”
 
 ## 远程账号会话
 
@@ -71,7 +79,7 @@
 - `GatewayV2Client`、`GatewayV2StreamClient`、`GatewayV2SessionClient` 已经成为 App 主链入口
 - 账户页主动刷新与后台预加载已经统一到同一套 `v2` 数据链
 - 账户预加载现在拆成两条明确链路：运行态只应用 stream 已发布快照，历史只在 `historyRevision` 前进时补拉 `v2/account/history`
-- 账户统计页高频刷新现在只更新账户概览、当前持仓和挂单；历史成交、曲线和历史统计只在 `historyRevision` 变化时补拉全量
+- 账户统计页现在只承接历史成交、曲线和统计分析；页面进入时会读取当前会话缓存并按需补拉历史，不再依赖前台实时推送刷新整页
 - 账户统计页“账户概览”的 `当日盈亏 / 当日收益率` 现在固定按 APP 本地今日口径计算，只覆盖这两个字段，其余 overview 指标仍消费服务端 canonical metrics
 - 账户统计页“账户概览”的 `累计盈亏 / 累计收益率` 现在只会在净值曲线或历史成交已给出完整真值时才本地覆盖；仅有当前持仓时不会再误写成持仓口径
 - 账户运行态连接状态现在只认完整账号身份，`source=remote_logged_out` 不再被误判为“已连接”
@@ -90,12 +98,12 @@
 - 服务端与 APP 现已统一移除 `XBT / GOLD` 历史别名容错，产品命名口径固定为市场侧 `BTCUSDT / XAUUSDT`、交易侧 `BTCUSD / XAUUSD`
 - EA Push 在取不到 `contractSize` 时会直接报错并中止本次快照发送，不再伪造 `1.0`
 - 设置页网关项已经收口为只读正式入口展示，不再允许手工保存地址
-- 管理面板已经支持查看会话摘要、运行状态、日志、配置和常用控制操作
+- 管理面板已经支持查看会话摘要、运行状态、日志、配置和常用控制操作；默认停进程与状态读取现已按 `ExecutablePath` 精确匹配当前部署实例，不再误伤同机其他同名进程
 - 自动化测试已经覆盖主入口、账户链、监控链、会话链、服务端账户模型和契约层
 - 前后台切换和悬浮窗切回主界面现在只改变刷新节奏，不再无条件重建 stream 或立刻触发账户页全量预加载
 - 行情持仓页普通 tab 返回现在只恢复页面消费节奏；长周期窗口改为按上游分钟源节奏刷新，不再制造“像重新打开页面”一样的重复拉取体感
 - 底部 tab 切换语义现已统一，设置页切走时不再先销毁再重建
-- 图表页当前持仓面板现已统一承接实时账户总览，账户统计页不再保留实时总览和当前持仓残留渲染链
+- 图表页已经收口为轻量页：只保留 K 线、图上标注、顶部轻量状态和 3 个交易按钮；实时账户总览与持仓/挂单正式承接页为“账户持仓”
 
 ## 本地运行方法
 
@@ -148,7 +156,10 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - Windows 部署根目录统一为 `C:\mt5_bundle\windows_server_bundle`
 - 服务器一键停旧服务并重部署命令：`C:\mt5_bundle\windows_server_bundle\deploy_bundle.cmd`
 - 命令行等价入口：`powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\mt5_bundle\windows_server_bundle\deploy_bundle.ps1 -Mode Gui -BundleRoot "C:\mt5_bundle\windows_server_bundle"`
+- 网关 `.env` 现在必须显式配置 `MT5_SERVER_TIMEZONE`，而且这个值必须是“MT5 / 券商服务器时区”，不是部署机器所在时区；对 `ICMarketsSC-MT5-6` 这类 `GMT+2 / GMT+3（夏令时）` 服务器，当前部署模板示例改为 `Europe/Athens`。缺失时 `start_gateway.ps1` 会直接拒绝启动，`/health` 也会明确报错，不再允许坏部署假通过
+- Windows 网关依赖现在显式包含 `tzdata`；原因是 `MT5_SERVER_TIMEZONE=Europe/Athens` 这类 IANA 时区在部分 Windows Python 环境里不能靠系统自带时区库稳定解析，缺它时 `/v2/account/snapshot` 会直接失败，APP 登录会卡在“正在同步账户”
 - 这套一键部署会先停掉旧计划任务、旧网关、旧管理面板、旧 Caddy/Nginx，并强制释放 `80 / 443 / 2019 / 8787 / 8788` 端口，再重新注册任务、启动后台服务并做健康检查
+- 健康检查现在除了 `/health`、`/admin/` 和 `wss://tradeapp.ltd/v2/stream`，还会强制校验 `/v2/account/snapshot` 与 `/v2/account/history?range=all`，避免只看通道在线却漏掉账户主链 500
 - 部署包里的 `.ps1` / `.cmd` 会在构建时统一转换成 Windows 兼容编码和换行；如果直接对比源码与部署包的原始文件哈希，PowerShell 脚本可能不同，但归一化后的逻辑内容应保持一致
 - 部署包根目录会生成 `bundle_manifest.json`，部署脚本会用它校验运行中的 `8787 / 80 / 443` 返回的 `bundleFingerprint` 是否与当前 bundle 一致
 - 网关启动脚本、管理面板启动脚本、首次引导脚本现在统一在脚本内部用 .NET `SHA256` 计算 `requirements.txt` 指纹，不再依赖 `Get-FileHash`，避免部分 Windows PowerShell 环境里网关根本起不来
@@ -210,15 +221,36 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 
 ## 待办事项
 
-- 正式整改台账仍待执行：P0-1 账户页首帧性能、P1-1 AccountStatsBridgeActivity 拆分、P2-2 并发收口；仓库外仍保留一次“真机 + 已部署 HTTPS 服务器”的现场人工联调记录
-- 部署现场需要再次确认域名、证书、443 放行和 `/v2/session/*` 的 HTTPS 暴露状态
+- 仓库内源码和最新部署包当前已收口；剩余待办只在仓库外现场条件，包括线上 bundle 切到本地最新指纹，以及手机重新连上 `adb`
+- 部署现场仍需再次确认域名、证书、443 放行和 `/v2/session/*` 的 HTTPS 暴露状态
+- 2026-04-13 实时复核：公网 `tradeapp.ltd` 的 `/health`、`/v2/account/snapshot`、`/v2/account/history?range=all` 已全部恢复 `200`，`MT5_SERVER_TIMEZONE=Asia/Seoul` 已在线生效；但线上当前 bundle 指纹仍为 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`，尚未切到本地最新 `2b24d1238924476899f684847d1453980c7777750ec006e0060f4df31a6fc10c`
+
+## 真机复测记录
+
+- 复测设备：`7fab54c4`
+- 安装验证：`adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 已成功
+- 采集方式：页面 Activity 未导出，不能直接 `am start -n`；本轮改为 `LAUNCHER + adb shell input tap` 点击底部 5 Tab 做真实切页
+- 采集目录：`temp/cpu_battery_20260412_account_position_tab`
+- 页面链路：`MarketChartActivity` 首屏 `+176ms`，`AccountStatsBridgeActivity` 切入 `+265ms`，`AccountPositionActivity` 切入 `+83ms`
+- 图表链路：`chart_pull` 从 `phase=start` 到 `load_done` 为 `909ms`，到 `ui_applied` 为 `1050ms`
+- `gfxinfo`：`207` 帧里 `50` 帧卡顿，占比 `24.15%`；`P90=30ms`，`P95=48ms`；`High input latency=232`，`Slow UI thread=43`，`Slow issue draw commands=27`
+- `batterystats`：采样窗口约 `47s`；本 App `UID u0a512` 总估算 `2.67 mAh`，其中 `screen=2.11 mAh`、`cpu=0.566 mAh`；前台停留 `47s 254ms`
+- 结论：安装、启动、切页、性能采样、耗电采样这条真机链已经补齐，当前卡顿已从“结构性整页重排”收口到“仍存在慢帧但页面链已跑通”的状态
 
 ## 阶段验收说明
 
-- 当前 1-6 步代码收口已经完成，最近一轮多模型复核与真实问题修复也已完成
-- 2026-04-11 最终收口复核：本轮复核、修复、测试与文档同步已收口；正式整改台账仍保留 P0-1 / P1-1 / P2-2 三项仓库内待办，仓库外仍保留“真机 + 已部署 HTTPS 服务器”的现场人工联调记录
-- App 最终总验收已通过：执行 `.\gradlew.bat :app:auditCriticalCheckstyle :app:compileDebugJavaWithJavac :app:testDebugUnitTest`，结果为 `BUILD SUCCESSFUL`
-- 服务端最终总验收已通过：执行 `python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v`，结果为 `Ran 229 tests ... OK`
+- 2026-04-13 最终收口复核：已再次确认本地 Android / Windows 源码与最新部署包没有新的未闭合问题；已知已完成智能体重新执行关闭均返回 `not found`，说明当前没有残留可回收的旧 Agent
+- 2026-04-13 在线环境复核：`https://tradeapp.ltd/health`、`/v2/session/status`、`/v2/account/snapshot`、`/v2/account/history?range=all` 均返回 `200`，当前在线账户状态为 `remote_logged_out`；但线上运行 bundle 指纹仍为 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`，尚未切到本地最新 `2b24d1238924476899f684847d1453980c7777750ec006e0060f4df31a6fc10c`
+- 当前 1-6 步代码收口已经完成，最近一轮多模型复核、BUG review 修复、README/CONTEXT 同步以及无用 Agent 回收也已完成
+- 2026-04-12 最终收口复核：Task1-Task6 已全部闭合；Task6 的 `adb install / gfxinfo / logcat / batterystats` 真机证据已补齐，真实设备为 `7fab54c4`，证据目录为 `temp/cpu_battery_20260412_account_position_tab`
+- App 最新全量单测已通过：执行 `.\gradlew.bat :app:testDebugUnitTest`，结果为 `BUILD SUCCESSFUL`，共 `696` 条测试全部通过
+- App 最新构建已通过：执行 `.\gradlew.bat :app:assembleDebug`，结果为 `BUILD SUCCESSFUL`
+- 服务端最新全量单测已通过：执行 `python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v`，结果为 `Ran 239 tests ... OK`
+- Windows 部署包测试已通过：执行 `python -m unittest scripts.tests.test_windows_server_bundle -v`，结果为 `Ran 15 tests ... OK`
+- 2026-04-12 真机链新增验证：`adb devices` 返回 `7fab54c4 device`；`adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 返回 `Success`
+- 2026-04-12 真机链新增验证：`logcat` 显示 `MarketChartActivity +176ms`、`AccountStatsBridgeActivity +265ms`、`AccountPositionActivity +83ms`，并记录 `chart_pull start/load_done/ui_applied = 0/909/1050ms`
+- 2026-04-12 真机链新增验证：`gfxinfo` 结果为 `207` 帧、`50` 帧卡顿、`P90=30ms`、`P95=48ms`
+- 2026-04-12 真机链新增验证：`batterystats` 采样约 `47s`，本 App `UID u0a512` 估算耗电 `2.67 mAh`，其中 `screen=2.11 mAh`、`cpu=0.566 mAh`
 - 2026-04-08 新增验证：启动脚本去噪回归、Windows bundle 回归、App 入口固定回归均已通过
 - 2026-04-08 新增验证：轻快照去全历史扫描、轻快照 single-flight、bundle 指纹校验、websocket 验收链均已通过
 - 2026-04-08 新增验证：`logged_out` 状态下 `v2/stream` 不再触发 MT5，同步链回归通过
@@ -241,4 +273,4 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - 2026-04-10 最终 BUG review 与任务收口新增验证：`.\gradlew.bat :app:testDebugUnitTest` 已通过；`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py"` 已通过，结果为 `Ran 226 tests ... OK`
 - 2026-04-11 全量复核新增验证：修复了图表页 `onNewIntent` 切品种旧上下文未先失效、账户页本地会话摘要旧错误残留、部署样例 `MT5_INIT_TIMEOUT_MS=90000` 被服务端静默截断，以及旧 source test 未跟随职责下沉的问题；`.\gradlew.bat :app:auditCriticalCheckstyle :app:compileDebugJavaWithJavac :app:testDebugUnitTest` 已通过；`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 已通过，结果为 `Ran 229 tests ... OK`
 - 2026-04-11 图表切页卡顿专项验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartStartupGateTest" --tests "com.binance.monitor.ui.chart.MarketChartStartupGateSourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartStartupGateTest" --tests "com.binance.monitor.ui.chart.MarketChartStartupGateSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartLifecycleSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartOverlayRestoreSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartV2SourceTest"` 已通过；`.\gradlew.bat :app:assembleDebug` 与 `adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 已通过；串行 ADB 复测显示 `Displayed MarketChartActivity +175ms`，且 `chart_realtime_render` 已晚于首屏显示发生
-- 2026-04-12 账户页/图表页职责迁移补收口：移除了账户统计页内残留的实时总览/持仓渲染代码，把账户总览组装逻辑收口到 `AccountOverviewMetricsHelper` 并由图表页当前持仓面板复用；`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeOverviewSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionSummarySourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac` 已通过
+- 2026-04-12 账户页/图表页职责迁移补收口：移除了账户统计页内残留的实时总览/持仓渲染代码，把账户总览组装逻辑收口到 `AccountOverviewMetricsHelper` 并交给账户持仓页统一复用；图表页正式收口为只保留 K 线主体、图上标注、轻量摘要和交易按钮；`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeOverviewSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionSummarySourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac` 已通过

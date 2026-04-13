@@ -57,6 +57,10 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertIn('Wait-HttpsLoopbackOk -HostName "tradeapp.ltd" -Path "/health"', deploy_script)
         self.assertIn('Wait-HttpJsonFieldMatch', deploy_script)
         self.assertIn('https://tradeapp.ltd/health', deploy_script)
+        self.assertIn('http://127.0.0.1:8787/v2/account/snapshot', deploy_script)
+        self.assertIn('http://127.0.0.1:8787/v2/account/history?range=all', deploy_script)
+        self.assertIn('https://tradeapp.ltd/v2/account/snapshot', deploy_script)
+        self.assertIn('https://tradeapp.ltd/v2/account/history?range=all', deploy_script)
         self.assertIn('bundle_manifest.json', deploy_script)
         self.assertIn('bundleFingerprint', deploy_script)
         self.assertIn('wss://tradeapp.ltd/v2/stream', deploy_script)
@@ -86,6 +90,73 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertIn("function Read-TextFileShared", deploy_script)
         self.assertNotIn('Add-Content -LiteralPath $Context.LogFile -Value $line -Encoding UTF8', deploy_script)
         self.assertNotIn('$logBox.Text = Get-Content -LiteralPath $ResolvedLogFile -Raw -Encoding UTF8', deploy_script)
+
+    def test_deploy_script_should_log_each_health_probe_and_preserve_last_failure_reason(self) -> None:
+        deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("function Get-WebRequestFailureMessage", deploy_script)
+        self.assertIn("function Start-HealthProbe", deploy_script)
+        self.assertIn("最后错误", deploy_script)
+        self.assertIn('Start-HealthProbe -Context $Context -Label "8787 /health"', deploy_script)
+        self.assertIn('Start-HealthProbe -Context $Context -Label "8788 /"', deploy_script)
+        self.assertIn('Start-HealthProbe -Context $Context -Label "80 /health"', deploy_script)
+        self.assertIn('Start-HealthProbe -Context $Context -Label "443 tradeapp.ltd/health"', deploy_script)
+        self.assertIn('Start-HealthProbe -Context $Context -Label "8787 /v2/account/snapshot"', deploy_script)
+        self.assertIn('Start-HealthProbe -Context $Context -Label "443 tradeapp.ltd/v2/account/snapshot"', deploy_script)
+        self.assertIn('Start-HealthProbe -Context $Context -Label "wss://tradeapp.ltd/v2/stream"', deploy_script)
+
+    def test_deploy_script_should_retry_websocket_probe_until_timeout(self) -> None:
+        deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('function Wait-WebSocketMessage', deploy_script)
+        self.assertIn('$deadline = (Get-Date).AddSeconds($MaxSeconds)', deploy_script)
+        self.assertIn('while ((Get-Date) -lt $deadline)', deploy_script)
+        self.assertIn('Start-Sleep -Seconds 2', deploy_script)
+        self.assertIn('throw "等待 WebSocket 首条消息超时: $Url | 最后错误: $lastFailure"', deploy_script)
+
+    def test_deploy_script_should_only_stop_bundle_managed_python_processes(self) -> None:
+        deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('function Test-BundleManagedProcess', deploy_script)
+        self.assertIn('$Context.GatewayDir', deploy_script)
+        self.assertIn('$Context.WindowsDir', deploy_script)
+        self.assertIn('Test-BundleManagedProcess -Process $_ -Context $Context', deploy_script)
+
+    def test_deploy_script_should_match_relative_python_script_names_inside_bundle_venv(self) -> None:
+        deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('$serverScriptName = [System.IO.Path]::GetFileName($serverScriptPath).ToLowerInvariant()', deploy_script)
+        self.assertIn('$adminScriptName = [System.IO.Path]::GetFileName($adminScriptPath).ToLowerInvariant()', deploy_script)
+        self.assertIn('$pythonExecutableManagedByBundle = $normalizedExecutablePath.StartsWith($normalizedGatewayDir)', deploy_script)
+        self.assertIn('$normalizedCommandLine.Contains($serverScriptName)', deploy_script)
+        self.assertIn('$normalizedCommandLine.Contains($adminScriptName)', deploy_script)
+
+    def test_deploy_script_should_validate_gateway_env_before_starting_tasks(self) -> None:
+        deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("function Test-GatewayEnvContract", deploy_script)
+        self.assertIn('Join-Path $Context.GatewayDir ".env"', deploy_script)
+        self.assertIn('"MT5_LOGIN"', deploy_script)
+        self.assertIn('"MT5_PASSWORD"', deploy_script)
+        self.assertIn('"MT5_SERVER"', deploy_script)
+        self.assertIn('"MT5_SERVER_TIMEZONE"', deploy_script)
+        self.assertIn("Test-GatewayEnvContract -Context $Context", deploy_script)
+
+    def test_deploy_script_should_include_latest_gateway_log_when_8787_probe_fails(self) -> None:
+        deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("function Get-ServiceLogTail", deploy_script)
+        self.assertIn('Join-Path $Context.GatewayDir "logs"', deploy_script)
+        self.assertIn('"gateway-*.log"', deploy_script)
+        self.assertIn('最近网关日志', deploy_script)
+        self.assertIn('健康检查通过: 8787 /health', deploy_script)
+
+    def test_run_gateway_should_pin_bundle_manifest_path_for_runtime_fingerprint(self) -> None:
+        run_gateway_script = (builder.SOURCE_WINDOWS_DIR / "run_gateway.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("MT5_BUNDLE_MANIFEST_PATH", run_gateway_script)
+        self.assertIn('Join-Path (Split-Path -Parent $gatewayDir) "bundle_manifest.json"', run_gateway_script)
+        self.assertIn('$env:MT5_BUNDLE_MANIFEST_PATH = (Resolve-Path $bundleManifestPath).Path', run_gateway_script)
 
     def test_default_caddyfile_should_expose_tradeapp_https_entry(self) -> None:
         caddyfile = (builder.SOURCE_WINDOWS_DIR / "Caddyfile").read_text(encoding="utf-8")

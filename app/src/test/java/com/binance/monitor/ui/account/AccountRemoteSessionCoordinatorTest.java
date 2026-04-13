@@ -26,6 +26,114 @@ import java.util.List;
 public class AccountRemoteSessionCoordinatorTest {
 
     @Test
+    public void loginAcceptedShouldPersistInactiveUntilSnapshotApplied() throws Exception {
+        FakeCacheResetter resetter = new FakeCacheResetter();
+        FakeSessionStore store = new FakeSessionStore();
+        AccountSessionStateMachine machine = new AccountSessionStateMachine();
+        FakeGateway gateway = new FakeGateway();
+        gateway.publicKeyPayload = new SessionPublicKeyPayload(true, "key-1", "rsa-oaep+aes-gcm", "pem", 0L, null, Collections.emptyList(), 0, "{}");
+        gateway.loginReceipt = new SessionReceipt(
+                true,
+                "accepted",
+                "req-login",
+                new RemoteAccountProfile("acc-login", "12345678", "****5678", "IC", "IC 5678", true, "accepted"),
+                "登录已受理",
+                "",
+                false,
+                "{}"
+        );
+        gateway.statusPayload = new SessionStatusPayload(
+                true,
+                "accepted",
+                new RemoteAccountProfile("acc-login", "12345678", "****5678", "IC", "IC 5678", true, "accepted"),
+                Collections.singletonList(new RemoteAccountProfile("acc-login", "12345678", "****5678", "IC", "IC 5678", true, "accepted")),
+                1,
+                "{}"
+        );
+
+        AccountRemoteSessionCoordinator coordinator = new AccountRemoteSessionCoordinator(
+                machine,
+                gateway,
+                new FakeEncryptor(),
+                resetter,
+                store,
+                () -> "req-local"
+        );
+
+        AccountRemoteSessionCoordinator.SessionActionResult result = coordinator.loginNewAccount(
+                new AccountRemoteSessionCoordinator.LoginRequest(
+                        "12345678",
+                        "secret-pass".toCharArray(),
+                        "IC",
+                        true,
+                        1775400000111L
+                )
+        );
+
+        assertNotNull(result);
+        assertTrue(coordinator.isAwaitingSync());
+        assertFalse(store.active);
+
+        boolean activated = coordinator.onSnapshotApplied("12345678", "IC");
+
+        assertTrue(activated);
+        assertTrue(store.active);
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.ACTIVE, machine.snapshot().getState());
+    }
+
+    @Test
+    public void loginShouldClearPasswordArrayAfterEncryption() throws Exception {
+        FakeCacheResetter resetter = new FakeCacheResetter();
+        FakeSessionStore store = new FakeSessionStore();
+        AccountSessionStateMachine machine = new AccountSessionStateMachine();
+        FakeGateway gateway = new FakeGateway();
+        gateway.publicKeyPayload = new SessionPublicKeyPayload(true, "key-1", "rsa-oaep+aes-gcm", "pem", 0L, null, Collections.emptyList(), 0, "{}");
+        gateway.loginReceipt = new SessionReceipt(
+                true,
+                "accepted",
+                "req-login",
+                new RemoteAccountProfile("acc-login", "12345678", "****5678", "IC", "IC 5678", true, "accepted"),
+                "登录已受理",
+                "",
+                false,
+                "{}"
+        );
+        gateway.statusPayload = new SessionStatusPayload(
+                true,
+                "accepted",
+                new RemoteAccountProfile("acc-login", "12345678", "****5678", "IC", "IC 5678", true, "accepted"),
+                Collections.singletonList(new RemoteAccountProfile("acc-login", "12345678", "****5678", "IC", "IC 5678", true, "accepted")),
+                1,
+                "{}"
+        );
+        FakeEncryptor encryptor = new FakeEncryptor();
+        AccountRemoteSessionCoordinator coordinator = new AccountRemoteSessionCoordinator(
+                machine,
+                gateway,
+                encryptor,
+                resetter,
+                store,
+                () -> "req-local"
+        );
+        char[] password = "secret-pass".toCharArray();
+
+        coordinator.loginNewAccount(
+                new AccountRemoteSessionCoordinator.LoginRequest(
+                        "12345678",
+                        password,
+                        "IC",
+                        true,
+                        1775400000111L
+                )
+        );
+
+        assertEquals("secret-pass", encryptor.lastPasswordSnapshot);
+        for (char value : password) {
+            assertEquals('\0', value);
+        }
+    }
+
+    @Test
     public void switchSuccessShouldClearOldAccountCachesBeforeMarkingActive() throws Exception {
         FakeCacheResetter resetter = new FakeCacheResetter();
         FakeSessionStore store = new FakeSessionStore();
@@ -490,6 +598,8 @@ public class AccountRemoteSessionCoordinatorTest {
     }
 
     private static final class FakeGateway implements AccountRemoteSessionCoordinator.SessionGateway {
+        private SessionPublicKeyPayload publicKeyPayload;
+        private SessionReceipt loginReceipt;
         private SessionReceipt switchReceipt;
         private SessionReceipt logoutReceipt;
         private SessionStatusPayload statusPayload;
@@ -497,12 +607,12 @@ public class AccountRemoteSessionCoordinatorTest {
 
         @Override
         public SessionPublicKeyPayload fetchPublicKey() {
-            return null;
+            return publicKeyPayload;
         }
 
         @Override
         public SessionReceipt login(SessionCredentialEncryptor.LoginEnvelope envelope, boolean saveAccount) {
-            return null;
+            return loginReceipt;
         }
 
         @Override
@@ -525,14 +635,17 @@ public class AccountRemoteSessionCoordinatorTest {
     }
 
     private static final class FakeEncryptor implements AccountRemoteSessionCoordinator.CredentialEnvelopeFactory {
+        private String lastPasswordSnapshot = "";
+
         @Override
         public SessionCredentialEncryptor.LoginEnvelope encrypt(String publicKeyPem,
                                                                 String keyId,
                                                                 String login,
-                                                                String password,
+                                                                char[] password,
                                                                 String server,
                                                                 boolean remember,
                                                                 long clientTime) {
+            lastPasswordSnapshot = password == null ? "" : new String(password);
             return new SessionCredentialEncryptor.LoginEnvelope("req", keyId, "rsa-oaep+aes-gcm", "key", "payload", "iv");
         }
     }

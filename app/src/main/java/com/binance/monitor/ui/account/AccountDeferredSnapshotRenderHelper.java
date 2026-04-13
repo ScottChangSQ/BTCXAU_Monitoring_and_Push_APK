@@ -10,6 +10,7 @@ import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
+import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.ProductSymbolMapper;
 
 import java.util.ArrayList;
@@ -141,9 +142,7 @@ public final class AccountDeferredSnapshotRenderHelper {
                                                      TradePnlSideMode tradePnlSideMode,
                                                      TradeWeekdayBasis tradeWeekdayBasis,
                                                      List<CurvePoint> displayedCurvePoints) {
-        List<AccountMetric> statsMetrics = latestStatsMetrics == null
-                ? new ArrayList<>()
-                : new ArrayList<>(latestStatsMetrics);
+        List<AccountMetric> statsMetrics = buildTradeStatsMetrics(latestStatsMetrics, baseTrades, displayedCurvePoints);
         List<TradePnlBarChartView.Entry> tradePnlEntries =
                 buildTradePnlChartEntries(baseTrades, tradePnlSideMode);
         List<TradeRecordItem> scopedTrades = filterTradesBySideMode(baseTrades, tradePnlSideMode);
@@ -162,6 +161,79 @@ public final class AccountDeferredSnapshotRenderHelper {
                 TradeWeekdayBarChartHelper.buildEntries(weekdayRows),
                 sumTradePnl(tradePnlEntries)
         );
+    }
+
+    // 首轮快照尚未携带服务端统计指标时，直接基于当前交易和曲线真值补出同口径基础指标，避免页面先出现空卡片。
+    @NonNull
+    private static List<AccountMetric> buildTradeStatsMetrics(List<AccountMetric> snapshotStats,
+                                                              List<TradeRecordItem> baseTrades,
+                                                              List<CurvePoint> curvePoints) {
+        if (snapshotStats != null && !snapshotStats.isEmpty()) {
+            return new ArrayList<>(snapshotStats);
+        }
+        List<TradeRecordItem> trades = baseTrades == null ? new ArrayList<>() : new ArrayList<>(baseTrades);
+        if (trades.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        double totalPnl = 0d;
+        int buyCount = 0;
+        int sellCount = 0;
+        int winCount = 0;
+        int lossCount = 0;
+        double totalWinPnl = 0d;
+        double totalLossPnl = 0d;
+        for (TradeRecordItem item : trades) {
+            if (item == null) {
+                continue;
+            }
+            double pnl = item.getProfit() + item.getStorageFee() + item.getFee();
+            totalPnl += pnl;
+            if (matchesSideMode(item, TradePnlSideMode.BUY)) {
+                buyCount++;
+            } else if (matchesSideMode(item, TradePnlSideMode.SELL)) {
+                sellCount++;
+            }
+            if (pnl > 0d) {
+                winCount++;
+                totalWinPnl += pnl;
+            } else if (pnl < 0d) {
+                lossCount++;
+                totalLossPnl += pnl;
+            }
+        }
+
+        AccountOverviewCumulativeMetricsCalculator.OverviewCumulativeValues cumulativeValues =
+                AccountOverviewCumulativeMetricsCalculator.calculate(trades, null, curvePoints);
+        double cumulativePnl = cumulativeValues.hasCumulativePnlTruth()
+                ? cumulativeValues.getCumulativePnl()
+                : totalPnl;
+        double cumulativeReturnRate = cumulativeValues.hasCumulativeReturnRateTruth()
+                ? cumulativeValues.getCumulativeReturnRate()
+                : 0d;
+
+        double averageWin = winCount == 0 ? 0d : totalWinPnl / winCount;
+        double averageLoss = lossCount == 0 ? 0d : totalLossPnl / lossCount;
+        double profitLossRatio = averageLoss == 0d ? 0d : Math.abs(averageWin / averageLoss);
+        int settledCount = winCount + lossCount;
+        double winRate = settledCount == 0 ? 0d : ((double) winCount) / settledCount;
+        CurveAnalyticsHelper.DrawdownSegment drawdownSegment =
+                CurveAnalyticsHelper.resolveMaxDrawdownSegment(curvePoints == null ? new ArrayList<>() : curvePoints);
+        double maxDrawdown = drawdownSegment == null ? 0d : Math.abs(drawdownSegment.getDrawdownRate());
+
+        List<AccountMetric> result = new ArrayList<>();
+        result.add(new AccountMetric("累计收益额", FormatUtils.formatSignedMoney(cumulativePnl)));
+        result.add(new AccountMetric("累计收益率", formatRatioPercent(cumulativeReturnRate)));
+        result.add(new AccountMetric("总交易次数", String.valueOf(trades.size())));
+        result.add(new AccountMetric("买入次数", String.valueOf(buyCount)));
+        result.add(new AccountMetric("卖出次数", String.valueOf(sellCount)));
+        result.add(new AccountMetric("胜率", formatRatioPercent(winRate)));
+        result.add(new AccountMetric("盈利/亏损", winCount + " / " + lossCount));
+        result.add(new AccountMetric("平均每笔盈利", FormatUtils.formatSignedMoney(averageWin)));
+        result.add(new AccountMetric("平均每笔亏损", FormatUtils.formatSignedMoney(averageLoss)));
+        result.add(new AccountMetric("盈亏比", String.format(Locale.getDefault(), "%.2f", profitLossRatio)));
+        result.add(new AccountMetric("最大回撤", formatRatioPercent(maxDrawdown)));
+        return result;
     }
 
     // 计算交易列表当前筛选和排序结果，供页面直接提交给适配器。
@@ -424,6 +496,11 @@ public final class AccountDeferredSnapshotRenderHelper {
 
     private static String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    @NonNull
+    private static String formatRatioPercent(double ratio) {
+        return String.format(Locale.getDefault(), "%+.2f%%", ratio * 100d);
     }
 
     public static final class PrepareRequest {

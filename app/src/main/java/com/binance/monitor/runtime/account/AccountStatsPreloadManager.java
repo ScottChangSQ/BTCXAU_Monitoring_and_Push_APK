@@ -14,6 +14,7 @@ import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.model.v2.AccountHistoryPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
+import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.AccountMetric;
@@ -21,6 +22,7 @@ import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
+import com.binance.monitor.security.SecureSessionPrefs;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -42,6 +44,7 @@ public class AccountStatsPreloadManager {
     private final GatewayV2Client gatewayV2Client;
     private final AccountStorageRepository accountStorageRepository;
     private final ConfigManager configManager;
+    private final SecureSessionPrefs secureSessionPrefs;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Set<CacheListener> cacheListeners = new CopyOnWriteArraySet<>();
@@ -65,6 +68,7 @@ public class AccountStatsPreloadManager {
         gatewayV2Client = new GatewayV2Client(context.getApplicationContext());
         accountStorageRepository = new AccountStorageRepository(context.getApplicationContext());
         configManager = ConfigManager.getInstance(context.getApplicationContext());
+        secureSessionPrefs = new SecureSessionPrefs(context.getApplicationContext());
     }
 
     public static AccountStatsPreloadManager getInstance(Context context) {
@@ -261,8 +265,7 @@ public class AccountStatsPreloadManager {
         }
         try {
             if (!isAccountSessionActive()) {
-                accountStorageRepository.clearRuntimeSnapshot();
-                accountStorageRepository.clearTradeHistory();
+                clearStoredSnapshotForResolvedIdentity();
                 clearLatestCache();
                 nextDelayMs = MAX_REFRESH_MS;
                 return;
@@ -286,8 +289,7 @@ public class AccountStatsPreloadManager {
         }
         try {
             if (!isAccountSessionActive()) {
-                accountStorageRepository.clearRuntimeSnapshot();
-                accountStorageRepository.clearTradeHistory();
+                clearStoredSnapshotForResolvedIdentity();
                 clearLatestCache();
                 nextDelayMs = MAX_REFRESH_MS;
                 return null;
@@ -323,8 +325,7 @@ public class AccountStatsPreloadManager {
         }
         try {
             if (!isAccountSessionActive()) {
-                accountStorageRepository.clearRuntimeSnapshot();
-                accountStorageRepository.clearTradeHistory();
+                clearStoredSnapshotForResolvedIdentity();
                 clearLatestCache();
                 nextDelayMs = MAX_REFRESH_MS;
                 return null;
@@ -384,8 +385,7 @@ public class AccountStatsPreloadManager {
     // 这里写回本地的是“全局账户历史缓存”，不能把页面当前时间范围裁短后覆盖进去。
     public Cache fetchForUi(AccountTimeRange range) {
         if (!isAccountSessionActive()) {
-            accountStorageRepository.clearRuntimeSnapshot();
-            accountStorageRepository.clearTradeHistory();
+            clearStoredSnapshotForResolvedIdentity();
             clearLatestCache();
             nextDelayMs = MAX_REFRESH_MS;
             return null;
@@ -677,13 +677,54 @@ public class AccountStatsPreloadManager {
     // 统一收口同步快照读取，避免调用点绕过线程边界检查。
     private AccountStorageRepository.StoredSnapshot loadStoredSnapshotForWorkerThread() {
         assertWorkerThreadForStorageAccess("loadStoredSnapshot");
-        return accountStorageRepository.loadStoredSnapshot();
+        String[] identity = resolveStorageIdentity();
+        if (identity == null) {
+            return accountStorageRepository.loadStoredSnapshot();
+        }
+        return accountStorageRepository.loadStoredSnapshot(identity[0], identity[1]);
     }
 
     // 统一收口同步成交历史读取，避免调用点绕过线程边界检查。
     private int loadStoredTradeCountForWorkerThread() {
         assertWorkerThreadForStorageAccess("loadTrades");
-        return accountStorageRepository.loadTrades().size();
+        String[] identity = resolveStorageIdentity();
+        if (identity == null) {
+            return accountStorageRepository.loadTrades().size();
+        }
+        return accountStorageRepository.loadTrades(identity[0], identity[1]).size();
+    }
+
+    // 按当前最新内存或安全会话摘要解析本地持久层应访问的账户身份。
+    private String[] resolveStorageIdentity() {
+        Cache cache = latestCache;
+        if (cache != null && !cache.getAccount().trim().isEmpty() && !cache.getServer().trim().isEmpty()) {
+            return new String[]{cache.getAccount().trim(), cache.getServer().trim()};
+        }
+        if (secureSessionPrefs == null) {
+            return null;
+        }
+        RemoteAccountProfile activeAccount = secureSessionPrefs.getActiveAccount();
+        if (activeAccount == null) {
+            return null;
+        }
+        String account = activeAccount.getLogin() == null ? "" : activeAccount.getLogin().trim();
+        String server = activeAccount.getServer() == null ? "" : activeAccount.getServer().trim();
+        if (account.isEmpty() || server.isEmpty()) {
+            return null;
+        }
+        return new String[]{account, server};
+    }
+
+    // 只清理当前会话对应的持久化分区，避免切号或登出时顺带抹掉其他账户缓存。
+    private void clearStoredSnapshotForResolvedIdentity() {
+        String[] identity = resolveStorageIdentity();
+        if (identity == null) {
+            accountStorageRepository.clearRuntimeSnapshot();
+            accountStorageRepository.clearTradeHistory();
+            return;
+        }
+        accountStorageRepository.clearRuntimeSnapshot(identity[0], identity[1]);
+        accountStorageRepository.clearTradeHistory(identity[0], identity[1]);
     }
 
     // 冷启动时如果内存缓存还没被 stream 填充，就先从本地已保存快照恢复页面。

@@ -134,6 +134,78 @@ public class GatewayV2TradeClientTest {
     }
 
     @Test
+    public void buildTradeCommandPayloadShouldRejectClosePositionWithoutTicket() throws Exception {
+        JSONObject params = new JSONObject();
+        params.put("volume", 0.1d);
+        TradeCommand command = new TradeCommand(
+                "req-close",
+                "acc-1",
+                "BTCUSD",
+                "CLOSE_POSITION",
+                0.1d,
+                0d,
+                0d,
+                0d,
+                params
+        );
+
+        try {
+            GatewayV2TradeClient.buildTradeCommandPayload(command);
+            fail("缺少 positionTicket 的平仓命令不应构造成功");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("positionTicket"));
+        }
+    }
+
+    @Test
+    public void buildTradeCommandPayloadShouldRejectModifyTpSlWithoutTicket() throws Exception {
+        JSONObject params = new JSONObject();
+        params.put("tp", 68000.0d);
+        TradeCommand command = new TradeCommand(
+                "req-modify",
+                "acc-1",
+                "BTCUSD",
+                "MODIFY_TPSL",
+                0d,
+                0d,
+                0d,
+                68000.0d,
+                params
+        );
+
+        try {
+            GatewayV2TradeClient.buildTradeCommandPayload(command);
+            fail("缺少 positionTicket 的改单命令不应构造成功");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("positionTicket"));
+        }
+    }
+
+    @Test
+    public void buildTradeCommandPayloadShouldRejectPendingModifyWithoutOrderTicket() throws Exception {
+        JSONObject params = new JSONObject();
+        params.put("price", 65000.0d);
+        TradeCommand command = new TradeCommand(
+                "req-pending-modify",
+                "acc-1",
+                "BTCUSD",
+                "PENDING_MODIFY",
+                0d,
+                65000.0d,
+                0d,
+                0d,
+                params
+        );
+
+        try {
+            GatewayV2TradeClient.buildTradeCommandPayload(command);
+            fail("缺少 orderTicket 的挂单修改命令不应构造成功");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("orderTicket"));
+        }
+    }
+
+    @Test
     public void buildHttpFailureMessageShouldExplainMissingTradeEndpoint() {
         String message = GatewayV2TradeClient.buildHttpFailureMessage(
                 404,

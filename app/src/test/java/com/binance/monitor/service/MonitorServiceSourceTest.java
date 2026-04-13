@@ -26,16 +26,17 @@ public class MonitorServiceSourceTest {
                 source.contains("foreground -> mainHandler.post(() -> handleForegroundStateChanged(foreground))"));
         assertTrue("前台切回时应先判断当前 stream 是否仍健康",
                 source.contains("boolean streamHealthy = isV2StreamHealthy(System.currentTimeMillis());"));
-        assertTrue("stream 健康时应直接返回，不再继续重建主链连接",
-                source.contains("if (streamHealthy) {\n            floatingCoordinator.requestRefresh(false);"));
+        assertTrue("stream 健康时应先做远程会话恢复检查，再直接返回，不再继续重建主链连接",
+                source.contains("if (streamHealthy) {\n            reconcileRemoteSessionIfNeeded();\n            floatingCoordinator.requestRefresh(false);"));
         assertTrue("只有 stream 已失活时才应继续走后面的重建逻辑",
-                source.contains("if (streamHealthy) {\n            floatingCoordinator.requestRefresh(false);\n            updateConnectionStatus();\n            return;\n        }\n"));
+                source.contains("if (streamHealthy) {\n            reconcileRemoteSessionIfNeeded();\n            floatingCoordinator.requestRefresh(false);\n            updateConnectionStatus();\n            return;\n        }\n"));
         assertFalse("前台切回时不应无条件重建 v2 stream",
                 source.contains("restartV2Stream(\"foreground_resume\");\n        requestForegroundEntryRefresh();"));
         assertFalse("前台切回时不应再主动补拉 /v2/account/snapshot",
                 source.contains("requestAccountRefreshFromV2();"));
-        assertTrue("stream 健康时只应切换消费层刷新节奏，不应做全量刷新",
-                source.contains("floatingCoordinator.requestRefresh(false);"));
+        assertTrue("stream 健康时只应切换消费层刷新节奏，并补一次远程会话一致性检查，不应做全量主链重建",
+                source.contains("reconcileRemoteSessionIfNeeded();")
+                        && source.contains("floatingCoordinator.requestRefresh(false);"));
         assertTrue("服务层应维护结构化连接阶段，避免把重连过程误渲染成离线",
                 source.contains("private volatile ConnectionStage v2StreamStage = ConnectionStage.CONNECTING;"));
     }
@@ -49,6 +50,30 @@ public class MonitorServiceSourceTest {
 
         assertTrue("新进入 APP 时应主动触发一次全局刷新",
                 source.contains("requestForegroundEntryRefresh();"));
+    }
+
+    @Test
+    public void foregroundBootstrapShouldRecoverRemoteSessionWhenLocalSessionStillClaimsActive() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("服务层应维护独立的远程会话恢复并发门闩，避免前后台切换时重复发起恢复",
+                source.contains("private final java.util.concurrent.atomic.AtomicBoolean remoteSessionRecoveryInFlight = new java.util.concurrent.atomic.AtomicBoolean(false);")
+                        || source.contains("private final AtomicBoolean remoteSessionRecoveryInFlight = new AtomicBoolean(false);"));
+        assertTrue("统一前台刷新入口应同时触发远程会话恢复检查，避免本地误以为已登录时一直拿不到账户真值",
+                source.contains("private void requestForegroundEntryRefresh() {\n        floatingCoordinator.requestRefresh(true);\n        reconcileRemoteSessionIfNeeded();\n    }"));
+        assertTrue("服务层应提供正式的远程会话恢复方法",
+                source.contains("private void reconcileRemoteSessionIfNeeded() {"));
+        assertTrue("恢复链应先读取服务端 session status 真值，而不是只看本地标记",
+                source.contains("SessionStatusPayload status = sessionClient.fetchStatus();"));
+        assertTrue("当服务端 logged_out 但本地仍有活动账号时，应按已保存账号正式切回远程会话",
+                source.contains("SessionReceipt receipt = sessionClient.switchAccount(targetProfile.getProfileId(), UUID.randomUUID().toString());"));
+        assertTrue("切回成功后应主动拉一次正式账户快照，立即恢复当前持仓和悬浮窗数据",
+                source.contains("AccountStatsPreloadManager.Cache recoveredCache = accountStatsPreloadManager.fetchForUi(AccountTimeRange.ALL);"));
+        assertTrue("恢复成功后应把远程 active/saved accounts 真值回写到本地安全会话摘要",
+                source.contains("secureSessionPrefs.saveSession(remoteActiveAccount, recoveredSavedAccounts, true);"));
     }
 
     @Test
@@ -188,6 +213,17 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
+    public void malformedAccountRuntimePayloadShouldClearStaleStreamSnapshot() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("stream 账户运行态解析失败时也应清理旧持仓快照，避免悬浮窗残留上一次仓位",
+                source.contains("} catch (Exception exception) {\n                clearStreamAccountSnapshot();\n                logManager.warn(\"v2 stream 账户运行态应用失败: \" + exception.getMessage());"));
+    }
+
+    @Test
     public void accountHistoryRefreshShouldQueueLatestRevisionWhilePreviousRefreshIsInFlight() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
@@ -218,7 +254,7 @@ public class MonitorServiceSourceTest {
         assertTrue("新连接建立后应重置顺序守卫，允许接收新的 stream 序列",
                 source.contains("if (v2StreamConnected) {\n                        v2StreamSequenceGuard.reset();"));
         assertTrue("消费 stream 消息前应先按 busSeq 判断是否仍是当前有效序列",
-                source.contains("if (!v2StreamSequenceGuard.shouldApply(message.getBusSeq())) {\n            return;\n        }"));
+                source.contains("if (!v2StreamSequenceGuard.shouldApply(busSeq)) {\n            return;\n        }"));
     }
 
     @Test
@@ -274,12 +310,50 @@ public class MonitorServiceSourceTest {
         ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("stream 消息应先进入后台串行执行器，不能直接把 payload 解析压到主线程",
-                source.contains("executorService.execute(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
+                source.contains("executeOnWorker(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
         assertTrue("后台消费完 stream 后，主线程只负责刷新连接状态",
                 source.contains("mainHandler.post(MonitorService.this::updateConnectionStatus);")
                         || source.contains("mainHandler.post(() -> updateConnectionStatus());"));
         assertFalse("主线程不应直接执行 handleV2StreamMessage(message)",
                 source.contains("mainHandler.post(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();\n                    try {\n                        handleV2StreamMessage(message);"));
+    }
+
+    @Test
+    public void lateCallbacksShouldNotSubmitWorkIntoDestroyedExecutorService() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("MonitorService 应通过统一安全投递入口向后台线程池派发任务",
+                source.contains("executeOnWorker(() -> {"));
+        assertTrue("安全投递入口应先判断线程池是否已关闭",
+                source.contains("if (currentExecutor == null || currentExecutor.isShutdown() || currentExecutor.isTerminated()) {"));
+        assertTrue("线程池销毁后应回收引用，避免晚到回调继续命中旧实例",
+                source.contains("executorService = null;"));
+        assertTrue("晚到回调命中已关闭线程池时应显式吞掉拒绝异常",
+                source.contains("} catch (RejectedExecutionException exception) {"));
+    }
+
+    @Test
+    public void workerDispatchShouldSkipLateCallbacksAfterServiceDestroy() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("服务层应统一通过安全投递入口把后台任务交给串行线程池",
+                source.contains("private boolean executeOnWorker(Runnable task) {"));
+        assertTrue("服务销毁时应先关闭线程池再清空引用，避免晚到回调继续提交",
+                source.contains("executorService.shutdownNow();\n            executorService = null;"));
+        assertTrue("stream 消息应通过安全投递入口执行，避免销毁后 RejectedExecutionException",
+                source.contains("executeOnWorker(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
+        assertTrue("历史补拉应通过安全投递入口执行，避免销毁后继续提交",
+                source.contains("executeOnWorker(() -> {\n            try {\n                AccountStatsPreloadManager.Cache cache ="));
+        assertTrue("账户运行态应用应通过安全投递入口执行，避免销毁后继续提交",
+                source.contains("executeOnWorker(() -> {\n            try {\n                JSONObject snapshotCopy = new JSONObject(snapshotBody);"));
+        assertTrue("异常配置同步也应通过安全投递入口执行，避免销毁后继续提交",
+                source.contains("executeOnWorker(() -> {\n            AbnormalGatewayClient.PushResult result = abnormalGatewayClient.pushConfig"));
     }
 
     @Test

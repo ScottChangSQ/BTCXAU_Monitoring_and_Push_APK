@@ -26,7 +26,7 @@ import com.binance.monitor.data.local.db.entity.TradeHistoryEntity;
                 PendingOrderSnapshotEntity.class,
                 AccountSnapshotMetaEntity.class
         },
-        version = 3,
+        version = 4,
         exportSchema = false
 )
 public abstract class AppDatabase extends RoomDatabase {
@@ -43,6 +43,38 @@ public abstract class AppDatabase extends RoomDatabase {
         public void migrate(SupportSQLiteDatabase database) {
             database.execSQL("ALTER TABLE position_snapshot ADD COLUMN openTime INTEGER NOT NULL DEFAULT 0");
             database.execSQL("ALTER TABLE pending_order_snapshot ADD COLUMN openTime INTEGER NOT NULL DEFAULT 0");
+        }
+    };
+
+    public static final Migration MIGRATION_3_4 = new Migration(3, 4) {
+        @Override
+        public void migrate(SupportSQLiteDatabase database) {
+            String legacyIdentityPrefixSql =
+                    "(SELECT LENGTH(TRIM(COALESCE(account, ''))) || '|' || TRIM(COALESCE(account, '')) || '|' "
+                            + "|| LENGTH(LOWER(TRIM(COALESCE(server, '')))) || '|' || LOWER(TRIM(COALESCE(server, ''))) || '||' "
+                            + "FROM account_snapshot_meta WHERE id = 1 LIMIT 1)";
+            String identityExistsSql = "EXISTS (SELECT 1 FROM account_snapshot_meta WHERE id = 1)";
+            database.execSQL("UPDATE position_snapshot SET snapshotKey = "
+                    + legacyIdentityPrefixSql
+                    + " || snapshotKey WHERE "
+                    + identityExistsSql
+                    + " AND snapshotKey NOT LIKE "
+                    + legacyIdentityPrefixSql
+                    + " || '%'");
+            database.execSQL("UPDATE pending_order_snapshot SET snapshotKey = "
+                    + legacyIdentityPrefixSql
+                    + " || snapshotKey WHERE "
+                    + identityExistsSql
+                    + " AND snapshotKey NOT LIKE "
+                    + legacyIdentityPrefixSql
+                    + " || '%'");
+            database.execSQL("UPDATE trade_history SET tradeKey = "
+                    + legacyIdentityPrefixSql
+                    + " || tradeKey WHERE "
+                    + identityExistsSql
+                    + " AND tradeKey NOT LIKE "
+                    + legacyIdentityPrefixSql
+                    + " || '%'");
         }
     };
 

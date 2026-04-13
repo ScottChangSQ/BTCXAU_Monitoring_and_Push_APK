@@ -61,6 +61,7 @@ import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
+import com.binance.monitor.data.model.v2.session.RemoteAccountProfileDeduplicationHelper;
 import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
 import com.binance.monitor.data.model.v2.session.SessionReceipt;
 import com.binance.monitor.data.model.v2.session.SessionStatusPayload;
@@ -79,7 +80,7 @@ import com.binance.monitor.security.SessionCredentialEncryptor;
 import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.runtime.account.MetricNameTranslator;
-import com.binance.monitor.service.MonitorService;
+import com.binance.monitor.service.MonitorServiceController;
 import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
 import com.binance.monitor.ui.account.session.AccountSessionRestoreHelper;
 import com.binance.monitor.ui.account.adapter.StatsMetricAdapter;
@@ -101,6 +102,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
@@ -119,6 +121,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class AccountStatsBridgeActivity extends AppCompatActivity {
+    public static final String EXTRA_OPEN_LOGIN_DIALOG = "com.binance.monitor.ui.account.extra.OPEN_LOGIN_DIALOG";
+    public static final String EXTRA_FINISH_AFTER_LOGIN_DIALOG = "com.binance.monitor.ui.account.extra.FINISH_AFTER_LOGIN_DIALOG";
+    public static final String EXTRA_LOGIN_DIALOG_RESULT_MESSAGE = "com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_MESSAGE";
+    public static final String EXTRA_LOGIN_DIALOG_RESULT_ACCOUNT = "com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_ACCOUNT";
+    public static final String EXTRA_LOGIN_DIALOG_RESULT_SERVER = "com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_SERVER";
     private static final double ACCOUNT_INITIAL_BALANCE = 15_019.45d;
     private static final double TRADE_PNL_ZERO_THRESHOLD = 0.01d;
     private static final int RETURNS_CELL_MARGIN_DP = 1;
@@ -128,8 +135,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private static final int RETURNS_STAGE_HEIGHT_DP = 38;
     @Nullable
     private AlertDialog activeLoginDialog;
-    private static final String ACCOUNT = "7400048";
-    private static final String SERVER = "ICMarketsSC-MT5-6";
+    private boolean pendingOpenLoginDialogFromIntent;
+    private boolean finishAfterLoginDialog;
+    private boolean loginDialogSubmissionInFlight;
+    private static final String ACCOUNT = "";
+    private static final String SERVER = "";
 
     private static final String FILTER_PRODUCT = "全部产品";
     private static final String FILTER_SIDE = "全部方向";
@@ -309,6 +319,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             snapshotRefreshCoordinator.applyPreloadedCacheIfAvailable();
         }
     };
+
+    // 只用于承载登录弹窗的场景不应先把账户统计页画到前台。
+    private boolean isLoginDialogOnlyMode(@Nullable Intent intent) {
+        if (intent == null) {
+            return false;
+        }
+        return intent.getBooleanExtra(EXTRA_OPEN_LOGIN_DIALOG, false)
+                && intent.getBooleanExtra(EXTRA_FINISH_AFTER_LOGIN_DIALOG, false);
+    }
 
     private final Runnable refreshRunnable = new Runnable() {
         @Override
@@ -507,8 +526,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
             @Override
             public boolean onSnapshotApplied(@NonNull String account, @NonNull String server) {
-                return remoteSessionCoordinator != null
+                boolean activated = remoteSessionCoordinator != null
                         && remoteSessionCoordinator.onSnapshotApplied(account, server);
+                if (activated) {
+                    ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(true);
+                }
+                return activated;
             }
 
             @Override
@@ -574,7 +597,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
             @Override
             public void runOnUiThread(@NonNull Runnable action) {
-                AccountStatsBridgeActivity.this.runOnUiThread(action);
+                AccountStatsBridgeActivity.this.runOnUiThreadIfAlive(action);
             }
 
             @Override
@@ -588,11 +611,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        if (isLoginDialogOnlyMode(getIntent())) {
+            setTheme(R.style.Theme_BinanceMonitor_TranslucentHost);
+        }
         super.onCreate(savedInstanceState);
         long onCreateStartedAt = SystemClock.elapsedRealtime();
         long stageStartedAt = onCreateStartedAt;
         binding = ActivityAccountStatsBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        consumeLoginDialogIntent(getIntent());
+        if (finishAfterLoginDialog) {
+            binding.getRoot().setVisibility(View.INVISIBLE);
+        }
         registerFirstFrameCompletionListener();
         ensureMonitorServiceStarted();
         traceAccountRenderPhase("on_create_inflate_and_content",
@@ -686,20 +716,22 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         ensureMonitorServiceStarted();
-        applyPaletteStyles();
-        applyPrivacyMaskState();
         if (preloadManager != null) {
             preloadManager.addCacheListener(preloadCacheListener);
             preloadManager.setLiveScreenActive(true);
         }
+        applyPaletteStyles();
+        applyPrivacyMaskState();
         snapshotLoopEnabled = true;
         enterAccountScreen(false);
+        openLoginDialogIfRequested();
     }
 
     @Override
     protected void onPause() {
         snapshotLoopEnabled = false;
         clearScheduledRefresh();
+        dismissActiveLoginDialog();
         binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
         binding.scrollAccountStats.removeCallbacks(deferredSecondarySectionAttachRunnable);
         deferredSecondarySectionAttachPosted = false;
@@ -717,11 +749,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     protected void onDestroy() {
         snapshotLoopEnabled = false;
         clearScheduledRefresh();
+        dismissActiveLoginDialog();
         if (binding != null && binding.tvLoginSuccessBanner != null) {
             binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
-        }
-        if (preloadManager != null) {
-            preloadManager.setLiveScreenActive(false);
         }
         if (ioExecutor != null) {
             ioExecutor.shutdownNow();
@@ -730,6 +760,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             sessionExecutor.shutdownNow();
         }
         super.onDestroy();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        consumeLoginDialogIntent(intent);
+        openLoginDialogIfRequested();
     }
 
     @Override
@@ -759,15 +797,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setupOverviewHeader() {
-        binding.ivAccountPrivacyToggle.setOnClickListener(v -> togglePrivacyMaskState());
-        binding.tvAccountConnectionStatus.setOnClickListener(v -> {
-            logRemoteSessionDebug("点击账户连接状态: userLoggedIn=" + userLoggedIn);
-            if (!userLoggedIn) {
-                showLoginDialog();
-            } else {
-                showConnectionDialog();
-            }
-        });
     }
 
     private void restoreUiState() {
@@ -1075,8 +1104,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle("远程账户会话")
                 .setView(container)
-                .setNegativeButton("取消", null)
-                .setPositiveButton("继续", null)
                 .create();
         activeLoginDialog = dialog;
         if (dialog.getWindow() != null) {
@@ -1087,37 +1114,74 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             if (activeLoginDialog == dialog) {
                 activeLoginDialog = null;
             }
+            if (finishAfterLoginDialog && !loginDialogSubmissionInFlight && !isFinishing() && !isDestroyed()) {
+                finish();
+                overridePendingTransition(0, 0);
+            }
         });
+        LinearLayout actionRow = createLoginActionRow(dialog, palette, accountInput, passwordInput, serverInput, rememberCheckBox);
+        container.addView(actionRow);
         dialog.setOnShowListener(ignored -> {
             logRemoteSessionDebug("登录弹窗已展示");
-            Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-            if (positive != null) {
-                positive.setTextColor(palette.primary);
-                positive.setOnClickListener(v -> {
-                    String account = trim(accountInput.getText() == null ? "" : accountInput.getText().toString());
-                    String password = trim(passwordInput.getText() == null ? "" : passwordInput.getText().toString());
-                    String server = trim(serverInput.getText() == null ? "" : serverInput.getText().toString());
-                    logRemoteSessionDebug("点击登录继续: accountEmpty=" + account.isEmpty()
-                            + ", passwordEmpty=" + password.isEmpty()
-                            + ", serverEmpty=" + server.isEmpty()
-                            + ", remember=" + rememberCheckBox.isChecked());
-                    if (account.isEmpty() || password.isEmpty() || server.isEmpty()) {
-                        logRemoteSessionDebug("登录继续被字段校验拦截");
-                        Toast.makeText(this, "请完整填写账户、密码和服务器信息", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    logRemoteSessionDebug("登录继续通过校验，准备提交");
-                    dialog.dismiss();
-                    submitRemoteLogin(account, password, server, rememberCheckBox.isChecked());
-                });
-            }
-            if (negative != null) {
-                negative.setTextColor(palette.textSecondary);
-            }
             refreshSavedAccountsForDialog(savedAccountsContainer, palette, dialog);
         });
         dialog.show();
+    }
+
+    // 登录弹窗使用页面自管操作按钮，避免部分机型把系统正按钮点击直接吞成 dismiss。
+    private LinearLayout createLoginActionRow(@NonNull AlertDialog dialog,
+                                              @NonNull UiPaletteManager.Palette palette,
+                                              @NonNull EditText accountInput,
+                                              @NonNull EditText passwordInput,
+                                              @NonNull EditText serverInput,
+                                              @NonNull CheckBox rememberCheckBox) {
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionRow.setGravity(Gravity.END);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowParams.topMargin = dpToPx(10);
+        actionRow.setLayoutParams(rowParams);
+
+        MaterialButton cancelButton = new MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        cancelButton.setText("取消");
+        cancelButton.setTextColor(palette.textSecondary);
+        cancelButton.setStrokeColor(ColorStateList.valueOf(palette.stroke));
+        cancelButton.setOnClickListener(v -> dialog.dismiss());
+        actionRow.addView(cancelButton);
+
+        MaterialButton continueButton = new MaterialButton(this, null, com.google.android.material.R.attr.materialButtonStyle);
+        continueButton.setText("继续");
+        continueButton.setTextColor(Color.WHITE);
+        continueButton.setBackgroundTintList(ColorStateList.valueOf(palette.primary));
+        LinearLayout.LayoutParams continueParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        continueParams.leftMargin = dpToPx(10);
+        continueButton.setLayoutParams(continueParams);
+        continueButton.setOnClickListener(v -> {
+            String account = trim(accountInput.getText() == null ? "" : accountInput.getText().toString());
+            char[] password = readPasswordChars(passwordInput);
+            String server = trim(serverInput.getText() == null ? "" : serverInput.getText().toString());
+            logRemoteSessionDebug("点击登录继续: accountEmpty=" + account.isEmpty()
+                    + ", passwordEmpty=" + (password.length == 0)
+                    + ", serverEmpty=" + server.isEmpty()
+                    + ", remember=" + rememberCheckBox.isChecked());
+            if (account.isEmpty() || password.length == 0 || server.isEmpty()) {
+                clearPasswordChars(password);
+                logRemoteSessionDebug("登录继续被字段校验拦截");
+                Toast.makeText(this, "请完整填写账户、密码和服务器信息", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            logRemoteSessionDebug("登录继续通过校验，准备提交");
+            loginDialogSubmissionInFlight = true;
+            passwordInput.setText("");
+            dialog.dismiss();
+            submitRemoteLogin(account, password, server, rememberCheckBox.isChecked());
+        });
+        actionRow.addView(continueButton);
+        return actionRow;
     }
 
     private EditText createLoginField(String hint, boolean passwordMode) {
@@ -1229,6 +1293,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             actionButton.setTextColor(profile.isActive() ? palette.textSecondary : palette.primary);
             actionButton.setStrokeColor(ColorStateList.valueOf(palette.stroke));
             actionButton.setOnClickListener(v -> {
+                loginDialogSubmissionInFlight = true;
                 if (dialog != null) {
                     dialog.dismiss();
                 }
@@ -1249,7 +1314,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         ioExecutor.execute(() -> {
             try {
                 SessionPublicKeyPayload payload = sessionClient.fetchPublicKey();
-                runOnUiThread(() -> {
+                runOnUiThreadIfAlive(() -> {
                     updateSessionProfiles(payload.getActiveAccount(), payload.getSavedAccounts(), payload.getActiveAccount() != null);
                     populateSavedAccountRows(container, palette, dialog);
                 });
@@ -1260,16 +1325,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private void logoutAccount() {
         if (sessionExecutor == null || remoteSessionCoordinator == null) {
-            applyLoggedOutSessionState();
+            sessionStateMachine.markFailed("退出登录服务未就绪");
+            Toast.makeText(this, "退出登录服务未就绪", Toast.LENGTH_SHORT).show();
             return;
         }
         sessionStateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SUBMITTING, "正在退出登录");
         sessionExecutor.execute(() -> {
             try {
                 remoteSessionCoordinator.logoutCurrent();
-                runOnUiThread(this::applyLoggedOutSessionState);
+                runOnUiThreadIfAlive(this::applyLoggedOutSessionState);
             } catch (Exception ex) {
-                runOnUiThread(() -> {
+                runOnUiThreadIfAlive(() -> {
                     sessionStateMachine.markFailed(ex.getMessage());
                     Toast.makeText(this, trim(ex.getMessage()).isEmpty() ? "退出登录失败" : ex.getMessage(), Toast.LENGTH_SHORT).show();
                 });
@@ -1343,8 +1409,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (accountStorageRepository == null) {
             return;
         }
-        accountStorageRepository.clearRuntimeSnapshot();
-        accountStorageRepository.clearTradeHistory();
+        String[] identity = resolvePersistedStorageIdentity();
+        if (identity == null) {
+            accountStorageRepository.clearRuntimeSnapshot();
+            accountStorageRepository.clearTradeHistory();
+            return;
+        }
+        accountStorageRepository.clearRuntimeSnapshot(identity[0], identity[1]);
+        accountStorageRepository.clearTradeHistory(identity[0], identity[1]);
     }
 
     private void clearPersistedAccountStateAsync() {
@@ -1441,7 +1513,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     @Override
                     public void clearTradeHistory() {
                         if (accountStorageRepository != null) {
-                            accountStorageRepository.clearTradeHistory();
+                            String[] identity = resolvePersistedStorageIdentity();
+                            if (identity == null) {
+                                accountStorageRepository.clearTradeHistory();
+                                return;
+                            }
+                            accountStorageRepository.clearTradeHistory(identity[0], identity[1]);
                         }
                     }
 
@@ -1487,9 +1564,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             try {
                 sessionClient.resetTransport();
                 SessionStatusPayload status = sessionClient.fetchStatus();
-                runOnUiThread(() -> applyRemoteSessionStatus(status, requestSnapshotAfter));
+                runOnUiThreadIfAlive(() -> applyRemoteSessionStatus(status, requestSnapshotAfter));
             } catch (Exception ex) {
-                runOnUiThread(() -> {
+                runOnUiThreadIfAlive(() -> {
                     connectedError = trim(ex.getMessage()).isEmpty() ? connectedError : ex.getMessage();
                     updateOverviewHeader();
                     if (requestSnapshotAfter && userLoggedIn) {
@@ -1543,11 +1620,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     // 提交新账号远程登录。
-    private void submitRemoteLogin(String account, String password, String server, boolean remember) {
+    private void submitRemoteLogin(String account, char[] password, String server, boolean remember) {
         logRemoteSessionDebug("进入 submitRemoteLogin: account=" + account
                 + ", server=" + server
                 + ", remember=" + remember);
         if (sessionExecutor == null || remoteSessionCoordinator == null) {
+            clearPasswordChars(password);
             logRemoteSessionDebug("submitRemoteLogin 失败: 会话执行器未初始化");
             handleRemoteSessionFailed("远程会话未初始化");
             return;
@@ -1571,11 +1649,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                 System.currentTimeMillis()
                         )
                 );
-                logRemoteSessionDebug("submitRemoteLogin 后台任务成功受理");
-                runOnUiThread(() -> applyRemoteSessionAccepted(result, "登录已受理，正在同步账户"));
+                logRemoteSessionDebug("submitRemoteLogin 后台任务成功，准备直连校验账户快照");
+                verifyRemoteSessionAndApply(result, "登录成功");
             } catch (Exception ex) {
                 logRemoteSessionDebug("submitRemoteLogin 后台任务失败: " + ex.getMessage());
-                runOnUiThread(() -> handleRemoteSessionFailed(ex.getMessage()));
+                runOnUiThreadIfAlive(() -> handleRemoteSessionFailed(ex.getMessage()));
+            } finally {
+                clearPasswordChars(password);
             }
         });
     }
@@ -1591,22 +1671,99 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     // 提交已保存账号切换。
     private void submitSavedAccountSwitch(@NonNull RemoteAccountProfile profile) {
         if (sessionExecutor == null || remoteSessionCoordinator == null || profile == null) {
+            logRemoteSessionDebug("submitSavedAccountSwitch 失败: 会话执行器未初始化");
             handleRemoteSessionFailed("远程会话未初始化");
             return;
         }
+        logRemoteSessionDebug("进入 submitSavedAccountSwitch: profileId=" + trim(profile.getProfileId())
+                + ", login=" + trim(profile.getLogin())
+                + ", server=" + trim(profile.getServer()));
         sessionExecutor.execute(() -> {
             try {
                 AccountRemoteSessionCoordinator.SessionActionResult result = remoteSessionCoordinator.switchSavedAccount(profile.getProfileId());
-                runOnUiThread(() -> applyRemoteSessionAccepted(result, "切换已受理，正在同步账户"));
+                logRemoteSessionDebug("submitSavedAccountSwitch 后台任务成功，准备直连校验账户快照");
+                verifyRemoteSessionAndApply(result, "登录成功");
             } catch (Exception ex) {
-                runOnUiThread(() -> handleRemoteSessionFailed(ex.getMessage()));
+                logRemoteSessionDebug("submitSavedAccountSwitch 后台任务失败: " + ex.getMessage());
+                runOnUiThreadIfAlive(() -> handleRemoteSessionFailed(ex.getMessage()));
             }
         });
+    }
+
+    // 登录弹窗主链：服务器会话校验通过后，立刻拉账户快照并在当前页应用成功态。
+    private void verifyRemoteSessionAndApply(@Nullable AccountRemoteSessionCoordinator.SessionActionResult result,
+                                             @NonNull String successMessage) {
+        if (result == null || result.getReceipt() == null || result.getReceipt().isFailed()) {
+            runOnUiThreadIfAlive(() -> handleRemoteSessionFailed(result == null || result.getReceipt() == null
+                    ? "远程会话失败"
+                    : result.getReceipt().getMessage()));
+            return;
+        }
+        if (preloadManager == null) {
+            runOnUiThreadIfAlive(() -> handleRemoteSessionFailed("账户快照服务未初始化"));
+            return;
+        }
+        ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(true);
+        AccountStatsPreloadManager.Cache verifiedCache = preloadManager.fetchForUi(AccountTimeRange.ALL);
+        ensureVerifiedRemoteCache(verifiedCache, result.getActiveAccount());
+        runOnUiThreadIfAlive(() -> applyVerifiedRemoteSession(result, verifiedCache, successMessage));
+    }
+
+    // 只有拿到与当前账号完全一致的远端快照后，才允许把登录收口为成功。
+    private void ensureVerifiedRemoteCache(@Nullable AccountStatsPreloadManager.Cache verifiedCache,
+                                           @Nullable RemoteAccountProfile profile) {
+        if (verifiedCache == null || !verifiedCache.isConnected() || verifiedCache.getSnapshot() == null) {
+            throw new IllegalStateException("账户登录成功，但账户数据尚未返回");
+        }
+        if (!isCompleteRemoteSessionProfile(profile)) {
+            throw new IllegalStateException("会话账号摘要缺失");
+        }
+        String expectedAccount = trim(profile.getLogin());
+        String expectedServer = trim(profile.getServer());
+        String actualAccount = trim(verifiedCache.getAccount());
+        String actualServer = trim(verifiedCache.getServer());
+        if (!expectedAccount.equalsIgnoreCase(actualAccount) || !expectedServer.equalsIgnoreCase(actualServer)) {
+            throw new IllegalStateException("账户数据与当前登录账号不一致");
+        }
+    }
+
+    // 把已验证的账户快照直接应用到页面，完成登录成功收口。
+    private void applyVerifiedRemoteSession(@NonNull AccountRemoteSessionCoordinator.SessionActionResult result,
+                                            @NonNull AccountStatsPreloadManager.Cache verifiedCache,
+                                            @NonNull String successMessage) {
+        loginDialogSubmissionInFlight = false;
+        userLoggedIn = true;
+        ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(true);
+        updateSessionProfiles(result.getActiveAccount(), result.getSavedAccounts(), true);
+        applyRemoteSessionIdentity(result.getActiveAccount());
+        applyCacheMeta(verifiedCache);
+        gatewayConnected = true;
+        connectedError = "";
+        setConnectionStatus(true);
+        String verifiedSignature = buildRefreshSignature(
+                verifiedCache.getSnapshot(),
+                verifiedCache.getHistoryRevision(),
+                true,
+                verifiedCache.getAccount(),
+                verifiedCache.getServer()
+        );
+        applySnapshot(verifiedCache.getSnapshot(), true);
+        lastAppliedSnapshotSignature = verifiedSignature;
+        persistUiState();
+        showLoginSuccessBanner();
+        Toast.makeText(this, successMessage, Toast.LENGTH_SHORT).show();
+        if (finishAfterLoginDialog) {
+            setResult(RESULT_OK, buildLoginDialogResultIntent(result.getActiveAccount(), successMessage));
+            finish();
+            overridePendingTransition(0, 0);
+        }
     }
 
     // 服务器接受新账号后，立即切空旧页面并等待新快照完成收口。
     private void applyRemoteSessionAccepted(@Nullable AccountRemoteSessionCoordinator.SessionActionResult result,
                                             @NonNull String sourceText) {
+        loginDialogSubmissionInFlight = false;
+        logRemoteSessionDebug("进入 applyRemoteSessionAccepted: source=" + sourceText);
         if (result == null || result.getReceipt() == null || result.getReceipt().isFailed()) {
             handleRemoteSessionFailed(result == null || result.getReceipt() == null
                     ? "远程会话失败"
@@ -1615,7 +1772,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         userLoggedIn = true;
         ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(true);
-        updateSessionProfiles(result.getActiveAccount(), result.getSavedAccounts(), true);
+        updateSessionProfiles(result.getActiveAccount(), result.getSavedAccounts(), false);
         applyRemoteSessionIdentity(result.getActiveAccount());
         connectedSource = sourceText;
         connectedGateway = "--";
@@ -1624,17 +1781,31 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         setConnectionStatus(false);
         updateOverviewHeader();
         persistUiState();
+        logRemoteSessionDebug("applyRemoteSessionAccepted 已切到可刷新会话，准备请求前台快照");
         requestForegroundEntrySnapshot();
+        if (finishAfterLoginDialog) {
+            setResult(RESULT_OK, buildLoginDialogResultIntent(result.getActiveAccount(), sourceText));
+            logRemoteSessionDebug("applyRemoteSessionAccepted 已回传结果并准备返回原页");
+            finish();
+            overridePendingTransition(0, 0);
+            return;
+        }
     }
 
     // 统一处理远程会话失败，避免残留伪成功状态。
     private void handleRemoteSessionFailed(@Nullable String message) {
+        loginDialogSubmissionInFlight = false;
         String safeMessage = trim(message).isEmpty() ? "远程会话失败" : trim(message);
+        logRemoteSessionDebug("handleRemoteSessionFailed: " + safeMessage);
         sessionStateMachine.markFailed(safeMessage);
         connectedError = safeMessage;
         connectedSource = "远程会话失败";
         updateOverviewHeader();
         Toast.makeText(this, safeMessage, Toast.LENGTH_SHORT).show();
+        if (finishAfterLoginDialog) {
+            pendingOpenLoginDialogFromIntent = true;
+            openLoginDialogIfRequested();
+        }
     }
 
     // 更新本地缓存中的 active/saved account 摘要。
@@ -1642,7 +1813,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                        @Nullable List<RemoteAccountProfile> savedAccounts,
                                        boolean active) {
         activeSessionAccount = activeAccount;
-        savedSessionAccounts = savedAccounts == null ? new ArrayList<>() : new ArrayList<>(savedAccounts);
+        savedSessionAccounts = RemoteAccountProfileDeduplicationHelper.deduplicate(savedAccounts);
         if (secureSessionPrefs != null) {
             secureSessionPrefs.saveSession(activeAccount, savedSessionAccounts, active);
             refreshSessionStorageErrorFromPrefs();
@@ -1675,6 +1846,90 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedServer = trim(loginServerInput).isEmpty() ? SERVER : trim(loginServerInput);
         connectedUpdateAtMs = System.currentTimeMillis();
         connectedUpdate = FormatUtils.formatDateTime(connectedUpdateAtMs);
+    }
+
+    // 构造登录弹窗专用模式的回传结果，让原页能显示明确的同步状态。
+    @NonNull
+    private Intent buildLoginDialogResultIntent(@Nullable RemoteAccountProfile profile,
+                                                @NonNull String statusMessage) {
+        Intent result = new Intent();
+        result.putExtra(EXTRA_LOGIN_DIALOG_RESULT_MESSAGE, statusMessage);
+        if (profile != null) {
+            result.putExtra(EXTRA_LOGIN_DIALOG_RESULT_ACCOUNT, trim(profile.getLogin()));
+            result.putExtra(EXTRA_LOGIN_DIALOG_RESULT_SERVER, trim(profile.getServer()));
+        }
+        return result;
+    }
+
+    private void runOnUiThreadIfAlive(@NonNull Runnable action) {
+        if (action == null || isFinishing() || isDestroyed()) {
+            return;
+        }
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            action.run();
+        });
+    }
+
+    private void dismissActiveLoginDialog() {
+        if (activeLoginDialog == null) {
+            return;
+        }
+        AlertDialog dialog = activeLoginDialog;
+        activeLoginDialog = null;
+        if (dialog.isShowing()) {
+            dialog.dismiss();
+        }
+    }
+
+    // 统一消费外部传入的“直接打开登录弹窗”请求，避免旧页面实例漏处理。
+    private void consumeLoginDialogIntent(@Nullable Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        finishAfterLoginDialog = intent.getBooleanExtra(EXTRA_FINISH_AFTER_LOGIN_DIALOG, false);
+        if (intent.getBooleanExtra(EXTRA_OPEN_LOGIN_DIALOG, false)) {
+            pendingOpenLoginDialogFromIntent = true;
+            intent.removeExtra(EXTRA_OPEN_LOGIN_DIALOG);
+        }
+        intent.removeExtra(EXTRA_FINISH_AFTER_LOGIN_DIALOG);
+    }
+
+    // 只在页面可交互时真正拉起登录弹窗，避免 onCreate/onNewIntent 阶段过早操作窗口。
+    private void openLoginDialogIfRequested() {
+        if (!pendingOpenLoginDialogFromIntent || binding == null) {
+            return;
+        }
+        pendingOpenLoginDialogFromIntent = false;
+        binding.getRoot().post(() -> {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            dismissActiveLoginDialog();
+            showLoginDialog();
+        });
+    }
+
+    @NonNull
+    private char[] readPasswordChars(@Nullable EditText input) {
+        if (input == null || input.getText() == null) {
+            return new char[0];
+        }
+        CharSequence value = input.getText();
+        char[] password = new char[value.length()];
+        for (int i = 0; i < value.length(); i++) {
+            password[i] = value.charAt(i);
+        }
+        return password;
+    }
+
+    private void clearPasswordChars(@Nullable char[] password) {
+        if (password == null) {
+            return;
+        }
+        Arrays.fill(password, '\0');
     }
 
     // 生成人类可读的会话状态说明，用于连接详情弹窗。
@@ -1724,27 +1979,31 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setupBottomNav() {
-        updateBottomTabs(false, false, true, false);
+        updateBottomTabs(false, false, true, false, false);
         binding.tabMarketMonitor.setOnClickListener(v -> openMarketMonitor());
         binding.tabMarketChart.setOnClickListener(v -> openMarketChart());
-        binding.tabAccountStats.setOnClickListener(v -> updateBottomTabs(false, false, true, false));
+        binding.tabAccountStats.setOnClickListener(v -> updateBottomTabs(false, false, true, false, false));
+        binding.tabAccountPosition.setOnClickListener(v -> openAccountPosition());
         binding.tabSettings.setOnClickListener(v -> openSettings());
     }
 
     private void updateBottomTabs(boolean marketSelected,
                                   boolean chartSelected,
                                   boolean accountSelected,
+                                  boolean accountPositionSelected,
                                   boolean settingsSelected) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
+                binding.tabAccountPosition,
                 binding.tabSettings);
         binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
         styleNavTab(binding.tabMarketMonitor, marketSelected);
         styleNavTab(binding.tabMarketChart, chartSelected);
         styleNavTab(binding.tabAccountStats, accountSelected);
+        styleNavTab(binding.tabAccountPosition, accountPositionSelected);
         styleNavTab(binding.tabSettings, settingsSelected);
     }
 
@@ -1853,7 +2112,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);
         binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
         binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);
-        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
         secondarySectionsAttached = true;
         traceAccountRenderPhase("attach_secondary_sections",
                 stageStartedAt,
@@ -1872,8 +2130,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 渲染首屏之外的统计、表格和交易区块，避免它们参与第一帧竞争。
     private void renderDeferredSnapshotSections() {
+        hideTradeStatsSectionUntilFreshContentReady();
         deferredSecondaryRenderPending = false;
         scheduleDeferredSecondarySectionRender();
+    }
+
+    // 新一轮交易统计还在后台准备时，先整体收起旧卡片，避免用户先看到旧壳子再补指标列表。
+    private void hideTradeStatsSectionUntilFreshContentReady() {
+        binding.cardTradeStatsSection.setVisibility(View.GONE);
     }
 
     // 次级区块统一切到后台准备数据，主线程只负责最终绑定。
@@ -2009,7 +2273,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.tradePnlBarChart.setMasked(masked);
         binding.tradeDistributionScatterView.setMasked(masked);
         binding.holdingDurationDistributionView.setMasked(masked);
-        updateAccountPrivacyToggle(masked);
         updateOverviewHeader();
         if (!hasImmediateAccountContent()) {
             return;
@@ -2038,19 +2301,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void togglePrivacyMaskState() {
         boolean masked = !isPrivacyMasked();
         ConfigManager.getInstance(getApplicationContext()).setDataMasked(masked);
-        sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+        MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         applyPrivacyMaskState();
-    }
-
-    private void updateAccountPrivacyToggle(boolean masked) {
-        if (binding == null || binding.ivAccountPrivacyToggle == null) {
-            return;
-        }
-        binding.ivAccountPrivacyToggle.setImageResource(masked
-                ? R.drawable.ic_privacy_hidden
-                : R.drawable.ic_privacy_visible);
-        binding.ivAccountPrivacyToggle.setContentDescription(masked ? "显示隐私数据" : "隐藏隐私数据");
-        binding.ivAccountPrivacyToggle.setAlpha(masked ? 0.9f : 1f);
     }
 
     private void setupFilters() {
@@ -3111,6 +3363,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     // 页面首次进入和应用回到前台时，都立即拉一次账户总计，避免只显示旧缓存。
     private void requestForegroundEntrySnapshot() {
         if (snapshotRefreshCoordinator != null) {
+            logRemoteSessionDebug("请求 requestForegroundEntrySnapshot");
             snapshotRefreshCoordinator.requestForegroundEntrySnapshot();
         }
     }
@@ -3212,7 +3465,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         appendStringToken(builder, connected ? "1" : "0");
         appendStringToken(builder, trim(account).toLowerCase(Locale.ROOT));
         appendStringToken(builder, trim(server).toLowerCase(Locale.ROOT));
-        // 页面是否需要重画只看可渲染真值，不把服务端 revision 元数据算进来。
+        // 交易统计和历史曲线都受 historyRevision 驱动，签名必须跟着它一起前进。
+        appendStringToken(builder, trim(historyRevision));
         if (snapshot == null) {
             return builder.toString();
         }
@@ -3393,26 +3647,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void setConnectionStatus(boolean connected) {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         gatewayConnected = connected;
-        if (!userLoggedIn) {
-            binding.tvAccountConnectionStatus.setText("未登录账户");
-            binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createOutlinedDrawable(this,
-                    UiPaletteManager.neutralFill(this),
-                    UiPaletteManager.neutralStroke(this)));
-            binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-            return;
-        }
-        binding.tvAccountConnectionStatus.setText(connected ? "已连接账户" : "已登录账户");
-        if (connected) {
-            binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
-            binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(this, R.color.white));
-        } else {
-            binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createOutlinedDrawable(this,
-                    UiPaletteManager.neutralFill(this),
-                    UiPaletteManager.neutralStroke(this)));
-            binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-        }
     }
 
     private void logConnectionEvent(boolean connected) {
@@ -3978,6 +4213,28 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return account + "@" + server;
     }
 
+    // 解析当前页面正在处理的远程会话身份，供本地分区缓存读写复用。
+    private String[] resolvePersistedStorageIdentity() {
+        String account = trim(connectedAccount);
+        if (account.isEmpty() && activeSessionAccount != null) {
+            account = trim(activeSessionAccount.getLogin());
+        }
+        if (account.isEmpty()) {
+            account = trim(loginAccountInput);
+        }
+        String server = trim(connectedServer);
+        if (server.isEmpty() && activeSessionAccount != null) {
+            server = trim(activeSessionAccount.getServer());
+        }
+        if (server.isEmpty()) {
+            server = trim(loginServerInput);
+        }
+        if (account.isEmpty() || server.isEmpty()) {
+            return null;
+        }
+        return new String[]{account, server};
+    }
+
     private void replaceCurveHistory(List<CurvePoint> source) {
         curveHistory.clear();
         if (source != null && !source.isEmpty()) {
@@ -4072,6 +4329,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                     List<TradeWeekdayBarChartHelper.Entry> weekdayEntries,
                                     double totalPnl) {
         boolean masked = isPrivacyMasked();
+        boolean firstReveal = binding.cardTradeStatsSection.getVisibility() != View.VISIBLE;
+        if (firstReveal) {
+            binding.cardTradeStatsSection.setVisibility(View.INVISIBLE);
+        }
         statsAdapter.submitList(tradeStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(tradeStatsMetrics));
         binding.tradePnlBarChart.setEntries(entries == null ? new ArrayList<>() : new ArrayList<>(entries));
         binding.tradeDistributionScatterView.setPoints(
@@ -4097,6 +4358,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     SensitiveDisplayMasker.MASK_TEXT));
             binding.tvTradePnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
             binding.tvTradePnlLegend.setVisibility(View.GONE);
+            if (firstReveal) {
+                revealTradeStatsSectionWhenReady();
+            } else {
+                binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+            }
             return;
         }
         String summaryText = String.format(
@@ -4113,6 +4379,32 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         binding.tvTradePnlSummary.setText(summarySpan);
         binding.tvTradePnlLegend.setVisibility(View.GONE);
+        if (firstReveal) {
+            revealTradeStatsSectionWhenReady();
+        } else {
+            binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+        }
+    }
+
+    // 首次展示交易统计卡片时，等指标列表进入预绘制后再整体显示，避免先露出选项卡再补列表。
+    private void revealTradeStatsSectionWhenReady() {
+        ViewTreeObserver observer = binding.recyclerStats.getViewTreeObserver();
+        if (!observer.isAlive()) {
+            binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+            return;
+        }
+        binding.recyclerStats.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                ViewTreeObserver currentObserver = binding.recyclerStats.getViewTreeObserver();
+                if (currentObserver.isAlive()) {
+                    currentObserver.removeOnPreDrawListener(this);
+                }
+                binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+                return true;
+            }
+        });
+        binding.recyclerStats.requestLayout();
     }
 
     private void refreshTradeWeekdayStats(List<TradeRecordItem> trades) {
@@ -6668,7 +6960,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(this, palette);
-        updateBottomTabs(false, false, true, false);
+        updateBottomTabs(false, false, true, false, false);
         configureToggleButtonsV2();
         flattenCardSections(binding.scrollAccountStats, palette);
         binding.equityCurveView.refreshPalette();
@@ -6677,9 +6969,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.dailyReturnChartView.refreshPalette();
         binding.tradeDistributionScatterView.refreshPalette();
         binding.holdingDurationDistributionView.refreshPalette();
-        if (binding.ivAccountPrivacyToggle != null) {
-            binding.ivAccountPrivacyToggle.setImageTintList(ColorStateList.valueOf(palette.textSecondary));
-        }
         updateLoginSuccessBannerStyle();
         setConnectionStatus(gatewayConnected);
         applyPrivacyMaskState();
@@ -6797,27 +7086,25 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         overridePendingTransition(0, 0);
     }
 
-    private void sendServiceAction(String action) {
-        Intent intent = new Intent(this, MonitorService.class);
-        intent.setAction(action);
-        ContextCompat.startForegroundService(this, intent);
-    }
-
     // 会话切换或退出登录时，显式通知服务清掉流式账户运行态，避免旧仓位短暂回灌。
     private void requestMonitorServiceAccountRuntimeClear() {
-        sendServiceAction(AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME);
+        MonitorServiceController.dispatch(this, AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME);
     }
 
     // 首次创建账户页时确保监控服务已启动，避免用户直达账户页时服务未建立主链。
     private void ensureMonitorServiceStarted() {
-        if (MonitorService.isServiceRunning()) {
-            return;
-        }
-        sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
+        MonitorServiceController.ensureStarted(this);
     }
 
     private void openSettings() {
         Intent intent = new Intent(this, SettingsActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
+    }
+
+    private void openAccountPosition() {
+        Intent intent = new Intent(this, AccountPositionActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);

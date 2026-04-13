@@ -4,10 +4,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-import androidx.core.content.ContextCompat;
-
 import com.binance.monitor.constants.AppConstants;
-import com.binance.monitor.service.MonitorService;
+import com.binance.monitor.data.local.ConfigManager;
+import com.binance.monitor.service.MonitorServiceController;
 
 public class BootCompletedReceiver extends BroadcastReceiver {
 
@@ -22,8 +21,10 @@ public class BootCompletedReceiver extends BroadcastReceiver {
                 && !"android.intent.action.QUICKBOOT_POWERON".equals(action)) {
             return;
         }
-        Intent serviceIntent = new Intent(context, MonitorService.class);
-        serviceIntent.setAction(AppConstants.ACTION_BOOTSTRAP);
-        ContextCompat.startForegroundService(context, serviceIntent);
+        ConfigManager configManager = ConfigManager.getInstance(context.getApplicationContext());
+        if (!configManager.isMonitoringEnabled() && !configManager.isFloatingEnabled()) {
+            return;
+        }
+        MonitorServiceController.dispatch(context, AppConstants.ACTION_BOOTSTRAP);
     }
 }

@@ -146,7 +146,7 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, baselineCache);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
         assertEquals(TradeCommandStateMachine.Step.ACCEPTED, result.getStateMachine().getStep());
     }
@@ -184,9 +184,48 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, baselineCache);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
         assertEquals(TradeCommandStateMachine.Step.ACCEPTED, result.getStateMachine().getStep());
+    }
+
+    @Test
+    public void submitAfterConfirmationShouldSettleAcceptedReceiptWithoutReferenceWhenBusinessSnapshotHasClosedLoop() throws Exception {
+        FakeTradeGateway gateway = new FakeTradeGateway();
+        gateway.checkResult = executableCheck("req-accepted-without-reference");
+        gateway.submitReceipt = acceptedReceiptWithoutReference("req-accepted-without-reference");
+        FakeAccountRefreshGateway refreshGateway = new FakeAccountRefreshGateway();
+        AccountStatsPreloadManager.Cache baselineCache = cache(
+                1000L,
+                metrics("$1,000.00", "$100.00"),
+                positions("BTCUSD", 0.10d, 9001L, 0L),
+                pendingOrders(),
+                trades(1001L)
+        );
+        refreshGateway.enqueue(cache(
+                2000L,
+                metrics("$1,020.00", "$120.00"),
+                positions("BTCUSD", 0.20d, 9002L, 0L),
+                pendingOrders(),
+                trades(1001L, 1002L)
+        ));
+        TradeExecutionCoordinator coordinator = new TradeExecutionCoordinator(
+                gateway,
+                refreshGateway,
+                new TradeConfirmDialogController(),
+                1
+        );
+
+        TradeExecutionCoordinator.PreparedTrade prepared =
+                coordinator.prepareExecution(buildCommand("req-accepted-without-reference"));
+        prepared.markConfirmed();
+        TradeExecutionCoordinator.ExecutionResult result =
+                coordinator.submitAfterConfirmation(prepared, baselineCache);
+
+        assertEquals(TradeExecutionCoordinator.UiState.SETTLED, result.getUiState());
+        assertTrue(result.isSettled());
+        assertEquals(TradeCommandStateMachine.Step.SETTLED, result.getStateMachine().getStep());
+        assertEquals(1, refreshGateway.fetchCount);
     }
 
     @Test
@@ -260,7 +299,7 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, baselineCache);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
         assertFalse(result.isSafeState());
         assertEquals(TradeCommandStateMachine.Step.ACCEPTED, result.getStateMachine().getStep());
@@ -359,7 +398,7 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, null);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
         assertFalse(result.isSafeState());
     }
@@ -391,7 +430,7 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, null);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
     }
 
@@ -445,7 +484,7 @@ public class TradeExecutionCoordinatorTest {
     }
 
     @Test
-    public void submitAfterConfirmationShouldPreserveAcceptedStateWhenCalledAgainAfterAcceptance() throws Exception {
+    public void submitAfterConfirmationShouldPreserveAcceptedAwaitingSyncStateWhenCalledAgainAfterAcceptance() throws Exception {
         FakeTradeGateway gateway = new FakeTradeGateway();
         gateway.checkResult = executableCheck("req-accepted-repeat");
         FakeAccountRefreshGateway refreshGateway = new FakeAccountRefreshGateway();
@@ -466,11 +505,11 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, null);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
         assertFalse(result.isSafeState());
         assertEquals(TradeCommandStateMachine.Step.ACCEPTED, result.getStateMachine().getStep());
-        assertEquals("结果未确认，请等待后续刷新", result.getMessage());
+        assertEquals("交易已受理，等待账户同步", result.getMessage());
         assertEquals(0, gateway.submitCount);
         assertEquals(0, refreshGateway.fetchCount);
     }
@@ -611,7 +650,7 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, baselineCache);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
     }
 
@@ -667,7 +706,7 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, baselineCache);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertEquals(TradeCommandStateMachine.Step.ACCEPTED, result.getStateMachine().getStep());
         assertEquals("refresh crashed", result.getMessage());
     }
@@ -736,7 +775,7 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, baselineCache);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
     }
 
@@ -773,7 +812,7 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, baselineCache);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
     }
 
@@ -811,46 +850,8 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.ExecutionResult result =
                 coordinator.submitAfterConfirmation(prepared, baselineCache);
 
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
+        assertEquals(TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC, result.getUiState());
         assertFalse(result.isSettled());
-    }
-
-    @Test
-    public void submitAfterConfirmationShouldStayUnconfirmedWhenAcceptedReceiptHasNoReferenceIds() throws Exception {
-        FakeTradeGateway gateway = new FakeTradeGateway();
-        gateway.checkResult = executableCheck("req-accepted-no-reference");
-        gateway.submitReceipt = acceptedReceiptWithoutReference("req-accepted-no-reference");
-        FakeAccountRefreshGateway refreshGateway = new FakeAccountRefreshGateway();
-        AccountStatsPreloadManager.Cache baselineCache = cache(
-                1000L,
-                metrics("$1,000.00", "$100.00"),
-                positions("BTCUSD", 0.10d, 9001L, 0L),
-                pendingOrders(),
-                trades(1001L)
-        );
-        refreshGateway.enqueue(cache(
-                2000L,
-                metrics("$1,020.00", "$120.00"),
-                positions("BTCUSD", 0.20d, 9002L, 0L),
-                pendingOrders(),
-                trades(1001L, 1002L)
-        ));
-        TradeExecutionCoordinator coordinator = new TradeExecutionCoordinator(
-                gateway,
-                refreshGateway,
-                new TradeConfirmDialogController(),
-                1
-        );
-
-        TradeExecutionCoordinator.PreparedTrade prepared =
-                coordinator.prepareExecution(buildCommand("req-accepted-no-reference"));
-        prepared.markConfirmed();
-        TradeExecutionCoordinator.ExecutionResult result =
-                coordinator.submitAfterConfirmation(prepared, baselineCache);
-
-        assertEquals(TradeExecutionCoordinator.UiState.RESULT_UNCONFIRMED, result.getUiState());
-        assertFalse(result.isSettled());
-        assertEquals(TradeCommandStateMachine.Step.ACCEPTED, result.getStateMachine().getStep());
     }
 
     @Test

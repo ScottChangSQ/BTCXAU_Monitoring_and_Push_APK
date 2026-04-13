@@ -232,6 +232,8 @@ public final class UiPaletteManager {
             iconRes = R.drawable.ic_nav_chart;
         } else if (viewId == R.id.tabAccountStats) {
             iconRes = R.drawable.ic_nav_account;
+        } else if (viewId == R.id.tabAccountPosition) {
+            iconRes = R.drawable.ic_nav_account;
         } else if (viewId == R.id.tabSettings) {
             iconRes = R.drawable.ic_nav_settings;
         } else {

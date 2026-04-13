@@ -27,6 +27,158 @@ public class AccountStatsBridgeActivitySessionSourceTest {
     }
 
     @Test
+    public void accountStatsActivityShouldDeduplicateSavedAccountsBeforePersistingToPrefs() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("账户统计页更新 active/saved account 摘要时，应先按稳定身份去重，避免本地再次写入重复账号",
+                source.contains("import com.binance.monitor.data.model.v2.session.RemoteAccountProfileDeduplicationHelper;")
+                        && source.contains("savedSessionAccounts = RemoteAccountProfileDeduplicationHelper.deduplicate(savedAccounts);"));
+    }
+
+    @Test
+    public void accountStatsActivityShouldConsumeLoginDialogIntentForNewAndExistingInstances() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("账户统计页应定义显式登录弹窗入口 extra，避免顶部账户按钮误落到普通统计页",
+                source.contains("public static final String EXTRA_OPEN_LOGIN_DIALOG = \"com.binance.monitor.ui.account.extra.OPEN_LOGIN_DIALOG\";"));
+        assertTrue("账户统计页应支持“只弹登录后返回”模式，避免账户持仓页被 CLEAR_TOP 清栈跳走",
+                source.contains("public static final String EXTRA_FINISH_AFTER_LOGIN_DIALOG = \"com.binance.monitor.ui.account.extra.FINISH_AFTER_LOGIN_DIALOG\";"));
+        assertTrue("新建页面时应消费登录弹窗意图",
+                source.contains("consumeLoginDialogIntent(getIntent());"));
+        assertTrue("复用已存在页面实例时也应消费新的登录弹窗意图",
+                source.contains("protected void onNewIntent(Intent intent) {")
+                        && source.contains("consumeLoginDialogIntent(intent);"));
+        assertTrue("消费到登录弹窗意图后，应在页面可交互时真正弹出登录框",
+                source.contains("private void openLoginDialogIfRequested() {")
+                        && source.contains("binding.getRoot().post(() -> {")
+                        && source.contains("dismissActiveLoginDialog();")
+                        && source.contains("showLoginDialog();"));
+        assertTrue("登录弹窗专用模式应在取消时直接返回原页面，而不是停留在账户统计页",
+                source.contains("if (finishAfterLoginDialog && !loginDialogSubmissionInFlight && !isFinishing() && !isDestroyed()) {")
+                        && source.contains("finish();")
+                        && source.contains("overridePendingTransition(0, 0);"));
+        assertTrue("登录弹窗专用模式在受理成功后也应直接返回原页面，由原页面继续消费同步结果",
+                source.contains("if (finishAfterLoginDialog) {")
+                        && source.contains("persistUiState();")
+                        && source.contains("finish();")
+                        && source.contains("requestForegroundEntrySnapshot();"));
+    }
+
+    @Test
+    public void loginDialogOnlyModeShouldNotRenderAccountStatsTabBeforeShowingDialog() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+        String themeSource = readUtf8(
+                "app/src/main/res/values/themes.xml",
+                "src/main/res/values/themes.xml"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("登录弹窗专用模式应在 onCreate 最开始切到透明宿主题，避免先闪到账户统计页",
+                source.contains("if (isLoginDialogOnlyMode(getIntent())) {\n            setTheme(R.style.Theme_BinanceMonitor_TranslucentHost);\n        }\n        super.onCreate(savedInstanceState);"));
+        assertTrue("登录弹窗专用模式应在正文 view 建好后立刻隐藏统计页内容，只留下弹窗承载层",
+                source.contains("if (finishAfterLoginDialog) {\n            binding.getRoot().setVisibility(View.INVISIBLE);\n        }"));
+        assertTrue("主题文件应定义透明宿主主题，确保底层仍显示账户持仓页而不是统计页背景",
+                themeSource.contains("<style name=\"Theme.BinanceMonitor.TranslucentHost\" parent=\"Theme.BinanceMonitor\">")
+                        && themeSource.contains("<item name=\"android:windowIsTranslucent\">true</item>")
+                        && themeSource.contains("<item name=\"android:windowBackground\">@android:color/transparent</item>"));
+    }
+
+    @Test
+    public void loginDialogOnlyModeShouldNotFinishBeforeSubmissionResultReturns() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("继续登录前应先标记提交中，避免弹窗 dismiss 时把页面过早 finish 掉",
+                source.contains("logRemoteSessionDebug(\"登录继续通过校验，准备提交\");")
+                        && source.contains("loginDialogSubmissionInFlight = true;")
+                        && source.contains("passwordInput.setText(\"\");")
+                        && source.contains("dialog.dismiss();")
+                        && source.contains("submitRemoteLogin(account, password, server, rememberCheckBox.isChecked());"));
+        assertTrue("切换已保存账号前也应先标记提交中，避免 dismiss 直接结束页面",
+                source.contains("actionButton.setOnClickListener(v -> {")
+                        && source.contains("loginDialogSubmissionInFlight = true;")
+                        && source.contains("if (dialog != null) {")
+                        && source.contains("dialog.dismiss();")
+                        && source.contains("submitSavedAccountSwitch(profile);"));
+        assertTrue("登录或切换失败后，应清掉提交中标记并重新拉起登录弹窗，避免专用模式停在空白统计页",
+                source.contains("loginDialogSubmissionInFlight = false;")
+                        && source.contains("if (finishAfterLoginDialog) {\n            pendingOpenLoginDialogFromIntent = true;\n            openLoginDialogIfRequested();\n        }"));
+    }
+
+    @Test
+    public void loginDialogOnlyModeShouldReturnAcceptedResultAndKeepSessionRefreshEnabled() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("登录弹窗专用模式应定义回传原页的受理结果字段，避免原页无法展示同步中状态",
+                source.contains("public static final String EXTRA_LOGIN_DIALOG_RESULT_MESSAGE = \"com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_MESSAGE\";")
+                        && source.contains("public static final String EXTRA_LOGIN_DIALOG_RESULT_ACCOUNT = \"com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_ACCOUNT\";")
+                        && source.contains("public static final String EXTRA_LOGIN_DIALOG_RESULT_SERVER = \"com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_SERVER\";"));
+        assertTrue("受理成功后应立即把账户会话标记为可刷新，不能在主动 snapshot 前就把 fetchForUi 自己拦掉",
+                source.contains("ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(true);"));
+        assertTrue("登录弹窗专用模式受理成功后应把结果回传给原页，而不是静默 finish",
+                source.contains("setResult(RESULT_OK, buildLoginDialogResultIntent(result.getActiveAccount(), sourceText));"));
+        assertTrue("账户统计页应提供统一的登录结果回传 Intent 构造方法",
+                source.contains("private Intent buildLoginDialogResultIntent(@Nullable RemoteAccountProfile profile,")
+                        && source.contains("result.putExtra(EXTRA_LOGIN_DIALOG_RESULT_MESSAGE, statusMessage);"));
+    }
+
+    @Test
+    public void loginDialogShouldVerifyServerSnapshotAndApplySuccessImmediately() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("登录和已保存账号切换都应走同一条“服务器校验后立即拉账户数据”的主链",
+                source.contains("verifyRemoteSessionAndApply("));
+        assertTrue("登录成功后应直接拉取账户快照，而不是只发起受理后再依赖别处异步收口",
+                source.contains("AccountStatsPreloadManager.Cache verifiedCache = preloadManager.fetchForUi(AccountTimeRange.ALL);"));
+        assertTrue("登录链应校验快照账号与当前登录账号完全一致",
+                source.contains("ensureVerifiedRemoteCache(verifiedCache, result.getActiveAccount());"));
+        assertTrue("快照校验通过后应直接在当前页应用连接态和账户数据",
+                source.contains("applyVerifiedRemoteSession(")
+                        && source.contains("applySnapshot(verifiedCache.getSnapshot(), true);"));
+        assertTrue("校验完成后应直接给出登录成功提示",
+                source.contains("showLoginSuccessBanner();")
+                        && source.contains("buildLoginDialogResultIntent(result.getActiveAccount(), successMessage)"));
+        assertFalse("直接登录主链不应继续只停留在“已受理，正在同步账户”的旧收口方法",
+                source.contains("applyRemoteSessionAccepted(result, \"登录已受理，正在同步账户\")"));
+        assertFalse("已保存账号切换也不应继续走旧的“切换已受理”收口方法",
+                source.contains("applyRemoteSessionAccepted(result, \"切换已受理，正在同步账户\")"));
+    }
+
+    @Test
+    public void loginDialogShouldUseOwnedActionButtonsInsteadOfSystemPositiveButton() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertFalse("登录弹窗不应继续依赖系统正按钮，否则部分机型会直接 dismiss 而不进入提交监听",
+                source.contains(".setPositiveButton(\"继续\", null)"));
+        assertTrue("登录弹窗应改为自管的内容区操作按钮，避免系统按钮链吞掉点击",
+                source.contains("LinearLayout actionRow = createLoginActionRow(dialog, palette, accountInput, passwordInput, serverInput, rememberCheckBox);"));
+        assertTrue("自管继续按钮仍应走完整的字段校验与提交日志链",
+                source.contains("continueButton.setOnClickListener(v -> {")
+                        && source.contains("logRemoteSessionDebug(\"点击登录继续: accountEmpty=\" + account.isEmpty()"));
+        assertTrue("自管取消按钮应显式 dismiss 当前弹窗，继续复用现有 finishAfterLoginDialog 收口",
+                source.contains("cancelButton.setOnClickListener(v -> dialog.dismiss());"));
+    }
+
+    @Test
     public void syncingCredentialMatchShouldUseCoordinatorPendingIdentity() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
@@ -77,8 +229,12 @@ public class AccountStatsBridgeActivitySessionSourceTest {
                 source.contains("if (sessionExecutor == null || remoteSessionCoordinator == null) {")
                         && source.contains("sessionExecutor.execute(() -> {"));
         assertTrue("退出登录应走独立会话执行器，避免被其他后台任务拖住",
-                source.contains("if (sessionExecutor == null || remoteSessionCoordinator == null) {")
-                        && source.contains("sessionExecutor.execute(() -> {\n            try {\n                remoteSessionCoordinator.logoutCurrent();"));
+                source.contains("sessionExecutor.execute(() -> {\n            try {\n                remoteSessionCoordinator.logoutCurrent();"));
+        assertTrue("退出登录链在执行器或协调器缺失时应直接报失败，不能绕过远端 logout 直接本地登出",
+                source.contains("sessionStateMachine.markFailed(\"退出登录服务未就绪\");")
+                        && source.contains("Toast.makeText(this, \"退出登录服务未就绪\", Toast.LENGTH_SHORT).show();"));
+        assertFalse("退出登录链不应在执行器缺失时直接本地收口，避免服务端残留活跃会话",
+                source.contains("if (sessionExecutor == null || remoteSessionCoordinator == null) {\n            applyLoggedOutSessionState();"));
         assertTrue("已保存账号切换应走独立会话执行器，避免点击切换后继续排队等待",
                 source.contains("if (sessionExecutor == null || remoteSessionCoordinator == null || profile == null) {")
                         && source.contains("sessionExecutor.execute(() -> {\n            try {\n                AccountRemoteSessionCoordinator.SessionActionResult result = remoteSessionCoordinator.switchSavedAccount(profile.getProfileId());"));
@@ -138,7 +294,7 @@ public class AccountStatsBridgeActivitySessionSourceTest {
                 source.contains("requestMonitorServiceAccountRuntimeClear();"));
         assertTrue("账户页应提供统一的服务清理入口",
                 source.contains("private void requestMonitorServiceAccountRuntimeClear() {")
-                        && source.contains("sendServiceAction(AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME);"));
+                        && source.contains("MonitorServiceController.dispatch(this, AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME);"));
     }
 
     @Test
@@ -154,10 +310,12 @@ public class AccountStatsBridgeActivitySessionSourceTest {
 
         assertTrue("syncing 状态应优先展示状态机里的精确文案，而不是永远只显示“正在同步”",
                 activitySource.contains("case SYNCING:\n                return trim(snapshot.getMessage()).isEmpty() ? \"正在同步\" : trim(snapshot.getMessage());"));
+        assertTrue("如果网关已返回明确错误，等待同步态应直接收口为失败并展示真实原因",
+                coordinatorSource.contains("if (!trim(finalError).isEmpty() && !\"历史数据（网关离线）\".equals(finalSource)) {\n                            host.markSyncFailed(finalError);"));
         assertTrue("网关离线但会话仍待同步时，应切到等待网关同步文案，而不是直接判失败",
                 coordinatorSource.contains("host.markAwaitingGatewaySync(\"会话已受理，等待网关上线\");"));
-        assertFalse("离线历史快照不应继续直接把等待同步态打成失败",
-                coordinatorSource.contains("&& \"登录校验失败\".equals(finalSource)) {\n                            host.markSyncFailed(finalError);"));
+        assertTrue("登录校验失败仍应直接收口为失败，避免用户继续停在同步中",
+                coordinatorSource.contains("if (\"登录校验失败\".equals(finalSource)) {\n                            host.markSyncFailed(finalError);"));
     }
 
     @Test

@@ -13,6 +13,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.binance.monitor.databinding.ActivitySettingsBinding;
+import com.binance.monitor.ui.account.AccountPositionActivity;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.log.LogActivity;
@@ -62,6 +63,7 @@ public class SettingsActivity extends AppCompatActivity {
         binding.tabMarketMonitor.setOnClickListener(v -> openMarketMonitor());
         binding.tabMarketChart.setOnClickListener(v -> openMarketChart());
         binding.tabAccountStats.setOnClickListener(v -> openAccountStats());
+        binding.tabAccountPosition.setOnClickListener(v -> openAccountPosition());
         binding.tabSettings.setOnClickListener(v -> updateBottomTabs());
     }
 
@@ -72,11 +74,13 @@ public class SettingsActivity extends AppCompatActivity {
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
+                binding.tabAccountPosition,
                 binding.tabSettings);
         binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
         styleNavTab(binding.tabMarketMonitor, false);
         styleNavTab(binding.tabMarketChart, false);
         styleNavTab(binding.tabAccountStats, false);
+        styleNavTab(binding.tabAccountPosition, false);
         styleNavTab(binding.tabSettings, true);
     }
 
@@ -130,6 +134,13 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void openMarketChart() {
         Intent intent = new Intent(this, MarketChartActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
+    }
+
+    private void openAccountPosition() {
+        Intent intent = new Intent(this, AccountPositionActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);

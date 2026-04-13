@@ -4,6 +4,7 @@
 package com.binance.monitor.ui.account;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -121,6 +122,19 @@ public class AccountStatsLayoutResourceTest {
         assertTrue("重排方法应先移除历史分析卡片", source.contains("container.removeView(binding.cardCurveSection);"));
         assertTrue("重排方法应把历史分析卡片重新追加到底部", source.contains("container.addView(binding.cardCurveSection);"));
         assertTrue("重排方法应把收益统计卡片跟随追加到底部", source.contains("container.addView(returnStatsSection);"));
+    }
+
+    // 账户统计页顶部不再保留隐私切换和已连接账户入口，避免和账户持仓页重复。
+    @Test
+    public void activityAccountStatsShouldNotKeepTopPrivacyAndConnectionShortcuts() throws Exception {
+        Path layoutPath = resolveProjectFile(
+                "app/src/main/res/layout/activity_account_stats.xml",
+                "src/main/res/layout/activity_account_stats.xml"
+        );
+        String xml = new String(Files.readAllBytes(layoutPath), StandardCharsets.UTF_8);
+
+        assertFalse("账户统计页不应继续保留顶部隐藏按钮", xml.contains("@+id/ivAccountPrivacyToggle"));
+        assertFalse("账户统计页不应继续保留顶部已连接账户入口", xml.contains("@+id/tvAccountConnectionStatus"));
     }
 
     // 按当前工作目录自动解析项目资源文件，兼容根目录和 app 模块目录两种执行入口。

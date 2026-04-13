@@ -16,8 +16,10 @@ import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.security.SessionSummaryStore;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class AccountRemoteSessionCoordinator {
 
@@ -37,7 +39,7 @@ public final class AccountRemoteSessionCoordinator {
         SessionCredentialEncryptor.LoginEnvelope encrypt(String publicKeyPem,
                                                         String keyId,
                                                         String login,
-                                                        String password,
+                                                        char[] password,
                                                         String server,
                                                         boolean remember,
                                                         long clientTime) throws Exception;
@@ -63,19 +65,20 @@ public final class AccountRemoteSessionCoordinator {
 
     public static final class LoginRequest {
         private final String login;
-        private final String password;
+        private final char[] password;
         private final String server;
         private final boolean remember;
         private final long clientTime;
 
         // 构造登录请求参数。
         public LoginRequest(String login,
-                            String password,
+                            char[] password,
                             String server,
                             boolean remember,
                             long clientTime) {
             this.login = login == null ? "" : login.trim();
-            this.password = password == null ? "" : password;
+            this.password = password == null ? new char[0] : Arrays.copyOf(password, password.length);
+            AccountRemoteSessionCoordinator.clearPassword(password);
             this.server = server == null ? "" : server.trim();
             this.remember = remember;
             this.clientTime = clientTime;
@@ -85,8 +88,12 @@ public final class AccountRemoteSessionCoordinator {
             return login;
         }
 
-        public String getPassword() {
-            return password;
+        public boolean hasPassword() {
+            return password.length > 0;
+        }
+
+        public char[] copyPassword() {
+            return Arrays.copyOf(password, password.length);
         }
 
         public String getServer() {
@@ -99,6 +106,10 @@ public final class AccountRemoteSessionCoordinator {
 
         public long getClientTime() {
             return clientTime;
+        }
+
+        public void clearPassword() {
+            Arrays.fill(password, '\0');
         }
     }
 
@@ -135,11 +146,69 @@ public final class AccountRemoteSessionCoordinator {
     private final CacheResetter cacheResetter;
     private final SessionSummaryStore sessionSummaryStore;
     private final RequestIdGenerator requestIdGenerator;
+    private final AtomicReference<AwaitingSyncState> awaitingSyncState = new AtomicReference<>(AwaitingSyncState.empty());
 
-    private String pendingProfileId = "";
-    private String pendingLogin = "";
-    private String pendingServer = "";
-    private boolean awaitingSync;
+    private static final class AwaitingSyncState {
+        private static final AwaitingSyncState EMPTY = new AwaitingSyncState(
+                null,
+                Collections.emptyList(),
+                "",
+                "",
+                ""
+        );
+
+        private final RemoteAccountProfile activeAccount;
+        private final List<RemoteAccountProfile> savedAccounts;
+        private final String profileId;
+        private final String login;
+        private final String server;
+
+        private AwaitingSyncState(@Nullable RemoteAccountProfile activeAccount,
+                                  @Nullable List<RemoteAccountProfile> savedAccounts,
+                                  @Nullable String profileId,
+                                  @Nullable String login,
+                                  @Nullable String server) {
+            this.activeAccount = activeAccount;
+            this.savedAccounts = savedAccounts == null ? new ArrayList<>() : new ArrayList<>(savedAccounts);
+            this.profileId = profileId == null ? "" : profileId.trim();
+            this.login = login == null ? "" : login.trim();
+            this.server = server == null ? "" : server.trim();
+        }
+
+        @NonNull
+        private static AwaitingSyncState empty() {
+            return EMPTY;
+        }
+
+        private boolean isAwaitingSync() {
+            return activeAccount != null;
+        }
+
+        @Nullable
+        private RemoteAccountProfile getActiveAccount() {
+            return activeAccount;
+        }
+
+        @NonNull
+        private List<RemoteAccountProfile> getSavedAccounts() {
+            return new ArrayList<>(savedAccounts);
+        }
+
+        @NonNull
+        private String getProfileId() {
+            return profileId;
+        }
+
+        @NonNull
+        private String getLogin() {
+            return login;
+        }
+
+        @NonNull
+        private String getServer() {
+            return server;
+        }
+    }
 
     // 创建远程会话协调器。
     public AccountRemoteSessionCoordinator(@NonNull AccountSessionStateMachine stateMachine,
@@ -159,26 +228,32 @@ public final class AccountRemoteSessionCoordinator {
     // 提交新账号登录，服务器受理成功后进入同步中而不是直接 active。
     public SessionActionResult loginNewAccount(@NonNull LoginRequest request) throws Exception {
         validateLoginRequest(request);
-        stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.ENCRYPTING, "正在安全加密");
-        SessionPublicKeyPayload publicKey = requirePublicKey(sessionGateway.fetchPublicKey());
-        SessionCredentialEncryptor.LoginEnvelope envelope = credentialFactory.encrypt(
-                publicKey.getPublicKeyPem(),
-                publicKey.getKeyId(),
-                request.getLogin(),
-                request.getPassword(),
-                request.getServer(),
-                request.isRemember(),
-                request.getClientTime()
-        );
-        stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SUBMITTING, "正在提交登录");
-        SessionReceipt receipt = sessionGateway.login(envelope, request.isRemember());
-        return handleAcceptedReceipt(
-                receipt,
-                "正在同步账户数据",
-                "",
-                request.getLogin(),
-                request.getServer()
-        );
+        char[] password = request.copyPassword();
+        try {
+            stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.ENCRYPTING, "正在安全加密");
+            SessionPublicKeyPayload publicKey = requirePublicKey(sessionGateway.fetchPublicKey());
+            SessionCredentialEncryptor.LoginEnvelope envelope = credentialFactory.encrypt(
+                    publicKey.getPublicKeyPem(),
+                    publicKey.getKeyId(),
+                    request.getLogin(),
+                    password,
+                    request.getServer(),
+                    request.isRemember(),
+                    request.getClientTime()
+            );
+            stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SUBMITTING, "正在提交登录");
+            SessionReceipt receipt = sessionGateway.login(envelope, request.isRemember());
+            return handleAcceptedReceipt(
+                    receipt,
+                    "正在同步账户数据",
+                    "",
+                    request.getLogin(),
+                    request.getServer()
+            );
+        } finally {
+            clearPassword(password);
+            request.clearPassword();
+        }
     }
 
     // 切换到服务器已保存账号，成功后立即清理旧缓存并进入同步中。
@@ -201,68 +276,77 @@ public final class AccountRemoteSessionCoordinator {
         }
         clearCachesForAccountChange();
         sessionSummaryStore.clearSession();
-        awaitingSync = false;
-        pendingProfileId = "";
-        pendingLogin = "";
-        pendingServer = "";
+        awaitingSyncState.set(AwaitingSyncState.empty());
         stateMachine.reset();
         return new SessionActionResult(receipt, null, Collections.emptyList());
     }
 
     // 在页面拿到新快照后调用，只有匹配当前等待的账号时才转为 active。
     public boolean onSnapshotApplied(@Nullable String account, @Nullable String server) {
-        if (!awaitingSync) {
+        AwaitingSyncState pendingState = awaitingSyncState.get();
+        if (!pendingState.isAwaitingSync()) {
             return false;
         }
         String safeAccount = account == null ? "" : account.trim();
         String safeServer = server == null ? "" : server.trim();
-        if (pendingLogin.isEmpty()) {
+        if (pendingState.getLogin().isEmpty()) {
             // server 往往会被多个账号共用，只有 server 没有 login 时仍然不能安全收口。
             return false;
         }
-        if (!pendingLogin.equalsIgnoreCase(safeAccount)) {
+        if (!pendingState.getLogin().equalsIgnoreCase(safeAccount)) {
             return false;
         }
-        if (!pendingServer.isEmpty() && !pendingServer.equalsIgnoreCase(safeServer)) {
+        if (!pendingState.getServer().isEmpty() && !pendingState.getServer().equalsIgnoreCase(safeServer)) {
             return false;
         }
-        awaitingSync = false;
-        stateMachine.markActive(pendingProfileId, "账户数据已对齐");
+        if (!awaitingSyncState.compareAndSet(pendingState, AwaitingSyncState.empty())) {
+            return false;
+        }
+        sessionSummaryStore.saveSession(
+                pendingState.getActiveAccount(),
+                pendingState.getSavedAccounts(),
+                true
+        );
+        stateMachine.markActive(pendingState.getProfileId(), "账户数据已对齐");
         return true;
     }
 
     // 当同步阶段明确失败时，统一收口到 failed。
     public void markSyncFailed(@Nullable String message) {
-        awaitingSync = false;
+        awaitingSyncState.set(AwaitingSyncState.empty());
         stateMachine.markFailed(message == null ? "账户同步失败" : message);
     }
 
     // 当网关暂时离线但服务器已经受理时，继续保留等待同步态，只更新提示文案。
     public void markAwaitingGatewaySync(@Nullable String message) {
-        if (!awaitingSync) {
+        AwaitingSyncState pendingState = awaitingSyncState.get();
+        if (!pendingState.isAwaitingSync()) {
             return;
         }
-        stateMachine.markSyncing(pendingProfileId, message == null ? "会话已受理，等待网关上线" : message);
+        stateMachine.markSyncing(
+                pendingState.getProfileId(),
+                message == null ? "会话已受理，等待网关上线" : message
+        );
     }
 
     // 返回当前是否仍在等待新快照。
     public boolean isAwaitingSync() {
-        return awaitingSync;
+        return awaitingSyncState.get().isAwaitingSync();
     }
 
     // 返回当前等待同步的 profileId。
     public String getPendingProfileId() {
-        return pendingProfileId;
+        return awaitingSyncState.get().getProfileId();
     }
 
     // 返回当前等待同步的 login。
     public String getPendingLogin() {
-        return pendingLogin;
+        return awaitingSyncState.get().getLogin();
     }
 
     // 返回当前等待同步的 server。
     public String getPendingServer() {
-        return pendingServer;
+        return awaitingSyncState.get().getServer();
     }
 
     private SessionActionResult handleAcceptedReceipt(@Nullable SessionReceipt receipt,
@@ -300,12 +384,12 @@ public final class AccountRemoteSessionCoordinator {
         try {
             activeAccount = resolveCanonicalActiveAccount(receipt, status);
         } catch (IllegalStateException conflictError) {
-            awaitingSync = false;
+            awaitingSyncState.set(AwaitingSyncState.empty());
             stateMachine.markFailed(conflictError.getMessage());
             throw conflictError;
         }
         if (!isCanonicalActiveAccountComplete(activeAccount)) {
-            awaitingSync = false;
+            awaitingSyncState.set(AwaitingSyncState.empty());
             stateMachine.markFailed("会话账号摘要缺失");
             throw new IllegalStateException("会话账号摘要缺失");
         }
@@ -326,7 +410,7 @@ public final class AccountRemoteSessionCoordinator {
                 sessionSummary.getSavedAccountsSnapshot()
         );
         if (!isCanonicalActiveAccountComplete(pendingAccount)) {
-            awaitingSync = false;
+            awaitingSyncState.set(AwaitingSyncState.empty());
             stateMachine.markFailed("会话账号摘要缺失");
             throw new IllegalStateException("会话账号摘要缺失");
         }
@@ -342,12 +426,16 @@ public final class AccountRemoteSessionCoordinator {
                                                   @NonNull List<RemoteAccountProfile> savedAccounts,
                                                   @NonNull String syncingMessage) {
         clearCachesForAccountChange();
-        sessionSummaryStore.saveSession(activeAccount, savedAccounts, true);
-        pendingProfileId = activeAccount.getProfileId();
-        pendingLogin = activeAccount.getLogin();
-        pendingServer = activeAccount.getServer();
-        awaitingSync = true;
-        stateMachine.markSyncing(pendingProfileId, syncingMessage);
+        sessionSummaryStore.saveSession(activeAccount, savedAccounts, false);
+        AwaitingSyncState nextState = new AwaitingSyncState(
+                activeAccount,
+                savedAccounts,
+                activeAccount.getProfileId(),
+                activeAccount.getLogin(),
+                activeAccount.getServer()
+        );
+        awaitingSyncState.set(nextState);
+        stateMachine.markSyncing(nextState.getProfileId(), syncingMessage);
         return new SessionActionResult(receipt, activeAccount, savedAccounts);
     }
 
@@ -378,12 +466,19 @@ public final class AccountRemoteSessionCoordinator {
         if (request.getLogin().isEmpty()) {
             throw new IllegalArgumentException("账号不能为空");
         }
-        if (request.getPassword().isEmpty()) {
+        if (!request.hasPassword()) {
             throw new IllegalArgumentException("密码不能为空");
         }
         if (request.getServer().isEmpty()) {
             throw new IllegalArgumentException("服务器不能为空");
         }
+    }
+
+    private static void clearPassword(@Nullable char[] password) {
+        if (password == null) {
+            return;
+        }
+        Arrays.fill(password, '\0');
     }
 
     private static String resolveFailureMessage(@Nullable SessionReceipt receipt, @NonNull String fallback) {

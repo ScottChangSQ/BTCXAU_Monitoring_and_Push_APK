@@ -62,6 +62,23 @@ public class SettingsSectionActivitySourceTest {
                         && source.contains("cacheExecutor.shutdownNow();"));
     }
 
+    @Test
+    public void tabSectionShouldManageAccountPositionTogetherWithOtherBusinessTabs() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("设置页应绑定账户持仓 tab 开关监听",
+                source.contains("binding.switchTabAccountPosition.setOnCheckedChangeListener"));
+        assertTrue("设置页应把账户持仓 tab 开关写回配置",
+                source.contains("viewModel.setTabAccountPositionVisible(isChecked);"));
+        assertTrue("设置页回显时应同步账户持仓 tab 开关状态",
+                source.contains("binding.switchTabAccountPosition.setChecked(viewModel.isTabAccountPositionVisible());"));
+        assertTrue("至少保留一个业务页签的校验应覆盖账户持仓",
+                source.contains("boolean accountPositionVisible = \"accountPosition\".equals(tabKey) ? targetVisible : viewModel.isTabAccountPositionVisible();"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

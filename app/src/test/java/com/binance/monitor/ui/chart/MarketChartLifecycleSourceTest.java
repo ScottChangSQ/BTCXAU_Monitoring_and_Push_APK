@@ -21,8 +21,8 @@ public class MarketChartLifecycleSourceTest {
 
         assertTrue("图表页应提供统一的前台进入入口，避免 onCreate/onResume 各自散落恢复逻辑",
                 source.contains("private void enterChartScreen(boolean coldStart)"));
-        assertTrue("图表页 onResume 应先恢复账户叠加层，再按隐私态重绘，避免当前持仓先闪成空白",
-                source.contains("protected void onResume() {\n        super.onResume();\n        ensureMonitorServiceStarted();\n        applyPaletteStyles();\n        if (accountStatsPreloadManager != null) {\n            accountStatsPreloadManager.addCacheListener(accountCacheListener);\n        }\n        restoreChartOverlayFromLatestCacheOrEmpty();\n        applyPrivacyMaskState();\n        enterChartScreen(!chartScreenEntered);\n        chartScreenEntered = true;\n    }"));
+        assertTrue("图表页 onResume 应先恢复账户叠加层，再消费待处理交易动作，最后按隐私态重绘，避免当前持仓先闪成空白或漏掉待执行入口",
+                source.contains("protected void onResume() {\n        super.onResume();\n        ensureMonitorServiceStarted();\n        applyPaletteStyles();\n        if (accountStatsPreloadManager != null) {\n            accountStatsPreloadManager.addCacheListener(accountCacheListener);\n        }\n        restoreChartOverlayFromLatestCacheOrEmpty();\n        consumePendingTradeActionIfNeeded();\n        applyPrivacyMaskState();\n        enterChartScreen(!chartScreenEntered);\n        chartScreenEntered = true;\n    }"));
         assertFalse("普通 tab 返回图表页时不应无条件重建行情 HTTP transport",
                 source.contains("protected void onResume() {\n        super.onResume();\n        ensureMonitorServiceStarted();\n        applyPaletteStyles();\n        applyPrivacyMaskState();\n        if (gatewayV2Client != null) {\n            gatewayV2Client.resetTransport();"));
         assertFalse("普通 tab 返回图表页时不应无条件重建交易 HTTP transport",

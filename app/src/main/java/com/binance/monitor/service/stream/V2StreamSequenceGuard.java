@@ -16,8 +16,15 @@ public final class V2StreamSequenceGuard {
         if (busSeq <= lastAppliedBusSeq) {
             return false;
         }
-        lastAppliedBusSeq = busSeq;
         return true;
+    }
+
+    // 仅在消息真正成功应用后才推进已消费序列，避免坏包把后续新消息一起挡掉。
+    public synchronized void commitApplied(long busSeq) {
+        if (busSeq <= 0L || busSeq <= lastAppliedBusSeq) {
+            return;
+        }
+        lastAppliedBusSeq = busSeq;
     }
 
     // 新连接建立后重置顺序守卫，允许消费新序列的 bootstrap。

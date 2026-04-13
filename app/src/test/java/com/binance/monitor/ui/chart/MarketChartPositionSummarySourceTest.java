@@ -13,55 +13,38 @@ import java.nio.file.Paths;
 public class MarketChartPositionSummarySourceTest {
 
     @Test
-    public void positionSummaryShouldUseTotalAssetAsReturnRateDenominator() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+    public void chartActivityShouldBindLightweightOverlayStatusFromSnapshot() throws Exception {
+        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
 
-        assertTrue(source.contains("double ratio = totalAsset <= 1e-9 ? 0d : totalPnl / totalAsset;"));
-        assertTrue(source.contains("private double resolveChartTotalAsset(@Nullable AccountSnapshot snapshot) {"));
-        assertTrue(source.contains("double balance = resolveMetricNumber(snapshot.getOverviewMetrics(), \"总结余\", \"结余\", \"Balance\", \"Current Balance\");"));
-        assertTrue(source.contains("double curveBalance = resolveLatestCurveBalance(snapshot);"));
+        assertTrue(activitySource.contains("private void bindChartOverlayStatus(@NonNull ChartOverlaySnapshot overlaySnapshot, boolean masked)"));
+        assertTrue(activitySource.contains("binding.tvChartPositionSummary.setText(overlaySnapshot.getPositionSummaryText());"));
+        assertTrue(activitySource.contains("binding.tvChartOverlayMeta.setText(overlaySnapshot.getOverlayMetaText());"));
+        assertTrue(activitySource.contains("applyBuiltChartOverlaySnapshot("));
+        assertFalse(activitySource.contains("chartOverviewAdapter"));
+        assertFalse(activitySource.contains("recyclerChartOverview"));
+        assertFalse(activitySource.contains("import com.binance.monitor.ui.account.AccountOverviewMetricsHelper;"));
+        assertFalse(activitySource.contains("import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;"));
+        assertFalse(activitySource.contains("import com.binance.monitor.domain.account.model.AccountMetric;"));
+    }
+
+    @Test
+    public void chartOverlaySnapshotFactoryShouldOwnOverlaySummaryConstruction() throws Exception {
+        String factorySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/ChartOverlaySnapshotFactory.java");
+
+        assertTrue(factorySource.contains("private String buildSummaryText("));
+        assertTrue(factorySource.contains("private String buildUpdatedAtText("));
+        assertTrue(factorySource.contains("return new ChartOverlaySnapshot("));
+        assertFalse(factorySource.contains("MarketChartPositionSortHelper"));
     }
 
     @Test
     public void positionSummaryShouldKeepPnlAndReturnRateFontSizeConsistent() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
-
-        assertFalse(source.contains("new AbsoluteSizeSpan("));
+        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        assertFalse(activitySource.contains("new AbsoluteSizeSpan("));
     }
 
-    @Test
-    public void chartActivityShouldProvidePositionDetailSortOptions() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
-                .replace("\r\n", "\n")
-                .replace('\r', '\n');
-
-        assertTrue(source.contains("binding.spinnerChartPositionSort.setAdapter(positionSortAdapter);"));
-        assertTrue(source.contains("binding.tvChartPositionSortLabel.setOnClickListener(v -> binding.spinnerChartPositionSort.performClick());"));
-        assertTrue(source.contains("MarketChartPositionSortHelper.buildOptionLabels()"));
-        assertTrue(source.contains("filteredPositions = MarketChartPositionSortHelper.sortPositions(filteredPositions, selectedPositionSort);"));
-    }
-
-    @Test
-    public void chartActivityShouldOwnRealtimeOverviewTogetherWithPositionPanel() throws Exception {
-        Path activityFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        Path layoutFile = Paths.get("src/main/res/layout/activity_market_chart.xml");
-        String activitySource = new String(Files.readAllBytes(activityFile), StandardCharsets.UTF_8)
-                .replace("\r\n", "\n")
-                .replace('\r', '\n');
-        String layoutSource = new String(Files.readAllBytes(layoutFile), StandardCharsets.UTF_8)
-                .replace("\r\n", "\n")
-                .replace('\r', '\n');
-
-        assertTrue(activitySource.contains("private AccountMetricAdapter chartOverviewAdapter;"));
-        assertTrue(activitySource.contains("binding.recyclerChartOverview.setLayoutManager(new GridLayoutManager(this, 2));"));
-        assertTrue(activitySource.contains("binding.recyclerChartOverview.setAdapter(chartOverviewAdapter);"));
-        assertTrue(activitySource.contains("private void updateChartOverviewSection("));
-        assertTrue(activitySource.contains("updateChartOverviewSection(snapshot);"));
-        assertTrue(layoutSource.contains("@+id/tvChartOverviewTitle"));
-        assertTrue(layoutSource.contains("@+id/tvChartOverviewMeta"));
-        assertTrue(layoutSource.contains("@+id/recyclerChartOverview"));
+    private static String readUtf8(String relativePath) throws Exception {
+        Path path = Paths.get(relativePath);
+        return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
     }
 }

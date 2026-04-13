@@ -4,6 +4,7 @@
 package com.binance.monitor.ui.theme;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -34,6 +35,18 @@ public class SettingsDetailThemeResourceTest {
         );
         assertFalse("设置详情页不应再保留重复的查看日志按钮",
                 xml.contains("android:id=\"@+id/btnViewLogs\""));
+    }
+
+    @Test
+    public void settingsDetailLayoutShouldExposeAccountPositionTabSwitch() throws Exception {
+        String xml = readUtf8(
+                "app/src/main/res/layout/activity_settings_detail.xml",
+                "src/main/res/layout/activity_settings_detail.xml"
+        );
+        assertTrue("Tab 页管理中应包含账户持仓开关",
+                xml.contains("android:id=\"@+id/switchTabAccountPosition\""));
+        assertTrue("账户持仓开关应直接复用统一文案",
+                xml.contains("android:text=\"@string/nav_account_position\""));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

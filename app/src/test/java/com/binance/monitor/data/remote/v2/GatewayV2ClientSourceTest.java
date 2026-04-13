@@ -49,4 +49,13 @@ public class GatewayV2ClientSourceTest {
         assertTrue(source.contains("closeClient(previous);"));
         assertTrue(source.contains("previous.connectionPool().evictAll();"));
     }
+
+    @Test
+    public void gatewayV2ClientShouldPreserveServerErrorBodyInHttpException() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+
+        assertTrue(source.contains("String responseBody = response.body() == null ? \"\" : response.body().string();"));
+        assertTrue(source.contains("throw new IOException(\"HTTP \" + response.code() + \" for \" + path + \" \" + responseBody);"));
+    }
 }

@@ -40,7 +40,9 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
     private ActionListener actionListener;
 
     public interface ActionListener {
-        void onActionRequested(PositionItem item);
+        void onCloseRequested(PositionItem item);
+
+        void onModifyRequested(PositionItem item);
     }
 
     // 注册持仓操作回调，供图表页接入平仓和改单入口。
@@ -75,7 +77,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         diffResult.dispatchUpdatesTo(this);
     }
 
-    // 行情持仓页关闭隐私显示时，统一把持仓数量、价格、盈亏和收益率打码。
+    // 账户持仓相关页面关闭隐私显示时，统一把持仓数量、价格、盈亏和收益率打码。
     public void setMasked(boolean masked) {
         if (this.masked == masked) {
             return;
@@ -124,7 +126,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             }
             notifyItemChanged(adapterPosition, PAYLOAD_EXPAND_STATE);
         });
-        holder.binding.btnPositionAction.setOnClickListener(v -> {
+        holder.binding.btnPositionCloseAction.setOnClickListener(v -> {
             ActionListener listener = actionListener;
             if (listener == null) {
                 return;
@@ -133,7 +135,18 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= items.size()) {
                 return;
             }
-            listener.onActionRequested(items.get(adapterPosition));
+            listener.onCloseRequested(items.get(adapterPosition));
+        });
+        holder.binding.btnPositionModifyAction.setOnClickListener(v -> {
+            ActionListener listener = actionListener;
+            if (listener == null) {
+                return;
+            }
+            int adapterPosition = holder.getBindingAdapterPosition();
+            if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= items.size()) {
+                return;
+            }
+            listener.onModifyRequested(items.get(adapterPosition));
         });
     }
 
@@ -175,17 +188,25 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         if (item == null) {
             return "";
         }
+        String productName = safe(item.getProductName());
+        String side = safe(item.getSide());
+        long openTime = item.getOpenTime();
         long qty = Math.round(Math.abs(item.getQuantity()) * 10_000d);
         long sellable = Math.round(Math.abs(item.getSellableQuantity()) * 10_000d);
+        long costPrice = Math.round(item.getCostPrice() * 100d);
         long latest = Math.round(item.getLatestPrice() * 100d);
         long marketValue = Math.round(item.getMarketValue() * 100d);
         long positionRatio = Math.round(item.getPositionRatio() * 1_000_000d);
         long dayPnl = Math.round(item.getDayPnL() * 100d);
         long totalPnl = Math.round(item.getTotalPnL() * 100d);
         long returnRate = Math.round(item.getReturnRate() * 1_000_000d);
+        long takeProfit = Math.round(item.getTakeProfit() * 100d);
+        long stopLoss = Math.round(item.getStopLoss() * 100d);
         long storage = Math.round(item.getStorageFee() * 100d);
         return identityKeyOf(item) + "|" + qty + "|" + sellable + "|" + latest + "|" + marketValue + "|"
-                + positionRatio + "|" + dayPnl + "|" + totalPnl + "|" + returnRate + "|" + storage;
+                + positionRatio + "|" + dayPnl + "|" + totalPnl + "|" + returnRate + "|"
+                + openTime + "|" + costPrice + "|" + takeProfit + "|" + stopLoss + "|" + storage
+                + "|" + productName + "|" + side;
     }
 
     private boolean hasPayload(List<Object> payloads, String expected) {
@@ -257,11 +278,15 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                   boolean animateExpand,
                   boolean masked,
                   boolean actionEnabled) {
-            binding.btnPositionAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
-            binding.btnPositionAction.setText("平仓/改单");
+            binding.btnPositionCloseAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
+            binding.btnPositionModifyAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
+            binding.btnPositionDeleteAction.setVisibility(View.GONE);
             if (masked) {
                 binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
                 binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                binding.layoutHeader.setBackgroundResource(expanded
+                        ? R.drawable.bg_position_row_expanded
+                        : R.drawable.bg_position_row_collapsed);
                 updateExpandState(expanded, animateExpand);
                 binding.tvProduct.setVisibility(View.GONE);
                 binding.tvBase.setText(SensitiveDisplayMasker.MASK_TEXT);
@@ -274,13 +299,14 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             }
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
-            double summaryPnl = item.getTotalPnL() + item.getStorageFee();
-            int pnlColor = resolveAmountColor(binding.getRoot(), summaryPnl, R.color.text_primary);
-            String pnlText = signedMoney(summaryPnl);
+            double displayPnl = item.getTotalPnL() + item.getStorageFee();
+            int pnlColor = resolveAmountColor(binding.getRoot(), displayPnl, R.color.text_primary);
+            String pnlText = signedMoney(displayPnl);
             double displayQty = Math.abs(item.getQuantity());
             String qtyText = String.format(Locale.getDefault(), "%.2f 手", displayQty);
-            String raw = String.format(Locale.getDefault(), "%s | %s | %s | %s",
-                    item.getProductName(), sideText, qtyText, pnlText);
+            String openPriceText = "$" + FormatUtils.formatPrice(item.getCostPrice());
+            String raw = String.format(Locale.getDefault(), "%s | %s | %s | 开仓 %s | %s",
+                    item.getProductName(), sideText, qtyText, openPriceText, pnlText);
             SpannableStringBuilder span = new SpannableStringBuilder(raw);
             int sideStart = raw.indexOf(sideText);
             if (sideStart >= 0) {
@@ -297,9 +323,15 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             binding.tvSummary.setText(span);
+            binding.layoutHeader.setBackgroundResource(expanded
+                    ? R.drawable.bg_position_row_expanded
+                    : R.drawable.bg_position_row_collapsed);
             updateExpandState(expanded, animateExpand);
 
-            binding.tvProduct.setVisibility(View.GONE);
+            binding.tvProduct.setVisibility(View.VISIBLE);
+            binding.tvProduct.setText(String.format(Locale.getDefault(),
+                    "开仓时间 %s",
+                    formatOpenTime(item.getOpenTime())));
             String costText = "$" + FormatUtils.formatPrice(item.getCostPrice());
             String latestText = "$" + FormatUtils.formatPrice(item.getLatestPrice());
             binding.tvBase.setText(String.format(Locale.getDefault(),
@@ -321,17 +353,17 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             binding.tvMetrics.setText(metricsSpan);
-            String totalPnlText = signedMoney(item.getTotalPnL());
+            String totalPnlText = signedMoney(displayPnl);
             double displayReturnRate = resolveDisplayReturnRate(item);
             String returnRateText = String.format(Locale.getDefault(), "%+.2f%%", displayReturnRate * 100d);
             String pnlRaw = String.format(Locale.getDefault(),
-                    "盈亏 %s | 收益率 %s",
+                    "持仓盈亏 %s | 收益率 %s",
                     totalPnlText,
                     returnRateText);
             SpannableStringBuilder pnlSpan = new SpannableStringBuilder(pnlRaw);
             int totalPnlStart = pnlRaw.indexOf(totalPnlText);
             if (totalPnlStart >= 0) {
-                pnlSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(binding.getRoot(), item.getTotalPnL(), R.color.text_secondary)),
+                pnlSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(binding.getRoot(), displayPnl, R.color.text_secondary)),
                         totalPnlStart,
                         totalPnlStart + totalPnlText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -389,6 +421,13 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
 
         private static String signedMoney(double value) {
             return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
+        }
+
+        private static String formatOpenTime(long openTime) {
+            if (openTime <= 0L) {
+                return "--";
+            }
+            return FormatUtils.formatDateTime(openTime);
         }
 
         private static String optionalPrice(double value) {

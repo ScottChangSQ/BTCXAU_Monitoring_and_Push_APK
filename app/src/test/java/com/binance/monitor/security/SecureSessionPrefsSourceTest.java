@@ -39,4 +39,33 @@ public class SecureSessionPrefsSourceTest {
         assertFalse(source.contains("return new SessionCache();"));
         assertFalse(source.contains("preferences.edit().remove(KEY_PAYLOAD).remove(KEY_IV).apply();"));
     }
+
+    @Test
+    public void secureSessionPrefsShouldBlockWritesWhenCiphertextCannotBeRead() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/security/SecureSessionPrefs.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("SessionCache cache = requireWritableCache();"));
+        assertTrue(source.contains("if (cache == null) {"));
+        assertTrue(source.contains("private SessionCache requireWritableCache() {")
+                || source.contains("private SessionCache requireWritableCache()")
+                || source.contains("private SessionCache requireWritableCache("));
+        assertTrue(source.contains("if (snapshot.hasStorageFailure()) {"));
+        assertTrue(source.contains("SessionCache writableCache = SessionCache.fromSnapshot(snapshot);"));
+    }
+
+    @Test
+    public void secureSessionPrefsShouldDeduplicateSavedAccountsBeforePersistAndRestore() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/security/SecureSessionPrefs.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("import com.binance.monitor.data.model.v2.session.RemoteAccountProfileDeduplicationHelper;"));
+        assertTrue(source.contains("cache.savedAccounts = RemoteAccountProfileDeduplicationHelper.deduplicate(savedAccounts);"));
+        assertTrue(source.contains("cache.savedAccounts = RemoteAccountProfileDeduplicationHelper.deduplicate(cache.savedAccounts);"));
+        assertTrue(source.contains("cache.savedAccounts = RemoteAccountProfileDeduplicationHelper.deduplicate(\n                    snapshot.getSavedAccountsSnapshot()\n            );"));
+    }
 }

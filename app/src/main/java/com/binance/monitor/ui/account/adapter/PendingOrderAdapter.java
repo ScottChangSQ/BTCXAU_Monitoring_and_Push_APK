@@ -38,10 +38,11 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
     private ActionListener actionListener;
 
     public interface ActionListener {
-        void onActionRequested(PositionItem item);
+        void onModifyRequested(PositionItem item);
+        void onDeleteRequested(PositionItem item);
     }
 
-    // 注册挂单操作回调，供图表页接入撤单入口。
+    // 注册挂单操作回调，供图表页接入改单和撤单入口。
     public void setActionListener(ActionListener actionListener) {
         this.actionListener = actionListener;
     }
@@ -73,7 +74,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         diffResult.dispatchUpdatesTo(this);
     }
 
-    // 行情持仓页关闭隐私显示时，统一把挂单数量和价格打码。
+    // 账户持仓相关页面关闭隐私显示时，统一把挂单数量和价格打码。
     public void setMasked(boolean masked) {
         if (this.masked == masked) {
             return;
@@ -122,7 +123,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             }
             notifyItemChanged(adapterPosition, PAYLOAD_EXPAND_STATE);
         });
-        holder.binding.btnPositionAction.setOnClickListener(v -> {
+        holder.binding.btnPositionModifyAction.setOnClickListener(v -> {
             ActionListener listener = actionListener;
             if (listener == null) {
                 return;
@@ -131,7 +132,18 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= items.size()) {
                 return;
             }
-            listener.onActionRequested(items.get(adapterPosition));
+            listener.onModifyRequested(items.get(adapterPosition));
+        });
+        holder.binding.btnPositionDeleteAction.setOnClickListener(v -> {
+            ActionListener listener = actionListener;
+            if (listener == null) {
+                return;
+            }
+            int adapterPosition = holder.getBindingAdapterPosition();
+            if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= items.size()) {
+                return;
+            }
+            listener.onDeleteRequested(items.get(adapterPosition));
         });
     }
 
@@ -173,9 +185,20 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         if (item == null) {
             return "";
         }
-        long lots = Math.round(Math.abs(item.getPendingLots()) * 10_000d);
+        String productName = safe(item.getProductName());
+        String side = safe(item.getSide());
+        double displayLots = Math.abs(item.getPendingLots()) > 1e-9
+                ? Math.abs(item.getPendingLots())
+                : Math.abs(item.getQuantity());
+        long lots = Math.round(displayLots * 10_000d);
+        long quantity = Math.round(Math.abs(item.getQuantity()) * 10_000d);
         long latest = Math.round(item.getLatestPrice() * 100d);
-        return identityKeyOf(item) + "|" + lots + "|" + latest + "|" + item.getPendingCount();
+        long pendingPrice = Math.round(item.getPendingPrice() * 100d);
+        long takeProfit = Math.round(item.getTakeProfit() * 100d);
+        long stopLoss = Math.round(item.getStopLoss() * 100d);
+        return identityKeyOf(item) + "|" + lots + "|" + quantity + "|" + latest + "|" + pendingPrice + "|"
+                + takeProfit + "|" + stopLoss + "|" + item.getPendingCount()
+                + "|" + productName + "|" + side;
     }
 
     private boolean hasPayload(List<Object> payloads, String expected) {
@@ -247,11 +270,15 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                   boolean animateExpand,
                   boolean masked,
                   boolean actionEnabled) {
-            binding.btnPositionAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
-            binding.btnPositionAction.setText("撤单");
+            binding.btnPositionCloseAction.setVisibility(View.GONE);
+            binding.btnPositionModifyAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
+            binding.btnPositionDeleteAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
             if (masked) {
                 binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
                 binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                binding.layoutHeader.setBackgroundResource(expanded
+                        ? R.drawable.bg_position_row_expanded
+                        : R.drawable.bg_position_row_collapsed);
                 updateExpandState(expanded, animateExpand);
                 binding.tvProduct.setVisibility(View.GONE);
                 binding.tvBase.setVisibility(View.GONE);
@@ -287,6 +314,9 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             binding.tvSummary.setText(summarySpan);
+            binding.layoutHeader.setBackgroundResource(expanded
+                    ? R.drawable.bg_position_row_expanded
+                    : R.drawable.bg_position_row_collapsed);
 
             updateExpandState(expanded, animateExpand);
 

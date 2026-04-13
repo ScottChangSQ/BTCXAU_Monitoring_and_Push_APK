@@ -14,6 +14,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.data.model.v2.session.RemoteAccountProfileDeduplicationHelper;
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 
 import org.json.JSONArray;
@@ -59,16 +60,22 @@ public class SecureSessionPrefs implements SessionSummaryStore {
     public void saveSession(@Nullable RemoteAccountProfile activeAccount,
                             @NonNull List<RemoteAccountProfile> savedAccounts,
                             boolean active) {
-        SessionCache cache = loadCacheForWrite();
+        SessionCache cache = requireWritableCache();
+        if (cache == null) {
+            return;
+        }
         cache.active = active;
         cache.activeAccount = activeAccount;
-        cache.savedAccounts = savedAccounts == null ? new ArrayList<>() : new ArrayList<>(savedAccounts);
+        cache.savedAccounts = RemoteAccountProfileDeduplicationHelper.deduplicate(savedAccounts);
         writeCache(cache);
     }
 
     @Override
     public void clearSession() {
-        SessionCache cache = loadCacheForWrite();
+        SessionCache cache = requireWritableCache();
+        if (cache == null) {
+            return;
+        }
         cache.active = false;
         cache.activeAccount = null;
         writeCache(cache);
@@ -76,7 +83,10 @@ public class SecureSessionPrefs implements SessionSummaryStore {
 
     // 保存最近输入的账号和服务器，便于下次打开面板时直接回填。
     public void saveDraftIdentity(@Nullable String account, @Nullable String server) {
-        SessionCache cache = loadCacheForWrite();
+        SessionCache cache = requireWritableCache();
+        if (cache == null) {
+            return;
+        }
         cache.draftAccount = safeText(account);
         cache.draftServer = safeText(server);
         writeCache(cache);
@@ -160,11 +170,16 @@ public class SecureSessionPrefs implements SessionSummaryStore {
         }
     }
 
-    // 写入前统一把当前可读缓存转回可变对象，失败时明确从空结构重新开始。
-    @NonNull
-    private SessionCache loadCacheForWrite() {
+    // 写入前先确认密文仍可读；一旦读失败就阻止覆盖写，保留现场给上层处理。
+    @Nullable
+    private SessionCache requireWritableCache() {
         SessionSummarySnapshot snapshot = loadSessionSummary();
-        return SessionCache.fromSnapshot(snapshot);
+        if (snapshot.hasStorageFailure()) {
+            Log.w(TAG, "安全会话缓存已损坏，已阻止覆盖写入: " + snapshot.getStorageError());
+            return null;
+        }
+        SessionCache writableCache = SessionCache.fromSnapshot(snapshot);
+        return writableCache;
     }
 
     // 加密并写回本地会话缓存。
@@ -262,6 +277,7 @@ public class SecureSessionPrefs implements SessionSummaryStore {
                     }
                 }
             }
+            cache.savedAccounts = RemoteAccountProfileDeduplicationHelper.deduplicate(cache.savedAccounts);
             return cache;
         }
 
@@ -274,7 +290,9 @@ public class SecureSessionPrefs implements SessionSummaryStore {
             }
             cache.active = snapshot.isSessionMarkedActive();
             cache.activeAccount = snapshot.getActiveAccount();
-            cache.savedAccounts = snapshot.getSavedAccountsSnapshot();
+            cache.savedAccounts = RemoteAccountProfileDeduplicationHelper.deduplicate(
+                    snapshot.getSavedAccountsSnapshot()
+            );
             cache.draftAccount = safeText(snapshot.getDraftAccount());
             cache.draftServer = safeText(snapshot.getDraftServer());
             return cache;

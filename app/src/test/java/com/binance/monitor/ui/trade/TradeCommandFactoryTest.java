@@ -55,6 +55,24 @@ public class TradeCommandFactoryTest {
     }
 
     @Test
+    public void pendingModifyShouldKeepOrderTicketAndEditableFields() {
+        TradeCommand command = TradeCommandFactory.pendingModify(
+                "acc-1",
+                "BTCUSD",
+                8003L,
+                65123.4d,
+                64000d,
+                68000d
+        );
+
+        assertEquals("PENDING_MODIFY", command.getAction());
+        assertEquals(8003L, command.getParams().optLong("orderTicket", 0L));
+        assertEquals(65123.4d, command.getParams().optDouble("price"), 0.0000001d);
+        assertEquals(64000d, command.getParams().optDouble("sl"), 0.0000001d);
+        assertEquals(68000d, command.getParams().optDouble("tp"), 0.0000001d);
+    }
+
+    @Test
     public void describeShouldProduceReadableText() {
         TradeCommand command = TradeCommandFactory.modifyTpSl(
                 "acc-1",
@@ -70,6 +88,25 @@ public class TradeCommandFactoryTest {
         assertTrue(summary.contains("修改止盈止损"));
         assertTrue(summary.contains("BTCUSD"));
         assertTrue(summary.contains("TP="));
+    }
+
+    @Test
+    public void describeShouldProduceReadableTextForPendingModify() {
+        TradeCommand command = TradeCommandFactory.pendingModify(
+                "acc-1",
+                "BTCUSD",
+                8003L,
+                65123.4d,
+                64000d,
+                68000d
+        );
+
+        String summary = TradeCommandFactory.describe(command);
+
+        assertTrue(summary.contains("修改挂单"));
+        assertTrue(summary.contains("BTCUSD"));
+        assertTrue(summary.contains("#8003"));
+        assertTrue(summary.contains("价格="));
     }
 
     @Test

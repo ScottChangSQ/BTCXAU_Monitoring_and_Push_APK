@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
 import com.binance.monitor.ui.account.AccountValueStyleHelper;
+import com.binance.monitor.ui.account.PositionAggregateItem;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 import com.binance.monitor.util.FormatUtils;
 
@@ -22,10 +23,10 @@ import java.util.List;
 import java.util.Locale;
 
 public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggregateAdapter.Holder> {
-    private final List<AggregateItem> items = new ArrayList<>();
+    private final List<PositionAggregateItem> items = new ArrayList<>();
     private boolean masked;
 
-    public void submitList(List<AggregateItem> data) {
+    public void submitList(List<PositionAggregateItem> data) {
         items.clear();
         if (data != null) {
             items.addAll(data);
@@ -33,7 +34,7 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
         notifyDataSetChanged();
     }
 
-    // 行情持仓页关闭隐私显示时，用于统一把数量、成本和盈亏替换为星号。
+    // 账户持仓相关页面关闭隐私显示时，用于统一把数量、成本和盈亏替换为星号。
     public void setMasked(boolean masked) {
         if (this.masked == masked) {
             return;
@@ -66,32 +67,61 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             this.binding = binding;
         }
 
-        void bind(AggregateItem item, boolean masked) {
-            binding.btnPositionAction.setVisibility(View.GONE);
+        void bind(PositionAggregateItem item, boolean masked) {
+            binding.btnPositionCloseAction.setVisibility(View.GONE);
+            binding.btnPositionModifyAction.setVisibility(View.GONE);
+            binding.btnPositionDeleteAction.setVisibility(View.GONE);
             if (masked) {
                 binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
                 binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                binding.layoutHeader.setBackgroundResource(R.drawable.bg_position_row_collapsed);
+                binding.tvProduct.setVisibility(View.GONE);
+                binding.tvBase.setVisibility(View.GONE);
+                binding.tvMetrics.setVisibility(View.GONE);
+                binding.tvPnL.setVisibility(View.GONE);
                 binding.layoutDetail.setVisibility(View.GONE);
                 return;
             }
-            int pnlColor = resolveAmountColor(item.totalPnl);
-            String pnlText = signedMoney(item.totalPnl);
-            String qtyText = String.format(Locale.getDefault(), "%.2f 手", item.quantity);
-            String costText = "$" + String.format(Locale.getDefault(), "%,.0f", item.avgCostPrice);
+            int pnlColor = resolveAmountColor(item.getTotalPnl());
+            String pnlText = signedMoney(item.getTotalPnl());
+            String qtyText = String.format(Locale.getDefault(), "%.2f 手", item.getQuantity());
+            String costText = "$" + FormatUtils.formatPrice(item.getAverageCostPrice());
+            String sideText = sideCn(item.getSide());
             String raw = String.format(Locale.getDefault(),
-                    "%s | %s | 成本 %s | %s",
-                    item.productName,
+                    "%s | %s | %s | 成本 %s | %s",
+                    item.getProductName(),
+                    sideText,
                     qtyText,
                     costText,
                     pnlText);
             SpannableString span = new SpannableString(raw);
+            int sideStart = raw.indexOf(sideText);
+            if (sideStart >= 0) {
+                span.setSpan(new ForegroundColorSpan(resolveSideColor(sideText)),
+                        sideStart,
+                        sideStart + sideText.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
             int start = raw.lastIndexOf(pnlText);
             if (start >= 0) {
                 span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             binding.tvSummary.setText(span);
-
+            binding.layoutHeader.setBackgroundResource(R.drawable.bg_position_row_collapsed);
+            binding.tvProduct.setVisibility(View.GONE);
+            binding.tvBase.setVisibility(View.GONE);
+            binding.tvMetrics.setVisibility(View.GONE);
+            binding.tvPnL.setVisibility(View.GONE);
             binding.layoutDetail.setVisibility(View.GONE);
+        }
+
+        private static String sideCn(String side) {
+            return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
+        }
+
+        private int resolveSideColor(String sideText) {
+            return ContextCompat.getColor(binding.getRoot().getContext(),
+                    "买入".equals(sideText) ? R.color.accent_green : R.color.accent_red);
         }
 
         private static String signedMoney(double value) {
@@ -110,19 +140,4 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
         }
     }
 
-    public static class AggregateItem {
-        public final String productName;
-        public final String side;
-        public final double quantity;
-        public final double avgCostPrice;
-        public final double totalPnl;
-
-        public AggregateItem(String productName, String side, double quantity, double avgCostPrice, double totalPnl) {
-            this.productName = productName;
-            this.side = side;
-            this.quantity = quantity;
-            this.avgCostPrice = avgCostPrice;
-            this.totalPnl = totalPnl;
-        }
-    }
 }

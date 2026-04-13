@@ -22,12 +22,15 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.binance.monitor.R;
+import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
 import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.databinding.DialogTradeCommandBinding;
 import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.security.SecureSessionPrefs;
+import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.ui.trade.TradeCommandFactory;
@@ -60,6 +63,7 @@ final class MarketChartTradeDialogCoordinator {
         OPEN_BUY,
         OPEN_SELL,
         PENDING_ADD,
+        PENDING_MODIFY,
         CLOSE_POSITION,
         MODIFY_TPSL,
         PENDING_CANCEL
@@ -104,6 +108,7 @@ final class MarketChartTradeDialogCoordinator {
     private final ExecutorService ioExecutor;
     private final AccountStatsPreloadManager accountStatsPreloadManager;
     private final TradeExecutionCoordinator tradeExecutionCoordinator;
+    private final SecureSessionPrefs secureSessionPrefs;
     private final SymbolProvider symbolProvider;
     private final CandleProvider candleProvider;
     private final Host host;
@@ -127,53 +132,10 @@ final class MarketChartTradeDialogCoordinator {
         this.ioExecutor = ioExecutor;
         this.accountStatsPreloadManager = accountStatsPreloadManager;
         this.tradeExecutionCoordinator = tradeExecutionCoordinator;
+        this.secureSessionPrefs = new SecureSessionPrefs(activity.getApplicationContext());
         this.symbolProvider = symbolProvider;
         this.candleProvider = candleProvider;
         this.host = host;
-    }
-
-    // 打开持仓操作菜单。
-    void showPositionActionMenu(@Nullable PositionItem item) {
-        if (item == null) {
-            return;
-        }
-        String[] actions = new String[]{"全部平仓", "修改止盈止损"};
-        AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
-                .setTitle("持仓操作")
-                .setAdapter(createTradeActionMenuAdapter(actions), (menuDialog, which) -> {
-                    try {
-                        if (which == 0) {
-                            requestTradeExecution(buildClosePositionInput(item));
-                            return;
-                        }
-                        showTradeCommandDialog(ChartTradeAction.MODIFY_TPSL, item);
-                    } catch (IllegalArgumentException exception) {
-                        showTradeMessage(exception.getMessage());
-                    }
-                })
-                .create();
-        dialog.show();
-        applyDialogSurface(dialog);
-    }
-
-    // 打开挂单操作菜单。
-    void showPendingOrderActionMenu(@Nullable PositionItem item) {
-        if (item == null) {
-            return;
-        }
-        String[] actions = new String[]{"撤销挂单"};
-        AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
-                .setTitle("挂单操作")
-                .setAdapter(createTradeActionMenuAdapter(actions), (menuDialog, which) -> {
-                    try {
-                        requestTradeExecution(buildPendingCancelInput(item));
-                    } catch (IllegalArgumentException exception) {
-                        showTradeMessage(exception.getMessage());
-                    }
-                })
-                .create();
-        dialog.show();
-        applyDialogSurface(dialog);
     }
 
     // 根据动作类型打开统一表单。
@@ -224,7 +186,10 @@ final class MarketChartTradeDialogCoordinator {
         boolean showVolume = action == ChartTradeAction.OPEN_BUY
                 || action == ChartTradeAction.OPEN_SELL
                 || action == ChartTradeAction.PENDING_ADD;
-        boolean showPrice = action == ChartTradeAction.PENDING_ADD;
+        boolean showPrice = action == ChartTradeAction.PENDING_ADD
+                || action == ChartTradeAction.PENDING_MODIFY;
+        boolean showRiskFields = action != ChartTradeAction.CLOSE_POSITION
+                && action != ChartTradeAction.PENDING_CANCEL;
         double referencePrice = resolveTradeReferencePrice(targetItem, targetItem);
 
         dialogBinding.layoutTradeOrderType.setVisibility(showOrderType ? View.VISIBLE : View.GONE);
@@ -232,6 +197,10 @@ final class MarketChartTradeDialogCoordinator {
         dialogBinding.etTradeVolume.setVisibility(showVolume ? View.VISIBLE : View.GONE);
         dialogBinding.tvTradePriceLabel.setVisibility(showPrice ? View.VISIBLE : View.GONE);
         dialogBinding.etTradePrice.setVisibility(showPrice ? View.VISIBLE : View.GONE);
+        dialogBinding.tvTradeSlLabel.setVisibility(showRiskFields ? View.VISIBLE : View.GONE);
+        dialogBinding.etTradeSl.setVisibility(showRiskFields ? View.VISIBLE : View.GONE);
+        dialogBinding.tvTradeTpLabel.setVisibility(showRiskFields ? View.VISIBLE : View.GONE);
+        dialogBinding.etTradeTp.setVisibility(showRiskFields ? View.VISIBLE : View.GONE);
         dialogBinding.tvTradeCommandHint.setText(resolveTradeDialogHint(action, targetItem, referencePrice));
 
         if (showOrderType) {
@@ -244,6 +213,17 @@ final class MarketChartTradeDialogCoordinator {
         }
         if (showPrice && referencePrice > 0d) {
             dialogBinding.etTradePrice.setText(FormatUtils.formatPrice(referencePrice));
+        }
+        if (action == ChartTradeAction.PENDING_MODIFY && targetItem != null) {
+            if (targetItem.getPendingPrice() > 0d) {
+                dialogBinding.etTradePrice.setText(FormatUtils.formatPrice(targetItem.getPendingPrice()));
+            }
+            if (targetItem.getStopLoss() > 0d) {
+                dialogBinding.etTradeSl.setText(FormatUtils.formatPrice(targetItem.getStopLoss()));
+            }
+            if (targetItem.getTakeProfit() > 0d) {
+                dialogBinding.etTradeTp.setText(FormatUtils.formatPrice(targetItem.getTakeProfit()));
+            }
         }
         if (action == ChartTradeAction.MODIFY_TPSL && targetItem != null) {
             if (targetItem.getStopLoss() > 0d) {
@@ -281,9 +261,27 @@ final class MarketChartTradeDialogCoordinator {
                     parseOptionalTradeValue(dialogBinding.etTradeTp),
                     0L, 0L);
         }
+        if (action == ChartTradeAction.PENDING_MODIFY) {
+            if (targetItem == null) {
+                throw new IllegalArgumentException("未找到目标挂单，暂时不能修改");
+            }
+            if (targetItem.getOrderId() <= 0L) {
+                throw new IllegalArgumentException("当前挂单缺少 orderTicket，暂时不能修改");
+            }
+            double price = parseOptionalTradeValue(dialogBinding.etTradePrice);
+            double sl = parseOptionalTradeValue(dialogBinding.etTradeSl);
+            double tp = parseOptionalTradeValue(dialogBinding.etTradeTp);
+            if (price <= 0d && sl <= 0d && tp <= 0d) {
+                throw new IllegalArgumentException("请至少填写价格、止损或止盈中的一项");
+            }
+            return new TradeDialogInput(action, symbol, "", 0d, price, sl, tp, 0L, targetItem.getOrderId());
+        }
         if (action == ChartTradeAction.MODIFY_TPSL) {
             if (targetItem == null) {
                 throw new IllegalArgumentException("未找到目标持仓，暂时不能改单");
+            }
+            if (targetItem.getPositionTicket() <= 0L) {
+                throw new IllegalArgumentException("当前持仓缺少 positionTicket，暂时不能改单");
             }
             double sl = parseOptionalTradeValue(dialogBinding.etTradeSl);
             double tp = parseOptionalTradeValue(dialogBinding.etTradeTp);
@@ -294,47 +292,41 @@ final class MarketChartTradeDialogCoordinator {
                     referencePrice > 0d ? referencePrice : 0d,
                     sl, tp, targetItem.getPositionTicket(), 0L);
         }
+        if (action == ChartTradeAction.CLOSE_POSITION) {
+            if (targetItem == null) {
+                throw new IllegalArgumentException("未找到目标持仓，暂时不能平仓");
+            }
+            if (targetItem.getPositionTicket() <= 0L) {
+                throw new IllegalArgumentException("当前持仓缺少 positionTicket，暂时不能平仓");
+            }
+            return new TradeDialogInput(action,
+                    symbol,
+                    "",
+                    Math.abs(targetItem.getQuantity()),
+                    0d,
+                    0d,
+                    0d,
+                    targetItem.getPositionTicket(),
+                    0L);
+        }
+        if (action == ChartTradeAction.PENDING_CANCEL) {
+            if (targetItem == null) {
+                throw new IllegalArgumentException("未找到目标挂单，暂时不能删除");
+            }
+            if (targetItem.getOrderId() <= 0L) {
+                throw new IllegalArgumentException("当前挂单缺少 orderTicket，暂时不能删除");
+            }
+            return new TradeDialogInput(action,
+                    symbol,
+                    "",
+                    0d,
+                    0d,
+                    0d,
+                    0d,
+                    0L,
+                    targetItem.getOrderId());
+        }
         throw new IllegalArgumentException("当前动作不支持表单提交");
-    }
-
-    // 构建全平命令输入。
-    private TradeDialogInput buildClosePositionInput(@Nullable PositionItem item) {
-        if (item == null) {
-            throw new IllegalArgumentException("未找到目标持仓");
-        }
-        double volume = Math.abs(item.getQuantity());
-        if (volume <= 0d) {
-            throw new IllegalArgumentException("当前持仓手数无效");
-        }
-        return new TradeDialogInput(
-                ChartTradeAction.CLOSE_POSITION,
-                resolveTradeSymbol(item),
-                "",
-                volume,
-                0d,
-                0d,
-                0d,
-                item.getPositionTicket(),
-                0L
-        );
-    }
-
-    // 构建撤单命令输入。
-    private TradeDialogInput buildPendingCancelInput(@Nullable PositionItem item) {
-        if (item == null || item.getOrderId() <= 0L) {
-            throw new IllegalArgumentException("当前挂单缺少 orderTicket，无法撤销");
-        }
-        return new TradeDialogInput(
-                ChartTradeAction.PENDING_CANCEL,
-                resolveTradeSymbol(item),
-                "",
-                0d,
-                0d,
-                0d,
-                0d,
-                0L,
-                item.getOrderId()
-        );
     }
 
     // 触发一笔交易执行，统一走检查、确认、提交、强刷闭环。
@@ -457,6 +449,9 @@ final class MarketChartTradeDialogCoordinator {
             case PENDING_ADD:
                 return TradeCommandFactory.pendingAdd(accountId, input.symbol, input.orderType,
                         input.volume, input.price, input.sl, input.tp);
+            case PENDING_MODIFY:
+                return TradeCommandFactory.pendingModify(accountId, input.symbol,
+                        input.orderTicket, input.price, input.sl, input.tp);
             case CLOSE_POSITION:
                 return TradeCommandFactory.closePosition(accountId, input.symbol,
                         input.positionTicket, input.volume, input.price);
@@ -477,19 +472,39 @@ final class MarketChartTradeDialogCoordinator {
             return null;
         }
         AccountStatsPreloadManager.Cache latestCache = accountStatsPreloadManager.getLatestCache();
-        if (latestCache != null && latestCache.getSnapshot() != null) {
+        if (isTradeBaselineCacheReady(latestCache)) {
             return latestCache;
         }
-        return accountStatsPreloadManager.fetchForUi(AccountTimeRange.ALL);
+        AccountStatsPreloadManager.Cache fetchedCache = accountStatsPreloadManager.fetchForUi(AccountTimeRange.ALL);
+        return isTradeBaselineCacheReady(fetchedCache) ? fetchedCache : null;
     }
 
     // 从账户缓存里读取当前账号，作为交易命令 accountId。
     @NonNull
     private String resolveTradeAccountId(@Nullable AccountStatsPreloadManager.Cache cache) {
-        if (cache == null || cache.getAccount() == null) {
+        if (!isTradeBaselineCacheReady(cache) || cache == null || cache.getAccount() == null) {
             return "";
         }
         return cache.getAccount().trim();
+    }
+
+    private boolean isTradeBaselineCacheReady(@Nullable AccountStatsPreloadManager.Cache cache) {
+        if (cache == null || cache.getSnapshot() == null || !cache.isConnected()) {
+            return false;
+        }
+        if (!ConfigManager.getInstance(activity.getApplicationContext()).isAccountSessionActive()) {
+            return false;
+        }
+        SessionSummarySnapshot sessionSummary = secureSessionPrefs.loadSessionSummary();
+        if (sessionSummary == null || sessionSummary.getActiveAccount() == null) {
+            return false;
+        }
+        String activeAccount = sessionSummary.getActiveAccount().getLogin();
+        String activeServer = sessionSummary.getActiveAccount().getServer();
+        return activeAccount != null
+                && activeServer != null
+                && activeAccount.trim().equalsIgnoreCase(cache.getAccount().trim())
+                && activeServer.trim().equalsIgnoreCase(cache.getServer().trim());
     }
 
     // 解析当前目标品种，优先使用条目里的 MT5 品种。
@@ -668,8 +683,14 @@ final class MarketChartTradeDialogCoordinator {
                 return "市价卖出";
             case PENDING_ADD:
                 return "新增挂单";
+            case PENDING_MODIFY:
+                return "修改挂单";
+            case CLOSE_POSITION:
+                return "平仓确认";
             case MODIFY_TPSL:
                 return "修改止盈止损";
+            case PENDING_CANCEL:
+                return "删除挂单";
             default:
                 return "交易操作";
         }
@@ -680,6 +701,18 @@ final class MarketChartTradeDialogCoordinator {
     private String resolveTradeDialogHint(@NonNull ChartTradeAction action,
                                           @Nullable PositionItem targetItem,
                                           double referencePrice) {
+        if (action == ChartTradeAction.CLOSE_POSITION) {
+            return "当前品种 " + resolveTradeSymbol(targetItem) + "，将按服务器实时价执行平仓。";
+        }
+        if (action == ChartTradeAction.PENDING_CANCEL) {
+            return "当前品种 " + resolveTradeSymbol(targetItem) + "，确认删除这笔挂单。";
+        }
+        if (action == ChartTradeAction.PENDING_MODIFY) {
+            if (referencePrice > 0d) {
+                return "参考价 $" + FormatUtils.formatPrice(referencePrice) + "，可修改挂单价格、止损或止盈。";
+            }
+            return "请填写新的挂单价格、止损或止盈，提交后将由服务器按 MT5 规则校验。";
+        }
         if (action == ChartTradeAction.MODIFY_TPSL) {
             if (referencePrice > 0d) {
                 return "参考价 $" + FormatUtils.formatPrice(referencePrice) + "，至少填写止损或止盈。";
@@ -702,6 +735,9 @@ final class MarketChartTradeDialogCoordinator {
         if (uiState == TradeExecutionCoordinator.UiState.SETTLED) {
             return "交易已完成";
         }
+        if (uiState == TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC) {
+            return "交易已受理";
+        }
         if (executionResult != null
                 && executionResult.getStateMachine() != null
                 && executionResult.getStateMachine().getStep() == TradeCommandStateMachine.Step.ACCEPTED) {
@@ -717,6 +753,9 @@ final class MarketChartTradeDialogCoordinator {
         }
         if (uiState == TradeExecutionCoordinator.UiState.SETTLED) {
             return "交易已完成";
+        }
+        if (uiState == TradeExecutionCoordinator.UiState.ACCEPTED_AWAITING_SYNC) {
+            return "交易已受理";
         }
         return "结果未确认";
     }

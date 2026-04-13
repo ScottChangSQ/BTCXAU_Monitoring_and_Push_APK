@@ -259,8 +259,8 @@ public class KlineChartView extends View {
     private float candleGap;
     private float minWidth;
     private float maxWidth;
-    private static final float DEFAULT_CANDLE_WIDTH_DP = 0.96f;
-    private static final float DEFAULT_CANDLE_GAP_DP = 0.7067f;
+    private static final float DEFAULT_CANDLE_WIDTH_DP = 1.28f;
+    private static final float DEFAULT_CANDLE_GAP_DP = 0.88f;
     // 图表右侧固定保留绘图区 1/7 的空白，避免最新 K 线贴边。
     private static final float RIGHT_BLANK_RATIO = 1f / 7f;
     private float offsetCandles;

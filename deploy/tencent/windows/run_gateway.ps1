@@ -53,6 +53,15 @@ if (-not (Test-Path $startScript)) {
     throw "start_gateway.ps1 not found: $startScript"
 }
 
+# 显式把当前 bundle 的 manifest 路径传给网关进程，避免运行时按目录层级误判来源。
+$bundleManifestPath = Join-Path (Split-Path -Parent $gatewayDir) "bundle_manifest.json"
+if (Test-Path $bundleManifestPath) {
+    $env:MT5_BUNDLE_MANIFEST_PATH = (Resolve-Path $bundleManifestPath).Path
+}
+else {
+    Remove-Item Env:MT5_BUNDLE_MANIFEST_PATH -ErrorAction SilentlyContinue
+}
+
 $logsDir = Join-Path $gatewayDir "logs"
 New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
 

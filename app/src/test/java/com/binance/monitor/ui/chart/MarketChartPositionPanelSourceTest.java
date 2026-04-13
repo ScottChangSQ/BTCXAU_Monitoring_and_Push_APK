@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.chart;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -12,19 +13,21 @@ import java.nio.file.Paths;
 public class MarketChartPositionPanelSourceTest {
 
     @Test
-    public void updateChartPositionPanelShouldSnapshotInputsBeforeRefreshingCachedLists() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
-                .replace("\r\n", "\n")
-                .replace('\r', '\n');
+    public void chartPositionPanelShouldOnlyBindLightweightStatusAndTradeButtons() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
 
-        int methodStart = source.indexOf("private void updateChartPositionPanel(List<PositionItem> positions,");
-        int nextMethodStart = source.indexOf("private double resolveChartTotalAsset(");
-        String method = source.substring(methodStart, nextMethodStart);
+        assertTrue(source.contains("private void setupChartPositionPanel()"));
+        assertTrue(source.contains("binding.btnChartTradeBuy.setOnClickListener"));
+        assertTrue(source.contains("binding.btnChartTradeSell.setOnClickListener"));
+        assertTrue(source.contains("binding.btnChartTradePending.setOnClickListener"));
+        assertTrue(source.contains("bindChartOverlayStatus(lastChartOverlaySnapshot, masked);"));
+        assertFalse(source.contains("lastChartPositions"));
+        assertFalse(source.contains("lastChartPendingOrders"));
+        assertFalse(source.contains("updateChartPositionPanel("));
+    }
 
-        assertTrue(method.contains("List<PositionItem> positionSnapshot = positions == null"));
-        assertTrue(method.contains("List<PositionItem> pendingSnapshot = pendingOrders == null"));
-        assertTrue(method.contains("lastChartPositions.addAll(positionSnapshot);"));
-        assertTrue(method.contains("lastChartPendingOrders.addAll(pendingSnapshot);"));
+    private static String readUtf8(String relativePath) throws Exception {
+        Path path = Paths.get(relativePath);
+        return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
     }
 }

@@ -277,6 +277,10 @@ public class GatewayV2TradeClient {
         }
         if ("CLOSE_POSITION".equals(action)) {
             requirePositive(command.getVolume(), "volume 必须大于 0");
+            long positionTicket = params.optLong("positionTicket", 0L);
+            if (positionTicket <= 0L) {
+                throw new IllegalArgumentException("positionTicket 不能为空");
+            }
             return;
         }
         if ("PENDING_ADD".equals(action)) {
@@ -294,7 +298,21 @@ public class GatewayV2TradeClient {
             }
             return;
         }
+        if ("PENDING_MODIFY".equals(action)) {
+            long orderTicket = params.optLong("orderTicket", params.optLong("orderId", 0L));
+            if (orderTicket <= 0L) {
+                throw new IllegalArgumentException("orderTicket 不能为空");
+            }
+            if (command.getPrice() <= 0.0d && command.getSl() <= 0.0d && command.getTp() <= 0.0d) {
+                throw new IllegalArgumentException("修改挂单至少要传一个值");
+            }
+            return;
+        }
         if ("MODIFY_TPSL".equals(action)) {
+            long positionTicket = params.optLong("positionTicket", 0L);
+            if (positionTicket <= 0L) {
+                throw new IllegalArgumentException("positionTicket 不能为空");
+            }
             if (command.getSl() <= 0.0d && command.getTp() <= 0.0d) {
                 throw new IllegalArgumentException("修改 TP/SL 至少要传一个值");
             }

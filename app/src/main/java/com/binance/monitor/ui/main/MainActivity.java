@@ -36,7 +36,8 @@ import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.databinding.ActivityMainBinding;
 import com.binance.monitor.databinding.ItemMetricBinding;
 import com.binance.monitor.databinding.DialogAbnormalRecordsBinding;
-import com.binance.monitor.service.MonitorService;
+import com.binance.monitor.service.MonitorServiceController;
+import com.binance.monitor.ui.account.AccountPositionActivity;
 import com.binance.monitor.ui.adapter.AbnormalRecordAdapter;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
@@ -211,27 +212,31 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupBottomNav() {
-        updateBottomTabs(true, false, false, false);
-        binding.tabMarketMonitor.setOnClickListener(v -> updateBottomTabs(true, false, false, false));
+        updateBottomTabs(true, false, false, false, false);
+        binding.tabMarketMonitor.setOnClickListener(v -> updateBottomTabs(true, false, false, false, false));
         binding.tabMarketChart.setOnClickListener(v -> openMarketChart());
         binding.tabAccountStats.setOnClickListener(v -> openAccountStats());
+        binding.tabAccountPosition.setOnClickListener(v -> openAccountPosition());
         binding.tabSettings.setOnClickListener(v -> openSettings());
     }
 
     private void updateBottomTabs(boolean marketSelected,
                                   boolean chartSelected,
                                   boolean accountSelected,
+                                  boolean accountPositionSelected,
                                   boolean settingsSelected) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         BottomTabVisibilityManager.apply(this,
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
+                binding.tabAccountPosition,
                 binding.tabSettings);
         binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
         styleNavTab(binding.tabMarketMonitor, marketSelected);
         styleNavTab(binding.tabMarketChart, chartSelected);
         styleNavTab(binding.tabAccountStats, accountSelected);
+        styleNavTab(binding.tabAccountPosition, accountPositionSelected);
         styleNavTab(binding.tabSettings, settingsSelected);
     }
 
@@ -244,7 +249,7 @@ public class MainActivity extends AppCompatActivity {
         binding.btnRestoreDefault.setOnClickListener(v -> {
             SymbolConfig config = viewModel.resetSymbolConfig(selectedSymbol);
             applySymbolConfig(config);
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+            MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         });
         binding.btnOpenBinance.setOnClickListener(v -> {
             if (!AppLaunchHelper.openBinance(this)) {
@@ -264,7 +269,7 @@ public class MainActivity extends AppCompatActivity {
             }
             viewModel.setUseAndMode(checkedId == R.id.radioLogicAnd);
             applyLogicModeStyles();
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+            MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         });
         binding.switchVolume.setOnCheckedChangeListener((buttonView, isChecked) -> persistIfReady());
         binding.switchAmount.setOnCheckedChangeListener((buttonView, isChecked) -> persistIfReady());
@@ -687,7 +692,7 @@ public class MainActivity extends AppCompatActivity {
         if (binding.spinnerSymbolPicker.getAdapter() instanceof BaseAdapter) {
             ((BaseAdapter) binding.spinnerSymbolPicker.getAdapter()).notifyDataSetChanged();
         }
-        updateBottomTabs(true, false, false, false);
+        updateBottomTabs(true, false, false, false, false);
         applyConnectionChipStyle();
         syncSymbolSelector();
     }
@@ -887,7 +892,7 @@ public class MainActivity extends AppCompatActivity {
         current.setAmountEnabled(binding.switchAmount.isChecked());
         current.setPriceChangeEnabled(binding.switchPriceChange.isChecked());
         viewModel.saveSymbolConfig(current);
-        sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+        MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
     }
 
     private double parseDouble(String value, double fallback) {
@@ -901,18 +906,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void sendServiceAction(String action) {
-        android.content.Intent intent = new android.content.Intent(this, MonitorService.class);
-        intent.setAction(action);
-        ContextCompat.startForegroundService(this, intent);
-    }
-
     // 首次创建页面时确保监控服务已启动，避免直达入口时服务尚未建立主链。
     private void ensureMonitorServiceStarted() {
-        if (MonitorService.isServiceRunning()) {
-            return;
-        }
-        sendServiceAction(AppConstants.ACTION_BOOTSTRAP);
+        MonitorServiceController.ensureStarted(this);
     }
 
     private void openAccountStats() {
@@ -931,6 +927,13 @@ public class MainActivity extends AppCompatActivity {
 
     private void openSettings() {
         android.content.Intent intent = new android.content.Intent(this, SettingsActivity.class);
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
+    }
+
+    private void openAccountPosition() {
+        android.content.Intent intent = new android.content.Intent(this, AccountPositionActivity.class);
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);

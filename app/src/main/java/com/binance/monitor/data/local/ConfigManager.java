@@ -18,6 +18,8 @@ public class ConfigManager {
     private static final String KEY_TAB_MARKET_MONITOR_VISIBLE = "tab_market_monitor_visible";
     private static final String KEY_TAB_MARKET_CHART_VISIBLE = "tab_market_chart_visible";
     private static final String KEY_TAB_ACCOUNT_STATS_VISIBLE = "tab_account_stats_visible";
+    private static final String KEY_TAB_ACCOUNT_POSITION_VISIBLE = "tab_account_position_visible";
+    private static final String KEY_MONITORING_ENABLED = "monitoring_enabled";
     private static final String KEY_ACCOUNT_SESSION_ACTIVE = "account_session_active";
     private static final String KEY_DATA_MASKED = "data_masked";
     private static volatile ConfigManager instance;
@@ -163,6 +165,22 @@ public class ConfigManager {
 
     public void setTabAccountStatsVisible(boolean visible) {
         preferences.edit().putBoolean(KEY_TAB_ACCOUNT_STATS_VISIBLE, visible).apply();
+    }
+
+    public boolean isTabAccountPositionVisible() {
+        return preferences.getBoolean(KEY_TAB_ACCOUNT_POSITION_VISIBLE, true);
+    }
+
+    public void setTabAccountPositionVisible(boolean visible) {
+        preferences.edit().putBoolean(KEY_TAB_ACCOUNT_POSITION_VISIBLE, visible).apply();
+    }
+
+    public boolean isMonitoringEnabled() {
+        return preferences.getBoolean(KEY_MONITORING_ENABLED, true);
+    }
+
+    public void setMonitoringEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_MONITORING_ENABLED, enabled).apply();
     }
 
     public boolean isAccountSessionActive() {

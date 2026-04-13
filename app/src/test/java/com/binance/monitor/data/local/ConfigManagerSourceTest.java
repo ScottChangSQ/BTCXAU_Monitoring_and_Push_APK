@@ -29,6 +29,21 @@ public class ConfigManagerSourceTest {
                 source.contains("public void setMt5GatewayBaseUrl(String baseUrl) {\n        preferences.edit()\n                .putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL)"));
     }
 
+    @Test
+    public void tabVisibilityConfigShouldIncludeAccountPosition() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/ConfigManager.java",
+                "src/main/java/com/binance/monitor/data/local/ConfigManager.java"
+        );
+
+        assertTrue("配置中心应新增账户持仓 tab 的持久化键",
+                source.contains("private static final String KEY_TAB_ACCOUNT_POSITION_VISIBLE = \"tab_account_position_visible\";"));
+        assertTrue("配置中心应提供账户持仓 tab 可见性读取方法",
+                source.contains("public boolean isTabAccountPositionVisible() {"));
+        assertTrue("配置中心应提供账户持仓 tab 可见性写入方法",
+                source.contains("public void setTabAccountPositionVisible(boolean visible) {"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

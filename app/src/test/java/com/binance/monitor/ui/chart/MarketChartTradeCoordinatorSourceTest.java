@@ -3,6 +3,7 @@
  */
 package com.binance.monitor.ui.chart;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -15,27 +16,26 @@ import java.nio.file.Paths;
 public class MarketChartTradeCoordinatorSourceTest {
 
     @Test
-    public void marketChartActivityShouldDelegateTradeFlow() throws Exception {
-        assertTrue("图表交易协调器文件应存在",
-                exists("app/src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java",
-                        "src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java"));
+    public void marketChartActivityShouldDelegateOnlyButtonDrivenTradeFlow() throws Exception {
+        assertTrue(exists("app/src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java",
+                "src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java"));
 
-        String source = readUtf8(
-                "app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java",
-                "src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java"
-        );
-        assertTrue("图表页应持有交易协调器",
-                source.contains("private MarketChartTradeDialogCoordinator tradeDialogCoordinator;"));
-        assertTrue("图表页初始化时应装配交易协调器",
-                source.contains("tradeDialogCoordinator = new MarketChartTradeDialogCoordinator("));
-        assertTrue("持仓操作菜单应委托给交易协调器",
-                source.contains("tradeDialogCoordinator.showPositionActionMenu("));
-        assertTrue("挂单操作菜单应委托给交易协调器",
-                source.contains("tradeDialogCoordinator.showPendingOrderActionMenu("));
-        assertTrue("交易弹窗应委托给交易协调器",
-                source.contains("tradeDialogCoordinator.showTradeCommandDialog("));
-        assertTrue("销毁时应委托协调器取消交易任务",
-                source.contains("tradeDialogCoordinator.cancelTradeTasks();"));
+        String source = readUtf8("app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java",
+                "src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        assertTrue(source.contains("private MarketChartTradeDialogCoordinator tradeDialogCoordinator;"));
+        assertTrue(source.contains("tradeDialogCoordinator = new MarketChartTradeDialogCoordinator("));
+        assertTrue(source.contains("tradeDialogCoordinator.showTradeCommandDialog("));
+        assertTrue(source.contains("tradeDialogCoordinator.cancelTradeTasks();"));
+        assertFalse(source.contains("tradeDialogCoordinator.showPositionActionMenu("));
+        assertFalse(source.contains("tradeDialogCoordinator.showPendingOrderActionMenu("));
+    }
+
+    @Test
+    public void tradeCoordinatorShouldNotKeepLegacyListActionHelpers() throws Exception {
+        String source = readUtf8("app/src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java",
+                "src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
+        assertFalse(source.contains("buildClosePositionInput("));
+        assertFalse(source.contains("buildPendingCancelInput("));
     }
 
     private static boolean exists(String... candidates) {

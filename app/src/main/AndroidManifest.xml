@@ -52,6 +52,11 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.account.AccountPositionActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.chart.MarketChartActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

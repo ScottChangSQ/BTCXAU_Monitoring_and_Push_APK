@@ -13,6 +13,7 @@ import v2_trade_models
 ACTION_OPEN_MARKET = "OPEN_MARKET"
 ACTION_CLOSE_POSITION = "CLOSE_POSITION"
 ACTION_PENDING_ADD = "PENDING_ADD"
+ACTION_PENDING_MODIFY = "PENDING_MODIFY"
 ACTION_PENDING_CANCEL = "PENDING_CANCEL"
 ACTION_MODIFY_TPSL = "MODIFY_TPSL"
 
@@ -20,6 +21,7 @@ SUPPORTED_ACTIONS = {
     ACTION_OPEN_MARKET,
     ACTION_CLOSE_POSITION,
     ACTION_PENDING_ADD,
+    ACTION_PENDING_MODIFY,
     ACTION_PENDING_CANCEL,
     ACTION_MODIFY_TPSL,
 }
@@ -205,7 +207,7 @@ def prepare_trade_request(
 
     symbol = str(params.get("symbol") or "").strip().upper()
 
-    if action in {ACTION_OPEN_MARKET, ACTION_PENDING_ADD} and not symbol:
+    if action in {ACTION_OPEN_MARKET, ACTION_PENDING_ADD, ACTION_PENDING_MODIFY} and not symbol:
         return {
             "command": command,
             "request": None,
@@ -261,7 +263,7 @@ def prepare_trade_request(
         if volume_error is not None:
             return {"command": command, "request": None, "error": volume_error}
 
-    if action in {ACTION_OPEN_MARKET, ACTION_PENDING_ADD, ACTION_MODIFY_TPSL}:
+    if action in {ACTION_OPEN_MARKET, ACTION_PENDING_ADD, ACTION_PENDING_MODIFY, ACTION_MODIFY_TPSL}:
         stop_error = _validate_stops(params, symbol_info)
         if stop_error is not None:
             return {"command": command, "request": None, "error": stop_error}
@@ -289,6 +291,7 @@ def _request_builder(
     """按 action 构建 MT5 请求。"""
     trade_action_deal = _to_int(getattr(mt5_module, "TRADE_ACTION_DEAL", 1), 1)
     trade_action_pending = _to_int(getattr(mt5_module, "TRADE_ACTION_PENDING", 5), 5)
+    trade_action_modify = _to_int(getattr(mt5_module, "TRADE_ACTION_MODIFY", 7), 7)
     trade_action_remove = _to_int(getattr(mt5_module, "TRADE_ACTION_REMOVE", 8), 8)
     trade_action_sltp = _to_int(getattr(mt5_module, "TRADE_ACTION_SLTP", 6), 6)
     order_type_buy = _to_int(getattr(mt5_module, "ORDER_TYPE_BUY", 0), 0)
@@ -414,6 +417,39 @@ def _request_builder(
             }
         request = dict(base)
         request.update({"action": trade_action_remove, "order": order_ticket})
+        return {"request": request, "error": None}
+
+    if action == ACTION_PENDING_MODIFY:
+        order_ticket = _to_int(params.get("orderTicket") or params.get("orderId"), 0)
+        price = _to_float(params.get("price"), 0.0)
+        sl = _to_float(params.get("sl"), 0.0)
+        tp = _to_float(params.get("tp"), 0.0)
+        if order_ticket <= 0:
+            return {
+                "request": None,
+                "error": v2_trade_models.build_error(
+                    v2_trade_models.ERROR_INVALID_ORDER,
+                    "修改挂单需要 orderTicket",
+                ),
+            }
+        if price <= 0.0 and sl <= 0.0 and tp <= 0.0:
+            return {
+                "request": None,
+                "error": v2_trade_models.build_error(
+                    v2_trade_models.ERROR_INVALID_PARAMS,
+                    "修改挂单至少要传一个值",
+                ),
+            }
+        request = dict(base)
+        request.update({"action": trade_action_modify, "order": order_ticket})
+        if symbol:
+            request["symbol"] = symbol
+        if price > 0.0:
+            request["price"] = price
+        if sl > 0.0:
+            request["sl"] = sl
+        if tp > 0.0:
+            request["tp"] = tp
         return {"request": request, "error": None}
 
     if action == ACTION_MODIFY_TPSL:

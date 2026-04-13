@@ -15,6 +15,8 @@ public class V2StreamSequenceGuardTest {
         V2StreamSequenceGuard guard = new V2StreamSequenceGuard();
 
         assertTrue(guard.shouldApply(10L));
+        assertTrue(guard.shouldApply(10L));
+        guard.commitApplied(10L);
         assertFalse(guard.shouldApply(10L));
         assertFalse(guard.shouldApply(9L));
         assertTrue(guard.shouldApply(11L));
@@ -25,6 +27,7 @@ public class V2StreamSequenceGuardTest {
         V2StreamSequenceGuard guard = new V2StreamSequenceGuard();
 
         assertTrue(guard.shouldApply(5L));
+        guard.commitApplied(5L);
         guard.reset();
         assertTrue(guard.shouldApply(1L));
     }

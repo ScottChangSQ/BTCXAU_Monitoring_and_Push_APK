@@ -21,8 +21,9 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.local.db.repository.ChartHistoryRepository;
 import com.binance.monitor.databinding.ActivitySettingsDetailBinding;
-import com.binance.monitor.service.MonitorService;
+import com.binance.monitor.service.MonitorServiceController;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.ui.account.AccountPositionActivity;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
@@ -97,6 +98,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.tabMarketMonitor.setOnClickListener(v -> openMarketMonitor());
         binding.tabMarketChart.setOnClickListener(v -> openMarketChart());
         binding.tabAccountStats.setOnClickListener(v -> openAccountStats());
+        binding.tabAccountPosition.setOnClickListener(v -> openAccountPosition());
         binding.tabSettings.setOnClickListener(v -> openSettingsHome());
     }
 
@@ -107,11 +109,13 @@ public class SettingsSectionActivity extends AppCompatActivity {
                 binding.tabMarketMonitor,
                 binding.tabMarketChart,
                 binding.tabAccountStats,
+                binding.tabAccountPosition,
                 binding.tabSettings);
         binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
         styleNavTab(binding.tabMarketMonitor, false);
         styleNavTab(binding.tabMarketChart, false);
         styleNavTab(binding.tabAccountStats, false);
+        styleNavTab(binding.tabAccountPosition, false);
         styleNavTab(binding.tabSettings, true);
     }
 
@@ -132,7 +136,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
                 return;
             }
             viewModel.setFloatingEnabled(isChecked);
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+            MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         });
         binding.seekFloatingAlpha.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
             @Override
@@ -141,7 +145,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
                 binding.tvAlphaValue.setText(getString(R.string.alpha_suffix, safeValue));
                 if (fromUser && !applying) {
                     viewModel.setFloatingAlpha(safeValue);
-                    sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+                    MonitorServiceController.dispatch(SettingsSectionActivity.this, AppConstants.ACTION_REFRESH_CONFIG);
                 }
             }
 
@@ -158,14 +162,14 @@ public class SettingsSectionActivity extends AppCompatActivity {
                 return;
             }
             viewModel.setShowBtc(isChecked);
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+            MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         });
         binding.switchShowXau.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (applying) {
                 return;
             }
             viewModel.setShowXau(isChecked);
-            sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+            MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         });
         binding.switchTabMarketMonitor.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (applying) {
@@ -193,11 +197,22 @@ public class SettingsSectionActivity extends AppCompatActivity {
             if (applying) {
                 return;
             }
-            if (!canApplyTabVisibility("account", isChecked)) {
+            if (!canApplyTabVisibility("accountStats", isChecked)) {
                 resetTabSwitches();
                 return;
             }
             viewModel.setTabAccountStatsVisible(isChecked);
+            updateBottomTabs();
+        });
+        binding.switchTabAccountPosition.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (applying) {
+                return;
+            }
+            if (!canApplyTabVisibility("accountPosition", isChecked)) {
+                resetTabSwitches();
+                return;
+            }
+            viewModel.setTabAccountPositionVisible(isChecked);
             updateBottomTabs();
         });
     }
@@ -215,8 +230,9 @@ public class SettingsSectionActivity extends AppCompatActivity {
     private boolean canApplyTabVisibility(String tabKey, boolean targetVisible) {
         boolean marketVisible = "market".equals(tabKey) ? targetVisible : viewModel.isTabMarketMonitorVisible();
         boolean chartVisible = "chart".equals(tabKey) ? targetVisible : viewModel.isTabMarketChartVisible();
-        boolean accountVisible = "account".equals(tabKey) ? targetVisible : viewModel.isTabAccountStatsVisible();
-        if (marketVisible || chartVisible || accountVisible) {
+        boolean accountStatsVisible = "accountStats".equals(tabKey) ? targetVisible : viewModel.isTabAccountStatsVisible();
+        boolean accountPositionVisible = "accountPosition".equals(tabKey) ? targetVisible : viewModel.isTabAccountPositionVisible();
+        if (marketVisible || chartVisible || accountStatsVisible || accountPositionVisible) {
             return true;
         }
         Toast.makeText(this, "至少保留一个业务 Tab 页", Toast.LENGTH_SHORT).show();
@@ -229,6 +245,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.switchTabMarketMonitor.setChecked(viewModel.isTabMarketMonitorVisible());
         binding.switchTabMarketChart.setChecked(viewModel.isTabMarketChartVisible());
         binding.switchTabAccountStats.setChecked(viewModel.isTabAccountStatsVisible());
+        binding.switchTabAccountPosition.setChecked(viewModel.isTabAccountPositionVisible());
         applying = false;
     }
 
@@ -342,6 +359,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.switchTabMarketMonitor.setChecked(viewModel.isTabMarketMonitorVisible());
         binding.switchTabMarketChart.setChecked(viewModel.isTabMarketChartVisible());
         binding.switchTabAccountStats.setChecked(viewModel.isTabAccountStatsVisible());
+        binding.switchTabAccountPosition.setChecked(viewModel.isTabAccountPositionVisible());
         lockGatewayEntrySection();
         applying = false;
     }
@@ -432,7 +450,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         viewModel.setColorPalette(paletteId);
         ThemeLauncherIconManager.apply(this, paletteId);
         applyPaletteStyles();
-        sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+        MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         Toast.makeText(this, "主题已切换为 " + UiPaletteManager.findById(paletteId).label, Toast.LENGTH_SHORT).show();
     }
 
@@ -442,15 +460,8 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.etMt5GatewayUrl.setText(AppConstants.MT5_GATEWAY_BASE_URL);
         binding.etMt5GatewayUrl.setSelection(AppConstants.MT5_GATEWAY_BASE_URL.length());
         AccountStatsPreloadManager.getInstance(getApplicationContext()).clearLatestCache();
-        sendServiceAction(AppConstants.ACTION_REFRESH_CONFIG);
+        MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         Toast.makeText(this, getString(R.string.mt5_gateway_saved, AppConstants.MT5_GATEWAY_BASE_URL), Toast.LENGTH_SHORT).show();
-    }
-
-    // 让前台服务立即应用新配置。
-    private void sendServiceAction(String action) {
-        Intent intent = new Intent(this, MonitorService.class);
-        intent.setAction(action);
-        ContextCompat.startForegroundService(this, intent);
     }
 
     // 根据分类控制可见模块。
@@ -478,6 +489,13 @@ public class SettingsSectionActivity extends AppCompatActivity {
 
     private void openMarketChart() {
         Intent intent = new Intent(this, MarketChartActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
+    }
+
+    private void openAccountPosition() {
+        Intent intent = new Intent(this, AccountPositionActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
         overridePendingTransition(0, 0);

@@ -26,7 +26,7 @@ public class MonitorRepository {
     private final LogManager logManager;
     private final AbnormalRecordManager recordManager;
     private final MutableLiveData<String> connectionStatus = new MutableLiveData<>("连接中");
-    private final MutableLiveData<Boolean> monitoringEnabled = new MutableLiveData<>(true);
+    private final MutableLiveData<Boolean> monitoringEnabled;
     private final MutableLiveData<Long> lastUpdateTime = new MutableLiveData<>(0L);
     private final MutableLiveData<Map<String, Double>> displayPrices = new MutableLiveData<>(Collections.emptyMap());
     private final MutableLiveData<Map<String, KlineData>> displayKlines = new MutableLiveData<>(Collections.emptyMap());
@@ -40,6 +40,7 @@ public class MonitorRepository {
         configManager = ConfigManager.getInstance(appContext);
         logManager = LogManager.getInstance(appContext);
         recordManager = AbnormalRecordManager.getInstance(appContext);
+        monitoringEnabled = new MutableLiveData<>(configManager.isMonitoringEnabled());
     }
 
     public static MonitorRepository getInstance(Context context) {
@@ -120,6 +121,7 @@ public class MonitorRepository {
     }
 
     public void setMonitoringEnabled(boolean enabled) {
+        configManager.setMonitoringEnabled(enabled);
         monitoringEnabled.postValue(enabled);
     }
 

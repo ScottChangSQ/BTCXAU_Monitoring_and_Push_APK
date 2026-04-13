@@ -4,9 +4,15 @@
         android:id="@+id/nav_market_monitor"
         android:title="@string/nav_market_monitor" />
     <item
+        android:id="@+id/nav_market_chart"
+        android:title="@string/nav_market_chart" />
+    <item
+        android:id="@+id/nav_account_position"
+        android:title="@string/nav_account_position" />
+    <item
         android:id="@+id/nav_account_stats"
         android:title="@string/nav_account_stats" />
     <item
         android:id="@+id/nav_settings"
-        android:title="设置" />
+        android:title="@string/nav_settings" />
 </menu>

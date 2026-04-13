@@ -33,7 +33,14 @@ class AdminPanelTests(unittest.TestCase):
         requirements_path = fixture_dir / "requirements.txt"
         requirements_path.write_text("", encoding="utf-8")
         (fixture_dir / ".requirements.sha256").write_text(self._requirements_hash(requirements_path), encoding="utf-8")
-        (fixture_dir / ".env").write_text("GATEWAY_HOST=127.0.0.1\n", encoding="utf-8")
+        (fixture_dir / ".env").write_text(
+            "GATEWAY_HOST=127.0.0.1\n"
+            "MT5_LOGIN=7400048\n"
+            "MT5_PASSWORD=demo-password\n"
+            "MT5_SERVER=ICMarketsSC-MT5-6\n"
+            "MT5_SERVER_TIMEZONE=Asia/Seoul\n",
+            encoding="utf-8",
+        )
         (fixture_dir / target_script_name).write_text("print('fixture ok')\n", encoding="utf-8")
         subprocess.run([sys.executable, "-m", "venv", str(fixture_dir / ".venv")], check=True, cwd=fixture_dir)
         return fixture_dir
@@ -66,6 +73,47 @@ class AdminPanelTests(unittest.TestCase):
 
         self.assertEqual({"gateway", "mt5", "caddy", "nginx"}, set(registry.keys()))
         self.assertIn("Start-ScheduledTask", registry["gateway"]["actions"]["start"])
+
+    def test_build_component_registry_should_stop_gateway_by_bundle_python_path_even_when_script_name_is_relative(self):
+        registry = admin_panel.build_component_registry(
+            env_map={"ADMIN_GATEWAY_TASK_NAME": "MT5GatewayAutoStart"},
+            repo_root="C:/mt5_bundle/windows_server_bundle",
+        )
+
+        stop_command = registry["gateway"]["actions"]["stop"]
+        self.assertIn("$_.ExecutablePath", stop_command)
+        self.assertIn("server_v2.py", stop_command)
+        self.assertIn("bridge\\mt5_gateway", stop_command.replace("/", "\\"))
+        self.assertNotIn("??", stop_command)
+
+    def test_build_process_component_should_scope_default_stop_to_exact_executable_path(self):
+        component = admin_panel.build_process_component(
+            label="MT5 客户端",
+            process_names=["terminal64"],
+            start_cmd="",
+            stop_cmd="",
+            restart_cmd="",
+            exe_path="C:/Program Files/MetaTrader 5/terminal64.exe",
+        )
+
+        stop_command = component["actions"]["stop"]
+        self.assertIn("$_.ExecutablePath", stop_command)
+        self.assertIn("terminal64.exe", stop_command)
+        self.assertIn("-eq", stop_command)
+        self.assertNotIn("Get-Process -Name", stop_command)
+
+    def test_build_component_registry_should_scope_caddy_start_and_stop_to_configured_executable_path(self):
+        registry = admin_panel.build_component_registry(
+            env_map={"ADMIN_CADDY_PATH": "C:/mt5_bundle/caddy.exe"},
+            repo_root="C:/mt5_bundle/windows_server_bundle",
+        )
+
+        start_command = registry["caddy"]["actions"]["start"]
+        stop_command = registry["caddy"]["actions"]["stop"]
+        self.assertIn("$_.ExecutablePath", start_command)
+        self.assertIn("$_.ExecutablePath", stop_command)
+        self.assertNotIn("Get-Process caddy", start_command)
+        self.assertNotIn("Get-Process -Name", stop_command)
 
     def test_build_component_registry_should_prefer_service_controls_when_configured(self):
         registry = admin_panel.build_component_registry(
@@ -131,6 +179,26 @@ class AdminPanelTests(unittest.TestCase):
 
         selected_policy = set_mock.call_args[0][0]
         self.assertIsInstance(selected_policy, _FakeSelectorPolicy)
+
+    def test_read_process_status_should_prefer_exact_executable_path_when_available(self):
+        with mock.patch.object(
+            admin_panel,
+            "run_powershell_command",
+            return_value={
+                "ok": True,
+                "code": 0,
+                "stdout": '{"Name":"caddy.exe","ProcessId":42,"ExecutablePath":"C:\\\\mt5_bundle\\\\caddy.exe"}',
+                "stderr": "",
+                "command": "",
+            },
+        ) as run_mock:
+            state = admin_panel.read_process_status(["caddy"], exe_path="C:/mt5_bundle/caddy.exe")
+
+        command = run_mock.call_args[0][0]
+        self.assertIn("$_.ExecutablePath", command)
+        self.assertNotIn("Get-Process -Name", command)
+        self.assertTrue(state["running"])
+        self.assertEqual("运行中 (1)", state["statusText"])
 
     def test_admin_index_should_use_relative_asset_paths_for_subpath_proxy(self):
         html = admin_panel.index()
@@ -232,6 +300,8 @@ class AdminPanelTests(unittest.TestCase):
         self.assertIn("--disable-pip-version-check", content)
         self.assertIn("public static int Run(string filePath, string argumentsLine, string workingDirectory)", content)
         self.assertIn("RedirectStandardError = true", content)
+        self.assertIn("MT5_SERVER_TIMEZONE", content)
+        self.assertIn("required env missing or blank", content)
 
     def test_start_gateway_script_should_not_depend_on_get_file_hash_cmdlet(self):
         fixture_dir = self._build_start_script_fixture("start_gateway.ps1", "server_v2.py")

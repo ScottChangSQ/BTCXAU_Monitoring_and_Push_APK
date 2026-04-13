@@ -20,6 +20,10 @@ public interface TradeHistoryDao {
     @Query("SELECT * FROM trade_history ORDER BY closeTime DESC, timestamp DESC")
     List<TradeHistoryEntity> loadAll();
 
+    // 按身份前缀读取对应账户的交易历史。
+    @Query("SELECT * FROM trade_history WHERE tradeKey LIKE :identityPrefix || '%' ORDER BY closeTime DESC, timestamp DESC")
+    List<TradeHistoryEntity> loadAll(String identityPrefix);
+
     // 批量写入或覆盖同稳定键的交易。
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void upsertAll(List<TradeHistoryEntity> items);
@@ -27,4 +31,8 @@ public interface TradeHistoryDao {
     // 清空全部历史交易。
     @Query("DELETE FROM trade_history")
     int clearAll();
+
+    // 清空某个身份分区下的历史交易。
+    @Query("DELETE FROM trade_history WHERE tradeKey LIKE :identityPrefix || '%'")
+    int clearAll(String identityPrefix);
 }

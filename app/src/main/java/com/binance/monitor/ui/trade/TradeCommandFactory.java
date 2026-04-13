@@ -48,10 +48,11 @@ public final class TradeCommandFactory {
                                              long positionTicket,
                                              double volume,
                                              double price) {
-        JSONObject params = createBaseParams(symbol, volume, price, 0d, 0d);
-        if (positionTicket > 0L) {
-            putQuietly(params, "positionTicket", positionTicket);
+        if (positionTicket <= 0L) {
+            throw new IllegalArgumentException("positionTicket 不能为空");
         }
+        JSONObject params = createBaseParams(symbol, volume, price, 0d, 0d);
+        putQuietly(params, "positionTicket", positionTicket);
         return new TradeCommand(
                 nextRequestId(),
                 accountId,
@@ -110,6 +111,35 @@ public final class TradeCommandFactory {
         );
     }
 
+    // 创建挂单修改命令，只修改当前挂单的价格和 TP/SL。
+    public static TradeCommand pendingModify(String accountId,
+                                             String symbol,
+                                             long orderTicket,
+                                             double price,
+                                             double sl,
+                                             double tp) {
+        if (orderTicket <= 0L) {
+            throw new IllegalArgumentException("orderTicket 不能为空");
+        }
+        if (price <= 0d && sl <= 0d && tp <= 0d) {
+            throw new IllegalArgumentException("修改挂单至少要传一个值");
+        }
+        JSONObject params = createBaseParams(symbol, 0d, price, sl, tp);
+        putQuietly(params, "orderTicket", orderTicket);
+        putQuietly(params, "orderId", orderTicket);
+        return new TradeCommand(
+                nextRequestId(),
+                accountId,
+                symbol,
+                "PENDING_MODIFY",
+                0d,
+                price,
+                sl,
+                tp,
+                params
+        );
+    }
+
     // 创建 TP/SL 修改命令。
     public static TradeCommand modifyTpSl(String accountId,
                                           String symbol,
@@ -117,10 +147,11 @@ public final class TradeCommandFactory {
                                           double referencePrice,
                                           double sl,
                                           double tp) {
-        JSONObject params = createBaseParams(symbol, 0d, referencePrice, sl, tp);
-        if (positionTicket > 0L) {
-            putQuietly(params, "positionTicket", positionTicket);
+        if (positionTicket <= 0L) {
+            throw new IllegalArgumentException("positionTicket 不能为空");
         }
+        JSONObject params = createBaseParams(symbol, 0d, referencePrice, sl, tp);
+        putQuietly(params, "positionTicket", positionTicket);
         return new TradeCommand(
                 nextRequestId(),
                 accountId,
@@ -171,6 +202,18 @@ public final class TradeCommandFactory {
         }
         if ("PENDING_CANCEL".equals(action)) {
             return "撤销挂单 " + symbol + " #" + params.optLong("orderTicket", 0L);
+        }
+        if ("PENDING_MODIFY".equals(action)) {
+            return "修改挂单 "
+                    + symbol
+                    + " #"
+                    + params.optLong("orderTicket", 0L)
+                    + " 价格="
+                    + formatOptionalPrice(command.getPrice())
+                    + " TP="
+                    + formatOptionalPrice(command.getTp())
+                    + " SL="
+                    + formatOptionalPrice(command.getSl());
         }
         if ("MODIFY_TPSL".equals(action)) {
             return "修改止盈止损 "

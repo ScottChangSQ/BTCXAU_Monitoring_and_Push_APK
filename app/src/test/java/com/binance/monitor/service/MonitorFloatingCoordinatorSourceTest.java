@@ -28,6 +28,22 @@ public class MonitorFloatingCoordinatorSourceTest {
         assertTrue(source.contains("floatingWindowManager.destroy();"));
     }
 
+    @Test
+    public void emptyStreamSnapshotShouldWaitForCanonicalCacheBeforeShowingNoPositions() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private List<PositionItem> resolveFloatingPositions(@Nullable AccountStatsPreloadManager.Cache cache) {"));
+        assertTrue(source.contains("List<PositionItem> streamPositions = dataSource.copyStreamPositions();"));
+        assertTrue(source.contains("List<PositionItem> cachePositions = copyCachePositions(cache);"));
+        assertTrue(source.contains("boolean cacheCaughtUp = cache != null\n                && cache.getFetchedAt() >= dataSource.getStreamPositionsUpdatedAt();"));
+        assertTrue(source.contains("if (!streamPositions.isEmpty()) {\n            return streamPositions;\n        }"));
+        assertTrue(source.contains("if (!cachePositions.isEmpty()) {\n            return cachePositions;\n        }"));
+        assertTrue(source.contains("if (dataSource.hasStreamAccountSnapshot() && !cacheCaughtUp) {\n            return streamPositions;\n        }"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

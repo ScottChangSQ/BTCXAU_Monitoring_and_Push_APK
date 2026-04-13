@@ -17,6 +17,7 @@ public final class BottomTabVisibilityManager {
                              @Nullable TextView tabMarketMonitor,
                              @Nullable TextView tabMarketChart,
                              @Nullable TextView tabAccountStats,
+                             @Nullable TextView tabAccountPosition,
                              @Nullable TextView tabSettings) {
         if (context == null) {
             return;
@@ -24,13 +25,15 @@ public final class BottomTabVisibilityManager {
         ConfigManager config = ConfigManager.getInstance(context.getApplicationContext());
         boolean showMarket = config.isTabMarketMonitorVisible();
         boolean showChart = config.isTabMarketChartVisible();
-        boolean showAccount = config.isTabAccountStatsVisible();
-        if (!showMarket && !showChart && !showAccount) {
+        boolean showAccountStats = config.isTabAccountStatsVisible();
+        boolean showAccountPosition = config.isTabAccountPositionVisible();
+        if (!showMarket && !showChart && !showAccountStats && !showAccountPosition) {
             showMarket = true;
         }
         setVisibility(tabMarketMonitor, showMarket);
         setVisibility(tabMarketChart, showChart);
-        setVisibility(tabAccountStats, showAccount);
+        setVisibility(tabAccountStats, showAccountStats);
+        setVisibility(tabAccountPosition, showAccountPosition);
         setVisibility(tabSettings, true);
     }
 

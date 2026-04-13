@@ -150,12 +150,7 @@ final class MonitorFloatingCoordinator {
     // 组装一份统一悬浮窗快照，确保所有字段在同一次 UI 刷新中一起变化。
     private FloatingWindowSnapshot buildFloatingSnapshot() {
         AccountStatsPreloadManager.Cache cache = dataSource.getLatestAccountCache();
-        List<PositionItem> positions = dataSource.copyStreamPositions();
-        if (!dataSource.hasStreamAccountSnapshot() && positions.isEmpty()) {
-            positions = cache == null || cache.getSnapshot() == null || cache.getSnapshot().getPositions() == null
-                    ? new ArrayList<>()
-                    : cache.getSnapshot().getPositions();
-        }
+        List<PositionItem> positions = resolveFloatingPositions(cache);
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 positions,
                 repository == null ? null : repository.getDisplayOverviewKlineSnapshot(),
@@ -169,6 +164,32 @@ final class MonitorFloatingCoordinator {
                 Math.max(resolveFloatingUpdatedAt(cards), dataSource.getStreamPositionsUpdatedAt()),
                 cards
         );
+    }
+
+    // 统一决定悬浮窗使用哪一份持仓真值，避免空 stream 快照瞬时覆盖掉已确认的账户缓存。
+    private List<PositionItem> resolveFloatingPositions(@Nullable AccountStatsPreloadManager.Cache cache) {
+        List<PositionItem> streamPositions = dataSource.copyStreamPositions();
+        List<PositionItem> cachePositions = copyCachePositions(cache);
+        boolean cacheCaughtUp = cache != null
+                && cache.getFetchedAt() >= dataSource.getStreamPositionsUpdatedAt();
+        if (!streamPositions.isEmpty()) {
+            return streamPositions;
+        }
+        if (!cachePositions.isEmpty()) {
+            return cachePositions;
+        }
+        if (dataSource.hasStreamAccountSnapshot() && !cacheCaughtUp) {
+            return streamPositions;
+        }
+        return cachePositions;
+    }
+
+    // 复制账户正式缓存里的持仓列表，避免悬浮窗直接持有可变对象引用。
+    private List<PositionItem> copyCachePositions(@Nullable AccountStatsPreloadManager.Cache cache) {
+        if (cache == null || cache.getSnapshot() == null || cache.getSnapshot().getPositions() == null) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(cache.getSnapshot().getPositions());
     }
 
     // 从产品卡片里挑出本轮悬浮窗的统一刷新时间。

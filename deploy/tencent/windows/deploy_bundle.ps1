@@ -294,6 +294,82 @@ function Test-PsScriptSyntax {
     }
 }
 
+function Get-WebRequestFailureMessage {
+    param(
+        [System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    if ($null -eq $ErrorRecord) {
+        return "未知错误"
+    }
+
+    $exception = $ErrorRecord.Exception
+    if ($null -eq $exception) {
+        return $ErrorRecord.ToString()
+    }
+
+    $response = $exception.Response
+    if ($null -ne $response) {
+        try {
+            $statusCode = ""
+            $statusDescription = ""
+            if ($response.PSObject.Properties.Name -contains "StatusCode") {
+                $statusCode = [string]$response.StatusCode
+            }
+            if ($response.PSObject.Properties.Name -contains "StatusDescription") {
+                $statusDescription = [string]$response.StatusDescription
+            }
+
+            $body = ""
+            if ($response.PSObject.Methods.Name -contains "GetResponseStream") {
+                $stream = $response.GetResponseStream()
+                if ($null -ne $stream) {
+                    try {
+                        $reader = New-Object System.IO.StreamReader($stream, [System.Text.UTF8Encoding]::new($false))
+                        try {
+                            $body = $reader.ReadToEnd().Trim()
+                        }
+                        finally {
+                            $reader.Dispose()
+                        }
+                    }
+                    finally {
+                        $stream.Dispose()
+                    }
+                }
+            }
+
+            $message = "HTTP $statusCode"
+            if (-not [string]::IsNullOrWhiteSpace($statusDescription)) {
+                $message += " $statusDescription"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($body)) {
+                $message += " | $body"
+            }
+            return $message
+        }
+        catch {
+        }
+    }
+
+    if ($exception.InnerException -and -not [string]::IsNullOrWhiteSpace($exception.InnerException.Message)) {
+        return $exception.InnerException.Message
+    }
+    if (-not [string]::IsNullOrWhiteSpace($exception.Message)) {
+        return $exception.Message
+    }
+    return $ErrorRecord.ToString()
+}
+
+function Start-HealthProbe {
+    param(
+        $Context,
+        [string]$Label
+    )
+
+    Write-DeployLog -Context $Context -Message ("健康检查开始: " + $Label)
+}
+
 function Wait-HttpOk {
     param(
         [string]$Url,
@@ -301,19 +377,25 @@ function Wait-HttpOk {
     )
 
     $deadline = (Get-Date).AddSeconds($MaxSeconds)
+    $lastFailure = ""
     while ((Get-Date) -lt $deadline) {
         try {
             $resp = Invoke-WebRequest $Url -UseBasicParsing -TimeoutSec 5
             if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 300) {
                 return $resp
             }
+            $lastFailure = "HTTP $($resp.StatusCode)"
         }
         catch {
+            $lastFailure = Get-WebRequestFailureMessage -ErrorRecord $_
         }
         Start-Sleep -Seconds 2
     }
 
-    throw "等待接口超时: $Url"
+    if ([string]::IsNullOrWhiteSpace($lastFailure)) {
+        throw "等待接口超时: $Url"
+    }
+    throw "等待接口超时: $Url | 最后错误: $lastFailure"
 }
 
 function Wait-HttpJsonFieldMatch {
@@ -325,10 +407,12 @@ function Wait-HttpJsonFieldMatch {
     )
 
     $deadline = (Get-Date).AddSeconds($MaxSeconds)
+    $lastFailure = ""
     while ((Get-Date) -lt $deadline) {
         try {
             $resp = Invoke-WebRequest $Url -UseBasicParsing -TimeoutSec 5
             if ($resp.StatusCode -lt 200 -or $resp.StatusCode -ge 300) {
+                $lastFailure = "HTTP $($resp.StatusCode)"
                 throw "HTTP $($resp.StatusCode)"
             }
             $payload = $resp.Content | ConvertFrom-Json
@@ -340,13 +424,21 @@ function Wait-HttpJsonFieldMatch {
                     FieldValue = $actualValue
                 }
             }
+            $lastFailure = ("字段 {0} 实际值为 {1}，期望 {2}" -f $FieldName, $actualValue, $ExpectedValue)
         }
         catch {
+            $failureMessage = Get-WebRequestFailureMessage -ErrorRecord $_
+            if (-not [string]::IsNullOrWhiteSpace($failureMessage)) {
+                $lastFailure = $failureMessage
+            }
         }
         Start-Sleep -Seconds 2
     }
 
-    throw "等待接口字段匹配超时: $Url -> $FieldName"
+    if ([string]::IsNullOrWhiteSpace($lastFailure)) {
+        throw "等待接口字段匹配超时: $Url -> $FieldName"
+    }
+    throw "等待接口字段匹配超时: $Url -> $FieldName | 最后错误: $lastFailure"
 }
 
 function Invoke-HttpsLoopbackRequest {
@@ -416,19 +508,27 @@ function Wait-HttpsLoopbackOk {
     )
 
     $deadline = (Get-Date).AddSeconds($MaxSeconds)
+    $lastFailure = ""
     while ((Get-Date) -lt $deadline) {
         try {
             $response = Invoke-HttpsLoopbackRequest -HostName $HostName -Path $Path
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
                 return $response
             }
+            $lastFailure = "HTTP $($response.StatusCode)"
         }
         catch {
+            if ($_.Exception -and -not [string]::IsNullOrWhiteSpace($_.Exception.Message)) {
+                $lastFailure = $_.Exception.Message
+            }
         }
         Start-Sleep -Seconds 2
     }
 
-    throw "等待本机 HTTPS SNI 接口超时: https://$HostName$Path"
+    if ([string]::IsNullOrWhiteSpace($lastFailure)) {
+        throw "等待本机 HTTPS SNI 接口超时: https://$HostName$Path"
+    }
+    throw "等待本机 HTTPS SNI 接口超时: https://$HostName$Path | 最后错误: $lastFailure"
 }
 
 function Wait-WebSocketMessage {
@@ -437,46 +537,69 @@ function Wait-WebSocketMessage {
         [int]$MaxSeconds = 60
     )
 
-    $client = [System.Net.WebSockets.ClientWebSocket]::new()
-    $cts = [System.Threading.CancellationTokenSource]::new()
-    $cts.CancelAfter([TimeSpan]::FromSeconds($MaxSeconds))
-    try {
-        $client.ConnectAsync([Uri]$Url, $cts.Token).GetAwaiter().GetResult()
-        $buffer = New-Object byte[] 65536
-        $segment = [ArraySegment[byte]]::new($buffer)
-        $builder = New-Object System.Text.StringBuilder
-        do {
-            $result = $client.ReceiveAsync($segment, $cts.Token).GetAwaiter().GetResult()
-            if ($result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
-                throw "WebSocket 在收到首条消息前被关闭"
-            }
-            $null = $builder.Append([System.Text.Encoding]::UTF8.GetString($buffer, 0, $result.Count))
-        } while (-not $result.EndOfMessage)
+    $deadline = (Get-Date).AddSeconds($MaxSeconds)
+    $lastFailure = ""
 
-        $message = $builder.ToString()
-        if ([string]::IsNullOrWhiteSpace($message)) {
-            throw "WebSocket 首条消息为空"
-        }
-        return [pscustomobject]@{
-            Url = $Url
-            Preview = $message.Substring(0, [Math]::Min(160, $message.Length))
-        }
-    }
-    finally {
+    while ((Get-Date) -lt $deadline) {
+        $client = [System.Net.WebSockets.ClientWebSocket]::new()
+        $cts = [System.Threading.CancellationTokenSource]::new()
         try {
-            if ($client.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
-                $client.CloseAsync(
-                    [System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure,
-                    "deploy-check",
-                    [System.Threading.CancellationToken]::None
-                ).GetAwaiter().GetResult() | Out-Null
+            $remainingSeconds = [Math]::Max(1, [int][Math]::Ceiling(($deadline - (Get-Date)).TotalSeconds))
+            $attemptSeconds = [Math]::Min($remainingSeconds, 10)
+            $cts.CancelAfter([TimeSpan]::FromSeconds($attemptSeconds))
+            $client.ConnectAsync([Uri]$Url, $cts.Token).GetAwaiter().GetResult()
+            $buffer = New-Object byte[] 65536
+            $segment = [ArraySegment[byte]]::new($buffer)
+            $builder = New-Object System.Text.StringBuilder
+            do {
+                $result = $client.ReceiveAsync($segment, $cts.Token).GetAwaiter().GetResult()
+                if ($result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
+                    throw "WebSocket 在收到首条消息前被关闭"
+                }
+                $null = $builder.Append([System.Text.Encoding]::UTF8.GetString($buffer, 0, $result.Count))
+            } while (-not $result.EndOfMessage)
+
+            $message = $builder.ToString()
+            if ([string]::IsNullOrWhiteSpace($message)) {
+                throw "WebSocket 首条消息为空"
+            }
+            return [pscustomobject]@{
+                Url = $Url
+                Preview = $message.Substring(0, [Math]::Min(160, $message.Length))
             }
         }
         catch {
+            if ($_.Exception -and -not [string]::IsNullOrWhiteSpace($_.Exception.Message)) {
+                $lastFailure = $_.Exception.Message
+            }
+            elseif ([string]::IsNullOrWhiteSpace($lastFailure)) {
+                $lastFailure = "未知错误"
+            }
         }
-        $cts.Dispose()
-        $client.Dispose()
+        finally {
+            try {
+                if ($client.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
+                    $client.CloseAsync(
+                        [System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure,
+                        "deploy-check",
+                        [System.Threading.CancellationToken]::None
+                    ).GetAwaiter().GetResult() | Out-Null
+                }
+            }
+            catch {
+            }
+            $cts.Dispose()
+            $client.Dispose()
+        }
+        if ((Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 2
+        }
     }
+
+    if ([string]::IsNullOrWhiteSpace($lastFailure)) {
+        $lastFailure = "未知错误"
+    }
+    throw "等待 WebSocket 首条消息超时: $Url | 最后错误: $lastFailure"
 }
 
 function Resolve-CaddyExecutablePath {
@@ -529,6 +652,141 @@ function Get-ListenerProcessDetails {
     return $details
 }
 
+function Test-GatewayEnvContract {
+    param($Context)
+
+    $envPath = Join-Path $Context.GatewayDir ".env"
+    if (-not (Test-Path $envPath)) {
+        throw "网关环境文件缺失: $envPath"
+    }
+
+    $requiredKeys = @(
+        "MT5_LOGIN",
+        "MT5_PASSWORD",
+        "MT5_SERVER",
+        "MT5_SERVER_TIMEZONE"
+    )
+    $values = @{}
+    foreach ($line in Get-Content -LiteralPath $envPath -Encoding UTF8) {
+        if ($null -eq $line) {
+            continue
+        }
+        $trimmed = $line.ToString().Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+            continue
+        }
+        $separatorIndex = $trimmed.IndexOf("=")
+        if ($separatorIndex -lt 1) {
+            continue
+        }
+        $key = $trimmed.Substring(0, $separatorIndex).Trim()
+        $value = $trimmed.Substring($separatorIndex + 1).Trim()
+        if (
+            ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+            ($value.StartsWith("'") -and $value.EndsWith("'"))
+        ) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        $values[$key] = $value
+    }
+
+    $missingKeys = @()
+    foreach ($key in $requiredKeys) {
+        if (-not $values.ContainsKey($key) -or [string]::IsNullOrWhiteSpace([string]$values[$key])) {
+            $missingKeys += $key
+        }
+    }
+    if ($missingKeys.Count -gt 0) {
+        throw ("网关环境文件缺少必填项: " + ($missingKeys -join ", ") + " | 文件: " + $envPath)
+    }
+}
+
+function Get-ServiceLogTail {
+    param(
+        [string]$LogsDir,
+        [string]$Pattern,
+        [int]$MaxLines = 20
+    )
+
+    if (-not (Test-Path $LogsDir)) {
+        return ""
+    }
+    $latestLog = Get-ChildItem -Path $LogsDir -Filter $Pattern -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1
+    if ($null -eq $latestLog) {
+        return ""
+    }
+    $lines = Get-Content -LiteralPath $latestLog.FullName -Encoding UTF8 -ErrorAction SilentlyContinue |
+        Select-Object -Last $MaxLines
+    if ($null -eq $lines -or $lines.Count -eq 0) {
+        return ""
+    }
+    $joined = (($lines | ForEach-Object { $_.ToString().Trim() }) -join " || ").Trim()
+    if ([string]::IsNullOrWhiteSpace($joined)) {
+        return ""
+    }
+    return ($latestLog.Name + ": " + $joined)
+}
+
+function Test-BundleManagedProcess {
+    param(
+        $Process,
+        $Context
+    )
+
+    if ($null -eq $Process) {
+        return $false
+    }
+
+    $name = [string]$Process.Name
+    $commandLine = [string]$Process.CommandLine
+    $executablePath = [string]$Process.ExecutablePath
+    $gatewayDir = [string]$Context.GatewayDir
+    $windowsDir = [string]$Context.WindowsDir
+    $bundleRoot = [string]$Context.BundleRoot
+
+    if ($null -eq $commandLine) { $commandLine = "" }
+    if ($null -eq $executablePath) { $executablePath = "" }
+    if ($null -eq $gatewayDir) { $gatewayDir = "" }
+    if ($null -eq $windowsDir) { $windowsDir = "" }
+    if ($null -eq $bundleRoot) { $bundleRoot = "" }
+
+    $normalizedCommandLine = $commandLine.Replace("/", "\").ToLowerInvariant()
+    $normalizedExecutablePath = $executablePath.Replace("/", "\").ToLowerInvariant()
+    $normalizedGatewayDir = $gatewayDir.Replace("/", "\").ToLowerInvariant()
+    $normalizedWindowsDir = $windowsDir.Replace("/", "\").ToLowerInvariant()
+    $normalizedBundleRoot = $bundleRoot.Replace("/", "\").ToLowerInvariant()
+    $serverScriptPath = ([System.IO.Path]::Combine($gatewayDir, "server_v2.py")).Replace("/", "\").ToLowerInvariant()
+    $adminScriptPath = ([System.IO.Path]::Combine($gatewayDir, "admin_panel.py")).Replace("/", "\").ToLowerInvariant()
+    $serverScriptName = [System.IO.Path]::GetFileName($serverScriptPath).ToLowerInvariant()
+    $adminScriptName = [System.IO.Path]::GetFileName($adminScriptPath).ToLowerInvariant()
+    $pythonExecutableManagedByBundle = $normalizedExecutablePath.StartsWith($normalizedGatewayDir)
+    if (-not $pythonExecutableManagedByBundle) {
+        $pythonExecutableManagedByBundle = $normalizedExecutablePath.StartsWith($normalizedBundleRoot)
+    }
+
+    if ($name -match '^pythonw?\.exe$') {
+        return $normalizedCommandLine.Contains($serverScriptPath) `
+            -or $normalizedCommandLine.Contains($adminScriptPath) `
+            -or (
+                $pythonExecutableManagedByBundle -and (
+                    $normalizedCommandLine.Contains($serverScriptName) `
+                        -or $normalizedCommandLine.Contains($adminScriptName)
+                )
+            )
+    }
+
+    if ($name -ieq "caddy.exe" -or $name -ieq "nginx.exe") {
+        return $normalizedExecutablePath.StartsWith($normalizedBundleRoot) `
+            -or $normalizedCommandLine.Contains($normalizedWindowsDir) `
+            -or $normalizedCommandLine.Contains($normalizedBundleRoot) `
+            -or $normalizedCommandLine.Contains($normalizedGatewayDir)
+    }
+
+    return $false
+}
+
 function Stop-TargetProcessesAndPorts {
     param($Context)
 
@@ -559,15 +817,7 @@ function Stop-TargetProcessesAndPorts {
 
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
-            (
-                $_.Name -match '^pythonw?\.exe$' -and
-                (
-                    $_.CommandLine -like "*server_v2.py*" -or
-                    $_.CommandLine -like "*admin_panel.py*"
-                )
-            ) -or
-            $_.Name -ieq "caddy.exe" -or
-            $_.Name -ieq "nginx.exe"
+            Test-BundleManagedProcess -Process $_ -Context $Context
         } |
         ForEach-Object {
             try {
@@ -648,6 +898,7 @@ function Invoke-DeployWorker {
 
         Begin-Step -Context $Context -Name "初始化环境" -Message "创建虚拟环境并安装依赖"
         & $bootstrapScript -BundleRoot $Context.BundleRoot
+        Test-GatewayEnvContract -Context $Context
         Complete-Step -Context $Context -Name "初始化环境" -Status "success" -Message "Python 环境初始化完成"
 
         Begin-Step -Context $Context -Name "注册任务" -Message "重新注册网关与管理面板开机自启任务"
@@ -692,28 +943,55 @@ function Invoke-DeployWorker {
             )
 
         Begin-Step -Context $Context -Name "健康检查" -Message "验证端口监听和接口可用性"
-        $directGateway = Wait-HttpJsonFieldMatch `
-            -Url "http://127.0.0.1:8787/health" `
-            -FieldName "bundleFingerprint" `
-            -ExpectedValue $Context.ExpectedBundleFingerprint `
-            -MaxSeconds 90
+        Start-HealthProbe -Context $Context -Label "8787 /health"
+        try {
+            $directGateway = Wait-HttpJsonFieldMatch `
+                -Url "http://127.0.0.1:8787/health" `
+                -FieldName "bundleFingerprint" `
+                -ExpectedValue $Context.ExpectedBundleFingerprint `
+                -MaxSeconds 90
+        }
+        catch {
+            $gatewayLogTail = Get-ServiceLogTail -LogsDir (Join-Path $Context.GatewayDir "logs") -Pattern "gateway-*.log"
+            if ([string]::IsNullOrWhiteSpace($gatewayLogTail)) {
+                throw
+            }
+            throw ($_.Exception.Message + " | 最近网关日志: " + $gatewayLogTail)
+        }
         Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /health -> " + $directGateway.StatusCode + " | bundleFingerprint=" + $directGateway.FieldValue)
+        Start-HealthProbe -Context $Context -Label "8788 /"
         $directAdmin = Wait-HttpOk -Url "http://127.0.0.1:8788/" -MaxSeconds 90
         Write-DeployLog -Context $Context -Message ("健康检查通过: 8788 / -> " + $directAdmin.StatusCode)
+        Start-HealthProbe -Context $Context -Label "80 /health"
         $proxyGateway = Wait-HttpJsonFieldMatch `
             -Url "http://127.0.0.1/health" `
             -FieldName "bundleFingerprint" `
             -ExpectedValue $Context.ExpectedBundleFingerprint `
             -MaxSeconds 90
         Write-DeployLog -Context $Context -Message ("健康检查通过: 80 /health -> " + $proxyGateway.StatusCode + " | bundleFingerprint=" + $proxyGateway.FieldValue)
+        Start-HealthProbe -Context $Context -Label "443 loopback tradeapp.ltd/health"
         $loopbackHttpsGateway = Wait-HttpsLoopbackOk -HostName "tradeapp.ltd" -Path "/health" -MaxSeconds 90
         Write-DeployLog -Context $Context -Message ("健康检查通过: 443 loopback tradeapp.ltd/health -> " + $loopbackHttpsGateway.StatusCode)
+        Start-HealthProbe -Context $Context -Label "443 tradeapp.ltd/health"
         $publicHttpsGateway = Wait-HttpJsonFieldMatch `
             -Url "https://tradeapp.ltd/health" `
             -FieldName "bundleFingerprint" `
             -ExpectedValue $Context.ExpectedBundleFingerprint `
             -MaxSeconds 180
         Write-DeployLog -Context $Context -Message ("健康检查通过: 443 tradeapp.ltd/health -> " + $publicHttpsGateway.StatusCode + " | bundleFingerprint=" + $publicHttpsGateway.FieldValue)
+        Start-HealthProbe -Context $Context -Label "8787 /v2/account/snapshot"
+        $directAccountSnapshot = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/snapshot" -MaxSeconds 90
+        Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /v2/account/snapshot -> " + $directAccountSnapshot.StatusCode)
+        Start-HealthProbe -Context $Context -Label "8787 /v2/account/history?range=all"
+        $directAccountHistory = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/history?range=all" -MaxSeconds 90
+        Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /v2/account/history?range=all -> " + $directAccountHistory.StatusCode)
+        Start-HealthProbe -Context $Context -Label "443 tradeapp.ltd/v2/account/snapshot"
+        $publicAccountSnapshot = Wait-HttpOk -Url "https://tradeapp.ltd/v2/account/snapshot" -MaxSeconds 180
+        Write-DeployLog -Context $Context -Message ("健康检查通过: 443 tradeapp.ltd/v2/account/snapshot -> " + $publicAccountSnapshot.StatusCode)
+        Start-HealthProbe -Context $Context -Label "443 tradeapp.ltd/v2/account/history?range=all"
+        $publicAccountHistory = Wait-HttpOk -Url "https://tradeapp.ltd/v2/account/history?range=all" -MaxSeconds 180
+        Write-DeployLog -Context $Context -Message ("健康检查通过: 443 tradeapp.ltd/v2/account/history?range=all -> " + $publicAccountHistory.StatusCode)
+        Start-HealthProbe -Context $Context -Label "wss://tradeapp.ltd/v2/stream"
         $streamCheck = Wait-WebSocketMessage -Url "wss://tradeapp.ltd/v2/stream" -MaxSeconds 90
         Write-DeployLog -Context $Context -Message ("健康检查通过: wss://tradeapp.ltd/v2/stream -> " + $streamCheck.Preview)
 
@@ -747,6 +1025,10 @@ function Invoke-DeployWorker {
                 ("80 /health -> " + $proxyGateway.StatusCode + " | bundleFingerprint=" + $proxyGateway.FieldValue),
                 ("443 loopback tradeapp.ltd/health -> " + $loopbackHttpsGateway.StatusCode),
                 ("443 tradeapp.ltd/health -> " + $publicHttpsGateway.StatusCode + " | bundleFingerprint=" + $publicHttpsGateway.FieldValue),
+                ("8787 /v2/account/snapshot -> " + $directAccountSnapshot.StatusCode),
+                ("8787 /v2/account/history?range=all -> " + $directAccountHistory.StatusCode),
+                ("443 tradeapp.ltd/v2/account/snapshot -> " + $publicAccountSnapshot.StatusCode),
+                ("443 tradeapp.ltd/v2/account/history?range=all -> " + $publicAccountHistory.StatusCode),
                 ("wss://tradeapp.ltd/v2/stream -> " + $streamCheck.Preview),
                 ("/admin/ -> " + $adminProxyStatus),
                 ("监听端口: " + ($listeners -join " ; ")),

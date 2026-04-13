@@ -75,6 +75,25 @@ function Import-EnvFile {
     }
 }
 
+# 校验网关启动所需的关键环境变量，缺失时直接阻止坏配置启动。
+function Assert-RequiredGatewayEnv {
+    param(
+        [string[]]$Keys
+    )
+
+    $missingKeys = @()
+    foreach ($key in $Keys) {
+        $value = [System.Environment]::GetEnvironmentVariable($key, "Process")
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            $missingKeys += $key
+        }
+    }
+
+    if ($missingKeys.Count -gt 0) {
+        throw ("Gateway required env missing or blank: " + ($missingKeys -join ", "))
+    }
+}
+
 # 计算文件内容哈希，用来判断依赖是否真的发生变化。
 function Get-FileSha256 {
     param(
@@ -211,5 +230,12 @@ if (Test-Path $resolvedEnvFile) {
 } else {
     Write-Host "Env file not found, continuing with current process environment."
 }
+
+Assert-RequiredGatewayEnv -Keys @(
+    "MT5_LOGIN",
+    "MT5_PASSWORD",
+    "MT5_SERVER",
+    "MT5_SERVER_TIMEZONE"
+)
 
 Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @("server_v2.py")

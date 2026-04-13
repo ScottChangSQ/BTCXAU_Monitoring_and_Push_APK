@@ -159,13 +159,10 @@ public class TradeExecutionCoordinator {
             try {
                 latestCache = accountRefreshGateway.fetchForUi(AccountTimeRange.ALL);
             } catch (Exception exception) {
-                return new ExecutionResult(
-                        UiState.RESULT_UNCONFIRMED,
+                return buildAcceptedAwaitingSyncResult(
                         stateMachine,
                         latestCache,
-                        false,
-                        false,
-                        resolveExceptionMessage(exception, "结果未确认，请等待后续刷新")
+                        resolveExceptionMessage(exception, "交易已受理，等待账户同步")
                 );
             }
             if (hasConverged(stateMachine.getCommand(), stateMachine.getReceipt(), baselineCache, latestCache, refreshStartedAt)) {
@@ -181,13 +178,25 @@ public class TradeExecutionCoordinator {
             }
         }
 
+        return buildAcceptedAwaitingSyncResult(
+                stateMachine,
+                latestCache,
+                "交易已受理，等待账户同步"
+        );
+    }
+
+    private ExecutionResult buildAcceptedAwaitingSyncResult(@Nullable TradeCommandStateMachine stateMachine,
+                                                            @Nullable AccountStatsPreloadManager.Cache latestCache,
+                                                            @Nullable String message) {
         return new ExecutionResult(
-                UiState.RESULT_UNCONFIRMED,
+                UiState.ACCEPTED_AWAITING_SYNC,
                 stateMachine,
                 latestCache,
                 false,
                 false,
-                "结果未确认，请等待后续刷新"
+                message == null || message.trim().isEmpty()
+                        ? "交易已受理，等待账户同步"
+                        : message
         );
     }
 
@@ -229,9 +238,7 @@ public class TradeExecutionCoordinator {
         if (isAcceptedDuplicateReceipt(receipt)) {
             return latestReceiptMatched;
         }
-        if (receipt != null && receipt.isAccepted() && !receiptReference.hasReference()) {
-            return false;
-        }
+        // 部分网关受理回执不会返回 order/deal，只能退回到账户真值的结构变化来判断是否收敛。
         if (baselineCache == null || baselineCache.getSnapshot() == null) {
             return false;
         }
@@ -417,8 +424,14 @@ public class TradeExecutionCoordinator {
                     "交易已受理并完成账户刷新"
             );
         }
-        if (stateMachine.getStep() == TradeCommandStateMachine.Step.ACCEPTED
-                || stateMachine.getStep() == TradeCommandStateMachine.Step.SUBMITTING) {
+        if (stateMachine.getStep() == TradeCommandStateMachine.Step.ACCEPTED) {
+            return buildAcceptedAwaitingSyncResult(
+                    stateMachine,
+                    null,
+                    "交易已受理，等待账户同步"
+            );
+        }
+        if (stateMachine.getStep() == TradeCommandStateMachine.Step.SUBMITTING) {
             return new ExecutionResult(
                     UiState.RESULT_UNCONFIRMED,
                     stateMachine,
@@ -794,6 +807,7 @@ public class TradeExecutionCoordinator {
     public enum UiState {
         AWAITING_CONFIRMATION,
         SETTLED,
+        ACCEPTED_AWAITING_SYNC,
         RESULT_UNCONFIRMED,
         REJECTED
     }

@@ -136,6 +136,27 @@ class V2TradeContractTests(unittest.TestCase):
         self.assertEqual("TRADE_DUPLICATE_SUBMISSION", second["error"]["code"])
         self.assertEqual(1, send_mock.call_count)
 
+    def test_trade_submit_should_publish_account_history_revision_immediately_after_success(self):
+        check_result = _fake_mt5_result(retcode=0, comment="ok")
+        send_result = _fake_mt5_result(retcode=0, comment="sent", order=7788, deal=8899)
+        request_payload = {
+            "requestId": "req-submit-history-001",
+            "action": "OPEN_MARKET",
+            "params": {"symbol": "BTCUSD", "side": "buy", "volume": 0.1},
+        }
+        with mock.patch.object(server_v2, "_trade_check_request", return_value=check_result), mock.patch.object(
+            server_v2, "_trade_send_request", return_value=send_result
+        ), mock.patch.object(server_v2, "_detect_account_mode", return_value="netting"), mock.patch.object(
+            server_v2, "_invalidate_account_runtime_cache_after_trade_commit", create=True
+        ) as invalidate_mock, mock.patch.object(
+            server_v2, "_publish_account_trade_commit_sync_state", create=True
+        ) as publish_mock:
+            payload = server_v2.v2_trade_submit(request_payload)
+
+        self.assertEqual("ACCEPTED", payload["status"])
+        invalidate_mock.assert_called_once_with()
+        publish_mock.assert_called_once_with()
+
     def test_trade_check_should_distinguish_error_codes(self):
         check_result = _fake_mt5_result(retcode=10019, comment="no money")
         with mock.patch.object(server_v2, "_trade_check_request", return_value=check_result), mock.patch.object(
@@ -182,6 +203,70 @@ class V2TradeContractTests(unittest.TestCase):
         self.assertEqual(submit_payload["requestId"], result_payload["requestId"])
         self.assertEqual("ACCEPTED", result_payload["status"])
         self.assertEqual(9001, result_payload["result"]["order"])
+
+    def test_pending_modify_should_build_modify_request_with_order_ticket(self):
+        fake_mt5 = types.SimpleNamespace(
+            TRADE_ACTION_MODIFY=7,
+            TRADE_ACTION_PENDING=5,
+            TRADE_ACTION_REMOVE=8,
+            TRADE_ACTION_SLTP=6,
+            TRADE_ACTION_DEAL=1,
+            ORDER_TYPE_BUY=0,
+            ORDER_TYPE_SELL=1,
+            ORDER_TIME_GTC=0,
+            ORDER_FILLING_FOK=0,
+            symbol_info=lambda _symbol: None,
+        )
+
+        prepared = server_v2.v2_trade.prepare_trade_request(
+            {
+                "requestId": "req-pending-modify-001",
+                "action": "PENDING_MODIFY",
+                "params": {
+                    "symbol": "BTCUSD",
+                    "orderTicket": 8011,
+                    "price": 65123.4,
+                    "sl": 64000.0,
+                    "tp": 68000.0,
+                },
+            },
+            account_mode="netting",
+            mt5_module=fake_mt5,
+        )
+
+        self.assertIsNone(prepared["error"])
+        self.assertEqual(7, prepared["request"]["action"])
+        self.assertEqual(8011, prepared["request"]["order"])
+        self.assertEqual(65123.4, prepared["request"]["price"])
+        self.assertEqual(64000.0, prepared["request"]["sl"])
+        self.assertEqual(68000.0, prepared["request"]["tp"])
+
+    def test_pending_modify_should_reject_missing_order_ticket(self):
+        fake_mt5 = types.SimpleNamespace(
+            TRADE_ACTION_MODIFY=7,
+            TRADE_ACTION_PENDING=5,
+            TRADE_ACTION_REMOVE=8,
+            TRADE_ACTION_SLTP=6,
+            TRADE_ACTION_DEAL=1,
+            ORDER_TYPE_BUY=0,
+            ORDER_TYPE_SELL=1,
+            ORDER_TIME_GTC=0,
+            ORDER_FILLING_FOK=0,
+            symbol_info=lambda _symbol: None,
+        )
+
+        prepared = server_v2.v2_trade.prepare_trade_request(
+            {
+                "requestId": "req-pending-modify-002",
+                "action": "PENDING_MODIFY",
+                "params": {"symbol": "BTCUSD", "price": 65123.4},
+            },
+            account_mode="netting",
+            mt5_module=fake_mt5,
+        )
+
+        self.assertIsNotNone(prepared["error"])
+        self.assertEqual("TRADE_INVALID_ORDER", prepared["error"]["code"])
 
     def test_close_position_should_reject_when_target_position_not_found(self):
         with mock.patch.object(server_v2, "_detect_account_mode", return_value="netting"), mock.patch.object(

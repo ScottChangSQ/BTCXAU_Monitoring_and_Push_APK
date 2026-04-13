@@ -30,13 +30,17 @@ public class AccountStatsBridgeSnapshotSourceTest {
     }
 
     @Test
-    public void preloadListenerShouldSkipUiRefreshWhileExplicitRequestIsLoading() throws Exception {
+    public void preloadListenerShouldSkipUiRefreshUntilPageOwnsForegroundSubscription() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
 
         assertTrue(source.contains("if (cache == null || isFinishing() || isDestroyed() || loading) {"));
         assertTrue(source.contains("preloadManager.addCacheListener(preloadCacheListener);"));
         assertTrue(source.contains("preloadManager.removeCacheListener(preloadCacheListener);"));
+        assertTrue(source.contains("preloadManager.setLiveScreenActive(true);"));
+        assertTrue(source.contains("preloadManager.setLiveScreenActive(false);"));
     }
 
     @Test
@@ -207,13 +211,13 @@ public class AccountStatsBridgeSnapshotSourceTest {
     }
 
     @Test
-    public void refreshSignatureShouldDeduplicateByRenderablePayloadInsteadOfHistoryRevision() throws Exception {
+    public void refreshSignatureShouldIncludeHistoryRevisionForHistoryDrivenSections() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(!source.contains("appendStringToken(builder, trim(historyRevision));"));
+        assertTrue(source.contains("appendStringToken(builder, trim(historyRevision));"));
     }
 
     @Test
@@ -243,6 +247,9 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertTrue(activitySource.contains("binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);"));
         assertTrue(activitySource.contains("binding.cardReturnStatsSection.setVisibility(View.VISIBLE);"));
         assertTrue(activitySource.contains("binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);"));
+        assertFalse(activitySource.contains("binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);\n        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);"));
+        assertTrue(activitySource.contains("private void bindTradeAnalytics(List<AccountMetric> tradeStatsMetrics,"));
+        assertTrue(activitySource.contains("boolean masked = isPrivacyMasked();"));
         assertTrue(activitySource.contains("binding.cardTradeStatsSection.setVisibility(View.VISIBLE);"));
 
         assertTrue(layoutSource.contains("android:id=\"@+id/cardCurveSection\""));
@@ -308,5 +315,48 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertFalse(activitySource.contains("stageStartedAt = SystemClock.elapsedRealtime();\n        refreshTradeStats();"));
         assertFalse(activitySource.contains("stageStartedAt = SystemClock.elapsedRealtime();\n        refreshTrades(false);"));
         assertFalse(activitySource.contains("stageStartedAt = SystemClock.elapsedRealtime();\n        applyCurrentCurveRangeFromAllPoints();"));
+    }
+
+    @Test
+    public void tradeStatsSectionShouldBecomeVisibleOnlyAfterMetricsAndChartsAreBound() throws Exception {
+        String activitySource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        int statsSubmitIndex = activitySource.indexOf("statsAdapter.submitList(tradeStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(tradeStatsMetrics));");
+        int pnlChartIndex = activitySource.indexOf("binding.tradePnlBarChart.setEntries(");
+        int scatterIndex = activitySource.indexOf("binding.tradeDistributionScatterView.setPoints(");
+        int visibleIndex = activitySource.indexOf("binding.cardTradeStatsSection.setVisibility(View.VISIBLE);");
+
+        assertTrue(statsSubmitIndex >= 0);
+        assertTrue(pnlChartIndex >= 0);
+        assertTrue(scatterIndex >= 0);
+        assertTrue(visibleIndex >= 0);
+        assertTrue("交易统计卡片应在指标和图表数据全部绑定后再整体显示，避免先露出选项卡再补列表",
+                visibleIndex > statsSubmitIndex && visibleIndex > pnlChartIndex && visibleIndex > scatterIndex);
+    }
+
+    @Test
+    public void tradeStatsFirstRevealShouldWaitUntilRecyclerPreDraw() throws Exception {
+        String activitySource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(activitySource.contains("private void revealTradeStatsSectionWhenReady() {"));
+        assertTrue(activitySource.contains("binding.recyclerStats.getViewTreeObserver().addOnPreDrawListener("));
+        assertTrue(activitySource.contains("binding.cardTradeStatsSection.getVisibility() != View.VISIBLE"));
+        assertTrue(activitySource.contains("binding.cardTradeStatsSection.setVisibility(View.INVISIBLE);"));
+        assertTrue(activitySource.contains("revealTradeStatsSectionWhenReady();"));
+    }
+
+    @Test
+    public void deferredTradeStatsRenderShouldHideOldCardBeforePreparingFreshContent() throws Exception {
+        String activitySource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(activitySource.contains("private void hideTradeStatsSectionUntilFreshContentReady() {"));
+        assertTrue(activitySource.contains("binding.cardTradeStatsSection.setVisibility(View.GONE);"));
+        assertTrue(activitySource.contains("hideTradeStatsSectionUntilFreshContentReady();\n        deferredSecondaryRenderPending = false;\n        scheduleDeferredSecondarySectionRender();"));
     }
 }

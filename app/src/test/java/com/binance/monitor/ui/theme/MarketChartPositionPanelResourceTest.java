@@ -16,17 +16,18 @@ public class MarketChartPositionPanelResourceTest {
 
     // 校验图表页当前持仓空态和顶部元信息已切到统一样式。
     @Test
-    public void marketChartLayoutShouldContainPositionEmptyStateAndSharedMetaStyle() throws Exception {
+    public void marketChartLayoutShouldKeepLightweightSummaryAndSharedMetaStyle() throws Exception {
         String xml = readUtf8(
                 "app/src/main/res/layout/activity_market_chart.xml",
                 "src/main/res/layout/activity_market_chart.xml"
         );
-        assertTrue("图表页缺少按产品汇总暂无持仓空态控件", xml.contains("android:id=\"@+id/tvChartPositionAggregateEmpty\""));
-        assertTrue("图表页按产品汇总缺少暂无持仓文案",
-                xml.contains("android:id=\"@+id/tvChartPositionAggregateEmpty\"")
-                        && xml.contains("android:text=\"暂无持仓\""));
-        assertTrue("图表页缺少暂无持仓空态控件", xml.contains("android:id=\"@+id/tvChartPositionsEmpty\""));
-        assertTrue("图表页缺少暂无持仓文案", xml.contains("android:text=\"暂无持仓\""));
+        assertTrue("图表页应保留轻量持仓摘要", xml.contains("android:id=\"@+id/tvChartPositionSummary\""));
+        assertTrue("图表页应保留轻量更新时间元信息", xml.contains("android:id=\"@+id/tvChartOverlayMeta\""));
+        assertTrue("轻量更新时间应统一使用 Meta 文本样式",
+                xml.contains("android:id=\"@+id/tvChartOverlayMeta\"")
+                        && xml.contains("android:textAppearance=\"@style/TextAppearance.BinanceMonitor.Meta\""));
+        assertTrue("图表页不应再保留旧持仓列表空态控件", !xml.contains("android:id=\"@+id/tvChartPositionsEmpty\""));
+        assertTrue("图表页不应再保留旧按产品汇总空态控件", !xml.contains("android:id=\"@+id/tvChartPositionAggregateEmpty\""));
         assertTrue("左上角信息应统一使用 Meta 文本样式",
                 xml.contains("android:id=\"@+id/tvChartInfo\"")
                         && xml.contains("android:textAppearance=\"@style/TextAppearance.BinanceMonitor.Meta\""));

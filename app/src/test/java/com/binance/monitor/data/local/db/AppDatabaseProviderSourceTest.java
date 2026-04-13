@@ -69,6 +69,53 @@ public class AppDatabaseProviderSourceTest {
         assertTrue(providerSource.contains(".addMigrations(AppDatabase.MIGRATION_2_3)"));
     }
 
+    @Test
+    public void accountSnapshotTablesShouldUseIdentityPartitionQueriesInsteadOfSingleSlotAccess() throws Exception {
+        String accountDaoSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/db/dao/AccountSnapshotDao.java",
+                "src/main/java/com/binance/monitor/data/local/db/dao/AccountSnapshotDao.java"
+        );
+        String tradeDaoSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/db/dao/TradeHistoryDao.java",
+                "src/main/java/com/binance/monitor/data/local/db/dao/TradeHistoryDao.java"
+        );
+        String repositorySource = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java",
+                "src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java"
+        );
+
+        assertTrue(accountDaoSource.contains("AccountSnapshotMetaEntity loadMeta(String account, String server);"));
+        assertTrue(accountDaoSource.contains("void replacePositions(String identityPrefix, List<PositionSnapshotEntity> items)"));
+        assertTrue(accountDaoSource.contains("void replacePendingOrders(String identityPrefix, List<PendingOrderSnapshotEntity> items)"));
+        assertTrue(tradeDaoSource.contains("List<TradeHistoryEntity> loadAll(String identityPrefix);"));
+        assertTrue(tradeDaoSource.contains("int clearAll(String identityPrefix);"));
+        assertTrue(repositorySource.contains("private AccountSnapshotMetaEntity loadMetaByIdentity(String account, String server)"));
+        assertTrue(repositorySource.contains("return accountSnapshotDao.loadMeta(safe(account), safe(server));"));
+        assertTrue(repositorySource.contains("accountSnapshotDao.replacePositions(identityPrefix"));
+        assertTrue(repositorySource.contains("accountSnapshotDao.replacePendingOrders(identityPrefix"));
+        assertTrue(repositorySource.contains("tradeHistoryDao.clearAll(identityPrefix);"));
+        assertTrue(repositorySource.contains("tradeHistoryDao.loadAll(buildIdentityPrefix(account, server))"));
+    }
+
+    @Test
+    public void databaseShouldMigrateLegacySingleSlotKeysToPartitionedIdentityPrefix() throws Exception {
+        String databaseSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/db/AppDatabase.java",
+                "src/main/java/com/binance/monitor/data/local/db/AppDatabase.java"
+        );
+        String providerSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/local/db/AppDatabaseProvider.java",
+                "src/main/java/com/binance/monitor/data/local/db/AppDatabaseProvider.java"
+        );
+
+        assertTrue(databaseSource.contains("version = 4"));
+        assertTrue(databaseSource.contains("public static final Migration MIGRATION_3_4"));
+        assertTrue(databaseSource.contains("UPDATE position_snapshot SET snapshotKey ="));
+        assertTrue(databaseSource.contains("UPDATE pending_order_snapshot SET snapshotKey ="));
+        assertTrue(databaseSource.contains("UPDATE trade_history SET tradeKey ="));
+        assertTrue(providerSource.contains(".addMigrations(AppDatabase.MIGRATION_3_4)"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

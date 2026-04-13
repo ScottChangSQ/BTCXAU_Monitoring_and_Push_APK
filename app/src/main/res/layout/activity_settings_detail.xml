@@ -512,6 +512,15 @@
                     android:text="@string/nav_account_stats"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp" />
+
+                <androidx.appcompat.widget.AppCompatCheckBox
+                    android:id="@+id/switchTabAccountPosition"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="0dp"
+                    android:text="@string/nav_account_position"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -583,6 +592,17 @@
             android:textSize="13sp" />
 
         <TextView
+            android:id="@+id/tabAccountPosition"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"
+            android:gravity="center"
+            android:text="@string/nav_account_position"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <TextView
             android:id="@+id/tabAccountStats"
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -600,7 +620,7 @@
             android:layout_weight="1"
             android:background="@android:color/transparent"
             android:gravity="center"
-            android:text="设置"
+            android:text="@string/nav_settings"
             android:textColor="@color/white"
             android:textSize="13sp" />
     </LinearLayout>

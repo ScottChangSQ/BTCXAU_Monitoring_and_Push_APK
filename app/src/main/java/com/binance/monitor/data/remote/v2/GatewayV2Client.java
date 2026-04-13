@@ -198,10 +198,11 @@ public class GatewayV2Client {
         String url = baseUrl + path;
         Request request = new Request.Builder().url(url).get().build();
         try (Response response = client.newCall(request).execute()) {
+            String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                throw new IOException("HTTP " + response.code() + " for " + path);
+                throw new IOException("HTTP " + response.code() + " for " + path + " " + responseBody);
             }
-            return response.body() == null ? "" : response.body().string();
+            return responseBody;
         }
     }
 

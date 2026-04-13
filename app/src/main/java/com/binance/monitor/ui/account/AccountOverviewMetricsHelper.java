@@ -142,10 +142,10 @@ public final class AccountOverviewMetricsHelper {
         Set<AccountMetric> appended = new HashSet<>();
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "总资产");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "净资产");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "可用预付款");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "保证金");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "累计盈亏");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "累计收益率");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "可用预付款");
+        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "保证金");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "当日盈亏");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "当日收益率");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "持仓盈亏");

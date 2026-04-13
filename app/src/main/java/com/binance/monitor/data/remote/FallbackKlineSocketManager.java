@@ -149,9 +149,10 @@ public class FallbackKlineSocketManager {
 
     private void handleSocketTermination(WebSocket terminatedSocket, String reason) {
         synchronized (this) {
-            if (socket == terminatedSocket) {
-                socket = null;
+            if (socket != terminatedSocket) {
+                return;
             }
+            socket = null;
         }
         notifyErrorAll(reason);
         scheduleReconnect(false);

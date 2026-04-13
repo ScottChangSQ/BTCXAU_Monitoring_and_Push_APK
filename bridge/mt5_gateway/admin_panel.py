@@ -166,6 +166,36 @@ def compose_restart_command(stop_command: str, start_command: str) -> str:
     return f"{stop_part}; Start-Sleep -Seconds 2; {start_part}"
 
 
+# 按可执行文件路径精确匹配当前组件进程，避免误伤同机其他同名进程。
+def build_managed_process_stop_command(exe_path: str) -> str:
+    safe_exe_path = str(exe_path or "").strip()
+    if not safe_exe_path:
+        return "throw 'Executable path is not configured.'"
+    normalized_exe_path = safe_exe_path.replace("\\", "/").replace("'", "''").lower()
+    return (
+        "Get-CimInstance Win32_Process | Where-Object { "
+        + "$normalizedExecutablePath = (([string]$_.ExecutablePath) -replace '\\\\', '/').ToLowerInvariant(); "
+        + "$normalizedExecutablePath -eq "
+        + ps_quote(normalized_exe_path)
+        + " } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+    )
+
+
+# 按可执行文件路径精确读取组件进程状态，避免把其他部署实例算进来。
+def build_managed_process_status_command(exe_path: str) -> str:
+    safe_exe_path = str(exe_path or "").strip()
+    if not safe_exe_path:
+        return ""
+    normalized_exe_path = safe_exe_path.replace("\\", "/").replace("'", "''").lower()
+    return (
+        "Get-CimInstance Win32_Process | Where-Object { "
+        + "$normalizedExecutablePath = (([string]$_.ExecutablePath) -replace '\\\\', '/').ToLowerInvariant(); "
+        + "$normalizedExecutablePath -eq "
+        + ps_quote(normalized_exe_path)
+        + " } | Select-Object Name,ProcessId,ExecutablePath | ConvertTo-Json -Compress"
+    )
+
+
 # 解析当前管理面板所处的部署布局。
 def resolve_runtime_layout(project_root: str) -> Dict[str, Any]:
     safe_root = Path(str(project_root or REPO_ROOT))
@@ -192,6 +222,7 @@ def resolve_runtime_layout(project_root: str) -> Dict[str, Any]:
 def build_hidden_caddy_start_command(exe_path: str, windows_dir: Path, config_path: str) -> str:
     if not exe_path:
         return ""
+    stop_same_caddy = build_managed_process_stop_command(exe_path)
     safe_exe = ps_quote(exe_path)
     safe_windows_dir = ps_quote(str(windows_dir))
     safe_config = ps_quote(config_path)
@@ -202,7 +233,8 @@ def build_hidden_caddy_start_command(exe_path: str, windows_dir: Path, config_pa
         f"if (Test-Path {safe_exe}) "
         + "{ "
         + f"New-Item -ItemType Directory -Force -Path {safe_log_dir} | Out-Null; "
-        + "Get-Process caddy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; "
+        + stop_same_caddy
+        + "; "
         + "Start-Process -WindowStyle Hidden -FilePath "
         + safe_exe
         + " -ArgumentList @('run','--config',"
@@ -222,6 +254,8 @@ def build_component_registry(env_map: Dict[str, str], repo_root: str) -> Dict[st
     safe_env = env_map or {}
     safe_repo_root = str(repo_root or REPO_ROOT)
     safe_repo_root_pattern = safe_repo_root.replace("'", "''")
+    safe_gateway_dir = str(BASE_DIR)
+    safe_gateway_dir_pattern = safe_gateway_dir.replace("\\", "/").replace("'", "''").lower()
     runtime_layout = resolve_runtime_layout(safe_repo_root)
     gateway_task_name = str(safe_env.get("ADMIN_GATEWAY_TASK_NAME", "MT5GatewayAutoStart") or "MT5GatewayAutoStart").strip()
     gateway_runner = runtime_layout["gateway_runner"]
@@ -262,8 +296,15 @@ def build_component_registry(env_map: Dict[str, str], repo_root: str) -> Dict[st
             + ps_quote(gateway_task_name)
             + " -ErrorAction SilentlyContinue }; "
             + "Get-CimInstance Win32_Process | Where-Object { "
-            + "($_.CommandLine -like '*server_v2.py*') -and "
-            + f"($_.CommandLine -like '*{safe_repo_root_pattern}*')"
+            + "$normalizedExecutablePath = (([string]$_.ExecutablePath) -replace '\\\\', '/').ToLowerInvariant(); "
+            + "$normalizedCommandLine = (([string]$_.CommandLine) -replace '\\\\', '/').ToLowerInvariant(); "
+            + "$pythonExecutableManagedByBundle = $normalizedExecutablePath.StartsWith("
+            + ps_quote(safe_gateway_dir_pattern)
+            + "); "
+            + "($normalizedCommandLine.Contains('server_v2.py')) -and ("
+            + "$pythonExecutableManagedByBundle -or "
+            + f"($normalizedCommandLine.Contains({ps_quote(safe_repo_root_pattern.lower())}))"
+            + ")"
             + " } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
         )
 
@@ -331,16 +372,12 @@ def build_process_component(label: str,
         if exe_path
         else ""
     )
-    effective_stop = stop_cmd or (
-        "Get-Process -Name "
-        + "@("
-        + ",".join(ps_quote(name) for name in process_names)
-        + ") -ErrorAction SilentlyContinue | Stop-Process -Force"
-    )
+    effective_stop = stop_cmd or build_managed_process_stop_command(exe_path)
     effective_restart = restart_cmd or compose_restart_command(effective_stop, effective_start)
     return {
         "label": label,
         "statusMode": "process",
+        "exePath": exe_path,
         "processNames": process_names,
         "actions": {
             "start": effective_start,
@@ -394,15 +431,12 @@ def build_service_or_process_component(label: str,
         if exe_path and stop_signal_arg:
             effective_stop = f"& {ps_quote(exe_path)} {stop_signal_arg}"
         else:
-            effective_stop = (
-                "Get-Process -Name @("
-                + ",".join(ps_quote(name) for name in process_names)
-                + ") -ErrorAction SilentlyContinue | Stop-Process -Force"
-            )
+            effective_stop = build_managed_process_stop_command(exe_path)
     effective_restart = restart_cmd or compose_restart_command(effective_stop, effective_start)
     return {
         "label": label,
         "statusMode": "process",
+        "exePath": exe_path,
         "processNames": process_names,
         "actions": {
             "start": effective_start,
@@ -451,16 +485,20 @@ def read_service_status(service_name: str) -> Dict[str, Any]:
 
 
 # 读取指定进程组的运行状态。
-def read_process_status(process_names: List[str]) -> Dict[str, Any]:
+def read_process_status(process_names: List[str], exe_path: str = "") -> Dict[str, Any]:
     safe_names = [name for name in (process_names or []) if name]
-    if not safe_names:
+    status_command = build_managed_process_status_command(exe_path)
+    if status_command:
+        command = status_command
+    elif safe_names:
+        command = (
+            "Get-Process -Name @("
+            + ",".join(ps_quote(name) for name in safe_names)
+            + ") -ErrorAction SilentlyContinue | "
+            + "Select-Object ProcessName,Id | ConvertTo-Json -Compress"
+        )
+    else:
         return {"running": False, "statusText": "未配置进程名"}
-    command = (
-        "Get-Process -Name @("
-        + ",".join(ps_quote(name) for name in safe_names)
-        + ") -ErrorAction SilentlyContinue | "
-        + "Select-Object ProcessName,Id | ConvertTo-Json -Compress"
-    )
     result = run_powershell_command(command)
     if not result["ok"] or not result["stdout"]:
         return {"running": False, "statusText": "未运行", "details": result}
@@ -555,7 +593,10 @@ def inspect_component(target: str, spec: Dict[str, Any], gateway_url: str) -> Di
 
     if spec.get("statusMode") == "service":
         return read_service_status(str(spec.get("serviceName", "") or ""))
-    return read_process_status(list(spec.get("processNames") or []))
+    return read_process_status(
+        list(spec.get("processNames") or []),
+        str(spec.get("exePath", "") or ""),
+    )
 
 
 def decorate_gateway_payload(payload: Dict[str, Any], fallback_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

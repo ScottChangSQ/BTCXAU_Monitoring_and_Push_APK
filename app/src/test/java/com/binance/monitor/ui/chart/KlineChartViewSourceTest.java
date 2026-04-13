@@ -23,14 +23,14 @@ public class KlineChartViewSourceTest {
     }
 
     @Test
-    public void defaultViewportShouldUseSmallerSlotToShowMoreCandles() throws Exception {
+    public void defaultViewportShouldUseWiderSlotToShowFewerCandles() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("private static final float DEFAULT_CANDLE_WIDTH_DP = 0.96f;"));
-        assertTrue(source.contains("private static final float DEFAULT_CANDLE_GAP_DP = 0.7067f;"));
+        assertTrue(source.contains("private static final float DEFAULT_CANDLE_WIDTH_DP = 1.28f;"));
+        assertTrue(source.contains("private static final float DEFAULT_CANDLE_GAP_DP = 0.88f;"));
         assertTrue(source.contains("candleWidth = dp(DEFAULT_CANDLE_WIDTH_DP);"));
         assertTrue(source.contains("candleGap = dp(DEFAULT_CANDLE_GAP_DP);"));
         assertTrue(source.contains("private void resetViewportToDefault() {\n        candleWidth = dp(DEFAULT_CANDLE_WIDTH_DP);\n        candleGap = dp(DEFAULT_CANDLE_GAP_DP);"));

@@ -10,6 +10,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.R;
@@ -18,18 +19,27 @@ import com.binance.monitor.data.local.AbnormalRecordManager;
 import com.binance.monitor.data.local.AbnormalAlertDispatchStore;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.LogManager;
+import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.model.AbnormalAlertItem;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
+import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
+import com.binance.monitor.data.model.v2.session.RemoteAccountProfileDeduplicationHelper;
+import com.binance.monitor.data.model.v2.session.SessionReceipt;
+import com.binance.monitor.data.model.v2.session.SessionStatusPayload;
 import com.binance.monitor.data.remote.AbnormalGatewayClient;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
+import com.binance.monitor.data.remote.v2.GatewayV2SessionClient;
 import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
 import com.binance.monitor.data.repository.MonitorRepository;
+import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.ConnectionStage;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.security.SecureSessionPrefs;
+import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.service.account.AccountHistoryRefreshGate;
 import com.binance.monitor.service.stream.V2StreamSequenceGuard;
 import com.binance.monitor.ui.floating.FloatingWindowManager;
@@ -43,8 +53,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -66,20 +79,24 @@ public class MonitorService extends Service {
     private MonitorRepository repository;
     private LogManager logManager;
     private ConfigManager configManager;
+    private AccountStorageRepository accountStorageRepository;
     private AbnormalRecordManager recordManager;
     private AbnormalAlertDispatchStore abnormalAlertDispatchStore;
     private NotificationHelper notificationHelper;
     private FloatingWindowManager floatingWindowManager;
     private AbnormalGatewayClient abnormalGatewayClient;
     private GatewayV2Client gatewayV2Client;
+    private GatewayV2SessionClient sessionClient;
     private GatewayV2StreamClient v2StreamClient;
     private AccountStatsPreloadManager accountStatsPreloadManager;
+    private SecureSessionPrefs secureSessionPrefs;
     private ExecutorService executorService;
     private MonitorForegroundNotificationCoordinator foregroundNotificationCoordinator;
     private MonitorFloatingCoordinator floatingCoordinator;
     private boolean pipelineStarted;
     private final AccountHistoryRefreshGate accountHistoryRefreshGate = new AccountHistoryRefreshGate();
     private final V2StreamSequenceGuard v2StreamSequenceGuard = new V2StreamSequenceGuard();
+    private final AtomicBoolean remoteSessionRecoveryInFlight = new AtomicBoolean(false);
     private volatile ConnectionStage v2StreamStage = ConnectionStage.CONNECTING;
     private volatile boolean v2StreamConnected;
     private volatile long lastV2StreamMessageAt;
@@ -96,14 +113,17 @@ public class MonitorService extends Service {
         repository = MonitorRepository.getInstance(this);
         logManager = repository.getLogManager();
         configManager = repository.getConfigManager();
+        accountStorageRepository = new AccountStorageRepository(this);
         recordManager = repository.getRecordManager();
         abnormalAlertDispatchStore = new AbnormalAlertDispatchStore(this);
         notificationHelper = new NotificationHelper(this);
         floatingWindowManager = new FloatingWindowManager(this);
         abnormalGatewayClient = new AbnormalGatewayClient(this);
         gatewayV2Client = new GatewayV2Client(this);
+        sessionClient = new GatewayV2SessionClient(this);
         v2StreamClient = new GatewayV2StreamClient(this);
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(this);
+        secureSessionPrefs = new SecureSessionPrefs(this);
         executorService = Executors.newSingleThreadExecutor();
         foregroundNotificationCoordinator = new MonitorForegroundNotificationCoordinator(notificationHelper, repository);
         floatingCoordinator = new MonitorFloatingCoordinator(
@@ -150,7 +170,6 @@ public class MonitorService extends Service {
             }
         }
         AppForegroundTracker.getInstance().addListener(appForegroundListener);
-        repository.setMonitoringEnabled(true);
         logManager.info("服务初始化完成");
         logResolvedGatewayAddresses();
         floatingCoordinator.applyPreferences();
@@ -206,6 +225,7 @@ public class MonitorService extends Service {
         }
         if (executorService != null) {
             executorService.shutdownNow();
+            executorService = null;
         }
         mainHandler.removeCallbacksAndMessages(null);
         AppForegroundTracker.getInstance().removeListener(appForegroundListener);
@@ -275,10 +295,7 @@ public class MonitorService extends Service {
 
             @Override
             public void onMessage(GatewayV2StreamClient.StreamMessage message) {
-                if (executorService == null) {
-                    return;
-                }
-                executorService.execute(() -> {
+                executeOnWorker(() -> {
                     lastV2StreamMessageAt = System.currentTimeMillis();
                     try {
                         handleV2StreamMessage(message);
@@ -306,7 +323,8 @@ public class MonitorService extends Service {
         if (message == null) {
             return;
         }
-        if (!v2StreamSequenceGuard.shouldApply(message.getBusSeq())) {
+        long busSeq = message.getBusSeq();
+        if (!v2StreamSequenceGuard.shouldApply(busSeq)) {
             return;
         }
         V2StreamRefreshPlanner.RefreshPlan plan = V2StreamRefreshPlanner.plan(
@@ -329,6 +347,7 @@ public class MonitorService extends Service {
         if (plan.shouldRefreshFloating()) {
             floatingCoordinator.requestRefresh(false);
         }
+        v2StreamSequenceGuard.commitApplied(busSeq);
     }
 
     // 只有 history revision 前进时才补拉 history，避免运行态每次都重复打 snapshot。
@@ -343,7 +362,7 @@ public class MonitorService extends Service {
         if (!startDecision.shouldStart()) {
             return;
         }
-        executorService.execute(() -> {
+        boolean submitted = executeOnWorker(() -> {
             try {
                 AccountStatsPreloadManager.Cache cache =
                         accountStatsPreloadManager.refreshHistoryForRevision(startDecision.getRevision());
@@ -362,6 +381,9 @@ public class MonitorService extends Service {
                 });
             }
         });
+        if (!submitted) {
+            accountHistoryRefreshGate.finish(safeHistoryRevision);
+        }
     }
 
     // 会话清空后同步清掉 stream 持仓快照，避免悬浮窗短时显示旧仓位。
@@ -465,21 +487,21 @@ public class MonitorService extends Service {
                     optString(item, "side", ""),
                     optLong(item, "positionTicket", 0L),
                     optLong(item, "orderId", 0L),
-                    optDouble(item, "quantity"),
-                    optDouble(item, "sellableQuantity"),
-                    optDouble(item, "costPrice"),
-                    optDouble(item, "latestPrice"),
-                    optDouble(item, "marketValue"),
-                    optDouble(item, "positionRatio"),
-                    optDouble(item, "dayPnL"),
-                    optDouble(item, "totalPnL"),
-                    optDouble(item, "returnRate"),
-                    optDouble(item, "pendingLots"),
+                    requireFiniteDouble(item, "quantity", "v2 stream position"),
+                    requireFiniteDouble(item, "sellableQuantity", "v2 stream position"),
+                    requireFiniteDouble(item, "costPrice", "v2 stream position"),
+                    requireFiniteDouble(item, "latestPrice", "v2 stream position"),
+                    requireFiniteDouble(item, "marketValue", "v2 stream position"),
+                    requireFiniteDouble(item, "positionRatio", "v2 stream position"),
+                    requireFiniteDouble(item, "dayPnL", "v2 stream position"),
+                    requireFiniteDouble(item, "totalPnL", "v2 stream position"),
+                    requireFiniteDouble(item, "returnRate", "v2 stream position"),
+                    requireFiniteDouble(item, "pendingLots", "v2 stream position"),
                     item.optInt("pendingCount", 0),
-                    optDouble(item, "pendingPrice"),
-                    optDouble(item, "takeProfit"),
-                    optDouble(item, "stopLoss"),
-                    optDouble(item, "storageFee")
+                    requireFiniteDouble(item, "pendingPrice", "v2 stream position"),
+                    requireFiniteDouble(item, "takeProfit", "v2 stream position"),
+                    requireFiniteDouble(item, "stopLoss", "v2 stream position"),
+                    requireFiniteDouble(item, "storageFee", "v2 stream position")
             ));
         }
         synchronized (streamPositionSnapshot) {
@@ -497,7 +519,7 @@ public class MonitorService extends Service {
             return;
         }
         final String snapshotBody = accountSnapshot.toString();
-        executorService.execute(() -> {
+        executeOnWorker(() -> {
             try {
                 JSONObject snapshotCopy = new JSONObject(snapshotBody);
                 AccountStatsPreloadManager.Cache cache =
@@ -506,6 +528,7 @@ public class MonitorService extends Service {
                     clearStreamAccountSnapshot();
                 }
             } catch (Exception exception) {
+                clearStreamAccountSnapshot();
                 logManager.warn("v2 stream 账户运行态应用失败: " + exception.getMessage());
             } finally {
                 mainHandler.post(() -> floatingCoordinator.requestRefresh(false));
@@ -517,12 +540,12 @@ public class MonitorService extends Service {
     private KlineData toKlineDataFromJson(String symbol, JSONObject candle, boolean closed) {
         return new KlineData(
                 symbol,
-                optDouble(candle, "open"),
-                optDouble(candle, "high"),
-                optDouble(candle, "low"),
-                optDouble(candle, "close"),
-                optDouble(candle, "volume"),
-                optDouble(candle, "quoteVolume"),
+                requireFiniteDouble(candle, "open", "v2 stream candle"),
+                requireFiniteDouble(candle, "high", "v2 stream candle"),
+                requireFiniteDouble(candle, "low", "v2 stream candle"),
+                requireFiniteDouble(candle, "close", "v2 stream candle"),
+                requireFiniteDouble(candle, "volume", "v2 stream candle"),
+                requireFiniteDouble(candle, "quoteVolume", "v2 stream candle"),
                 optLong(candle, "openTime", 0L),
                 optLong(candle, "closeTime", 0L),
                 closed
@@ -543,12 +566,32 @@ public class MonitorService extends Service {
             configs.add(configManager.getSymbolConfig(symbol));
         }
         boolean logicAnd = configManager.isUseAndMode();
-        executorService.execute(() -> {
+        executeOnWorker(() -> {
             AbnormalGatewayClient.PushResult result = abnormalGatewayClient.pushConfig(logicAnd, configs);
             if (result != null && !result.isSuccess() && result.getError() != null && !result.getError().trim().isEmpty()) {
                 logManager.warn("异常配置同步失败: " + result.getError());
             }
         });
+    }
+
+    // 统一把后台任务投递到串行执行器；服务销毁或线程池关闭后直接丢弃晚到回调。
+    private boolean executeOnWorker(Runnable task) {
+        if (task == null) {
+            return false;
+        }
+        ExecutorService currentExecutor = executorService;
+        if (currentExecutor == null || currentExecutor.isShutdown() || currentExecutor.isTerminated()) {
+            return false;
+        }
+        try {
+            currentExecutor.execute(task);
+            return true;
+        } catch (RejectedExecutionException exception) {
+            if (logManager != null) {
+                logManager.warn("后台任务已跳过，服务正在关闭");
+            }
+            return false;
+        }
     }
 
     // 按当前前后台状态重新安排固定任务节奏。
@@ -571,6 +614,7 @@ public class MonitorService extends Service {
         }
         boolean streamHealthy = isV2StreamHealthy(System.currentTimeMillis());
         if (streamHealthy) {
+            reconcileRemoteSessionIfNeeded();
             floatingCoordinator.requestRefresh(false);
             updateConnectionStatus();
             return;
@@ -598,6 +642,227 @@ public class MonitorService extends Service {
     // 统一处理“新进入 APP / 后台回前台”的一次性刷新，避免不同入口刷新不一致。
     private void requestForegroundEntryRefresh() {
         floatingCoordinator.requestRefresh(true);
+        reconcileRemoteSessionIfNeeded();
+    }
+
+    // 当前台仍保留本地活动会话，但服务端已经掉到 logged_out 时，按服务端已保存账号正式恢复远程会话。
+    private void reconcileRemoteSessionIfNeeded() {
+        if (configManager == null
+                || secureSessionPrefs == null
+                || sessionClient == null
+                || accountStatsPreloadManager == null
+                || !configManager.isAccountSessionActive()
+                || !remoteSessionRecoveryInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        boolean submitted = executeOnWorker(() -> {
+            try {
+                performRemoteSessionRecoveryIfNeeded();
+            } finally {
+                remoteSessionRecoveryInFlight.set(false);
+            }
+        });
+        if (!submitted) {
+            remoteSessionRecoveryInFlight.set(false);
+        }
+    }
+
+    // 正式对齐本地会话摘要与服务端 session status，避免页面和悬浮窗长期停在伪在线状态。
+    private void performRemoteSessionRecoveryIfNeeded() {
+        SessionSummarySnapshot localSummary = secureSessionPrefs.loadSessionSummary();
+        if (localSummary.hasStorageFailure()) {
+            if (logManager != null) {
+                logManager.warn("远程会话恢复已跳过: " + localSummary.getStorageError());
+            }
+            return;
+        }
+        RemoteAccountProfile localActiveAccount = sanitizeCompleteProfile(localSummary.getActiveAccount());
+        if (localActiveAccount == null) {
+            return;
+        }
+        try {
+            sessionClient.resetTransport();
+            SessionStatusPayload status = sessionClient.fetchStatus();
+            if (status == null || !status.isOk()) {
+                return;
+            }
+            RemoteAccountProfile currentRemoteActiveAccount = sanitizeCompleteProfile(status.getActiveAccount());
+            if (currentRemoteActiveAccount != null) {
+                if (matchesSessionIdentity(currentRemoteActiveAccount, localActiveAccount)) {
+                    secureSessionPrefs.saveSession(
+                            currentRemoteActiveAccount,
+                            RemoteAccountProfileDeduplicationHelper.deduplicate(status.getSavedAccounts()),
+                            true
+                    );
+                }
+                return;
+            }
+            if (!"logged_out".equalsIgnoreCase(trim(status.getState()))) {
+                return;
+            }
+            List<RemoteAccountProfile> savedAccounts = RemoteAccountProfileDeduplicationHelper.deduplicate(status.getSavedAccounts());
+            RemoteAccountProfile targetProfile = findRecoverableSavedAccount(localActiveAccount, savedAccounts);
+            if (targetProfile == null) {
+                settleRemoteLoggedOutLocally(savedAccounts, localSummary, localActiveAccount);
+                return;
+            }
+            clearStreamAccountSnapshot();
+            accountStatsPreloadManager.clearLatestCache();
+            accountStatsPreloadManager.setFullSnapshotActive(true);
+            SessionReceipt receipt = sessionClient.switchAccount(targetProfile.getProfileId(), UUID.randomUUID().toString());
+            if (receipt == null || !receipt.isOk()) {
+                if (logManager != null) {
+                    logManager.warn("远程会话恢复失败: 已保存账号切换未获受理");
+                }
+                return;
+            }
+            SessionStatusPayload recoveredStatus = sessionClient.fetchStatus();
+            if (recoveredStatus == null || !recoveredStatus.isOk()) {
+                return;
+            }
+            RemoteAccountProfile remoteActiveAccountAfterSwitch = sanitizeCompleteProfile(recoveredStatus.getActiveAccount());
+            if (remoteActiveAccountAfterSwitch == null
+                    || !matchesSessionIdentity(remoteActiveAccountAfterSwitch, targetProfile)) {
+                return;
+            }
+            List<RemoteAccountProfile> recoveredSavedAccounts =
+                    RemoteAccountProfileDeduplicationHelper.deduplicate(recoveredStatus.getSavedAccounts());
+            RemoteAccountProfile remoteActiveAccount = remoteActiveAccountAfterSwitch;
+            secureSessionPrefs.saveSession(remoteActiveAccount, recoveredSavedAccounts, true);
+            configManager.setAccountSessionActive(true);
+            AccountStatsPreloadManager.Cache recoveredCache = accountStatsPreloadManager.fetchForUi(AccountTimeRange.ALL);
+            if (recoveredCache == null || !recoveredCache.isConnected()) {
+                if (logManager != null) {
+                    logManager.warn("远程会话恢复已受理，但账户快照暂未返回");
+                }
+                return;
+            }
+            if (!matchesSessionIdentity(remoteActiveAccount, recoveredCache.getAccount(), recoveredCache.getServer())) {
+                if (logManager != null) {
+                    logManager.warn("远程会话恢复后的账户快照与目标账号不一致");
+                }
+                return;
+            }
+            mainHandler.post(() -> {
+                if (floatingCoordinator != null) {
+                    floatingCoordinator.requestRefresh(true);
+                }
+                updateConnectionStatus();
+            });
+        } catch (Exception exception) {
+            if (logManager != null) {
+                logManager.warn("远程会话恢复失败: " + exception.getMessage());
+            }
+        }
+    }
+
+    // 服务端已确认 logged_out 且无法按已保存账号恢复时，本地也必须同步收口为离线态。
+    private void settleRemoteLoggedOutLocally(@NonNull List<RemoteAccountProfile> savedAccounts,
+                                              @NonNull SessionSummarySnapshot localSummary,
+                                              @NonNull RemoteAccountProfile localActiveAccount) {
+        configManager.setAccountSessionActive(false);
+        secureSessionPrefs.saveSession(null, savedAccounts, false);
+        secureSessionPrefs.saveDraftIdentity(
+                firstNonEmpty(localSummary.getDraftAccount(), localActiveAccount.getLogin()),
+                firstNonEmpty(localSummary.getDraftServer(), localActiveAccount.getServer())
+        );
+        if (accountStatsPreloadManager != null) {
+            accountStatsPreloadManager.setFullSnapshotActive(false);
+            accountStatsPreloadManager.clearLatestCache();
+        }
+        clearStreamAccountSnapshot();
+        clearPersistedAccountSnapshot(localActiveAccount);
+        mainHandler.post(() -> {
+            if (floatingCoordinator != null) {
+                floatingCoordinator.requestRefresh(true);
+            }
+            updateConnectionStatus();
+        });
+    }
+
+    // 找到与本地活动账号同一身份的服务端已保存账号，优先使用 profileId，其次使用 login+server。
+    @Nullable
+    private RemoteAccountProfile findRecoverableSavedAccount(@NonNull RemoteAccountProfile localActiveAccount,
+                                                             @Nullable List<RemoteAccountProfile> savedAccounts) {
+        if (savedAccounts == null) {
+            return null;
+        }
+        for (RemoteAccountProfile profile : savedAccounts) {
+            RemoteAccountProfile safeProfile = sanitizeCompleteProfile(profile);
+            if (safeProfile != null && matchesSessionIdentity(safeProfile, localActiveAccount)) {
+                return safeProfile;
+            }
+        }
+        return null;
+    }
+
+    // profileId 命中时按 profileId 收口；否则回退到 login+server 的稳定身份。
+    private boolean matchesSessionIdentity(@NonNull RemoteAccountProfile first,
+                                           @NonNull RemoteAccountProfile second) {
+        String firstProfileId = trim(first.getProfileId());
+        String secondProfileId = trim(second.getProfileId());
+        if (!firstProfileId.isEmpty() && !secondProfileId.isEmpty()) {
+            return firstProfileId.equalsIgnoreCase(secondProfileId);
+        }
+        return trim(first.getLogin()).equalsIgnoreCase(trim(second.getLogin()))
+                && trim(first.getServer()).equalsIgnoreCase(trim(second.getServer()));
+    }
+
+    // 用账号和服务器匹配恢复后的账户快照，确保不会把别的账号快照误写回当前会话。
+    private boolean matchesSessionIdentity(@NonNull RemoteAccountProfile profile,
+                                           @Nullable String account,
+                                           @Nullable String server) {
+        return trim(profile.getLogin()).equalsIgnoreCase(trim(account))
+                && trim(profile.getServer()).equalsIgnoreCase(trim(server));
+    }
+
+    // 只接受 profileId/login/server 完整的账号摘要，避免脏会话状态再次被写回。
+    @Nullable
+    private RemoteAccountProfile sanitizeCompleteProfile(@Nullable RemoteAccountProfile profile) {
+        if (profile == null) {
+            return null;
+        }
+        if (trim(profile.getProfileId()).isEmpty()
+                || trim(profile.getLogin()).isEmpty()
+                || trim(profile.getServer()).isEmpty()) {
+            return null;
+        }
+        return profile;
+    }
+
+    // 远端已明确登出时，同步清掉该账号的本地持久化账户缓存，避免页面回读旧快照。
+    private void clearPersistedAccountSnapshot(@NonNull RemoteAccountProfile localActiveAccount) {
+        if (accountStorageRepository == null) {
+            return;
+        }
+        String account = trim(localActiveAccount.getLogin());
+        String server = trim(localActiveAccount.getServer());
+        if (account.isEmpty() || server.isEmpty()) {
+            accountStorageRepository.clearRuntimeSnapshot();
+            accountStorageRepository.clearTradeHistory();
+            return;
+        }
+        accountStorageRepository.clearRuntimeSnapshot(account, server);
+        accountStorageRepository.clearTradeHistory(account, server);
+    }
+
+    @NonNull
+    private String firstNonEmpty(@Nullable String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            String safeValue = trim(value);
+            if (!safeValue.isEmpty()) {
+                return safeValue;
+            }
+        }
+        return "";
+    }
+
+    @NonNull
+    private String trim(@Nullable String value) {
+        return value == null ? "" : value.trim();
     }
 
     // 安排下一次连接心跳检查。
@@ -840,6 +1105,30 @@ public class MonitorService extends Service {
             }
         }
         return 0d;
+    }
+
+    // 关键数值字段必须是有限实数，异常时直接拒绝整包，避免坏包被静默写成 0。
+    private double requireFiniteDouble(JSONObject item, String key, String context) {
+        if (item == null || key == null || key.trim().isEmpty() || !item.has(key)) {
+            throw new IllegalStateException(context + " missing " + key);
+        }
+        Object value = item.opt(key);
+        double parsed;
+        if (value instanceof Number) {
+            parsed = ((Number) value).doubleValue();
+        } else if (value instanceof String) {
+            try {
+                parsed = Double.parseDouble(((String) value).trim());
+            } catch (Exception exception) {
+                throw new IllegalStateException(context + " invalid " + key, exception);
+            }
+        } else {
+            throw new IllegalStateException(context + " invalid " + key);
+        }
+        if (!Double.isFinite(parsed)) {
+            throw new IllegalStateException(context + " invalid " + key);
+        }
+        return parsed;
     }
 
     // 读取长整型字段，缺失或异常时返回默认值。
