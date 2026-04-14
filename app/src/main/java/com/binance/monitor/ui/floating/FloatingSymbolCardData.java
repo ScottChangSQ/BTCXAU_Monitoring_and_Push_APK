@@ -9,6 +9,7 @@ public class FloatingSymbolCardData {
     private final String code;
     private final String label;
     private final double totalPnl;
+    private final double totalLots;
     private final double latestPrice;
     private final boolean hasLatestPrice;
     private final double volume;
@@ -19,6 +20,7 @@ public class FloatingSymbolCardData {
     public FloatingSymbolCardData(String code,
                                   String label,
                                   double totalPnl,
+                                  double totalLots,
                                   double latestPrice,
                                   boolean hasLatestPrice,
                                   double volume,
@@ -28,6 +30,7 @@ public class FloatingSymbolCardData {
         this.code = code == null ? "" : code;
         this.label = label == null ? "" : label;
         this.totalPnl = totalPnl;
+        this.totalLots = totalLots;
         this.latestPrice = latestPrice;
         this.hasLatestPrice = hasLatestPrice;
         this.volume = volume;
@@ -49,6 +52,11 @@ public class FloatingSymbolCardData {
     // 返回该产品当前合计盈亏。
     public double getTotalPnl() {
         return totalPnl;
+    }
+
+    // 返回带方向的展示总手数；大小按绝对手数汇总，正负按净方向确定。
+    public double getTotalLots() {
+        return totalLots;
     }
 
     // 返回当前最新价格。
@@ -92,6 +100,8 @@ public class FloatingSymbolCardData {
                 + label
                 + "|"
                 + Double.doubleToLongBits(totalPnl)
+                + "|"
+                + Double.doubleToLongBits(totalLots)
                 + "|"
                 + Double.doubleToLongBits(latestPrice)
                 + "|"

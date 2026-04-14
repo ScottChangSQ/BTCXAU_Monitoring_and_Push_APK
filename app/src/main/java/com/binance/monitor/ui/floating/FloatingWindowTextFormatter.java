@@ -6,6 +6,8 @@ package com.binance.monitor.ui.floating;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
+import java.text.DecimalFormat;
+
 final class FloatingWindowTextFormatter {
 
     private static final double ZERO_EPSILON = 1e-9;
@@ -14,9 +16,13 @@ final class FloatingWindowTextFormatter {
     }
 
     // 生成“产品名\n盈亏金额”格式的标题，隐私开启时仅隐藏金额部分。
-    static String formatCardTitle(String label, double totalPnl, boolean masked) {
+    static String formatCardTitle(String label,
+                                  double totalLots,
+                                  double totalPnl,
+                                  boolean hasPosition,
+                                  boolean masked) {
         String safeLabel = label == null ? "" : label.trim();
-        String pnlText = formatPnlAmount(totalPnl, masked);
+        String pnlText = formatCardPnlLine(totalLots, totalPnl, hasPosition, masked);
         return safeLabel + "\n" + pnlText;
     }
 
@@ -70,11 +76,32 @@ final class FloatingWindowTextFormatter {
         return "1M额 " + amountText;
     }
 
+    // 统一格式化产品卡片第二行：有持仓时显示“总手数 + 盈亏”，无持仓时维持原有盈亏占位。
+    static String formatCardPnlLine(double totalLots,
+                                    double totalPnl,
+                                    boolean hasPosition,
+                                    boolean masked) {
+        if (masked) {
+            return SensitiveDisplayMasker.MASK_TEXT;
+        }
+        if (!hasPosition) {
+            return formatVisiblePnl(totalPnl);
+        }
+        return formatSignedLots(totalLots) + formatVisiblePnl(totalPnl);
+    }
+
     // 统一处理悬浮窗盈亏显示，零值时按产品要求显示为 $-。
     private static String formatVisiblePnl(double totalPnl) {
         if (shouldUseNeutralPnlStyle(totalPnl)) {
             return "$-";
         }
         return FormatUtils.formatSignedMoneyOneDecimal(totalPnl);
+    }
+
+    // 统一格式化悬浮窗卡片里的总手数，方向按净方向、大小按绝对手数汇总。
+    private static String formatSignedLots(double totalLots) {
+        String sign = totalLots < 0d ? "-" : "+";
+        String amount = new DecimalFormat("0.00").format(Math.abs(totalLots));
+        return "（" + sign + amount + "手）";
     }
 }

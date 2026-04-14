@@ -41,8 +41,10 @@ public class FloatingPositionAggregatorTest {
         assertEquals(2, items.size());
         assertEquals("BTCUSD", items.get(0).getCode());
         assertEquals(-28d, items.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(-0.10d, items.get(0).getTotalLots(), 0.0001d);
         assertEquals("XAUUSD", items.get(1).getCode());
         assertEquals(4d, items.get(1).getTotalPnl(), 0.0001d);
+        assertEquals(0.01d, items.get(1).getTotalLots(), 0.0001d);
     }
 
     // 行情价格应按 BTC/XAU 开关过滤，并回填到对应产品行。
@@ -128,14 +130,37 @@ public class FloatingPositionAggregatorTest {
         assertEquals("BTCUSD", cards.get(0).getLabel());
         assertEquals(true, cards.get(0).hasActivePosition());
         assertEquals(-20d, cards.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(-0.05d, cards.get(0).getTotalLots(), 0.0001d);
         assertEquals(123d, cards.get(0).getVolume(), 0.0001d);
         assertEquals(456_000d, cards.get(0).getAmount(), 0.0001d);
         assertEquals(AppConstants.SYMBOL_XAU, cards.get(1).getCode());
         assertEquals("XAUUSD", cards.get(1).getLabel());
         assertEquals(true, cards.get(1).hasActivePosition());
         assertEquals(4d, cards.get(1).getTotalPnl(), 0.0001d);
+        assertEquals(0.01d, cards.get(1).getTotalLots(), 0.0001d);
         assertEquals(456d, cards.get(1).getVolume(), 0.0001d);
         assertEquals(789_000d, cards.get(1).getAmount(), 0.0001d);
+    }
+
+    // 同一产品总手数按绝对手数求和，但正负方向仍按净方向展示。
+    @Test
+    public void aggregateShouldSumAbsoluteLotsAndKeepDirectionFromNetSide() {
+        List<PositionItem> positions = Arrays.asList(
+                new PositionItem("BTCUSD", "BTCUSD", "Buy", 1L, 11L,
+                        0.01d, 0.01d, 66_000d, 66_500d, 665d, 0.1d,
+                        0d, 12d, 0.01d, 0d, 0, 0d, 0d, 0d, 0d),
+                new PositionItem("BTCUSD", "BTCUSD", "Buy", 2L, 12L,
+                        0.02d, 0.02d, 66_100d, 66_550d, 1_331d, 0.2d,
+                        0d, 8d, 0.01d, 0d, 0, 0d, 0d, 0d, 0d),
+                new PositionItem("BTCUSD", "BTCUSD", "Sell", 3L, 13L,
+                        0.01d, 0.01d, 66_200d, 66_520d, 665.2d, 0.1d,
+                        0d, -5d, -0.01d, 0d, 0, 0d, 0d, 0d, 0d)
+        );
+
+        List<FloatingPositionPnlItem> items = FloatingPositionAggregator.aggregate(positions);
+
+        assertEquals(1, items.size());
+        assertEquals(0.04d, items.get(0).getTotalLots(), 0.0001d);
     }
 
     // 悬浮窗价格应优先使用实时价格缓存，不能继续落回旧的已收盘 K 线价格。

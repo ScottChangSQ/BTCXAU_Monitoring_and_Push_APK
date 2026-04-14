@@ -11,23 +11,30 @@ public class FloatingWindowTextFormatterTest {
 
     @Test
     public void formatCardTitleShouldCombineAssetAndPnl() {
-        String title = FloatingWindowTextFormatter.formatCardTitle("BTC", -1250d, false);
+        String title = FloatingWindowTextFormatter.formatCardTitle("BTC", -0.10d, -1250d, true, false);
 
-        assertEquals("BTC\n-$1,250.0", title);
+        assertEquals("BTC\n（-0.10手）-$1,250.0", title);
     }
 
     @Test
     public void formatCardTitleShouldMaskPnlOnly() {
-        String title = FloatingWindowTextFormatter.formatCardTitle("XAU", 88d, true);
+        String title = FloatingWindowTextFormatter.formatCardTitle("XAU", 0.05d, 88d, true, true);
 
         assertEquals("XAU\n*", title);
     }
 
     @Test
     public void formatCardTitleShouldShowDashWhenPnlIsZero() {
-        String title = FloatingWindowTextFormatter.formatCardTitle("BTC", 0d, false);
+        String title = FloatingWindowTextFormatter.formatCardTitle("BTC", 0d, 0d, false, false);
 
         assertEquals("BTC\n$-", title);
+    }
+
+    @Test
+    public void formatCardTitleShouldPrefixVisiblePnlWithLots() {
+        String title = FloatingWindowTextFormatter.formatCardTitle("BTC", 0.03d, -28d, true, false);
+
+        assertEquals("BTC\n（+0.03手）-$28.0", title);
     }
 
     @Test

@@ -29,7 +29,7 @@ public class FloatingPositionAggregator {
                                                           Map<String, Double> latestPrices,
                                                           boolean showBtc,
                                                           boolean showXau) {
-        Map<String, FloatingPositionPnlItem> grouped = new TreeMap<>(String::compareToIgnoreCase);
+        Map<String, GroupedPositionState> grouped = new TreeMap<>(String::compareToIgnoreCase);
         if (positions == null || positions.isEmpty()) {
             return new ArrayList<>();
         }
@@ -48,20 +48,41 @@ public class FloatingPositionAggregator {
             double marketPrice = resolveMarketPrice(code, latestPrices);
             boolean hasMarketPrice = !Double.isNaN(marketPrice);
             double total = resolveDisplayTotalPnl(item);
-            FloatingPositionPnlItem current = grouped.get(code);
+            double quantity = Math.abs(item.getQuantity());
+            double signedQuantity = resolveSignedQuantity(item);
+            GroupedPositionState current = grouped.get(code);
             if (current == null) {
-                grouped.put(code, new FloatingPositionPnlItem(code, label, total, marketPrice, hasMarketPrice));
+                GroupedPositionState initial = new GroupedPositionState(label);
+                initial.totalPnl = total;
+                initial.totalLotsAbs = quantity;
+                initial.netLots = signedQuantity;
+                initial.marketPrice = marketPrice;
+                initial.hasMarketPrice = hasMarketPrice;
+                grouped.put(code, initial);
                 continue;
             }
-            grouped.put(code, new FloatingPositionPnlItem(
+            current.totalPnl += total;
+            current.totalLotsAbs += quantity;
+            current.netLots += signedQuantity;
+            if (!current.hasMarketPrice() && hasMarketPrice) {
+                current.marketPrice = marketPrice;
+                current.hasMarketPrice = true;
+            }
+        }
+        List<FloatingPositionPnlItem> result = new ArrayList<>();
+        for (Map.Entry<String, GroupedPositionState> entry : grouped.entrySet()) {
+            String code = entry.getKey();
+            GroupedPositionState state = entry.getValue();
+            result.add(new FloatingPositionPnlItem(
                     code,
-                    current.getLabel(),
-                    current.getTotalPnl() + total,
-                    current.hasMarketPrice() ? current.getMarketPrice() : marketPrice,
-                    current.hasMarketPrice() || hasMarketPrice
+                    state.getLabel(),
+                    state.getTotalPnl(),
+                    resolveDisplayLots(state.getTotalLotsAbs(), state.getNetLots()),
+                    state.getMarketPrice(),
+                    state.hasMarketPrice()
             ));
         }
-        return new ArrayList<>(grouped.values());
+        return result;
     }
 
     // 生成悬浮窗产品卡片，确保已启用的产品即使当前无持仓也会展示行情。
@@ -89,6 +110,7 @@ public class FloatingPositionAggregator {
             FloatingPositionPnlItem pnlItem = findPnlItemForSymbol(symbol, grouped);
             KlineData kline = latestKlines == null ? null : latestKlines.get(symbol);
             double totalPnl = pnlItem == null ? 0d : pnlItem.getTotalPnl();
+            double totalLots = pnlItem == null ? 0d : pnlItem.getTotalLots();
             String label = resolveCardLabel(symbol, pnlItem);
             double realtimePrice = resolveMarketPrice(symbol, latestPrices);
             boolean hasPrice = !Double.isNaN(realtimePrice) || kline != null;
@@ -103,6 +125,7 @@ public class FloatingPositionAggregator {
                     symbol,
                     label,
                     totalPnl,
+                    totalLots,
                     latestPrice,
                     hasPrice,
                     volume,
@@ -209,6 +232,24 @@ public class FloatingPositionAggregator {
         return item.getTotalPnL() + item.getStorageFee();
     }
 
+    // 把持仓方向统一收口成带正负的手数，买入为正，卖出为负。
+    private static double resolveSignedQuantity(PositionItem item) {
+        if (item == null) {
+            return 0d;
+        }
+        double quantity = Math.abs(item.getQuantity());
+        String side = item.getSide() == null ? "" : item.getSide().trim().toUpperCase(Locale.ROOT);
+        return side.startsWith("SELL") ? -quantity : quantity;
+    }
+
+    // 展示手数大小按绝对值累计，正负按净方向决定。
+    private static double resolveDisplayLots(double totalLotsAbs, double netLots) {
+        if (totalLotsAbs <= 1e-9) {
+            return 0d;
+        }
+        return netLots < 0d ? -totalLotsAbs : totalLotsAbs;
+    }
+
     // 兼容 MT5 持仓代码和 Binance 行情代码不一致的场景，保证悬浮窗仍能显示对应盈亏。
     private static FloatingPositionPnlItem findPnlItemForSymbol(String symbol,
                                                                 Map<String, FloatingPositionPnlItem> grouped) {
@@ -237,5 +278,43 @@ public class FloatingPositionAggregator {
             return item.getLabel().trim();
         }
         return ProductSymbolMapper.toTradeSymbol(symbol);
+    }
+
+    // 聚合同一产品下的悬浮窗持仓状态。
+    private static final class GroupedPositionState {
+        private final String label;
+        private double totalPnl;
+        private double totalLotsAbs;
+        private double netLots;
+        private double marketPrice;
+        private boolean hasMarketPrice;
+
+        private GroupedPositionState(String label) {
+            this.label = label == null ? "" : label;
+        }
+
+        private String getLabel() {
+            return label;
+        }
+
+        private double getTotalPnl() {
+            return totalPnl;
+        }
+
+        private double getTotalLotsAbs() {
+            return totalLotsAbs;
+        }
+
+        private double getNetLots() {
+            return netLots;
+        }
+
+        private double getMarketPrice() {
+            return marketPrice;
+        }
+
+        private boolean hasMarketPrice() {
+            return hasMarketPrice;
+        }
     }
 }

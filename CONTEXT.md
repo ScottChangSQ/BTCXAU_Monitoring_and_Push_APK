@@ -1,6 +1,17 @@
 # CONTEXT
 
 ## 当前正在做什么
+- 当前这轮已继续补充“账户历史为什么补拉慢”的机制定位，新增确认：账户持仓页回前台、账户统计页前台刷新循环、交易成功后强一致确认，这三条链虽然都会触发 `fetchForUi(AccountTimeRange.ALL)` 或相关确认动作，但真正决定历史成交/净值曲线/统计指标是否正式补拉的核心仍是 `historyRevision` 是否前进。
+- 当前这轮已明确 `historyRevision` 的真实源头：服务端不是按简单时间戳递增，而是重新读取 MT5 历史成交列表后，对整份 `trades` 稳定排序并做哈希；只有这份历史列表真的变化，stream 才会带出新的 `accountHistoryRevision`，APP 才会触发 `/v2/account/history` 正式补拉。
+- 当前这轮还补清了一个容易误判的口径：`historyRevision` 用的是服务端整理后的“历史成交行”列表，而不是 MT5 全部原始 deal 原样列表；所以某些“只开仓、未形成历史成交闭环”的交易，即使已受理，也不一定立刻推动历史 revision 前进。
+- 当前这轮已确认“历史成交拉取明显延后”的第一嫌疑不在 APP 侧长时间定时器，也不优先指向手机本地时区；按现有代码，更应优先怀疑交易受理后，服务端当次 `history_deals_get(...)` 尚未立即看到新成交，导致立即发布 bus 时 `historyRevision` 仍是旧值。
+- 当前已完成“APP 全量数据更新机制”梳理，新增 [app-data-update-mechanisms-2026-04-14.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/docs/app-data-update-mechanisms-2026-04-14.md)，覆盖悬浮窗、行情监控、行情持仓、账户持仓、账户统计五个展示面的数据源头、更新链条、频次、增量/全量机制、更新时间口径和触发机制，并附上总 Mermaid 链路图。
+- 当前这轮已明确当前架构不是“每个页面各拉各的”：市场主链以 `/v2/stream -> MonitorService -> MonitorRepository` 为主，账户主链以 `/v2/stream.accountRuntime -> AccountStatsPreloadManager.Cache` 为主，历史成交/净值曲线/统计指标以 `historyRevision` 驱动 `/v2/account/history` 补拉为主。
+- 当前这轮还确认了页面差异：悬浮窗与行情监控主要消费共享快照；行情持仓是 `REST K 线主链 + Repository 实时尾部 + 账户叠加层` 三链并行；账户持仓与账户统计都以 `AccountStatsPreloadManager.Cache` 为统一账户真值入口，但账户统计页前台会维持显式 `fetchForUi(AccountTimeRange.ALL)` 确认链。
+- 当前已完成悬浮窗分产品盈亏文案增强：同一产品卡片第二行现在会在盈亏金额前显示该产品总手数，格式为 `（+/-0.00手）+/-$xx.x`；总手数大小按该产品下所有持仓 `quantity` 绝对值求和，正负方向按净方向决定，无持仓卡片仍保持原来的 `$-` 占位。
+- 当前已完成“实盘实施第一阶段完成情况 + 第二阶段及后续路径”的文档梳理，并新增 [2026-04-13-live-trading-phase2-roadmap.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/docs/superpowers/plans/2026-04-13-live-trading-phase2-roadmap.md) 作为后续推进基线。
+- 当前这轮判断已明确：第一阶段“最小交易闭环”的核心主链已落地，可正式进入第二阶段；但第二阶段不应从图表拖拽线直接开做，而应先补风险预演、拒单可读和交易状态分层，再把这些能力接到图表交互层。
+- 当前这轮还明确标注了边界：服务端交易接口、App 状态机、统一确认、交易后强一致刷新已经具备；但独立交易审计模块、图表草稿线状态层、风险预演、拒单翻译和快速模式边界仍未形成第二阶段完整交付。
 - 当前已完成 K 线图首页默认视口收紧与历史窗口扩容： [KlineChartView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java) 的默认蜡烛宽度/间距已从 `0.96 / 0.7067` 调整为 `1.28 / 0.88`，首屏默认显示的 K 线数量明显减少，不再默认挤得过密。
 - 当前已把图表首次恢复窗口和后续历史分页窗口统一扩到 500 条： [MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java) 的 `RESTORE_WINDOW_LIMIT`、`HISTORY_PAGE_LIMIT` 已统一改为 `500`，首次加载与后续继续加载历史都按同一窗口执行。
 - 当前这轮已按先红后绿完成验证：先让 `KlineChartViewSourceTest.defaultViewportShouldUseWiderSlotToShowFewerCandles` 与 `MarketChartProgressiveGapFillSourceTest.chartActivityShouldUseExpandedRestoreWindow` 在旧实现上失败，再修复后回跑通过；随后 `.\gradlew.bat :app:compileDebugJavaWithJavac` 与 `.\gradlew.bat :app:assembleDebug` 已通过。
@@ -170,6 +181,8 @@
 - 本轮继续按最小单元推进 1-12：当前本地代码侧没有新的未修复项，剩余未闭合项仍只有第 12 条公网部署链；这次再次确认线上 `bundleFingerprint` 仍是旧值、账户接口仍因 `MT5_SERVER_TIMEZONE` 缺失返回 `500`，且当前 `adb devices` 为空，真机链也无法继续。
 
 ## 上次停在哪个位置
+- 这次停在“悬浮窗分产品盈亏前增加总手数”已完成并通过定向测试；如果后续继续改悬浮窗文案，应直接从 `FloatingPositionAggregator -> FloatingSymbolCardData -> FloatingWindowTextFormatter -> FloatingWindowManager` 这条链接着看。
+- 这次停在“已完成第一阶段复盘，并给出第二阶段到第四阶段的最短实施路径”；下次如继续推进，应直接按新路线文档从“风险预演 + 拒单翻译”开始拆任务，而不是重新讨论是否先做图表拖拽线。
 - 这轮新增收口了一条服务端管理面板回归：默认 stop 命令此前只按 `CommandLine` 匹配 Python 网关进程，没有继续校验 `ExecutablePath` 是否属于当前 gateway 目录；现在已收口为脚本名 + bundle/python 可执行路径双重匹配。
 - 这轮新增收口了一条账户持仓页异步竞态回归：页面同时收到“本地旧缓存恢复”和“新实时缓存”时，旧结果可能晚到并覆盖新界面；现在已按快照版本拒绝更旧的读模型。
 - 这次停在用户要求“再做一次 BUG review 及修复”。
@@ -226,6 +239,10 @@
 - 这次 BUG review 又沿账户持仓 adapter 的同一根因链继续下探，确认挂单行数量展示还存在一个隐藏边界：界面会在 `pendingLots` 为空时回退用 `quantity`，但旧的 `contentKeyOf()` 没把这个回退字段纳入签名，导致这类变化仍可能不刷新。已先补失败测试锁定，再把 `quantity` 补进签名。
 
 ## 近期关键决定和原因
+- 悬浮窗分产品盈亏文案当前采用“聚合层先产出总手数，再由格式器统一拼文案”的实现；原因是总手数属于悬浮窗业务真值的一部分，不应在视图层临时回扫持仓列表做第二次计算。
+- 第二阶段当前采用“先补风险表达，再补图表交互”的实施顺序；原因是第一阶段已经有正式交易主链，当前最大缺口不是能不能发命令，而是用户能否在发命令前看懂风险、在失败后看懂原因、在图上分清草稿与已生效状态。
+- 第二阶段不再新建第二套图表专用交易执行链，只允许把图表交互接入现有 `GatewayV2TradeClient + TradeExecutionCoordinator + AccountStatsPreloadManager` 主链；原因是第一阶段的核心价值就是统一交易校验、提交和同步收敛，第二阶段如果分叉，会直接破坏这个闭环。
+- 第一阶段完成情况当前按“核心主链已闭合、边界项单独标注”口径记录；原因是仓库内已经能证明交易网关、状态机、统一确认和交易后强刷存在，但独立交易审计模块与第二阶段能力尚未完整落地，不能混写成全部完成。
 - 账户本地仓储不再继续维持“单槽位 + 全表清空”模型，正式改成“账号+服务器身份分区 + 旧 key 迁移补前缀”；原因是多账号切换场景下，历史交易、持仓和挂单不能互相覆盖，也不能靠页面层过滤来补救底层串号。
 - 交易强一致收敛对 `accepted` 但无 `order/deal` reference 的回执，不再直接判失败，而是回到账户快照结构变化判断；原因是部分网关受理回执天生不带 reference，继续硬卡 reference 会把真实已成交交易永远留在同步中。
 - 账户持仓页不能直接消费任意最新缓存，必须先校验缓存账号/服务器与当前活动远程会话一致；原因是切号后旧账号缓存会短暂复用到新页面，属于真实数据串号，不是单纯首帧延迟。

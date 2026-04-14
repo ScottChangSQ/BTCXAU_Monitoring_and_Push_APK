@@ -659,10 +659,15 @@ public class FloatingWindowManager {
                                               boolean masked) {
         String label = card == null || card.getLabel() == null ? "" : card.getLabel().trim();
         double totalPnl = card == null ? 0d : card.getTotalPnl();
+        double totalLots = card == null ? 0d : card.getTotalLots();
+        boolean hasPosition = card != null && card.hasPosition();
         String pnlText = FloatingWindowTextFormatter.formatPnlAmount(totalPnl, masked);
-        String title = FloatingWindowTextFormatter.formatCardTitle(label, totalPnl, masked);
+        String title = FloatingWindowTextFormatter.formatCardTitle(label, totalLots, totalPnl, hasPosition, masked);
         SpannableStringBuilder styled = new SpannableStringBuilder(title);
-        int pnlStart = Math.min(title.length(), label.length() + 1);
+        int pnlStart = title.lastIndexOf(pnlText);
+        if (pnlStart < 0) {
+            pnlStart = Math.min(title.length(), label.length() + 1);
+        }
         int pnlEnd = Math.min(title.length(), pnlStart + pnlText.length());
         if (pnlStart < pnlEnd) {
             int pnlColor = masked ? palette.textPrimary : resolvePnlColor(totalPnl, true);
