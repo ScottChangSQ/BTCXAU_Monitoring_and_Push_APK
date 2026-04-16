@@ -1,122 +1,16 @@
 # CONTEXT
 
 ## 当前正在做什么
-- 已继续修复账户统计页“交易统计模块切换/切回时会先消失，再由上方净值/结余曲线区域顶上来，随后交易统计才出现”的剩余问题：这次根因不是刷新前的显式 `hide`，而是 `bindTradeAnalytics(...)` 在主壳页和桥接页里都保留了“首次展示时额外等待 `RecyclerView` 预绘制再显示整卡”的旧语义，导致页面每次重建交易统计卡片时都会先空一帧。
-- 现已把交易统计卡片的显示语义收口为“子内容绑定完成后同轮直接显示整卡”：`AccountStatsScreen`、`AccountStatsBridgeActivity` 已删除 `revealTradeStatsSectionWhenReady()` 和 `firstReveal` 预绘制等待分支，不再让交易统计卡片在切页/切换后额外空一帧。
-- 已同步更新源码级回归测试 `AccountStatsTradeStatsVisibilitySourceTest` 与 `AccountStatsBridgeSnapshotSourceTest`，锁定交易统计绑定后必须立即显示，不能再依赖额外 `preDraw` 才显卡片。
-- 已修复账户统计页“交易统计模块每次切换都会先消失，净值/结余曲线区补位后再回来”的问题：根因在交易统计次级区块每次刷新前都会调用 `hideTradeStatsSectionUntilFreshContentReady()`，而宿主把整张卡片设成了 `GONE`，导致布局立刻重排，曲线模块顶上来；等交易统计后台准备完成后，卡片才再次显示。
-- 现已把交易统计刷新前的显示语义收口为“只在首显前保留占位，不再让布局补位”：如果交易统计卡片此前还没显示过，就先设为 `INVISIBLE` 保留位置；如果已经显示过，则切换时不再额外隐藏。
-- 已新增源码级回归测试 `AccountStatsTradeStatsVisibilitySourceTest.tradeStatsRefreshShouldPreserveCardSlotInScreenAndBridge`，并同步更新 `AccountStatsBridgeSnapshotSourceTest`，锁定主壳版和桥接版账户统计页都不能再用 `GONE` 把交易统计卡片整块收起。
-- 已修复“左滑到最左侧触发一次左补后，焦点仍卡在新最左侧、容易再次误拉”的问题：根因在 `KlineChartView.prependCandles(...)` 前插旧 K 线后又把 `offsetCandles` 额外推进了 `olderCandles.size()`，这会让视口直接贴到新的最大左偏移，刚补进来的最老 K 线立刻顶到最左侧，从而继续满足再次左补的触发条件。
-- 现已把左补后的视口行为收口为“保持补页前的原视口偏移”：前插历史并重算指标后，会恢复旧 `offsetCandles` 再做边界裁剪，只把更早历史暴露在左侧，不会自动把焦点跳到新最左边。
-- 已新增源码级回归测试 `KlineChartViewSourceTest.prependOlderCandlesShouldKeepViewportOffsetInsteadOfJumpingToNewLeftEdge`，锁定左补后必须保留原视口偏移，不能再把焦点推到新最左侧。
-- 已修复“点击月线会跳到 1 分钟线”的问题：根因是图表周期键里把 `1M` 和 `1m` 混用了忽略大小写比较，导致月线在“恢复已选周期 / 按 key 查找周期 / 判断是否分钟线 / 月线聚合 / 分钟实时尾部派生”等链路里都可能被误判成 1 分钟。
-- 现已把图表周期键的关键比较统一收口为大小写敏感：`1M` 只表示月线，`1m` 只表示 1 分钟，避免月线按钮、月线恢复和月线数据处理再落进分钟分支。
-- 已新增回归测试 `MarketChartRuntimeHelperTest.resolveStoredIntervalKeyShouldNotTreatMonthlyAsMinute`、`CandleAggregationHelperTest.aggregateShouldTreatMonthlyIntervalAsMonthlyInsteadOfMinute`、`MarketChartRealtimeTailHelperTest.buildRealtimeDisplayCandlesShouldNotTreatMonthlyIntervalAsMinute` 和 `MarketChartIntervalKeySourceTest.intervalLookupShouldKeepMonthlyAndMinuteKeysCaseSensitive`，锁定这次 `1M/1m` 不能混用。
-- 已继续修复“某些周期（如 1 小时、4 小时）切换后 K 线仍持续向左补历史”的剩余问题：这次根因不在缓存恢复，而在自动补拉判定本身把“窗口内部有时间空档”也当成了继续向左翻页的条件。对于 XAU 这类存在正常停盘空档的品种，这个条件会长期成立，但向左补历史根本修不好窗口中间的空档，反而会造成持续补拉和焦点跳动。
-- 现已把自动左补历史的判定收口为“只有用户之前真的翻过更老历史，而且本轮刷新把左边已看过的历史挤掉了，才继续向左补”；窗口内部缺口不再触发自动左补，内部断档统一留给主刷新链路修复。
-- 已同步更新 `ChartGapFillHelperTest`，锁定“仅内部缺口、但此前并未加载扩展历史”时不能触发自动左补。
-- 已修复“切换 K 线周期后持续补拉历史、导致图表焦点持续跳动”的问题：根因不是用户手势重复触发补页，而是切周期后本地预热显示直接恢复了旧的扩展历史窗口，后续刷新会把这段过宽窗口误当成当前需要维持的显示范围，继而持续向左补历史并反复改写视口。
-- 现已把图表页本地恢复/预热显示统一收口为“只恢复默认窗口大小”：`MarketChartScreen`、`MarketChartActivity` 在应用本地 K 线缓存时，都会先用 `ChartWindowSliceHelper.takeLatest(..., RESTORE_WINDOW_LIMIT)` 截成标准窗口，再交给图表显示，避免旧分页历史在切周期后重新注入当前视口。
-- 已新增源码级回归测试 `MarketChartLocalDisplaySourceTest.localRestoreShouldTrimPagedHistoryBackToDefaultWindowBeforeApplying`，锁定“切周期后的本地恢复不能直接带回旧分页历史窗口”。
-- 已修复 K 线图历史成交标注里的盈亏金额单位错误：根因是图表叠加层专用 `formatSignedUsd(...)` 把普通美元盈亏误送进了 `FormatUtils.formatAmount(...)`，而该工具会按百万美元输出 `M$`，导致几美元/几十美元成交被显示成接近 `0.00M$`。现已统一改回普通 `$` 金额格式。
-- 已新增图表叠加层回归测试 `ChartOverlaySnapshotFactoryTest.buildShouldRenderHistoryTradePnlInUsdInsteadOfMillionUnit`，锁定历史成交详情与连线标签都必须显示 `+$12.34` 这一类普通美元文案，不能再出现 `M$` 缩写。
-- 已修复手机上“交易记录最近 2-3 天不完整”的再次回归：根因不是渲染筛选，而是 `AccountStatsPreloadManager.fetchForUi(...)` 在前一轮调整后又把显式账户页刷新带回了“historyRevision 未变化就跳过全量历史”的路径，导致手机本地库会长期停在旧交易集。现已改回显式 UI 刷新始终走“账户快照 + 全量历史”主链。
-- 真机复测已确认修复生效：账户统计页摘要已从 `1130次` 刷到 `1139次`，手机本地 `trade_history` 最新 `closeTime` 已从 `2026-04-13 23:31:27` 推进到 `2026-04-15`，说明最近缺失交易已重新落库并回到界面。
-- 已同步更新源码级回归测试 `AccountStatsPreloadManagerSourceTest`，锁定账户统计页显式刷新不能再退回“只看 revision、跳过 canonical full-history reload”的旧路径。
-- 已继续修正“账户统计页未加载已连接账户历史数据”的真实主因：主壳共享页 `AccountStatsScreen` 初始化时漏掉了首帧完成监听，导致主壳路径下不会按计划在首帧后挂载并刷新交易记录/交易统计等次级区块；现已补回监听注册，真机账户统计页已直接显示 1130 条历史成交，不再停留在 `0次`。
-- 已新增源码级回归测试 `AccountStatsScreenFirstFrameSourceTest`，锁定共享账户统计页必须在初始化时注册首帧监听，避免后续再把桥接页已有的“首帧后挂载次级区块”链路漏到主壳版本里。
-- 已修复账户统计页未加载已连接账户历史数据的问题：账户统计快照协调器现在只会把“带历史成交或净值曲线”的缓存当成完整统计快照；如果当前只有账户运行态缓存，就继续走正式历史刷新，不再把主壳里的已连接账户误判成“历史已加载”。
-- 已补一条源码级回归测试 `AccountStatsScreenHistorySourceTest`，锁定这次根因：预加载缓存若只有运行态、没有历史段，不能阻断账户统计页后续 canonical history refresh。
-- 已针对最新 UI 反馈补齐两条实际修复：1）`MainHostActivity` 已改用项目自己的文字 Tab 条，主壳里不再叠加旧页内 tabBar，因此底部不会再出现“上面显示一层、下面空白可点一层”的双层错位；2）账户持仓页已恢复内容显示，账户统计页在无历史数据时也会显示完整空骨架与空态提示，不再黑屏。
-- 已修正主壳底部 Tab 的双层错位：`MainHostActivity` 现已改用项目自己的文字 Tab 条，`MarketMonitorFragment`、`MarketChartFragment` 在主壳里也会显式隐藏旧页内 tabBar，不再出现“上面一行文字、下面一块空白可点区”的重叠。
-- 已修正账户持仓/账户统计页在主壳中的空白问题：`content_account_position.xml`、`content_account_stats.xml` 的宿主布局高度已改成适配 Fragment 的 `match_parent`；其中账户统计页另外补了一张显式空态卡，在没有历史成交/曲线数据时也会显示“账户统计”提示，而不是整页空白。
-- 本轮已完成“主壳切流 + 真实共享屏幕 + 兼容入口收薄”收口：`MainHostActivity` 已接管 launcher alias，`MainActivity` 已退成桥接；`MarketChartActivity`、`AccountStatsBridgeActivity` 也已变成启动即桥接到主壳并透传 extras 的兼容薄壳；`AccountStatsFragment`、`MarketChartFragment` 已分别通过 `AccountStatsScreen`、`MarketChartScreen` 承接真实主链。
-- 已完成固定路径主壳真机验收并落档到 `temp/cpu_battery_20260415_single_host_tab_shell`：路径为 `行情监控 -> 行情持仓 -> 账户统计 -> 账户持仓 -> 设置 -> 回到账户统计`（循环 5 轮）；首启 `MainActivity` 已直接拉起 `MainHostActivity`，后续切页没有再出现旧底部页 `Activity` 的 `Displayed` 记录。
-- 本轮验收中修掉了设置页主壳崩溃：`SettingsFragment` 现已和图表页/监控页一样，改为先取 include 进去的真实内容根节点再做 binding，不再把外层 `FrameLayout` 误绑定成 `ContentSettingsBinding`。
-- 当前固定路径设备摘要：`gfxinfo` 为 `Total frames rendered: 2035`、`Janky frames: 343 (16.86%)`、`P90=19ms`、`P95=27ms`、`P99=150ms`；`batterystats` 在 reset 后的短路径采样里，当前包 `appId=10518` 对应 `UID u0a518`，摘录结果约为 `cpu=1.19 mAh`、`wifi=0.0181 mAh`。
-- 本轮还修正了主壳图表页/监控页的真实绑定崩溃：`fragment_market_chart.xml`、`fragment_market_monitor.xml` 外层都是 `FrameLayout`，现在改为先取 include 进去的真实内容根节点再做 `Activity*Binding.bind(...)`，避免真机把 `FrameLayout` 误当成页面根布局。
-- 本轮 smoke 验证结果：重新安装最新 debug 包后，`MainActivity` 旧入口已可拉起主壳；`MainHostActivity` 打开 `market_chart / account_stats` Tab 均可返回 `Status: ok`；`dumpsys activity activities` 当前前台顶层已落在 `MainHostActivity`；最新 `gfxinfo` 摘要为 `Total frames rendered: 13`、`Janky frames: 2 (15.38%)`。`batterystats` 已抓到当前系统摘要，但还不是 2026-04-14 计划要求的固定路径专项采样。
-- 已继续按 `docs/superpowers/plans/2026-04-14-single-host-tab-shell.md` 推进到底部主壳切流阶段：`MainHostActivity` 已补齐注册并接管 launcher alias，`MainActivity` 已退成跳转主壳 `MARKET_MONITOR` 的桥接页。
-- 本轮新增两个真实共享屏幕对象：`AccountStatsScreen`、`MarketChartScreen`。`AccountStatsFragment`、`MarketChartFragment` 现在不再保留“当前阶段先保留空实现”的宿主回调，而是直接接到共享屏幕对象承接页面状态、刷新协调器和重业务主链。
-- 应用内部主链已继续收口到主壳：账户持仓页里的交易快捷入口已直接跳 `MainHostActivity` 的 `MARKET_CHART` Tab 并透传图表参数；设置二级页里的顶层 Tab 返回也已改走主壳。
-- 当前剩余工作已收缩为可选清理项：是否继续物理删除 `AccountStatsBridgeActivity`、`MarketChartActivity` 文件内保留的历史实现代码，以及是否继续做更长时长耗电/性能采样。
-- 正在按“单主壳 Activity + 常驻 Fragment/PageController + 数据域拆分”的正式方案继续推进底部 Tab 迁移。
-- 本轮已把行情监控页从“共享宿主委托”继续推进到“真实共享运行时”：新增 `MarketMonitorPageRuntime`，`MainActivity` 与 `MarketMonitorFragment` 现在共用同一套页面状态、数据订阅和交互逻辑。
-- `MainActivity` 已缩回旧入口宿主，只保留生命周期、底部导航跳转和权限提示；原来主页面里的大块行情监控逻辑已迁入 `MarketMonitorPageRuntime`。
-- 已把 `RecentAbnormalRecordHelper`、`MainMarketRenderHelper` 提升为可复用公共辅助，供新运行时直接复用，避免再在 Fragment 里复制一套逻辑。
-- 本轮继续把图表页和账户统计页的页面宿主匿名实现收口成独立运行时：新增 `MarketChartPageRuntime`、`AccountStatsPageRuntime`，`MarketChartActivity/Fragment` 与 `AccountStatsBridgeActivity/Fragment` 现在开始共用各自的宿主运行时包装层。
-- 图表页原先写在 `MarketChartActivity` 匿名宿主里的前台/后台/冷启动页面编排，已抽成具名方法并由 `MarketChartPageRuntime` 统一接入，旧 Activity 的页面编排块进一步收缩。
-- 本轮继续把图表页和账户统计页的 `PageController` 收到“只负责底部导航和生命周期转发”，不再由控制器自己拼页面业务步骤；对应的前后台/冷启动/销毁编排现在已经真正下沉到 `MarketChartPageRuntime`、`AccountStatsPageRuntime`。
-- 图表页和账户统计页的 `Fragment` / `Activity` 宿主因此又少掉一批空实现和页面编排代码，运行时边界比上一轮更清晰。
-- 本轮已继续把图表页“账户叠加层短延迟刷新”这一组页面级状态从 `MarketChartActivity` 迁入 `MarketChartPageRuntime`：旧 Activity 已移除 `chartScreenEntered`、`accountOverlayRefreshPending` 以及对应的叠加层回调方法，图表页页面状态继续从旧宿主退出。
-- 本轮还继续把图表页“进入前台后的页面编排”从 `MarketChartActivity` 迁入 `MarketChartPageRuntime`：旧 Activity 已移除 `enterChartScreen(boolean coldStart)`，冷启动首拉、回前台补拉、图层刷新和自动刷新启动现在由运行时统一编排。
-- 本轮又继续把图表页“自动刷新调度状态”从 `MarketChartActivity` 迁入 `MarketChartPageRuntime`：旧 Activity 已移除 `nextAutoRefreshAtMs`、自动刷新/倒计时 `Runnable` 以及 `startAutoRefresh/stopAutoRefresh/scheduleNextAutoRefresh`，切产品、切周期、自动刷新回调现在都统一走运行时调度。
-- 本轮也已把账户统计页的 `snapshotLoopEnabled` 页面循环状态从 `AccountStatsBridgeActivity` 迁入 `AccountStatsPageRuntime`，旧 Activity 不再持有这类页面活跃态标记，刷新循环判断开始走运行时统一入口。
-- 本轮还把账户统计页“下一次快照刷新调度状态”从 `AccountStatsBridgeActivity` 迁入 `AccountStatsPageRuntime`：旧 Activity 已移除 `refreshHandler`、`refreshRunnable`、`nextRefreshAtMs`、`scheduledRefreshDelayMs` 以及对应的 `scheduleNextSnapshot/clearScheduledRefresh`，快照协调器继续通过宿主接口调用，但实际调度已由运行时持有。
-- 本轮还删除了账户统计页旧 `Activity` 里的纯转发包装 `requestForegroundEntrySnapshot()` 与 `requestSnapshot()`；相关调用点现在直接走 `AccountSnapshotRefreshCoordinator`，旧宿主又缩掉两层无业务含义的转发代码。
-- 本轮继续把图表页和账户统计页“监控服务启动”从旧 `Activity` 私有包装收口到共享运行时：`MarketChartActivity`、`AccountStatsBridgeActivity` 已移除 `ensureMonitorServiceStarted()`，页面恢复时改由 `MarketChartPageRuntime`、`AccountStatsPageRuntime` 直接调用 `MonitorServiceController.ensureStarted(...)`。
-- 本轮还把图表页普通刷新与自动刷新入口从旧 `Activity` 私有包装继续下沉到协调器：`MarketChartActivity` 已移除 `requestKlines()` / `requestKlines(boolean, boolean)`，重试按钮、切产品、切周期、`onNewIntent` 和自动刷新现在都直接走 `MarketChartDataCoordinator.requestKlines(...)`。
-- 本轮继续把图表页历史补页入口也从旧 `Activity` 私有包装继续下沉到协调器：`MarketChartActivity` 已移除 `requestMoreHistory(long beforeOpenTime)`，图表控件的补页监听现在直接走 `MarketChartDataCoordinator.requestMoreHistory(...)`。
-- 本轮继续把图表页三层旧 `Activity` 转发壳继续收掉：`observeRealtimeDisplayKlines()`、`refreshChartOverlays()`、`restoreChartOverlayFromLatestCacheOrEmpty()` 已从 `MarketChartActivity` 退出，页面运行时、交易弹窗回调、首帧恢复和本地显示落地现在都直接走 `MarketChartDataCoordinator`。
-- 本轮还把账户统计页一组旧 `Activity` 的纯转发壳继续删掉：`applyPreloadedCacheIfAvailable()`、`enterAccountScreen(boolean coldStart)`、`applySnapshot(...)`、`refreshTradeStats()`、`refreshTrades(...)` 和 `renderDeferredSnapshotSections()` 已从 `AccountStatsBridgeActivity` 退出，页面运行时、快照协调器、渲染协调器和筛选事件现在直接互连。
-- 本轮还修正了账户统计页“本地存储快照恢复后重新应用缓存”的回调路径：`AccountSnapshotRefreshCoordinator` 不再通过宿主回调自己，而是直接复用自身 `applyPreloadedCacheIfAvailable()` 主链。
-- 本轮还删除了账户统计页“次级区块后台渲染调度”那层无意义宿主绕路：`AccountStatsRenderCoordinator` 不再要求 Host 暴露 `scheduleDeferredSecondarySectionRender()`，对应的 `AccountStatsBridgeActivity` / `AccountStatsRenderHostDelegate` 包装也已移除。
-- 本轮继续把账户统计页残留的交易统计旧 helper 清出旧 `Activity`：周内统计切换现在也统一走 `AccountStatsRenderCoordinator.refreshTradeStats()`，旧页里的 `refreshTradeWeekdayStats(...)`、`buildTradePnlChartEntries(...)`、`matchesSideMode(...)`、`filterTradesBySideMode(...)` 已删除。
-- 本轮还把账户统计页“收益统计模式切换 / 收益值模式切换 / 收益参考月份切换”这一组收益表重建编排继续收口到 `AccountStatsRenderCoordinator`：旧 `Activity` 不再自己直接调用 `renderReturnStatsTable(...)`。
-- 本轮还把账户统计页“时间维度切换 / 手动日期区间应用”这一组曲线投影编排继续收口到 `AccountStatsRenderCoordinator`：新增 `refreshCurveProjection()`，旧 `Activity` 不再自己直接调用 `applyCurrentCurveRangeFromAllPoints()`。
-- 本轮还把图表页“切产品 / 切周期 / 复用任务栈带 symbol 切入”这一组页面重拉取编排继续收口到 `MarketChartPageRuntime`：新增 `requestChartSelectionReload()`，旧 `MarketChartActivity` 不再自己拼“requestKlines + scheduleNextAutoRefresh”。
-- 本轮还把图表页“历史成交显隐开关 / 持仓标注显隐开关”这一组点击编排继续收口到 `MarketChartPageRuntime`：按钮点击现在先走运行时，再落到宿主状态切换和持久化，旧 `MarketChartActivity` 已删除 `toggleHistoryTradeVisibility()`、`togglePositionOverlayVisibility()`。
-- 本轮还把图表页“指标显隐切换 / 指标参数修改后的统一刷新”这一组交互编排继续收口到 `MarketChartPageRuntime`：按钮点击和参数修改后的收尾现在先走运行时，再落到宿主状态切换和图层刷新，旧 `MarketChartActivity` 已删除 `toggleIndicator(...)`、`onIndicatorChanged()`。
-- 本轮还把图表页“品种切换 / 周期切换”这一组状态提交编排继续收口到 `MarketChartPageRuntime`：Spinner 选择和周期按钮点击现在先走运行时，再落到宿主状态提交、旧显示上下文失效和统一重拉取，旧 `MarketChartActivity` 已删除 `switchSymbol(...)`、`switchInterval(...)`。
-- 已重新通过图表页、账户统计页相关源码测试与编译验证，并重新完成 `:app:assembleDebug`；最新 debug 包也已重新安装到真机。
-- 当前机器 `adb devices` 已恢复在线设备 `7fab54c4`，最新 `app-debug.apk` 已重新安装并成功拉起，启动证据截图已更新到 `temp/btcxau_launch_check.png`。
-- 已补一组“当前版本、仅冷启动路径”的真机证据：最新一次 `am start -W` 冷启动到 `MainActivity` 为 `TotalTime: 412ms`，但这还不是 Tab 切换或耗电复测结果。
+- 正在为 APP 全面 UI 重做编写正式设计稿，当前已完成信息架构和关键交互边界确认：新一级入口固定为 `交易 / 账户 / 分析 / 设置`，默认首页为 `交易`，不再保留独立仪表盘，也不再保留旧版“行情概览”模块。
+- 已明确全局状态收敛为顶部状态按钮，异常提醒整合进交易图表页；`账户` 页负责当前账户与对象管理，`分析` 页只负责账户交易分析，不承接市场分析中心角色。
+- 已把一级页、弹层和深页的边界固定下来：轻内容先弹层，重内容进入新页面，一级页不再铺开完整历史长列表。
 
 ## 上次停在哪个位置
-- 这条“交易统计模块先消失、曲线区补位再回来”的问题已继续收口到交易统计卡片首次显示策略：当前不再额外等待 `RecyclerView` 预绘制，数据和图表绑定完后会同轮直接显示整卡；下一次若仍有闪烁，优先先查是否还有别的生命周期路径把整卡重新打回 `GONE/INVISIBLE`，而不是再怀疑预绘制等待本身。
-- 这条“交易统计切换时先消失、曲线补位后再回来”的问题已确认收口到交易统计卡片刷新前的可见性策略：当前切换时会保留交易统计卡片原位，不再让净值/结余曲线模块顶上来；下一次若仍有闪烁，优先先查 `bindTradeAnalytics(...)` 是否在切换中又重复触发了首次 reveal 分支，而不是再怀疑布局文件顺序。
-- 这条“左补后焦点还卡在新最左侧”的问题已确认收口到 `KlineChartView` 的视口偏移恢复：当前左补完成后会停留在补页前那一屏内容，只把新增历史留在左边等待下一次主动滑动；下一次若仍出现重复误拉，优先先查触摸 MOVE 阶段是否又额外改写了 `offsetCandles`，而不是再怀疑分页回包本身。
-- 这条“月线跳到 1 分钟线”的问题已确认收口到周期键大小写边界：当前 `1M` 不会再被周期恢复、周期查找、分钟派生和月线聚合误当成 `1m`；下一次若月线仍异常，优先先查接口返回的月线数据本身，而不是再怀疑按钮绑定。
-- 这条“1 小时、4 小时仍持续左补”的剩余问题已确认收口到自动补拉条件误判：当前自动左补不会再因为窗口内部正常空档而成立；下一次若仍出现连续补拉，优先先查是否存在“上一轮已翻出的左侧历史在刷新后被挤掉”的真实场景，而不是再把中间停盘空档当成左补目标。
-- 这条“切周期后持续拉历史、焦点跳动”的问题已确认收口到图表本地恢复链路：当前 fresh interval switch 不会再把上次分页出来的旧历史窗口直接恢复进当前视口；下一次若仍出现连续补拉，优先先查真实网络缺口判定，而不是再回头怀疑本地 warm display。
-- 图表历史成交盈亏金额这条问题已确认收口到文案格式层，不是成交数据本身错误；共享图表屏幕和兼容旧图表入口里的 `formatSignedUsd(...)` 现在都统一走普通美元格式。
-- 这条交易记录缺失问题已确认收口：显式进入账户统计页时现在会无条件重走 canonical history refresh，真机数据库和界面数字都已追上最近交易；下一次若再出现缺口，优先先看服务端历史接口本身是否返回缺页，而不是再怀疑本地筛选。
-- 账户统计页这条问题已从“缓存完成态误判”继续收敛到第二个真实主因：主壳共享页缺少首帧监听注册，导致次级区块在 Fragment/主壳路径下没有按设计挂载；目前这一点已补上，并已在真机看到交易记录区直接显示真实历史成交。
-- 账户统计页“已连接但历史未加载”这条回归已收口到共享主链：`AccountStatsScreen` / `AccountStatsBridgeActivity` 都补了“历史段是否可渲染”的统一判断，`AccountSnapshotRefreshCoordinator` 也已改成遇到纯运行态缓存时继续正式拉历史。
-- `MainHostActivity`、`HostTabNavigator`、`AccountPositionPageController`、`MarketMonitorPageController`、`SettingsPageController`、`MarketChartPageController`、`AccountStatsPageController` 等主壳骨架和宿主层已存在并通过源码测试。
-- `MainActivity`、`AccountPositionActivity`、`SettingsActivity` 已退成桥接；`AccountStatsBridgeActivity`、`MarketChartActivity` 仍保留旧入口重页逻辑，当前主要用于兼容旧入口与遗留专项链路。
-- `AccountPositionFragment`、`SettingsFragment`、`MarketMonitorFragment` 已具备真实页面承接；`AccountStatsFragment`、`MarketChartFragment` 本轮已通过 `AccountStatsScreen`、`MarketChartScreen` 接入真实共享屏幕对象，不再只是空宿主骨架。
-- 图表页页面级状态又完成两层收口后，当前主要残留已经从“页面前后台状态、进入前台编排、自动刷新调度”进一步收缩到“图表主业务 helper / 图表数据准备 / 图层渲染细节”。
-- 图表页服务启动、普通 K 线请求入口、“切产品 / 切周期后的页面重拉取编排”、“图层显隐开关点击编排”、“指标切换/参数修改后的统一刷新编排”以及“品种/周期状态提交编排”也已退出旧宿主后，当前图表页残留进一步收缩到“更重的数据准备细节、图层渲染细节、少数仍留在旧 Activity 的业务 helper”。
-- 账户统计页页面循环状态、刷新调度以及一批纯转发渲染包装也都已退出旧宿主；本轮又继续把剩余宿主状态收口进 `AccountStatsScreen`、`MarketChartScreen`，主入口已切到 `MainHostActivity`。下一步主阻塞点继续收缩为兼容旧入口的 `AccountStatsBridgeActivity`、`MarketChartActivity` 还保留旧重页逻辑，以及主壳切流后的完整性能/耗电复测。
-- 真机已完成固定路径主壳验收，长期耗电/性能复测仍可按需要继续追加。
+- 设计讨论已从“是否保留仪表盘”收口到“交易中枢型”方案，并已完成 `账户页 / 分析页 / 交易页 / 状态按钮 / 异常整合进图表` 的详细规则确认。
+- 下一步是让用户审阅刚写入的设计稿文件；若设计稿获批，再进入实现计划编写阶段，而不是直接开始改代码。
 
 ## 近期关键决定和原因
-- 这次没有继续围绕 `hideTradeStatsSectionUntilFreshContentReady()` 加更多条件判断，而是直接删除交易统计卡片首次显示时额外等待 `preDraw` 的旧语义；原因是用户反馈说明真正可见的闪烁仍发生在页面重建后的首次展示，而不是后台刷新前的占位逻辑。
-- 这次没有去改动交易统计和曲线模块的布局顺序，也没有加延时/过渡动画掩盖闪烁，而是直接修正交易统计卡片刷新前的可见性策略；原因是根因不在布局层，而在宿主每次刷新前都把卡片设成 `GONE` 导致布局补位。
-- 这次没有在“再次误拉”的触发口再加节流或冷却时间，而是直接修正左补完成后的视口保持语义；原因是根因不在请求频率，而在补页成功后把视口错误推进到了新的最左边界。
-- 这次没有只在月线按钮点击处加一个局部修补，而是把图表周期键里所有 `1M/1m` 关键分支一起收口为大小写敏感比较；原因是根因不止一处，若只修按钮入口，月线仍会在恢复、聚合或实时派生阶段被再次误判成分钟线。
-- 这次没有再给 1 小时、4 小时单独做产品/周期白名单，也没有加“补拉次数节流”之类的局部稳定化手段，而是直接修正自动左补的判定语义；原因是窗口内部缺口本来就不是“向左翻页”能修复的对象，把它作为左补条件在逻辑上就是错位的。
-- 这次没有用“限制补拉次数”“切周期后临时关掉补历史”这类局部稳定化手段，而是直接修正切周期后的本地恢复边界；原因是根因不在补拉节流，而在旧分页历史被错误当成当前标准显示窗口重新注入主链。
-- 这次没有在图表层额外加“如果值很小就特殊显示”的启发式分支，而是直接改正格式工具的调用边界；原因是根因不是小数精度，而是把普通美元盈亏错误送进了“百万单位缩写”工具。
-- 这次没有在页面层补“进入页面后多等一会儿再刷新”之类的临时手段，而是直接恢复显式 UI 刷新的 canonical full-history 主链；原因是手机数据库已经证明确实没有最近交易，问题发生在数据刷新策略，不在渲染层。
-- 这次继续坚持不做页面级临时兜底，而是把修复落在共享页初始化主链：旧桥接页已有首帧监听注册，主壳共享页缺失同一步骤，根因属于共享链路缺口，应该直接补齐到 `AccountStatsScreen.initializePageContent()`，而不是再加额外强刷或延时补丁。
-- 这次没有给账户统计页加临时兜底分支，而是直接修正“缓存完成态”的判定边界；原因是根因不在渲染层，而在协调器把纯运行态缓存误当成完整历史快照，应该在主链入口一次改正。
-- 本轮先做“对计划逐项复核”而不是继续迁移代码；原因是 2026-04-14 计划里的 Task 6-7 与当前仓库现状已经出现明确差距，先确认真实完成度，后续才不会把“骨架已就位”误写成“主入口已切流、真机验收已完成”。
-- 本轮把账户统计页和图表页剩余宿主能力继续收口成 `AccountStatsScreen`、`MarketChartScreen`，而不是继续在旧 `Activity` 里一点点抠匿名回调；原因是只有抽成共享屏幕对象，`Fragment` 才能真正复用同一条主链，不会再形成新旧两套页面逻辑。
-- 本轮优先把“应用内部主链”收口到主壳，而没有立即删除 `AccountStatsBridgeActivity`、`MarketChartActivity` 的旧实现；原因是先保证用户在主壳内的真实操作路径不再掉回多 `Activity` 结构，同时保留旧入口兼容链，风险更低。
-- 不使用多智能体：当前主任务仍是强耦合串行迁移，不满足“并行且不形成单点阻塞”的条件。
-- 不做降级、兜底、临时补丁、启发式跳刷：所有改动都直接落在职责边界和主链编排上。
-- 先把“旧 Activity 里的重主链”迁入协调器，再处理 Fragment 真实承接：这样每一步都可单独验证，避免一次性切壳导致大面积不可控回归。
-- 在重主链迁入协调器之后，再把 `PageController.Host` 与协调器 `Host` 匿名实现抽成独立委托；对行情监控页已进一步落到了 `MarketMonitorPageRuntime`，对图表页和账户统计页则已进一步发展为“控制器只转发、运行时负责编排”的结构，继续证明“运行时复用”这条路可行。
-- 图表页和账户统计页都继续优先迁“页面级状态”而不是先碰最重渲染逻辑：先把前后台可见态、刷新循环、短延迟回调等状态从旧 Activity 清出去，能够在不动核心业务算法的前提下持续压缩旧宿主职责。
-- 图表页进一步验证了“先迁页面编排，再迁重业务 helper”这条顺序是可行的：`enterChartScreen` 这种典型页面编排已经可以直接由运行时持有，说明后面还能继续按同样方式压缩旧宿主。
-- 图表页和账户统计页都已经证明“页面调度状态”可以直接沉到运行时，而“真正的数据拉取和重渲染”继续留在协调器/业务层：后续应继续按这个边界推进，不再把新的页面级调度状态留回旧 Activity。
-- 本轮也进一步验证了“统计页用户交互后的重算编排”可以继续沉到协调器：收益表切换和曲线投影切换现在都能经由 `AccountStatsRenderCoordinator` 统一承接，后续 Fragment 真正接主链时可直接复用。
-- 本轮进一步验证了“用户交互后的页面编排”也可以继续沉到运行时：图表页的切产品 / 切周期重拉取已能由 `MarketChartPageRuntime` 统一承接，后续 Fragment 真正接主链时可直接复用。
-- 本轮继续验证了“图表页轻交互编排”同样可以沉到运行时：叠加层显隐开关点击已能由 `MarketChartPageRuntime` 统一承接，后续 Fragment 真正接主链时可直接复用。
-- 本轮继续验证了“图表页指标交互编排”也可以沉到运行时：指标显隐切换和参数修改后的统一刷新现在都能由 `MarketChartPageRuntime` 统一承接，后续 Fragment 真正接主链时可直接复用。
-- 本轮继续验证了“图表页选择类交互编排”也可以沉到运行时：品种切换和周期切换现在都能由 `MarketChartPageRuntime` 统一承接，后续 Fragment 真正接主链时可直接复用。
-- 进一步验证了“先删纯转发包装，再迁重业务 helper”这条路径：服务启动和图表请求入口在不动核心算法的前提下已能直接退出旧 Activity，说明后续可以继续按同样方式压缩重宿主。
-- 兼容旧入口继续优先保留“薄桥接 + extras 透传”策略，而不是立即删除旧文件；原因是当前应用内部主链已经全部收口到主壳，后续若继续删旧实现，应作为独立清理任务处理。
+- 不保留独立仪表盘页：原因是用户已明确不需要首页行情概览，也不保留默认品种快捷卡，继续保留仪表盘会让首页失去明确职责。
+- 一级入口改为 `交易 / 账户 / 分析 / 设置`：原因是这样最符合“交易是主场、账户和分析清晰分工”的产品结构。
+- 异常提醒整合进图表页，而不是独立占位：原因是异常与价格、时间、仓位决策本来就强关联，放回图表主场更符合用户判断路径。
+- `分析` 页只做账户交易分析：原因是用户明确不需要综合分析中心，避免再次把市场分析和异常复盘混进同一页。

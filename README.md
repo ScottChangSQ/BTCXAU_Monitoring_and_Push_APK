@@ -233,6 +233,7 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 
 ## 待办事项
 
+- 已完成一版 UI 重做设计稿，见 [docs/superpowers/specs/2026-04-16-btcxau-ui-redesign-design.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/docs/superpowers/specs/2026-04-16-btcxau-ui-redesign-design.md)；待按设计稿把一级结构收口为 `交易 / 账户 / 分析 / 设置`，并完成“无独立仪表盘、异常整合进交易图表页”的界面实现
 - 评估是否继续物理删除 `AccountStatsBridgeActivity`、`MarketChartActivity` 内保留的历史实现代码；当前运行链已不再依赖它们
 - 当前设备 `7fab54c4` 已在线，APK 安装与主壳启动验证已可在本机执行
 - 若要继续做更严格的耗电结论，仍建议在更长时长和更稳定交互条件下单独重复采样；当前 README 里的本轮数字只代表固定路径主壳验收结果
