@@ -149,8 +149,7 @@
                 android:id="@+id/cardPendingSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
-                android:layout_marginBottom="@dimen/space_20">
+                android:layout_marginTop="@dimen/page_section_gap">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -188,6 +187,44 @@
                         android:text="暂无挂单"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
                         android:visibility="gone" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardHistorySection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginBottom="@dimen/space_20">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_content_padding">
+
+                    <TextView
+                        android:id="@+id/tvHistorySectionTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/trade_records_title"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+                    <TextView
+                        android:id="@+id/tvHistorySummary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_8"
+                        android:text="@string/account_history_entry_summary"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
+
+                    <Button
+                        android:id="@+id/btnOpenAccountHistory"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/control_height_sm"
+                        android:layout_marginTop="@dimen/space_12"
+                        android:text="@string/account_history_entry_action"
+                        android:textAllCaps="false" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>

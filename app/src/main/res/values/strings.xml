@@ -93,6 +93,8 @@
     <string name="nav_analysis">分析</string>
     <string name="account_overview_title">账户总览</string>
     <string name="account_position_aggregate_title">按产品统计</string>
+    <string name="account_history_entry_summary">历史成交和完整账户分析已下沉到分析页入口，不再直接铺成长列表。</string>
+    <string name="account_history_entry_action">进入分析页查看</string>
     <string name="equity_curve_title">净值曲线</string>
     <string name="current_positions_title">当前持仓</string>
     <string name="trade_records_title">交易记录</string>

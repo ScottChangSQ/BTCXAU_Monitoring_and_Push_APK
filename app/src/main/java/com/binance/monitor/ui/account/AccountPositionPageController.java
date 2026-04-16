@@ -211,6 +211,7 @@ public final class AccountPositionPageController {
     private void setupActions() {
         binding.ivAccountPrivacyToggle.setOnClickListener(v -> togglePrivacyMaskState());
         binding.tvAccountConnectionStatus.setOnClickListener(v -> openAccountLogin());
+        binding.btnOpenAccountHistory.setOnClickListener(v -> host.openAccountStats());
     }
 
     // 绑定底部导航；主壳承载时隐藏页内 Tab，避免双层导航。
@@ -402,8 +403,8 @@ public final class AccountPositionPageController {
         binding.tvPositionSummary.setText(masked
                 ? "当前持仓 " + SensitiveDisplayMasker.MASK_TEXT
                 : model.getPositionSummaryText());
-        binding.tvPositionAggregateTitle.setVisibility(positions.isEmpty() ? View.GONE : View.VISIBLE);
-        binding.recyclerPositionAggregates.setVisibility(positions.isEmpty() ? View.GONE : View.VISIBLE);
+        binding.tvPositionAggregateTitle.setVisibility(View.GONE);
+        binding.recyclerPositionAggregates.setVisibility(View.GONE);
         binding.recyclerPositions.setVisibility(positions.isEmpty() ? View.GONE : View.VISIBLE);
         binding.tvPositionsEmpty.setVisibility(positions.isEmpty() ? View.VISIBLE : View.GONE);
     }
@@ -429,13 +430,18 @@ public final class AccountPositionPageController {
         binding.cardOverviewSection.setBackground(UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));
         binding.cardPositionSection.setBackground(UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));
         binding.cardPendingSection.setBackground(UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));
+        binding.cardHistorySection.setBackground(UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));
         binding.tvOverviewTitle.setTextColor(palette.textPrimary);
         binding.tvUpdatedAt.setTextColor(palette.textSecondary);
         binding.tvPositionSummary.setTextColor(palette.textSecondary);
         binding.tvPositionAggregateTitle.setTextColor(palette.textSecondary);
         binding.tvPendingSummary.setTextColor(palette.textSecondary);
+        binding.tvHistorySectionTitle.setTextColor(palette.textPrimary);
+        binding.tvHistorySummary.setTextColor(palette.textSecondary);
         binding.tvPositionsEmpty.setTextColor(palette.textSecondary);
         binding.tvPendingOrdersEmpty.setTextColor(palette.textSecondary);
+        binding.btnOpenAccountHistory.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.control, palette.stroke));
+        binding.btnOpenAccountHistory.setTextColor(palette.textPrimary);
         binding.ivAccountPrivacyToggle.setImageTintList(ColorStateList.valueOf(palette.textSecondary));
         updateConnectionStatusChip(resolveDisplayedConnectionStatusText(currentUiModel));
     }
