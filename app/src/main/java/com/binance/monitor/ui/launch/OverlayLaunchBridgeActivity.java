@@ -1,6 +1,6 @@
 /*
  * 悬浮窗跳转桥接页，负责把后台悬浮窗点击稳定转成应用内页面路由。
- * 该页面本身不承载 UI，只做目标产品解析并把请求转发给 MarketChartActivity。
+ * 该页面本身不承载 UI，只做目标产品解析并把请求转发给主壳目标 Tab。
  */
 package com.binance.monitor.ui.launch;
 
@@ -10,7 +10,8 @@ import android.os.Bundle;
 
 import androidx.annotation.Nullable;
 
-import com.binance.monitor.ui.main.MainActivity;
+import com.binance.monitor.ui.host.HostNavigationIntentFactory;
+import com.binance.monitor.ui.host.HostTab;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 
 import java.util.Locale;
@@ -52,17 +53,14 @@ public class OverlayLaunchBridgeActivity extends Activity {
 
     // 跳到指定产品图表页，并复用现有顶层任务栈。
     private void routeToChart(String targetSymbol) {
-        Intent intent = new Intent(this, MarketChartActivity.class);
+        Intent intent = HostNavigationIntentFactory.forTab(this, HostTab.MARKET_CHART);
         intent.putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL, targetSymbol);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(intent);
     }
 
     // 回到主页面，并保持与顶层 Tab 一致的返回栈语义。
     private void routeToHome() {
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.MARKET_MONITOR));
     }
 
     // 统一标准化产品代码，避免悬浮窗和图表页之间出现大小写不一致。

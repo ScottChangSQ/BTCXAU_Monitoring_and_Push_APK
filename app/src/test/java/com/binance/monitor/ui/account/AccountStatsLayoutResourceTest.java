@@ -137,6 +137,23 @@ public class AccountStatsLayoutResourceTest {
         assertFalse("账户统计页不应继续保留顶部已连接账户入口", xml.contains("@+id/tvAccountConnectionStatus"));
     }
 
+    @Test
+    public void activityAccountStatsShouldReuseSharedContentLayout() throws Exception {
+        Path layoutPath = resolveProjectFile(
+                "app/src/main/res/layout/activity_account_stats.xml",
+                "src/main/res/layout/activity_account_stats.xml"
+        );
+        Path contentPath = resolveProjectFile(
+                "app/src/main/res/layout/content_account_stats.xml",
+                "src/main/res/layout/content_account_stats.xml"
+        );
+        String activityXml = new String(Files.readAllBytes(layoutPath), StandardCharsets.UTF_8);
+        String contentXml = new String(Files.readAllBytes(contentPath), StandardCharsets.UTF_8);
+
+        assertTrue("账户统计 Activity 应通过 include 复用共享内容布局", activityXml.contains("@layout/content_account_stats"));
+        assertTrue("共享内容布局必须保留交易记录滚动容器", contentXml.contains("@+id/scrollAccountStats"));
+    }
+
     // 按当前工作目录自动解析项目资源文件，兼容根目录和 app 模块目录两种执行入口。
     private static Path resolveProjectFile(String... candidates) {
         Path workingDir = Paths.get(System.getProperty("user.dir"));

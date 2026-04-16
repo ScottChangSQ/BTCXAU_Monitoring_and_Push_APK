@@ -133,6 +133,42 @@ public class ChartOverlaySnapshotFactoryTest {
         assertEquals("持仓盈亏: +$22.50 | 持仓收益率: +11.25%", snapshot.getPositionSummaryText());
     }
 
+    @Test
+    public void buildShouldRenderHistoryTradePnlInUsdInsteadOfMillionUnit() {
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        List<CandleEntry> candles = Arrays.asList(
+                new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
+                new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
+        );
+        AccountSnapshot snapshotData = new AccountSnapshot(
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.singletonList(createTrade(
+                        "BTCUSDT",
+                        "buy",
+                        1710000000000L,
+                        1710000060000L,
+                        100d,
+                        103d,
+                        12.34d,
+                        0d,
+                        9001L
+                )),
+                Collections.emptyList()
+        );
+
+        ChartOverlaySnapshot snapshot = factory.build("BTCUSDT", candles, snapshotData, null);
+
+        assertEquals(3, snapshot.getHistoryTradeAnnotations().size());
+        assertEquals("+$12.34", snapshot.getHistoryTradeAnnotations().get(1).label);
+        assertEquals("盈亏 +$12.34", snapshot.getHistoryTradeAnnotations().get(1).detailLines[5]);
+        assertFalse(snapshot.getHistoryTradeAnnotations().get(1).label.contains("M$"));
+        assertFalse(snapshot.getHistoryTradeAnnotations().get(1).detailLines[5].contains("M$"));
+    }
+
     private static PositionItem createPosition(String code,
                                                String side,
                                                long positionTicket,
@@ -209,6 +245,38 @@ public class ChartOverlaySnapshotFactoryTest {
                 0d,
                 0d,
                 0d
+        );
+    }
+
+    private static com.binance.monitor.domain.account.model.TradeRecordItem createTrade(String code,
+                                                                                         String side,
+                                                                                         long openTime,
+                                                                                         long closeTime,
+                                                                                         double openPrice,
+                                                                                         double closePrice,
+                                                                                         double profit,
+                                                                                         double storageFee,
+                                                                                         long dealTicket) {
+        return new com.binance.monitor.domain.account.model.TradeRecordItem(
+                closeTime,
+                code,
+                code,
+                side,
+                closePrice,
+                1d,
+                100d,
+                0d,
+                "",
+                profit,
+                openTime,
+                closeTime,
+                storageFee,
+                openPrice,
+                closePrice,
+                dealTicket,
+                dealTicket,
+                dealTicket,
+                1
         );
     }
 }

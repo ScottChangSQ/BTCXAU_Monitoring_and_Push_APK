@@ -42,8 +42,8 @@ public class MarketChartAccountOverlaySourceTest {
         ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("图表页初次创建时应直接从最新账户缓存恢复持仓和标注，避免先显示空白",
-                source.contains("restoreChartOverlayFromLatestCacheOrEmpty();"));
-        assertTrue("图表页应提供专门的首帧账户叠加层恢复入口",
+                source.contains("dataCoordinator.restoreChartOverlayFromLatestCacheOrEmpty();"));
+        assertFalse("图表页不应继续保留专门的首帧账户叠加层恢复包装方法",
                 source.contains("private void restoreChartOverlayFromLatestCacheOrEmpty() {"));
         assertTrue("内存缓存尚未回填时，图表页仍应保留本地持久化快照恢复能力",
                 source.contains("private AccountSnapshot resolveChartOverlaySnapshot(")

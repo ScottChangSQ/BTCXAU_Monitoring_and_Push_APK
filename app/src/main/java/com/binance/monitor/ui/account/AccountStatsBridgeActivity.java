@@ -13,8 +13,6 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.SystemClock;
 import android.text.InputType;
 import android.text.SpannableString;
@@ -75,19 +73,25 @@ import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.ActivityAccountStatsBinding;
+import com.binance.monitor.databinding.ContentAccountStatsBinding;
 import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionCredentialEncryptor;
 import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.runtime.account.MetricNameTranslator;
 import com.binance.monitor.service.MonitorServiceController;
+import com.binance.monitor.ui.account.history.AccountHistoryPayload;
+import com.binance.monitor.ui.account.history.AccountHistorySnapshotStore;
+import com.binance.monitor.ui.account.history.AccountStatsRenderSignature;
+import com.binance.monitor.ui.account.history.AccountStatsSectionDiff;
 import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
 import com.binance.monitor.ui.account.session.AccountSessionRestoreHelper;
 import com.binance.monitor.ui.account.adapter.StatsMetricAdapter;
 import com.binance.monitor.ui.account.adapter.TradeRecordAdapterV2;
+import com.binance.monitor.ui.host.HostNavigationIntentFactory;
+import com.binance.monitor.ui.host.HostTab;
 import com.binance.monitor.util.ProductSymbolMapper;
 import com.binance.monitor.ui.chart.MarketChartActivity;
-import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
@@ -201,9 +205,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private final SimpleDateFormat monthTitleFormat = new SimpleDateFormat("yyyy年M月", Locale.getDefault());
 
     private ActivityAccountStatsBinding binding;
+    private ContentAccountStatsBinding contentBinding;
     private AccountStatsPreloadManager preloadManager;
     private AccountStorageRepository accountStorageRepository;
     private AccountMetricAdapter indicatorAdapter;
+    private AccountStatsCurveRenderHelper curveRenderHelper;
+    private AccountStatsReturnsTableHelper returnsTableHelper;
     private TradeRecordAdapterV2 tradeAdapter;
     private StatsMetricAdapter statsAdapter;
     private LogManager logManager;
@@ -215,13 +222,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private AccountSessionStateMachine sessionStateMachine;
     private AccountRemoteSessionCoordinator remoteSessionCoordinator;
     private AccountSnapshotRefreshCoordinator snapshotRefreshCoordinator;
+    private AccountStatsRenderCoordinator renderCoordinator;
+    private AccountStatsPageController pageController;
+    private AccountStatsPageRuntime pageRuntime;
+    private final AccountHistorySnapshotStore historySnapshotStore = new AccountHistorySnapshotStore();
 
-    private final Handler refreshHandler = new Handler(Looper.getMainLooper());
     private final AccountSnapshotRequestGuard snapshotRequestGuard = new AccountSnapshotRequestGuard();
     private volatile boolean loading;
-    private boolean snapshotLoopEnabled;
     private long connectedUpdateAtMs;
-    private long nextRefreshAtMs;
 
     private AccountTimeRange selectedRange = AccountTimeRange.D7;
     private ReturnStatsMode returnStatsMode = ReturnStatsMode.MONTH;
@@ -264,6 +272,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String connectedGateway = "--";
     private String connectedUpdate = "--";
     private String connectedError = "";
+    private String latestHistoryRevision = "";
     private String dataQualitySummary = "";
     private boolean userLoggedIn;
     private boolean gatewayConnected;
@@ -289,12 +298,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String lastTradeVisibilitySnapshotSignature = "";
     private String lastTradeFilterVisibilitySignature = "";
     private String lastAppliedSnapshotSignature = "";
+    @Nullable
+    private AccountStatsRenderSignature lastHistoryRenderSignature;
+    @Nullable
+    private AccountStatsRenderSignature pendingHistoryRenderSignature;
+    @Nullable
+    private AccountStatsSectionDiff pendingSectionDiff;
     private long dynamicRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
-    private long scheduledRefreshDelayMs = ACCOUNT_REFRESH_MIN_MS;
     private int unchangedRefreshStreak = 0;
     private boolean draggingTradeScrollBar;
     private boolean secondarySectionsAttached;
     private boolean deferredSecondaryRenderPending;
+    private boolean forceDeferredSectionRender;
     private boolean deferredSecondarySectionAttachPosted;
     private int deferredSecondaryRenderRevision;
     private boolean firstFrameCompleted;
@@ -307,7 +322,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         attachDeferredSecondarySections();
-        renderDeferredSnapshotSectionsIfNeeded();
+        if (secondarySectionsAttached && deferredSecondaryRenderPending && renderCoordinator != null) {
+            renderCoordinator.renderDeferredSnapshotSections();
+        }
     };
     @Nullable
     private ViewTreeObserver.OnDrawListener firstFrameDrawListener;
@@ -329,19 +346,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 && intent.getBooleanExtra(EXTRA_FINISH_AFTER_LOGIN_DIALOG, false);
     }
 
-    private final Runnable refreshRunnable = new Runnable() {
-        @Override
-        public void run() {
-            clearScheduledRefresh();
-            if (snapshotRefreshCoordinator != null) {
-                snapshotRefreshCoordinator.requestSnapshot();
-            }
-        }
-    };
-
     // 装配账户页快照刷新协调器，让刷新编排与页面渲染职责分开。
     private AccountSnapshotRefreshCoordinator.Host createSnapshotRefreshHost() {
-        return new AccountSnapshotRefreshCoordinator.Host() {
+        return new AccountSnapshotRefreshHostDelegate(new AccountSnapshotRefreshHostDelegate.Owner() {
             @Override
             public boolean isLoading() {
                 return loading;
@@ -373,13 +380,42 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
 
             @Override
+            public boolean isStoredSnapshotRestorePending() {
+                return storedSnapshotRestorePending;
+            }
+
+            @Override
+            public void setStoredSnapshotRestorePending(boolean pending) {
+                storedSnapshotRestorePending = pending;
+            }
+
+            @Override
+            public AccountStatsPreloadManager.Cache hydrateLatestCacheFromStorage() {
+                return preloadManager == null ? null : preloadManager.hydrateLatestCacheFromStorage();
+            }
+
+            @Override
+            public boolean isPreloadedCacheForCurrentSession(@Nullable AccountStatsPreloadManager.Cache cache) {
+                return AccountStatsBridgeActivity.this.isPreloadedCacheForCurrentSession(cache);
+            }
+
+            @Override
+            public void clearLatestCacheIfCurrent(@Nullable AccountStatsPreloadManager.Cache cache) {
+                if (preloadManager != null && cache != null && cache == preloadManager.getLatestCache()) {
+                    preloadManager.clearLatestCache();
+                }
+            }
+
+            @Override
             public void applyLoggedOutEmptyState() {
                 AccountStatsBridgeActivity.this.applyLoggedOutEmptyState();
             }
 
             @Override
             public void clearScheduledRefresh() {
-                AccountStatsBridgeActivity.this.clearScheduledRefresh();
+                if (pageRuntime != null) {
+                    pageRuntime.clearScheduledRefresh();
+                }
             }
 
             @Override
@@ -390,6 +426,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             @Override
             public boolean hasRenderableCurrentSessionState() {
                 return AccountStatsBridgeActivity.this.hasRenderableCurrentSessionState();
+            }
+
+            @Override
+            public boolean hasRenderableHistorySections(@Nullable AccountSnapshot snapshot) {
+                return AccountStatsBridgeActivity.this.hasRenderableHistorySections(snapshot);
             }
 
             @Override
@@ -404,7 +445,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
             @Override
             public void scheduleNextSnapshot(long delayMs) {
-                AccountStatsBridgeActivity.this.scheduleNextSnapshot(delayMs);
+                if (pageRuntime != null) {
+                    pageRuntime.scheduleNextSnapshot(delayMs);
+                }
             }
 
             @Override
@@ -560,7 +603,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
             @Override
             public void applySnapshot(@NonNull AccountSnapshot snapshot, boolean remoteConnected) {
-                AccountStatsBridgeActivity.this.applySnapshot(snapshot, remoteConnected);
+                if (renderCoordinator != null) {
+                    renderCoordinator.applySnapshot(snapshot, remoteConnected);
+                }
             }
 
             @Override
@@ -606,25 +651,616 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     logManager.warn(message);
                 }
             }
-        };
+        });
+    }
+
+    // 装配账户统计渲染协调器，把快照落地和次级区块主链从旧 Activity 抽离。
+    private AccountStatsRenderCoordinator.Host createRenderCoordinatorHost() {
+        return new AccountStatsRenderHostDelegate(new AccountStatsRenderHostDelegate.Owner() {
+            @Override
+            public void replaceTradeHistory(@Nullable List<TradeRecordItem> source) {
+                AccountStatsBridgeActivity.this.replaceTradeHistory(source);
+            }
+
+            @Override
+            public void replaceCurveHistory(@Nullable List<CurvePoint> source) {
+                AccountStatsBridgeActivity.this.replaceCurveHistory(source);
+            }
+
+            @Override
+            public void setLatestCurveIndicators(@Nullable List<AccountMetric> indicators) {
+                latestCurveIndicators = indicators == null ? new ArrayList<>() : new ArrayList<>(indicators);
+            }
+
+            @Override
+            public void setLatestStatsMetrics(@Nullable List<AccountMetric> metrics) {
+                latestStatsMetrics = metrics == null ? new ArrayList<>() : new ArrayList<>(metrics);
+            }
+
+            @Override
+            public void setBasePositions(@Nullable List<PositionItem> positions) {
+                basePositions = positions == null ? new ArrayList<>() : new ArrayList<>(positions);
+            }
+
+            @Override
+            public void setBasePendingOrders(@Nullable List<PositionItem> pendingOrders) {
+                basePendingOrders = pendingOrders == null ? new ArrayList<>() : new ArrayList<>(pendingOrders);
+            }
+
+            @NonNull
+            @Override
+            public List<TradeRecordItem> getTradeHistory() {
+                return tradeHistory;
+            }
+
+            @NonNull
+            @Override
+            public List<CurvePoint> getCurveHistory() {
+                return curveHistory;
+            }
+
+            @NonNull
+            @Override
+            public String buildDataQualitySummary(@Nullable List<TradeRecordItem> trades,
+                                                  @Nullable List<CurvePoint> curves,
+                                                  @Nullable List<PositionItem> positions) {
+                return AccountStatsBridgeActivity.this.buildDataQualitySummary(trades, curves, positions);
+            }
+
+            @Override
+            public void setDataQualitySummary(@NonNull String summary) {
+                dataQualitySummary = summary;
+            }
+
+            @Override
+            public long resolveCloseTime(@Nullable TradeRecordItem item) {
+                return AccountStatsBridgeActivity.this.resolveCloseTime(item);
+            }
+
+            @Override
+            public void setBaseTrades(@Nullable List<TradeRecordItem> trades) {
+                baseTrades = trades == null ? new ArrayList<>() : new ArrayList<>(trades);
+            }
+
+            @NonNull
+            @Override
+            public List<TradeRecordItem> getBaseTrades() {
+                return baseTrades;
+            }
+
+            @NonNull
+            @Override
+            public List<PositionItem> getBasePositions() {
+                return basePositions;
+            }
+
+            @NonNull
+            @Override
+            public List<CurvePoint> normalizeCurvePoints(@Nullable List<CurvePoint> source) {
+                return AccountStatsBridgeActivity.this.normalizeCurvePoints(source);
+            }
+
+            @Override
+            public void setAllCurvePoints(@Nullable List<CurvePoint> points) {
+                allCurvePoints = points == null ? new ArrayList<>() : new ArrayList<>(points);
+            }
+
+            @NonNull
+            @Override
+            public List<CurvePoint> getAllCurvePoints() {
+                return allCurvePoints;
+            }
+
+            @Override
+            public void setLatestCumulativePnl(double cumulativePnl) {
+                latestCumulativePnl = cumulativePnl;
+            }
+
+            @NonNull
+            @Override
+            public List<CurvePoint> resolveImmediateCurvePoints() {
+                return AccountStatsBridgeActivity.this.resolveImmediateCurvePoints();
+            }
+
+            @Override
+            public void renderCurveWithIndicators(@NonNull List<CurvePoint> points) {
+                AccountStatsBridgeActivity.this.renderCurveWithIndicators(points);
+            }
+
+            @Override
+            public void logTradeVisibilitySnapshot(@Nullable List<TradeRecordItem> snapshotTrades,
+                                                   @Nullable List<TradeRecordItem> effectiveTrades,
+                                                   @Nullable List<TradeRecordItem> baseTrades) {
+                AccountStatsBridgeActivity.this.logTradeVisibilitySnapshot(snapshotTrades, effectiveTrades, baseTrades);
+            }
+
+            @Override
+            public void logAccountSnapshotEvents(@Nullable List<PositionItem> positions,
+                                                 @Nullable List<PositionItem> pendingOrders,
+                                                 @Nullable List<TradeRecordItem> trades,
+                                                 boolean remoteConnected) {
+                AccountStatsBridgeActivity.this.logAccountSnapshotEvents(positions, pendingOrders, trades, remoteConnected);
+            }
+
+            @Override
+            public void ensureReturnStatsAnchor() {
+                AccountStatsBridgeActivity.this.ensureReturnStatsAnchor();
+            }
+
+            @Override
+            public void updateOverviewHeader() {
+                AccountStatsBridgeActivity.this.updateOverviewHeader();
+            }
+
+            @Override
+            public void setDeferredSecondaryRenderPending(boolean pending) {
+                deferredSecondaryRenderPending = pending;
+            }
+
+            @Override
+            public boolean isSecondarySectionsAttached() {
+                return secondarySectionsAttached;
+            }
+
+            @Override
+            public void scheduleDeferredSecondarySectionAttach() {
+                AccountStatsBridgeActivity.this.scheduleDeferredSecondarySectionAttach();
+            }
+
+            @Override
+            public void traceAccountRenderPhase(@NonNull String phase,
+                                                long stageStartedAt,
+                                                int tradeCount,
+                                                int positionCount,
+                                                int curveCount) {
+                AccountStatsBridgeActivity.this.traceAccountRenderPhase(
+                        phase,
+                        stageStartedAt,
+                        tradeCount,
+                        positionCount,
+                        curveCount
+                );
+            }
+
+            @NonNull
+            @Override
+            public AccountStatsRenderSignature buildCurrentHistoryRenderSignature() {
+                return AccountStatsBridgeActivity.this.buildCurrentHistoryRenderSignature();
+            }
+
+            @Override
+            public boolean isForceDeferredSectionRender() {
+                return forceDeferredSectionRender;
+            }
+
+            @Override
+            public void setForceDeferredSectionRender(boolean value) {
+                forceDeferredSectionRender = value;
+            }
+
+            @Nullable
+            @Override
+            public AccountStatsRenderSignature getLastHistoryRenderSignature() {
+                return lastHistoryRenderSignature;
+            }
+
+            @Override
+            public void setPendingHistoryRenderSignature(@Nullable AccountStatsRenderSignature signature) {
+                pendingHistoryRenderSignature = signature;
+            }
+
+            @Override
+            public void setPendingSectionDiff(@Nullable AccountStatsSectionDiff diff) {
+                pendingSectionDiff = diff;
+            }
+
+            @Override
+            public void setLastHistoryRenderSignature(@Nullable AccountStatsRenderSignature signature) {
+                lastHistoryRenderSignature = signature;
+            }
+
+            @Override
+            public void hideTradeStatsSectionUntilFreshContentReady() {
+                AccountStatsBridgeActivity.this.hideTradeStatsSectionUntilFreshContentReady();
+            }
+
+            @Override
+            public int nextDeferredSecondaryRenderRevision() {
+                return ++deferredSecondaryRenderRevision;
+            }
+
+            @Override
+            public boolean canExecuteDeferredSecondarySectionRender() {
+                return binding != null && ioExecutor != null && !ioExecutor.isShutdown();
+            }
+
+            @Override
+            public void executeDeferredSecondaryRender(@NonNull Runnable action) {
+                ioExecutor.execute(action);
+            }
+
+            @Override
+            public void runOnUiThread(@NonNull Runnable action) {
+                AccountStatsBridgeActivity.this.runOnUiThread(action);
+            }
+
+            @Override
+            public boolean shouldIgnoreDeferredSecondaryRenderResult(int renderRevision) {
+                return isFinishing()
+                        || isDestroyed()
+                        || binding == null
+                        || renderRevision != deferredSecondaryRenderRevision;
+            }
+
+            @Override
+            public void logRenderWarning(@NonNull String message) {
+                if (logManager != null) {
+                    logManager.warn(message);
+                }
+            }
+
+            @Nullable
+            @Override
+            public AccountStatsSectionDiff getPendingSectionDiff() {
+                return pendingSectionDiff;
+            }
+
+            @Nullable
+            @Override
+            public AccountStatsRenderSignature getPendingHistoryRenderSignature() {
+                return pendingHistoryRenderSignature;
+            }
+
+            @NonNull
+            @Override
+            public List<AccountMetric> getLatestStatsMetrics() {
+                return latestStatsMetrics;
+            }
+
+            @NonNull
+            @Override
+            public AccountTimeRange getSelectedRange() {
+                return selectedRange;
+            }
+
+            @Override
+            public boolean isManualCurveRangeEnabled() {
+                return manualCurveRangeEnabled;
+            }
+
+            @Override
+            public long getManualCurveRangeStartMs() {
+                return manualCurveRangeStartMs;
+            }
+
+            @Override
+            public long getManualCurveRangeEndMs() {
+                return manualCurveRangeEndMs;
+            }
+
+            @NonNull
+            @Override
+            public AccountDeferredSnapshotRenderHelper.TradePnlSideMode getTradePnlSideMode() {
+                return AccountStatsBridgeActivity.this.toHelperTradePnlSideMode(tradePnlSideMode);
+            }
+
+            @NonNull
+            @Override
+            public AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis getTradeWeekdayBasis() {
+                return AccountStatsBridgeActivity.this.toHelperTradeWeekdayBasis(tradeWeekdayBasis);
+            }
+
+            @Override
+            public void bindTradeAnalytics(@Nullable List<AccountMetric> tradeStatsMetrics,
+                                           @Nullable List<TradePnlBarChartView.Entry> entries,
+                                           @Nullable List<CurveAnalyticsHelper.TradeScatterPoint> tradeScatterPoints,
+                                           @Nullable List<CurveAnalyticsHelper.DurationBucket> holdingDurationBuckets,
+                                           @Nullable List<TradeWeekdayBarChartHelper.Entry> weekdayEntries,
+                                           double totalPnl) {
+                AccountStatsBridgeActivity.this.bindTradeAnalytics(
+                        tradeStatsMetrics,
+                        entries,
+                        tradeScatterPoints,
+                        holdingDurationBuckets,
+                        weekdayEntries,
+                        totalPnl
+                );
+            }
+
+            @Override
+            public void collapseAllExpandedRows() {
+                if (tradeAdapter != null) {
+                    tradeAdapter.collapseAllExpandedRows();
+                }
+            }
+
+            @NonNull
+            @Override
+            public String readTradeProductFilter() {
+                String product = binding.spinnerTradeProduct == null
+                        ? FILTER_PRODUCT
+                        : (String) binding.spinnerTradeProduct.getSelectedItem();
+                return product == null || product.trim().isEmpty() ? FILTER_PRODUCT : product;
+            }
+
+            @NonNull
+            @Override
+            public String readTradeSideFilter() {
+                String side = binding.spinnerTradeSide == null
+                        ? FILTER_SIDE
+                        : (String) binding.spinnerTradeSide.getSelectedItem();
+                return side == null || side.trim().isEmpty() ? FILTER_SIDE : side;
+            }
+
+            @NonNull
+            @Override
+            public String readTradeSortFilter() {
+                String sort = binding.spinnerTradeSort == null
+                        ? FILTER_SORT
+                        : (String) binding.spinnerTradeSort.getSelectedItem();
+                return sort == null || sort.trim().isEmpty() ? FILTER_SORT : sort;
+            }
+
+            @Override
+            public void setSelectedTradeProductFilter(@NonNull String filter) {
+                selectedTradeProductFilter = filter;
+            }
+
+            @Override
+            public void setSelectedTradeSideFilter(@NonNull String filter) {
+                selectedTradeSideFilter = filter;
+            }
+
+            @Override
+            public void setSelectedTradeSortFilter(@NonNull String filter) {
+                selectedTradeSortFilter = filter;
+            }
+
+            @NonNull
+            @Override
+            public String getTradeProductFilterLabel() {
+                return FILTER_PRODUCT;
+            }
+
+            @NonNull
+            @Override
+            public String getTradeSideFilterLabel() {
+                return FILTER_SIDE;
+            }
+
+            @NonNull
+            @Override
+            public String getTradeSortFilterLabel() {
+                return FILTER_SORT;
+            }
+
+            @NonNull
+            @Override
+            public String getSelectedTradeProductFilterValue() {
+                return selectedTradeProductFilter == null ? "" : selectedTradeProductFilter;
+            }
+
+            @NonNull
+            @Override
+            public String getSelectedTradeSideFilterValue() {
+                return selectedTradeSideFilter == null ? "" : selectedTradeSideFilter;
+            }
+
+            @NonNull
+            @Override
+            public String getSelectedTradeSortFilterValue() {
+                return selectedTradeSortFilter == null ? "" : selectedTradeSortFilter;
+            }
+
+            @Override
+            public void updateTradeFilterDisplayTexts(@NonNull String product,
+                                                      @NonNull String side,
+                                                      @NonNull String sort) {
+                AccountStatsBridgeActivity.this.updateTradeFilterDisplayTexts(product, side, sort);
+            }
+
+            @Override
+            public void updateTradeProductOptions(@Nullable List<String> products,
+                                                  @NonNull String selectedProduct) {
+                AccountStatsBridgeActivity.this.updateTradeProductOptions(products, selectedProduct);
+            }
+
+            @Override
+            public void renderReturnStatsTable(@NonNull List<CurvePoint> curvePoints) {
+                AccountStatsBridgeActivity.this.renderReturnStatsTable(curvePoints);
+            }
+
+            @Override
+            public void setManualCurveRangeEnabled(boolean enabled) {
+                manualCurveRangeEnabled = enabled;
+            }
+
+            @Override
+            public void syncRangeInputsWithDisplayedCurve(@Nullable List<CurvePoint> displayedPoints) {
+                AccountStatsBridgeActivity.this.syncRangeInputsWithDisplayedCurve(displayedPoints);
+            }
+
+            @Override
+            public void applyPreparedCurveProjection(@NonNull AccountDeferredSnapshotRenderHelper.CurveProjection curveProjection) {
+                AccountStatsBridgeActivity.this.applyPreparedCurveProjection(curveProjection);
+            }
+
+            @Override
+            public int getDisplayedCurvePointCount() {
+                return displayedCurvePoints == null ? 0 : displayedCurvePoints.size();
+            }
+
+            @NonNull
+            @Override
+            public String getLastExplicitTradeSortMode() {
+                return lastExplicitTradeSortMode;
+            }
+
+            @NonNull
+            @Override
+            public String normalizeSortValue(@Nullable String rawSort) {
+                return AccountStatsBridgeActivity.this.normalizeSortValue(rawSort);
+            }
+
+            @Override
+            public boolean isTradeSortDescending() {
+                return tradeSortDescending;
+            }
+
+            @NonNull
+            @Override
+            public AccountDeferredSnapshotRenderHelper.SortMode toHelperSortMode(@NonNull String normalizedSort) {
+                return AccountStatsBridgeActivity.this.toHelperSortMode(normalizedSort);
+            }
+
+            @Override
+            public void bindFilteredTrades(@Nullable List<TradeRecordItem> filtered,
+                                           @NonNull AccountDeferredSnapshotRenderHelper.TradeSummary tradeSummary,
+                                           boolean scrollToTop,
+                                           @NonNull String product,
+                                           @NonNull String side,
+                                           @NonNull String normalizedSort) {
+                AccountStatsBridgeActivity.this.bindFilteredTrades(
+                        filtered,
+                        tradeSummary,
+                        scrollToTop,
+                        product,
+                        side,
+                        normalizedSort
+                );
+            }
+        });
+    }
+
+    // 装配收益表渲染助手，把收益表主链从旧 Activity 中抽离。
+    private AccountStatsReturnsTableHelper createReturnsTableHelper() {
+        return new AccountStatsReturnsTableHelper(new AccountStatsReturnsTableHelper.Host() {
+            @NonNull
+            @Override
+            public ContentAccountStatsBinding getBinding() {
+                return contentBinding;
+            }
+
+            @Override
+            public boolean isPrivacyMasked() {
+                return AccountStatsBridgeActivity.this.isPrivacyMasked();
+            }
+
+            @Override
+            public long resolveCloseTime(@Nullable TradeRecordItem item) {
+                return AccountStatsBridgeActivity.this.resolveCloseTime(item);
+            }
+
+            @NonNull
+            @Override
+            public String formatMonthLabel(long timeMs) {
+                return AccountStatsBridgeActivity.this.formatMonthLabel(timeMs);
+            }
+
+            @Override
+            public int resolveReturnDisplayColor(double rate, double amount, int neutralColorRes) {
+                return AccountStatsBridgeActivity.this.resolveReturnDisplayColor(rate, amount, neutralColorRes);
+            }
+
+            @NonNull
+            @Override
+            public String formatReturnValue(double rate, double amount, boolean dayMode) {
+                return AccountStatsBridgeActivity.this.formatReturnValue(rate, amount, dayMode);
+            }
+
+            @Override
+            public void applyCurveRangeFromTableSelection(long startMs, long endMs) {
+                AccountStatsBridgeActivity.this.applyCurveRangeFromTableSelection(startMs, endMs);
+            }
+
+            @Override
+            public long startOfDay(long timeMs) {
+                return AccountStatsBridgeActivity.this.startOfDay(timeMs);
+            }
+
+            @Override
+            public long endOfDay(long timeMs) {
+                return AccountStatsBridgeActivity.this.endOfDay(timeMs);
+            }
+
+            @Override
+            public long startOfMonth(long timeMs) {
+                return AccountStatsBridgeActivity.this.startOfMonth(timeMs);
+            }
+
+            @Override
+            public long endOfMonth(long timeMs) {
+                return AccountStatsBridgeActivity.this.endOfMonth(timeMs);
+            }
+
+            @Override
+            public long startOfYear(long timeMs) {
+                return AccountStatsBridgeActivity.this.startOfYear(timeMs);
+            }
+
+            @NonNull
+            @Override
+            public List<CurvePoint> filterCurveByManualRange(@Nullable List<CurvePoint> source, long startInclusive, long endInclusive) {
+                return AccountStatsBridgeActivity.this.filterCurveByManualRange(source, startInclusive, endInclusive);
+            }
+
+            @Override
+            public void applyReturnsCellLayout(@NonNull View cell, int widthDp, float weight, int heightDp, int marginLeftDp, int marginTopDp, int marginRightDp, int marginBottomDp) {
+                AccountStatsBridgeActivity.this.applyReturnsCellLayout(cell, widthDp, weight, heightDp, marginLeftDp, marginTopDp, marginRightDp, marginBottomDp);
+            }
+
+            @NonNull
+            @Override
+            public TableRow createSimpleHeaderRow(@NonNull String[] headers, int widthDp) {
+                return AccountStatsBridgeActivity.this.createSimpleHeaderRow(headers, widthDp);
+            }
+
+            @NonNull
+            @Override
+            public TableRow createAlignedReturnsRow(@NonNull CharSequence label, @NonNull CharSequence value, boolean header, @Nullable Integer valueColor, @Nullable Double heatRate) {
+                return AccountStatsBridgeActivity.this.createAlignedReturnsRow(label, value, header, valueColor, heatRate);
+            }
+
+            @NonNull
+            @Override
+            public TableRow createAlignedReturnsRow(@NonNull CharSequence label, @NonNull CharSequence value, boolean header, @Nullable Integer valueColor, @Nullable Double heatRate, @Nullable View.OnClickListener clickListener) {
+                return AccountStatsBridgeActivity.this.createAlignedReturnsRow(label, value, header, valueColor, heatRate, clickListener);
+            }
+
+            @NonNull
+            @Override
+            public View createDailyReturnsCell(@NonNull String label, @Nullable String value, int labelColor, @Nullable Integer valueColor, @Nullable View.OnClickListener clickListener, @Nullable Double heatRate) {
+                return AccountStatsBridgeActivity.this.createDailyReturnsCell(label, value, labelColor, valueColor, clickListener, heatRate);
+            }
+
+            @NonNull
+            @Override
+            public LinearLayout createMonthlyGroupedBlock(@NonNull AccountStatsReturnsTableHelper.YearlyReturnRow rowData) {
+                return AccountStatsBridgeActivity.this.createMonthlyGroupedBlock(rowData);
+            }
+        });
     }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (bridgeLegacyEntryToMainHost(getIntent())) {
+            return;
+        }
         if (isLoginDialogOnlyMode(getIntent())) {
             setTheme(R.style.Theme_BinanceMonitor_TranslucentHost);
         }
-        super.onCreate(savedInstanceState);
         long onCreateStartedAt = SystemClock.elapsedRealtime();
         long stageStartedAt = onCreateStartedAt;
         binding = ActivityAccountStatsBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        contentBinding = ContentAccountStatsBinding.bind(binding.getRoot());
         consumeLoginDialogIntent(getIntent());
         if (finishAfterLoginDialog) {
             binding.getRoot().setVisibility(View.INVISIBLE);
         }
         registerFirstFrameCompletionListener();
-        ensureMonitorServiceStarted();
+        MonitorServiceController.ensureStarted(this);
         traceAccountRenderPhase("on_create_inflate_and_content",
                 stageStartedAt,
                 0,
@@ -643,6 +1279,138 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         sessionStateMachine = new AccountSessionStateMachine();
         remoteSessionCoordinator = buildRemoteSessionCoordinator();
         snapshotRefreshCoordinator = new AccountSnapshotRefreshCoordinator(createSnapshotRefreshHost());
+        renderCoordinator = new AccountStatsRenderCoordinator(createRenderCoordinatorHost());
+        pageRuntime = new AccountStatsPageRuntime(new AccountStatsPageRuntime.Host() {
+            @NonNull
+            @Override
+            public AppCompatActivity requireActivity() {
+                return AccountStatsBridgeActivity.this;
+            }
+
+            @Override
+            public void bindPageContent(@NonNull ContentAccountStatsBinding binding) {
+                initializePageContent();
+            }
+
+            @Override
+            public void placeCurveSectionToBottom() {
+                AccountStatsBridgeActivity.this.placeCurveSectionToBottom();
+            }
+
+            @Override
+            public void bindLocalMeta() {
+                AccountStatsBridgeActivity.this.bindLocalMeta();
+            }
+
+            @Override
+            public void attachForegroundRefresh() {
+                if (preloadManager != null) {
+                    preloadManager.addCacheListener(preloadCacheListener);
+                    preloadManager.setLiveScreenActive(true);
+                }
+            }
+
+            @Override
+            public void applyPagePalette() {
+                AccountStatsBridgeActivity.this.applyPaletteStyles();
+            }
+
+            @Override
+            public void applyPrivacyMaskState() {
+                AccountStatsBridgeActivity.this.applyPrivacyMaskState();
+            }
+
+            public void enterAccountScreen(boolean coldStart) {
+                if (snapshotRefreshCoordinator != null) {
+                    snapshotRefreshCoordinator.enterAccountScreen(coldStart);
+                }
+            }
+
+            @Override
+            public void openLoginDialogIfRequested() {
+                AccountStatsBridgeActivity.this.openLoginDialogIfRequested();
+            }
+
+            @Override
+            public void dismissActiveLoginDialog() {
+                AccountStatsBridgeActivity.this.dismissActiveLoginDialog();
+            }
+
+            @Override
+            public void clearTransientUiCallbacks() {
+                binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
+                binding.scrollAccountStats.removeCallbacks(deferredSecondarySectionAttachRunnable);
+                deferredSecondarySectionAttachPosted = false;
+                clearFirstFrameCompletionListener();
+                hideLoginSuccessBannerNow();
+            }
+
+            @Override
+            public void detachForegroundRefresh() {
+                if (preloadManager != null) {
+                    preloadManager.removeCacheListener(preloadCacheListener);
+                    preloadManager.setLiveScreenActive(false);
+                }
+            }
+
+            @Override
+            public void persistUiState() {
+                AccountStatsBridgeActivity.this.persistUiState();
+            }
+
+            @Override
+            public void clearDestroyCallbacks() {
+                clearTransientUiCallbacks();
+            }
+
+            @Override
+            public void shutdownExecutors() {
+                AccountStatsBridgeActivity.this.shutdownExecutors();
+            }
+
+            @Override
+            public void requestScheduledSnapshot() {
+                if (snapshotRefreshCoordinator != null) {
+                    snapshotRefreshCoordinator.requestSnapshot();
+                }
+            }
+
+            @Override
+            public boolean isEmbeddedInHostShell() {
+                return false;
+            }
+
+            @Override
+            public void openMarketMonitor() {
+                AccountStatsBridgeActivity.this.openMarketMonitor();
+            }
+
+            @Override
+            public void openMarketChart() {
+                AccountStatsBridgeActivity.this.openMarketChart();
+            }
+
+            @Override
+            public void openAccountPosition() {
+                AccountStatsBridgeActivity.this.openAccountPosition();
+            }
+
+            @Override
+            public void openSettings() {
+                AccountStatsBridgeActivity.this.openSettings();
+            }
+        });
+        pageController = new AccountStatsPageController(new AccountStatsPageHostDelegate(
+                pageRuntime),
+                contentBinding,
+                new AccountStatsPageController.BottomNavBinding(
+                        binding.tabBar,
+                        binding.tabMarketMonitor,
+                        binding.tabMarketChart,
+                        binding.tabAccountPosition,
+                        binding.tabAccountStats,
+                        binding.tabSettings
+                ));
         traceAccountRenderPhase("on_create_runtime_init",
                 stageStartedAt,
                 0,
@@ -653,6 +1421,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         indicatorAdapter = new AccountMetricAdapter();
         tradeAdapter = new TradeRecordAdapterV2();
         statsAdapter = new StatsMetricAdapter();
+        curveRenderHelper = new AccountStatsCurveRenderHelper(contentBinding, indicatorAdapter);
+        returnsTableHelper = createReturnsTableHelper();
         traceAccountRenderPhase("on_create_adapter_init",
                 stageStartedAt,
                 0,
@@ -668,19 +1438,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 0);
 
         stageStartedAt = SystemClock.elapsedRealtime();
-        setupBottomNav();
-        setupRecyclers();
-        setupFilters();
-        configureToggleButtonsV2();
-        setupRangeToggle();
-        setupReturnStatsModeToggle();
-        setupReturnStatsValueToggle();
-        setupTradePnlSideToggle();
-        setupTradeWeekdayBasisToggle();
-        setupDatePickers();
-        setupCurveInteraction();
-        setupOverviewHeader();
-        placeCurveSectionToBottom();
+        pageController.bind();
         traceAccountRenderPhase("on_create_setup_static_ui",
                 stageStartedAt,
                 0,
@@ -688,18 +1446,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 0);
 
         stageStartedAt = SystemClock.elapsedRealtime();
-        bindLocalMeta();
+        pageController.onColdStart();
         traceAccountRenderPhase("on_create_bind_local_meta",
                 stageStartedAt,
                 0,
                 0,
                 0);
-
-        stageStartedAt = SystemClock.elapsedRealtime();
-        applyPaletteStyles();
-        applyPrivacyMaskState();
-        snapshotLoopEnabled = true;
-        enterAccountScreen(true);
         traceAccountRenderPhase("on_create_enter_account_screen",
                 stageStartedAt,
                 baseTrades.size(),
@@ -715,49 +1467,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        ensureMonitorServiceStarted();
-        if (preloadManager != null) {
-            preloadManager.addCacheListener(preloadCacheListener);
-            preloadManager.setLiveScreenActive(true);
-        }
-        applyPaletteStyles();
-        applyPrivacyMaskState();
-        snapshotLoopEnabled = true;
-        enterAccountScreen(false);
-        openLoginDialogIfRequested();
+        pageController.onPageShown();
     }
 
     @Override
     protected void onPause() {
-        snapshotLoopEnabled = false;
-        clearScheduledRefresh();
-        dismissActiveLoginDialog();
-        binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
-        binding.scrollAccountStats.removeCallbacks(deferredSecondarySectionAttachRunnable);
-        deferredSecondarySectionAttachPosted = false;
-        clearFirstFrameCompletionListener();
-        hideLoginSuccessBannerNow();
-        if (preloadManager != null) {
-            preloadManager.removeCacheListener(preloadCacheListener);
-            preloadManager.setLiveScreenActive(false);
-        }
-        persistUiState();
+        pageController.onPageHidden();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
-        snapshotLoopEnabled = false;
-        clearScheduledRefresh();
-        dismissActiveLoginDialog();
-        if (binding != null && binding.tvLoginSuccessBanner != null) {
-            binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
-        }
-        if (ioExecutor != null) {
-            ioExecutor.shutdownNow();
-        }
-        if (sessionExecutor != null) {
-            sessionExecutor.shutdownNow();
+        if (pageController != null) {
+            pageController.onDestroy();
         }
         super.onDestroy();
     }
@@ -765,6 +1487,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (bridgeLegacyEntryToMainHost(intent)) {
+            return;
+        }
         setIntent(intent);
         consumeLoginDialogIntent(intent);
         openLoginDialogIfRequested();
@@ -794,6 +1519,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
         }
         return super.dispatchTouchEvent(event);
+    }
+
+    private boolean bridgeLegacyEntryToMainHost(@Nullable Intent sourceIntent) {
+        Intent bridgeIntent = HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_STATS);
+        Bundle sourceExtras = sourceIntent == null ? null : sourceIntent.getExtras();
+        if (sourceExtras != null) {
+            bridgeIntent.putExtras(sourceExtras);
+        }
+        startActivity(bridgeIntent);
+        overridePendingTransition(0, 0);
+        finish();
+        return true;
     }
 
     private void setupOverviewHeader() {
@@ -1354,7 +2091,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         loading = false;
         activeSessionAccount = null;
         connectedAccount = "";
-        clearScheduledRefresh();
+        if (pageRuntime != null) {
+            pageRuntime.clearScheduledRefresh();
+        }
         ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(false);
         if (preloadManager != null) {
             preloadManager.setFullSnapshotActive(false);
@@ -1401,7 +2140,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         lastTradePnlMismatchState = null;
         accountLogBaselineReady = false;
         latestCumulativePnl = 0d;
+        latestHistoryRevision = "";
         dataQualitySummary = "";
+        lastHistoryRenderSignature = null;
+        pendingHistoryRenderSignature = null;
+        pendingSectionDiff = null;
+        forceDeferredSectionRender = false;
     }
 
     // 退出登录后顺手清掉本地账户缓存，避免其他页面继续读到旧快照。
@@ -1448,7 +2192,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         latestCurveIndicators = new ArrayList<>();
         latestStatsMetrics = new ArrayList<>();
         AccountSnapshot emptySnapshot = buildEmptyAccountSnapshot();
-        applySnapshot(emptySnapshot, false);
+        if (renderCoordinator != null) {
+            renderCoordinator.applySnapshot(emptySnapshot, false);
+        }
         lastAppliedSnapshotSignature = buildRefreshSignature(
                 emptySnapshot,
                 "",
@@ -1570,7 +2316,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     connectedError = trim(ex.getMessage()).isEmpty() ? connectedError : ex.getMessage();
                     updateOverviewHeader();
                     if (requestSnapshotAfter && userLoggedIn) {
-                        requestForegroundEntrySnapshot();
+                        logRemoteSessionDebug("请求 requestForegroundEntrySnapshot");
+                        snapshotRefreshCoordinator.requestForegroundEntrySnapshot();
                     }
                 });
             }
@@ -1594,7 +2341,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             persistUiState();
             updateOverviewHeader();
             if (requestSnapshotAfter) {
-                requestForegroundEntrySnapshot();
+                logRemoteSessionDebug("请求 requestForegroundEntrySnapshot");
+                snapshotRefreshCoordinator.requestForegroundEntrySnapshot();
             }
             return;
         }
@@ -1747,7 +2495,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 verifiedCache.getAccount(),
                 verifiedCache.getServer()
         );
-        applySnapshot(verifiedCache.getSnapshot(), true);
+        if (renderCoordinator != null) {
+            renderCoordinator.applySnapshot(verifiedCache.getSnapshot(), true);
+        }
         lastAppliedSnapshotSignature = verifiedSignature;
         persistUiState();
         showLoginSuccessBanner();
@@ -1782,7 +2532,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         updateOverviewHeader();
         persistUiState();
         logRemoteSessionDebug("applyRemoteSessionAccepted 已切到可刷新会话，准备请求前台快照");
-        requestForegroundEntrySnapshot();
+        if (snapshotRefreshCoordinator != null) {
+            logRemoteSessionDebug("请求 requestForegroundEntrySnapshot");
+            snapshotRefreshCoordinator.requestForegroundEntrySnapshot();
+        }
         if (finishAfterLoginDialog) {
             setResult(RESULT_OK, buildLoginDialogResultIntent(result.getActiveAccount(), sourceText));
             logRemoteSessionDebug("applyRemoteSessionAccepted 已回传结果并准备返回原页");
@@ -1884,6 +2637,16 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
+    // 统一关闭页面内部执行器，避免控制器在多个宿主入口重复展开同一段释放逻辑。
+    private void shutdownExecutors() {
+        if (ioExecutor != null) {
+            ioExecutor.shutdownNow();
+        }
+        if (sessionExecutor != null) {
+            sessionExecutor.shutdownNow();
+        }
+    }
+
     // 统一消费外部传入的“直接打开登录弹窗”请求，避免旧页面实例漏处理。
     private void consumeLoginDialogIntent(@Nullable Intent intent) {
         if (intent == null) {
@@ -1978,37 +2741,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return builder.toString();
     }
 
-    private void setupBottomNav() {
-        updateBottomTabs(false, false, true, false, false);
-        binding.tabMarketMonitor.setOnClickListener(v -> openMarketMonitor());
-        binding.tabMarketChart.setOnClickListener(v -> openMarketChart());
-        binding.tabAccountStats.setOnClickListener(v -> updateBottomTabs(false, false, true, false, false));
-        binding.tabAccountPosition.setOnClickListener(v -> openAccountPosition());
-        binding.tabSettings.setOnClickListener(v -> openSettings());
-    }
-
-    private void updateBottomTabs(boolean marketSelected,
-                                  boolean chartSelected,
-                                  boolean accountSelected,
-                                  boolean accountPositionSelected,
-                                  boolean settingsSelected) {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        BottomTabVisibilityManager.apply(this,
-                binding.tabMarketMonitor,
-                binding.tabMarketChart,
-                binding.tabAccountStats,
-                binding.tabAccountPosition,
-                binding.tabSettings);
-        binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
-        styleNavTab(binding.tabMarketMonitor, marketSelected);
-        styleNavTab(binding.tabMarketChart, chartSelected);
-        styleNavTab(binding.tabAccountStats, accountSelected);
-        styleNavTab(binding.tabAccountPosition, accountPositionSelected);
-        styleNavTab(binding.tabSettings, settingsSelected);
-    }
-
-    private void styleNavTab(TextView tab, boolean selected) {
-        UiPaletteManager.styleBottomNavTab(tab, selected, UiPaletteManager.resolve(this));
+    // 装配账户统计页的静态页面结构，便于后续 Fragment 复用同一套实现。
+    private void initializePageContent() {
+        setupRecyclers();
+        setupFilters();
+        configureToggleButtonsV2();
+        setupRangeToggle();
+        setupReturnStatsModeToggle();
+        setupReturnStatsValueToggle();
+        setupTradePnlSideToggle();
+        setupTradeWeekdayBasisToggle();
+        setupDatePickers();
+        setupCurveInteraction();
+        setupOverviewHeader();
     }
 
     private void placeCurveSectionToBottom() {
@@ -2120,140 +2865,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 allCurvePoints.size());
     }
 
-    // 次屏区块挂载后再统一补一次渲染，保证页面数据最终完整。
-    private void renderDeferredSnapshotSectionsIfNeeded() {
-        if (!secondarySectionsAttached || !deferredSecondaryRenderPending) {
-            return;
-        }
-        renderDeferredSnapshotSections();
-    }
-
-    // 渲染首屏之外的统计、表格和交易区块，避免它们参与第一帧竞争。
-    private void renderDeferredSnapshotSections() {
-        hideTradeStatsSectionUntilFreshContentReady();
-        deferredSecondaryRenderPending = false;
-        scheduleDeferredSecondarySectionRender();
-    }
-
-    // 新一轮交易统计还在后台准备时，先整体收起旧卡片，避免用户先看到旧壳子再补指标列表。
+    // 新一轮交易统计还在后台准备时，只在首显前保留占位，避免曲线区顶上来造成跳动。
     private void hideTradeStatsSectionUntilFreshContentReady() {
-        binding.cardTradeStatsSection.setVisibility(View.GONE);
-    }
-
-    // 次级区块统一切到后台准备数据，主线程只负责最终绑定。
-    private void scheduleDeferredSecondarySectionRender() {
-        if (binding == null || ioExecutor == null || ioExecutor.isShutdown()) {
-            return;
+        if (binding.cardTradeStatsSection.getVisibility() != View.VISIBLE) {
+            binding.cardTradeStatsSection.setVisibility(View.INVISIBLE);
         }
-        DeferredSecondaryRenderRequest request = buildDeferredSecondaryRenderRequest();
-        int renderRevision = ++deferredSecondaryRenderRevision;
-        ioExecutor.execute(() -> {
-            try {
-                AccountDeferredSnapshotRenderHelper.PreparedSnapshotSections prepared =
-                        AccountDeferredSnapshotRenderHelper.prepare(request.toHelperRequest());
-                runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed() || binding == null || renderRevision != deferredSecondaryRenderRevision) {
-                        return;
-                    }
-                    applyDeferredSecondaryRenderResult(request, prepared);
-                });
-            } catch (Exception exception) {
-                if (logManager != null) {
-                    logManager.warn("Deferred secondary render failed: " + exception.getMessage());
-                }
-            }
-        });
-    }
-
-    // 冻结一次次级区块刷新所需的状态，避免后台线程读取到中途变化的 UI 选择。
-    private DeferredSecondaryRenderRequest buildDeferredSecondaryRenderRequest() {
-        String product = selectedTradeProductFilter == null || selectedTradeProductFilter.trim().isEmpty()
-                ? FILTER_PRODUCT
-                : selectedTradeProductFilter;
-        String side = selectedTradeSideFilter == null || selectedTradeSideFilter.trim().isEmpty()
-                ? FILTER_SIDE
-                : selectedTradeSideFilter;
-        String sort = selectedTradeSortFilter == null || selectedTradeSortFilter.trim().isEmpty()
-                ? FILTER_SORT
-                : selectedTradeSortFilter;
-        String normalizedSort = FILTER_SORT.equals(sort)
-                ? normalizeSortValue(lastExplicitTradeSortMode)
-                : normalizeSortValue(sort);
-        return new DeferredSecondaryRenderRequest(
-                new ArrayList<>(latestStatsMetrics),
-                new ArrayList<>(baseTrades),
-                new ArrayList<>(allCurvePoints),
-                selectedRange,
-                manualCurveRangeEnabled,
-                manualCurveRangeStartMs,
-                manualCurveRangeEndMs,
-                tradePnlSideMode,
-                tradeWeekdayBasis,
-                product,
-                FILTER_PRODUCT.equals(product),
-                side,
-                FILTER_SIDE.equals(side),
-                sort,
-                normalizedSort,
-                tradeSortDescending
-        );
-    }
-
-    // 把后台准备好的结果一次性绑定到次级区块，避免主线程重复计算。
-    private void applyDeferredSecondaryRenderResult(DeferredSecondaryRenderRequest request,
-                                                    AccountDeferredSnapshotRenderHelper.PreparedSnapshotSections prepared) {
-        long stageStartedAt = SystemClock.elapsedRealtime();
-        updateTradeProductOptions(prepared.getTradeProducts(), request.tradeProductFilter);
-        updateTradeFilterDisplayTexts(request.tradeProductFilter, request.tradeSideFilter, request.rawSortSelection);
-        traceAccountRenderPhase("bind_overview_and_filters",
-                stageStartedAt,
-                baseTrades.size(),
-                basePositions.size(),
-                allCurvePoints.size());
-
-        stageStartedAt = SystemClock.elapsedRealtime();
-        renderReturnStatsTable(allCurvePoints);
-        traceAccountRenderPhase("render_returns_table",
-                stageStartedAt,
-                baseTrades.size(),
-                basePositions.size(),
-                allCurvePoints.size());
-
-        stageStartedAt = SystemClock.elapsedRealtime();
-        manualCurveRangeEnabled = prepared.getCurveProjection().isManualRangeApplied();
-        syncRangeInputsWithDisplayedCurve(prepared.getCurveProjection().getDisplayedCurvePoints());
-        applyPreparedCurveProjection(prepared.getCurveProjection());
-        traceAccountRenderPhase("apply_curve_range",
-                stageStartedAt,
-                baseTrades.size(),
-                basePositions.size(),
-                displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
-
-        stageStartedAt = SystemClock.elapsedRealtime();
-        bindTradeAnalytics(prepared.getTradeStatsMetrics(),
-                prepared.getTradePnlEntries(),
-                prepared.getTradeScatterPoints(),
-                prepared.getHoldingDurationBuckets(),
-                prepared.getTradeWeekdayEntries(),
-                prepared.getTradePnlTotal());
-        traceAccountRenderPhase("refresh_trade_stats",
-                stageStartedAt,
-                baseTrades.size(),
-                basePositions.size(),
-                displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
-
-        stageStartedAt = SystemClock.elapsedRealtime();
-        bindFilteredTrades(prepared.getFilteredTrades(),
-                prepared.getTradeSummary(),
-                false,
-                request.tradeProductFilter,
-                request.tradeSideFilter,
-                request.normalizedSort);
-        traceAccountRenderPhase("refresh_trades",
-                stageStartedAt,
-                baseTrades.size(),
-                basePositions.size(),
-                displayedCurvePoints == null ? 0 : displayedCurvePoints.size());
     }
 
     // 账户统计页不再用整页遮罩，而是统一切到局部打码 + 图表占位态。
@@ -2277,9 +2893,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (!hasImmediateAccountContent()) {
             return;
         }
+        forceDeferredSectionRender = true;
         deferredSecondaryRenderPending = true;
         if (secondarySectionsAttached) {
-            renderDeferredSnapshotSections();
+            if (renderCoordinator != null) {
+                renderCoordinator.renderDeferredSnapshotSections();
+            }
         } else {
             scheduleDeferredSecondarySectionAttach();
         }
@@ -2310,14 +2929,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.spinnerTradeProduct.setAdapter(productAdapter);
         binding.spinnerTradeProduct.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
             updateTradeFilterDisplayTexts();
-            refreshTrades(true);
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshTrades(true, false);
+            }
         }));
 
         ArrayAdapter<String> sideAdapter = createTradeFilterAdapter(new String[]{FILTER_SIDE, "\u4e70\u5165", "\u5356\u51fa"});
         binding.spinnerTradeSide.setAdapter(sideAdapter);
         binding.spinnerTradeSide.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
             updateTradeFilterDisplayTexts();
-            refreshTrades(true);
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshTrades(true, false);
+            }
         }));
 
         ArrayAdapter<String> sortAdapter = createTradeFilterAdapter(createTradeSortOptions());
@@ -2325,7 +2948,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.spinnerTradeSort.setOnItemSelectedListener(new SimpleSelectionListener(() -> {
             handleSortSelection(safeSpinnerValue(binding.spinnerTradeSort, selectedTradeSortFilter, FILTER_SORT), true);
             updateTradeFilterDisplayTexts();
-            refreshTrades(true, true);
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshTrades(true, true);
+            }
         }));
 
         setSpinnerSelectionByValue(binding.spinnerTradeProduct, selectedTradeProductFilter);
@@ -2471,7 +3096,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             handleSortSelection(chosen, true);
             setSpinnerSelectionByValue(binding.spinnerTradeSort, chosen);
             updateTradeFilterDisplayTexts();
-            refreshTrades(true, true);
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshTrades(true, true);
+            }
             return true;
         });
         popup.show();
@@ -2851,7 +3478,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             selected.set(Calendar.MILLISECOND, 0);
             returnStatsAnchorDateMs = selected.getTimeInMillis();
             hideReturnPeriodPickerPanel();
-            renderReturnStatsTable(allCurvePoints);
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshReturnStats();
+            }
         });
         binding.npReturnYear.setOnValueChangedListener((picker, oldVal, newVal) ->
                 syncReturnPickerMonthForYearIndex(newVal));
@@ -3066,7 +3695,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 selectedRange = AccountTimeRange.ALL;
             }
             clearManualCurveRange(true);
-            applyCurrentCurveRangeFromAllPoints();
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshCurveProjection();
+            }
         });
     }
 
@@ -3092,7 +3723,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
             binding.tvReturnsPeriod.setEnabled(returnStatsMode == ReturnStatsMode.DAY);
             binding.tvReturnsPeriod.setAlpha(returnStatsMode == ReturnStatsMode.DAY ? 1f : 0.65f);
-            renderReturnStatsTable(allCurvePoints);
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshReturnStats();
+            }
         });
     }
 
@@ -3107,7 +3740,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             returnValueMode = checkedId == R.id.btnReturnsAmount
                     ? ReturnValueMode.AMOUNT
                     : ReturnValueMode.RATE;
-            renderReturnStatsTable(allCurvePoints);
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshReturnStats();
+            }
         });
     }
 
@@ -3124,7 +3759,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             } else {
                 tradePnlSideMode = TradePnlSideMode.ALL;
             }
-            refreshTradeStats();
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshTradeStats();
+            }
         });
     }
 
@@ -3137,7 +3774,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             tradeWeekdayBasis = checkedId == R.id.btnTradeWeekdayOpenTime
                     ? TradeWeekdayBasis.OPEN_TIME
                     : TradeWeekdayBasis.CLOSE_TIME;
-            refreshTradeWeekdayStats(filterTradesBySideMode(baseTrades, tradePnlSideMode));
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshTradeStats();
+            }
         });
     }
 
@@ -3197,7 +3836,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             applyCacheMeta(cache);
             return;
         }
-        scheduleStoredSnapshotRestoreIfNeeded();
+        if (snapshotRefreshCoordinator != null) {
+            snapshotRefreshCoordinator.primeStoredSnapshotRestoreIfNeeded();
+        }
         String defaultAccount = activeSessionAccount != null && !trim(activeSessionAccount.getLogin()).isEmpty()
                 ? trim(activeSessionAccount.getLogin())
                 : loginAccountInput;
@@ -3221,27 +3862,19 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         updateOverviewHeader();
     }
 
-    private void applyPreloadedCacheIfAvailable() {
-        if (snapshotRefreshCoordinator != null) {
-            snapshotRefreshCoordinator.applyPreloadedCacheIfAvailable();
-        }
-    }
-
-    // 账户页进入前台时只消费已有会话真值与缓存；只有当前页确实没有可渲染状态时才重新 bootstrap。
-    private void enterAccountScreen(boolean coldStart) {
-        scheduleStoredSnapshotRestoreIfNeeded();
-        if (snapshotRefreshCoordinator != null) {
-            snapshotRefreshCoordinator.enterAccountScreen(coldStart);
-        }
-    }
-
     // 只要当前页已有本账户可渲染快照，就不应把切页/回前台误当成一次新的页面 bootstrap。
     private boolean hasRenderableCurrentSessionState() {
         if (!lastAppliedSnapshotSignature.isEmpty()) {
             return true;
         }
         AccountStatsPreloadManager.Cache cache = resolveCurrentSessionCache();
-        return cache != null && cache.getSnapshot() != null;
+        return cache != null && hasRenderableHistorySections(cache.getSnapshot());
+    }
+
+    // 只有真正拿到历史成交或净值曲线时，才能把缓存当成完整统计快照；纯运行态缓存仍需继续走正式历史刷新。
+    private boolean hasRenderableHistorySections(@Nullable AccountSnapshot snapshot) {
+        AccountHistoryPayload payload = historySnapshotStore.build(snapshot, latestHistoryRevision);
+        return !payload.getTrades().isEmpty() || !payload.getCurvePoints().isEmpty();
     }
 
     // 统一解析当前活动远程会话可消费的缓存，避免页面不同入口各自重复判断。
@@ -3259,42 +3892,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return cache;
     }
 
-    // 内存缓存为空时，后台恢复本地已持久化快照，避免切页首帧同步读库。
-    private void scheduleStoredSnapshotRestoreIfNeeded() {
-        if (!isAccountSessionReady()
-                || preloadManager == null
-                || ioExecutor == null
-                || ioExecutor.isShutdown()
-                || storedSnapshotRestorePending) {
-            return;
-        }
-        if (resolveCurrentSessionCache() != null) {
-            return;
-        }
-        storedSnapshotRestorePending = true;
-        ioExecutor.execute(() -> {
-            AccountStatsPreloadManager.Cache storedCache = null;
-            try {
-                storedCache = preloadManager.hydrateLatestCacheFromStorage();
-            } finally {
-                AccountStatsPreloadManager.Cache finalStoredCache = storedCache;
-                runOnUiThread(() -> {
-                    storedSnapshotRestorePending = false;
-                    if (isFinishing() || isDestroyed() || finalStoredCache == null) {
-                        return;
-                    }
-                    if (!isPreloadedCacheForCurrentSession(finalStoredCache)) {
-                        if (preloadManager != null && finalStoredCache == preloadManager.getLatestCache()) {
-                            preloadManager.clearLatestCache();
-                        }
-                        return;
-                    }
-                    applyPreloadedCacheIfAvailable();
-                });
-            }
-        });
-    }
-
     // 当前页首帧先消费缓存元数据，避免先把连接态写成未连接再被真实快照纠正。
     private void applyCacheMeta(@NonNull AccountStatsPreloadManager.Cache cache) {
         long updateAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
@@ -3306,6 +3903,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         connectedUpdateAtMs = updateAt;
         connectedUpdate = FormatUtils.formatDateTime(updateAt);
         connectedError = cache.getError();
+        latestHistoryRevision = trim(cache.getHistoryRevision());
         setConnectionStatus(cache.isConnected());
     }
 
@@ -3343,35 +3941,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private boolean isAccountSessionReady() {
         return userLoggedIn && ConfigManager.getInstance(getApplicationContext()).isAccountSessionActive();
-    }
-
-    private void scheduleNextSnapshot(long delayMs) {
-        long safeDelay = AccountRefreshMetaHelper.normalizeDelayMs(delayMs);
-        refreshHandler.removeCallbacks(refreshRunnable);
-        scheduledRefreshDelayMs = safeDelay;
-        nextRefreshAtMs = System.currentTimeMillis() + safeDelay;
-        refreshHandler.postDelayed(refreshRunnable, safeDelay);
-    }
-
-    // 清空已排队的下一次刷新，保证页面显示与真实调度保持一致。
-    private void clearScheduledRefresh() {
-        refreshHandler.removeCallbacks(refreshRunnable);
-        nextRefreshAtMs = 0L;
-        scheduledRefreshDelayMs = 0L;
-    }
-
-    // 页面首次进入和应用回到前台时，都立即拉一次账户总计，避免只显示旧缓存。
-    private void requestForegroundEntrySnapshot() {
-        if (snapshotRefreshCoordinator != null) {
-            logRemoteSessionDebug("请求 requestForegroundEntrySnapshot");
-            snapshotRefreshCoordinator.requestForegroundEntrySnapshot();
-        }
-    }
-
-    private void requestSnapshot() {
-        if (snapshotRefreshCoordinator != null) {
-            snapshotRefreshCoordinator.requestSnapshot();
-        }
     }
 
     // 页面自己合成的断线空快照只用于“完全无可渲染状态”的场景，不能覆盖当前已展示的真实持仓。
@@ -3461,23 +4030,41 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                          boolean connected,
                                          @Nullable String account,
                                          @Nullable String server) {
-        StringBuilder builder = new StringBuilder(512);
-        appendStringToken(builder, connected ? "1" : "0");
-        appendStringToken(builder, trim(account).toLowerCase(Locale.ROOT));
-        appendStringToken(builder, trim(server).toLowerCase(Locale.ROOT));
-        // 交易统计和历史曲线都受 historyRevision 驱动，签名必须跟着它一起前进。
-        appendStringToken(builder, trim(historyRevision));
-        if (snapshot == null) {
-            return builder.toString();
-        }
-        appendMetricsSignature(builder, snapshot.getOverviewMetrics());
-        appendMetricsSignature(builder, snapshot.getCurveIndicators());
-        appendMetricsSignature(builder, snapshot.getStatsMetrics());
-        appendCurveSignature(builder, snapshot.getCurvePoints());
-        appendTradeSignature(builder, snapshot.getTrades());
-        appendPositionSignature(builder, snapshot.getPositions());
-        appendPositionSignature(builder, snapshot.getPendingOrders());
-        return builder.toString();
+        return buildHistoryRenderSignature(snapshot, historyRevision).asText();
+    }
+
+    @NonNull
+    private AccountStatsRenderSignature buildCurrentHistoryRenderSignature() {
+        return buildHistoryRenderSignature(
+                new AccountHistoryPayload(
+                        latestHistoryRevision,
+                        new ArrayList<>(baseTrades),
+                        new ArrayList<>(allCurvePoints),
+                        new ArrayList<>(latestStatsMetrics),
+                        new ArrayList<>(latestCurveIndicators)
+                )
+        );
+    }
+
+    @NonNull
+    private AccountStatsRenderSignature buildHistoryRenderSignature(@Nullable AccountSnapshot snapshot,
+                                                                    @Nullable String historyRevision) {
+        return buildHistoryRenderSignature(historySnapshotStore.build(snapshot, historyRevision));
+    }
+
+    @NonNull
+    private AccountStatsRenderSignature buildHistoryRenderSignature(@NonNull AccountHistoryPayload payload) {
+        return AccountStatsRenderSignature.from(
+                payload.getHistoryRevision(),
+                payload.getTrades(),
+                payload.getCurvePoints(),
+                payload.getStatsMetrics(),
+                payload.getCurveIndicators(),
+                selectedTradeProductFilter,
+                selectedTradeSideFilter,
+                selectedTradeSortFilter,
+                tradeSortDescending
+        );
     }
 
     // 追加指标签名，统一按 name/value 顺序编码。
@@ -3626,7 +4213,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 仅在页面处于活跃状态且用户保持登录时，才继续排队下一次刷新。
     private boolean shouldKeepRefreshLoop() {
-        return snapshotLoopEnabled && userLoggedIn && !isFinishing() && !isDestroyed();
+        return pageRuntime != null && pageRuntime.shouldKeepRefreshLoop(userLoggedIn, isFinishing(), isDestroyed());
     }
 
     private String normalizeSource(String source) {
@@ -4012,172 +4599,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         private double price;
     }
 
-    // 次级区块后台计算请求，冻结一次渲染所需的筛选条件和数据快照。
-    private static final class DeferredSecondaryRenderRequest {
-        private final List<AccountMetric> latestStatsMetrics;
-        private final List<TradeRecordItem> baseTrades;
-        private final List<CurvePoint> allCurvePoints;
-        private final AccountTimeRange selectedRange;
-        private final boolean manualCurveRangeEnabled;
-        private final long manualCurveRangeStartMs;
-        private final long manualCurveRangeEndMs;
-        private final TradePnlSideMode tradePnlSideMode;
-        private final TradeWeekdayBasis tradeWeekdayBasis;
-        private final String tradeProductFilter;
-        private final boolean allProducts;
-        private final String tradeSideFilter;
-        private final boolean allSides;
-        private final String rawSortSelection;
-        private final String normalizedSort;
-        private final boolean tradeSortDescending;
-
-        private DeferredSecondaryRenderRequest(List<AccountMetric> latestStatsMetrics,
-                                               List<TradeRecordItem> baseTrades,
-                                               List<CurvePoint> allCurvePoints,
-                                               AccountTimeRange selectedRange,
-                                               boolean manualCurveRangeEnabled,
-                                               long manualCurveRangeStartMs,
-                                               long manualCurveRangeEndMs,
-                                               TradePnlSideMode tradePnlSideMode,
-                                               TradeWeekdayBasis tradeWeekdayBasis,
-                                               String tradeProductFilter,
-                                               boolean allProducts,
-                                               String tradeSideFilter,
-                                               boolean allSides,
-                                               String rawSortSelection,
-                                               String normalizedSort,
-                                               boolean tradeSortDescending) {
-            this.latestStatsMetrics = latestStatsMetrics;
-            this.baseTrades = baseTrades;
-            this.allCurvePoints = allCurvePoints;
-            this.selectedRange = selectedRange;
-            this.manualCurveRangeEnabled = manualCurveRangeEnabled;
-            this.manualCurveRangeStartMs = manualCurveRangeStartMs;
-            this.manualCurveRangeEndMs = manualCurveRangeEndMs;
-            this.tradePnlSideMode = tradePnlSideMode;
-            this.tradeWeekdayBasis = tradeWeekdayBasis;
-            this.tradeProductFilter = tradeProductFilter;
-            this.allProducts = allProducts;
-            this.tradeSideFilter = tradeSideFilter;
-            this.allSides = allSides;
-            this.rawSortSelection = rawSortSelection;
-            this.normalizedSort = normalizedSort;
-            this.tradeSortDescending = tradeSortDescending;
-        }
-
-        // 转成纯计算 helper 可直接消费的请求结构。
-        private AccountDeferredSnapshotRenderHelper.PrepareRequest toHelperRequest() {
-            return new AccountDeferredSnapshotRenderHelper.PrepareRequest(
-                    latestStatsMetrics,
-                    baseTrades,
-                    allCurvePoints,
-                    selectedRange,
-                    manualCurveRangeEnabled,
-                    manualCurveRangeStartMs,
-                    manualCurveRangeEndMs,
-                    toHelperTradePnlSideMode(tradePnlSideMode),
-                    toHelperTradeWeekdayBasis(tradeWeekdayBasis),
-                    new AccountDeferredSnapshotRenderHelper.TradeFilterRequest(
-                            tradeProductFilter,
-                            allProducts,
-                            tradeSideFilter,
-                            allSides,
-                            toHelperSortMode(normalizedSort),
-                            tradeSortDescending
-                    )
-            );
-        }
-
-        private static AccountDeferredSnapshotRenderHelper.TradePnlSideMode toHelperTradePnlSideMode(TradePnlSideMode source) {
-            if (source == TradePnlSideMode.BUY) {
-                return AccountDeferredSnapshotRenderHelper.TradePnlSideMode.BUY;
-            }
-            if (source == TradePnlSideMode.SELL) {
-                return AccountDeferredSnapshotRenderHelper.TradePnlSideMode.SELL;
-            }
-            return AccountDeferredSnapshotRenderHelper.TradePnlSideMode.ALL;
-        }
-
-        private static AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis toHelperTradeWeekdayBasis(TradeWeekdayBasis source) {
-            if (source == TradeWeekdayBasis.OPEN_TIME) {
-                return AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.OPEN_TIME;
-            }
-            return AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.CLOSE_TIME;
-        }
-
-        private static AccountDeferredSnapshotRenderHelper.SortMode toHelperSortMode(String normalizedSort) {
-            if (SORT_OPEN_TIME.equals(normalizedSort)) {
-                return AccountDeferredSnapshotRenderHelper.SortMode.OPEN_TIME;
-            }
-            if (SORT_PROFIT.equals(normalizedSort)) {
-                return AccountDeferredSnapshotRenderHelper.SortMode.PROFIT;
-            }
-            return AccountDeferredSnapshotRenderHelper.SortMode.CLOSE_TIME;
-        }
-    }
-
-    private void applySnapshot(AccountSnapshot snapshot, boolean remoteConnected) {
-        long applySnapshotStartedAt = SystemClock.elapsedRealtime();
-        List<PositionItem> snapshotPositions = snapshot.getPositions() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getPositions());
-        List<PositionItem> snapshotPending = snapshot.getPendingOrders() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getPendingOrders());
-        List<TradeRecordItem> snapshotTrades = snapshot.getTrades() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getTrades());
-        List<CurvePoint> snapshotCurves = snapshot.getCurvePoints() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getCurvePoints());
-
-        replaceTradeHistory(snapshotTrades);
-        replaceCurveHistory(snapshotCurves);
-        latestCurveIndicators = snapshot.getCurveIndicators() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getCurveIndicators());
-        latestStatsMetrics = snapshot.getStatsMetrics() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(snapshot.getStatsMetrics());
-
-        basePositions = snapshotPositions;
-        basePendingOrders = snapshotPending;
-
-        List<TradeRecordItem> effectiveTrades = new ArrayList<>(tradeHistory);
-        List<CurvePoint> effectiveCurves = new ArrayList<>(curveHistory);
-        dataQualitySummary = buildDataQualitySummary(effectiveTrades, effectiveCurves, basePositions);
-
-        baseTrades = new ArrayList<>(effectiveTrades);
-        baseTrades.sort((a, b) -> Long.compare(resolveCloseTime(b), resolveCloseTime(a)));
-        allCurvePoints = normalizeCurvePoints(effectiveCurves);
-        AccountOverviewCumulativeMetricsCalculator.OverviewCumulativeValues cumulativeValues =
-                AccountOverviewCumulativeMetricsCalculator.calculate(
-                        baseTrades,
-                        basePositions,
-                        allCurvePoints
-                );
-        latestCumulativePnl = cumulativeValues.hasCumulativePnlTruth()
-                ? cumulativeValues.getCumulativePnl()
-                : 0d;
-        renderCurveWithIndicators(resolveImmediateCurvePoints());
-        logTradeVisibilitySnapshot(snapshotTrades, effectiveTrades, baseTrades);
-        logAccountSnapshotEvents(basePositions, basePendingOrders, baseTrades, remoteConnected);
-        ensureReturnStatsAnchor();
-        updateOverviewHeader();
-
-        deferredSecondaryRenderPending = true;
-        if (secondarySectionsAttached) {
-            renderDeferredSnapshotSections();
-        } else {
-            scheduleDeferredSecondarySectionAttach();
-        }
-        traceAccountRenderPhase("apply_snapshot_total",
-                applySnapshotStartedAt,
-                baseTrades.size(),
-                basePositions.size(),
-                allCurvePoints.size());
-    }
-
     // 统一输出账户页主线程阶段耗时，便于真机点击后直接定位最重的一段。
     private void traceAccountRenderPhase(String phase,
                                          long stageStartedAt,
@@ -4302,25 +4723,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return AccountCurvePointNormalizer.normalize(source, ACCOUNT_INITIAL_BALANCE);
     }
 
-    private void refreshTradeStats() {
-        AccountDeferredSnapshotRenderHelper.TradeAnalytics tradeAnalytics =
-                AccountDeferredSnapshotRenderHelper.buildTradeAnalytics(
-                        latestStatsMetrics,
-                        baseTrades,
-                        toHelperTradePnlSideMode(tradePnlSideMode),
-                        toHelperTradeWeekdayBasis(tradeWeekdayBasis),
-                        allCurvePoints
-                );
-        bindTradeAnalytics(
-                tradeAnalytics.getTradeStatsMetrics(),
-                tradeAnalytics.getTradePnlEntries(),
-                tradeAnalytics.getTradeScatterPoints(),
-                tradeAnalytics.getHoldingDurationBuckets(),
-                tradeAnalytics.getTradeWeekdayEntries(),
-                tradeAnalytics.getTradePnlTotal()
-        );
-    }
-
     // 把已准备好的交易统计结果绑定到页面，避免 UI 层再做集合遍历。
     private void bindTradeAnalytics(List<AccountMetric> tradeStatsMetrics,
                                     List<TradePnlBarChartView.Entry> entries,
@@ -4329,10 +4731,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                     List<TradeWeekdayBarChartHelper.Entry> weekdayEntries,
                                     double totalPnl) {
         boolean masked = isPrivacyMasked();
-        boolean firstReveal = binding.cardTradeStatsSection.getVisibility() != View.VISIBLE;
-        if (firstReveal) {
-            binding.cardTradeStatsSection.setVisibility(View.INVISIBLE);
-        }
         statsAdapter.submitList(tradeStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(tradeStatsMetrics));
         binding.tradePnlBarChart.setEntries(entries == null ? new ArrayList<>() : new ArrayList<>(entries));
         binding.tradeDistributionScatterView.setPoints(
@@ -4358,11 +4756,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     SensitiveDisplayMasker.MASK_TEXT));
             binding.tvTradePnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
             binding.tvTradePnlLegend.setVisibility(View.GONE);
-            if (firstReveal) {
-                revealTradeStatsSectionWhenReady();
-            } else {
-                binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
-            }
+            binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
             return;
         }
         String summaryText = String.format(
@@ -4379,96 +4773,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         binding.tvTradePnlSummary.setText(summarySpan);
         binding.tvTradePnlLegend.setVisibility(View.GONE);
-        if (firstReveal) {
-            revealTradeStatsSectionWhenReady();
-        } else {
-            binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
-        }
-    }
-
-    // 首次展示交易统计卡片时，等指标列表进入预绘制后再整体显示，避免先露出选项卡再补列表。
-    private void revealTradeStatsSectionWhenReady() {
-        ViewTreeObserver observer = binding.recyclerStats.getViewTreeObserver();
-        if (!observer.isAlive()) {
-            binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
-            return;
-        }
-        binding.recyclerStats.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
-            @Override
-            public boolean onPreDraw() {
-                ViewTreeObserver currentObserver = binding.recyclerStats.getViewTreeObserver();
-                if (currentObserver.isAlive()) {
-                    currentObserver.removeOnPreDrawListener(this);
-                }
-                binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
-                return true;
-            }
-        });
-        binding.recyclerStats.requestLayout();
-    }
-
-    private void refreshTradeWeekdayStats(List<TradeRecordItem> trades) {
-        List<TradeWeekdayStatsHelper.Row> rows = TradeWeekdayStatsHelper.buildRows(
-                trades,
-                tradeWeekdayBasis == TradeWeekdayBasis.OPEN_TIME
-                        ? TradeWeekdayStatsHelper.TimeBasis.OPEN_TIME
-                        : TradeWeekdayStatsHelper.TimeBasis.CLOSE_TIME
-        );
-        binding.tradeWeekdayBarChart.setEntries(TradeWeekdayBarChartHelper.buildEntries(rows));
-    }
-
-    private List<TradePnlBarChartView.Entry> buildTradePnlChartEntries(List<TradeRecordItem> trades,
-                                                                        TradePnlSideMode sideMode) {
-        List<TradePnlBarChartView.Entry> result = new ArrayList<>();
-        if (trades == null || trades.isEmpty()) {
-            return result;
-        }
-
-        Map<String, Double> byCode = new LinkedHashMap<>();
-        for (TradeRecordItem item : trades) {
-            if (!matchesSideMode(item, sideMode)) {
-                continue;
-            }
-            String code = trim(item.getCode()).toUpperCase(Locale.ROOT);
-            if (code.isEmpty()) {
-                code = trim(item.getProductName());
-            }
-            if (code.isEmpty()) {
-                code = "UNKNOWN";
-            }
-            byCode.put(code, byCode.getOrDefault(code, 0d) + item.getProfit() + item.getStorageFee());
-        }
-
-        List<Map.Entry<String, Double>> ordered = new ArrayList<>(byCode.entrySet());
-        ordered.sort((a, b) -> Double.compare(Math.abs(b.getValue()), Math.abs(a.getValue())));
-        for (Map.Entry<String, Double> entry : ordered) {
-            result.add(new TradePnlBarChartView.Entry(entry.getKey(), entry.getValue()));
-        }
-        return result;
-    }
-
-    private boolean matchesSideMode(TradeRecordItem item, TradePnlSideMode sideMode) {
-        if (sideMode == TradePnlSideMode.ALL) {
-            return true;
-        }
-        String side = trim(item.getSide()).toLowerCase(Locale.ROOT);
-        if (sideMode == TradePnlSideMode.BUY) {
-            return side.contains("buy") || side.contains("多") || side.contains("买");
-        }
-        return side.contains("sell") || side.contains("空") || side.contains("卖");
-    }
-
-    private List<TradeRecordItem> filterTradesBySideMode(List<TradeRecordItem> trades, TradePnlSideMode sideMode) {
-        List<TradeRecordItem> result = new ArrayList<>();
-        if (trades == null || trades.isEmpty()) {
-            return result;
-        }
-        for (TradeRecordItem item : trades) {
-            if (item != null && matchesSideMode(item, sideMode)) {
-                result.add(item);
-            }
-        }
-        return result;
+        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
     }
 
     private long resolveOpenTime(TradeRecordItem item) {
@@ -4481,20 +4786,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     private String percentRaw(double ratio) {
         return String.format(Locale.getDefault(), "%.2f%%", ratio * 100d);
-    }
-
-    private void applyCurrentCurveRangeFromAllPoints() {
-        AccountDeferredSnapshotRenderHelper.CurveProjection curveProjection =
-                AccountDeferredSnapshotRenderHelper.buildCurveProjection(
-                        allCurvePoints,
-                        selectedRange,
-                        manualCurveRangeEnabled,
-                        manualCurveRangeStartMs,
-                        manualCurveRangeEndMs
-                );
-        manualCurveRangeEnabled = curveProjection.isManualRangeApplied();
-        syncRangeInputsWithDisplayedCurve(curveProjection.getDisplayedCurvePoints());
-        applyPreparedCurveProjection(curveProjection);
     }
 
     // 首屏先只解析当前范围下的主曲线点，避免等待次级区块后台结果后才看到历史曲线。
@@ -4592,101 +4883,40 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderCurveWithIndicators(List<CurvePoint> points) {
-        List<CurvePoint> effectivePoints = points == null
-                ? new ArrayList<>()
-                : new ArrayList<>(points);
-        displayedCurvePoints = effectivePoints;
-        CurveAnalyticsHelper.DrawdownSegment drawdownSegment = CurveAnalyticsHelper.resolveMaxDrawdownSegment(effectivePoints);
-        curveBaseBalance = resolveCurvePercentBase(effectivePoints);
-        binding.equityCurveView.setBaseBalance(curveBaseBalance);
-        long viewportStartTs = effectivePoints != null && !effectivePoints.isEmpty() ? effectivePoints.get(0).getTimestamp() : 0L;
-        long viewportEndTs = effectivePoints != null && effectivePoints.size() > 1
-                ? effectivePoints.get(effectivePoints.size() - 1).getTimestamp()
-                : viewportStartTs + 1L;
-        if (drawdownSegment == null) {
-            binding.equityCurveView.setDrawdownHighlight(0L, 0L, 0d, 0d);
-        } else {
-            binding.equityCurveView.setDrawdownHighlight(
-                    drawdownSegment.getPeakTimestamp(),
-                    drawdownSegment.getValleyTimestamp(),
-                    drawdownSegment.getPeakEquity(),
-                    drawdownSegment.getValleyEquity()
-            );
-        }
-        binding.equityCurveView.setPoints(effectivePoints);
-        defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
-        binding.tvCurveMeta.setText(isPrivacyMasked()
-                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
-                : defaultCurveMeta);
-        if (!secondarySectionsAttached) {
+        if (curveRenderHelper == null) {
             return;
         }
-        binding.positionRatioChartView.setViewport(viewportStartTs, viewportEndTs);
-        binding.positionRatioChartView.setPoints(effectivePoints);
-        displayedDrawdownPoints = CurveAnalyticsHelper.buildDrawdownSeries(effectivePoints);
-        displayedDailyReturnPoints = CurveAnalyticsHelper.buildDailyReturnSeries(effectivePoints);
-        binding.drawdownChartView.setViewport(viewportStartTs, viewportEndTs);
-        binding.drawdownChartView.setPoints(displayedDrawdownPoints);
-        binding.dailyReturnChartView.setViewport(viewportStartTs, viewportEndTs);
-        binding.dailyReturnChartView.setPoints(displayedDailyReturnPoints);
+        AccountStatsCurveRenderHelper.RenderResult result = curveRenderHelper.renderImmediate(
+                points,
+                latestCurveIndicators,
+                secondarySectionsAttached,
+                isPrivacyMasked()
+        );
+        displayedCurvePoints = result.getDisplayedCurvePoints();
+        displayedDrawdownPoints = result.getDisplayedDrawdownPoints();
+        displayedDailyReturnPoints = result.getDisplayedDailyReturnPoints();
+        defaultCurveMeta = result.getDefaultCurveMeta();
+        curveBaseBalance = result.getCurveBaseBalance();
         clearSharedCurveHighlight();
-        indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));
     }
 
     // 绑定后台已准备好的曲线投影结果，避免主线程再次重复推导附图。
     private void applyPreparedCurveProjection(AccountDeferredSnapshotRenderHelper.CurveProjection curveProjection) {
-        if (curveProjection == null) {
-            renderCurveWithIndicators(new ArrayList<>());
+        if (curveRenderHelper == null) {
             return;
         }
-        List<CurvePoint> effectivePoints = curveProjection.getDisplayedCurvePoints() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(curveProjection.getDisplayedCurvePoints());
-        displayedCurvePoints = effectivePoints;
-        CurveAnalyticsHelper.DrawdownSegment drawdownSegment = curveProjection.getDrawdownSegment();
-        curveBaseBalance = curveProjection.getCurveBaseBalance();
-        binding.equityCurveView.setBaseBalance(curveBaseBalance);
-        if (drawdownSegment == null) {
-            binding.equityCurveView.setDrawdownHighlight(0L, 0L, 0d, 0d);
-        } else {
-            binding.equityCurveView.setDrawdownHighlight(
-                    drawdownSegment.getPeakTimestamp(),
-                    drawdownSegment.getValleyTimestamp(),
-                    drawdownSegment.getPeakEquity(),
-                    drawdownSegment.getValleyEquity()
-            );
-        }
-        binding.equityCurveView.setPoints(effectivePoints);
-        defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
-        binding.tvCurveMeta.setText(isPrivacyMasked()
-                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
-                : defaultCurveMeta);
-        if (!secondarySectionsAttached) {
-            return;
-        }
-        binding.positionRatioChartView.setViewport(
-                curveProjection.getViewportStartTs(),
-                curveProjection.getViewportEndTs()
+        AccountStatsCurveRenderHelper.RenderResult result = curveRenderHelper.applyPreparedProjection(
+                curveProjection,
+                latestCurveIndicators,
+                secondarySectionsAttached,
+                isPrivacyMasked()
         );
-        binding.positionRatioChartView.setPoints(effectivePoints);
-        displayedDrawdownPoints = curveProjection.getDrawdownPoints() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(curveProjection.getDrawdownPoints());
-        displayedDailyReturnPoints = curveProjection.getDailyReturnPoints() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(curveProjection.getDailyReturnPoints());
-        binding.drawdownChartView.setViewport(
-                curveProjection.getViewportStartTs(),
-                curveProjection.getViewportEndTs()
-        );
-        binding.drawdownChartView.setPoints(displayedDrawdownPoints);
-        binding.dailyReturnChartView.setViewport(
-                curveProjection.getViewportStartTs(),
-                curveProjection.getViewportEndTs()
-        );
-        binding.dailyReturnChartView.setPoints(displayedDailyReturnPoints);
+        displayedCurvePoints = result.getDisplayedCurvePoints();
+        displayedDrawdownPoints = result.getDisplayedDrawdownPoints();
+        displayedDailyReturnPoints = result.getDisplayedDailyReturnPoints();
+        defaultCurveMeta = result.getDefaultCurveMeta();
+        curveBaseBalance = result.getCurveBaseBalance();
         clearSharedCurveHighlight();
-        indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));
     }
 
     // 把任一子图的时间点同步成多联图共享十字光标。
@@ -4828,101 +5058,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return String.format(Locale.getDefault(), "%.2f%%", value * 100d);
     }
 
-    private double resolveCurvePercentBase(List<CurvePoint> points) {
-        if (points != null && !points.isEmpty()) {
-            double firstEquity = points.get(0).getEquity();
-            if (firstEquity > 0d) {
-                return Math.max(1e-9, firstEquity);
-            }
-        }
-        if (allCurvePoints != null && !allCurvePoints.isEmpty()) {
-            double firstEquity = allCurvePoints.get(0).getEquity();
-            if (firstEquity > 0d) {
-                return Math.max(1e-9, firstEquity);
-            }
-        }
-        return Math.max(1e-9, ACCOUNT_INITIAL_BALANCE);
-    }
-
-    private String buildCurveMeta(List<CurvePoint> points,
-                                  @Nullable CurveAnalyticsHelper.DrawdownSegment drawdownSegment) {
-        if (points == null || points.isEmpty()) {
-            return "--";
-        }
-        double start = points.get(0).getEquity();
-        double currentEquity = points.get(points.size() - 1).getEquity();
-        double currentBalance = points.get(points.size() - 1).getBalance();
-        double rangeReturn = safeDivide(currentEquity - start, Math.max(1d, start)) * 100d;
-        String gapText = signedMoney(currentEquity - currentBalance);
-        if (drawdownSegment == null) {
-            return String.format(Locale.getDefault(),
-                    "区间净值 $%s | 当前净值 $%s | 当前结余 $%s | 区间收益 %+.2f%% | 浮盈差额 %s",
-                    FormatUtils.formatPrice(start),
-                    FormatUtils.formatPrice(currentEquity),
-                    FormatUtils.formatPrice(currentBalance),
-                    rangeReturn,
-                    gapText);
-        }
-        return String.format(Locale.getDefault(),
-                "区间净值 $%s | 当前净值 $%s | 当前结余 $%s | 最大回撤区间 %s -> %s | 最大回撤 %.2f%% | 区间收益 %+.2f%% | 浮盈差额 %s",
-                FormatUtils.formatPrice(start),
-                FormatUtils.formatPrice(currentEquity),
-                FormatUtils.formatPrice(currentBalance),
-                FormatUtils.formatTime(drawdownSegment.getPeakTimestamp()),
-                FormatUtils.formatTime(drawdownSegment.getValleyTimestamp()),
-                drawdownSegment.getDrawdownRate() * 100d,
-                rangeReturn,
-                gapText);
-    }
-
-    @Nullable
-    private DrawdownSegment resolveMaxDrawdownSegment(List<CurvePoint> points) {
-        if (points == null || points.size() < 2) {
-            return null;
-        }
-        List<CurvePoint> sorted = new ArrayList<>(points);
-        sorted.sort(Comparator.comparingLong(CurvePoint::getTimestamp));
-        CurvePoint peakPoint = sorted.get(0);
-        CurvePoint maxPeakPoint = null;
-        CurvePoint maxValleyPoint = null;
-        double maxDrawdown = 0d;
-        for (CurvePoint point : sorted) {
-            if (point.getBalance() >= peakPoint.getBalance()) {
-                peakPoint = point;
-            }
-            double drawdown = safeDivide(peakPoint.getBalance() - point.getBalance(), peakPoint.getBalance());
-            if (drawdown > maxDrawdown) {
-                maxDrawdown = drawdown;
-                maxPeakPoint = peakPoint;
-                maxValleyPoint = point;
-            }
-        }
-        if (maxPeakPoint == null || maxValleyPoint == null || maxDrawdown <= 0d) {
-            return null;
-        }
-        return new DrawdownSegment(
-                maxPeakPoint.getTimestamp(),
-                maxValleyPoint.getTimestamp(),
-                maxPeakPoint.getBalance(),
-                maxValleyPoint.getBalance(),
-                maxDrawdown
-        );
-    }
-
-    private List<AccountMetric> buildCurveIndicators(List<AccountMetric> snapshotIndicators) {
-        if (snapshotIndicators != null && !snapshotIndicators.isEmpty()) {
-            return new ArrayList<>(snapshotIndicators);
-        }
-        List<AccountMetric> result = new ArrayList<>();
-        result.add(new AccountMetric("近1日收益", "--"));
-        result.add(new AccountMetric("近7日收益", "--"));
-        result.add(new AccountMetric("近30日收益", "--"));
-        result.add(new AccountMetric("累计收益", "--"));
-        result.add(new AccountMetric("最大回撤", "--"));
-        result.add(new AccountMetric("夏普比率", "--"));
-        return result;
-    }
-
     private List<AccountMetric> buildTradeStatsMetrics(List<AccountMetric> snapshotStats) {
         if (snapshotStats != null && !snapshotStats.isEmpty()) {
             return new ArrayList<>(snapshotStats);
@@ -4931,80 +5066,22 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void renderReturnStatsTable(List<CurvePoint> source) {
-        binding.tableMonthlyReturns.removeAllViews();
-        binding.tvMonthlyReturnsHint.setVisibility(View.GONE);
-        binding.tvMonthlyReturnsHint.setText("");
-        if (shouldUseTradeBasedReturns()) {
-            long referenceTime = resolveTradeReturnReferenceTime();
-            String periodText = isPrivacyMasked()
-                    ? SensitiveDisplayMasker.MASK_TEXT
-                    : formatMonthLabel(referenceTime);
-            binding.tvReturnsPeriod.setText(periodText);
-            switch (returnStatsMode) {
-                case DAY:
-                    binding.tvReturnsPeriod.setVisibility(View.VISIBLE);
-                    binding.tvReturnsPeriod.setClickable(true);
-                    binding.tvReturnsPeriod.setText(periodText);
-                    renderDailyReturnsTableFromTrades(referenceTime);
-                    break;
-                case YEAR:
-                    binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                    binding.tvReturnsPeriod.setClickable(false);
-                    renderYearlyReturnsTableFromTrades();
-                    break;
-                case STAGE:
-                    binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                    binding.tvReturnsPeriod.setClickable(false);
-                    renderStageReturnsTableFromTrades(referenceTime);
-                    break;
-                case MONTH:
-                default:
-                    binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                    binding.tvReturnsPeriod.setClickable(false);
-                    renderMonthlyReturnsTableFromTrades();
-                    break;
-            }
+        if (returnsTableHelper == null) {
             return;
         }
-        if (source == null || source.size() < 2) {
-            binding.tvReturnsPeriod.setText("--");
-            return;
-        }
-        long referenceTime = resolveReturnStatsReferenceTime(source);
-        String periodText = isPrivacyMasked()
-                ? SensitiveDisplayMasker.MASK_TEXT
-                : formatMonthLabel(referenceTime);
-        binding.tvReturnsPeriod.setText(periodText);
-        List<CurvePoint> scoped = source;
-        if (scoped.size() < 2) {
-            scoped = new ArrayList<>();
-            scoped.add(source.get(0));
-            scoped.add(source.get(Math.min(1, source.size() - 1)));
-        }
-        switch (returnStatsMode) {
-            case DAY:
-                binding.tvReturnsPeriod.setVisibility(View.VISIBLE);
-                binding.tvReturnsPeriod.setClickable(true);
-                binding.tvReturnsPeriod.setText(periodText);
-                renderDailyReturnsTable(scoped, referenceTime);
-                break;
-            case YEAR:
-                binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                binding.tvReturnsPeriod.setClickable(false);
-                renderYearlyReturnsTable(scoped);
-                break;
-            case STAGE:
-                binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                binding.tvReturnsPeriod.setClickable(false);
-                renderStageReturnsTable(scoped, scoped.get(scoped.size() - 1).getTimestamp());
-                break;
-            case MONTH:
-            default:
-                binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                binding.tvReturnsPeriod.setClickable(false);
-                renderMonthlyReturnsTable(scoped);
-                break;
-        }
+        AccountStatsReturnsTableHelper.RenderResult result = returnsTableHelper.render(
+                new AccountStatsReturnsTableHelper.RenderRequest(
+                        source,
+                        baseTrades,
+                        allCurvePoints,
+                        AccountStatsReturnsTableHelper.ReturnStatsMode.valueOf(returnStatsMode.name()),
+                        returnStatsAnchorDateMs,
+                        manualCurveRangeEnabled,
+                        manualCurveRangeStartMs,
+                        manualCurveRangeEndMs
+                )
+        );
+        returnStatsAnchorDateMs = result.getResolvedAnchorDateMs();
     }
 
     private String formatMonthLabel(long timeMs) {
@@ -5059,7 +5136,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return Math.min(returnStatsAnchorDateMs, latest);
     }
 
-    private void renderDailyReturnsTableFromTrades(long referenceTime) {
+    private void legacyRenderDailyReturnsTableFromTrades(long referenceTime) {
         TableLayout table = binding.tableMonthlyReturns;
         table.removeAllViews();
         table.setShrinkAllColumns(true);
@@ -5172,11 +5249,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-    private void renderMonthlyReturnsTableFromTrades() {
-        rebuildMonthlyTableThreeRowsV4(binding.tableMonthlyReturns, buildMonthlyReturnRowsFromTrades(baseTrades));
+    private void legacyRenderMonthlyReturnsTableFromTrades() {
+        legacyRebuildMonthlyTableThreeRowsV4(binding.tableMonthlyReturns, legacyBuildMonthlyReturnRowsFromTrades(baseTrades));
     }
 
-    private void renderYearlyReturnsTableFromTrades() {
+    private void legacyRenderYearlyReturnsTableFromTrades() {
         TableLayout table = binding.tableMonthlyReturns;
         table.removeAllViews();
         table.setStretchAllColumns(false);
@@ -5184,7 +5261,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         String valueHeader = returnValueMode == ReturnValueMode.RATE ? "收益率" : "收益额";
         table.addView(createAlignedReturnsRow("年份", valueHeader, true, null, null));
 
-        List<YearlyReturnRow> rows = buildMonthlyReturnRowsFromTrades(baseTrades);
+        List<YearlyReturnRow> rows = legacyBuildMonthlyReturnRowsFromTrades(baseTrades);
         for (YearlyReturnRow row : rows) {
             int color = resolveReturnDisplayColor(row.yearReturnRate, row.yearReturnAmount, R.color.text_secondary);
             String valueText = formatReturnValue(row.yearReturnRate, row.yearReturnAmount);
@@ -5200,7 +5277,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-    private void renderStageReturnsTableFromTrades(long referenceTime) {
+    private void legacyRenderStageReturnsTableFromTrades(long referenceTime) {
         TableLayout table = binding.tableMonthlyReturns;
         table.removeAllViews();
         table.setStretchAllColumns(false);
@@ -5312,7 +5389,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (rows.isEmpty()) {
             return;
         }
-        rebuildMonthlyTableThreeRowsV4(binding.tableMonthlyReturns, rows);
+        legacyRebuildMonthlyTableThreeRowsV4(binding.tableMonthlyReturns, rows);
     }
 
     private void rebuildDailyTable(TableLayout table,
@@ -5774,16 +5851,20 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-    private void rebuildMonthlyTableThreeRowsV4(TableLayout table, List<YearlyReturnRow> rows) {
+    private void legacyRebuildMonthlyTableThreeRowsV4(TableLayout table, List<YearlyReturnRow> rows) {
         table.removeAllViews();
         table.setShrinkAllColumns(false);
         table.setStretchAllColumns(false);
         for (YearlyReturnRow row : rows) {
-            table.addView(createMonthlyGroupedBlock(row));
+            table.addView(legacyCreateMonthlyGroupedBlock(row));
         }
     }
 
-    private LinearLayout createMonthlyGroupedBlock(YearlyReturnRow rowData) {
+    LinearLayout createMonthlyGroupedBlock(AccountStatsReturnsTableHelper.YearlyReturnRow rowData) {
+        return legacyCreateMonthlyGroupedBlock(convertReturnsTableRow(rowData));
+    }
+
+    private LinearLayout legacyCreateMonthlyGroupedBlock(YearlyReturnRow rowData) {
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(LinearLayout.HORIZONTAL);
         block.setGravity(Gravity.TOP);
@@ -5813,6 +5894,34 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         monthColumn.addView(createMonthlyGroupedLine(rowData, 9, 12));
         block.addView(monthColumn);
         return block;
+    }
+
+    private YearlyReturnRow convertReturnsTableRow(AccountStatsReturnsTableHelper.YearlyReturnRow rowData) {
+        YearlyReturnRow legacy = new YearlyReturnRow(rowData.year);
+        legacy.startMs = rowData.startMs;
+        legacy.endMs = rowData.endMs;
+        legacy.yearReturnAmount = rowData.yearReturnAmount;
+        legacy.yearReturnRate = rowData.yearReturnRate;
+        for (Map.Entry<Integer, AccountStatsReturnsTableHelper.MonthReturnInfo> entry : rowData.monthly.entrySet()) {
+            legacy.monthly.put(entry.getKey(), convertReturnsTableMonth(entry.getValue()));
+        }
+        return legacy;
+    }
+
+    @Nullable
+    private MonthReturnInfo convertReturnsTableMonth(@Nullable AccountStatsReturnsTableHelper.MonthReturnInfo info) {
+        if (info == null) {
+            return null;
+        }
+        MonthReturnInfo legacy = new MonthReturnInfo();
+        legacy.startMs = info.startMs;
+        legacy.endMs = info.endMs;
+        legacy.startEquity = info.startEquity;
+        legacy.endEquity = info.endEquity;
+        legacy.returnAmount = info.returnAmount;
+        legacy.returnRate = info.returnRate;
+        legacy.hasData = info.hasData;
+        return legacy;
     }
 
     private LinearLayout createMonthlyGroupedLine(YearlyReturnRow rowData,
@@ -5910,7 +6019,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         row.addView(createMonthlyHeatCell(rowData.year + "年", 1.18f, false, null, null, yearClick));
         for (int month = 1; month <= 12; month++) {
             row.addView(createMonthlyHeatCell(
-                    formatMonthlyHeatCellValue(rowData.monthly.get(month)),
+                    legacyFormatMonthlyHeatCellValue(rowData.monthly.get(month)),
                     1f,
                     false,
                     resolveMonthlyHeatCellTextColor(rowData.monthly.get(month)),
@@ -5920,7 +6029,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return row;
     }
 
-    private String formatMonthlyHeatCellValue(@Nullable MonthReturnInfo info) {
+    private String legacyFormatMonthlyHeatCellValue(@Nullable MonthReturnInfo info) {
         if (info == null || !info.hasData) {
             return "--";
         }
@@ -6289,7 +6398,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return safe.replace(" ", "\u00A0");
     }
 
-    private List<YearlyReturnRow> buildMonthlyReturnRowsFromTrades(List<TradeRecordItem> trades) {
+    private List<YearlyReturnRow> legacyBuildMonthlyReturnRowsFromTrades(List<TradeRecordItem> trades) {
         List<YearlyReturnRow> rows = new ArrayList<>();
         if (trades == null || trades.isEmpty()) {
             return rows;
@@ -6537,51 +6646,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         long profit = Math.round(item.getProfit() * 100d);
         String side = normalizeSide(trim(item.getSide())).toLowerCase(Locale.ROOT);
         return code + "|" + side + "|" + open + "|" + close + "|" + qty + "|" + price + "|" + profit;
-    }
-
-    private void refreshTrades() {
-        refreshTrades(false);
-    }
-
-    private void refreshTrades(boolean scrollToTop) {
-        refreshTrades(scrollToTop, false);
-    }
-
-    private void refreshTrades(boolean scrollToTop, boolean collapseExpanded) {
-        if (collapseExpanded && tradeAdapter != null) {
-            tradeAdapter.collapseAllExpandedRows();
-        }
-        String product = (String) binding.spinnerTradeProduct.getSelectedItem();
-        String side = (String) binding.spinnerTradeSide.getSelectedItem();
-        String sort = (String) binding.spinnerTradeSort.getSelectedItem();
-        if (product == null || product.trim().isEmpty()) {
-            product = FILTER_PRODUCT;
-        }
-        if (side == null || side.trim().isEmpty()) {
-            side = FILTER_SIDE;
-        }
-        if (sort == null || sort.trim().isEmpty()) {
-            sort = FILTER_SORT;
-        }
-        selectedTradeProductFilter = product;
-        selectedTradeSideFilter = side;
-        selectedTradeSortFilter = sort;
-        updateTradeFilterDisplayTexts(product, side, sort);
-        String normalizedSort = FILTER_SORT.equals(sort)
-                ? normalizeSortValue(lastExplicitTradeSortMode)
-                : normalizeSortValue(sort);
-        List<TradeRecordItem> filtered = AccountDeferredSnapshotRenderHelper.buildFilteredTrades(
-                baseTrades,
-                buildTradeFilterRequest(product, side, normalizedSort)
-        );
-        bindFilteredTrades(
-                filtered,
-                AccountDeferredSnapshotRenderHelper.buildTradeSummary(filtered),
-                scrollToTop,
-                product,
-                side,
-                normalizedSort
-        );
     }
 
     // 统一构建交易列表筛选请求，保持同步刷新和后台准备走同一套规则。
@@ -6880,7 +6944,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         String endText = trim(binding.etRangeEnd.getText() == null ? "" : binding.etRangeEnd.getText().toString());
         if (startText.isEmpty() || endText.isEmpty()) {
             clearManualCurveRange(false);
-            applyCurrentCurveRangeFromAllPoints();
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshCurveProjection();
+            }
             Toast.makeText(this, "已恢复当前时间维度默认区间", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -6907,7 +6973,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             manualCurveRangeEnabled = true;
             manualCurveRangeStartMs = start;
             manualCurveRangeEndMs = end;
-            applyCurrentCurveRangeFromAllPoints();
+            if (renderCoordinator != null) {
+                renderCoordinator.refreshCurveProjection();
+            }
         } catch (Exception e) {
             Toast.makeText(this, "日期格式应为 yyyy-MM-dd", Toast.LENGTH_SHORT).show();
         }
@@ -6960,7 +7028,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(this, palette);
-        updateBottomTabs(false, false, true, false, false);
         configureToggleButtonsV2();
         flattenCardSections(binding.scrollAccountStats, palette);
         binding.equityCurveView.refreshPalette();
@@ -7073,16 +7140,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void openMarketMonitor() {
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.MARKET_MONITOR));
         overridePendingTransition(0, 0);
     }
 
     private void openMarketChart() {
-        Intent intent = new Intent(this, MarketChartActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.MARKET_CHART));
         overridePendingTransition(0, 0);
     }
 
@@ -7090,23 +7153,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private void requestMonitorServiceAccountRuntimeClear() {
         MonitorServiceController.dispatch(this, AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME);
     }
-
-    // 首次创建账户页时确保监控服务已启动，避免用户直达账户页时服务未建立主链。
-    private void ensureMonitorServiceStarted() {
-        MonitorServiceController.ensureStarted(this);
-    }
-
     private void openSettings() {
-        Intent intent = new Intent(this, SettingsActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.SETTINGS));
         overridePendingTransition(0, 0);
     }
 
     private void openAccountPosition() {
-        Intent intent = new Intent(this, AccountPositionActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_POSITION));
         overridePendingTransition(0, 0);
     }
 
@@ -7162,18 +7215,18 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-    private static class DrawdownSegment {
+    private static class LegacyDrawdownSegment {
         private final long peakTimestamp;
         private final long valleyTimestamp;
         private final double peakBalance;
         private final double valleyBalance;
         private final double drawdownRate;
 
-        private DrawdownSegment(long peakTimestamp,
-                                long valleyTimestamp,
-                                double peakBalance,
-                                double valleyBalance,
-                                double drawdownRate) {
+        private LegacyDrawdownSegment(long peakTimestamp,
+                                      long valleyTimestamp,
+                                      double peakBalance,
+                                      double valleyBalance,
+                                      double drawdownRate) {
             this.peakTimestamp = peakTimestamp;
             this.valleyTimestamp = valleyTimestamp;
             this.peakBalance = peakBalance;

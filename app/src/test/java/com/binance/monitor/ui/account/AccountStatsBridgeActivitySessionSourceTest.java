@@ -67,7 +67,7 @@ public class AccountStatsBridgeActivitySessionSourceTest {
                 source.contains("if (finishAfterLoginDialog) {")
                         && source.contains("persistUiState();")
                         && source.contains("finish();")
-                        && source.contains("requestForegroundEntrySnapshot();"));
+                        && source.contains("snapshotRefreshCoordinator.requestForegroundEntrySnapshot();"));
     }
 
     @Test
@@ -150,7 +150,7 @@ public class AccountStatsBridgeActivitySessionSourceTest {
                 source.contains("ensureVerifiedRemoteCache(verifiedCache, result.getActiveAccount());"));
         assertTrue("快照校验通过后应直接在当前页应用连接态和账户数据",
                 source.contains("applyVerifiedRemoteSession(")
-                        && source.contains("applySnapshot(verifiedCache.getSnapshot(), true);"));
+                        && source.contains("renderCoordinator.applySnapshot(verifiedCache.getSnapshot(), true);"));
         assertTrue("校验完成后应直接给出登录成功提示",
                 source.contains("showLoginSuccessBanner();")
                         && source.contains("buildLoginDialogResultIntent(result.getActiveAccount(), successMessage)"));

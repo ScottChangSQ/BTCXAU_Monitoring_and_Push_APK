@@ -14,13 +14,13 @@ public class MarketChartLaunchAnrSourceTest {
 
     @Test
     public void requestKlinesShouldOnlyReadChartCacheFromMemoryOnMainThread() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
-        int methodStart = source.indexOf("private void requestKlines()");
-        int nextMethodStart = source.indexOf("private void requestMoreHistory(long beforeOpenTime)");
+        int methodStart = source.indexOf("private void requestKlinesCore(boolean allowCancelRunning, boolean autoRefresh)");
+        int nextMethodStart = source.indexOf("private void requestMoreHistoryCore(long beforeOpenTime)");
         String method = source.substring(methodStart, nextMethodStart);
 
-        assertTrue(method.contains("List<CandleEntry> memoryCached = getCachedCandles(key);"));
+        assertTrue(method.contains("List<CandleEntry> memoryCached = host.getCachedCandles(key);"));
         assertTrue(method.contains("schedulePersistedCacheRestore(key, shouldWarmDisplay);"));
         assertFalse(method.contains("chartHistoryRepository.loadCandles("));
     }

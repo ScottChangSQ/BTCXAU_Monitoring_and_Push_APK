@@ -1,356 +1,122 @@
 # CONTEXT
 
 ## 当前正在做什么
-- 当前这轮已继续补充“账户历史为什么补拉慢”的机制定位，新增确认：账户持仓页回前台、账户统计页前台刷新循环、交易成功后强一致确认，这三条链虽然都会触发 `fetchForUi(AccountTimeRange.ALL)` 或相关确认动作，但真正决定历史成交/净值曲线/统计指标是否正式补拉的核心仍是 `historyRevision` 是否前进。
-- 当前这轮已明确 `historyRevision` 的真实源头：服务端不是按简单时间戳递增，而是重新读取 MT5 历史成交列表后，对整份 `trades` 稳定排序并做哈希；只有这份历史列表真的变化，stream 才会带出新的 `accountHistoryRevision`，APP 才会触发 `/v2/account/history` 正式补拉。
-- 当前这轮还补清了一个容易误判的口径：`historyRevision` 用的是服务端整理后的“历史成交行”列表，而不是 MT5 全部原始 deal 原样列表；所以某些“只开仓、未形成历史成交闭环”的交易，即使已受理，也不一定立刻推动历史 revision 前进。
-- 当前这轮已确认“历史成交拉取明显延后”的第一嫌疑不在 APP 侧长时间定时器，也不优先指向手机本地时区；按现有代码，更应优先怀疑交易受理后，服务端当次 `history_deals_get(...)` 尚未立即看到新成交，导致立即发布 bus 时 `historyRevision` 仍是旧值。
-- 当前已完成“APP 全量数据更新机制”梳理，新增 [app-data-update-mechanisms-2026-04-14.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/docs/app-data-update-mechanisms-2026-04-14.md)，覆盖悬浮窗、行情监控、行情持仓、账户持仓、账户统计五个展示面的数据源头、更新链条、频次、增量/全量机制、更新时间口径和触发机制，并附上总 Mermaid 链路图。
-- 当前这轮已明确当前架构不是“每个页面各拉各的”：市场主链以 `/v2/stream -> MonitorService -> MonitorRepository` 为主，账户主链以 `/v2/stream.accountRuntime -> AccountStatsPreloadManager.Cache` 为主，历史成交/净值曲线/统计指标以 `historyRevision` 驱动 `/v2/account/history` 补拉为主。
-- 当前这轮还确认了页面差异：悬浮窗与行情监控主要消费共享快照；行情持仓是 `REST K 线主链 + Repository 实时尾部 + 账户叠加层` 三链并行；账户持仓与账户统计都以 `AccountStatsPreloadManager.Cache` 为统一账户真值入口，但账户统计页前台会维持显式 `fetchForUi(AccountTimeRange.ALL)` 确认链。
-- 当前已完成悬浮窗分产品盈亏文案增强：同一产品卡片第二行现在会在盈亏金额前显示该产品总手数，格式为 `（+/-0.00手）+/-$xx.x`；总手数大小按该产品下所有持仓 `quantity` 绝对值求和，正负方向按净方向决定，无持仓卡片仍保持原来的 `$-` 占位。
-- 当前已完成“实盘实施第一阶段完成情况 + 第二阶段及后续路径”的文档梳理，并新增 [2026-04-13-live-trading-phase2-roadmap.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/docs/superpowers/plans/2026-04-13-live-trading-phase2-roadmap.md) 作为后续推进基线。
-- 当前这轮判断已明确：第一阶段“最小交易闭环”的核心主链已落地，可正式进入第二阶段；但第二阶段不应从图表拖拽线直接开做，而应先补风险预演、拒单可读和交易状态分层，再把这些能力接到图表交互层。
-- 当前这轮还明确标注了边界：服务端交易接口、App 状态机、统一确认、交易后强一致刷新已经具备；但独立交易审计模块、图表草稿线状态层、风险预演、拒单翻译和快速模式边界仍未形成第二阶段完整交付。
-- 当前已完成 K 线图首页默认视口收紧与历史窗口扩容： [KlineChartView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/KlineChartView.java) 的默认蜡烛宽度/间距已从 `0.96 / 0.7067` 调整为 `1.28 / 0.88`，首屏默认显示的 K 线数量明显减少，不再默认挤得过密。
-- 当前已把图表首次恢复窗口和后续历史分页窗口统一扩到 500 条： [MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java) 的 `RESTORE_WINDOW_LIMIT`、`HISTORY_PAGE_LIMIT` 已统一改为 `500`，首次加载与后续继续加载历史都按同一窗口执行。
-- 当前这轮已按先红后绿完成验证：先让 `KlineChartViewSourceTest.defaultViewportShouldUseWiderSlotToShowFewerCandles` 与 `MarketChartProgressiveGapFillSourceTest.chartActivityShouldUseExpandedRestoreWindow` 在旧实现上失败，再修复后回跑通过；随后 `.\gradlew.bat :app:compileDebugJavaWithJavac` 与 `.\gradlew.bat :app:assembleDebug` 已通过。
-- 当前已重新定位“又变回提前 6 小时”的直接根因：不是 Android 图表层回退，也不是本地源码再度改错，而是线上运行中的服务端配置已经再次偏离正式口径。实时检查 `https://tradeapp.ltd/health` 显示当前 `mt5ServerTimezone` 实际为 `Asia/Seoul`，而本仓库、部署模板和最新部署包里都已经是 `Europe/Athens`；这说明服务器上的运行时 `.env` 仍在使用旧值，导致成交历史再次整体提前约 6 小时。
-- 当前这轮已确认本地交付物是对的： [bridge/mt5_gateway/.env.example](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/.env.example)、 [deploy/tencent/windows/.env.example](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows/.env.example)、 [dist/windows_server_bundle/mt5_gateway/.env.example](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist/windows_server_bundle/mt5_gateway/.env.example) 和 [dist/windows_server_bundle/windows/.env.example](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist/windows_server_bundle/windows/.env.example) 都是 `Europe/Athens`；所以当前问题不在仓库交付物，而在已部署服务器环境没有同步更新。
-- 当前已修正“成交历史从提前 6 小时变成延后 3 小时”的回归问题，并确认上一轮服务端时间修复方向走反了：对当前 MT5 Python Pull 链路，`time_msc/time` 不是可直接当 UTC 使用的绝对 epoch，而是券商服务器 wall-clock 数值；因此必须继续按 `MT5_SERVER_TIMEZONE=Europe/Athens` 做归一化，之前变成“延后 3 小时”正是因为把这层归一化误删后，手机按本地时区直接显示了未经折算的 broker 时间。
-- 当前这轮已把服务端主链恢复为正确口径： [server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py) 的 `_deal_time_ms / _position_time_ms / _order_open_time_ms / _fetch_curve_price_samples(...)` 已重新按 broker wall-clock -> UTC 的规则处理；EA 推送快照时间归一化逻辑保持不变，没有再引入第二套口径。
-- 当前这轮验证已通过：先让 `SummaryResponseTests` 中 6 条 MT5 pull 时间契约测试失败，再修复后回跑通过；随后 `python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 全量再次通过，结果 `Ran 247 tests ... OK`；最新服务器部署包也已重新生成到 [dist/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist/windows_server_bundle)。
-- 当前已基于本轮服务端时间修复结果重新编译最新 Android 安装包，并完成真机安装：`.\gradlew.bat :app:assembleDebug` 通过，`adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 返回 `Success`。
-- 当前已继续修复“成交历史开仓/平仓时间在 K 线图上整体早 6 小时”的复发问题，并确认上一轮根因判断还不够准确：真正问题不是 Android 图表层，而是 [server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py) 仍把 MT5 Python Pull 原生 `time_msc/time` 当成“券商服务器墙上时间”再次按 `MT5_SERVER_TIMEZONE` 改写，导致成交历史、持仓开仓时间和历史价格采样都被整体提前。
-- 当前这轮已把服务端时间链收口为两条严格分支：MT5 Python Pull 的 `deal/position/order/copy_rates_range` 时间一律保留原生 epoch，不再做二次时区换算；只有 EA 推送快照仍继续走 `_normalize_ea_snapshot_time_fields(...)` 按 `MT5_SERVER_TIMEZONE` 归一化，避免把两套来源混成一条错误规则。
-- 当前这轮验证已通过：先让新增/修正后的 `SummaryResponseTests` 5 条时间契约测试失败，再修复后回跑通过；随后 `python -m unittest bridge.mt5_gateway.tests.test_summary_response -v` 与 `python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 全量通过，结果 `Ran 247 tests ... OK`；最新服务器部署包也已重新生成到 [dist/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist/windows_server_bundle)。
-- 当前已继续修复“当前持仓信息没有实时更新 / 悬浮窗错误显示无持仓”的共同根因：不是账户页自身少了一次局部刷新，而是手机本地仍标记 `account_session_active=true` 时，服务端真实会话已掉到 `logged_out`，结果 APP 只能持续收到市场流，拿不到账户运行态真值。
-- 当前这轮已把正式修复落到服务主链，而不是继续在页面层打补丁： [MonitorService.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorService.java) 新增远程会话恢复链，前台 bootstrap 或 APP 回到前台时会先读取服务端 `session/status` 真值；若服务端已 `logged_out` 且本地活动账号能在服务端 `savedAccounts` 中找到同一身份，就直接走 `switchAccount(profileId)` 正式恢复远程会话，再立即 `fetchForUi(AccountTimeRange.ALL)` 拉回账户快照，统一恢复当前持仓页和悬浮窗的数据源。
-- 当前这轮还补了“无法恢复时的正式收口”：如果服务端已经 `logged_out` 且找不到可恢复的已保存账号，服务会同步把本地 `account_session_active`、安全会话摘要、账户缓存和 stream 持仓快照一起清空，避免继续停在伪在线状态。
-- 当前这轮同时让 [AccountPositionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java) 在 `onResume()` 显式派发 `ACTION_BOOTSTRAP`，这样即使服务已在运行，用户切回账户持仓页时也会立即触发这条正式远程会话恢复链，不再只等下一次偶发 stream。
-- 当前这轮源码约束测试已先失败后通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.service.MonitorServiceSourceTest.foregroundBootstrapShouldRecoverRemoteSessionWhenLocalSessionStillClaimsActive" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest.accountPositionActivityShouldBootstrapMonitorServiceAndRequestForegroundSnapshot"`。
-- 当前这轮关联验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.service.MonitorFloatingCoordinatorSourceTest"`、`.\gradlew.bat :app:compileDebugJavaWithJavac :app:assembleDebug`。
-- 当前这轮真机闭环验证已完成：设备 `7fab54c4` 已安装最新 APK；修复前 `https://tradeapp.ltd/v2/session/status` 返回 `state=logged_out`，启动最新 APP 后已自动恢复为 `state=activated`；随后 `https://tradeapp.ltd/v2/account/snapshot` 已返回正式账户真值，包含 `positionCount=4`、`pendingOrderCount=1`、`profit=-118.68`，说明账户持仓页和悬浮窗不再被 `remote_logged_out` 空快照卡死。
-- 当前已继续修复账户统计页“交易统计卡片先出现壳子和 全部/买入/卖出，再补累计收益额/累计收益率列表”的复发问题：这次根因不是 `bindTradeAnalytics(...)` 末尾的显示时机，而是 [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java) 在每轮次级区块后台重算开始前，没有先把旧的 `cardTradeStatsSection` 整体收起，导致切回账户统计 Tab 时旧卡片壳子会先留在屏幕上，等新指标列表准备好后再补内容。
-- 当前这轮已把交易统计卡片的刷新入口收口到更前面：`renderDeferredSnapshotSections()` 现在会先调用新增的 `hideTradeStatsSectionUntilFreshContentReady()`，把 `cardTradeStatsSection` 先设为 `GONE`，等 `bindTradeAnalytics(...)` 绑定完本轮统计指标和图表后，再沿用原有 `revealTradeStatsSectionWhenReady()` 一次性显示整张卡片，不再让旧壳子提前露出。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest.deferredTradeStatsRenderShouldHideOldCardBeforePreparingFreshContent" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest.tradeStatsFirstRevealShouldWaitUntilRecyclerPreDraw" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest.tradeStatsSectionShouldBecomeVisibleOnlyAfterMetricsAndChartsAreBound"` 与 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" :app:compileDebugJavaWithJavac`。
-- 当前已重新生成最新服务器部署包 [dist/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist/windows_server_bundle)，并完成一次新的 APK 编译与真机安装：`python -m scripts.build_windows_server_bundle --output E:\Github\BTCXAU_Monitoring_and_Push_APK\dist\windows_server_bundle`、`.\gradlew.bat :app:assembleDebug`、`adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 均已通过。
-- 当前已修复“悬浮窗持仓信息错误显示为无持仓”的主链断点：根因不在悬浮窗文案，而在 [MonitorFloatingCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java) 之前把“stream 曾收到过一次账户快照”直接当成绝对真值；只要那次 runtime snapshot 的 `positions` 临时为空，就会立刻压过 `AccountStatsPreloadManager.Cache` 里的当前会话正式持仓，最终把悬浮窗错误渲染成“无持仓”。
-- 当前这轮已把悬浮窗持仓解析改成一致性收口：`buildFloatingSnapshot()` 现在统一走新增的 `resolveFloatingPositions(...)`，规则是“非空 stream 持仓直接用；空 stream 持仓只有在正式账户缓存 `fetchedAt` 已追平本次 `streamPositionsUpdatedAt` 后，才认定为空仓；否则继续保留当前会话缓存里的已验证持仓”，避免瞬时空快照误伤悬浮窗。
-- 当前这轮新增源码约束测试 [MonitorFloatingCoordinatorSourceTest.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/test/java/com/binance/monitor/service/MonitorFloatingCoordinatorSourceTest.java) 并已先失败后回跑通过，锁住“空 stream snapshot 不得在正式缓存未追平前直接显示无持仓”的契约。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.service.MonitorFloatingCoordinatorSourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.service.MonitorFloatingCoordinatorSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest"`。
-- 当前已修复“账户持仓页当前持仓信息更新不及时”的主链缺口： [AccountPositionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java) 之前只监听 `AccountStatsPreloadManager.Cache`，但自身没有像账户统计页那样确保 `MonitorService` 在线，也没有在页面回到前台时主动做一次正式账户同步；一旦服务被系统回收或页面只拿到旧缓存，持仓页就会一直等下一次 stream，表现成持仓信息更新慢。
-- 当前这轮已把账户持仓页补齐为正式主链入口：页面 `onCreate()` 和 `onResume()` 现在都会先执行 `ensureMonitorServiceStarted()`，同时在 `onResume()` 通过 `requestForegroundEntrySnapshot()` 走一次 `AccountStatsPreloadManager.fetchForUi(AccountTimeRange.ALL)` 的正式账户快照同步；页面仍然只消费 `AccountStatsPreloadManager.Cache` 这一份真值，没有新增第二数据源。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac`。
-- 当前已修复“手机端已保存账户重复累积”的本地根因：新增 [RemoteAccountProfileDeduplicationHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/model/v2/session/RemoteAccountProfileDeduplicationHelper.java)，按 `profileId` 优先、`login + server` 次级的稳定身份去重，并合并重复条目的有效字段，确保同一账户重复登录不会再往手机端新增一条同样的已保存账户。
-- 当前这轮已把去重收口接进三条实际链路： [SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java) 在写入和恢复 `savedAccounts` 时都会统一去重； [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java) 和 [AccountSessionDialogController.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountSessionDialogController.java) 在接收服务端 saved accounts 后也先去重再落本地，避免旧脏缓存或临时重复结果直接上屏。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.security.SecureSessionPrefsSourceTest" --tests "com.binance.monitor.data.model.v2.session.RemoteAccountProfileDeduplicationHelperTest" --tests "com.binance.monitor.ui.account.AccountSessionDialogControllerSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac`。
-- 当前已完成“成交历史 / 开平仓时间整体早 6 小时”的根因收口与修复：Android 图表页本身没有额外做时区偏移，真正问题在服务端 MT5 时间真值链。仓库和部署模板此前把 `MT5_SERVER_TIMEZONE` 错写成了 `Asia/Seoul`，但对 `ICMarketsSC-MT5-6` 这类 `GMT+2 / GMT+3（夏令时）` 服务器，当前正确示例应为 `Europe/Athens`；否则成交历史、开平仓时间和图上标记会整体提前约 6 小时。
-- 当前这轮还补齐了 EA 推送分支的时间归一化缺口： [server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py) 新增 `_normalize_ea_snapshot_time_fields(...)`，EA 推送快照里的 `trades.timestamp/openTime/closeTime`、`curvePoints.timestamp`、`positions.openTime`、`pendingOrders.openTime` 会先按 `MT5_SERVER_TIMEZONE` 统一归一化，再进入账户快照与图表链，不再直接透传券商墙上时间。
-- 当前这轮已同步修正文档与模板： [bridge/mt5_gateway/.env.example](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/.env.example)、 [deploy/tencent/windows/.env.example](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows/.env.example)、 [bridge/mt5_gateway/README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/README.md)、 [README.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/README.md) 与重建后的 [dist/windows_server_bundle](/E:/Github/BTCXAU_Monitoring_and_Push_APK/dist/windows_server_bundle)；现在已明确 `MT5_SERVER_TIMEZONE` 指的是“券商服务器时区”，不是部署机器时区。
-- 当前这轮验证已通过：`python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_normalize_ea_trade_times_with_server_timezone bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_normalize_ea_curve_and_position_times_with_server_timezone bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_not_rebuild_raw_ea_deals_into_trade_lifecycle bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_keep_sparse_ea_curve_points_from_payload bridge.mt5_gateway.tests.test_summary_response.SummaryResponseTests.test_normalize_snapshot_should_not_rebuild_ea_curve_points_when_source_curve_has_multiple_points bridge.mt5_gateway.tests.test_deploy_contracts.DeployContractTests.test_env_examples_should_define_non_empty_mt5_server_timezone bridge.mt5_gateway.tests.test_deploy_contracts.DeployContractTests.test_icmarkets_examples_should_not_hardcode_seoul_timezone bridge.mt5_gateway.tests.test_deploy_contracts.DeployContractTests.test_gateway_readme_should_explain_mt5_timezone_is_broker_timezone`、`python -m unittest bridge.mt5_gateway.tests.test_deploy_contracts -v`、`python -m unittest scripts.tests.test_windows_server_bundle -v`、`python -m scripts.build_windows_server_bundle --output E:\Github\BTCXAU_Monitoring_and_Push_APK\dist\windows_server_bundle`。
-- 当前已补齐设置页 `Tab 页管理` 的业务页签集合： [activity_settings_detail.xml](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/res/layout/activity_settings_detail.xml) 新增 `switchTabAccountPosition`，用户现在可和“行情监控 / 行情持仓 / 账户统计”一样单独管理“账户持仓”页签显示。
-- 当前这轮同时把账户持仓 tab 的配置链补完整： [ConfigManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/ConfigManager.java)、 [MainViewModel.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/main/MainViewModel.java)、 [BottomTabVisibilityManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/main/BottomTabVisibilityManager.java)、 [SettingsSectionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java) 已统一接入 `tab_account_position_visible`，不再是设置页缺项、底部导航固定强显。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.data.local.ConfigManagerSourceTest" --tests "com.binance.monitor.ui.settings.SettingsSectionActivitySourceTest" --tests "com.binance.monitor.ui.theme.SettingsDetailThemeResourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac`。
-- 当前已继续修正账户统计页“交易统计卡片先露壳子与按钮、后补统计指标列表”的真实根因：不是单纯 `VISIBLE` 时机问题，而是 [AccountDeferredSnapshotRenderHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountDeferredSnapshotRenderHelper.java) 之前在 `latestStatsMetrics` 为空时直接返回空列表，导致账户统计页首次次级渲染先显示空指标卡片，后续等服务端或下一轮快照补齐 `statsMetrics` 后才把“累计收益额 / 累计收益率”等列表填回来。
-- 当前这轮已把 fallback 统计正式补进后台准备链：`buildTradeAnalytics(...)` 现在会在 `snapshotStats` 为空时，直接基于当前 `baseTrades + curvePoints` 生成“累计收益额、累计收益率、总交易次数、买入次数、卖出次数、胜率、平均每笔盈利/亏损、盈亏比、最大回撤”等交易统计指标，不再把空列表交给 UI 首轮渲染。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountDeferredSnapshotRenderHelperTest.prepareShouldBuildFallbackTradeStatsMetricsWhenSnapshotMetricsAreMissing" --tests "com.binance.monitor.ui.account.AccountDeferredSnapshotRenderHelperTest.prepareShouldBuildCurveProjectionAndTradeAnalyticsTogether"`、`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountDeferredSnapshotRenderHelperTest"`、`.\gradlew.bat :app:compileDebugJavaWithJavac :app:assembleDebug` 全部通过；最新 APK 已 `adb -s 7fab54c4 install -r` 成功安装到真机。
-- 当前已按 review 反馈修复两条 P1：
-- 1. [MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java) 的图表缓存 schema 版本号不再在提交后台清库前提前落盘，而是改为 `clearAllHistory()` 成功后才调用 `markChartCacheSchemaCurrent()`，避免清库失败后永久跳过重试。
-- 2. [AccountPositionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java) 新增 `lastStableUiModel` 和 `restoreLastStableUiModel()`，账户登录/切换失败后会恢复上一份稳定账户模型，不再因为提交中清空页面而长期停在空白态。
-- 当前这轮 TDD / 验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartActivityCacheSourceTest.activityShouldInvalidateOldChartCacheBeforeRestore" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest.accountPositionActivityShouldRestoreLastStableModelWhenSessionSubmissionFails"`、`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartActivityCacheSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest"`、`.\gradlew.bat :app:compileDebugJavaWithJavac :app:assembleDebug` 全部通过。
-- 当前已修复账户统计页“点击 Tab 后先看到 全部/买入/卖出，再下一瞬间补出累计收益额、累计收益率列表”的显示时序问题：根因不是卡片提前绑定，而是 [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java) 首次显示 `cardTradeStatsSection` 时，`recyclerStats` 的指标列表还没进入首轮预绘制，导致卡片壳子和切换按钮先上屏、统计指标晚一帧出现。
-- 当前这轮修复已把交易统计卡片的首次显示收口到列表预绘制之后：`bindTradeAnalytics(...)` 首次绑定时会先把 `cardTradeStatsSection` 置为 `INVISIBLE`，再由新增的 `revealTradeStatsSectionWhenReady()` 等待 `recyclerStats` 的 `OnPreDrawListener` 回调后再整体显示卡片，避免“先露按钮、后补指标列表”的闪动。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest.tradeStatsFirstRevealShouldWaitUntilRecyclerPreDraw" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest.tradeStatsSectionShouldBecomeVisibleOnlyAfterMetricsAndChartsAreBound"`、`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest"`、`.\gradlew.bat :app:compileDebugJavaWithJavac :app:assembleDebug` 均通过；最新 APK 也已 `adb -s 7fab54c4 install -r` 成功安装到手机。
-- 当前已重新复核“1-4 项近期任务 + 更合理的长期结构调整”是否全部闭合：按“账户登录组件迁入账户持仓页、账户统计交易统计闪动修复、行情持仓 Tab 闪退修复、挂单新增修改链路”这组口径回扫源码与定向测试，当前均已完成，没有新增缺口。
-- 当前这轮复核验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartActivityCacheSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionEnhancementSourceTest"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac` 均通过。
-- 当前已修复账户持仓页“当前持仓-平仓/修改、挂单-删除后 APP 刷新并错误切到行情监控 Tab”的任务栈回跳问题：根因是 [AccountPositionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java) 的 `openChartTradeAction(...)` 仍带 `FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP`，会把旧 `MarketChartActivity/MainActivity` 实例重新洗牌复用。
-- 当前这轮已先补源码约束测试 [AccountPositionActivitySourceTest.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/test/java/com/binance/monitor/ui/account/AccountPositionActivitySourceTest.java)：新增 `accountPositionTradeShortcutShouldNotReuseChartActivityThroughClearTop`，先在旧代码上失败，再把 `openChartTradeAction(...)` 改成普通 `startActivity(intent)`，不再对交易快捷入口清栈复用。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountPositionEnhancementSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest"`、`.\gradlew.bat :app:compileDebugJavaWithJavac`、`.\gradlew.bat :app:assembleDebug` 全部通过；真机 `adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 也已成功安装最新 APK。
-- 当前已补齐账户持仓页“挂单明细右侧新增修改按钮”的整条正式链： [PendingOrderAdapter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java) 现在会同时暴露 `onModifyRequested / onDeleteRequested`，挂单条目右侧会同时显示“修改 / 删除”；[AccountPositionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java) 已把“修改挂单”路由到图表页统一交易链。
-- 当前这轮还补齐了图表页与服务器的正式“修改挂单”动作： [MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java) 新增 `EXTRA_TRADE_ACTION_MODIFY_PENDING` 并映射到 `ChartTradeAction.PENDING_MODIFY`；[MarketChartTradeDialogCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java) 已新增“修改挂单”表单，实际提交的是价格 / 止损 / 止盈修改；[TradeCommandFactory.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/trade/TradeCommandFactory.java)、[GatewayV2TradeClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2TradeClient.java) 和 [bridge/mt5_gateway/v2_trade.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_trade.py) 已一起新增正式动作 `PENDING_MODIFY`，不是用“删除再重建”降级替代。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionAdapterSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionEnhancementSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.trade.TradeCommandFactoryTest" --tests "com.binance.monitor.data.remote.v2.GatewayV2TradeClientTest"`、`.\gradlew.bat :app:compileDebugJavaWithJavac :app:assembleDebug`、`python -m unittest bridge.mt5_gateway.tests.test_v2_trade_contracts -v` 全部通过。
-- 当前已修复“点击底部第二个 `行情持仓` Tab 时 APP 闪退”的真机崩溃：根因是 [MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java) 在 `onCreate()` 的 `ensureChartCacheSchemaCurrent()` 里主线程直接调用 `ChartHistoryRepository.clearAllHistory()`，被 Room 以“Cannot access database on the main thread”拦截。
-- 当前这轮修复已把图表缓存版本失效链改成后台串行收口：[MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java) 新增 `chartCacheInvalidationTask`、`scheduleChartCacheInvalidation()`、`awaitChartCacheInvalidationIfNeeded()`；旧图表库表清理改为 `ioExecutor.submit(...)` 后台执行，并且本地 K 线恢复与持久化都会先等待这条失效任务完成，避免“后台清旧库前又把旧 K 线读回来”的竞态。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartActivityCacheSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeCoordinatorSourceTest" --tests "com.binance.monitor.ui.chart.ChartOverlaySnapshotFactoryTest"`、`.\gradlew.bat :app:compileDebugJavaWithJavac :app:assembleDebug` 全部通过；真机重新安装后，原路径再触发一次未再出现 `AndroidRuntime` 崩溃栈。
-- 当前已把“账户持仓页借道账户统计页打开登录弹窗”的旧链条真正拆掉：新增的 [AccountSessionDialogController.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountSessionDialogController.java) 现在承载独立的登录弹窗 UI、会话提交、已保存账号切换和结果回传，[AccountPositionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java) 直接持有这个组件，不再通过 `AccountStatsBridgeActivity` 中转。
-- 当前这轮还补齐了独立登录组件的最后状态收口：登录/切换成功后，在拉到并校验 `AccountStatsPreloadManager.Cache` 以后，会立刻调用 `remoteSessionCoordinator.onSnapshotApplied(account, server)` 把会话从 `awaitingSync` 收口为 `active`；如果快照已回到页面但会话状态仍未完成收口，会直接失败，不再留下“表面成功、内部仍卡同步”的半状态。
-- 当前已修正账户统计页“交易统计”区的显示时机约束：`bindTradeAnalytics(...)` 会先绑定指标和图表，再整体显示 `cardTradeStatsSection`，从源码契约上锁住“不能先露出全部/买入/卖出选项卡，再瞬间补出累计收益额/累计收益率”的闪动。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest.accountOverviewConnectionChipShouldRequestLoginDialogInsteadOfOpeningStatsTab" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest.accountPositionActivityShouldConsumeDirectSessionCallbacksInsteadOfActivityResultBridge" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest.independentSessionDialogControllerShouldCloseRemoteSessionAwaitingSyncAfterVerifiedSnapshot" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest.tradeStatsSectionShouldBecomeVisibleOnlyAfterMetricsAndChartsAreBound"`、`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest"`、`.\gradlew.bat :app:compileDebugJavaWithJavac` 全部通过。
-- 当前已修复“账户持仓页点击登录时会先切到账户统计 Tab、再切回账户持仓 Tab”的界面跳变问题：根因是账户持仓页仍借道 `AccountStatsBridgeActivity` 承载登录弹窗，而该宿主页会先按普通统计页主题完整绘制一帧，用户体感上就是先跳到统计页。
-- 当前这轮修复已落在 [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java) 和 [themes.xml](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/res/values/themes.xml)：登录弹窗专用模式现在会在 `onCreate()` 最开始切到 `Theme.BinanceMonitor.TranslucentHost`，并在 `finishAfterLoginDialog` 模式下直接把统计页 root 隐藏，只保留透明宿主承载登录弹窗，因此视觉上会一直停留在账户持仓页。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest.loginDialogOnlyModeShouldNotRenderAccountStatsTabBeforeShowingDialog" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest.accountOverviewConnectionChipShouldRequestLoginDialogInsteadOfOpeningStatsTab"` 与 `.\gradlew.bat :app:compileDebugJavaWithJavac` 已通过。
-- 当前已定位并修复本轮“手机点击登录后长期卡在切换受理/同步账户”的单一阻塞：Android 登录主链本身已生效，真正断点是 Windows 网关运行环境缺少 `tzdata`，导致 `server_v2.py` 无法解析 `MT5_SERVER_TIMEZONE=Asia/Seoul`，`/v2/account/snapshot` 直接失败，APP 因而一直等不到账户快照。
-- 当前已完成这条修复：`bridge/mt5_gateway/requirements.txt` 已显式加入 `tzdata>=2025.2`，`server_v2.py` 对 `ZoneInfoNotFoundError` 改成明确提示“Windows 部署包需安装 tzdata”，并补齐 `test_gateway_requirements_should_include_tzdata_for_windows_zoneinfo` 与 `test_resolve_mt5_server_zoneinfo_should_accept_asia_seoul` 两条约束测试。
-- 当前这轮验证已通过：`python -m unittest bridge.mt5_gateway.tests.test_deploy_contracts bridge.mt5_gateway.tests.test_summary_response scripts.tests.test_windows_server_bundle -v` 全通过；最新 `dist/windows_server_bundle` 已重建，当前部署包指纹为 `93a284e6a60ce3388275b040beb03799eb5d9b1499505036ca6375a5d8000404`。
-- 当前已按“登录弹窗直接接入 APP + 服务器登录验证主链”的新口径重做账户登录收口：不再走“服务器先受理、页面再等待其他异步链慢慢同步”的旧模式，而是改成“弹窗提交登录/已保存账号切换 -> 服务端校验通过 -> 立即拉 `snapshot/history` -> 当前页直接显示登录成功并上屏账户统计/账户持仓数据”。
-- 当前这轮关键改动已落在 [AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java) 和 [AccountPositionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java)：`submitRemoteLogin()` 与 `submitSavedAccountSwitch()` 现在统一改走 `verifyRemoteSessionAndApply(...)`，登录成功后会直接调用 `preloadManager.fetchForUi(AccountTimeRange.ALL)` 拉取账户真值并做账号/服务器一致性校验；校验通过才会 `applySnapshot(...)`、`showLoginSuccessBanner()`、回传结果并关闭弹窗。账户持仓页顶部状态则同步改成“登录成功 / 已连接账户 xxxx”，不再显示“正在同步账户”。
-- 当前这轮 TDD 已完成：先让 `AccountStatsBridgeActivitySessionSourceTest.loginDialogShouldVerifyServerSnapshotAndApplySuccessImmediately` 与 `AccountPositionActivitySourceTest.accountPositionActivityShouldShowDirectLoginSuccessInsteadOfPendingSyncMessage` 在旧代码上失败，再修复后回跑通过。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest.loginDialogShouldVerifyServerSnapshotAndApplySuccessImmediately" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest.accountPositionActivityShouldShowDirectLoginSuccessInsteadOfPendingSyncMessage"`、`.\gradlew.bat :app:compileDebugJavaWithJavac`、`.\gradlew.bat :app:assembleDebug` 全部通过；最新 APK 也已重新 `adb install -r` 到真机。
-- 当前正在继续排查“账户持仓页点击登录后填写完整信息仍像无反应”的登录收口链；这轮已确认新的真实断点不是按钮点击监听本身，而是“远程会话受理成功后，`applyRemoteSessionAccepted()` 仍把 `account_session_active` 关成 `false`，导致紧随其后的 `requestForegroundEntrySnapshot()` 被 `AccountStatsPreloadManager.fetchForUi()` 自己拦掉，账户持仓页也收不到可见状态”。
-- 当前已完成这条根因修复：`AccountStatsBridgeActivity` 现在在受理成功后会先把 `account_session_active` 置回 `true`，并把“登录/切换已受理”的结果通过 `setResult(...)` 回传给原页；`AccountPositionActivity` 则改为通过 `ActivityResultLauncher` 拉起登录页，并在原页顶部状态按钮上明确显示“正在同步账户”这类受理中状态，不再是静默返回后继续显示“未连接账户”。
-- 当前这轮 TDD / 编译验证已通过：先新增 `AccountStatsBridgeActivitySessionSourceTest.loginDialogOnlyModeShouldReturnAcceptedResultAndKeepSessionRefreshEnabled` 与 `AccountPositionActivitySourceTest.accountPositionActivityShouldConsumeLoginAcceptedResultAndExposeSyncingState` 两条约束测试并确认旧代码失败，再回跑 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest.loginDialogOnlyModeShouldReturnAcceptedResultAndKeepSessionRefreshEnabled" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest.accountPositionActivityShouldConsumeLoginAcceptedResultAndExposeSyncingState"` 通过；`.\gradlew.bat :app:compileDebugJavaWithJavac`、`.\gradlew.bat :app:assembleDebug` 也已通过，新 APK 已重新安装到真机。
-- 当前真机外部状态补充结论：公网 `https://tradeapp.ltd/v2/session/status` 仍返回 `state=activated` 且活动账号为 `7400048 / ICMarketsSC-MT5-6`；但手机端本地 `shared_prefs/binance_monitor_prefs.xml` 里 `account_session_active` 仍保持 `false`，说明此前真机上的“看起来没反应”现象与这次修复命中的根因一致。
-- 当前真机 ADB 联调还剩最后一个外部操作性阻塞：这台手机上对登录弹窗内部“继续/切换”按钮的 ADB 坐标点击没有稳定命中业务监听，日志文件里只能稳定看到“准备展示登录弹窗/登录弹窗已展示”，还没有稳定采到新的“点击继续 / submitSavedAccountSwitch”日志；因此这轮已经完成代码级闭环和 APK 装机，但还没拿到一次完整的 ADB 驱动成功登录证据链。
-- 当前已修复真机上“账户持仓页点击登录后无反应”的根因：`AccountStatsBridgeActivity.showLoginDialog()` 之前依赖系统托管的 AlertDialog 正按钮，ColorOS 真机上点“继续”会直接走默认 dismiss，根本进不到我们后绑的提交监听。现在已改成内容区自管的“取消/继续”按钮，彻底绕开系统正按钮链。
-- 当前这条修复已完成代码与真机双验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest.loginDialogShouldUseOwnedActionButtonsInsteadOfSystemPositiveButton"`、`.\gradlew.bat :app:compileDebugJavaWithJavac`、`.\gradlew.bat :app:assembleDebug` 通过；真机重新卸载安装后，ADB 点击登录弹窗“继续”已能写出 `RemoteSessionDebug: 点击登录继续...` 与字段校验日志，不再是直接 dismiss 无日志。
-- 当前已修复账户持仓页右上角“未连接账户”按钮误跳到账户统计页的问题：根因是 `AccountPositionActivity.openAccountLogin()` 之前复用了 `FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP`，任务栈里已有 `AccountStatsBridgeActivity` 时会先把当前账户持仓页清掉，再把账户统计页顶上来。现在已改成普通拉起登录弹窗宿主页，并显式带 `EXTRA_FINISH_AFTER_LOGIN_DIALOG`。
-- 当前已补齐登录弹窗宿主页的“只弹登录后返回”收口：`AccountStatsBridgeActivity` 新增 `EXTRA_FINISH_AFTER_LOGIN_DIALOG`、`finishAfterLoginDialog` 和 `loginDialogSubmissionInFlight`，取消时直接返回原页；登录/切换受理成功后先请求前台快照，再自动返回；失败时会重新拉起登录弹窗，不会停在空白统计页。
-- 当前这轮验证已通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` 通过，`.\gradlew.bat :app:compileDebugJavaWithJavac` 通过。
-- 当前已完成 2026-04-13 新一轮 BUG review，并修复管理面板默认“按进程名停 MT5/Caddy 进程、按进程名判运行”的误伤风险：`bridge/mt5_gateway/admin_panel.py` 现在会优先按当前配置的 `exePath` 精确匹配 `Win32_Process.ExecutablePath` 来停进程和读状态，`build_hidden_caddy_start_command()` 启动前也只会停止同一路径的旧 Caddy，不再误杀同机其他同名实例。
-- 当前已补齐这条回归的测试闭环：`bridge/mt5_gateway/tests/test_admin_panel.py` 新增了 3 条断言，分别锁住默认 stop 命令、Caddy 启停命令和状态读取命令都必须使用 `ExecutablePath` 精确匹配。
-- 当前这轮验证已通过：先跑 `python -m unittest bridge.mt5_gateway.tests.test_admin_panel.AdminPanelTests.test_build_process_component_should_scope_default_stop_to_exact_executable_path bridge.mt5_gateway.tests.test_admin_panel.AdminPanelTests.test_build_component_registry_should_scope_caddy_start_and_stop_to_configured_executable_path bridge.mt5_gateway.tests.test_admin_panel.AdminPanelTests.test_read_process_status_should_prefer_exact_executable_path_when_available -v` 和 `python -m unittest bridge.mt5_gateway.tests.test_admin_panel.AdminPanelTests.test_build_component_registry_should_stop_gateway_by_bundle_python_path_even_when_script_name_is_relative -v` 通过，再跑 `python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 与 `python -m unittest scripts.tests.test_windows_server_bundle -v` 通过，结果分别为 `Ran 239 tests ... OK`、`Ran 15 tests ... OK`。
-- 当前已完成一轮新的最终复核，并修复管理面板默认“停止网关”命令的进程归属回归：`bridge/mt5_gateway/admin_panel.py` 现在会按 `server_v2.py + Python ExecutablePath 位于当前 gateway 目录` 的双条件生成 stop 命令，不再只按命令行粗匹配，重新和 Windows 部署脚本的“只停当前 bundle 自己管理的 Python 进程”口径保持一致。
-- 当前这条修复的验证已通过：先跑 `python -m unittest bridge.mt5_gateway.tests.test_admin_panel.AdminPanelTests.test_build_component_registry_should_stop_gateway_by_bundle_python_path_even_when_script_name_is_relative -v` 通过，再跑 `python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 通过，结果为 `Ran 236 tests ... OK`；`python -m unittest scripts.tests.test_windows_server_bundle -v` 也已通过，结果为 `Ran 15 tests ... OK`。
-- 当前已重新生成最新 `dist/windows_server_bundle`，本地最新部署包指纹已更新为 `2b24d1238924476899f684847d1453980c7777750ec006e0060f4df31a6fc10c`。
-- 当前再次复核外部现场：`adb devices` 仍为空；公网 `https://tradeapp.ltd/health` 仍返回旧线上指纹 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`，尚未切到本地最新 `2b24d1238924476899f684847d1453980c7777750ec006e0060f4df31a6fc10c`；`/v2/session/status` 当前仍为 `logged_out`，`/v2/account/snapshot` 当前为 `remote_logged_out` 空会话结果。
-- 当前已完成一轮新的 BUG review，并修复账户持仓页“旧缓存异步恢复晚到一步、把新缓存界面重新盖回去”的并发回归：`AccountPositionUiModel` 新增 `snapshotVersionMs`，`AccountPositionUiModelFactory` 统一按 `updatedAt` 优先、`fetchedAt` 兜底生成快照版本，`AccountPositionActivity.applyUiModel()` 则会直接拒绝更旧的读模型。
-- 当前已补齐这条修复的测试闭环：先让 `AccountPositionActivitySourceTest.accountPositionActivityShouldIgnoreStaleUiModelFromOlderCacheRestore` 失败，再补修复后回跑 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest" :app:assembleDebug` 通过。
-- 当前已完成一轮新的 BUG review，并修复“账户持仓页跳转图表交易链时产品代码体系不一致”的真实回归：`AccountPositionActivity.openChartTradeAction()` 现在会先把持仓/挂单条目的交易侧代码统一映射成市场侧 canonical symbol；`MarketChartActivity.resolveTargetSymbol()` 也已改成统一用 `ProductSymbolMapper.toMarketSymbol(...)` 收口外部传入 symbol，避免从账户持仓页点“平仓/修改/删除”时图表仍停在旧产品。
-- 当前已补齐这条修复的源码约束测试：`AccountPositionActivitySourceTest` 和 `MarketChartTradeSourceTest` 已新增产品代码 canonical 化断言。
-- 当前已再次确认应用侧验证通过：先跑 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest"` 通过，再跑 `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug` 通过。
-- 当前已完成 2026-04-13 新一轮最终复核：`.\gradlew.bat :app:testDebugUnitTest`、`.\gradlew.bat :app:assembleDebug`、`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v`、`python -m unittest scripts.tests.test_windows_server_bundle -v` 这轮均已再次通过。
-- 当前已重新生成最新 `dist/windows_server_bundle`，本地最新部署包指纹仍为 `0f92d984cc2a412def607d07821e97eec809d34c780e03c05c50daa13c1917c8`。
-- 当前已再次复核外部现场：`adb devices` 仍为空，手机未重新连上；公网 `https://tradeapp.ltd/health` 仍返回旧线上指纹 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`，尚未切到本地最新 bundle；`/v2/session/status` 当前为 `logged_out`。
-- 当前已完成本轮 `P1` 核心修复收口：`TradeExecutionCoordinator` 现在允许“已受理但无 order/deal reference”的交易退回到账户真值变化判断收敛，不再永远卡在 `ACCEPTED_AWAITING_SYNC`。
-- 当前已完成账户本地仓储的身份分区闭环：`AccountStorageRepository` 正式按 `account + server` 分区读写历史交易、持仓、挂单和 meta；实现方式是“`account_snapshot_meta` 多行 + trade/position/pending 存储键身份前缀”，没有改数据库版本号，也没有引入破坏性迁移。
-- 当前已再次确认 `SecureSessionPrefs` 的损坏密文保护、`FallbackKlineSocketManager` 的旧连接终止隔离、`MonitorService` 的销毁后线程池安全投递都已经在源码中闭合，并补齐了对应测试。
-- 当前最新验证结果：`.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug` 已通过。
-- 当前已完成 2026-04-13 的实时外部复核：`https://tradeapp.ltd/health`、`/v2/account/snapshot`、`/v2/account/history?range=all` 现已全部返回 `200`，`MT5_SERVER_TIMEZONE=Asia/Seoul` 已经在线生效，不再是之前的 `500 / 时区缺失` 阻塞。
-- 当前新的外部状态是：线上服务器虽然已经恢复健康，但运行的 bundle 指纹仍是 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`，尚未切到本地最新 `0f92d984cc2a412def607d07821e97eec809d34c780e03c05c50daa13c1917c8`；同时 `session.activeAccount=null`，账户接口当前处于 `remote_logged_out` 空会话状态。
-- 当前在做最终收口复核：已再次确认 Android 本地代码、Windows 部署源码和最新 `dist/windows_server_bundle` 都没有新的可证实未闭合问题。
-- 当前已完成一轮新的 `P2` 余项收口：`GatewayV2Client` 现在会把服务端错误响应体原样带入异常；`AccountPositionActivity` 不再误把账户持仓页标记成 `liveScreenActive` 去主动降速预加载；`AccountStatsBridgeActivity.logoutAccount()` 在远程会话执行器未就绪时会明确报失败，不再绕过远端 `/logout` 直接本地下线；`MonitorServiceController` 已禁止在服务已停止时因 `ACTION_STOP_MONITORING` 反向重启服务；`MarketChartActivity` 现在会把图上叠加层和活动会话身份绑定，切号后若新快照尚未回填会先清掉旧账号标注，不再残留过期仓位。
-- 当前最新验证结果已更新为：先跑 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.data.remote.v2.GatewayV2ClientSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest" --tests "com.binance.monitor.service.MonitorServiceControllerTest" --tests "com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest"` 通过，再跑 `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug` 通过。
-- 当前已完成一次新的最终复核：`adb devices` 现在再次返回空列表，因此真机链当前确实受设备未连接阻塞；公网 `https://tradeapp.ltd/health`、`/v2/session/status`、`/v2/account/snapshot`、`/v2/account/history?range=all` 再次复核均返回 `200`，状态是 `remote_logged_out`，线上运行 bundle 指纹仍为 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`，尚未切到本地最新 `0f92d984cc2a412def607d07821e97eec809d34c780e03c05c50daa13c1917c8`。
-- 当前已重新跑完整服务端验证：`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 通过，结果为 `Ran 235 tests ... OK`；`python -m unittest scripts.tests.test_windows_server_bundle -v` 通过，结果为 `Ran 14 tests ... OK`；`dist/windows_server_bundle` 也已重新构建并保持最新指纹 `0f92d984cc2a412def607d07821e97eec809d34c780e03c05c50daa13c1917c8`。
-- 当前已完成一轮新的 BUG review 并补齐两条主线程读库缺口：`AccountPositionActivity` 不再在 `onCreate()` 主线程直接调用 `hydrateLatestCacheFromStorage()`，改成后台异步恢复本地账户缓存；`MarketChartActivity.resolveTradeTargetSnapshot()` 不再在主线程直读 Room，改为只消费内存缓存或页面级已恢复的 `storedChartOverlaySnapshot`，避免点击交易入口时因线程边界检查直接崩溃。
-- 当前这轮验证结果为：先跑 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartAccountOverlaySourceTest"` 通过，再跑 `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug` 通过。
-- 当前已再次核对已知完成智能体回收状态：此前记录的 6 个 Agent 重新执行关闭时均返回 `not found`，说明它们已经被回收，不存在当前线程里还能继续关闭的旧 Agent。
-- 当前剩余未闭合项仍只有两条外部条件：服务器现场还没有确认切到最新 bundle 指纹 `0f92d984cc2a412def607d07821e97eec809d34c780e03c05c50daa13c1917c8`，以及当前 `adb devices` 为空，真机链暂时无法继续。
-- 当前已完成一轮新的多智能体复核：Android 主线与 Windows 部署链都未发现新的本地未闭合问题；本地剩余阻塞只剩两项外部条件，分别是服务器实际 `.env` / bundle 尚未切到最新版本，以及当前 `adb devices` 为空导致真机安装链不可继续。
-- 本轮已同步修正文档口径回归：`README.md` 的部署说明已改成当前首尔时区模板 `Asia/Seoul`，不再继续提示旧的 `Europe/Athens` 示例。
-- 当前已完成一轮新的 BUG review，并修复账户统计页前后台节流标记回归：`AccountStatsBridgeActivity` 恢复在 `onResume/onPause` 中调用 `preloadManager.setLiveScreenActive(true/false)`，避免历史分析页前台可见时预加载仍按普通节奏运行，带来额外 CPU 和耗电。
-- 当前已修复账户持仓页账户总览右上角“已连接账户/未连接账户”按钮的错误跳转；现在点击会直接拉起账户登录弹窗，不再误跳到账户统计 Tab 内容页。
-- 当前已重新编译最新 Android APK，`app:assembleDebug` 通过；准备安装到真机时，`adb devices` 为空，手机当前未被电脑识别，因此安装链暂时阻塞在设备连接。
-- 当前已把 MT5 部署模板默认时区统一改成韩国首尔 `Asia/Seoul`，用于直接解决服务器 `.env` 缺少 `MT5_SERVER_TIMEZONE` 时的新包初始化失败问题。
-- 最新 `dist/windows_server_bundle` 已按首尔时区模板重建，当前部署包指纹为 `0f92d984cc2a412def607d07821e97eec809d34c780e03c05c50daa13c1917c8`。
-- 当前在处理服务器部署时 `127.0.0.1:8787/health` 被主动拒绝的问题；最新结论是网关进程没有成功驻留，不是健康检查误判。
-- 这次已补齐 3 个部署侧关键修复：`deploy_bundle.ps1` 先校验 `mt5_gateway/.env` 强依赖并在 8787 失败时回显最近 `gateway-*.log`；`start_gateway.ps1` 已重写并确认可被服务器实际使用的 `powershell.exe` 正常解析；最新 `dist/windows_server_bundle` 已重建，当前部署包指纹为 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`。
-- 当前只剩服务器用这版新 bundle 重新部署并核对 `.env` 是否齐全；如果仍失败，新的部署窗口会直接报缺少的环境变量或最近网关日志，不会再只停在 8787 超时。
-- 当前在做一轮新的 BUG review 收口，重点补账户持仓页旧会话缓存误显示、图表摘要缺数、持仓行盈亏口径不一致，以及 Windows 部署链默认凭据/探针重试/误杀进程这 6 条真实缺口。
-- 本轮已完成应用侧 3 条修复：`AccountPositionActivity` 现在只消费与当前活动会话账号/服务器匹配的缓存，`ChartOverlaySnapshotFactory` 在缺少总资产/净值指标时会按持仓成本线重算摘要，`PositionAdapterV2` 折叠态与展开态统一改为同一套“持仓盈亏 = 浮盈亏 + 库存费”口径。
-- 本轮已完成部署侧 3 条修复：`server_v2.py` 去掉默认 MT5 凭据，`start_gateway.ps1` 启动前强校验 `MT5_LOGIN / MT5_PASSWORD / MT5_SERVER / MT5_SERVER_TIMEZONE`，`deploy_bundle.ps1` 的 WebSocket 健康检查改成超时内循环重试，且停旧进程已收口到当前 bundle 自己管理的 Python/Caddy/Nginx 进程。
-- 本轮定向验证已通过：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.service.MonitorServiceControllerTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountPositionAdapterSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionEnhancementSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest" --tests "com.binance.monitor.ui.chart.ChartOverlaySnapshotFactoryTest"` 与 `python -m unittest bridge.mt5_gateway.tests.test_deploy_contracts scripts.tests.test_windows_server_bundle -v`。
-- 当前在修复 Windows 部署包健康检查卡在 `127.0.0.1:8787/health -> bundleFingerprint` 的根因。
-- 本轮已确认根因不是部署脚本读错 manifest，而是网关运行时此前仍靠 `server_v2.py` 的目录层级去推断 `bundle_manifest.json`，启动链没有把当前 bundle 的 manifest 路径显式传给进程。
-- 这次已把 `run_gateway.ps1` 改成启动前显式设置 `MT5_BUNDLE_MANIFEST_PATH`，`server_v2.py` 改成优先读取这条路径，并在 `/health` / `/v1/source` 暴露实际使用的 `bundleManifestPath` 与 `bundleScriptPath` 便于现场核对。
-- 最新 `dist/windows_server_bundle` 已重建，当前部署包指纹为 `944a8b0a3c3ba76bb603a5eee283dc7c858b06ccf62929fb2cef7864070339b0`。
-- 当前在做“多模型分阶段、分模块重新复核所有任务成果”的收口。
-- 本轮已拿到 3 组独立复核结论：`gpt-5.4` 交易/会话链确认本地无新的可证实问题，`gpt-5.2-codex` 抓到 `README.md` 里底部 5 Tab 顺序仍写旧口径，`gpt-5.3-codex` 重新指到账户挂单 adapter 的 Diff 签名与真实展示数量来源不一致。
-- 本轮已完成两处最小修复：`README.md` 的底部导航顺序已改成当前真实实现；`PendingOrderAdapter.contentKeyOf()` 已改为和界面展示一致地在 `pendingLots` 为空时回退使用 `quantity` 生成签名，避免同一挂单数量展示变化时漏刷。
-- 本轮后续补起的安全复核又确认一处真实缺口：`SessionCredentialEncryptor` 虽然入参改成了 `char[]`，但中间仍会生成包含密码的不可清零 `String`。这次已改成直接构造 UTF-8 明文字节载荷并加密，去掉 `JSONObject -> String` 明文链，同时把临时 `byte[]` 和调用方密码数组统一清零。
-- 本轮继续修复 Windows 部署包健康检查“看起来卡住”的问题：根因不是单独某个接口永远不通，而是部署脚本健康检查按串行等待执行、且只有“检查通过”才写日志，等待函数还会吞掉最后一次真实错误，所以一旦任一探针在重试，界面就只停在“验证端口监听和接口可用性”。
-- 这次已把部署脚本改成：每个健康探针开始前先写明当前正在检查的接口；超时信息会带上“最后错误”；最新 `dist/windows_server_bundle` 已重新生成，后续服务器重部署会直接带上这版诊断能力。
-- 本轮重新确认：除上述两处外，本地代码侧没有新的未闭合项；第 12 条仍然只是公网服务器还在跑旧部署/缺少 `MT5_SERVER_TIMEZONE`，不是本地 Android 或服务端源码残留缺口。
-- 当前在复核用户刚重新确认的 5-11 条账户持仓/历史刷新方案是否已按选定口径落地。
-- 本轮已完成定向回归确认：第 5 条“累计收益率/累计盈亏前移到第 3/4 位”、第 6 条“当前持仓按产品+方向聚合展示盈亏/成本线/手数”、第 7 条“展开态展示开仓时间”、第 8 条“未展开行展示开仓价”、第 9 条“展开/未展开背景区分”、第 10 条“右侧操作按钮”、第 11 条“平仓后即时推进历史刷新链”均已在当前主线实现并通过定向验证，不需要再新增代码。
-- 当前在处理 `Task 12`：修复“服务器已部署但手机端仍显示会话已受理 / 网关离线”的误报链。
-- 本轮已完成根因收口：公网 `https://tradeapp.ltd/v2/account/snapshot` 与 `https://tradeapp.ltd/v2/account/history?range=all` 仍返回 `500`，真实错误为 `MT5_SERVER_TIMEZONE 未配置`，不是 HTTPS、WebSocket 或会话链故障。
-- 本轮已完成服务端/部署/App 三处修复：`/health` 现在必须暴露 gateway readiness 错误；`start_gateway.ps1` 启动前强校验 `MT5_SERVER_TIMEZONE`；部署脚本健康检查补齐账户快照与历史接口；安卓端遇到明确服务端错误时不再误报“网关离线”。
-- 本轮已重新生成最新 `dist/windows_server_bundle`，确保部署包与源码模板一致。
-- 当前在收口“5 Tab + 账户持仓页 + 图表页轻量化”这条正式方案。
-- 本轮已完成 Task 11 历史交易即时刷新链修复：服务端交易成功后会立刻失效账户快照缓存并发布最新 bus 状态，账户统计页重新接回前台 `preloadCacheListener`，并把 `historyRevision` 纳入刷新签名。
-- 本轮已修复账户统计页“交易统计”首帧闪现旧选项卡壳子的问题：交易统计卡片改为等统计数据真正绑定后再显示，不再在次级区块挂载时提前露出。
-- 本轮已完成图表页轻量化主链：`ChartOverlaySnapshotFactory` 恢复并接入，图表页只保留 K 线、图上标注、轻量摘要和 3 个交易按钮。
-- 本轮已完成账户持仓页差异比较补强：`AccountPositionSectionDiff` 现在覆盖真实展示字段，不再只按粗摘要判断是否刷新。
-- 本轮已完成底部导航正式收口：`BottomTabVisibilityManager` 只保留 5 Tab 正式入口，资源测试已扩到所有底部导航页面。
-- 账户统计页已进一步收口为历史分析页，不再在前台生命周期里订阅实时预加载推送。
-- 本轮继续清掉了图表页遗留死代码：`MarketChartPositionSortHelper` 与旧排序测试已删除，`MarketChartTradeDialogCoordinator` 里的旧列表行内菜单入口、旧平仓输入 helper、旧撤单输入 helper 已全部移除。
-- `README.md` 与 `ARCHITECTURE.md` 已同步改成最终口径：图表页只描述轻量页职责，账户持仓页承接账户概览 / 当前持仓 / 挂单，旧“当前持仓模块打码”表述已清掉。
-- 本轮继续清掉了 `MarketChartActivity` 里 3 条旧账户面板残留 import：`AccountOverviewMetricsHelper`、`AccountMetricAdapter`、`AccountMetric`，避免图表页源码继续挂着已迁出的旧依赖痕迹。
-- 本轮继续清掉了几处注释口径残留：图表页文件头、账户持仓 adapter 的隐私注释、`AccountSnapshotPayload` 的职责说明都已改成当前正式结构。
-- 本轮 BUG review 新修复两处账户持仓页回归：`AccountPositionUiModelFactory` 不再把统一帮助类给出的固定概览顺序二次按名字排序；`AccountPositionActivity` 的缓存监听已改成跟随 `onResume/onPause` 收放，避免页面退后台后仍继续接收缓存更新。
-- 本轮最终收口已补齐真机链：设备 `7fab54c4` 已重新在线，`adb install` 已成功，`launcher + input tap` 方式的 `gfxinfo / logcat / batterystats` 证据都已采到并写回文档。
-- 本轮继续修正图表页“图上持仓状态”摘要数据源：`ChartOverlaySnapshotFactory` 不再把摘要写成图上条数统计，改为复用账户总览真值链，只展示 `持仓盈亏 / 持仓收益率`。
-- 本轮继续收口账户统计页顶部入口：`activity_account_stats.xml` 已删除“隐藏按钮”和“已连接账户”入口，避免和账户持仓页重复。
-- 本轮继续调整底部导航顺序：所有顶层页面和隐藏菜单里的 `账户持仓 / 账户统计` 已对调成“账户持仓在前，账户统计在后”。
-- 本轮 BUG review 新修复一条交易状态回归：`TradeExecutionCoordinator` 在“同一笔交易已拿到 ACCEPTED 回执、但再次进入提交流程”时，不再错误回退成 `RESULT_UNCONFIRMED`，现在统一保持“交易已受理，等待账户同步”。
-- 本轮继续按最小单元复核前述 1-12 条任务：安卓侧 1-11 的定向测试再次全部通过；第 12 条仍卡在公网服务器未切到最新 bundle，线上 `/health` 还是旧指纹且账户接口继续因 `MT5_SERVER_TIMEZONE` 缺失返回 `500`。
-- 本轮 BUG review 又修复一条账户持仓页局部刷新回归：`PositionAdapterV2` 与 `PendingOrderAdapter` 的 Diff 签名已补齐真实展示字段，止盈止损、开仓时间、开仓价、挂单价这类字段变化时不再被漏刷。
-- 本轮 BUG review 继续补齐了挂单行 Diff 的最后一个漏项：`PendingOrderAdapter` 现在也把 `quantity` 纳入内容签名，避免 `pendingLots` 为空、界面改用 `quantity` 展示手数时仍被 RecyclerView 漏刷。
-- 本轮继续按最小单元推进 1-12：当前本地代码侧没有新的未修复项，剩余未闭合项仍只有第 12 条公网部署链；这次再次确认线上 `bundleFingerprint` 仍是旧值、账户接口仍因 `MT5_SERVER_TIMEZONE` 缺失返回 `500`，且当前 `adb devices` 为空，真机链也无法继续。
+- 已继续修复账户统计页“交易统计模块切换/切回时会先消失，再由上方净值/结余曲线区域顶上来，随后交易统计才出现”的剩余问题：这次根因不是刷新前的显式 `hide`，而是 `bindTradeAnalytics(...)` 在主壳页和桥接页里都保留了“首次展示时额外等待 `RecyclerView` 预绘制再显示整卡”的旧语义，导致页面每次重建交易统计卡片时都会先空一帧。
+- 现已把交易统计卡片的显示语义收口为“子内容绑定完成后同轮直接显示整卡”：`AccountStatsScreen`、`AccountStatsBridgeActivity` 已删除 `revealTradeStatsSectionWhenReady()` 和 `firstReveal` 预绘制等待分支，不再让交易统计卡片在切页/切换后额外空一帧。
+- 已同步更新源码级回归测试 `AccountStatsTradeStatsVisibilitySourceTest` 与 `AccountStatsBridgeSnapshotSourceTest`，锁定交易统计绑定后必须立即显示，不能再依赖额外 `preDraw` 才显卡片。
+- 已修复账户统计页“交易统计模块每次切换都会先消失，净值/结余曲线区补位后再回来”的问题：根因在交易统计次级区块每次刷新前都会调用 `hideTradeStatsSectionUntilFreshContentReady()`，而宿主把整张卡片设成了 `GONE`，导致布局立刻重排，曲线模块顶上来；等交易统计后台准备完成后，卡片才再次显示。
+- 现已把交易统计刷新前的显示语义收口为“只在首显前保留占位，不再让布局补位”：如果交易统计卡片此前还没显示过，就先设为 `INVISIBLE` 保留位置；如果已经显示过，则切换时不再额外隐藏。
+- 已新增源码级回归测试 `AccountStatsTradeStatsVisibilitySourceTest.tradeStatsRefreshShouldPreserveCardSlotInScreenAndBridge`，并同步更新 `AccountStatsBridgeSnapshotSourceTest`，锁定主壳版和桥接版账户统计页都不能再用 `GONE` 把交易统计卡片整块收起。
+- 已修复“左滑到最左侧触发一次左补后，焦点仍卡在新最左侧、容易再次误拉”的问题：根因在 `KlineChartView.prependCandles(...)` 前插旧 K 线后又把 `offsetCandles` 额外推进了 `olderCandles.size()`，这会让视口直接贴到新的最大左偏移，刚补进来的最老 K 线立刻顶到最左侧，从而继续满足再次左补的触发条件。
+- 现已把左补后的视口行为收口为“保持补页前的原视口偏移”：前插历史并重算指标后，会恢复旧 `offsetCandles` 再做边界裁剪，只把更早历史暴露在左侧，不会自动把焦点跳到新最左边。
+- 已新增源码级回归测试 `KlineChartViewSourceTest.prependOlderCandlesShouldKeepViewportOffsetInsteadOfJumpingToNewLeftEdge`，锁定左补后必须保留原视口偏移，不能再把焦点推到新最左侧。
+- 已修复“点击月线会跳到 1 分钟线”的问题：根因是图表周期键里把 `1M` 和 `1m` 混用了忽略大小写比较，导致月线在“恢复已选周期 / 按 key 查找周期 / 判断是否分钟线 / 月线聚合 / 分钟实时尾部派生”等链路里都可能被误判成 1 分钟。
+- 现已把图表周期键的关键比较统一收口为大小写敏感：`1M` 只表示月线，`1m` 只表示 1 分钟，避免月线按钮、月线恢复和月线数据处理再落进分钟分支。
+- 已新增回归测试 `MarketChartRuntimeHelperTest.resolveStoredIntervalKeyShouldNotTreatMonthlyAsMinute`、`CandleAggregationHelperTest.aggregateShouldTreatMonthlyIntervalAsMonthlyInsteadOfMinute`、`MarketChartRealtimeTailHelperTest.buildRealtimeDisplayCandlesShouldNotTreatMonthlyIntervalAsMinute` 和 `MarketChartIntervalKeySourceTest.intervalLookupShouldKeepMonthlyAndMinuteKeysCaseSensitive`，锁定这次 `1M/1m` 不能混用。
+- 已继续修复“某些周期（如 1 小时、4 小时）切换后 K 线仍持续向左补历史”的剩余问题：这次根因不在缓存恢复，而在自动补拉判定本身把“窗口内部有时间空档”也当成了继续向左翻页的条件。对于 XAU 这类存在正常停盘空档的品种，这个条件会长期成立，但向左补历史根本修不好窗口中间的空档，反而会造成持续补拉和焦点跳动。
+- 现已把自动左补历史的判定收口为“只有用户之前真的翻过更老历史，而且本轮刷新把左边已看过的历史挤掉了，才继续向左补”；窗口内部缺口不再触发自动左补，内部断档统一留给主刷新链路修复。
+- 已同步更新 `ChartGapFillHelperTest`，锁定“仅内部缺口、但此前并未加载扩展历史”时不能触发自动左补。
+- 已修复“切换 K 线周期后持续补拉历史、导致图表焦点持续跳动”的问题：根因不是用户手势重复触发补页，而是切周期后本地预热显示直接恢复了旧的扩展历史窗口，后续刷新会把这段过宽窗口误当成当前需要维持的显示范围，继而持续向左补历史并反复改写视口。
+- 现已把图表页本地恢复/预热显示统一收口为“只恢复默认窗口大小”：`MarketChartScreen`、`MarketChartActivity` 在应用本地 K 线缓存时，都会先用 `ChartWindowSliceHelper.takeLatest(..., RESTORE_WINDOW_LIMIT)` 截成标准窗口，再交给图表显示，避免旧分页历史在切周期后重新注入当前视口。
+- 已新增源码级回归测试 `MarketChartLocalDisplaySourceTest.localRestoreShouldTrimPagedHistoryBackToDefaultWindowBeforeApplying`，锁定“切周期后的本地恢复不能直接带回旧分页历史窗口”。
+- 已修复 K 线图历史成交标注里的盈亏金额单位错误：根因是图表叠加层专用 `formatSignedUsd(...)` 把普通美元盈亏误送进了 `FormatUtils.formatAmount(...)`，而该工具会按百万美元输出 `M$`，导致几美元/几十美元成交被显示成接近 `0.00M$`。现已统一改回普通 `$` 金额格式。
+- 已新增图表叠加层回归测试 `ChartOverlaySnapshotFactoryTest.buildShouldRenderHistoryTradePnlInUsdInsteadOfMillionUnit`，锁定历史成交详情与连线标签都必须显示 `+$12.34` 这一类普通美元文案，不能再出现 `M$` 缩写。
+- 已修复手机上“交易记录最近 2-3 天不完整”的再次回归：根因不是渲染筛选，而是 `AccountStatsPreloadManager.fetchForUi(...)` 在前一轮调整后又把显式账户页刷新带回了“historyRevision 未变化就跳过全量历史”的路径，导致手机本地库会长期停在旧交易集。现已改回显式 UI 刷新始终走“账户快照 + 全量历史”主链。
+- 真机复测已确认修复生效：账户统计页摘要已从 `1130次` 刷到 `1139次`，手机本地 `trade_history` 最新 `closeTime` 已从 `2026-04-13 23:31:27` 推进到 `2026-04-15`，说明最近缺失交易已重新落库并回到界面。
+- 已同步更新源码级回归测试 `AccountStatsPreloadManagerSourceTest`，锁定账户统计页显式刷新不能再退回“只看 revision、跳过 canonical full-history reload”的旧路径。
+- 已继续修正“账户统计页未加载已连接账户历史数据”的真实主因：主壳共享页 `AccountStatsScreen` 初始化时漏掉了首帧完成监听，导致主壳路径下不会按计划在首帧后挂载并刷新交易记录/交易统计等次级区块；现已补回监听注册，真机账户统计页已直接显示 1130 条历史成交，不再停留在 `0次`。
+- 已新增源码级回归测试 `AccountStatsScreenFirstFrameSourceTest`，锁定共享账户统计页必须在初始化时注册首帧监听，避免后续再把桥接页已有的“首帧后挂载次级区块”链路漏到主壳版本里。
+- 已修复账户统计页未加载已连接账户历史数据的问题：账户统计快照协调器现在只会把“带历史成交或净值曲线”的缓存当成完整统计快照；如果当前只有账户运行态缓存，就继续走正式历史刷新，不再把主壳里的已连接账户误判成“历史已加载”。
+- 已补一条源码级回归测试 `AccountStatsScreenHistorySourceTest`，锁定这次根因：预加载缓存若只有运行态、没有历史段，不能阻断账户统计页后续 canonical history refresh。
+- 已针对最新 UI 反馈补齐两条实际修复：1）`MainHostActivity` 已改用项目自己的文字 Tab 条，主壳里不再叠加旧页内 tabBar，因此底部不会再出现“上面显示一层、下面空白可点一层”的双层错位；2）账户持仓页已恢复内容显示，账户统计页在无历史数据时也会显示完整空骨架与空态提示，不再黑屏。
+- 已修正主壳底部 Tab 的双层错位：`MainHostActivity` 现已改用项目自己的文字 Tab 条，`MarketMonitorFragment`、`MarketChartFragment` 在主壳里也会显式隐藏旧页内 tabBar，不再出现“上面一行文字、下面一块空白可点区”的重叠。
+- 已修正账户持仓/账户统计页在主壳中的空白问题：`content_account_position.xml`、`content_account_stats.xml` 的宿主布局高度已改成适配 Fragment 的 `match_parent`；其中账户统计页另外补了一张显式空态卡，在没有历史成交/曲线数据时也会显示“账户统计”提示，而不是整页空白。
+- 本轮已完成“主壳切流 + 真实共享屏幕 + 兼容入口收薄”收口：`MainHostActivity` 已接管 launcher alias，`MainActivity` 已退成桥接；`MarketChartActivity`、`AccountStatsBridgeActivity` 也已变成启动即桥接到主壳并透传 extras 的兼容薄壳；`AccountStatsFragment`、`MarketChartFragment` 已分别通过 `AccountStatsScreen`、`MarketChartScreen` 承接真实主链。
+- 已完成固定路径主壳真机验收并落档到 `temp/cpu_battery_20260415_single_host_tab_shell`：路径为 `行情监控 -> 行情持仓 -> 账户统计 -> 账户持仓 -> 设置 -> 回到账户统计`（循环 5 轮）；首启 `MainActivity` 已直接拉起 `MainHostActivity`，后续切页没有再出现旧底部页 `Activity` 的 `Displayed` 记录。
+- 本轮验收中修掉了设置页主壳崩溃：`SettingsFragment` 现已和图表页/监控页一样，改为先取 include 进去的真实内容根节点再做 binding，不再把外层 `FrameLayout` 误绑定成 `ContentSettingsBinding`。
+- 当前固定路径设备摘要：`gfxinfo` 为 `Total frames rendered: 2035`、`Janky frames: 343 (16.86%)`、`P90=19ms`、`P95=27ms`、`P99=150ms`；`batterystats` 在 reset 后的短路径采样里，当前包 `appId=10518` 对应 `UID u0a518`，摘录结果约为 `cpu=1.19 mAh`、`wifi=0.0181 mAh`。
+- 本轮还修正了主壳图表页/监控页的真实绑定崩溃：`fragment_market_chart.xml`、`fragment_market_monitor.xml` 外层都是 `FrameLayout`，现在改为先取 include 进去的真实内容根节点再做 `Activity*Binding.bind(...)`，避免真机把 `FrameLayout` 误当成页面根布局。
+- 本轮 smoke 验证结果：重新安装最新 debug 包后，`MainActivity` 旧入口已可拉起主壳；`MainHostActivity` 打开 `market_chart / account_stats` Tab 均可返回 `Status: ok`；`dumpsys activity activities` 当前前台顶层已落在 `MainHostActivity`；最新 `gfxinfo` 摘要为 `Total frames rendered: 13`、`Janky frames: 2 (15.38%)`。`batterystats` 已抓到当前系统摘要，但还不是 2026-04-14 计划要求的固定路径专项采样。
+- 已继续按 `docs/superpowers/plans/2026-04-14-single-host-tab-shell.md` 推进到底部主壳切流阶段：`MainHostActivity` 已补齐注册并接管 launcher alias，`MainActivity` 已退成跳转主壳 `MARKET_MONITOR` 的桥接页。
+- 本轮新增两个真实共享屏幕对象：`AccountStatsScreen`、`MarketChartScreen`。`AccountStatsFragment`、`MarketChartFragment` 现在不再保留“当前阶段先保留空实现”的宿主回调，而是直接接到共享屏幕对象承接页面状态、刷新协调器和重业务主链。
+- 应用内部主链已继续收口到主壳：账户持仓页里的交易快捷入口已直接跳 `MainHostActivity` 的 `MARKET_CHART` Tab 并透传图表参数；设置二级页里的顶层 Tab 返回也已改走主壳。
+- 当前剩余工作已收缩为可选清理项：是否继续物理删除 `AccountStatsBridgeActivity`、`MarketChartActivity` 文件内保留的历史实现代码，以及是否继续做更长时长耗电/性能采样。
+- 正在按“单主壳 Activity + 常驻 Fragment/PageController + 数据域拆分”的正式方案继续推进底部 Tab 迁移。
+- 本轮已把行情监控页从“共享宿主委托”继续推进到“真实共享运行时”：新增 `MarketMonitorPageRuntime`，`MainActivity` 与 `MarketMonitorFragment` 现在共用同一套页面状态、数据订阅和交互逻辑。
+- `MainActivity` 已缩回旧入口宿主，只保留生命周期、底部导航跳转和权限提示；原来主页面里的大块行情监控逻辑已迁入 `MarketMonitorPageRuntime`。
+- 已把 `RecentAbnormalRecordHelper`、`MainMarketRenderHelper` 提升为可复用公共辅助，供新运行时直接复用，避免再在 Fragment 里复制一套逻辑。
+- 本轮继续把图表页和账户统计页的页面宿主匿名实现收口成独立运行时：新增 `MarketChartPageRuntime`、`AccountStatsPageRuntime`，`MarketChartActivity/Fragment` 与 `AccountStatsBridgeActivity/Fragment` 现在开始共用各自的宿主运行时包装层。
+- 图表页原先写在 `MarketChartActivity` 匿名宿主里的前台/后台/冷启动页面编排，已抽成具名方法并由 `MarketChartPageRuntime` 统一接入，旧 Activity 的页面编排块进一步收缩。
+- 本轮继续把图表页和账户统计页的 `PageController` 收到“只负责底部导航和生命周期转发”，不再由控制器自己拼页面业务步骤；对应的前后台/冷启动/销毁编排现在已经真正下沉到 `MarketChartPageRuntime`、`AccountStatsPageRuntime`。
+- 图表页和账户统计页的 `Fragment` / `Activity` 宿主因此又少掉一批空实现和页面编排代码，运行时边界比上一轮更清晰。
+- 本轮已继续把图表页“账户叠加层短延迟刷新”这一组页面级状态从 `MarketChartActivity` 迁入 `MarketChartPageRuntime`：旧 Activity 已移除 `chartScreenEntered`、`accountOverlayRefreshPending` 以及对应的叠加层回调方法，图表页页面状态继续从旧宿主退出。
+- 本轮还继续把图表页“进入前台后的页面编排”从 `MarketChartActivity` 迁入 `MarketChartPageRuntime`：旧 Activity 已移除 `enterChartScreen(boolean coldStart)`，冷启动首拉、回前台补拉、图层刷新和自动刷新启动现在由运行时统一编排。
+- 本轮又继续把图表页“自动刷新调度状态”从 `MarketChartActivity` 迁入 `MarketChartPageRuntime`：旧 Activity 已移除 `nextAutoRefreshAtMs`、自动刷新/倒计时 `Runnable` 以及 `startAutoRefresh/stopAutoRefresh/scheduleNextAutoRefresh`，切产品、切周期、自动刷新回调现在都统一走运行时调度。
+- 本轮也已把账户统计页的 `snapshotLoopEnabled` 页面循环状态从 `AccountStatsBridgeActivity` 迁入 `AccountStatsPageRuntime`，旧 Activity 不再持有这类页面活跃态标记，刷新循环判断开始走运行时统一入口。
+- 本轮还把账户统计页“下一次快照刷新调度状态”从 `AccountStatsBridgeActivity` 迁入 `AccountStatsPageRuntime`：旧 Activity 已移除 `refreshHandler`、`refreshRunnable`、`nextRefreshAtMs`、`scheduledRefreshDelayMs` 以及对应的 `scheduleNextSnapshot/clearScheduledRefresh`，快照协调器继续通过宿主接口调用，但实际调度已由运行时持有。
+- 本轮还删除了账户统计页旧 `Activity` 里的纯转发包装 `requestForegroundEntrySnapshot()` 与 `requestSnapshot()`；相关调用点现在直接走 `AccountSnapshotRefreshCoordinator`，旧宿主又缩掉两层无业务含义的转发代码。
+- 本轮继续把图表页和账户统计页“监控服务启动”从旧 `Activity` 私有包装收口到共享运行时：`MarketChartActivity`、`AccountStatsBridgeActivity` 已移除 `ensureMonitorServiceStarted()`，页面恢复时改由 `MarketChartPageRuntime`、`AccountStatsPageRuntime` 直接调用 `MonitorServiceController.ensureStarted(...)`。
+- 本轮还把图表页普通刷新与自动刷新入口从旧 `Activity` 私有包装继续下沉到协调器：`MarketChartActivity` 已移除 `requestKlines()` / `requestKlines(boolean, boolean)`，重试按钮、切产品、切周期、`onNewIntent` 和自动刷新现在都直接走 `MarketChartDataCoordinator.requestKlines(...)`。
+- 本轮继续把图表页历史补页入口也从旧 `Activity` 私有包装继续下沉到协调器：`MarketChartActivity` 已移除 `requestMoreHistory(long beforeOpenTime)`，图表控件的补页监听现在直接走 `MarketChartDataCoordinator.requestMoreHistory(...)`。
+- 本轮继续把图表页三层旧 `Activity` 转发壳继续收掉：`observeRealtimeDisplayKlines()`、`refreshChartOverlays()`、`restoreChartOverlayFromLatestCacheOrEmpty()` 已从 `MarketChartActivity` 退出，页面运行时、交易弹窗回调、首帧恢复和本地显示落地现在都直接走 `MarketChartDataCoordinator`。
+- 本轮还把账户统计页一组旧 `Activity` 的纯转发壳继续删掉：`applyPreloadedCacheIfAvailable()`、`enterAccountScreen(boolean coldStart)`、`applySnapshot(...)`、`refreshTradeStats()`、`refreshTrades(...)` 和 `renderDeferredSnapshotSections()` 已从 `AccountStatsBridgeActivity` 退出，页面运行时、快照协调器、渲染协调器和筛选事件现在直接互连。
+- 本轮还修正了账户统计页“本地存储快照恢复后重新应用缓存”的回调路径：`AccountSnapshotRefreshCoordinator` 不再通过宿主回调自己，而是直接复用自身 `applyPreloadedCacheIfAvailable()` 主链。
+- 本轮还删除了账户统计页“次级区块后台渲染调度”那层无意义宿主绕路：`AccountStatsRenderCoordinator` 不再要求 Host 暴露 `scheduleDeferredSecondarySectionRender()`，对应的 `AccountStatsBridgeActivity` / `AccountStatsRenderHostDelegate` 包装也已移除。
+- 本轮继续把账户统计页残留的交易统计旧 helper 清出旧 `Activity`：周内统计切换现在也统一走 `AccountStatsRenderCoordinator.refreshTradeStats()`，旧页里的 `refreshTradeWeekdayStats(...)`、`buildTradePnlChartEntries(...)`、`matchesSideMode(...)`、`filterTradesBySideMode(...)` 已删除。
+- 本轮还把账户统计页“收益统计模式切换 / 收益值模式切换 / 收益参考月份切换”这一组收益表重建编排继续收口到 `AccountStatsRenderCoordinator`：旧 `Activity` 不再自己直接调用 `renderReturnStatsTable(...)`。
+- 本轮还把账户统计页“时间维度切换 / 手动日期区间应用”这一组曲线投影编排继续收口到 `AccountStatsRenderCoordinator`：新增 `refreshCurveProjection()`，旧 `Activity` 不再自己直接调用 `applyCurrentCurveRangeFromAllPoints()`。
+- 本轮还把图表页“切产品 / 切周期 / 复用任务栈带 symbol 切入”这一组页面重拉取编排继续收口到 `MarketChartPageRuntime`：新增 `requestChartSelectionReload()`，旧 `MarketChartActivity` 不再自己拼“requestKlines + scheduleNextAutoRefresh”。
+- 本轮还把图表页“历史成交显隐开关 / 持仓标注显隐开关”这一组点击编排继续收口到 `MarketChartPageRuntime`：按钮点击现在先走运行时，再落到宿主状态切换和持久化，旧 `MarketChartActivity` 已删除 `toggleHistoryTradeVisibility()`、`togglePositionOverlayVisibility()`。
+- 本轮还把图表页“指标显隐切换 / 指标参数修改后的统一刷新”这一组交互编排继续收口到 `MarketChartPageRuntime`：按钮点击和参数修改后的收尾现在先走运行时，再落到宿主状态切换和图层刷新，旧 `MarketChartActivity` 已删除 `toggleIndicator(...)`、`onIndicatorChanged()`。
+- 本轮还把图表页“品种切换 / 周期切换”这一组状态提交编排继续收口到 `MarketChartPageRuntime`：Spinner 选择和周期按钮点击现在先走运行时，再落到宿主状态提交、旧显示上下文失效和统一重拉取，旧 `MarketChartActivity` 已删除 `switchSymbol(...)`、`switchInterval(...)`。
+- 已重新通过图表页、账户统计页相关源码测试与编译验证，并重新完成 `:app:assembleDebug`；最新 debug 包也已重新安装到真机。
+- 当前机器 `adb devices` 已恢复在线设备 `7fab54c4`，最新 `app-debug.apk` 已重新安装并成功拉起，启动证据截图已更新到 `temp/btcxau_launch_check.png`。
+- 已补一组“当前版本、仅冷启动路径”的真机证据：最新一次 `am start -W` 冷启动到 `MainActivity` 为 `TotalTime: 412ms`，但这还不是 Tab 切换或耗电复测结果。
 
 ## 上次停在哪个位置
-- 这次停在“悬浮窗分产品盈亏前增加总手数”已完成并通过定向测试；如果后续继续改悬浮窗文案，应直接从 `FloatingPositionAggregator -> FloatingSymbolCardData -> FloatingWindowTextFormatter -> FloatingWindowManager` 这条链接着看。
-- 这次停在“已完成第一阶段复盘，并给出第二阶段到第四阶段的最短实施路径”；下次如继续推进，应直接按新路线文档从“风险预演 + 拒单翻译”开始拆任务，而不是重新讨论是否先做图表拖拽线。
-- 这轮新增收口了一条服务端管理面板回归：默认 stop 命令此前只按 `CommandLine` 匹配 Python 网关进程，没有继续校验 `ExecutablePath` 是否属于当前 gateway 目录；现在已收口为脚本名 + bundle/python 可执行路径双重匹配。
-- 这轮新增收口了一条账户持仓页异步竞态回归：页面同时收到“本地旧缓存恢复”和“新实时缓存”时，旧结果可能晚到并覆盖新界面；现在已按快照版本拒绝更旧的读模型。
-- 这次停在用户要求“再做一次 BUG review 及修复”。
-- 这轮新增收口了一条交易入口回归：账户持仓页跳到图表页执行交易动作时，传递的 `BTCUSD / XAUUSD` 交易侧代码此前不会触发图表页切到 `BTCUSDT / XAUUSDT`，现在发送端和接收端都已统一做 canonical 化，避免图表停在旧产品而交易弹窗已经对准另一笔持仓。
-- 这次停在“重新复核目前计划是否完全执行完成，并在不新增对话的前提下继续把未闭合项推进到能推进的终点”。
-- 这轮已把仓库内可执行项全部重新验证并补齐产物：Android 单测、APK 编译、Python 网关全量单测、Windows bundle 测试、`dist/windows_server_bundle` 重建都已完成。
-- 这轮重新确认后，剩余未闭合项仍只有两条仓库外条件：线上服务器还没切到本地最新 bundle 指纹 `0f92d984cc2a412def607d07821e97eec809d34c780e03c05c50daa13c1917c8`，以及手机当前未连接 `adb`，因此真机安装/联调无法继续。
-- 上次停在“基于最新多模型审计结果继续执行 P1 修复”。
-- 这次已完成 `TradeExecutionCoordinator / SecureSessionPrefs / FallbackKlineSocketManager / MonitorService / AccountStorageRepository` 这一批代码与测试收口，并完成全量单测和 Debug 包编译验证。
-- 上次停在用户要求“最终仔细复核全部任务、完成任务收口、更新 README、关闭回收已完成/无用的智能体 Agent”。
-- 这次已完成重新核验：本地代码与部署包没有新的未闭合项；已知旧 Agent 已确认不存在；线上服务器已恢复健康且账户接口返回 `200`，剩余只保留“线上 bundle 尚未切到最新指纹”和“手机当前未重新连上 adb”这两条外部事项。
-- 上次停在用户要求继续重新复核当前计划是否已经完全执行完成。
-- 这次已把 `P2` 复核里剩余 5 条真实问题全部补齐并完成定向测试 + 全量应用侧回归；后续如果继续复核，应从新的外部链路或真机联调证据开始，而不是重复回扫这批已闭合项。
-- 这次又补做了“真机连接状态 + 在线服务状态 + 服务端全量回归 + 最新部署包重建”四项复核；结果是仓库内 Android、Python 网关、Windows bundle 都已闭合，剩余未完成项只剩仓库外的两条现场条件：线上服务器尚未切到本地最新 bundle 指纹，以及当前手机未重新连上 `adb`。
-- 这次又做了一轮新的 BUG review，补掉了两处“测试外的真实崩溃点”：账户持仓页首帧恢复和图表页交易目标恢复此前都可能在主线程触发同步读库；现在两处都已收口到后台恢复或页面级内存快照，不再违反 `AccountStatsPreloadManager` 的线程边界。
-- 这次已做完两条并行复核：Android 主线复核结果为“当前代码无新的可证实问题”；Windows 部署链复核结果为“本地源码与部署包无新的未闭合问题，剩余仅是服务器实际 `.env` 和线上 bundle 尚未切换”。
-- 上次停在用户要求再做一轮 BUG review；本轮复核中确认账户统计页虽然恢复了前台缓存监听，但丢失了 `liveScreenActive` 生命周期标记，属于性能/耗电回归。
-- 这次已补源码并补测试锁定，账户统计页重新在前后台切换时显式通知 `AccountStatsPreloadManager` 调整预加载节奏。
-- 上次停在用户反馈账户持仓页顶部账户入口点击后会误跳到账户统计页，而不是直接打开登录页面。
-- 这次已把跳转协议收口成显式登录意图：`AccountPositionActivity` 顶部按钮改为发送 `EXTRA_OPEN_LOGIN_DIALOG`，`AccountStatsBridgeActivity` 无论新开还是复用旧实例都会消费该意图并弹出登录框。
-- 上次停在用户反馈 `deploy_bundle.cmd` 现在不再卡 8787，而是更早失败在 `初始化环境`，明确提示服务器实际 `.env` 缺少 `MT5_SERVER_TIMEZONE`。
-- 这次已把源码模板和部署包默认值统一改成 `Asia/Seoul`，后续只要用新包覆盖部署，自动生成的新 `.env` 就会带上首尔时区。
-- 上次停在用户贴出新的部署失败日志：健康检查卡在 `8787 /health`，最后错误为“目标计算机积极拒绝连接 127.0.0.1:8787”，但当时还没有确认是 `.env` 缺项、启动脚本解析失败，还是网关进程启动后立即退出。
-- 这次已把这条根因链收口到两个真实问题：一是服务器上的 `.env` 可能缺少强依赖字段，二是旧版 `start_gateway.ps1` 在 `powershell.exe` 下存在解析兼容性风险；两处都已在源码和部署包里修掉。
-- 上次停在用户要求“做一次 BUG review 及修复”，但新一轮复核里又确认了 6 条仍然真实存在的代码缺口，尚未补到源码。
-- 这次已按测试先行补完上述 6 条并回跑通过；如果下一步继续推进，应优先转回真机安装/部署联调或更大范围回归，而不是再重复扫这 6 条已闭合问题。
-- 上次停在用户给出的服务器日志只显示 `等待接口字段匹配超时: http://127.0.0.1:8787/health -> bundleFingerprint`，但还没有把“运行时 manifest 路径歧义”彻底收口。
-- 这次已先补 2 条失败测试锁定契约，再按根因修复并回跑通过；后续服务器重部署时，应能直接通过 `bundleManifestPath / bundleScriptPath` 确认 8787 进程是否来自当前 bundle。
-- 上次停在“多模型重新复核所有任务成果”阶段，待收取各条子链结论并确认是否还有遗漏修复。
-- 这次已完成收口：图表/导航链补了一处 README 旧口径；账户链在重新跑定向测试时再次暴露 `PendingOrderAdapter` 的数量展示回退未进入 Diff 签名，已按根因修复并回跑通过；交易/会话链继续确认本地代码无新增缺口；随后追加的安全复核又把 `SessionCredentialEncryptor` 的明文密码 `String` 副本问题补齐并回跑通过。
-- 这次还补了部署脚本可观测性修复：后续如果 8787/8788/80/443/公网接口任一点没起来，窗口不会再只显示“健康检查中”，而会明确写出卡在哪一个探针、最后一次 HTTP/连接错误是什么。
-- 上次停在用户重新指定 5-11 条各自采用的方案版本后，待确认这些方案是否还需要继续补实现。
-- 这次已用现有源码和定向测试逐条核对，确认当前实现与用户本轮选定口径一致，因此这批条目本轮没有新增代码变更。
-- 上次停在用户反馈“服务器健康检查通过，但手机仍显示等待网关上线 / 网关离线”的现场排查阶段。
-- 这次已确认公网服务器当前还在跑旧 bundle：`/health` 仍错误返回 `ok=true` 且 `mt5ServerTimezone=""`，说明服务器侧还没换成这次修好的部署包；下一步只剩服务器补 `.env` 里的 `MT5_SERVER_TIMEZONE` 并重部署。
-- 上次停在 `Task 11` 根因确认后待落地阶段：服务端成交后没有立即发布新的 `historyRevision`，账户统计页也没有作为前台直接消费者订阅这条缓存刷新链。
-- 这次已先补失败测试锁定两个缺口，再按根因修复：`v2_trade_submit()` 成功分支现在会触发 `_invalidate_account_runtime_cache_after_trade_commit()` 与 `_publish_account_trade_commit_sync_state()`；`AccountStatsBridgeActivity` 的 `onResume/onPause` 已重新注册/注销 `preloadCacheListener`，`buildRefreshSignature()` 也已纳入 `historyRevision`。
-- 这次同时复核了 `MonitorService` 主链，确认它现有实现已经满足“只通过 `requestAccountHistoryRefreshFromV2()` 作为唯一 history 补拉入口”和“通过 stream bootstrap 获取最新 history revision”的约束，因此这段本轮没有新增代码。
-- 上次停在“收尾残留扫描”阶段，待确认 `MarketChartTradeDialogCoordinator` 里两个旧 helper 是否还能被调用，以及 README / 架构文档里是否还残留旧职责描述。
-- 这次继续处理用户新反馈的账户统计页首帧时序问题：先补源码约束测试锁定“交易统计卡片不能早于数据绑定出现”，确认旧实现先失败后，再把显示时机从 `attachDeferredSecondarySections()` 挪到 `bindTradeAnalytics(...)` 并回跑通过。
-- 这次已先补一条源码约束测试让旧 helper 明确失败，再删除残留方法并回跑通过，同时把两份文档的旧口径改成正式结构。
-- 这次还补了一条源码约束测试，锁定图表页不能再 import 已迁出的旧账户面板类；测试先失败后，再删除残留 import 并回跑通过。
-- 这次最后又做了一轮纯注释收口，把仍写着“行情持仓页/当前持仓相关信息”的旧说明改成轻量图表页与账户持仓页的正式口径。
-- 这次 BUG review 里先补了两个失败测试：一个锁定概览顺序不能被工厂打乱，一个锁定账户持仓页监听必须跟随前后台生命周期；两条测试都先失败，再按根因修复并回跑通过。
-- 这次最终收口里又发现 3 条全量单测残留旧约束：一条监控服务 busSeq 守卫断言还写旧变量名，一条账户统计页测试还要求前台实时订阅，一条图表页资源测试还要求旧持仓面板空态控件；已判断为旧测试未跟随正式结构，并逐条修正后回跑通过。
-- 这次继续完成了 Task 6：设备重连后重新执行 `adb devices`、`adb install`，并基于 `launcher + 底部 Tab 点击` 采集了真实 `logcat / gfxinfo / batterystats`，补齐了现场证据。
-- 这次继续处理了用户反馈的图表页摘要缺数问题：先补失败测试锁定“摘要必须显示持仓盈亏 / 持仓收益率”，确认旧实现只会拼条数统计，再改工厂复用 `AccountOverviewMetricsHelper` 并回跑通过。
-- 这次继续处理了账户统计页顶部重复入口问题：先补资源测试锁定账户统计页顶部不再保留 `ivAccountPrivacyToggle / tvAccountConnectionStatus`，再删除布局和绑定引用并回跑通过。
-- 这次继续处理了底部导航顺序问题：先补资源测试锁定 `账户持仓` 必须排在 `账户统计` 之前，再统一调整 6 个页面布局和 `menu_bottom_nav.xml` 的顺序并回跑通过。
-- 这次 BUG review 又扫到交易受理状态链里的一个剩余分叉：主提交链已引入 `ACCEPTED_AWAITING_SYNC`，但 `buildBlockedExecutionResult()` 在状态机已经处于 `ACCEPTED` 时仍回退旧的 `RESULT_UNCONFIRMED`。这次已先补失败测试锁定，再按真实边界只修 `ACCEPTED` 分支；`SUBMITTING` 仍保持未确认态，因为那时还没有服务器受理回执。
-- 这次又按最小任务拆分重新复核了一轮：先重跑图表/账户统计相关测试确认 1-4 仍是绿，再重跑账户持仓/交易链相关测试确认 5-11 仍是绿，最后单独复核第 12 条的服务端契约测试和公网接口现状，确认本地修复还在，但线上环境仍旧未更新。
-- 这次 BUG review 又发现一条真正的 UI 数据回归：账户持仓页和挂单列表虽然已经展示了 `开仓时间 / 成本价 / 止盈 / 止损 / 挂单价`，但两个 adapter 的 `contentKeyOf()` 仍没把这些字段纳入 Diff 签名。结果是同一 ticket/order 下这些字段变化时，RecyclerView 会误判为“内容没变”，页面行不会刷新。已先补源码约束测试锁定，再把缺失字段补进两个签名。
-- 这次继续把 1-12 拆成最小可执行单元重新核对：先只核对当前设备状态，再只核对公网 `/health` 和 `/v2/account/snapshot`；结果仍然指向同一个根因，没有出现新的本地代码缺口，因此本轮没有新增业务代码修改。
-- 这次 BUG review 又沿账户持仓 adapter 的同一根因链继续下探，确认挂单行数量展示还存在一个隐藏边界：界面会在 `pendingLots` 为空时回退用 `quantity`，但旧的 `contentKeyOf()` 没把这个回退字段纳入签名，导致这类变化仍可能不刷新。已先补失败测试锁定，再把 `quantity` 补进签名。
+- 这条“交易统计模块先消失、曲线区补位再回来”的问题已继续收口到交易统计卡片首次显示策略：当前不再额外等待 `RecyclerView` 预绘制，数据和图表绑定完后会同轮直接显示整卡；下一次若仍有闪烁，优先先查是否还有别的生命周期路径把整卡重新打回 `GONE/INVISIBLE`，而不是再怀疑预绘制等待本身。
+- 这条“交易统计切换时先消失、曲线补位后再回来”的问题已确认收口到交易统计卡片刷新前的可见性策略：当前切换时会保留交易统计卡片原位，不再让净值/结余曲线模块顶上来；下一次若仍有闪烁，优先先查 `bindTradeAnalytics(...)` 是否在切换中又重复触发了首次 reveal 分支，而不是再怀疑布局文件顺序。
+- 这条“左补后焦点还卡在新最左侧”的问题已确认收口到 `KlineChartView` 的视口偏移恢复：当前左补完成后会停留在补页前那一屏内容，只把新增历史留在左边等待下一次主动滑动；下一次若仍出现重复误拉，优先先查触摸 MOVE 阶段是否又额外改写了 `offsetCandles`，而不是再怀疑分页回包本身。
+- 这条“月线跳到 1 分钟线”的问题已确认收口到周期键大小写边界：当前 `1M` 不会再被周期恢复、周期查找、分钟派生和月线聚合误当成 `1m`；下一次若月线仍异常，优先先查接口返回的月线数据本身，而不是再怀疑按钮绑定。
+- 这条“1 小时、4 小时仍持续左补”的剩余问题已确认收口到自动补拉条件误判：当前自动左补不会再因为窗口内部正常空档而成立；下一次若仍出现连续补拉，优先先查是否存在“上一轮已翻出的左侧历史在刷新后被挤掉”的真实场景，而不是再把中间停盘空档当成左补目标。
+- 这条“切周期后持续拉历史、焦点跳动”的问题已确认收口到图表本地恢复链路：当前 fresh interval switch 不会再把上次分页出来的旧历史窗口直接恢复进当前视口；下一次若仍出现连续补拉，优先先查真实网络缺口判定，而不是再回头怀疑本地 warm display。
+- 图表历史成交盈亏金额这条问题已确认收口到文案格式层，不是成交数据本身错误；共享图表屏幕和兼容旧图表入口里的 `formatSignedUsd(...)` 现在都统一走普通美元格式。
+- 这条交易记录缺失问题已确认收口：显式进入账户统计页时现在会无条件重走 canonical history refresh，真机数据库和界面数字都已追上最近交易；下一次若再出现缺口，优先先看服务端历史接口本身是否返回缺页，而不是再怀疑本地筛选。
+- 账户统计页这条问题已从“缓存完成态误判”继续收敛到第二个真实主因：主壳共享页缺少首帧监听注册，导致次级区块在 Fragment/主壳路径下没有按设计挂载；目前这一点已补上，并已在真机看到交易记录区直接显示真实历史成交。
+- 账户统计页“已连接但历史未加载”这条回归已收口到共享主链：`AccountStatsScreen` / `AccountStatsBridgeActivity` 都补了“历史段是否可渲染”的统一判断，`AccountSnapshotRefreshCoordinator` 也已改成遇到纯运行态缓存时继续正式拉历史。
+- `MainHostActivity`、`HostTabNavigator`、`AccountPositionPageController`、`MarketMonitorPageController`、`SettingsPageController`、`MarketChartPageController`、`AccountStatsPageController` 等主壳骨架和宿主层已存在并通过源码测试。
+- `MainActivity`、`AccountPositionActivity`、`SettingsActivity` 已退成桥接；`AccountStatsBridgeActivity`、`MarketChartActivity` 仍保留旧入口重页逻辑，当前主要用于兼容旧入口与遗留专项链路。
+- `AccountPositionFragment`、`SettingsFragment`、`MarketMonitorFragment` 已具备真实页面承接；`AccountStatsFragment`、`MarketChartFragment` 本轮已通过 `AccountStatsScreen`、`MarketChartScreen` 接入真实共享屏幕对象，不再只是空宿主骨架。
+- 图表页页面级状态又完成两层收口后，当前主要残留已经从“页面前后台状态、进入前台编排、自动刷新调度”进一步收缩到“图表主业务 helper / 图表数据准备 / 图层渲染细节”。
+- 图表页服务启动、普通 K 线请求入口、“切产品 / 切周期后的页面重拉取编排”、“图层显隐开关点击编排”、“指标切换/参数修改后的统一刷新编排”以及“品种/周期状态提交编排”也已退出旧宿主后，当前图表页残留进一步收缩到“更重的数据准备细节、图层渲染细节、少数仍留在旧 Activity 的业务 helper”。
+- 账户统计页页面循环状态、刷新调度以及一批纯转发渲染包装也都已退出旧宿主；本轮又继续把剩余宿主状态收口进 `AccountStatsScreen`、`MarketChartScreen`，主入口已切到 `MainHostActivity`。下一步主阻塞点继续收缩为兼容旧入口的 `AccountStatsBridgeActivity`、`MarketChartActivity` 还保留旧重页逻辑，以及主壳切流后的完整性能/耗电复测。
+- 真机已完成固定路径主壳验收，长期耗电/性能复测仍可按需要继续追加。
 
 ## 近期关键决定和原因
-- 悬浮窗分产品盈亏文案当前采用“聚合层先产出总手数，再由格式器统一拼文案”的实现；原因是总手数属于悬浮窗业务真值的一部分，不应在视图层临时回扫持仓列表做第二次计算。
-- 第二阶段当前采用“先补风险表达，再补图表交互”的实施顺序；原因是第一阶段已经有正式交易主链，当前最大缺口不是能不能发命令，而是用户能否在发命令前看懂风险、在失败后看懂原因、在图上分清草稿与已生效状态。
-- 第二阶段不再新建第二套图表专用交易执行链，只允许把图表交互接入现有 `GatewayV2TradeClient + TradeExecutionCoordinator + AccountStatsPreloadManager` 主链；原因是第一阶段的核心价值就是统一交易校验、提交和同步收敛，第二阶段如果分叉，会直接破坏这个闭环。
-- 第一阶段完成情况当前按“核心主链已闭合、边界项单独标注”口径记录；原因是仓库内已经能证明交易网关、状态机、统一确认和交易后强刷存在，但独立交易审计模块与第二阶段能力尚未完整落地，不能混写成全部完成。
-- 账户本地仓储不再继续维持“单槽位 + 全表清空”模型，正式改成“账号+服务器身份分区 + 旧 key 迁移补前缀”；原因是多账号切换场景下，历史交易、持仓和挂单不能互相覆盖，也不能靠页面层过滤来补救底层串号。
-- 交易强一致收敛对 `accepted` 但无 `order/deal` reference 的回执，不再直接判失败，而是回到账户快照结构变化判断；原因是部分网关受理回执天生不带 reference，继续硬卡 reference 会把真实已成交交易永远留在同步中。
-- 账户持仓页不能直接消费任意最新缓存，必须先校验缓存账号/服务器与当前活动远程会话一致；原因是切号后旧账号缓存会短暂复用到新页面，属于真实数据串号，不是单纯首帧延迟。
-- 图表页“持仓收益率”摘要在缺少总资产/净值时，改为按持仓成本线重算；原因是这时继续依赖账户总览口径会得到失真值，而直接显示 `--` 又会丢掉明明已经存在的持仓真值。
-- 单条持仓的折叠态与展开态必须共用一套盈亏口径；原因是同一条记录同时出现“摘要含库存费、详情不含库存费”的双口径，会直接误导用户判断。
-- 服务端源码不能再内置任何默认 MT5 登录凭据；原因是默认凭据会把坏部署伪装成可运行状态，也会把敏感信息留在源码里。
-- Windows 启动脚本必须把 MT5 登录、密码、服务器、时区同时视为强依赖；原因是这些字段缺任何一项，部署出来的网关都不是完整可用状态。
-- WebSocket 健康检查必须像 HTTP 探针一样在超时窗口内重试；原因是后台服务刚启动时 WS 首连存在短暂抖动，单次探测会把“暂时未就绪”误判成“部署失败”。
-- 停旧进程只能收口到当前 bundle 自己管理的进程，不能再全局匹配 `server_v2.py/admin_panel.py`；原因是同机多套目录并存时，全局强杀会误伤其他实例。
-- Windows 网关进程的部署指纹来源不能再依赖 `server_v2.py` 的物理目录层级推断；原因是计划任务、手工启动或历史目录残留都可能让“实际启动脚本路径”和“当前部署 bundle”脱钩，必须由启动链显式传入 manifest 真值路径。
-- `/health` 必须带出 `bundleManifestPath` 与 `bundleScriptPath`；原因是当现场再次出现指纹不匹配时，需要直接看到 8787 实际加载的是哪一份 manifest、哪一个 `server_v2.py`，不能再靠外部猜测。
-- 挂单行级 Diff 签名必须和界面真实展示的“手数来源”保持完全一致；原因是 UI 本身在 `pendingLots` 为空时会回退到 `quantity`，签名如果仍只看 `pendingLots`，同一挂单数量变化时仍会漏刷。
-- 会话密码加密链必须彻底避免生成包含密码的不可变 `String`；原因是仅仅把外部入参改成 `char[]` 还不够，如果中间继续走 `JSONObject -> String`，堆里仍会留下无法清零的明文副本，安全加固并没有闭环。
-- 文档里的 5 Tab 顺序也必须和资源实现保持一致；原因是 README 已经成为这轮多模型审计的对照基线，继续保留旧顺序会误导后续复核。
-- 网关 readiness 必须把 `MT5_SERVER_TIMEZONE` 视为强依赖，而不是继续让 `/health` 报绿；原因是账户快照、历史和图表成交时间轴都依赖这条时区真值，缺失时部署本身就是坏的。
-- 安卓端“等待网关上线 / 网关离线”文案只适用于真实离线场景；原因是服务端已经明确返回 `500` 错误时，继续显示离线会掩盖真正根因。
-- Windows 部署脚本的健康检查必须补齐 `/v2/account/snapshot` 与 `/v2/account/history`；原因是只检查 `/health` 和 `/v2/stream` 无法覆盖账户主链是否真的可用。
-- Windows 部署脚本的健康检查还必须逐项暴露“当前探针”和“最后错误”；原因是只在成功时写日志、失败时统一超时，会让现场看起来像卡死，无法判断是 8787、8788、80、443 还是公网回环链路出了问题。
-- 交易成功后的历史修订号推进不能继续依赖后续轮询或缓存自然过期；原因是历史交易、统计指标和历史曲线属于成交后的直接结果，服务端必须在成交成功分支立刻失效账户快照缓存并重新发布 bus 当前状态。
-- 账户统计页继续保持“非高频实时页”，但前台可见时必须重新接回 `preloadCacheListener`，并把 `historyRevision` 纳入刷新签名；原因是它需要作为历史统计直接消费者及时吃到后台已完成的 history 补拉结果，同时在退后台后又不能继续持有监听增加无效 UI 工作。
-- 图表页不再保留旧的账户概览 RecyclerView、持仓列表、挂单列表和排序控件；原因是这条链已经和“轻量图表页”目标冲突。
-- 账户统计页里的交易统计卡片必须等真实统计数据绑定完成后再显示，不能在次级区块挂载时先显示静态按钮；原因是 `全部 / 买入 / 卖出` 按钮属于静态 XML，提前露出会形成可见闪帧。
-- 图表叠加层统一走后台快照工厂；原因是图上标注、摘要文案和成本线必须共用一份只读结果，避免主线程重复拼装。
-- 账户持仓页分段刷新改成按真实展示字段比较；原因是止盈、止损、库存费、挂单价等字段变化时也必须触发对应区块刷新。
-- 账户统计页继续保留历史分析职责，但不再依赖前台实时推送触发页面刷新；原因是该页不应再承担高频实时 UI。
-- 图表页旧排序 helper、旧行内菜单入口、旧平仓输入 helper、旧撤单输入 helper 直接删除，不保留兼容空壳；原因是它们已经不再属于正式架构，继续留着只会增加误导和回归面。
-- 图表页旧账户面板相关 import 也直接删除，不保留“虽然没用但先挂着”的过渡痕迹；原因是图表页职责已经正式收口，源码依赖也应同步收口。
-- 注释口径也要和正式结构保持一致，不保留“代码已迁走、注释还停在旧页面”的残留描述；原因是这类文字残留会继续误导后续审计和维护。
-- 账户持仓页概览顺序必须沿用 `AccountOverviewMetricsHelper` 的固定展示顺序，不能在页面工厂里再次排序；原因是二次排序会把正式指标顺序打乱，造成用户可见回归。
-- 账户持仓页缓存监听必须跟随前后台生命周期收放；原因是退后台后继续保留监听会让页面在不可见状态下仍接收并排队 UI 读模型构建，违背这轮减负目标。
-- 全量测试里的旧结构断言也必须同步收口；原因是这些断言会把已完成的正式重构误报成失败，影响最终验收。
-- 真机复测继续坚持不伪造结论；由于页面 Activity 未导出，现场链路改用 `LAUNCHER + adb shell input tap`，不用违反安全边界的 `am start -n` 直启内部页。
-- 图表页“图上持仓状态”里的 `持仓盈亏 / 持仓收益率` 应继续走账户总览真值链，而不是复用图上 annotation 条数或单笔 `PositionItem.returnRate`；原因是条数统计不是财务指标，单笔价格涨跌比也不等于账户总览口径。
-- 账户统计页顶部不再保留“隐藏按钮 / 已连接账户”入口；原因是这两个入口已经正式迁到账户持仓页，继续保留只会造成重复操作点和界面噪音。
-- 底部导航正式顺序现在改为 `行情监控 / 行情持仓 / 账户持仓 / 账户统计 / 设置`；原因是账户持仓已经承接实时账户入口，应排在历史统计前面。
-- 交易状态语义必须和服务端真实回执保持一致；原因是 `ACCEPTED` 已经代表服务器受理成功，再回退成 `RESULT_UNCONFIRMED` 会让同一笔交易在重复进入时出现前后矛盾的提示。
-- 第 12 条继续按“服务端部署状态”和“本地代码状态”分开判断；原因是当前公网 `/health` 指纹和账户接口报错都明确表明线上仍跑旧包，本地继续改代码不会改变线上现状。
-- 账户持仓页分段刷新不只看页面级 section diff，也必须保证 adapter 行级 Diff 签名覆盖真实展示字段；原因是页面区块已经决定刷新时，如果行级 `areContentsTheSame()` 漏字段，最终用户仍会看到局部旧数据。
-- 第 12 条在服务器未切换到新 bundle 前不再继续做本地代码层面的重复改动；原因是最新线上证据仍然完全符合“旧部署 + 缺少 `MT5_SERVER_TIMEZONE`”这一单一根因。
-- `PendingOrderAdapter` 的 Diff 签名必须覆盖 `pendingLots` 和 `quantity` 两套数量来源；原因是页面数量展示本身就存在回退逻辑，签名如果只覆盖其中一套，仍会留下局部旧值。
-
-## 当前验证状态
-- 本轮新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.settings.SettingsSectionActivitySourceTest" --tests "com.binance.monitor.data.local.ConfigManagerSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` 已通过。
-- 本轮新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountOverviewMetricsHelperTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountPositionAdapterSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` 暴露 `AccountPositionAdapterSourceTest.pendingOrderAdapterContentSignatureShouldCoverDisplayedPriceFields` 失败，再把 `PendingOrderAdapter.contentKeyOf()` 改成复用 `displayLots` 回退逻辑后回跑通过。
-- 本轮新增验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionAdapterSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionEnhancementSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest"` 已通过。
-- 本轮新增验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountOverviewMetricsHelperTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountPositionAdapterSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest"` 已再次通过。
-- 本轮新增验证：先让 `.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.security.SessionCredentialEncryptorTest" --tests "com.binance.monitor.ui.account.AccountRemoteSessionCoordinatorTest"` 因新增源码约束断言过严而失败，再把断言改成匹配当前实现特征后回跑通过；当前 `SessionCredentialEncryptor` 已不再出现 `new String(password)` 和 `plainPayload.toString()` 这类明文密码 `String` 链路。
-- 本轮新增验证：先让 `python -m unittest scripts.tests.test_windows_server_bundle.WindowsServerBundleTests.test_deploy_script_should_log_each_health_probe_and_preserve_last_failure_reason` 在旧脚本上失败，再补部署脚本的逐项探针日志与“最后错误”输出后回跑通过。
-- 本轮新增验证：`python -m unittest scripts.tests.test_windows_server_bundle bridge.mt5_gateway.tests.test_deploy_contracts -v` 已通过。
-- 本轮新增验证：`python -m scripts.build_windows_server_bundle --output E:\Github\BTCXAU_Monitoring_and_Push_APK\dist\windows_server_bundle` 已再次完成，最新部署包已带上新的健康检查日志能力。
-- 本轮新增验证：`.\gradlew.bat :app:assembleDebug` 已通过，最新 APK 已重新输出。
-- 本轮新增验证：`python -m scripts.build_windows_server_bundle --output E:\Github\BTCXAU_Monitoring_and_Push_APK\dist\windows_server_bundle` 已再次完成；最新部署包指纹为 `06abac6a6b6ed42c506f57914dab0dd00695c3dff56823ac8cb517f792ea0423`。
-- 本轮新增验证：公网再次复核 `2026-04-12 21:03:36` 仍返回旧状态：`https://tradeapp.ltd/health` 仍是旧指纹 `e97cc314bc88c116329a7591c25a87a0ca00e5a379b059be20e8ddeed8e5e2f8` 且 `mt5ServerTimezone=""`；`https://tradeapp.ltd/v2/account/snapshot` 与 `https://tradeapp.ltd/v2/account/history?range=all` 仍返回 `500 {"detail":"MT5_SERVER_TIMEZONE 未配置，无法把 MT5 原始时间统一归一化为 UTC。"}`。
-- 本轮新增验证：`adb devices` 当前为空，说明真机安装与联调链此刻受设备未连接阻塞，尚不能继续做 APK 重装与现场 UI 复核。
-- 本轮新增验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountOverviewMetricsHelperTest" --tests "com.binance.monitor.ui.account.AccountPositionEnhancementSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityV2RefreshSourceTest"` 已通过。
-- 本轮新增验证：`python -m unittest bridge.mt5_gateway.tests.test_v2_trade_contracts.V2TradeContractTests.test_trade_submit_should_publish_account_history_revision_immediately_after_success` 已通过。
-- 本轮新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac` 已通过。
-- 本轮新增验证：`python -m unittest bridge.mt5_gateway.tests.test_deploy_contracts bridge.mt5_gateway.tests.test_admin_panel scripts.tests.test_windows_server_bundle` 已通过。
-- 本轮新增验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivitySessionSourceTest.syncingStateShouldExposePreciseMessageAndOfflineSnapshotShouldNotForceFailed"` 已通过。
-- 本轮新增验证：`python -m scripts.build_windows_server_bundle --output E:\Github\BTCXAU_Monitoring_and_Push_APK\dist\windows_server_bundle` 已完成，最新部署包已重建。
-- 本轮新增验证：公网复核 `2026-04-12 20:41:41` 仍返回旧状态：`https://tradeapp.ltd/health` 为 `ok=true` 且 `mt5ServerTimezone=""`；`https://tradeapp.ltd/v2/session/status` 为 `state=activated`；`https://tradeapp.ltd/v2/account/snapshot` 与 `https://tradeapp.ltd/v2/account/history?range=all` 均返回 `500 {"detail":"MT5_SERVER_TIMEZONE 未配置，无法把 MT5 原始时间统一归一化为 UTC。"}`。
-- 本轮新增验证：先让 `python -m unittest bridge.mt5_gateway.tests.test_v2_trade_contracts.V2TradeContractTests.test_trade_submit_should_publish_account_history_revision_immediately_after_success` 因成交成功后未触发即时 revision 发布而失败，再补服务端钩子后回跑通过。
-- 本轮新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest.preloadListenerShouldSkipUiRefreshUntilPageOwnsForegroundSubscription" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest.refreshSignatureShouldIncludeHistoryRevisionForHistoryDrivenSections"` 因页面未订阅前台缓存刷新链、签名未纳入 `historyRevision` 而失败，再修复后回跑通过。
-- 本轮新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeActivityV2RefreshSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.V2StreamRefreshPlannerTest"` 已通过。
-- 本轮新增验证：`python -m unittest bridge.mt5_gateway.tests.test_v2_trade_contracts bridge.mt5_gateway.tests.test_v2_sync_pipeline` 已通过。
-- 编译通过：`.\gradlew.bat :app:compileDebugJavaWithJavac`
-- 定向测试通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.ChartOverlaySnapshotFactoryTest" --tests "com.binance.monitor.ui.chart.MarketChartLayoutResourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionSortSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionSummarySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionPanelSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeCoordinatorSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest"`
-- 定向测试通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest"`
-- 定向测试通过：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest"`
-- 本轮新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartTradeCoordinatorSourceTest"` 因旧 helper 残留而失败，再删除残留方法后回跑通过。
-- 本轮新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartTradeCoordinatorSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionSummarySourceTest"` 已通过。
-- 本轮新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartPositionSummarySourceTest"` 因图表页残留旧 import 而失败，再删除残留 import 后回跑通过。
-- 本轮新增验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartLayoutResourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionSortSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeCoordinatorSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionSummarySourceTest" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest"` 已通过。
-- 本轮新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.ChartOverlaySnapshotFactoryTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartPositionPanelSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest"` 已通过。
-- 本轮新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartPositionSummarySourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeCoordinatorSourceTest"` 已通过。
-- 本轮新增验证：更新注释后，`.\gradlew.bat :app:compileDebugJavaWithJavac` 已再次通过；并且针对 `MarketChartActivity`、`PositionAdapterV2`、`PositionAggregateAdapter`、`PendingOrderAdapter`、`AccountSnapshotPayload` 的旧注释关键词复扫结果为空。
-- 本轮新增验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest"` 已通过。
-- 本轮新增验证：`.\gradlew.bat :app:assembleDebug` 已再次通过。
-- 本轮新增验证：按 Task1-Task5 对照回跑 `.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest" --tests "com.binance.monitor.ui.chart.ChartOverlaySnapshotFactoryTest" --tests "com.binance.monitor.ui.chart.MarketChartLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest"` 已通过。
-- 本轮 BUG review 新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest" --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest"` 因“概览顺序被打乱”和“监听生命周期过宽”而失败，再修复后回跑通过。
-- 本轮 BUG review 新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionActivitySourceTest" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest"` 已通过。
-- 本轮最终收口新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest` 暴露 3 条旧测试契约失败，再修正 `MonitorServiceSourceTest`、`AccountStatsBridgeSnapshotSourceTest`、`MarketChartPositionPanelResourceTest` 并回跑 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest" --tests "com.binance.monitor.ui.theme.MarketChartPositionPanelResourceTest"` 通过。
-- 本轮最终收口新增验证：`.\gradlew.bat :app:testDebugUnitTest` 已重新通过，结果为 `696 tests completed, 0 failed`。
-- 本轮最终收口新增验证：`python -m unittest discover -s bridge/mt5_gateway/tests -p "test_*.py" -v` 已通过，结果为 `Ran 229 tests ... OK`。
-- 新 APK 编译通过：`.\gradlew.bat :app:assembleDebug`
-- 真机链新增验证：`adb devices` 返回 `7fab54c4 device`
-- 真机链新增验证：`adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 返回 `Success`
-- 真机链新增验证：证据目录 `temp/cpu_battery_20260412_account_position_tab` 已补齐 `session_meta_tap_flow / am_trace / focus_trace / gfxinfo_tap_flow / logcat_filtered / batterystats_pkg_tap_flow`
-- 真机链新增验证：`logcat` 记录 `MarketChartActivity +176ms`、`AccountStatsBridgeActivity +265ms`、`AccountPositionActivity +83ms`，以及 `chart_pull start/load_done/ui_applied = 0/909/1050ms`
-- 真机链新增验证：`gfxinfo` 记录 `207` 帧、`50` 帧卡顿、`P90=30ms`、`P95=48ms`
-- 真机链新增验证：`batterystats` 采样约 `47s`，本 App `UID u0a512` 总估算 `2.67 mAh`，其中 `screen=2.11 mAh`、`cpu=0.566 mAh`
-- 本轮新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.ChartOverlaySnapshotFactoryTest.buildShouldUseOverviewPnlSummaryInsteadOfAnnotationCounts"` 因摘要仍是条数统计而失败，再修复后回跑 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.ChartOverlaySnapshotFactoryTest"` 通过。
-- 本轮新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac` 与 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.MarketChartPositionSummarySourceTest" --tests "com.binance.monitor.ui.chart.ChartOverlaySnapshotFactoryTest"` 已通过。
-- 本轮新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest.activityAccountStatsShouldNotKeepTopPrivacyAndConnectionShortcuts"` 因顶部仍保留两个入口而失败，再删除布局和绑定后回跑通过。
-- 本轮新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac` 与 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest"` 已通过。
-- 本轮新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest.allBottomNavLayoutsShouldKeepUnifiedFiveTabs" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest.bottomNavMenuShouldPlaceAccountPositionBeforeAccountStats"` 因底部导航顺序仍是旧口径而失败，再修复后回跑通过。
-- 本轮新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac` 已再次通过。
-- 本轮新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest.accountPageShouldDeferSecondarySectionsUntilAfterFirstFrame"` 因交易统计卡片仍在次级区块挂载时提前显示而失败，再把显示时机挪到 `bindTradeAnalytics(...)` 后回跑通过。
-- 本轮新增验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest"`、`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest"`、`.\gradlew.bat :app:compileDebugJavaWithJavac` 已通过。
-- 本轮 BUG review 新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.trade.TradeExecutionCoordinatorTest.submitAfterConfirmationShouldPreserveAcceptedAwaitingSyncStateWhenCalledAgainAfterAcceptance"` 因 `ACCEPTED` 被错误映射成 `RESULT_UNCONFIRMED` 而失败，再修复后回跑通过。
-- 本轮 BUG review 新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.trade.TradeExecutionCoordinatorTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeCoordinatorSourceTest"` 已通过。
-- 本轮继续复核验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.chart.ChartOverlaySnapshotFactoryTest" --tests "com.binance.monitor.ui.chart.MarketChartLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountStatsLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountStatsBridgeSnapshotSourceTest"` 已通过。
-- 本轮继续复核验证：`.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest" --tests "com.binance.monitor.ui.account.AccountPositionUiModelFactoryTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest" --tests "com.binance.monitor.ui.trade.TradeExecutionCoordinatorTest"` 已通过。
-- 本轮继续复核验证：`python -m unittest bridge.mt5_gateway.tests.test_v2_trade_contracts.V2TradeContractTests.test_trade_submit_should_publish_account_history_revision_immediately_after_success bridge.mt5_gateway.tests.test_deploy_contracts.DeployContractTests.test_health_should_fail_when_mt5_timezone_missing_under_mt5_configuration` 已通过。
-- 本轮继续复核验证：公网 `2026-04-12 21:29` 仍返回旧状态，`https://tradeapp.ltd/health` 依旧是指纹 `e97cc314bc88c116329a7591c25a87a0ca00e5a379b059be20e8ddeed8e5e2f8`，`https://tradeapp.ltd/v2/account/snapshot` 与 `https://tradeapp.ltd/v2/account/history?range=all` 继续返回 `500 {"detail":"MT5_SERVER_TIMEZONE 未配置，无法把 MT5 原始时间统一归一化为 UTC。"}`。
-- 本轮 BUG review 新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionAdapterSourceTest"` 因两个 adapter 的 Diff 签名未覆盖真实展示字段而失败，再补齐签名后回跑通过。
-- 本轮 BUG review 新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionAdapterSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionEnhancementSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest"` 已通过。
-- 本轮继续复核验证：`adb devices` 当前为空，没有在线设备。
-- 本轮继续复核验证：公网 `2026-04-12 21:46` 再次返回旧状态，`https://tradeapp.ltd/health` 仍是指纹 `e97cc314bc88c116329a7591c25a87a0ca00e5a379b059be20e8ddeed8e5e2f8` 且 `mt5ServerTimezone=""`，`https://tradeapp.ltd/v2/account/snapshot` 继续返回 `500 {"detail":"MT5_SERVER_TIMEZONE 未配置，无法把 MT5 原始时间统一归一化为 UTC。"}`。
-- 本轮 BUG review 新增验证：先让 `.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionAdapterSourceTest.pendingOrderAdapterContentSignatureShouldCoverDisplayedPriceFields"` 因挂单行 Diff 签名缺少 `quantity` 而失败，再修复后回跑通过。
-- 本轮 BUG review 新增验证：`.\gradlew.bat :app:compileDebugJavaWithJavac :app:testDebugUnitTest --tests "com.binance.monitor.ui.account.AccountPositionAdapterSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionEnhancementSourceTest" --tests "com.binance.monitor.ui.account.AccountPositionSectionDiffTest" --tests "com.binance.monitor.ui.account.AccountPositionLayoutResourceTest"` 已再次通过。
+- 这次没有继续围绕 `hideTradeStatsSectionUntilFreshContentReady()` 加更多条件判断，而是直接删除交易统计卡片首次显示时额外等待 `preDraw` 的旧语义；原因是用户反馈说明真正可见的闪烁仍发生在页面重建后的首次展示，而不是后台刷新前的占位逻辑。
+- 这次没有去改动交易统计和曲线模块的布局顺序，也没有加延时/过渡动画掩盖闪烁，而是直接修正交易统计卡片刷新前的可见性策略；原因是根因不在布局层，而在宿主每次刷新前都把卡片设成 `GONE` 导致布局补位。
+- 这次没有在“再次误拉”的触发口再加节流或冷却时间，而是直接修正左补完成后的视口保持语义；原因是根因不在请求频率，而在补页成功后把视口错误推进到了新的最左边界。
+- 这次没有只在月线按钮点击处加一个局部修补，而是把图表周期键里所有 `1M/1m` 关键分支一起收口为大小写敏感比较；原因是根因不止一处，若只修按钮入口，月线仍会在恢复、聚合或实时派生阶段被再次误判成分钟线。
+- 这次没有再给 1 小时、4 小时单独做产品/周期白名单，也没有加“补拉次数节流”之类的局部稳定化手段，而是直接修正自动左补的判定语义；原因是窗口内部缺口本来就不是“向左翻页”能修复的对象，把它作为左补条件在逻辑上就是错位的。
+- 这次没有用“限制补拉次数”“切周期后临时关掉补历史”这类局部稳定化手段，而是直接修正切周期后的本地恢复边界；原因是根因不在补拉节流，而在旧分页历史被错误当成当前标准显示窗口重新注入主链。
+- 这次没有在图表层额外加“如果值很小就特殊显示”的启发式分支，而是直接改正格式工具的调用边界；原因是根因不是小数精度，而是把普通美元盈亏错误送进了“百万单位缩写”工具。
+- 这次没有在页面层补“进入页面后多等一会儿再刷新”之类的临时手段，而是直接恢复显式 UI 刷新的 canonical full-history 主链；原因是手机数据库已经证明确实没有最近交易，问题发生在数据刷新策略，不在渲染层。
+- 这次继续坚持不做页面级临时兜底，而是把修复落在共享页初始化主链：旧桥接页已有首帧监听注册，主壳共享页缺失同一步骤，根因属于共享链路缺口，应该直接补齐到 `AccountStatsScreen.initializePageContent()`，而不是再加额外强刷或延时补丁。
+- 这次没有给账户统计页加临时兜底分支，而是直接修正“缓存完成态”的判定边界；原因是根因不在渲染层，而在协调器把纯运行态缓存误当成完整历史快照，应该在主链入口一次改正。
+- 本轮先做“对计划逐项复核”而不是继续迁移代码；原因是 2026-04-14 计划里的 Task 6-7 与当前仓库现状已经出现明确差距，先确认真实完成度，后续才不会把“骨架已就位”误写成“主入口已切流、真机验收已完成”。
+- 本轮把账户统计页和图表页剩余宿主能力继续收口成 `AccountStatsScreen`、`MarketChartScreen`，而不是继续在旧 `Activity` 里一点点抠匿名回调；原因是只有抽成共享屏幕对象，`Fragment` 才能真正复用同一条主链，不会再形成新旧两套页面逻辑。
+- 本轮优先把“应用内部主链”收口到主壳，而没有立即删除 `AccountStatsBridgeActivity`、`MarketChartActivity` 的旧实现；原因是先保证用户在主壳内的真实操作路径不再掉回多 `Activity` 结构，同时保留旧入口兼容链，风险更低。
+- 不使用多智能体：当前主任务仍是强耦合串行迁移，不满足“并行且不形成单点阻塞”的条件。
+- 不做降级、兜底、临时补丁、启发式跳刷：所有改动都直接落在职责边界和主链编排上。
+- 先把“旧 Activity 里的重主链”迁入协调器，再处理 Fragment 真实承接：这样每一步都可单独验证，避免一次性切壳导致大面积不可控回归。
+- 在重主链迁入协调器之后，再把 `PageController.Host` 与协调器 `Host` 匿名实现抽成独立委托；对行情监控页已进一步落到了 `MarketMonitorPageRuntime`，对图表页和账户统计页则已进一步发展为“控制器只转发、运行时负责编排”的结构，继续证明“运行时复用”这条路可行。
+- 图表页和账户统计页都继续优先迁“页面级状态”而不是先碰最重渲染逻辑：先把前后台可见态、刷新循环、短延迟回调等状态从旧 Activity 清出去，能够在不动核心业务算法的前提下持续压缩旧宿主职责。
+- 图表页进一步验证了“先迁页面编排，再迁重业务 helper”这条顺序是可行的：`enterChartScreen` 这种典型页面编排已经可以直接由运行时持有，说明后面还能继续按同样方式压缩旧宿主。
+- 图表页和账户统计页都已经证明“页面调度状态”可以直接沉到运行时，而“真正的数据拉取和重渲染”继续留在协调器/业务层：后续应继续按这个边界推进，不再把新的页面级调度状态留回旧 Activity。
+- 本轮也进一步验证了“统计页用户交互后的重算编排”可以继续沉到协调器：收益表切换和曲线投影切换现在都能经由 `AccountStatsRenderCoordinator` 统一承接，后续 Fragment 真正接主链时可直接复用。
+- 本轮进一步验证了“用户交互后的页面编排”也可以继续沉到运行时：图表页的切产品 / 切周期重拉取已能由 `MarketChartPageRuntime` 统一承接，后续 Fragment 真正接主链时可直接复用。
+- 本轮继续验证了“图表页轻交互编排”同样可以沉到运行时：叠加层显隐开关点击已能由 `MarketChartPageRuntime` 统一承接，后续 Fragment 真正接主链时可直接复用。
+- 本轮继续验证了“图表页指标交互编排”也可以沉到运行时：指标显隐切换和参数修改后的统一刷新现在都能由 `MarketChartPageRuntime` 统一承接，后续 Fragment 真正接主链时可直接复用。
+- 本轮继续验证了“图表页选择类交互编排”也可以沉到运行时：品种切换和周期切换现在都能由 `MarketChartPageRuntime` 统一承接，后续 Fragment 真正接主链时可直接复用。
+- 进一步验证了“先删纯转发包装，再迁重业务 helper”这条路径：服务启动和图表请求入口在不动核心算法的前提下已能直接退出旧 Activity，说明后续可以继续按同样方式压缩重宿主。
+- 兼容旧入口继续优先保留“薄桥接 + extras 透传”策略，而不是立即删除旧文件；原因是当前应用内部主链已经全部收口到主壳，后续若继续删旧实现，应作为独立清理任务处理。

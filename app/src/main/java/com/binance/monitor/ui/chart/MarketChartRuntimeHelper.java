@@ -18,7 +18,7 @@ final class MarketChartRuntimeHelper {
         }
         String candidate = storedKey.trim();
         for (String supportedKey : supportedKeys) {
-            if (supportedKey != null && candidate.equalsIgnoreCase(supportedKey.trim())) {
+            if (supportedKey != null && candidate.equals(supportedKey.trim())) {
                 return supportedKey.trim();
             }
         }

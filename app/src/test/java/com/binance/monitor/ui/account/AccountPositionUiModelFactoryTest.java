@@ -208,19 +208,71 @@ public class AccountPositionUiModelFactoryTest {
         assertEquals(1710001234567L, model.getSnapshotVersionMs());
     }
 
+    // 账户持仓页读模型必须只受运行态驱动，历史修订号、成交列表和净值曲线变化都不应打脏当前页。
+    @Test
+    public void buildShouldIgnoreHistoryRevisionTradesAndCurvePoints() {
+        AccountPositionUiModelFactory factory = new AccountPositionUiModelFactory();
+        List<AccountMetric> metrics = Arrays.asList(
+                new AccountMetric("总资产", "$1000.00"),
+                new AccountMetric("净值", "$900.00")
+        );
+        List<PositionItem> positions = Collections.singletonList(createPosition("BTCUSD", "Buy", 1L, 11L, 1.0));
+        List<PositionItem> pendingOrders = Collections.singletonList(createPosition("XAUUSD", "Sell", 0L, 21L, 2.0));
+
+        AccountStatsPreloadManager.Cache firstCache = createCache(
+                metrics,
+                positions,
+                pendingOrders,
+                1710000000000L,
+                "rev-a",
+                Collections.singletonList(new TradeRecordItem(1L, "BTCUSD", "BTCUSD", "Buy", 1d, 101d, 100d, 10d, "")),
+                Collections.singletonList(new CurvePoint(1L, 900d, 880d, 0.1d))
+        );
+        AccountStatsPreloadManager.Cache secondCache = createCache(
+                metrics,
+                positions,
+                pendingOrders,
+                1710000000000L,
+                "rev-b",
+                Collections.singletonList(new TradeRecordItem(2L, "ETHUSD", "ETHUSD", "Sell", 2d, 202d, 200d, -30d, "")),
+                Collections.singletonList(new CurvePoint(2L, 1200d, 1100d, 0.2d))
+        );
+
+        AccountPositionUiModel first = factory.build(firstCache);
+        AccountPositionUiModel second = factory.build(secondCache);
+
+        assertEquals(first.getOverviewMetrics().size(), second.getOverviewMetrics().size());
+        for (int i = 0; i < first.getOverviewMetrics().size(); i++) {
+            assertEquals(first.getOverviewMetrics().get(i).getName(), second.getOverviewMetrics().get(i).getName());
+            assertEquals(first.getOverviewMetrics().get(i).getValue(), second.getOverviewMetrics().get(i).getValue());
+        }
+        assertEquals(first.getSignature(), second.getSignature());
+    }
+
     // 组装缓存测试数据。
     private static AccountStatsPreloadManager.Cache createCache(List<AccountMetric> metrics,
                                                                 List<PositionItem> positions,
                                                                 List<PositionItem> pendingOrders,
                                                                 long updatedAt,
                                                                 String historyRevision) {
+        return createCache(metrics, positions, pendingOrders, updatedAt, historyRevision,
+                new ArrayList<>(), new ArrayList<>());
+    }
+
+    private static AccountStatsPreloadManager.Cache createCache(List<AccountMetric> metrics,
+                                                                List<PositionItem> positions,
+                                                                List<PositionItem> pendingOrders,
+                                                                long updatedAt,
+                                                                String historyRevision,
+                                                                List<TradeRecordItem> trades,
+                                                                List<CurvePoint> curvePoints) {
         AccountSnapshot snapshot = new AccountSnapshot(
                 metrics == null ? new ArrayList<>() : metrics,
-                new ArrayList<CurvePoint>(),
+                curvePoints == null ? new ArrayList<>() : curvePoints,
                 new ArrayList<AccountMetric>(),
                 positions == null ? new ArrayList<>() : positions,
                 pendingOrders == null ? new ArrayList<>() : pendingOrders,
-                new ArrayList<TradeRecordItem>(),
+                trades == null ? new ArrayList<>() : trades,
                 new ArrayList<AccountMetric>()
         );
         return new AccountStatsPreloadManager.Cache(

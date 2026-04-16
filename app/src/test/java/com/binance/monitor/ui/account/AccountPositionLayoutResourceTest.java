@@ -12,6 +12,7 @@ import org.w3c.dom.NodeList;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -91,6 +92,23 @@ public class AccountPositionLayoutResourceTest {
         int accountStatsIndex = findElementOrder(document, "nav_account_stats");
         assertTrue("底部导航菜单应让账户持仓排在账户统计之前",
                 accountPositionIndex >= 0 && accountStatsIndex >= 0 && accountPositionIndex < accountStatsIndex);
+    }
+
+    @Test
+    public void activityAccountPositionShouldReuseSharedContentLayout() throws Exception {
+        Path layoutPath = resolveProjectFile(
+                "app/src/main/res/layout/activity_account_position.xml",
+                "src/main/res/layout/activity_account_position.xml"
+        );
+        Path contentPath = resolveProjectFile(
+                "app/src/main/res/layout/content_account_position.xml",
+                "src/main/res/layout/content_account_position.xml"
+        );
+        String activityXml = new String(Files.readAllBytes(layoutPath), StandardCharsets.UTF_8);
+        String contentXml = new String(Files.readAllBytes(contentPath), StandardCharsets.UTF_8);
+
+        assertTrue("账户持仓 Activity 应通过 include 复用共享内容布局", activityXml.contains("@layout/content_account_position"));
+        assertTrue("共享内容布局必须保留持仓滚动容器", contentXml.contains("@+id/scrollAccountPosition"));
     }
 
     // 按当前工作目录自动解析项目文件，兼容根目录和 app 模块目录两种入口。

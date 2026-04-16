@@ -14,12 +14,12 @@ public class AccountPositionActivitySourceTest {
 
     @Test
     public void accountPositionActivityShouldBindCacheListenerWithoutSlowingSharedPreloadLoop() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java");
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
 
-        assertTrue(source.contains("protected void onResume() {"));
+        assertTrue(source.contains("public void onPageShown() {"));
         assertTrue(source.contains("ensureMonitorServiceStarted();"));
         assertTrue(source.contains("preloadManager.addCacheListener(cacheListener);"));
-        assertTrue(source.contains("protected void onPause() {"));
+        assertTrue(source.contains("public void onPageHidden() {"));
         assertTrue(source.contains("preloadManager.removeCacheListener(cacheListener);"));
         assertFalse(source.contains("preloadManager.setLiveScreenActive(true);"));
         assertFalse(source.contains("preloadManager.setLiveScreenActive(false);"));
@@ -28,10 +28,10 @@ public class AccountPositionActivitySourceTest {
 
     @Test
     public void accountPositionActivityShouldRejectCacheFromOtherSession() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java");
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
 
         assertTrue(source.contains("private SecureSessionPrefs secureSessionPrefs;"));
-        assertTrue(source.contains("secureSessionPrefs = new SecureSessionPrefs(getApplicationContext());"));
+        assertTrue(source.contains("secureSessionPrefs = new SecureSessionPrefs(appContext);"));
         assertTrue(source.contains("private AccountStatsPreloadManager.Cache resolveCurrentSessionCache() {"));
         assertTrue(source.contains("private AccountStatsPreloadManager.Cache resolveStoredCurrentSessionCacheOnWorkerThread() {"));
         assertTrue(source.contains("private void restoreStoredCurrentSessionCacheAsync() {"));
@@ -47,9 +47,9 @@ public class AccountPositionActivitySourceTest {
 
     @Test
     public void accountOverviewConnectionChipShouldRequestLoginDialogInsteadOfOpeningStatsTab() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java");
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
         int methodStart = source.indexOf("private void openAccountLogin() {");
-        int methodEnd = source.indexOf("private void openSettings()", methodStart);
+        int methodEnd = source.indexOf("private void ensureMonitorServiceStarted()", methodStart);
         String methodSource = methodStart >= 0 && methodEnd > methodStart
                 ? source.substring(methodStart, methodEnd)
                 : source;
@@ -58,13 +58,12 @@ public class AccountPositionActivitySourceTest {
         assertTrue(source.contains("private AccountSessionDialogController accountSessionDialogController;"));
         assertTrue(source.contains("accountSessionDialogController = new AccountSessionDialogController("));
         assertTrue(methodSource.contains("accountSessionDialogController.showLoginDialog();"));
-        assertFalse(source.contains("binding.tvAccountConnectionStatus.setOnClickListener(v -> openAccountStats());"));
-        assertFalse(methodSource.contains("new Intent(this, AccountStatsBridgeActivity.class)"));
+        assertFalse(source.contains("binding.tvAccountConnectionStatus.setOnClickListener(v -> host.openAccountStats());"));
     }
 
     @Test
     public void accountPositionActivityShouldConsumeDirectSessionCallbacksInsteadOfActivityResultBridge() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java")
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
@@ -97,7 +96,7 @@ public class AccountPositionActivitySourceTest {
 
     @Test
     public void accountPositionActivityShouldShowDirectLoginSuccessInsteadOfPendingSyncMessage() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java")
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
@@ -114,36 +113,34 @@ public class AccountPositionActivitySourceTest {
 
     @Test
     public void accountPositionTradeShortcutShouldSendCanonicalMarketSymbolToChartPage() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java")
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionFragment.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("import com.binance.monitor.util.ProductSymbolMapper;"));
-        assertTrue(source.contains("symbol = ProductSymbolMapper.toMarketSymbol(symbol);"));
-        assertTrue(source.contains("intent.putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL, symbol);"));
+        assertTrue(source.contains("symbol = com.binance.monitor.util.ProductSymbolMapper.toMarketSymbol(symbol);"));
+        assertTrue(source.contains("intent.putExtra(com.binance.monitor.ui.chart.MarketChartActivity.EXTRA_TARGET_SYMBOL, symbol);"));
     }
 
     @Test
     public void accountPositionTradeShortcutShouldNotReuseChartActivityThroughClearTop() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java")
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionFragment.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
-        int methodStart = source.indexOf("private void openChartTradeAction(@Nullable PositionItem item, @NonNull String tradeAction) {");
-        int methodEnd = source.indexOf("private void openAccountStats()", methodStart);
+        int methodStart = source.indexOf("public void openChartTradeAction(@Nullable com.binance.monitor.domain.account.model.PositionItem item,");
+        int methodEnd = source.indexOf("}\n                },", methodStart);
         String methodSource = methodStart >= 0 && methodEnd > methodStart
                 ? source.substring(methodStart, methodEnd)
                 : source;
 
-        assertTrue(methodSource.contains("Intent intent = new Intent(this, MarketChartActivity.class);"));
+        assertTrue(methodSource.contains("Intent intent = HostNavigationIntentFactory.forTab(requireContext(), HostTab.MARKET_CHART);"));
         assertTrue(methodSource.contains("startActivity(intent);"));
-        assertFalse(methodSource.contains("Intent.FLAG_ACTIVITY_CLEAR_TOP"));
-        assertFalse(methodSource.contains("Intent.FLAG_ACTIVITY_SINGLE_TOP"));
-        assertFalse(methodSource.contains("intent.addFlags("));
+        assertTrue(methodSource.contains("intent.putExtra(com.binance.monitor.ui.chart.MarketChartActivity.EXTRA_TARGET_SYMBOL, symbol);"));
+        assertTrue(methodSource.contains("intent.putExtra(com.binance.monitor.ui.chart.MarketChartActivity.EXTRA_TRADE_ACTION, tradeAction);"));
     }
 
     @Test
     public void accountPositionActivityShouldIgnoreStaleUiModelFromOlderCacheRestore() throws Exception {
-        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java");
+        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
         String modelSource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionUiModel.java");
 
         assertTrue(modelSource.contains("private final long snapshotVersionMs;"));
@@ -154,25 +151,25 @@ public class AccountPositionActivitySourceTest {
 
     @Test
     public void accountPositionActivityShouldBootstrapMonitorServiceAndRequestForegroundSnapshot() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java")
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
         assertTrue(source.contains("import com.binance.monitor.domain.account.AccountTimeRange;"));
         assertTrue(source.contains("ensureMonitorServiceStarted();\n        preloadManager.start();"));
-        assertTrue(source.contains("protected void onResume() {\n        super.onResume();\n        ensureMonitorServiceStarted();"));
+        assertTrue(source.contains("public void onPageShown() {\n        if (destroyed || !bound) {\n            return;\n        }\n        ensureMonitorServiceStarted();"));
         assertTrue("账户持仓页回到前台时应显式触发服务 bootstrap，确保服务端掉线后的远程会话恢复链能立即执行",
-                source.contains("MonitorServiceController.dispatch(this, AppConstants.ACTION_BOOTSTRAP);"));
+                source.contains("MonitorServiceController.dispatch(host.requireActivity(), AppConstants.ACTION_BOOTSTRAP);"));
         assertTrue(source.contains("requestForegroundEntrySnapshot();"));
         assertTrue(source.contains("private void requestForegroundEntrySnapshot() {"));
         assertTrue(source.contains("uiModelExecutor.execute(() -> preloadManager.fetchForUi(AccountTimeRange.ALL));"));
         assertTrue(source.contains("private void ensureMonitorServiceStarted() {"));
-        assertTrue(source.contains("MonitorServiceController.ensureStarted(this);"));
+        assertTrue(source.contains("MonitorServiceController.ensureStarted(host.requireActivity());"));
     }
 
     @Test
     public void accountPositionActivityShouldRestoreLastStableModelWhenSessionSubmissionFails() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java")
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
@@ -181,6 +178,17 @@ public class AccountPositionActivitySourceTest {
         assertTrue(source.contains("restoreLastStableUiModel();"));
         assertTrue(source.contains("if (!nextModel.getSignature().isEmpty()) {\n            lastStableUiModel = nextModel;\n        }"));
         assertFalse(source.contains("public void onSessionFailed(@NonNull String message) {\n                        pendingConnectionStatusText = \"\";\n                        updateConnectionStatusChip(resolveDisplayedConnectionStatusText(currentUiModel));\n                    }"));
+    }
+
+    @Test
+    public void accountPositionActivityShouldBridgeToMainHostAccountPositionTab() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java");
+
+        assertTrue(source.contains("import com.binance.monitor.ui.host.HostNavigationIntentFactory;"));
+        assertTrue(source.contains("import com.binance.monitor.ui.host.HostTab;"));
+        assertTrue(source.contains("startActivity(HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_POSITION));"));
+        assertTrue(source.contains("finish();"));
+        assertFalse(source.contains("AccountPositionPageController"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

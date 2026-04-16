@@ -11,14 +11,14 @@ import com.binance.monitor.data.model.AbnormalRecord;
 import java.util.ArrayList;
 import java.util.List;
 
-final class RecentAbnormalRecordHelper {
+public final class RecentAbnormalRecordHelper {
 
     private RecentAbnormalRecordHelper() {
     }
 
     // 直接截取最新原始记录，避免时间过滤把真正最近的异常挡掉。
     @NonNull
-    static List<AbnormalRecord> buildRecentDisplay(List<AbnormalRecord> source, long nowMs, int limit) {
+    public static List<AbnormalRecord> buildRecentDisplay(List<AbnormalRecord> source, long nowMs, int limit) {
         List<AbnormalRecord> output = new ArrayList<>();
         if (source == null || source.isEmpty() || limit <= 0) {
             return output;

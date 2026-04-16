@@ -271,6 +271,26 @@ public class CandleAggregationHelperTest {
         assertTrue(retained.isEmpty());
     }
 
+    @Test
+    public void aggregateShouldTreatMonthlyIntervalAsMonthlyInsteadOfMinute() {
+        long januaryOpen = 1_704_067_200_000L;
+        long februaryOpen = 1_706_745_600_000L;
+        List<CandleEntry> source = Arrays.asList(
+                new CandleEntry("BTCUSDT", januaryOpen, januaryOpen + 24L * 60L * 60_000L - 1L,
+                        100d, 105d, 99d, 102d, 10d, 100d),
+                new CandleEntry("BTCUSDT", januaryOpen + 24L * 60L * 60_000L, januaryOpen + 2L * 24L * 60L * 60_000L - 1L,
+                        102d, 108d, 101d, 107d, 11d, 110d),
+                new CandleEntry("BTCUSDT", februaryOpen, februaryOpen + 24L * 60L * 60_000L - 1L,
+                        107d, 109d, 104d, 105d, 12d, 120d)
+        );
+
+        List<CandleEntry> result = CandleAggregationHelper.aggregate(source, "BTCUSDT", "1M", 10);
+
+        assertEquals(2, result.size());
+        assertEquals(januaryOpen, result.get(0).getOpenTime());
+        assertEquals(februaryOpen, result.get(1).getOpenTime());
+    }
+
     private CandleEntry candle(long openTime,
                                double open,
                                double high,

@@ -40,6 +40,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.drawable.DrawableCompat;
+import androidx.lifecycle.LifecycleOwner;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
@@ -73,7 +74,10 @@ import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
-import com.binance.monitor.ui.main.BottomTabVisibilityManager;
+import com.binance.monitor.ui.chart.MarketChartPageController;
+import com.binance.monitor.ui.chart.MarketChartPageRuntime;
+import com.binance.monitor.ui.host.HostNavigationIntentFactory;
+import com.binance.monitor.ui.host.HostTab;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
@@ -126,7 +130,6 @@ public class MarketChartActivity extends AppCompatActivity {
     private static final int RESTORE_WINDOW_LIMIT = 500;
     private static final int HISTORY_PAGE_LIMIT = 500;
     private static final int GAP_FILL_MAX_ROUNDS = 8;
-    private static final long CHART_OVERLAY_REFRESH_DEBOUNCE_MS = 120L;
 
     private static final class IntervalOption {
         private final String key;
@@ -163,11 +166,16 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private ActivityMarketChartBinding binding;
     private GatewayV2Client gatewayV2Client;
+    private MarketChartSeriesLoaderHelper chartSeriesLoaderHelper;
+    private MarketChartRealtimeTailHelper realtimeTailHelper;
     private GatewayV2TradeClient gatewayV2TradeClient;
     private MonitorRepository monitorRepository;
     private TradeExecutionCoordinator tradeExecutionCoordinator;
     private MarketChartTradeDialogCoordinator tradeDialogCoordinator;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private MarketChartPageController pageController;
+    private MarketChartPageRuntime pageRuntime;
+    private MarketChartDataCoordinator dataCoordinator;
     private ExecutorService ioExecutor;
     private Future<?> runningTask;
     private Future<?> loadMoreTask;
@@ -239,41 +247,17 @@ public class MarketChartActivity extends AppCompatActivity {
     private int volumePaneTopPx;
     private int volumePaneRightPx;
     private int volumePaneBottomPx;
-    private long nextAutoRefreshAtMs;
     private volatile boolean loadingMore;
     private long lastSuccessUpdateMs;
     private long lastSuccessfulRequestLatencyMs = -1L;
     private List<AbnormalRecord> abnormalRecords = new ArrayList<>();
-    private boolean chartScreenEntered;
-    private boolean accountOverlayRefreshPending;
     private String lastAccountOverlaySignature = "";
     private String lastAbnormalOverlaySignature = "";
     private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> {
-        scheduleChartOverlayRefresh();
+        if (pageRuntime != null) {
+            pageRuntime.scheduleChartOverlayRefresh();
+        }
         consumePendingTradeActionIfNeeded();
-    };
-    private final Runnable chartOverlayRefreshRunnable = new Runnable() {
-        @Override
-        public void run() {
-            accountOverlayRefreshPending = false;
-            updateAccountAnnotationsOverlay();
-        }
-    };
-    private final Runnable autoRefreshRunnable = new Runnable() {
-        @Override
-        public void run() {
-            requestKlines(false, true);
-            scheduleNextAutoRefresh();
-        }
-    };
-    private final Runnable refreshCountdownRunnable = new Runnable() {
-        @Override
-        public void run() {
-            updateRefreshCountdownText();
-            if (nextAutoRefreshAtMs > 0L) {
-                mainHandler.postDelayed(this, 1_000L);
-            }
-        }
     };
     private final MarketChartStartupGate startupGate = new MarketChartStartupGate();
     @Nullable
@@ -281,13 +265,433 @@ public class MarketChartActivity extends AppCompatActivity {
     private String pendingStartupDrawKey = "";
     private String lastConsumedTradeActionToken = "";
 
+    // 装配图表页数据协调器，把请求入口、实时观察和叠加层主链从旧 Activity 抽离。
+    private MarketChartDataCoordinator.Host createDataCoordinatorHost() {
+        return new MarketChartDataHostDelegate(new MarketChartDataHostDelegate.Owner() {
+            @Override
+            public MonitorRepository getMonitorRepository() {
+                return monitorRepository;
+            }
+
+            @NonNull
+            @Override
+            public LifecycleOwner getLifecycleOwner() {
+                return MarketChartActivity.this;
+            }
+
+            @Override
+            public String getSelectedSymbol() {
+                return selectedSymbol;
+            }
+
+            @NonNull
+            @Override
+            public MarketChartDataCoordinator.IntervalSelection getSelectedInterval() {
+                IntervalOption option = selectedInterval;
+                if (option == null) {
+                    return new MarketChartDataCoordinator.IntervalSelection("default", "default", RESTORE_WINDOW_LIMIT, false);
+                }
+                return new MarketChartDataCoordinator.IntervalSelection(
+                        option.key,
+                        option.apiInterval,
+                        option.limit,
+                        option.yearAggregate
+                );
+            }
+
+            @NonNull
+            @Override
+            public String buildCacheKey(@NonNull String symbol,
+                                        @NonNull MarketChartDataCoordinator.IntervalSelection interval) {
+                return MarketChartCacheKeyHelper.build(
+                        symbol,
+                        interval.getKey(),
+                        interval.getApiInterval(),
+                        interval.isYearAggregate()
+                );
+            }
+
+            @Override
+            public boolean cancelRunningRequestIfNeeded(boolean allowCancelRunning, boolean autoRefresh) {
+                if (runningTask != null && !runningTask.isDone()) {
+                    if (!allowCancelRunning) {
+                        boolean taskStale = autoRefresh && (System.currentTimeMillis() - runningTaskStartMs > 25_000L);
+                        if (!taskStale) {
+                            return false;
+                        }
+                    }
+                    runningTask.cancel(true);
+                    runningTask = null;
+                }
+                return true;
+            }
+
+            @Override
+            public List<CandleEntry> getCachedCandles(@NonNull String key) {
+                return MarketChartActivity.this.getCachedCandles(key);
+            }
+
+            @Override
+            public void schedulePersistedCacheRestore(@NonNull String key, boolean applyWhenLoaded) {
+                MarketChartActivity.this.schedulePersistedCacheRestore(key, applyWhenLoaded);
+            }
+
+            @Override
+            public List<CandleEntry> buildWarmDisplayCandles(@NonNull String symbol,
+                                                             @NonNull MarketChartDataCoordinator.IntervalSelection targetInterval) {
+                return MarketChartActivity.this.buildWarmDisplayCandles(
+                        symbol,
+                        toIntervalOption(targetInterval)
+                );
+            }
+
+            @Override
+            public void applyLocalDisplayCandles(@NonNull String key, @NonNull List<CandleEntry> candles) {
+                MarketChartActivity.this.applyLocalDisplayCandles(key, candles);
+            }
+
+            @NonNull
+            @Override
+            public String getActiveDataKey() {
+                return activeDataKey;
+            }
+
+            @NonNull
+            @Override
+            public List<CandleEntry> getLoadedCandles() {
+                return loadedCandles;
+            }
+
+            @Override
+            public long resolveLatestVisibleCandleTime(@Nullable List<CandleEntry> visible) {
+                return MarketChartActivity.this.resolveLatestVisibleCandleTime(visible);
+            }
+
+            @Override
+            public long intervalToMs(@NonNull String key) {
+                return MarketChartActivity.this.intervalToMs(key);
+            }
+
+            @Override
+            public boolean hasRealtimeTailSourceForChart() {
+                return MarketChartActivity.this.hasRealtimeTailSourceForChart();
+            }
+
+            @Override
+            public void applyRequestSkipState(@NonNull MarketChartRefreshHelper.SyncPlan refreshPlan) {
+                MarketChartActivity.this.applyRequestSkipState(refreshPlan);
+            }
+
+            @Override
+            public int nextRequestVersion() {
+                return ++requestVersion;
+            }
+
+            @Override
+            public void applyRequestStartState(boolean autoRefresh) {
+                MarketChartActivity.this.applyRequestStartState(autoRefresh);
+            }
+
+            @Override
+            public void setRunningTaskStartMs(long startedAtMs) {
+                runningTaskStartMs = startedAtMs;
+            }
+
+            @Override
+            public void cancelProgressiveGapFillTask() {
+                MarketChartActivity.this.cancelProgressiveGapFillTask();
+            }
+
+            @Override
+            public void submitRunningTask(@NonNull Runnable action) {
+                runningTask = ioExecutor.submit(action);
+            }
+
+            @NonNull
+            @Override
+            public List<CandleEntry> loadCandlesForRequest(@NonNull MarketChartRefreshHelper.SyncPlan plan,
+                                                           @Nullable List<CandleEntry> seed,
+                                                           long previousLatestOpenTime,
+                                                           long previousOldestOpenTime,
+                                                           int previousWindowSize,
+                                                           @NonNull String symbol,
+                                                           @NonNull MarketChartDataCoordinator.IntervalSelection interval) throws Exception {
+                return chartSeriesLoaderHelper.loadCandlesForRequest(
+                        plan,
+                        seed,
+                        symbol,
+                        interval,
+                        RESTORE_WINDOW_LIMIT,
+                        seriesGateway()
+                );
+            }
+
+            @Override
+            public void postToMainThread(@NonNull Runnable action) {
+                mainHandler.post(action);
+            }
+
+            @Override
+            public boolean shouldIgnoreRequestResult(int requestVersion) {
+                return requestVersion != MarketChartActivity.this.requestVersion || isFinishing() || isDestroyed();
+            }
+
+            @Override
+            public boolean shouldFollowLatestViewportOnRefresh() {
+                return MarketChartActivity.this.shouldFollowLatestViewportOnRefresh();
+            }
+
+            @Override
+            public void setActiveDataKey(@NonNull String key) {
+                activeDataKey = key;
+            }
+
+            @Override
+            public void applyDisplayCandles(@NonNull String key,
+                                            @NonNull List<CandleEntry> candles,
+                                            boolean keepViewport,
+                                            boolean shouldFollowLatest,
+                                            boolean updateMemoryCache) {
+                MarketChartActivity.this.applyDisplayCandles(
+                        key,
+                        candles,
+                        keepViewport,
+                        shouldFollowLatest,
+                        updateMemoryCache
+                );
+            }
+
+            @Override
+            public void persistClosedCandles(@NonNull String key,
+                                             @NonNull List<CandleEntry> finalProcessed,
+                                             @NonNull String symbol,
+                                             @NonNull MarketChartDataCoordinator.IntervalSelection interval) {
+                List<CandleEntry> closedPersistenceWindow =
+                        ChartPersistenceWindowHelper.retainClosedCandles(finalProcessed, System.currentTimeMillis());
+                persistCandlesAsync(key, closedPersistenceWindow, symbol, toIntervalOption(interval), true);
+            }
+
+            @Override
+            public void startProgressiveGapFill(@NonNull String reqSymbol,
+                                                @NonNull MarketChartDataCoordinator.IntervalSelection reqInterval,
+                                                int current,
+                                                @Nullable List<CandleEntry> visibleWindow,
+                                                long previousOldestOpenTime,
+                                                int previousWindowSize) {
+                MarketChartActivity.this.startProgressiveGapFill(
+                        reqSymbol,
+                        toIntervalOption(reqInterval),
+                        current,
+                        visibleWindow,
+                        previousOldestOpenTime,
+                        previousWindowSize
+                );
+            }
+
+            @Override
+            public void applyRequestSuccessState(boolean autoRefresh, long requestStartedAtMs) {
+                MarketChartActivity.this.applyRequestSuccessState(autoRefresh, requestStartedAtMs);
+            }
+
+            @Override
+            public void applyRequestFailureState(boolean autoRefresh, @NonNull String message) {
+                MarketChartActivity.this.applyRequestFailureState(autoRefresh, message);
+            }
+
+            @Override
+            public boolean beginLoadMore() {
+                if (loadingMore || loadedCandles.isEmpty()) {
+                    return false;
+                }
+                loadingMore = true;
+                return true;
+            }
+
+            @Override
+            public void notifyLoadMoreFinished() {
+                binding.klineChartView.notifyLoadMoreFinished();
+            }
+
+            @Override
+            public void cancelLoadMoreTask() {
+                if (loadMoreTask != null) {
+                    loadMoreTask.cancel(true);
+                }
+            }
+
+            @Override
+            public void submitLoadMoreTask(@NonNull Runnable action) {
+                loadMoreTask = ioExecutor.submit(action);
+            }
+
+            @NonNull
+            @Override
+            public List<CandleEntry> fetchV2SeriesBefore(@NonNull String symbol,
+                                                         @NonNull MarketChartDataCoordinator.IntervalSelection interval,
+                                                         int limit,
+                                                         long endTimeInclusive) throws Exception {
+                return chartSeriesLoaderHelper.fetchV2SeriesBefore(
+                        symbol,
+                        interval,
+                        limit,
+                        endTimeInclusive,
+                        seriesGateway()
+                );
+            }
+
+            @NonNull
+            @Override
+            public List<CandleEntry> aggregateToYear(@Nullable List<CandleEntry> source, @NonNull String symbol) {
+                return chartSeriesLoaderHelper.aggregateToYear(source, symbol);
+            }
+
+            @Override
+            public boolean shouldIgnoreLoadMoreResult(@NonNull String reqSymbol,
+                                                      @NonNull MarketChartDataCoordinator.IntervalSelection reqInterval) {
+                return isFinishing()
+                        || isDestroyed()
+                        || !reqSymbol.equals(selectedSymbol)
+                        || !sameInterval(reqInterval, selectedInterval)
+                        || loadedCandles.isEmpty();
+            }
+
+            @Override
+            public void applyLoadMoreSuccessState(@NonNull String reqSymbol,
+                                                  @NonNull MarketChartDataCoordinator.IntervalSelection reqInterval,
+                                                  @NonNull List<CandleEntry> older) {
+                MarketChartActivity.this.applyLoadMoreSuccessState(
+                        reqSymbol,
+                        toIntervalOption(reqInterval),
+                        older
+                );
+            }
+
+            @Override
+            public void finishLoadMoreState() {
+                MarketChartActivity.this.finishLoadMoreState();
+            }
+
+            @Override
+            public int getRestoreWindowLimit() {
+                return RESTORE_WINDOW_LIMIT;
+            }
+
+            @Override
+            public int getHistoryPageLimit() {
+                return HISTORY_PAGE_LIMIT;
+            }
+
+            @Override
+            public void applyRealtimeChartTail(@Nullable KlineData latestKline) {
+                MarketChartActivity.this.applyRealtimeChartTail(latestKline);
+            }
+
+            @Override
+            public void updateVolumeThresholdOverlay() {
+                MarketChartActivity.this.updateVolumeThresholdOverlay();
+            }
+
+            @Override
+            public void updateAccountAnnotationsOverlay() {
+                MarketChartActivity.this.updateAccountAnnotationsOverlay();
+            }
+
+            @Override
+            public void updateAbnormalAnnotationsOverlay() {
+                MarketChartActivity.this.updateAbnormalAnnotationsOverlay();
+            }
+
+            @Override
+            public boolean isChartViewReady() {
+                return binding != null && binding.klineChartView != null;
+            }
+
+            @Override
+            public boolean isAccountSessionActive() {
+                return ConfigManager.getInstance(MarketChartActivity.this).isAccountSessionActive();
+            }
+
+            @Nullable
+            @Override
+            public AccountStatsPreloadManager.Cache getLatestAccountCache() {
+                return accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache();
+            }
+
+            @Nullable
+            @Override
+            public AccountSnapshot resolveChartOverlaySnapshot(boolean sessionActive,
+                                                               @Nullable AccountStatsPreloadManager.Cache cache) {
+                return MarketChartActivity.this.resolveChartOverlaySnapshot(sessionActive, cache);
+            }
+
+            @Override
+            public boolean isCurrentOverlayBoundToActiveSession() {
+                return MarketChartActivity.this.isCurrentOverlayBoundToActiveSession();
+            }
+
+            @Override
+            public void clearAccountAnnotationsOverlay() {
+                MarketChartActivity.this.clearAccountAnnotationsOverlay();
+            }
+
+            @NonNull
+            @Override
+            public String buildCurrentCacheKey() {
+                return buildCacheKey(selectedSymbol, getSelectedInterval());
+            }
+
+            @Override
+            public boolean shouldDeferOverlayUntilPrimaryDisplay(@NonNull String key) {
+                return startupGate.shouldDeferUntilPrimaryDisplay(key);
+            }
+
+            @Override
+            public void replacePendingOverlay(@NonNull String key, @NonNull Runnable action) {
+                startupGate.replacePendingOverlay(key, action);
+            }
+
+            @Override
+            public void applyChartOverlaySnapshot(@NonNull AccountSnapshot snapshot,
+                                                  @Nullable AccountStatsPreloadManager.Cache cache) {
+                MarketChartActivity.this.applyChartOverlaySnapshot(snapshot, cache);
+            }
+
+            private IntervalOption toIntervalOption(@NonNull MarketChartDataCoordinator.IntervalSelection interval) {
+                for (IntervalOption candidate : INTERVALS) {
+                    if (candidate != null
+                            && candidate.yearAggregate == interval.isYearAggregate()
+                            && candidate.limit == interval.getLimit()
+                            && interval.getKey().equals(candidate.key)
+                            && interval.getApiInterval().equals(candidate.apiInterval)) {
+                        return candidate;
+                    }
+                }
+                return selectedInterval == null ? INTERVALS[0] : selectedInterval;
+            }
+
+            private boolean sameInterval(@NonNull MarketChartDataCoordinator.IntervalSelection interval,
+                                         @Nullable IntervalOption current) {
+                return current != null
+                        && interval.isYearAggregate() == current.yearAggregate
+                        && interval.getLimit() == current.limit
+                        && interval.getKey().equals(current.key)
+                        && interval.getApiInterval().equals(current.apiInterval);
+            }
+        });
+    }
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (bridgeLegacyEntryToMainHost(getIntent())) {
+            return;
+        }
         binding = ActivityMarketChartBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
-        ensureMonitorServiceStarted();
+        MonitorServiceController.ensureStarted(this);
         gatewayV2Client = new GatewayV2Client(this);
+        chartSeriesLoaderHelper = new MarketChartSeriesLoaderHelper();
+        realtimeTailHelper = new MarketChartRealtimeTailHelper();
         gatewayV2TradeClient = new GatewayV2TradeClient(this);
         monitorRepository = MonitorRepository.getInstance(getApplicationContext());
         ioExecutor = Executors.newFixedThreadPool(2);
@@ -306,8 +710,266 @@ public class MarketChartActivity extends AppCompatActivity {
                 tradeExecutionCoordinator,
                 () -> selectedSymbol,
                 () -> loadedCandles,
-                this::refreshChartOverlays
+                () -> {
+                    if (dataCoordinator != null) {
+                        dataCoordinator.refreshChartOverlays();
+                    }
+                }
         );
+        dataCoordinator = new MarketChartDataCoordinator(createDataCoordinatorHost());
+        pageRuntime = new MarketChartPageRuntime(new MarketChartPageRuntime.Host() {
+            @NonNull
+            @Override
+            public AppCompatActivity requireActivity() {
+                return MarketChartActivity.this;
+            }
+
+            @Override
+            public void bindPageContent(@NonNull ActivityMarketChartBinding binding) {
+                setupChart();
+                setupSymbolSelector();
+                setupIntervalButtons();
+                setupIndicatorButtons();
+                setupChartPositionPanel();
+                normalizeOptionButtons();
+                binding.btnRetryLoad.setOnClickListener(v -> dataCoordinator.requestKlines(true, false));
+            }
+
+            @Override
+            public void applyPagePalette() {
+                applyPaletteStyles();
+            }
+
+            @Override
+            public void applyPrivacyMaskState() {
+                MarketChartActivity.this.applyPrivacyMaskState();
+            }
+
+            @Override
+            public void attachAccountCacheListener() {
+                if (accountStatsPreloadManager != null) {
+                    accountStatsPreloadManager.addCacheListener(accountCacheListener);
+                }
+            }
+
+            @Override
+            public void restoreChartOverlayFromLatestCacheOrEmpty() {
+                dataCoordinator.restoreChartOverlayFromLatestCacheOrEmpty();
+            }
+
+            @Override
+            public void consumePendingTradeActionIfNeeded() {
+                MarketChartActivity.this.consumePendingTradeActionIfNeeded();
+            }
+
+            @Override
+            public boolean shouldRequestKlinesOnResume() {
+                return MarketChartActivity.this.shouldRequestKlinesOnResume();
+            }
+
+            @Override
+            public void requestKlines() {
+                dataCoordinator.requestKlines(true, false);
+            }
+
+            @Override
+            public void refreshChartOverlays() {
+                dataCoordinator.refreshChartOverlays();
+            }
+
+            @Override
+            public void restorePersistedCache() {
+                MarketChartActivity.this.restorePersistedCache();
+            }
+
+            @Override
+            public void updateStateCount() {
+                MarketChartActivity.this.updateStateCount();
+            }
+
+            @Override
+            public void cancelChartBackgroundTasks() {
+                MarketChartActivity.this.cancelChartBackgroundTasks();
+            }
+
+            @Override
+            public void cancelTradeTasks() {
+                if (tradeDialogCoordinator != null) {
+                    tradeDialogCoordinator.cancelTradeTasks();
+                }
+            }
+
+            @Override
+            public void detachAccountCacheListener() {
+                MarketChartActivity.this.detachAccountCacheListener();
+            }
+
+            @Override
+            public void clearStartupPrimaryDrawObserver() {
+                MarketChartActivity.this.clearStartupPrimaryDrawObserver();
+            }
+
+            @Override
+            public void shutdownIoExecutor() {
+                MarketChartActivity.this.shutdownIoExecutor();
+            }
+
+            @Override
+            public void updateAccountAnnotationsOverlay() {
+                MarketChartActivity.this.updateAccountAnnotationsOverlay();
+            }
+
+            @Override
+            public long getChartOverlayRefreshDebounceMs() {
+                return 120L;
+            }
+
+            @Override
+            public void requestAutoRefreshKlines() {
+                dataCoordinator.requestKlines(false, true);
+            }
+
+            @Override
+            public boolean shouldShowRefreshCountdown() {
+                return MarketChartActivity.this.shouldShowRefreshCountdown();
+            }
+
+            @Override
+            public long resolveAutoRefreshDelayMs() {
+                return MarketChartActivity.this.resolveAutoRefreshDelayMs();
+            }
+
+            @Override
+            public void renderRefreshCountdown(long nextAutoRefreshAtMs) {
+                MarketChartActivity.this.renderRefreshCountdown(nextAutoRefreshAtMs);
+            }
+
+            @Override
+            public void toggleHistoryTradeVisibilityState() {
+                showHistoryTrades = !showHistoryTrades;
+                persistHistoryTradeVisibility();
+            }
+
+            @Override
+            public void togglePositionOverlayVisibilityState() {
+                showPositionOverlays = !showPositionOverlays;
+                persistPositionOverlayVisibility();
+            }
+
+            @Override
+            public void toggleIndicatorState(@NonNull String indicatorKey) {
+                switch (indicatorKey) {
+                    case MarketChartPageRuntime.INDICATOR_VOLUME:
+                        showVolume = !showVolume;
+                        break;
+                    case MarketChartPageRuntime.INDICATOR_MACD:
+                        showMacd = !showMacd;
+                        break;
+                    case MarketChartPageRuntime.INDICATOR_STOCH_RSI:
+                        showStochRsi = !showStochRsi;
+                        break;
+                    case MarketChartPageRuntime.INDICATOR_BOLL:
+                        showBoll = !showBoll;
+                        break;
+                    case MarketChartPageRuntime.INDICATOR_MA:
+                        showMa = !showMa;
+                        break;
+                    case MarketChartPageRuntime.INDICATOR_EMA:
+                        showEma = !showEma;
+                        break;
+                    case MarketChartPageRuntime.INDICATOR_SRA:
+                        showSra = !showSra;
+                        break;
+                    case MarketChartPageRuntime.INDICATOR_AVL:
+                        showAvl = !showAvl;
+                        break;
+                    case MarketChartPageRuntime.INDICATOR_RSI:
+                        showRsi = !showRsi;
+                        break;
+                    case MarketChartPageRuntime.INDICATOR_KDJ:
+                        showKdj = !showKdj;
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            @Override
+            public void notifyIndicatorSelectionChanged() {
+                binding.klineChartView.setIndicatorsVisible(showVolume, showMacd, showStochRsi, showBoll);
+                binding.klineChartView.setExtendedIndicatorsVisible(showMa, showEma, showSra, showAvl, showRsi, showKdj);
+                updateIndicatorButtons();
+                dataCoordinator.refreshChartOverlays();
+                binding.klineChartView.post(() -> updateScrollToLatestButtonPosition());
+            }
+
+            @Override
+            public boolean canApplySelectedSymbol(@NonNull String symbol) {
+                return !symbol.trim().isEmpty() && !symbol.equalsIgnoreCase(selectedSymbol);
+            }
+
+            @Override
+            public void commitSelectedSymbol(@NonNull String symbol) {
+                selectedSymbol = symbol.trim().toUpperCase(Locale.ROOT);
+                syncSymbolSelector();
+            }
+
+            @Override
+            public boolean canApplySelectedInterval(@NonNull String intervalKey) {
+                IntervalOption option = findIntervalOptionByKey(intervalKey);
+                return option != null && !option.key.equals(selectedInterval.key);
+            }
+
+            @Override
+            public void commitSelectedInterval(@NonNull String intervalKey) {
+                IntervalOption option = findIntervalOptionByKey(intervalKey);
+                if (option == null) {
+                    return;
+                }
+                selectedInterval = option;
+                persistSelectedInterval();
+                updateIntervalButtons();
+            }
+
+            @Override
+            public void invalidateChartDisplayContext() {
+                MarketChartActivity.this.invalidateChartDisplayContext();
+            }
+
+            @Override
+            public boolean isEmbeddedInHostShell() {
+                return false;
+            }
+
+            @Override
+            public void openMarketMonitor() {
+                MarketChartActivity.this.openMarketMonitor();
+            }
+
+            @Override
+            public void openAccountStats() {
+                MarketChartActivity.this.openAccountStats();
+            }
+
+            @Override
+            public void openAccountPosition() {
+                MarketChartActivity.this.openAccountPosition();
+            }
+
+            @Override
+            public void openSettings() {
+                MarketChartActivity.this.openSettings();
+            }
+        });
+        pageController = new MarketChartPageController(new MarketChartPageHostDelegate(
+                pageRuntime), binding, new MarketChartPageController.BottomNavBinding(
+                binding.tabBar,
+                binding.tabMarketMonitor,
+                binding.tabMarketChart,
+                binding.tabAccountPosition,
+                binding.tabAccountStats,
+                binding.tabSettings
+        ));
         ensureChartCacheSchemaCurrent();
         applyIntentSymbol(getIntent(), false);
         restoreSelectedInterval();
@@ -320,41 +982,25 @@ public class MarketChartActivity extends AppCompatActivity {
                 updateAbnormalAnnotationsOverlay();
             });
         }
-        observeRealtimeDisplayKlines();
-
-        setupChart();
-        setupSymbolSelector();
-        setupIntervalButtons();
-        setupIndicatorButtons();
-        setupChartPositionPanel();
-        setupBottomNav();
-        normalizeOptionButtons();
-        binding.btnRetryLoad.setOnClickListener(v -> requestKlines());
-        applyPaletteStyles();
-        applyPrivacyMaskState();
-        restorePersistedCache(buildCacheKey(selectedSymbol, selectedInterval));
-        updateStateCount();
-        updateRefreshCountdownText();
+        dataCoordinator.observeRealtimeDisplayKlines();
+        pageController.bind();
+        pageController.onColdStart();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        ensureMonitorServiceStarted();
-        applyPaletteStyles();
-        if (accountStatsPreloadManager != null) {
-            accountStatsPreloadManager.addCacheListener(accountCacheListener);
+        if (pageController != null) {
+            pageController.onPageShown();
         }
-        restoreChartOverlayFromLatestCacheOrEmpty();
-        consumePendingTradeActionIfNeeded();
-        applyPrivacyMaskState();
-        enterChartScreen(!chartScreenEntered);
-        chartScreenEntered = true;
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (bridgeLegacyEntryToMainHost(intent)) {
+            return;
+        }
         setIntent(intent);
         lastConsumedTradeActionToken = "";
         applyIntentSymbol(intent, true);
@@ -363,36 +1009,31 @@ public class MarketChartActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
-        stopAutoRefresh();
-        cancelChartBackgroundTasks();
-        if (tradeDialogCoordinator != null) {
-            tradeDialogCoordinator.cancelTradeTasks();
-        }
-        mainHandler.removeCallbacks(chartOverlayRefreshRunnable);
-        accountOverlayRefreshPending = false;
-        if (accountStatsPreloadManager != null) {
-            accountStatsPreloadManager.removeCacheListener(accountCacheListener);
+        if (pageController != null) {
+            pageController.onPageHidden();
         }
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
-        stopAutoRefresh();
-        mainHandler.removeCallbacks(chartOverlayRefreshRunnable);
-        accountOverlayRefreshPending = false;
-        clearStartupPrimaryDrawObserver();
-        if (accountStatsPreloadManager != null) {
-            accountStatsPreloadManager.removeCacheListener(accountCacheListener);
-        }
-        cancelChartBackgroundTasks();
-        if (tradeDialogCoordinator != null) {
-            tradeDialogCoordinator.cancelTradeTasks();
-        }
-        if (ioExecutor != null) {
-            ioExecutor.shutdownNow();
+        if (pageController != null) {
+            pageController.onDestroy();
+            pageController = null;
         }
         super.onDestroy();
+    }
+
+    private boolean bridgeLegacyEntryToMainHost(@Nullable Intent sourceIntent) {
+        Intent bridgeIntent = HostNavigationIntentFactory.forTab(this, HostTab.MARKET_CHART);
+        Bundle sourceExtras = sourceIntent == null ? null : sourceIntent.getExtras();
+        if (sourceExtras != null) {
+            bridgeIntent.putExtras(sourceExtras);
+        }
+        startActivity(bridgeIntent);
+        overridePendingTransition(0, 0);
+        finish();
+        return true;
     }
 
     private void setupChart() {
@@ -407,7 +1048,11 @@ public class MarketChartActivity extends AppCompatActivity {
                 renderInfo(value.candle, value.macdDif, value.macdDea, value.macdHist, value.stochK, value.stochD);
             }
         });
-        binding.klineChartView.setOnRequestMoreListener(this::requestMoreHistory);
+        binding.klineChartView.setOnRequestMoreListener(beforeOpenTime -> {
+            if (dataCoordinator != null) {
+                dataCoordinator.requestMoreHistory(beforeOpenTime);
+            }
+        });
         binding.klineChartView.setOnPricePaneLayoutListener((left, top, right, bottom) -> {
             pricePaneLeftPx = left;
             pricePaneTopPx = top;
@@ -449,8 +1094,8 @@ public class MarketChartActivity extends AppCompatActivity {
             binding.klineChartView.scrollToLatest();
             updateScrollToLatestButtonPosition();
         });
-        binding.btnTogglePositionOverlays.setOnClickListener(v -> togglePositionOverlayVisibility());
-        binding.btnToggleHistoryTrades.setOnClickListener(v -> toggleHistoryTradeVisibility());
+        binding.btnTogglePositionOverlays.setOnClickListener(v -> pageRuntime.togglePositionOverlayVisibility());
+        binding.btnToggleHistoryTrades.setOnClickListener(v -> pageRuntime.toggleHistoryTradeVisibility());
         binding.btnScrollToLatest.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updateScrollToLatestButtonPosition());
         binding.tvChartRefreshCountdown.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
@@ -471,7 +1116,7 @@ public class MarketChartActivity extends AppCompatActivity {
         updateHistoryTradeToggleButton();
         updatePositionOverlayButtonPosition();
         updateHistoryTradeButtonPosition();
-        refreshChartOverlays();
+        dataCoordinator.refreshChartOverlays();
     }
 
     // 根据隐私状态控制敏感叠加层和当前持仓模块，不再使用整页遮罩。
@@ -507,7 +1152,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     return;
                 }
                 updateChartSymbolPickerLabel(symbol);
-                switchSymbol(symbol);
+                pageRuntime.requestSymbolSelection(symbol);
             }
 
             @Override
@@ -567,8 +1212,7 @@ public class MarketChartActivity extends AppCompatActivity {
         syncSymbolSelector();
         if (triggerReload) {
             invalidateChartDisplayContext();
-            requestKlines();
-            scheduleNextAutoRefresh();
+            pageRuntime.requestChartSelectionReload();
         }
     }
 
@@ -706,17 +1350,6 @@ public class MarketChartActivity extends AppCompatActivity {
         return null;
     }
 
-    // 统一处理图表页进入前台：冷启动只发起一次初始请求，普通切页返回只恢复消费节奏。
-    private void enterChartScreen(boolean coldStart) {
-        if (coldStart) {
-            requestKlines();
-        } else if (shouldRequestKlinesOnResume()) {
-            requestKlines();
-        }
-        refreshChartOverlays();
-        startAutoRefresh();
-    }
-
     private boolean isSupportedSymbol(@Nullable String symbol) {
         if (symbol == null || symbol.trim().isEmpty()) {
             return false;
@@ -731,30 +1364,30 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private void setupIntervalButtons() {
-        binding.btnInterval1m.setOnClickListener(v -> switchInterval(INTERVALS[0]));
-        binding.btnInterval5m.setOnClickListener(v -> switchInterval(INTERVALS[1]));
-        binding.btnInterval15m.setOnClickListener(v -> switchInterval(INTERVALS[2]));
-        binding.btnInterval30m.setOnClickListener(v -> switchInterval(INTERVALS[3]));
-        binding.btnInterval1h.setOnClickListener(v -> switchInterval(INTERVALS[4]));
-        binding.btnInterval4h.setOnClickListener(v -> switchInterval(INTERVALS[5]));
-        binding.btnInterval1d.setOnClickListener(v -> switchInterval(INTERVALS[6]));
-        binding.btnInterval1w.setOnClickListener(v -> switchInterval(INTERVALS[7]));
-        binding.btnInterval1mo.setOnClickListener(v -> switchInterval(INTERVALS[8]));
-        binding.btnInterval1y.setOnClickListener(v -> switchInterval(INTERVALS[9]));
+        binding.btnInterval1m.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[0].key));
+        binding.btnInterval5m.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[1].key));
+        binding.btnInterval15m.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[2].key));
+        binding.btnInterval30m.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[3].key));
+        binding.btnInterval1h.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[4].key));
+        binding.btnInterval4h.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[5].key));
+        binding.btnInterval1d.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[6].key));
+        binding.btnInterval1w.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[7].key));
+        binding.btnInterval1mo.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[8].key));
+        binding.btnInterval1y.setOnClickListener(v -> pageRuntime.requestIntervalSelection(INTERVALS[9].key));
         updateIntervalButtons();
     }
 
     private void setupIndicatorButtons() {
-        binding.btnIndicatorVolume.setOnClickListener(v -> toggleIndicator(() -> showVolume = !showVolume));
-        binding.btnIndicatorMacd.setOnClickListener(v -> toggleIndicator(() -> showMacd = !showMacd));
-        binding.btnIndicatorStochRsi.setOnClickListener(v -> toggleIndicator(() -> showStochRsi = !showStochRsi));
-        binding.btnIndicatorBoll.setOnClickListener(v -> toggleIndicator(() -> showBoll = !showBoll));
-        binding.btnIndicatorMa.setOnClickListener(v -> toggleIndicator(() -> showMa = !showMa));
-        binding.btnIndicatorEma.setOnClickListener(v -> toggleIndicator(() -> showEma = !showEma));
-        binding.btnIndicatorSra.setOnClickListener(v -> toggleIndicator(() -> showSra = !showSra));
-        binding.btnIndicatorAvl.setOnClickListener(v -> toggleIndicator(() -> showAvl = !showAvl));
-        binding.btnIndicatorRsi.setOnClickListener(v -> toggleIndicator(() -> showRsi = !showRsi));
-        binding.btnIndicatorKdj.setOnClickListener(v -> toggleIndicator(() -> showKdj = !showKdj));
+        binding.btnIndicatorVolume.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_VOLUME));
+        binding.btnIndicatorMacd.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_MACD));
+        binding.btnIndicatorStochRsi.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_STOCH_RSI));
+        binding.btnIndicatorBoll.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_BOLL));
+        binding.btnIndicatorMa.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_MA));
+        binding.btnIndicatorEma.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_EMA));
+        binding.btnIndicatorSra.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_SRA));
+        binding.btnIndicatorAvl.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_AVL));
+        binding.btnIndicatorRsi.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_RSI));
+        binding.btnIndicatorKdj.setOnClickListener(v -> pageRuntime.toggleIndicator(MarketChartPageRuntime.INDICATOR_KDJ));
 
         binding.btnIndicatorVolume.setOnLongClickListener(v -> {
             showIndicatorParamDialog(
@@ -777,7 +1410,7 @@ public class MarketChartActivity extends AppCompatActivity {
                         macdSlowPeriod = Math.max(macdFastPeriod + 1, values[1]);
                         macdSignalPeriod = values[2];
                         applyCoreIndicatorParamsToChart();
-                        onIndicatorChanged();
+                        pageRuntime.notifyIndicatorSelectionChanged();
                     });
             return true;
         });
@@ -791,7 +1424,7 @@ public class MarketChartActivity extends AppCompatActivity {
                         bollPeriod = values[0];
                         bollStdMultiplier = values[1];
                         applyCoreIndicatorParamsToChart();
-                        onIndicatorChanged();
+                        pageRuntime.notifyIndicatorSelectionChanged();
                     });
             return true;
         });
@@ -806,7 +1439,7 @@ public class MarketChartActivity extends AppCompatActivity {
                         stochRsiSmoothK = values[1];
                         stochRsiSmoothD = values[2];
                         applyCoreIndicatorParamsToChart();
-                        onIndicatorChanged();
+                        pageRuntime.notifyIndicatorSelectionChanged();
                     });
             return true;
         });
@@ -820,7 +1453,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     values -> {
                         maPeriod = values[0];
                         applyAdvancedIndicatorParamsToChart();
-                        onIndicatorChanged();
+                        pageRuntime.notifyIndicatorSelectionChanged();
                     });
             return true;
         });
@@ -833,7 +1466,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     values -> {
                         emaPeriod = values[0];
                         applyAdvancedIndicatorParamsToChart();
-                        onIndicatorChanged();
+                        pageRuntime.notifyIndicatorSelectionChanged();
                     });
             return true;
         });
@@ -846,7 +1479,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     values -> {
                         sraPeriod = values[0];
                         applyAdvancedIndicatorParamsToChart();
-                        onIndicatorChanged();
+                        pageRuntime.notifyIndicatorSelectionChanged();
                     });
             return true;
         });
@@ -859,7 +1492,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     values -> {
                         avlPeriod = values[0];
                         applyAdvancedIndicatorParamsToChart();
-                        onIndicatorChanged();
+                        pageRuntime.notifyIndicatorSelectionChanged();
                     });
             return true;
         });
@@ -872,7 +1505,7 @@ public class MarketChartActivity extends AppCompatActivity {
                     values -> {
                         rsiPeriod = values[0];
                         applyAdvancedIndicatorParamsToChart();
-                        onIndicatorChanged();
+                        pageRuntime.notifyIndicatorSelectionChanged();
                     });
             return true;
         });
@@ -887,19 +1520,11 @@ public class MarketChartActivity extends AppCompatActivity {
                         kdjSmoothK = values[1];
                         kdjSmoothD = values[2];
                         applyAdvancedIndicatorParamsToChart();
-                        onIndicatorChanged();
+                        pageRuntime.notifyIndicatorSelectionChanged();
                     });
             return true;
         });
         updateIndicatorButtons();
-    }
-
-    private void toggleIndicator(Runnable action) {
-        if (action == null) {
-            return;
-        }
-        action.run();
-        onIndicatorChanged();
     }
 
     // 创建图表页复用的交易执行协调器，统一复用检查、确认和强刷逻辑。
@@ -947,7 +1572,7 @@ public class MarketChartActivity extends AppCompatActivity {
                 )
         );
         binding.tvChartOverlayMeta.setText("更新时间 --");
-        restoreChartOverlayFromLatestCacheOrEmpty();
+        dataCoordinator.restoreChartOverlayFromLatestCacheOrEmpty();
     }
 
     // 统一创建持仓明细排序下拉项，保证主题切换后选项仍可见。
@@ -962,70 +1587,6 @@ public class MarketChartActivity extends AppCompatActivity {
             return pendingLots;
         }
         return Math.abs(item.getQuantity());
-    }
-
-    private void setupBottomNav() {
-        updateBottomTabs(false, true, false, false, false);
-        binding.tabMarketMonitor.setOnClickListener(v -> openMarketMonitor());
-        binding.tabMarketChart.setOnClickListener(v -> updateBottomTabs(false, true, false, false, false));
-        binding.tabAccountStats.setOnClickListener(v -> openAccountStats());
-        binding.tabAccountPosition.setOnClickListener(v -> openAccountPosition());
-        binding.tabSettings.setOnClickListener(v -> openSettings());
-    }
-
-    private void updateBottomTabs(boolean market,
-                                  boolean chart,
-                                  boolean account,
-                                  boolean accountPosition,
-                                  boolean settings) {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        BottomTabVisibilityManager.apply(this,
-                binding.tabMarketMonitor,
-                binding.tabMarketChart,
-                binding.tabAccountStats,
-                binding.tabAccountPosition,
-                binding.tabSettings);
-        binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
-        styleNavTab(binding.tabMarketMonitor, market);
-        styleNavTab(binding.tabMarketChart, chart);
-        styleNavTab(binding.tabAccountStats, account);
-        styleNavTab(binding.tabAccountPosition, accountPosition);
-        styleNavTab(binding.tabSettings, settings);
-    }
-
-    private void styleNavTab(TextView button, boolean selected) {
-        UiPaletteManager.styleBottomNavTab(button, selected, UiPaletteManager.resolve(this));
-    }
-
-    private void switchSymbol(String symbol) {
-        if (symbol == null || symbol.trim().isEmpty() || symbol.equalsIgnoreCase(selectedSymbol)) {
-            return;
-        }
-        selectedSymbol = symbol.trim().toUpperCase(Locale.ROOT);
-        syncSymbolSelector();
-        invalidateChartDisplayContext();
-        requestKlines();
-        scheduleNextAutoRefresh();
-    }
-
-    private void switchInterval(IntervalOption option) {
-        if (option == null || option.key.equals(selectedInterval.key)) {
-            return;
-        }
-        selectedInterval = option;
-        persistSelectedInterval();
-        updateIntervalButtons();
-        invalidateChartDisplayContext();
-        requestKlines();
-        scheduleNextAutoRefresh();
-    }
-
-    private void onIndicatorChanged() {
-        binding.klineChartView.setIndicatorsVisible(showVolume, showMacd, showStochRsi, showBoll);
-        binding.klineChartView.setExtendedIndicatorsVisible(showMa, showEma, showSra, showAvl, showRsi, showKdj);
-        updateIndicatorButtons();
-        refreshChartOverlays();
-        binding.klineChartView.post(() -> updateScrollToLatestButtonPosition());
     }
 
     private void applyAdvancedIndicatorParamsToChart() {
@@ -1128,237 +1689,17 @@ public class MarketChartActivity extends AppCompatActivity {
         }
     }
 
-    private void requestKlines() {
-        requestKlines(true, false);
-    }
-
-    private void requestKlines(boolean allowCancelRunning, boolean autoRefresh) {
-        final String key = buildCacheKey(selectedSymbol, selectedInterval);
-
-        if (runningTask != null && !runningTask.isDone()) {
-            if (!allowCancelRunning) {
-                boolean taskStale = autoRefresh && (System.currentTimeMillis() - runningTaskStartMs > 25_000L);
-                if (!taskStale) {
-                    return;
-                }
-            }
-            runningTask.cancel(true);
-            runningTask = null;
-        }
-
-        boolean shouldWarmDisplay = ChartWarmDisplayPolicyHelper.shouldWarmDisplay(
-                loadedCandles.isEmpty(),
-                !key.equals(activeDataKey)
-        );
-        List<CandleEntry> memoryCached = getCachedCandles(key);
-        if (!MarketChartDisplayHelper.isSeriesCompatibleForInterval(selectedInterval.key, memoryCached)) {
-            memoryCached = null;
-        }
-        if (memoryCached == null || memoryCached.isEmpty()) {
-            schedulePersistedCacheRestore(key, shouldWarmDisplay);
-        }
-        if (shouldWarmDisplay) {
-            List<CandleEntry> cached = memoryCached;
-            if (cached == null || cached.isEmpty()) {
-                cached = buildWarmDisplayCandles(selectedSymbol, selectedInterval);
-            }
-            if (cached != null && !cached.isEmpty()) {
-                applyLocalDisplayCandles(key, cached);
-            }
-        }
-
-        List<CandleEntry> localForPlan = key.equals(activeDataKey)
-                ? loadedCandles
-                : memoryCached;
-        if (!MarketChartDisplayHelper.isSeriesCompatibleForInterval(selectedInterval.key, localForPlan)) {
-            localForPlan = null;
-        }
-        long latestVisibleTime = resolveLatestVisibleCandleTime(localForPlan);
-        MarketChartRefreshHelper.SyncPlan refreshPlan = MarketChartRefreshHelper.resolvePlan(
-                localForPlan,
-                selectedInterval.limit,
-                RESTORE_WINDOW_LIMIT,
-                System.currentTimeMillis(),
-                latestVisibleTime,
-                intervalToMs(selectedInterval.key),
-                selectedInterval.yearAggregate,
-                hasRealtimeTailSourceForChart()
-        );
-        if (refreshPlan.mode == MarketChartRefreshHelper.SyncMode.SKIP) {
-            applyRequestSkipState(refreshPlan);
-            return;
-        }
-
-        final int current = ++requestVersion;
-        final String traceSymbol = selectedSymbol;
-        final IntervalOption reqInterval = selectedInterval;
-        final String traceIntervalKey = reqInterval == null ? "" : reqInterval.key;
-        final long previousLatestOpenTime = loadedCandles.isEmpty()
-                ? -1L
-                : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
-        final long previousOldestOpenTime = loadedCandles.isEmpty()
-                ? -1L
-                : loadedCandles.get(0).getOpenTime();
-        final int previousWindowSize = loadedCandles.size();
-        final long requestStartedAtMs = SystemClock.elapsedRealtime();
-        applyRequestStartState(autoRefresh);
-        runningTaskStartMs = System.currentTimeMillis();
-        cancelProgressiveGapFillTask();
-        final List<CandleEntry> refreshSeed = localForPlan == null ? new ArrayList<>() : new ArrayList<>(localForPlan);
-        ChainLatencyTracer.markChartPullPhase(
-                traceSymbol,
-                traceIntervalKey,
-                current,
-                "start",
-                0L,
-                refreshSeed.size()
-        );
-        runningTask = ioExecutor.submit(() -> {
-            try {
-                long loadStartedAtMs = SystemClock.elapsedRealtime();
-                List<CandleEntry> processed = loadCandlesForRequest(
-                        refreshPlan,
-                        refreshSeed,
-                        previousLatestOpenTime,
-                        previousOldestOpenTime,
-                        previousWindowSize);
-                long loadDurationMs = Math.max(0L, SystemClock.elapsedRealtime() - loadStartedAtMs);
-                ChainLatencyTracer.markChartPullPhase(
-                        traceSymbol,
-                        traceIntervalKey,
-                        current,
-                        "load_done",
-                        loadDurationMs,
-                        processed.size()
-                );
-                final List<CandleEntry> finalProcessed = processed;
-                if (finalProcessed.isEmpty()) {
-                    throw new IllegalStateException("币安未返回可用K线数据");
-                }
-                mainHandler.post(() -> {
-                    if (current != requestVersion || isFinishing() || isDestroyed()) {
-                        return;
-                    }
-                    boolean followingLatestViewport = shouldFollowLatestViewportOnRefresh();
-                    MarketChartDisplayHelper.DisplayUpdate displayUpdate = MarketChartDisplayHelper.buildDisplayUpdate(
-                            selectedSymbol,
-                            reqInterval == null ? "" : reqInterval.key,
-                            refreshSeed,
-                            finalProcessed,
-                            reqInterval == null ? RESTORE_WINDOW_LIMIT : reqInterval.limit,
-                            loadedCandles,
-                            autoRefresh,
-                            followingLatestViewport
-                    );
-                    activeDataKey = key;
-                    if (displayUpdate.candlesChanged) {
-                        applyDisplayCandles(key, displayUpdate.toDisplay, autoRefresh, displayUpdate.shouldFollowLatest, true);
-                        List<CandleEntry> closedPersistenceWindow =
-                                ChartPersistenceWindowHelper.retainClosedCandles(finalProcessed, System.currentTimeMillis());
-                        persistCandlesAsync(key, closedPersistenceWindow, traceSymbol, reqInterval, true);
-                    }
-                    startProgressiveGapFill(
-                            traceSymbol,
-                            reqInterval,
-                            current,
-                            displayUpdate.toDisplay,
-                            previousOldestOpenTime,
-                            previousWindowSize
-                    );
-                    applyRequestSuccessState(autoRefresh, requestStartedAtMs);
-                    long totalDurationMs = Math.max(0L, SystemClock.elapsedRealtime() - requestStartedAtMs);
-                    ChainLatencyTracer.markChartPullPhase(
-                            traceSymbol,
-                            traceIntervalKey,
-                            current,
-                            "ui_applied",
-                            totalDurationMs,
-                            finalProcessed.size()
-                    );
-                });
-            } catch (Exception e) {
-                if (Thread.currentThread().isInterrupted()) {
-                    return;
-                }
-                final String message = e.getMessage() == null ? "K线请求失败" : e.getMessage();
-                mainHandler.post(() -> {
-                    if (current != requestVersion || isFinishing() || isDestroyed()) {
-                        return;
-                    }
-                    applyRequestFailureState(autoRefresh, message);
-                });
-            }
-        });
-    }
-
-    private void requestMoreHistory(long beforeOpenTime) {
-        if (loadingMore || loadedCandles.isEmpty()) {
-            binding.klineChartView.notifyLoadMoreFinished();
-            return;
-        }
-        loadingMore = true;
-        final String reqSymbol = selectedSymbol;
-        final IntervalOption reqInterval = selectedInterval;
-        cancelProgressiveGapFillTask();
-        if (loadMoreTask != null) {
-            loadMoreTask.cancel(true);
-        }
-        loadMoreTask = ioExecutor.submit(() -> {
-            try {
-                List<CandleEntry> fetched = fetchV2SeriesBefore(
-                        reqSymbol,
-                        reqInterval,
-                        HISTORY_PAGE_LIMIT,
-                        beforeOpenTime - 1L
-                );
-                List<CandleEntry> processed = reqInterval.yearAggregate
-                        ? aggregateToYear(fetched, reqSymbol)
-                        : fetched;
-                if (processed.isEmpty()) {
-                    mainHandler.post(() -> {
-                        finishLoadMoreState();
-                    });
-                    return;
-                }
-                mainHandler.post(() -> {
-                    try {
-                        if (isFinishing() || isDestroyed()) {
-                            return;
-                        }
-                        if (!reqSymbol.equals(selectedSymbol) || reqInterval != selectedInterval) {
-                            return;
-                        }
-                        if (loadedCandles.isEmpty()) {
-                            return;
-                        }
-                        List<CandleEntry> older = ChartHistoryPagingHelper.resolveOlderCandles(loadedCandles, processed);
-                        if (older.isEmpty()) {
-                            return;
-                        }
-                        applyLoadMoreSuccessState(reqSymbol, reqInterval, older);
-                    } finally {
-                        finishLoadMoreState();
-                    }
-                });
-            } catch (Exception ignored) {
-                mainHandler.post(() -> {
-                    finishLoadMoreState();
-                });
-            }
-        });
-    }
-
     private long intervalToMs(String key) {
         if ("1M".equals(key)) return 30L * 24L * 60L * 60_000L;
-        if ("1y".equalsIgnoreCase(key)) return 365L * 24L * 60L * 60_000L;
-        if ("1m".equalsIgnoreCase(key)) return 60_000L;
-        if ("5m".equalsIgnoreCase(key)) return 5L * 60_000L;
-        if ("15m".equalsIgnoreCase(key)) return 15L * 60_000L;
-        if ("30m".equalsIgnoreCase(key)) return 30L * 60_000L;
-        if ("1h".equalsIgnoreCase(key)) return 60L * 60_000L;
-        if ("4h".equalsIgnoreCase(key)) return 4L * 60L * 60_000L;
-        if ("1d".equalsIgnoreCase(key)) return 24L * 60L * 60_000L;
-        if ("1w".equalsIgnoreCase(key)) return 7L * 24L * 60L * 60_000L;
+        if ("1y".equals(key)) return 365L * 24L * 60L * 60_000L;
+        if ("1m".equals(key)) return 60_000L;
+        if ("5m".equals(key)) return 5L * 60_000L;
+        if ("15m".equals(key)) return 15L * 60_000L;
+        if ("30m".equals(key)) return 30L * 60_000L;
+        if ("1h".equals(key)) return 60L * 60_000L;
+        if ("4h".equals(key)) return 4L * 60L * 60_000L;
+        if ("1d".equals(key)) return 24L * 60L * 60_000L;
+        if ("1w".equals(key)) return 7L * 24L * 60L * 60_000L;
         return -1L;
     }
 
@@ -1420,37 +1761,7 @@ public class MarketChartActivity extends AppCompatActivity {
         return ChartSeriesSignatureHelper.build(candles);
     }
 
-    private void startAutoRefresh() {
-        stopAutoRefresh();
-        scheduleNextAutoRefresh();
-        if (shouldShowRefreshCountdown()) {
-            mainHandler.post(refreshCountdownRunnable);
-        } else {
-            updateRefreshCountdownText();
-        }
-    }
-
-    private void stopAutoRefresh() {
-        mainHandler.removeCallbacks(autoRefreshRunnable);
-        mainHandler.removeCallbacks(refreshCountdownRunnable);
-        nextAutoRefreshAtMs = 0L;
-        updateRefreshCountdownText();
-    }
-
-    private void scheduleNextAutoRefresh() {
-        long delayMs = resolveAutoRefreshDelayMs();
-        nextAutoRefreshAtMs = System.currentTimeMillis() + delayMs;
-        mainHandler.removeCallbacks(autoRefreshRunnable);
-        mainHandler.postDelayed(autoRefreshRunnable, delayMs);
-        mainHandler.removeCallbacks(refreshCountdownRunnable);
-        if (shouldShowRefreshCountdown()) {
-            mainHandler.post(refreshCountdownRunnable);
-        } else {
-            updateRefreshCountdownText();
-        }
-    }
-
-    private void updateRefreshCountdownText() {
+    private void renderRefreshCountdown(long nextAutoRefreshAtMs) {
         if (binding == null || binding.tvChartRefreshCountdown == null) {
             return;
         }
@@ -1527,19 +1838,6 @@ public class MarketChartActivity extends AppCompatActivity {
                 && AppConstants.MONITOR_SYMBOLS.contains(selectedSymbol);
     }
 
-    // 直接监听监控服务的实时 K 线尾部，让图表页与悬浮窗共用同一套最新行情源。
-    private void observeRealtimeDisplayKlines() {
-        if (monitorRepository == null) {
-            return;
-        }
-        monitorRepository.getDisplayKlines().observe(this, snapshot -> {
-            if (snapshot == null || snapshot.isEmpty()) {
-                return;
-            }
-            applyRealtimeChartTail(snapshot.get(selectedSymbol));
-        });
-    }
-
     // 用最新分钟 K 线修正当前图表的末尾，避免只能每 5 秒靠轮询回填。
     private void applyRealtimeChartTail(@Nullable KlineData latestKline) {
         if (latestKline == null || binding == null || !hasRealtimeTailSourceForChart()) {
@@ -1554,8 +1852,35 @@ public class MarketChartActivity extends AppCompatActivity {
             return;
         }
         CandleEntry realtimeBaseCandle = toRealtimeCandleEntry(latestKline);
-        List<CandleEntry> minuteCandles = mergeRealtimeMinuteCache(realtimeBaseCandle);
-        List<CandleEntry> realtimeDisplay = buildRealtimeDisplayCandles(realtimeBaseCandle, minuteCandles);
+        if (realtimeTailHelper == null) {
+            return;
+        }
+        MarketChartDataCoordinator.IntervalSelection minuteInterval =
+                new MarketChartDataCoordinator.IntervalSelection(
+                        INTERVALS[0].key,
+                        INTERVALS[0].apiInterval,
+                        INTERVALS[0].limit,
+                        INTERVALS[0].yearAggregate
+                );
+        String minuteKey = buildCacheKey(selectedSymbol, INTERVALS[0]);
+        List<CandleEntry> minuteCandles = realtimeTailHelper.mergeRealtimeMinuteCache(
+                selectedSymbol,
+                minuteKey,
+                getCachedCandles(minuteKey),
+                realtimeBaseCandle,
+                INTERVALS[0].limit,
+                RESTORE_WINDOW_LIMIT
+        );
+        if (!minuteCandles.isEmpty()) {
+            klineCache.put(minuteKey, new ArrayList<>(minuteCandles));
+        }
+        List<CandleEntry> realtimeDisplay = realtimeTailHelper.buildRealtimeDisplayCandles(
+                selectedSymbol,
+                minuteIntervalFromSelected(),
+                loadedCandles,
+                realtimeBaseCandle,
+                minuteCandles
+        );
         if (realtimeDisplay.isEmpty()) {
             return;
         }
@@ -1572,11 +1897,13 @@ public class MarketChartActivity extends AppCompatActivity {
         );
         lastSuccessUpdateMs = System.currentTimeMillis();
         updateStateCount();
-        refreshChartOverlays();
+        dataCoordinator.refreshChartOverlays();
         if (!binding.klineChartView.hasActiveCrosshair()) {
             renderInfoWithLatest();
         }
-        updateRefreshCountdownText();
+        if (pageRuntime != null) {
+            pageRuntime.refreshRefreshCountdownDisplay();
+        }
     }
 
     // 统一把服务层实时 K 线转成图表层 CandleEntry，避免两边字段口径再次分叉。
@@ -1595,7 +1922,7 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     // 分钟底稿先写回本地缓存，供切周期、异常标注和后续聚合统一复用。
-    private List<CandleEntry> mergeRealtimeMinuteCache(CandleEntry realtimeBaseCandle) {
+    private List<CandleEntry> legacyMergeRealtimeMinuteCache(CandleEntry realtimeBaseCandle) {
         IntervalOption minuteOption = INTERVALS[0];
         String minuteKey = buildCacheKey(selectedSymbol, minuteOption);
         List<CandleEntry> minuteSource = getCachedCandles(minuteKey);
@@ -1612,12 +1939,12 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     // 当前周期显示序列统一从分钟底稿派生，保证图表尾部与服务端实时价格口径一致。
-    private List<CandleEntry> buildRealtimeDisplayCandles(CandleEntry realtimeBaseCandle,
-                                                          List<CandleEntry> minuteCandles) {
+    private List<CandleEntry> legacyBuildRealtimeDisplayCandles(CandleEntry realtimeBaseCandle,
+                                                                List<CandleEntry> minuteCandles) {
         if (selectedInterval.yearAggregate) {
             return new ArrayList<>();
         }
-        if ("1m".equalsIgnoreCase(selectedInterval.key)) {
+        if ("1m".equals(selectedInterval.key)) {
             return CandleAggregationHelper.mergeRealtimeBaseCandle(
                     loadedCandles,
                     realtimeBaseCandle,
@@ -1638,6 +1965,38 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private boolean matchesSelectedSymbol(@Nullable String symbol) {
         return symbol != null && symbol.trim().equalsIgnoreCase(selectedSymbol);
+    }
+
+    private MarketChartDataCoordinator.IntervalSelection minuteIntervalFromSelected() {
+        IntervalOption option = selectedInterval == null ? INTERVALS[0] : selectedInterval;
+        return new MarketChartDataCoordinator.IntervalSelection(
+                option.key,
+                option.apiInterval,
+                option.limit,
+                option.yearAggregate
+        );
+    }
+
+    private MarketChartSeriesLoaderHelper.Gateway seriesGateway() {
+        return new MarketChartSeriesLoaderHelper.Gateway() {
+            @Nullable
+            @Override
+            public MarketSeriesPayload fetchMarketSeries(@NonNull String symbol, @NonNull String apiInterval, int limit) throws Exception {
+                return gatewayV2Client == null ? null : gatewayV2Client.fetchMarketSeries(symbol, apiInterval, limit);
+            }
+
+            @Nullable
+            @Override
+            public MarketSeriesPayload fetchMarketSeriesBefore(@NonNull String symbol, @NonNull String apiInterval, int limit, long endTimeInclusive) throws Exception {
+                return gatewayV2Client == null ? null : gatewayV2Client.fetchMarketSeriesBefore(symbol, apiInterval, limit, endTimeInclusive);
+            }
+
+            @Nullable
+            @Override
+            public MarketSeriesPayload fetchMarketSeriesAfter(@NonNull String symbol, @NonNull String apiInterval, int limit, long startTimeInclusive) throws Exception {
+                return gatewayV2Client == null ? null : gatewayV2Client.fetchMarketSeriesAfter(symbol, apiInterval, limit, startTimeInclusive);
+            }
+        };
     }
 
     // 给周期/指标横向按钮条同步主题背景。
@@ -1670,6 +2029,19 @@ public class MarketChartActivity extends AppCompatActivity {
             return MarketChartCacheKeyHelper.build(symbol, "default", "default", false);
         }
         return MarketChartCacheKeyHelper.build(symbol, interval.key, interval.apiInterval, interval.yearAggregate);
+    }
+
+    private IntervalOption requireIntervalOption(@NonNull MarketChartDataCoordinator.IntervalSelection interval) {
+        for (IntervalOption candidate : INTERVALS) {
+            if (candidate != null
+                    && candidate.yearAggregate == interval.isYearAggregate()
+                    && candidate.limit == interval.getLimit()
+                    && interval.getKey().equals(candidate.key)
+                    && interval.getApiInterval().equals(candidate.apiInterval)) {
+                return candidate;
+            }
+        }
+        return selectedInterval == null ? INTERVALS[0] : selectedInterval;
     }
 
     private List<String> getSupportedSymbols() {
@@ -1745,6 +2117,11 @@ public class MarketChartActivity extends AppCompatActivity {
         }
     }
 
+    // 冷启动恢复缓存时统一使用当前产品和周期生成键，避免宿主层重复拼 key。
+    private void restorePersistedCache() {
+        restorePersistedCache(buildCacheKey(selectedSymbol, selectedInterval));
+    }
+
     private void restorePersistedCache(String key) {
         List<CandleEntry> persisted = getCachedCandles(key);
         if (persisted == null || persisted.isEmpty()) {
@@ -1759,10 +2136,11 @@ public class MarketChartActivity extends AppCompatActivity {
         if (key == null || key.trim().isEmpty() || candles == null || candles.isEmpty() || binding == null) {
             return;
         }
-        applyDisplayCandles(key, candles, false, false, false);
+        List<CandleEntry> restoreWindow = ChartWindowSliceHelper.takeLatest(candles, RESTORE_WINDOW_LIMIT);
+        applyDisplayCandles(key, restoreWindow, false, false, false);
         renderInfoWithLatest();
         updateStateCount();
-        refreshChartOverlays();
+        dataCoordinator.refreshChartOverlays();
     }
 
     // 统一替换当前图表显示序列，区分是否保留视口与是否同步刷新内存缓存。
@@ -1803,7 +2181,7 @@ public class MarketChartActivity extends AppCompatActivity {
 
     // 统一处理成功回包后的页面状态更新，避免成功路径再散落多套收尾逻辑。
     private void applyRequestSuccessState(boolean autoRefresh, long requestStartedAtMs) {
-        refreshChartOverlays();
+        dataCoordinator.refreshChartOverlays();
         if (!(autoRefresh && binding.klineChartView.hasActiveCrosshair())) {
             renderInfoWithLatest();
         }
@@ -1826,7 +2204,9 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.tvError.setVisibility(android.view.View.GONE);
         binding.btnRetryLoad.setVisibility(android.view.View.GONE);
         showLoading(false);
-        updateRefreshCountdownText();
+        if (pageRuntime != null) {
+            pageRuntime.refreshRefreshCountdownDisplay();
+        }
     }
 
     // 统一处理发起网络请求前的页面状态，避免 loading / error reset 再次分叉。
@@ -1851,7 +2231,7 @@ public class MarketChartActivity extends AppCompatActivity {
     // 没有任何可显示 K 线时，统一清空图表并恢复空态文案。
     private void clearChartDisplayForEmptyState() {
         binding.klineChartView.setCandles(new ArrayList<>());
-        refreshChartOverlays();
+        dataCoordinator.refreshChartOverlays();
         binding.tvChartInfo.setText(R.string.chart_info_empty);
     }
 
@@ -1889,7 +2269,7 @@ public class MarketChartActivity extends AppCompatActivity {
         klineCache.put(cacheKey, new ArrayList<>(loadedCandles));
         persistCandlesAsync(cacheKey, older, reqSymbol, reqInterval, false);
         binding.klineChartView.prependCandles(older);
-        refreshChartOverlays();
+        dataCoordinator.refreshChartOverlays();
         updateStateCount();
     }
 
@@ -1916,13 +2296,11 @@ public class MarketChartActivity extends AppCompatActivity {
             return;
         }
         long latestWindowOldestOpenTime = resolveOldestOpenTime(visibleWindow);
-        boolean visibleWindowHasInternalGap = hasVisibleWindowInternalGap(reqInterval, visibleWindow);
         if (!ChartGapFillHelper.shouldBackfillOlderHistory(
                 previousWindowSize,
                 RESTORE_WINDOW_LIMIT,
                 previousOldestOpenTime,
-                latestWindowOldestOpenTime,
-                visibleWindowHasInternalGap)) {
+                latestWindowOldestOpenTime)) {
             return;
         }
         List<CandleEntry> workingWindow = new ArrayList<>(visibleWindow);
@@ -1952,14 +2330,19 @@ public class MarketChartActivity extends AppCompatActivity {
                 previousWindowSize,
                 RESTORE_WINDOW_LIMIT,
                 previousOldestOpenTime,
-                latestOldest,
-                hasVisibleWindowInternalGap(reqInterval, workingWindow))
+                latestOldest)
                 && rounds < GAP_FILL_MAX_ROUNDS) {
-            List<CandleEntry> fetched = fetchV2SeriesBefore(
+            List<CandleEntry> fetched = chartSeriesLoaderHelper.fetchV2SeriesBefore(
                     reqSymbol,
-                    reqInterval,
+                    new MarketChartDataCoordinator.IntervalSelection(
+                            reqInterval.key,
+                            reqInterval.apiInterval,
+                            reqInterval.limit,
+                            reqInterval.yearAggregate
+                    ),
                     HISTORY_PAGE_LIMIT,
-                    Math.max(0L, latestOldest - 1L)
+                    Math.max(0L, latestOldest - 1L),
+                    seriesGateway()
             );
             List<CandleEntry> older = ChartHistoryPagingHelper.resolveOlderCandles(workingWindow, fetched);
             if (older.isEmpty()) {
@@ -2004,16 +2387,21 @@ public class MarketChartActivity extends AppCompatActivity {
                 previousWindowSize,
                 RESTORE_WINDOW_LIMIT,
                 previousOldestOpenTime,
-                latestOldest,
-                hasVisibleWindowInternalGap(reqInterval, workingWindow))
+                latestOldest)
                 && rounds < GAP_FILL_MAX_ROUNDS) {
-            List<CandleEntry> olderMonthly = fetchV2SeriesBefore(
+            List<CandleEntry> olderMonthly = chartSeriesLoaderHelper.fetchV2SeriesBefore(
                     reqSymbol,
-                    reqInterval,
+                    new MarketChartDataCoordinator.IntervalSelection(
+                            reqInterval.key,
+                            reqInterval.apiInterval,
+                            reqInterval.limit,
+                            reqInterval.yearAggregate
+                    ),
                     HISTORY_PAGE_LIMIT,
-                    Math.max(0L, latestOldest - 1L)
+                    Math.max(0L, latestOldest - 1L),
+                    seriesGateway()
             );
-            List<CandleEntry> olderYear = aggregateToYear(olderMonthly, reqSymbol);
+            List<CandleEntry> olderYear = chartSeriesLoaderHelper.aggregateToYear(olderMonthly, reqSymbol);
             List<CandleEntry> older = ChartHistoryPagingHelper.resolveOlderCandles(workingWindow, olderYear);
             if (older.isEmpty()) {
                 break;
@@ -2178,32 +2566,37 @@ public class MarketChartActivity extends AppCompatActivity {
         );
     }
 
-    private List<CandleEntry> loadCandlesForRequest(MarketChartRefreshHelper.SyncPlan plan,
-                                                    @Nullable List<CandleEntry> seed,
-                                                    long previousLatestOpenTime,
-                                                    long previousOldestOpenTime,
-                                                    int previousWindowSize) throws Exception {
-        if (selectedInterval != null && selectedInterval.yearAggregate) {
-            return loadYearAggregateCandlesForRequest(
+    private List<CandleEntry> legacyLoadCandlesForRequest(MarketChartRefreshHelper.SyncPlan plan,
+                                                          @Nullable List<CandleEntry> seed,
+                                                          long previousLatestOpenTime,
+                                                          long previousOldestOpenTime,
+                                                          int previousWindowSize,
+                                                          @NonNull String symbol,
+                                                          @NonNull MarketChartDataCoordinator.IntervalSelection interval) throws Exception {
+        IntervalOption intervalOption = requireIntervalOption(interval);
+        if (intervalOption.yearAggregate) {
+            return legacyLoadYearAggregateCandlesForRequest(
                     plan,
                     seed,
                     previousLatestOpenTime,
                     previousOldestOpenTime,
-                    previousWindowSize
+                    previousWindowSize,
+                    symbol,
+                    intervalOption
             );
         }
         List<CandleEntry> result;
         if (plan != null && plan.mode == MarketChartRefreshHelper.SyncMode.INCREMENTAL) {
             List<CandleEntry> base = ChartWindowSliceHelper.takeLatest(seed, RESTORE_WINDOW_LIMIT);
-            List<CandleEntry> tail = fetchV2SeriesAfter(
-                    selectedSymbol,
-                    selectedInterval,
+            List<CandleEntry> tail = legacyFetchV2SeriesAfter(
+                    symbol,
+                    intervalOption,
                     RESTORE_WINDOW_LIMIT,
                     plan.startTimeInclusive
             );
             result = MarketChartDisplayHelper.mergeSeriesByOpenTime(base, tail);
         } else {
-            result = fetchFullHistoryAndMark(selectedSymbol, RESTORE_WINDOW_LIMIT);
+            result = fetchFullHistoryAndMark(symbol, intervalOption, RESTORE_WINDOW_LIMIT);
         }
         if (result == null || result.isEmpty()) {
             throw new IllegalStateException("币安未返回可用K线数据");
@@ -2212,25 +2605,27 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     // 年线显示仍使用月线接口增量拉取，但先聚合成年桶再与本地年线窗口合并，避免跨粒度直接拼接导致重复统计。
-    private List<CandleEntry> loadYearAggregateCandlesForRequest(MarketChartRefreshHelper.SyncPlan plan,
-                                                                 @Nullable List<CandleEntry> seed,
-                                                                 long previousLatestOpenTime,
-                                                                 long previousOldestOpenTime,
-                                                                 int previousWindowSize) throws Exception {
+    private List<CandleEntry> legacyLoadYearAggregateCandlesForRequest(MarketChartRefreshHelper.SyncPlan plan,
+                                                                       @Nullable List<CandleEntry> seed,
+                                                                       long previousLatestOpenTime,
+                                                                       long previousOldestOpenTime,
+                                                                       int previousWindowSize,
+                                                                       @NonNull String symbol,
+                                                                       @NonNull IntervalOption interval) throws Exception {
         List<CandleEntry> mergedYear;
         if (plan != null && plan.mode == MarketChartRefreshHelper.SyncMode.INCREMENTAL) {
             List<CandleEntry> baseYear = ChartWindowSliceHelper.takeLatest(seed, RESTORE_WINDOW_LIMIT);
-            List<CandleEntry> tailMonthly = fetchV2SeriesAfter(
-                    selectedSymbol,
-                    selectedInterval,
+            List<CandleEntry> tailMonthly = legacyFetchV2SeriesAfter(
+                    symbol,
+                    interval,
                     RESTORE_WINDOW_LIMIT,
                     plan.startTimeInclusive
             );
-            List<CandleEntry> tailYear = aggregateToYear(tailMonthly, selectedSymbol);
+            List<CandleEntry> tailYear = legacyAggregateToYear(tailMonthly, symbol);
             mergedYear = MarketChartDisplayHelper.mergeSeriesByOpenTime(baseYear, tailYear);
         } else {
-            List<CandleEntry> fullMonthly = fetchFullHistoryAndMark(selectedSymbol, RESTORE_WINDOW_LIMIT);
-            mergedYear = aggregateToYear(fullMonthly, selectedSymbol);
+            List<CandleEntry> fullMonthly = fetchFullHistoryAndMark(symbol, interval, RESTORE_WINDOW_LIMIT);
+            mergedYear = legacyAggregateToYear(fullMonthly, symbol);
         }
         if (mergedYear == null || mergedYear.isEmpty()) {
             throw new IllegalStateException("币安未返回可用K线数据");
@@ -2238,26 +2633,28 @@ public class MarketChartActivity extends AppCompatActivity {
         return mergedYear;
     }
 
-    private List<CandleEntry> fetchFullHistoryAndMark(String symbol, int limit) throws Exception {
-        return fetchV2FullSeries(symbol, selectedInterval, limit);
+    private List<CandleEntry> fetchFullHistoryAndMark(String symbol,
+                                                      @NonNull IntervalOption interval,
+                                                      int limit) throws Exception {
+        return legacyFetchV2FullSeries(symbol, interval, limit);
     }
 
     // v2 行情链路下，图表真值直接来自服务端的闭合 candles + latestPatch。
-    private List<CandleEntry> fetchV2FullSeries(String symbol,
-                                                @Nullable IntervalOption interval,
-                                                int limit) throws Exception {
+    private List<CandleEntry> legacyFetchV2FullSeries(String symbol,
+                                                      @Nullable IntervalOption interval,
+                                                      int limit) throws Exception {
         if (gatewayV2Client == null || interval == null) {
             return new ArrayList<>();
         }
         MarketSeriesPayload payload = gatewayV2Client.fetchMarketSeries(symbol, interval.apiInterval, limit);
-        return mergeMarketSeriesPayload(payload);
+        return legacyMergeMarketSeriesPayload(payload);
     }
 
     // v2 分页链路：按 endTime 拉窗口并复用同一套 candles + patch 合并逻辑。
-    private List<CandleEntry> fetchV2SeriesBefore(String symbol,
-                                                  @Nullable IntervalOption interval,
-                                                  int limit,
-                                                  long endTimeInclusive) throws Exception {
+    private List<CandleEntry> legacyFetchV2SeriesBefore(String symbol,
+                                                        @Nullable IntervalOption interval,
+                                                        int limit,
+                                                        long endTimeInclusive) throws Exception {
         if (gatewayV2Client == null || interval == null) {
             return new ArrayList<>();
         }
@@ -2267,14 +2664,14 @@ public class MarketChartActivity extends AppCompatActivity {
                 limit,
                 endTimeInclusive
         );
-        return mergeMarketSeriesPayload(payload);
+        return legacyMergeMarketSeriesPayload(payload);
     }
 
     // v2 增量链路：按 startTime 拉窗口，减少切周期后的补尾等待。
-    private List<CandleEntry> fetchV2SeriesAfter(String symbol,
-                                                 @Nullable IntervalOption interval,
-                                                 int limit,
-                                                 long startTimeInclusive) throws Exception {
+    private List<CandleEntry> legacyFetchV2SeriesAfter(String symbol,
+                                                       @Nullable IntervalOption interval,
+                                                       int limit,
+                                                       long startTimeInclusive) throws Exception {
         if (gatewayV2Client == null || interval == null) {
             return new ArrayList<>();
         }
@@ -2284,11 +2681,11 @@ public class MarketChartActivity extends AppCompatActivity {
                 limit,
                 startTimeInclusive
         );
-        return mergeMarketSeriesPayload(payload);
+        return legacyMergeMarketSeriesPayload(payload);
     }
 
     // 把 v2 返回的闭合 candles 与 latestPatch 合并成图表当前要显示的完整序列。
-    private List<CandleEntry> mergeMarketSeriesPayload(@Nullable MarketSeriesPayload payload) {
+    private List<CandleEntry> legacyMergeMarketSeriesPayload(@Nullable MarketSeriesPayload payload) {
         if (payload == null) {
             return new ArrayList<>();
         }
@@ -2298,7 +2695,7 @@ public class MarketChartActivity extends AppCompatActivity {
         );
     }
 
-    private List<CandleEntry> aggregateToYear(List<CandleEntry> source, String symbol) {
+    private List<CandleEntry> legacyAggregateToYear(List<CandleEntry> source, String symbol) {
         if (source == null || source.isEmpty()) {
             return new ArrayList<>();
         }
@@ -2422,28 +2819,12 @@ public class MarketChartActivity extends AppCompatActivity {
         binding.tvChartLoading.setVisibility(loading ? android.view.View.VISIBLE : android.view.View.GONE);
     }
 
-    private void refreshChartOverlays() {
-        updateVolumeThresholdOverlay();
-        updateAccountAnnotationsOverlay();
-        updateAbnormalAnnotationsOverlay();
-    }
-
-    // 把账户侧高频刷新折叠成短延迟任务，避免持仓区连续重建导致卡顿。
-    private void scheduleChartOverlayRefresh() {
-        if (accountOverlayRefreshPending) {
-            return;
-        }
-        accountOverlayRefreshPending = true;
-        mainHandler.removeCallbacks(chartOverlayRefreshRunnable);
-        mainHandler.postDelayed(chartOverlayRefreshRunnable, CHART_OVERLAY_REFRESH_DEBOUNCE_MS);
-    }
-
     private void updateVolumeThresholdOverlay() {
         if (binding == null || binding.klineChartView == null) {
             return;
         }
         SymbolConfig config = ConfigManager.getInstance(this).getSymbolConfig(selectedSymbol);
-        boolean minuteInterval = "1m".equalsIgnoreCase(selectedInterval.apiInterval) && !selectedInterval.yearAggregate;
+        boolean minuteInterval = "1m".equals(selectedInterval.apiInterval) && !selectedInterval.yearAggregate;
         double threshold = config == null ? Double.NaN : config.getVolumeThreshold();
         boolean visible = config != null
                 && showVolume
@@ -2574,35 +2955,6 @@ public class MarketChartActivity extends AppCompatActivity {
         if (snapshot == null) {
             lastAccountOverlaySignature = overlaySignature;
             clearAccountAnnotationsOverlay();
-            return;
-        }
-        String key = buildCacheKey(selectedSymbol, selectedInterval);
-        if (startupGate.shouldDeferUntilPrimaryDisplay(key)) {
-            startupGate.replacePendingOverlay(key, () -> applyChartOverlaySnapshot(snapshot, cache));
-            return;
-        }
-        applyChartOverlaySnapshot(snapshot, cache);
-    }
-
-    // 图表页初次创建时优先直接消费最近一份账户缓存，避免“当前持仓”先闪成空白再恢复。
-    private void restoreChartOverlayFromLatestCacheOrEmpty() {
-        if (binding == null || binding.klineChartView == null) {
-            return;
-        }
-        boolean sessionActive = ConfigManager.getInstance(this).isAccountSessionActive();
-        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
-                ? null
-                : accountStatsPreloadManager.getLatestCache();
-        AccountSnapshot snapshot = resolveChartOverlaySnapshot(sessionActive, cache);
-        if (!sessionActive) {
-            clearAccountAnnotationsOverlay();
-            return;
-        }
-        // 会话仍有效但缓存尚未回填时，保留当前页面状态，避免首帧先闪成空白。
-        if (snapshot == null) {
-            if (!isCurrentOverlayBoundToActiveSession()) {
-                clearAccountAnnotationsOverlay();
-            }
             return;
         }
         String key = buildCacheKey(selectedSymbol, selectedInterval);
@@ -2833,6 +3185,20 @@ public class MarketChartActivity extends AppCompatActivity {
         pendingStartupDrawKey = "";
     }
 
+    // 图表页离开前统一解绑账户缓存监听，避免后台继续触发图上叠加刷新。
+    private void detachAccountCacheListener() {
+        if (accountStatsPreloadManager != null) {
+            accountStatsPreloadManager.removeCacheListener(accountCacheListener);
+        }
+    }
+
+    // 页面销毁时统一关闭图表 IO 执行器，避免多个宿主入口重复展开相同逻辑。
+    private void shutdownIoExecutor() {
+        if (ioExecutor != null) {
+            ioExecutor.shutdownNow();
+        }
+    }
+
     // 只要本地已经落过账户叠加层必需数据，就允许首帧直接恢复，避免当前持仓先空白。
     private boolean hasStoredChartOverlaySnapshot(@Nullable AccountStorageRepository.StoredSnapshot storedSnapshot) {
         if (storedSnapshot == null) {
@@ -2967,41 +3333,6 @@ public class MarketChartActivity extends AppCompatActivity {
 
     private String trimToEmpty(@Nullable String value) {
         return value == null ? "" : value.trim();
-    }
-
-    // 图表页可见窗口仍有固定时间粒度缺口时，需要继续向左补历史，不能只看窗口长度。
-    private boolean hasVisibleWindowInternalGap(@Nullable IntervalOption interval,
-                                                @Nullable List<CandleEntry> visibleWindow) {
-        long expectedGapMs = resolveExpectedGapMs(interval);
-        return expectedGapMs > 0L && MarketChartRefreshHelper.hasInternalGap(visibleWindow, expectedGapMs);
-    }
-
-    // 固定周期直接使用标准时间步长；月线和年线属于变长桶，不走这里的定长缺口判定。
-    private long resolveExpectedGapMs(@Nullable IntervalOption interval) {
-        if (interval == null || interval.yearAggregate) {
-            return 0L;
-        }
-        String apiInterval = interval.apiInterval == null ? "" : interval.apiInterval.trim().toLowerCase(Locale.ROOT);
-        switch (apiInterval) {
-            case "1m":
-                return 60_000L;
-            case "5m":
-                return 5L * 60_000L;
-            case "15m":
-                return 15L * 60_000L;
-            case "30m":
-                return 30L * 60_000L;
-            case "1h":
-                return 60L * 60_000L;
-            case "4h":
-                return 4L * 60L * 60_000L;
-            case "1d":
-                return 24L * 60L * 60_000L;
-            case "1w":
-                return 7L * 24L * 60L * 60_000L;
-            default:
-                return 0L;
-        }
     }
 
     private List<KlineChartView.PriceAnnotation> buildHistoricalTradeAnnotations(List<TradeRecordItem> trades) {
@@ -3373,8 +3704,7 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private String formatSignedUsd(double value) {
-        String sign = value >= 0d ? "+" : "-";
-        return sign + "$" + pnlFormat.format(Math.abs(value));
+        return FormatUtils.formatSignedMoney(value);
     }
 
     // 当前持仓/挂单没有真实开仓时间时只显示占位，避免伪造时间。
@@ -3636,20 +3966,6 @@ public class MarketChartActivity extends AppCompatActivity {
                 .apply();
     }
 
-    // 切换 K 线图历史成交叠加层显示状态。
-    private void toggleHistoryTradeVisibility() {
-        showHistoryTrades = !showHistoryTrades;
-        persistHistoryTradeVisibility();
-        applyPrivacyMaskState();
-    }
-
-    // 切换 K 线图当前仓位相关标注显示状态，不影响历史成交和下方持仓面板。
-    private void togglePositionOverlayVisibility() {
-        showPositionOverlays = !showPositionOverlays;
-        persistPositionOverlayVisibility();
-        applyPrivacyMaskState();
-    }
-
     private void updatePositionOverlayToggleButton() {
         if (binding == null || binding.btnTogglePositionOverlays == null) {
             return;
@@ -3807,7 +4123,7 @@ public class MarketChartActivity extends AppCompatActivity {
             return null;
         }
         for (IntervalOption option : INTERVALS) {
-            if (option != null && key.equalsIgnoreCase(option.key)) {
+            if (option != null && key.equals(option.key)) {
                 return option;
             }
         }
@@ -3892,7 +4208,9 @@ public class MarketChartActivity extends AppCompatActivity {
         if (binding.spinnerSymbolPicker.getAdapter() instanceof BaseAdapter) {
             ((BaseAdapter) binding.spinnerSymbolPicker.getAdapter()).notifyDataSetChanged();
         }
-        updateBottomTabs(false, true, false, false, false);
+        if (pageController != null) {
+            pageController.onPageShown();
+        }
         syncSymbolSelector();
         updateIntervalButtons();
         updateIndicatorButtons();
@@ -3910,30 +4228,22 @@ public class MarketChartActivity extends AppCompatActivity {
     }
 
     private void openMarketMonitor() {
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.MARKET_MONITOR));
         overridePendingTransition(0, 0);
     }
 
     private void openAccountStats() {
-        Intent intent = new Intent(this, AccountStatsBridgeActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_STATS));
         overridePendingTransition(0, 0);
     }
 
     private void openSettings() {
-        Intent intent = new Intent(this, SettingsActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.SETTINGS));
         overridePendingTransition(0, 0);
     }
 
     private void openAccountPosition() {
-        Intent intent = new Intent(this, AccountPositionActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_POSITION));
         overridePendingTransition(0, 0);
     }
 
@@ -3948,10 +4258,5 @@ public class MarketChartActivity extends AppCompatActivity {
         }
         cancelChartOverlayBuildTask();
         cancelProgressiveGapFillTask();
-    }
-
-    // 首次创建图表页时确保监控服务已启动，避免悬浮窗直达时主链尚未建立。
-    private void ensureMonitorServiceStarted() {
-        MonitorServiceController.ensureStarted(this);
     }
 }

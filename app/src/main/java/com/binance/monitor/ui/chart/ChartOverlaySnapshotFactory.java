@@ -537,8 +537,7 @@ public class ChartOverlaySnapshotFactory {
 
     @NonNull
     private String formatSignedUsd(double value) {
-        String sign = value >= 0d ? "+" : "-";
-        return sign + "$" + FormatUtils.formatAmount(Math.abs(value));
+        return FormatUtils.formatSignedMoney(value);
     }
 
     @NonNull

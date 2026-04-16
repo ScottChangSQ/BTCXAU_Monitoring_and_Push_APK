@@ -23,6 +23,8 @@ import com.binance.monitor.data.local.db.repository.ChartHistoryRepository;
 import com.binance.monitor.databinding.ActivitySettingsDetailBinding;
 import com.binance.monitor.service.MonitorServiceController;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.ui.host.HostNavigationIntentFactory;
+import com.binance.monitor.ui.host.HostTab;
 import com.binance.monitor.ui.account.AccountPositionActivity;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.ui.chart.MarketChartActivity;
@@ -474,30 +476,22 @@ public class SettingsSectionActivity extends AppCompatActivity {
     }
 
     private void openMarketMonitor() {
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.MARKET_MONITOR));
         overridePendingTransition(0, 0);
     }
 
     private void openAccountStats() {
-        Intent intent = new Intent(this, AccountStatsBridgeActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_STATS));
         overridePendingTransition(0, 0);
     }
 
     private void openMarketChart() {
-        Intent intent = new Intent(this, MarketChartActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.MARKET_CHART));
         overridePendingTransition(0, 0);
     }
 
     private void openAccountPosition() {
-        Intent intent = new Intent(this, AccountPositionActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
+        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_POSITION));
         overridePendingTransition(0, 0);
     }
 

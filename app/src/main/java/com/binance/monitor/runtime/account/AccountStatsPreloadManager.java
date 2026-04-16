@@ -392,38 +392,13 @@ public class AccountStatsPreloadManager {
         }
         try {
             AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();
-            String remoteHistoryRevision = resolveRemoteHistoryRevision(snapshotPayload);
-            Cache previous = latestCache;
-            AccountStorageRepository.StoredSnapshot storedSnapshot =
-                    loadStoredSnapshotForWorkerThread();
-            String cachedHistoryRevision = previous == null
-                    ? storedSnapshot.getHistoryRevision()
-                    : previous.getHistoryRevision();
-            int storedTradeCount = loadStoredTradeCountForWorkerThread();
-            boolean hasStoredTradeHistory = storedTradeCount > 0;
-            boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
-                    remoteHistoryRevision,
-                    cachedHistoryRevision,
-                    hasStoredTradeHistory
-            );
-
-            Cache cache;
-            if (shouldRefreshAllHistory) {
-                AccountHistoryPayload historyPayload = fetchCompleteHistoryPayload(AccountTimeRange.ALL);
-                AccountStorageRepository.StoredSnapshot mergedSnapshot =
-                        buildStoredSnapshotFromV2(snapshotPayload, historyPayload);
-                accountStorageRepository.persistV2Snapshot(mergedSnapshot);
-                String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, historyPayload);
-                cache = buildCache(mergedSnapshot, resolvedRevision);
-            } else {
-                AccountStorageRepository.StoredSnapshot incrementalSnapshot =
-                        buildStoredSnapshotFromSnapshotOnly(snapshotPayload);
-                accountStorageRepository.persistIncrementalSnapshot(incrementalSnapshot);
-                AccountStorageRepository.StoredSnapshot cachedSnapshot =
-                        loadStoredSnapshotForWorkerThread();
-                String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, null);
-                cache = buildCache(cachedSnapshot, resolvedRevision);
-            }
+            // 显式 UI 刷新必须始终走“快照 + 全量历史”主链，不能因为 historyRevision 未前进就跳过历史补拉。
+            AccountHistoryPayload historyPayload = fetchCompleteHistoryPayload(AccountTimeRange.ALL);
+            AccountStorageRepository.StoredSnapshot mergedSnapshot =
+                    buildStoredSnapshotFromV2(snapshotPayload, historyPayload);
+            accountStorageRepository.persistV2Snapshot(mergedSnapshot);
+            String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, historyPayload);
+            Cache cache = buildCache(mergedSnapshot, resolvedRevision);
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
             return cache;

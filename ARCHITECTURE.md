@@ -2,6 +2,10 @@
 
 ## 每个文件/模块的职责
 
+- [app/src/main/java/com/binance/monitor/ui/host/MainHostActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/host/MainHostActivity.java)
+  单主壳入口，负责承载底部 5 个 Tab、接收目标 Tab intent，并统一补齐通知权限提示；launcher alias 现已指向它。
+- [app/src/main/java/com/binance/monitor/ui/main/MainActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/main/MainActivity.java)
+  旧行情监控入口桥接页，当前只负责把历史入口收口到主壳 `MARKET_MONITOR` Tab。
 - [app/src/main/java/com/binance/monitor/service/MonitorService.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorService.java)
   前台服务入口，负责展示快照刷新、异常判断、通知调度，以及生成悬浮窗统一快照；当前冷启动和 fallback 补拉都已改成直接读取 `v2 market series`，不再给图表历史库写底稿。`v2 stream` 现在只有在消息成功应用后才提交 `busSeq`，并且关键数值字段遇到非有限值会直接拒包，不再写零吞掉坏数据。
 - [app/src/main/java/com/binance/monitor/service/MonitorServiceController.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorServiceController.java)
@@ -35,7 +39,13 @@
 - [app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/security/SecureSessionPrefs.java)
   APP 安全会话偏好，负责用 Android Keystore 加密保存最近一次远程会话摘要和已保存账号列表缓存；logout 时只清当前激活账号，不清已保存账号摘要。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
-  图表页入口，负责 K 线请求调度、周期切换、指标开关、局部隐私隐藏、右上角刷新/延迟信息，以及图上标注和顶部轻量状态绑定；当前最终真值只认服务端 `candles + latestPatch`，本地只保留 `ChartHistoryRepository + 内存窗口` 这一层图表缓存。图表账户叠加层恢复时，会在内存缓存 miss 时回退到 Room 已持久化快照，避免首帧把当前持仓先清空；图表启动阶段现在还会用 `MarketChartStartupGate + 首帧绘制监听` 把实时尾部和账户叠加层延后到主图首帧真正完成后再释放。页面进入 `onPause()` 时会主动取消图表加载、补页和缺口补算任务，避免后台继续拖住 UI 与网络。
+  图表页旧入口兼容桥接页，当前启动后会立即把原始 extras 透传给主壳 `MARKET_CHART` Tab；历史重业务实现仍保留在文件内，主要用于兼容旧专项链路和源码测试，应用内部主链已不再依赖它承载底部导航。
+- [app/src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java)
+  图表页共享屏幕对象，负责把原先只留在旧 Activity 里的页面状态、刷新入口、图层恢复和指标/周期交互收口成可供 `MarketChartFragment` 复用的真实宿主主链。
+- [app/src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java)
+  行情持仓页数据协调器，负责统一编排 `requestKlines / requestMoreHistory / observeRealtimeDisplayKlines / refreshChartOverlays / restoreChartOverlayFromLatestCacheOrEmpty`，把图表页重业务主链从旧 Activity 抽离成可复用宿主接口。
+- [app/src/main/java/com/binance/monitor/ui/chart/MarketChartPageHostDelegate.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartPageHostDelegate.java)
+  行情持仓页宿主委托，负责把 `MarketChartPageController.Host` 从 Activity/Fragment 各自的匿名实现收口成统一适配层，为后续 Fragment 真实承接业务留出稳定宿主边界。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java)
   图表页交易弹窗协调器，负责收口下单、平仓、改单前的输入准备、结果展示和会话校验；当前图表页交易只认“当前激活会话 + 已连接账户缓存”这一份身份真值，平仓和改单都强制要求 `positionTicket`。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartStartupGate.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartStartupGate.java)
@@ -51,7 +61,13 @@
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartScaleGestureResolver.java)
   缩放方向判定工具，负责把双指手势分成横向、纵向和斜向整体缩放。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
-  账户统计页入口，负责历史分析、收益统计、净值/结余主图、附图、交易分布、交易记录、隐私小眼睛和登录成功提示动画；实时账户总览与当前持仓已从该页迁出，不再在这里做高频区块渲染。当前进入页面时仍会读取当前会话缓存并按需补拉历史，但不再在前台生命周期里订阅实时预加载推送。
+  账户统计页旧入口兼容桥接页，当前启动后会立即把原始 extras 透传给主壳 `ACCOUNT_STATS` Tab；历史重业务实现仍保留在文件内，主要用于兼容旧专项链路和源码测试，应用内部主链已不再依赖它承载底部导航。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java)
+  账户统计页共享屏幕对象，负责把原先只留在旧 Activity 里的页面状态、历史刷新协调、收益表渲染和登录会话交互收口成可供 `AccountStatsFragment` 复用的真实宿主主链。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountStatsRenderCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsRenderCoordinator.java)
+  账户统计页渲染协调器，负责统一编排 `applySnapshot`、次级区块 deferred render、交易统计和交易记录筛选，把账户统计页的大块渲染主链从旧 Activity 抽离成可复用宿主接口。
+- [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPageHostDelegate.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPageHostDelegate.java)
+  账户统计页宿主委托，负责把 `AccountStatsPageController.Host` 从 Activity/Fragment 各自的匿名实现收口成统一适配层，为后续 Fragment 真实承接业务留出稳定宿主边界。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java)
   账户持仓页入口，负责承接账户概览、当前持仓和挂单三段内容；页面只消费 `AccountStatsPreloadManager.Cache` 的单一快照，并按概览 / 持仓 / 挂单三段独立刷新。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountPositionUiModelFactory.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountPositionUiModelFactory.java)
@@ -121,7 +137,9 @@
 - [app/src/main/java/com/binance/monitor/util/GatewayUrlResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/util/GatewayUrlResolver.java)
   网关地址标准化工具，把用户输入整理成统一可用的基础地址。
 - [app/src/main/java/com/binance/monitor/util/NotificationHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/util/NotificationHelper.java)
-  通知帮助类，负责前台服务通知和异常交易通知，本轮已升级为更强系统通知样式。
+  通知帮助类，负责前台服务通知和异常交易通知；当前通知点击已直接收口到主壳 `MARKET_MONITOR` Tab。
+- [app/src/main/java/com/binance/monitor/ui/launch/OverlayLaunchBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/launch/OverlayLaunchBridgeActivity.java)
+  悬浮窗点击桥接页，负责把悬浮窗点击统一转成主壳目标 Tab 路由；当前图表目标会把 `symbol` 等参数直接透传给主壳 `MARKET_CHART` Tab。
 - [app/src/main/java/com/binance/monitor/data/local/db/](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db)
   Room 数据库层，负责历史 K 线、历史交易、账户摘要、持仓快照、挂单快照；当前账户缓存已改为按 `account + server` 分区，`account_snapshot_meta` 保存多身份摘要行，其余表通过稳定身份前缀隔离不同账户的数据。
 - [app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java)
@@ -163,8 +181,10 @@
 
 ## 模块之间的调用关系
 
-- `MainActivity` -> `BinanceApiClient`
-  主监控页按需从韩国服务器转发入口读取公共行情补充数据。
+- `MainHostActivity` -> `HostTabNavigator` -> `MarketMonitorFragment / MarketChartFragment / AccountStatsFragment / AccountPositionFragment / SettingsFragment`
+  主壳根据目标 Tab 统一创建或复用常驻页面实例，不再通过底部 Tab 互相 `startActivity(...)`。
+- `MainActivity` -> `HostNavigationIntentFactory` -> `MainHostActivity`
+  旧行情监控入口已退成桥接，默认直接跳到主壳 `MARKET_MONITOR` Tab。
 - `MonitorService` -> `FallbackKlineSocketManager`
   fallback 行情流现在只保留观测用途，不再直接写主监控页和悬浮窗真值。
 - `MonitorService` -> `GatewayV2StreamClient` -> `server_v2.py /v2/stream`
@@ -173,7 +193,7 @@
   根据 `v2 stream` 消息内容决定当前是应用市场运行态、应用账户运行态、按 `historyRevision` 补历史，还是只刷新悬浮窗。
 - `MonitorService` -> `service.stream.V2StreamSequenceGuard`
   先按 `busSeq` 判断当前消息是否仍属于当前有效序列，只有通过顺序守卫且成功应用的 stream 消息才会提交序列进度。
-- `MainActivity` / `MarketChartActivity` / `AccountStatsBridgeActivity` / `SettingsSectionActivity` / `BootCompletedReceiver` -> `MonitorServiceController`
+- `MainHostActivity` / `MainActivity` / `MarketChartActivity` / `AccountStatsBridgeActivity` / `SettingsSectionActivity` / `BootCompletedReceiver` -> `MonitorServiceController`
   服务启动和动作分发统一走控制器，不再由各入口自己手写 `Intent + startForegroundService`。
 - `MonitorService` -> `service.account.AccountHistoryRefreshGate`
   账户历史补拉进入前先走 gate，结束后再由 gate 决定是否续跑到最新 revision。
@@ -191,6 +211,10 @@
   悬浮窗的刷新节流、快照拼装和销毁清理都统一收口到协调器，服务层不再自己散落悬浮窗生命周期逻辑。
 - `MarketChartActivity` -> `ChartHistoryRepository` -> Room
   先读本地历史，再按需补网络数据；落库时直接 upsert 当前整理好的窗口，不再回读整段旧历史。
+- `MarketChartActivity` -> `MarketChartDataCoordinator`
+  图表页请求、补页、实时观察和叠加层恢复主编排统一先进入数据协调器，再由宿主回调执行底层抓取与最终落图。
+- `MarketChartFragment` -> `MarketChartScreen` -> `MarketChartDataCoordinator`
+  主壳内的图表页现在直接复用共享屏幕对象与数据协调器，不再停留在空宿主回调阶段。
 - `MarketChartActivity` -> `ChartPersistenceWindowHelper` -> `ChartHistoryRepository`
   最新窗口在持久化前先剔除未闭合 patch，避免 Room 把活 K 线当成历史真值恢复。
 - `MarketChartActivity` -> `GatewayV2Client` -> `server_v2.py /v2/market/candles`
@@ -205,6 +229,10 @@
   统一把应用前后台状态转换成账户预加载节奏，避免旧常量分散在多个入口里。
 - `AccountStatsBridgeActivity` -> `AccountStatsPreloadManager`
   主动刷新时统一复用 `v2` 优先抓取逻辑，不再由页面自己直连旧网关。
+- `AccountStatsBridgeActivity` -> `AccountStatsRenderCoordinator`
+  账户统计页快照落地、deferred secondary render、交易统计和交易记录筛选统一先进入渲染协调器，再由宿主回调执行最终绑定。
+- `AccountStatsFragment` -> `AccountStatsScreen` -> `AccountStatsRenderCoordinator` / `AccountSnapshotRefreshCoordinator`
+  主壳内的账户统计页现在直接复用共享屏幕对象与两条协调器主链，不再停留在空宿主回调阶段。
 - `AccountStatsBridgeActivity` -> `AccountOverviewCumulativeMetricsCalculator`
   账户概览渲染前先判断是否已具备累计指标真值；只有曲线或历史成交侧能证明累计真值时，才覆盖 `累计盈亏 / 累计收益率`。
 - `AccountStatsBridgeActivity` -> `AccountRemoteSessionCoordinator` -> `GatewayV2SessionClient`

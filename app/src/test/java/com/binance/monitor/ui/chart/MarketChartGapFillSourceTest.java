@@ -13,13 +13,15 @@ public class MarketChartGapFillSourceTest {
 
     @Test
     public void activityShouldUsePreviousOldestOpenTimeForGapBackfill() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        Path activityFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        Path coordinatorFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java");
+        String activitySource = new String(Files.readAllBytes(activityFile), StandardCharsets.UTF_8);
+        String coordinatorSource = new String(Files.readAllBytes(coordinatorFile), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("long previousOldestOpenTime = loadedCandles.isEmpty()"));
-        assertTrue(source.contains("loadCandlesForRequest("));
-        assertTrue(source.contains("previousOldestOpenTime,"));
-        assertTrue(source.contains("ChartGapFillHelper.shouldBackfillOlderHistory("));
+        assertTrue(coordinatorSource.contains("long previousOldestOpenTime = loadedCandles.isEmpty()"));
+        assertTrue(activitySource.contains("loadCandlesForRequest("));
+        assertTrue(coordinatorSource.contains("previousOldestOpenTime,"));
+        assertTrue(activitySource.contains("ChartGapFillHelper.shouldBackfillOlderHistory("));
     }
 
     @Test

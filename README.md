@@ -1,6 +1,6 @@
 # BTC/XAU 异常交易监控 Android App
 
-一个用于监控 BTC / XAU 行情、展示 MT5 账户状态、接收异常提醒的 Android App + Python 网关项目。当前仓库内“5 Tab + 账户持仓页 + 图表页轻量化”正式方案、BUG review 修复和本轮自动化复核已经收口完成；App 与服务端已经统一到单入口、单真值、纯消费展示的结构。`2026-04-12` 已补齐“真机 + 已部署 HTTPS 服务器”现场复测，真实设备为 `7fab54c4`，证据目录为 `temp/cpu_battery_20260412_account_position_tab`；`2026-04-13` 又完成一轮最终 BUG review 收口，管理面板进程控制已改为按可执行文件路径精确识别，无用 Agent 也已回收完毕。
+一个用于监控 BTC / XAU 行情、展示 MT5 账户状态、接收异常提醒的 Android App + Python 网关项目。当前仓库已经进入“单主壳 Activity + 常驻 Tab 页面 + 数据域拆分”的主壳切流阶段：`MainHostActivity` 已接管 launcher alias，`MainActivity` 已退成桥接页，`AccountStatsFragment`、`MarketChartFragment` 也已通过共享屏幕对象承接真实业务主链。历史真机复测记录仍保留在本文下方，但应和本轮新增验证区分阅读。
 
 ## 项目功能简介
 
@@ -75,6 +75,18 @@
 
 ## 已完成功能列表
 
+- 单主壳 `MainHostActivity`、`HostTabNavigator`、`HostTabPage`、5 个 Tab Fragment 骨架和共享 `PageController` 已建立
+- launcher alias 已切到 `MainHostActivity`，`MainActivity` 已退成桥接到 `MARKET_MONITOR` Tab
+- `MarketChartActivity`、`AccountStatsBridgeActivity` 已收薄成“启动即桥接到主壳并透传 extras”的兼容入口
+- 悬浮窗点击入口和通知点击入口现在也直接收口到主壳，不再绕旧底部页
+- 已重新按固定路径补主壳真机验收：`MainActivity` 首启直接进入 `MainHostActivity`，后续 `market_chart / account_stats / account_position / settings / account_stats` 均复用同一个主壳实例，不再出现旧底部页 `Displayed`
+- 主壳固定路径 smoke 期间发现并修复了 `SettingsFragment` 的外层 `FrameLayout` 误绑定崩溃
+- `temp/cpu_battery_20260415_single_host_tab_shell` 已保存主壳固定路径验收原始输出与摘要；当前摘要为 `Total frames rendered: 2035`、`Janky frames: 343 (16.86%)`、`P90=19ms`、`P95=27ms`、`P99=150ms`
+- 账户统计页的 `applySnapshot / deferred secondary render / trade stats / trade records` 主链已继续下沉到 `AccountStatsRenderCoordinator`
+- 行情持仓页的 `requestKlines / requestMoreHistory / observeRealtimeDisplayKlines / overlay restore` 主链已继续下沉到 `MarketChartDataCoordinator`
+- 账户统计页、行情持仓页的 `PageController.Host` 已继续抽成 `AccountStatsPageHostDelegate`、`MarketChartPageHostDelegate`，Activity 与 Fragment 先共用同一层页面宿主适配
+- `AccountStatsScreen`、`MarketChartScreen` 已建立，`AccountStatsFragment`、`MarketChartFragment` 不再保留空宿主回调
+- `AccountPositionActivity`、`SettingsActivity` 已退成桥接；`AccountStatsBridgeActivity`、`MarketChartActivity` 现已收薄成兼容桥接入口，应用内部主链不再依赖它们做底部主导航
 - 行情监控、异常提醒、悬浮窗、图表、账户总览、交易历史、收益曲线已经跑在统一的 `/v2/*` 主链上
 - `GatewayV2Client`、`GatewayV2StreamClient`、`GatewayV2SessionClient` 已经成为 App 主链入口
 - 账户页主动刷新与后台预加载已经统一到同一套 `v2` 数据链
@@ -221,12 +233,15 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 
 ## 待办事项
 
-- 仓库内源码和最新部署包当前已收口；剩余待办只在仓库外现场条件，包括线上 bundle 切到本地最新指纹，以及手机重新连上 `adb`
+- 评估是否继续物理删除 `AccountStatsBridgeActivity`、`MarketChartActivity` 内保留的历史实现代码；当前运行链已不再依赖它们
+- 当前设备 `7fab54c4` 已在线，APK 安装与主壳启动验证已可在本机执行
+- 若要继续做更严格的耗电结论，仍建议在更长时长和更稳定交互条件下单独重复采样；当前 README 里的本轮数字只代表固定路径主壳验收结果
 - 部署现场仍需再次确认域名、证书、443 放行和 `/v2/session/*` 的 HTTPS 暴露状态
 - 2026-04-13 实时复核：公网 `tradeapp.ltd` 的 `/health`、`/v2/account/snapshot`、`/v2/account/history?range=all` 已全部恢复 `200`，`MT5_SERVER_TIMEZONE=Asia/Seoul` 已在线生效；但线上当前 bundle 指纹仍为 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`，尚未切到本地最新 `2b24d1238924476899f684847d1453980c7777750ec006e0060f4df31a6fc10c`
 
-## 真机复测记录
+## 历史真机复测记录
 
+- 说明：以下为历史现场记录，不代表当前这台开发机已经完整复现同一组采样；本轮主壳切流后的新增验证请以前文“已完成功能列表 / 待办事项”口径为准
 - 复测设备：`7fab54c4`
 - 安装验证：`adb -s 7fab54c4 install -r app\build\outputs\apk\debug\app-debug.apk` 已成功
 - 采集方式：页面 Activity 未导出，不能直接 `am start -n`；本轮改为 `LAUNCHER + adb shell input tap` 点击底部 5 Tab 做真实切页
@@ -239,6 +254,10 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 
 ## 阶段验收说明
 
+- 当前代码迁移状态：`AccountStatsFragment`、`MarketChartFragment` 已接入共享屏幕对象并承接真实主链，主入口也已切到 `MainHostActivity`；当前剩余工作主要是旧入口兼容链进一步收口，以及主壳切流后的完整性能/耗电复测
+- 当前代码迁移状态：主入口、旧底部页兼容入口、悬浮窗入口、通知入口都已收口到主壳；当前剩余工作已收缩到“是否继续删除旧重页实现”和“是否做更长时长性能/耗电复测”这两类后续优化
+- 2026-04-15 固定路径主壳验收：证据目录为 `temp/cpu_battery_20260415_single_host_tab_shell`；`MainActivity` 首启直接拉起 `MainHostActivity`，后续切页没有再出现旧底部页 `Displayed`；`gfxinfo` 摘要为 `Total frames rendered: 2035`、`Janky frames: 343 (16.86%)`；`batterystats` reset 后当前包 `appId=10518 / UID u0a518` 摘录约为 `cpu=1.19 mAh`、`wifi=0.0181 mAh`
+- 当前设备状态：本机 `adb devices` 已恢复 `7fab54c4 device`；最新 debug 包安装与主壳启动验证已在本机重新执行
 - 2026-04-13 最终收口复核：已再次确认本地 Android / Windows 源码与最新部署包没有新的未闭合问题；已知已完成智能体重新执行关闭均返回 `not found`，说明当前没有残留可回收的旧 Agent
 - 2026-04-13 在线环境复核：`https://tradeapp.ltd/health`、`/v2/session/status`、`/v2/account/snapshot`、`/v2/account/history?range=all` 均返回 `200`，当前在线账户状态为 `remote_logged_out`；但线上运行 bundle 指纹仍为 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`，尚未切到本地最新 `2b24d1238924476899f684847d1453980c7777750ec006e0060f4df31a6fc10c`
 - 当前 1-6 步代码收口已经完成，最近一轮多模型复核、BUG review 修复、README/CONTEXT 同步以及无用 Agent 回收也已完成

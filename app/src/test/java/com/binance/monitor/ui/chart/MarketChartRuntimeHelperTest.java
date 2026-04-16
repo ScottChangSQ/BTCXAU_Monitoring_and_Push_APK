@@ -30,4 +30,15 @@ public class MarketChartRuntimeHelperTest {
 
         assertEquals("15m", key);
     }
+
+    @Test
+    public void resolveStoredIntervalKeyShouldNotTreatMonthlyAsMinute() {
+        String key = MarketChartRuntimeHelper.resolveStoredIntervalKey(
+                "1M",
+                "15m",
+                new String[]{"1m", "15m", "1M"}
+        );
+
+        assertEquals("1M", key);
+    }
 }

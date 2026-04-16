@@ -25,11 +25,10 @@ public class OverlayLaunchBridgeActivitySourceTest {
         assertTrue(source.contains("routeToTargetAndFinish();"));
         assertTrue(source.contains("private void routeToTargetAndFinish()"));
         assertTrue(source.contains("private void routeToChart(String targetSymbol)"));
-        assertTrue(source.contains("new Intent(this, MarketChartActivity.class)"));
+        assertTrue(source.contains("HostNavigationIntentFactory.forTab(this, HostTab.MARKET_CHART)"));
         assertTrue(source.contains("putExtra(MarketChartActivity.EXTRA_TARGET_SYMBOL"));
         assertTrue(source.contains("private void routeToHome()"));
-        assertTrue(source.contains("new Intent(this, MainActivity.class)"));
-        assertTrue(source.contains("intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);"));
+        assertTrue(source.contains("HostNavigationIntentFactory.forTab(this, HostTab.MARKET_MONITOR)"));
         assertTrue(source.contains("finish();"));
     }
 

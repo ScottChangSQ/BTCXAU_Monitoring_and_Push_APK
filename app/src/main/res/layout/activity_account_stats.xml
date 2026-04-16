@@ -1132,4 +1132,11 @@
         android:layout_height="0dp"
         android:visibility="gone"
         app:menu="@menu/menu_bottom_nav" />
+
+    <ViewStub
+        android:id="@+id/stubSharedAccountStatsContent"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:inflatedId="@+id/inflatedSharedAccountStatsContent"
+        android:layout="@layout/content_account_stats" />
 </LinearLayout>

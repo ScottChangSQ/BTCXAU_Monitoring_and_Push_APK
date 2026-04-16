@@ -21,6 +21,7 @@ public class NotificationHelperSourceTest {
         assertTrue(helperSource.contains("AppConstants.ALERT_CHANNEL_ID"));
         assertTrue(helperSource.contains("notifyAbnormalAlert("));
         assertTrue(helperSource.contains("alertChannel"));
+        assertTrue(helperSource.contains("HostNavigationIntentFactory.forTab(context, HostTab.MARKET_MONITOR)"));
     }
 
     @Test

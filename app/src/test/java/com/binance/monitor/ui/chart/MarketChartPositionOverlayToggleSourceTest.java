@@ -14,14 +14,22 @@ public class MarketChartPositionOverlayToggleSourceTest {
 
     @Test
     public void positionOverlayShouldBeControlledByOwnToggleOnly() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+        String activitySource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java")
+        ), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+        String runtimeSource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartPageRuntime.java")
+        ), StandardCharsets.UTF_8)
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("private void togglePositionOverlayVisibility()"));
-        assertTrue(source.contains("showPositionOverlays = !showPositionOverlays;"));
-        assertTrue(source.contains("binding.klineChartView.setOverlayVisibility(\n                !masked && showPositionOverlays,\n                !masked && showPositionOverlays,\n                showHistoryTrades,\n                !masked && showPositionOverlays);"));
-        assertFalse(source.contains("showHistoryTrades = !showPositionOverlays"));
+        assertTrue(activitySource.contains("binding.btnTogglePositionOverlays.setOnClickListener(v -> pageRuntime.togglePositionOverlayVisibility());"));
+        assertFalse(activitySource.contains("private void togglePositionOverlayVisibility()"));
+        assertTrue(activitySource.contains("showPositionOverlays = !showPositionOverlays;"));
+        assertTrue(runtimeSource.contains("public void togglePositionOverlayVisibility() {\n        host.togglePositionOverlayVisibilityState();\n        host.applyPrivacyMaskState();\n    }"));
+        assertTrue(activitySource.contains("binding.klineChartView.setOverlayVisibility(\n                !masked && showPositionOverlays,\n                !masked && showPositionOverlays,\n                showHistoryTrades,\n                !masked && showPositionOverlays);"));
+        assertFalse(activitySource.contains("showHistoryTrades = !showPositionOverlays"));
     }
 }

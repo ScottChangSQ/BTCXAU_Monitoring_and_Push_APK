@@ -37,18 +37,24 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
                 "app/src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java",
                 "src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java"
         );
+        String runtimeSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsPageRuntime.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsPageRuntime.java"
+        );
 
-        assertTrue("账户页应提供统一的前台进入刷新入口",
-                activitySource.contains("private void requestForegroundEntrySnapshot()"));
+        assertTrue("账户页应直接通过快照协调器触发统一的前台进入刷新入口",
+                activitySource.contains("snapshotRefreshCoordinator.requestForegroundEntrySnapshot();"));
         assertTrue("账户页创建时应启动监控服务，避免首次直达账户页时服务未就绪",
-                activitySource.contains("ensureMonitorServiceStarted();"));
-        assertTrue("账户页应提供单独的服务启动入口，避免 onResume 每次都误触发 bootstrap",
+                activitySource.contains("MonitorServiceController.ensureStarted(this);"));
+        assertFalse("账户页旧 Activity 不应继续保留一层服务启动私有包装",
                 activitySource.contains("private void ensureMonitorServiceStarted()"));
-        assertTrue("账户页回到前台时也应先确认服务仍在运行，避免服务被系统回收后页面空转",
-                activitySource.contains("protected void onResume() {\n        super.onResume();\n        ensureMonitorServiceStarted();"));
-        assertTrue("页面进入前台应统一走账户页恢复入口，而不是在 onCreate/onResume 各自散落 bootstrap 逻辑",
-                activitySource.contains("enterAccountScreen(true);")
-                        && activitySource.contains("enterAccountScreen(false);"));
+        assertTrue("账户页回到前台时也应通过页面运行时先确认服务仍在运行，避免服务被系统回收后页面空转",
+                activitySource.contains("protected void onResume() {\n        super.onResume();\n        pageController.onPageShown();")
+                        && runtimeSource.contains("public void onPageShown() {\n        MonitorServiceController.ensureStarted(host.requireActivity());"));
+        assertTrue("页面进入前台应统一走页面控制器/运行时入口，而不是在 onCreate/onResume 各自散落 bootstrap 逻辑",
+                activitySource.contains("pageController.onColdStart();")
+                        && activitySource.contains("pageController.onPageShown();")
+                        && activitySource.contains("pageController.onPageHidden();"));
         assertTrue("账户页恢复入口应先消费当前会话缓存，再决定是否需要 bootstrap",
                 coordinatorSource.contains("void enterAccountScreen(boolean coldStart) {")
                         && coordinatorSource.contains("applyPreloadedCacheIfAvailable();"));
@@ -171,10 +177,11 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
         );
 
-        assertTrue("账户页签名必须覆盖交易记录，避免平仓后交易列表被误判为未变化",
-                source.contains("appendTradeSignature(builder, snapshot.getTrades());"));
-        assertTrue("账户页签名应覆盖净值曲线，避免曲线更新时被误判成旧快照",
-                source.contains("appendCurveSignature(builder, snapshot.getCurvePoints());"));
+        assertTrue("账户页签名必须统一走历史渲染签名构建入口，覆盖交易记录与净值曲线",
+                source.contains("return AccountStatsRenderSignature.from("));
+        assertTrue("历史渲染签名应显式接收交易记录和净值曲线",
+                source.contains("payload.getTrades(),")
+                        && source.contains("payload.getCurvePoints(),"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

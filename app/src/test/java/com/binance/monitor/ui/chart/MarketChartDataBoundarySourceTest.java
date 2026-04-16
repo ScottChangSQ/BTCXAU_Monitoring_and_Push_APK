@@ -3,6 +3,7 @@
  */
 package com.binance.monitor.ui.chart;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -20,15 +21,26 @@ public class MarketChartDataBoundarySourceTest {
                 "app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java",
                 "src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
+        String runtimeSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/chart/MarketChartPageRuntime.java",
+                "src/main/java/com/binance/monitor/ui/chart/MarketChartPageRuntime.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("切换产品前应先失效旧图表上下文，避免旧 K 线继续挂在新产品名下",
                 source.contains("private void invalidateChartDisplayContext() {"));
-        assertTrue("切换产品时应先失效旧上下文，再发起新请求",
-                source.contains("selectedSymbol = symbol.trim().toUpperCase(Locale.ROOT);\n        syncSymbolSelector();\n        invalidateChartDisplayContext();\n        requestKlines();"));
-        assertTrue("切换周期时也应先失效旧上下文，再发起新请求",
-                source.contains("selectedInterval = option;\n        persistSelectedInterval();\n        updateIntervalButtons();\n        invalidateChartDisplayContext();\n        requestKlines();"));
+        assertTrue("切换产品应先走运行时入口，再由运行时统一失效旧上下文并重拉取",
+                source.contains("pageRuntime.requestSymbolSelection(symbol);"));
+        assertTrue("切换周期也应先走运行时入口，再由运行时统一失效旧上下文并重拉取",
+                source.contains("pageRuntime.requestIntervalSelection(INTERVALS[0].key)"));
+        assertTrue("运行时里应在提交新的图表选择后先失效旧上下文，再发起统一刷新",
+                runtimeSource.contains("host.commitSelectedSymbol(symbol);")
+                        && runtimeSource.contains("host.commitSelectedInterval(intervalKey);")
+                        && runtimeSource.contains("host.invalidateChartDisplayContext();")
+                        && runtimeSource.contains("requestChartSelectionReload();"));
         assertTrue("复用图表页任务栈时，onNewIntent 切换品种也应先失效旧上下文再请求，避免短时混图",
-                source.contains("if (triggerReload) {\n            invalidateChartDisplayContext();\n            requestKlines();\n            scheduleNextAutoRefresh();\n        }"));
+                source.contains("if (triggerReload) {\n            invalidateChartDisplayContext();\n            pageRuntime.requestChartSelectionReload();\n        }"));
+        assertFalse("旧 Activity 不应继续手写“请求一次再重排自动刷新”的旧编排",
+                source.contains("dataCoordinator.requestKlines(true, false);\n            if (pageRuntime != null) {\n                pageRuntime.scheduleNextAutoRefresh();\n            }"));
     }
 
     @Test

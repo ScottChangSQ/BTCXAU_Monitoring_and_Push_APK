@@ -16,11 +16,11 @@ public class AccountPositionEnhancementSourceTest {
 
     @Test
     public void activityShouldBindPositionAggregateSection() throws Exception {
-        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java");
+        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
         String layoutSource = readUtf8("src/main/res/layout/activity_account_position.xml");
 
         assertTrue(activitySource.contains("private PositionAggregateAdapter positionAggregateAdapter;"));
-        assertTrue(activitySource.contains("binding.recyclerPositionAggregates.setLayoutManager(new LinearLayoutManager(this));"));
+        assertTrue(activitySource.contains("binding.recyclerPositionAggregates.setLayoutManager(new LinearLayoutManager(host.requireActivity()));"));
         assertTrue(activitySource.contains("binding.recyclerPositionAggregates.setAdapter(positionAggregateAdapter);"));
         assertTrue(activitySource.contains("positionAggregateAdapter.submitList(model.getPositionAggregates());"));
 
@@ -53,14 +53,14 @@ public class AccountPositionEnhancementSourceTest {
 
     @Test
     public void activityShouldRoutePositionAndPendingActionsIntoChartTradeFlow() throws Exception {
-        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionActivity.java");
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
 
         assertTrue(source.contains("positionAdapter.setActionListener(new PositionAdapterV2.ActionListener()"));
         assertTrue(source.contains("pendingOrderAdapter.setActionListener(new PendingOrderAdapter.ActionListener()"));
-        assertTrue(source.contains("openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_CLOSE_POSITION);"));
-        assertTrue(source.contains("openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_MODIFY_POSITION);"));
-        assertTrue(source.contains("openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_MODIFY_PENDING);"));
-        assertTrue(source.contains("openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_CANCEL_PENDING);"));
+        assertTrue(source.contains("host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_CLOSE_POSITION);"));
+        assertTrue(source.contains("host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_MODIFY_POSITION);"));
+        assertTrue(source.contains("host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_MODIFY_PENDING);"));
+        assertTrue(source.contains("host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_CANCEL_PENDING);"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

@@ -8,15 +8,15 @@ import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.model.KlineData;
 
-final class MainMarketRenderHelper {
+public final class MainMarketRenderHelper {
 
     private MainMarketRenderHelper() {
     }
 
     // 生成当前行情卡片的稳定签名；只有签名变化时才需要整块重绘。
-    static String buildRenderSignature(@Nullable String symbol,
-                                       @Nullable Double latestPrice,
-                                       @Nullable KlineData latestKline) {
+    public static String buildRenderSignature(@Nullable String symbol,
+                                              @Nullable Double latestPrice,
+                                              @Nullable KlineData latestKline) {
         String safeSymbol = symbol == null ? "" : symbol.trim().toUpperCase();
         long openTime = latestKline == null ? 0L : latestKline.getOpenTime();
         long closeTime = latestKline == null ? 0L : latestKline.getCloseTime();
@@ -40,8 +40,8 @@ final class MainMarketRenderHelper {
     }
 
     // 当签名未变化时，说明整块行情卡片内容没变，不必重复刷新。
-    static boolean shouldRender(@Nullable String previousSignature,
-                                @Nullable String nextSignature) {
+    public static boolean shouldRender(@Nullable String previousSignature,
+                                       @Nullable String nextSignature) {
         if (nextSignature == null) {
             return false;
         }

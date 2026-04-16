@@ -210,17 +210,17 @@ final class CandleAggregationHelper {
         calendar.set(Calendar.MINUTE, 0);
         calendar.set(Calendar.SECOND, 0);
         calendar.set(Calendar.MILLISECOND, 0);
-        if ("1w".equalsIgnoreCase(normalized)) {
+        if ("1w".equals(normalized)) {
             int day = calendar.get(Calendar.DAY_OF_WEEK);
             int delta = day == Calendar.SUNDAY ? -6 : (Calendar.MONDAY - day);
             calendar.add(Calendar.DAY_OF_MONTH, delta);
             return calendar.getTimeInMillis();
         }
-        if ("1M".equalsIgnoreCase(normalized)) {
+        if ("1M".equals(normalized)) {
             calendar.set(Calendar.DAY_OF_MONTH, 1);
             return calendar.getTimeInMillis();
         }
-        if ("1y".equalsIgnoreCase(normalized)) {
+        if ("1y".equals(normalized)) {
             calendar.set(Calendar.DAY_OF_YEAR, 1);
             return calendar.getTimeInMillis();
         }
@@ -247,15 +247,15 @@ final class CandleAggregationHelper {
         calendar.set(Calendar.MINUTE, 0);
         calendar.set(Calendar.SECOND, 0);
         calendar.set(Calendar.MILLISECOND, 0);
-        if ("1w".equalsIgnoreCase(normalized)) {
+        if ("1w".equals(normalized)) {
             calendar.add(Calendar.DAY_OF_MONTH, 7);
             return calendar.getTimeInMillis();
         }
-        if ("1M".equalsIgnoreCase(normalized)) {
+        if ("1M".equals(normalized)) {
             calendar.add(Calendar.MONTH, 1);
             return calendar.getTimeInMillis();
         }
-        if ("1y".equalsIgnoreCase(normalized)) {
+        if ("1y".equals(normalized)) {
             calendar.add(Calendar.YEAR, 1);
             return calendar.getTimeInMillis();
         }
@@ -263,13 +263,13 @@ final class CandleAggregationHelper {
     }
 
     private static long resolveFixedIntervalMs(String intervalKey) {
-        if ("1m".equalsIgnoreCase(intervalKey)) return 60_000L;
-        if ("5m".equalsIgnoreCase(intervalKey)) return 5L * 60_000L;
-        if ("15m".equalsIgnoreCase(intervalKey)) return 15L * 60_000L;
-        if ("30m".equalsIgnoreCase(intervalKey)) return 30L * 60_000L;
-        if ("1h".equalsIgnoreCase(intervalKey)) return 60L * 60_000L;
-        if ("4h".equalsIgnoreCase(intervalKey)) return 4L * 60L * 60_000L;
-        if ("1d".equalsIgnoreCase(intervalKey)) return 24L * 60L * 60_000L;
+        if ("1m".equals(intervalKey)) return 60_000L;
+        if ("5m".equals(intervalKey)) return 5L * 60_000L;
+        if ("15m".equals(intervalKey)) return 15L * 60_000L;
+        if ("30m".equals(intervalKey)) return 30L * 60_000L;
+        if ("1h".equals(intervalKey)) return 60L * 60_000L;
+        if ("4h".equals(intervalKey)) return 4L * 60L * 60_000L;
+        if ("1d".equals(intervalKey)) return 24L * 60L * 60_000L;
         return -1L;
     }
 

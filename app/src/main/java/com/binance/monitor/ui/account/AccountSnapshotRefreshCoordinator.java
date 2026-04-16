@@ -26,6 +26,17 @@ final class AccountSnapshotRefreshCoordinator {
         @Nullable
         AccountStatsPreloadManager.Cache resolveCurrentSessionCache();
 
+        boolean isStoredSnapshotRestorePending();
+
+        void setStoredSnapshotRestorePending(boolean pending);
+
+        @Nullable
+        AccountStatsPreloadManager.Cache hydrateLatestCacheFromStorage();
+
+        boolean isPreloadedCacheForCurrentSession(@Nullable AccountStatsPreloadManager.Cache cache);
+
+        void clearLatestCacheIfCurrent(@Nullable AccountStatsPreloadManager.Cache cache);
+
         void applyLoggedOutEmptyState();
 
         void clearScheduledRefresh();
@@ -33,6 +44,8 @@ final class AccountSnapshotRefreshCoordinator {
         void updateOverviewHeader();
 
         boolean hasRenderableCurrentSessionState();
+
+        boolean hasRenderableHistorySections(@Nullable AccountSnapshot snapshot);
 
         boolean shouldKeepRefreshLoop();
 
@@ -154,6 +167,9 @@ final class AccountSnapshotRefreshCoordinator {
         host.applyCacheMeta(cache);
         host.updateOverviewHeader();
         host.logConnectionEvent(cache.isConnected());
+        if (!host.hasRenderableHistorySections(cache.getSnapshot())) {
+            return;
+        }
         String cacheSignature = host.buildRefreshSignature(
                 cache.getSnapshot(),
                 cache.getHistoryRevision(),
@@ -170,6 +186,7 @@ final class AccountSnapshotRefreshCoordinator {
 
     // 账户页进入前台时只消费已有真值；只有缺少可渲染状态时才重建主链。
     void enterAccountScreen(boolean coldStart) {
+        scheduleStoredSnapshotRestoreIfNeeded();
         applyPreloadedCacheIfAvailable();
         if (!host.isUserLoggedIn()) {
             host.clearScheduledRefresh();
@@ -192,6 +209,42 @@ final class AccountSnapshotRefreshCoordinator {
             return;
         }
         requestForegroundEntrySnapshot();
+    }
+
+    // 页面冷启动先尝试触发一次本地快照恢复，避免首帧只有默认占位信息。
+    void primeStoredSnapshotRestoreIfNeeded() {
+        scheduleStoredSnapshotRestoreIfNeeded();
+    }
+
+    // 当前会话内存缓存为空时，后台恢复本地持久化快照，避免切页首帧同步读库。
+    private void scheduleStoredSnapshotRestoreIfNeeded() {
+        if (!host.isAccountSessionReady()
+                || host.isStoredSnapshotRestorePending()) {
+            return;
+        }
+        if (host.resolveCurrentSessionCache() != null) {
+            return;
+        }
+        host.setStoredSnapshotRestorePending(true);
+        host.executeIo(() -> {
+            AccountStatsPreloadManager.Cache storedCache = null;
+            try {
+                storedCache = host.hydrateLatestCacheFromStorage();
+            } finally {
+                AccountStatsPreloadManager.Cache finalStoredCache = storedCache;
+                host.runOnUiThread(() -> {
+                    host.setStoredSnapshotRestorePending(false);
+                    if (host.isFinishingOrDestroyed() || finalStoredCache == null) {
+                        return;
+                    }
+                    if (!host.isPreloadedCacheForCurrentSession(finalStoredCache)) {
+                        host.clearLatestCacheIfCurrent(finalStoredCache);
+                        return;
+                    }
+                    applyPreloadedCacheIfAvailable();
+                });
+            }
+        });
     }
 
     // 页面首次进入和回前台时统一触发一次明确刷新。

@@ -196,7 +196,8 @@ public class AccountStatsPreloadManagerSourceTest {
 
         assertTrue(source.contains("public Cache fetchForUi(AccountTimeRange range) {"));
         assertTrue(source.contains("AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();"));
-        assertTrue(source.contains("String remoteHistoryRevision = resolveRemoteHistoryRevision(snapshotPayload);"));
+        assertTrue(source.contains("AccountHistoryPayload historyPayload = fetchCompleteHistoryPayload(AccountTimeRange.ALL);"));
+        assertTrue(source.contains("String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, historyPayload);"));
         assertFalse(source.contains("public Cache fetchForUi(AccountTimeRange range) {\n        Cache cache = latestCache;\n        if (cache != null) {\n            return cache;\n        }\n        return null;\n    }"));
     }
 
@@ -212,6 +213,26 @@ public class AccountStatsPreloadManagerSourceTest {
         assertTrue(source.contains("String nextCursor = firstPage.getNextCursor();"));
         assertTrue(source.contains("while (!nextCursor.trim().isEmpty()) {"));
         assertTrue(source.contains("gatewayV2Client.fetchAccountHistory(range, nextCursor)"));
+    }
+
+    @Test
+    public void fetchForUiShouldNotSkipCanonicalHistoryReloadWhenRevisionLooksUnchanged() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        int fetchForUiStart = source.indexOf("public Cache fetchForUi(AccountTimeRange range) {");
+        int updateLatestCacheIndex = source.indexOf("updateLatestCache(cache);", fetchForUiStart);
+        String fetchForUiBody = source.substring(fetchForUiStart, updateLatestCacheIndex);
+
+        assertTrue(fetchForUiBody.contains("AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();"));
+        assertTrue(fetchForUiBody.contains("AccountHistoryPayload historyPayload = fetchCompleteHistoryPayload(AccountTimeRange.ALL);"));
+        assertTrue(fetchForUiBody.contains("AccountStorageRepository.StoredSnapshot mergedSnapshot ="));
+        assertTrue(fetchForUiBody.contains("buildStoredSnapshotFromV2(snapshotPayload, historyPayload);"));
+        assertFalse(fetchForUiBody.contains("AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory("));
+        assertFalse(fetchForUiBody.contains("buildStoredSnapshotFromSnapshotOnly(snapshotPayload)"));
+        assertFalse(fetchForUiBody.contains("persistIncrementalSnapshot(incrementalSnapshot)"));
     }
 
     @Test

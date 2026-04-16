@@ -34,6 +34,8 @@ public class AccountStatsBridgeCoordinatorSourceTest {
                 source.contains("snapshotRefreshCoordinator.requestForegroundEntrySnapshot();"));
         assertTrue("账户页快照请求应委托协调器处理",
                 source.contains("snapshotRefreshCoordinator.requestSnapshot();"));
+        assertTrue("账户页不应再保留纯转发的 requestSnapshot 包装方法",
+                !source.contains("private void requestSnapshot()"));
     }
 
     private static boolean exists(String... candidates) {

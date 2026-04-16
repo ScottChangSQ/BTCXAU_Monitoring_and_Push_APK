@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.chart;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -85,6 +86,18 @@ public class KlineChartViewSourceTest {
         assertTrue(source.contains("public void prependCandles(@Nullable List<CandleEntry> olderCandles) {"));
         assertTrue(source.contains("long highlightedOpenTime = resolveHighlightedOpenTime();"));
         assertTrue(source.contains("if (!restoreCrosshairByOpenTime(highlightedOpenTime)) {\n                updateCrosshair(crosshairX, crosshairY);\n            }"));
+    }
+
+    @Test
+    public void prependOlderCandlesShouldKeepViewportOffsetInsteadOfJumpingToNewLeftEdge() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("float oldOffset = offsetCandles;"));
+        assertTrue(source.contains("offsetCandles = oldOffset;"));
+        assertFalse(source.contains("offsetCandles += olderCandles.size();"));
     }
 
     @Test

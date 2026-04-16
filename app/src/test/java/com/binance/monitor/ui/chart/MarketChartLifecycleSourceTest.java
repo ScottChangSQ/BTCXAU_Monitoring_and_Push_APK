@@ -18,11 +18,17 @@ public class MarketChartLifecycleSourceTest {
                 "app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java",
                 "src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
+        String runtimeSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/chart/MarketChartPageRuntime.java",
+                "src/main/java/com/binance/monitor/ui/chart/MarketChartPageRuntime.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("图表页应提供统一的前台进入入口，避免 onCreate/onResume 各自散落恢复逻辑",
-                source.contains("private void enterChartScreen(boolean coldStart)"));
-        assertTrue("图表页 onResume 应先恢复账户叠加层，再消费待处理交易动作，最后按隐私态重绘，避免当前持仓先闪成空白或漏掉待执行入口",
-                source.contains("protected void onResume() {\n        super.onResume();\n        ensureMonitorServiceStarted();\n        applyPaletteStyles();\n        if (accountStatsPreloadManager != null) {\n            accountStatsPreloadManager.addCacheListener(accountCacheListener);\n        }\n        restoreChartOverlayFromLatestCacheOrEmpty();\n        consumePendingTradeActionIfNeeded();\n        applyPrivacyMaskState();\n        enterChartScreen(!chartScreenEntered);\n        chartScreenEntered = true;\n    }"));
+                runtimeSource.contains("private void enterChartScreen(boolean coldStart)"));
+        assertTrue("图表页 onResume 应只保留控制器入口，具体前台进入编排交给宿主回调统一承接",
+                source.contains("protected void onResume() {\n        super.onResume();\n        if (pageController != null) {\n            pageController.onPageShown();\n        }\n    }"));
+        assertTrue("图表页前台进入主链应收口到控制器宿主回调里，避免 Activity 生命周期散落同一套逻辑",
+                runtimeSource.contains("public void onPageShown() {\n        MonitorServiceController.ensureStarted(host.requireActivity());\n        host.applyPagePalette();\n        host.attachAccountCacheListener();\n        host.restoreChartOverlayFromLatestCacheOrEmpty();\n        host.consumePendingTradeActionIfNeeded();\n        host.applyPrivacyMaskState();\n        enterChartScreen(!hasEnteredScreen);\n        hasEnteredScreen = true;\n    }"));
         assertFalse("普通 tab 返回图表页时不应无条件重建行情 HTTP transport",
                 source.contains("protected void onResume() {\n        super.onResume();\n        ensureMonitorServiceStarted();\n        applyPaletteStyles();\n        applyPrivacyMaskState();\n        if (gatewayV2Client != null) {\n            gatewayV2Client.resetTransport();"));
         assertFalse("普通 tab 返回图表页时不应无条件重建交易 HTTP transport",
@@ -45,6 +51,25 @@ public class MarketChartLifecycleSourceTest {
                 source.contains("private String buildAbnormalOverlaySignature("));
         assertTrue("异常标注层在输入未变化时应直接跳过重建",
                 source.contains("if (abnormalOverlaySignature.equals(lastAbnormalOverlaySignature)) {\n            return;\n        }"));
+    }
+
+    @Test
+    public void chartSelectionReloadShouldBeOwnedByPageRuntime() throws Exception {
+        String activitySource = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java",
+                "src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+        String runtimeSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/chart/MarketChartPageRuntime.java",
+                "src/main/java/com/binance/monitor/ui/chart/MarketChartPageRuntime.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("切产品、切周期后的重拉取与自动刷新重排应收口到运行时，避免旧 Activity 自己拼编排",
+                runtimeSource.contains("public void requestChartSelectionReload() {\n        host.requestKlines();\n        scheduleNextAutoRefresh();\n    }"));
+        assertTrue("图表页切换 symbol/interval 和外部 intent 切入都应复用运行时入口",
+                activitySource.contains("pageRuntime.requestChartSelectionReload();"));
+        assertFalse("旧 Activity 不应继续手写“请求一次再 scheduleNextAutoRefresh”这一组页面编排",
+                activitySource.contains("dataCoordinator.requestKlines(true, false);\n            if (pageRuntime != null) {\n                pageRuntime.scheduleNextAutoRefresh();\n            }"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

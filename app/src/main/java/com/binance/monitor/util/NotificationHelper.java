@@ -12,7 +12,8 @@ import androidx.core.app.NotificationCompat;
 
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
-import com.binance.monitor.ui.main.MainActivity;
+import com.binance.monitor.ui.host.HostNavigationIntentFactory;
+import com.binance.monitor.ui.host.HostTab;
 
 public class NotificationHelper {
 
@@ -47,9 +48,9 @@ public class NotificationHelper {
     }
 
     public Notification buildServiceNotification(String connectionState, boolean monitoringEnabled) {
-        Intent intent = new Intent(context, MainActivity.class)
+        Intent intent = HostNavigationIntentFactory.forTab(context, HostTab.MARKET_MONITOR)
                 .setAction(Intent.ACTION_MAIN)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 context,
                 100,
@@ -94,9 +95,9 @@ public class NotificationHelper {
         }
         String safeTitle = title == null || title.trim().isEmpty() ? "异常提醒" : title.trim();
         String safeContent = content == null ? "" : content.trim();
-        Intent intent = new Intent(context, MainActivity.class)
+        Intent intent = HostNavigationIntentFactory.forTab(context, HostTab.MARKET_MONITOR)
                 .setAction(Intent.ACTION_MAIN)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 context,
                 200 + Math.max(0, notificationId),

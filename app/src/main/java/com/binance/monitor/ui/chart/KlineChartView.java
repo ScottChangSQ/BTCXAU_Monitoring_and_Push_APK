@@ -759,10 +759,12 @@ public class KlineChartView extends View {
             setCandles(olderCandles);
             return;
         }
+        float oldOffset = offsetCandles;
         long highlightedOpenTime = resolveHighlightedOpenTime();
         candles.addAll(0, olderCandles);
-        offsetCandles += olderCandles.size();
         computeIndicators();
+        // 左补成功后继续停留在原来的视口位置，只把更早历史暴露到左侧，不要自动跳到新的最左边。
+        offsetCandles = oldOffset;
         clampOffset();
         if (longPressing && !Float.isNaN(crosshairX) && !Float.isNaN(crosshairY)) {
             if (!restoreCrosshairByOpenTime(highlightedOpenTime)) {
