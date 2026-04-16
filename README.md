@@ -19,7 +19,7 @@
 - 图表页从其他 tab 返回前台时，已收口为“恢复消费节奏”而不是“重新启动页面链路”：普通返回不再在 `onResume()` 里重置 V2 transport，也不再由图表页切账户全量快照节奏
 - 图表页当前持仓/挂单叠加层首帧现在会优先恢复最近一次本地已持久化快照，不再因为内存缓存尚未回填就先清空“当前持仓”
 - 图表页切到“行情持仓”时，实时尾部和持仓叠加层现在会等主图首帧真正画出来后再释放，不再抢在首屏前一起压主线程
-- 底部导航现已固定为 5 个 Tab：`行情监控 / 行情持仓 / 账户持仓 / 账户统计 / 设置`
+- 底部导航现已收口为 4 个一级页：`交易 / 账户 / 分析 / 设置`
 - 实时账户总览、当前持仓、挂单现在统一迁到独立的“账户持仓”页；图表页只保留 K 线主体、图上标注、轻量摘要和交易按钮，账户统计页只保留历史分析
 - K 线图当前持仓、挂单、历史成交、异常记录现在共用统一 annotation 明细消费链；当前持仓/挂单线支持查看开仓时间、数量、浮盈亏、止盈止损等详情
 - 图表页 `1w / 1M / 1y` 长周期恢复前台时，若当前窗口仍新鲜则不再立刻重拉；后续自动刷新也不再走快速 fallback，而是对齐到下一次分钟边界
@@ -75,7 +75,7 @@
 
 ## 已完成功能列表
 
-- 单主壳 `MainHostActivity`、`HostTabNavigator`、`HostTabPage`、5 个 Tab Fragment 骨架和共享 `PageController` 已建立
+- 单主壳 `MainHostActivity`、`HostTabNavigator`、`HostTabPage`、4 个一级页 Fragment 骨架和共享 `PageController` 已建立
 - launcher alias 已切到 `MainHostActivity`，`MainActivity` 已退成桥接到 `MARKET_MONITOR` Tab
 - `MarketChartActivity`、`AccountStatsBridgeActivity` 已收薄成“启动即桥接到主壳并透传 extras”的兼容入口
 - 悬浮窗点击入口和通知点击入口现在也直接收口到主壳，不再绕旧底部页
@@ -116,6 +116,7 @@
 - 行情持仓页普通 tab 返回现在只恢复页面消费节奏；长周期窗口改为按上游分钟源节奏刷新，不再制造“像重新打开页面”一样的重复拉取体感
 - 底部 tab 切换语义现已统一，设置页切走时不再先销毁再重建
 - 图表页已经收口为轻量页：只保留 K 线、图上标注、顶部轻量状态和 3 个交易按钮；实时账户总览与持仓/挂单正式承接页为“账户持仓”
+- 2026-04-16 UI 第一轮重做已落地：一级结构已收口为 `交易 / 账户 / 分析 / 设置`，默认首页为 `交易`；顶部状态按钮、图表风险条、账户摘要页、分析摘要页和设置诊断入口都已接入
 
 ## 本地运行方法
 
@@ -233,7 +234,6 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 
 ## 待办事项
 
-- 已完成一版 UI 重做设计稿，见 [docs/superpowers/specs/2026-04-16-btcxau-ui-redesign-design.md](/E:/Github/BTCXAU_Monitoring_and_Push_APK/docs/superpowers/specs/2026-04-16-btcxau-ui-redesign-design.md)；待按设计稿把一级结构收口为 `交易 / 账户 / 分析 / 设置`，并完成“无独立仪表盘、异常整合进交易图表页”的界面实现
 - 评估是否继续物理删除 `AccountStatsBridgeActivity`、`MarketChartActivity` 内保留的历史实现代码；当前运行链已不再依赖它们
 - 当前设备 `7fab54c4` 已在线，APK 安装与主壳启动验证已可在本机执行
 - 若要继续做更严格的耗电结论，仍建议在更长时长和更稳定交互条件下单独重复采样；当前 README 里的本轮数字只代表固定路径主壳验收结果

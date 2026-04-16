@@ -3,7 +3,7 @@
 ## 每个文件/模块的职责
 
 - [app/src/main/java/com/binance/monitor/ui/host/MainHostActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/host/MainHostActivity.java)
-  单主壳入口，负责承载底部 5 个 Tab、接收目标 Tab intent，并统一补齐通知权限提示；launcher alias 现已指向它。
+  单主壳入口，负责承载底部 `交易 / 账户 / 分析 / 设置` 4 个一级页、接收目标 Tab intent，并统一补齐通知权限提示；launcher alias 现已指向它。
 - [app/src/main/java/com/binance/monitor/ui/main/MainActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/main/MainActivity.java)
   旧行情监控入口桥接页，当前只负责把历史入口收口到主壳 `MARKET_MONITOR` Tab。
 - [app/src/main/java/com/binance/monitor/service/MonitorService.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorService.java)
@@ -41,7 +41,11 @@
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java)
   图表页旧入口兼容桥接页，当前启动后会立即把原始 extras 透传给主壳 `MARKET_CHART` Tab；历史重业务实现仍保留在文件内，主要用于兼容旧专项链路和源码测试，应用内部主链已不再依赖它承载底部导航。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java)
-  图表页共享屏幕对象，负责把原先只留在旧 Activity 里的页面状态、刷新入口、图层恢复和指标/周期交互收口成可供 `MarketChartFragment` 复用的真实宿主主链。
+  图表页共享屏幕对象，负责把原先只留在旧 Activity 里的页面状态、刷新入口、图层恢复和指标/周期交互收口成可供 `MarketChartFragment` 复用的真实宿主主链；当前也承接顶部状态按钮、风险提示条、异常快看和当前品种摘要。
+- [app/src/main/java/com/binance/monitor/ui/host/GlobalStatusBottomSheetController.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/host/GlobalStatusBottomSheetController.java)
+  全局状态弹层控制器，负责把连接状态、当前账户、同步状态、最近刷新时间和异常数量收口到统一底部弹层。
+- [app/src/main/java/com/binance/monitor/ui/chart/ChartAbnormalBottomSheetController.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartAbnormalBottomSheetController.java)
+  图表异常快看弹层控制器，负责承接交易页风险条和图上异常标记的轻量详情查看。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java)
   行情持仓页数据协调器，负责统一编排 `requestKlines / requestMoreHistory / observeRealtimeDisplayKlines / refreshChartOverlays / restoreChartOverlayFromLatestCacheOrEmpty`，把图表页重业务主链从旧 Activity 抽离成可复用宿主接口。
 - [app/src/main/java/com/binance/monitor/ui/chart/MarketChartPageHostDelegate.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/MarketChartPageHostDelegate.java)
@@ -63,7 +67,7 @@
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java)
   账户统计页旧入口兼容桥接页，当前启动后会立即把原始 extras 透传给主壳 `ACCOUNT_STATS` Tab；历史重业务实现仍保留在文件内，主要用于兼容旧专项链路和源码测试，应用内部主链已不再依赖它承载底部导航。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java)
-  账户统计页共享屏幕对象，负责把原先只留在旧 Activity 里的页面状态、历史刷新协调、收益表渲染和登录会话交互收口成可供 `AccountStatsFragment` 复用的真实宿主主链。
+  账户统计页共享屏幕对象，负责把原先只留在旧 Activity 里的页面状态、历史刷新协调、收益表渲染和登录会话交互收口成可供 `AccountStatsFragment` 复用的真实宿主主链；当前首屏已改成“收益曲线 + 核心统计摘要 + 结构分析摘要 + 历史分析入口”，完整长页通过旧桥接 Activity 承接。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsRenderCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsRenderCoordinator.java)
   账户统计页渲染协调器，负责统一编排 `applySnapshot`、次级区块 deferred render、交易统计和交易记录筛选，把账户统计页的大块渲染主链从旧 Activity 抽离成可复用宿主接口。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPageHostDelegate.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPageHostDelegate.java)
@@ -288,7 +292,7 @@
 
 ## 关键的设计决定和原因
 
-- 2026-04-16 已先写入新的 UI 重做设计稿，拟把一级结构收口为 `交易 / 账户 / 分析 / 设置`，同时移除独立仪表盘并把异常提醒整合进交易图表页；原因是用户已明确不再需要旧版“行情概览”型首页，继续保留首页总览会让产品结构重复且分散。
+- 2026-04-16 UI 第一轮重做已落地：一级结构已收口为 `交易 / 账户 / 分析 / 设置`，移除了独立仪表盘，并把异常提醒整合进交易图表页；原因是用户已明确不再需要旧版“行情概览”型首页，继续保留首页总览会让产品结构重复且分散。
 - 实盘升级先按“交易网关 -> 命令状态机 -> 强一致同步 -> 交易界面增强”四阶段推进；原因是当前项目最大缺口不在图表展示，而在没有真正的下单、校验、确认、回执和审计主链。
 - APP 从实盘阶段开始要采用“命令式 + 快照式”双轨；原因是用户发出交易指令后，页面不能只靠旧快照轮询判断结果，必须显式区分草稿、预检查、待确认、提交中、已受理、已拒绝、超时和已结算。
 - 包结构整理遵循“只移动真正独立的 helper，不为了目录整齐去扩大访问级别”；原因是整理包结构本身不能反过来破坏既有职责边界。

@@ -140,6 +140,51 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/cardDiagnosticsSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingVertical="@dimen/space_10">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="连接与诊断"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_8"
+                    android:text="顶部状态按钮可查看连接、同步和异常数量；这里提供固定入口和日志排查入口。"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_12"
+                    android:text="当前正式入口"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvDiagnosticsGatewayValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_4"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnOpenDiagnosticsLogs"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/control_height_md"
+                    android:layout_marginTop="@dimen/space_12"
+                    android:background="@android:color/transparent"
+                    android:text="打开运行日志"
+                    android:textAllCaps="false" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/cardThemeSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
