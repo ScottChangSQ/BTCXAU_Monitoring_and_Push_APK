@@ -9,3 +9,4 @@ dist/
 *.ipr
 local.properties
 *.log
+.worktrees/
