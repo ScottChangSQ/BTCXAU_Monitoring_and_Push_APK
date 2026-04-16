@@ -517,7 +517,48 @@
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/cardChartPositions"
+                android:id="@+id/cardChartRiskBanner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="vertical"
+                android:padding="8dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/tvChartRiskBanner"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/chart_risk_banner_clear"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+
+                    <Button
+                        android:id="@+id/btnChartRiskAction"
+                        android:layout_width="wrap_content"
+                        android:layout_height="@dimen/control_height_sm"
+                        android:minWidth="0dp"
+                        android:text="@string/chart_risk_banner_action"
+                        android:textAllCaps="false"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvChartRiskMeta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/chart_risk_banner_clear_meta"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardChartTradeActions"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
@@ -525,19 +566,11 @@
                 android:padding="8dp">
 
                 <TextView
-                    android:id="@+id/tvChartPositionTitle"
+                    android:id="@+id/tvChartTradeActionsTitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="当前持仓"
+                    android:text="@string/chart_trade_actions_title"
                     android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
-
-                <TextView
-                    android:id="@+id/tvChartPositionSummary"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="持仓盈亏: -- | 持仓收益率: --"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
                 <LinearLayout
                     android:id="@+id/layoutChartPositionRows"
@@ -585,6 +618,38 @@
                         android:textColor="@color/text_primary"
                         android:textSize="10sp" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardChartPositions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="vertical"
+                android:padding="8dp">
+
+                <TextView
+                    android:id="@+id/tvChartPositionTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="当前持仓"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+
+                <TextView
+                    android:id="@+id/tvChartPositionSummary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="持仓盈亏: -- | 持仓收益率: --"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvChartAbnormalSummary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/chart_abnormal_summary_empty"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
                 <TextView
                     android:id="@+id/tvChartOverlayMeta"

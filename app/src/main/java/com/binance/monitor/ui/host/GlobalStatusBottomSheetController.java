@@ -76,9 +76,14 @@ public final class GlobalStatusBottomSheetController {
         });
         binding.btnGlobalStatusAbnormal.setOnClickListener(v -> {
             dialog.dismiss();
-            showAbnormalRecordsDialog(snapshot.getAbnormalRecords());
+            showAbnormalRecords(snapshot.getAbnormalRecords());
         });
         dialog.show();
+    }
+
+    // 对外暴露异常列表弹窗，供交易页风险提示条和摘要区复用。
+    public void showAbnormalRecords(@NonNull List<AbnormalRecord> records) {
+        showAbnormalRecordsDialog(records);
     }
 
     // 统一渲染底部弹层里的轻操作按钮，避免与主界面风格脱节。

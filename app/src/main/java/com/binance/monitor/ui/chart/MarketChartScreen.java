@@ -192,6 +192,10 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         abnormalRecordManager = AbnormalRecordManager.getInstance(getApplicationContext());
         secureSessionPrefs = new SecureSessionPrefs(getApplicationContext());
         globalStatusBottomSheetController = new GlobalStatusBottomSheetController(activity);
+        chartAbnormalBottomSheetController = new ChartAbnormalBottomSheetController(
+                activity,
+                globalStatusBottomSheetController
+        );
         tradeExecutionCoordinator = createTradeExecutionCoordinator();
         tradeDialogCoordinator = new MarketChartTradeDialogCoordinator(
                 activity,
@@ -315,6 +319,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     void commitSelectedSymbol(@NonNull String symbol) {
         selectedSymbol = symbol;
         syncSymbolSelector();
+        refreshTradingSignalPanels();
     }
 
     boolean canApplySelectedInterval(@NonNull String intervalKey) {
@@ -388,6 +393,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private AbnormalRecordManager abnormalRecordManager;
     private SecureSessionPrefs secureSessionPrefs;
     private GlobalStatusBottomSheetController globalStatusBottomSheetController;
+    private ChartAbnormalBottomSheetController chartAbnormalBottomSheetController;
     private Future<?> chartCacheInvalidationTask;
     private Future<?> storedChartOverlayRestoreTask;
     private AccountSnapshot storedChartOverlaySnapshot;
@@ -1011,6 +1017,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             abnormalRecordManager.getRecordsLiveData().observe(lifecycleOwner, records -> {
                 abnormalRecords = records == null ? new ArrayList<>() : new ArrayList<>(records);
                 refreshGlobalStatusButton();
+                refreshTradingSignalPanels();
                 updateAbnormalAnnotationsOverlay();
             });
         }
@@ -1592,8 +1599,67 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                         null
                 )
         );
+        binding.btnChartRiskAction.setOnClickListener(v -> showChartAbnormalQuickView());
+        binding.tvChartAbnormalSummary.setOnClickListener(v -> showChartAbnormalQuickView());
         binding.tvChartOverlayMeta.setText("更新时间 --");
+        updateChartRiskBanner();
+        updateCurrentSymbolAbnormalSummary();
         dataCoordinator.restoreChartOverlayFromLatestCacheOrEmpty();
+    }
+
+    // 统一刷新交易页的风险提示条和当前品种异常摘要。
+    private void refreshTradingSignalPanels() {
+        updateChartRiskBanner();
+        updateCurrentSymbolAbnormalSummary();
+    }
+
+    // 刷新顶部风险提示条，优先展示当前品种最新的一条异常。
+    private void updateChartRiskBanner() {
+        if (binding == null || binding.tvChartRiskBanner == null || binding.tvChartRiskMeta == null) {
+            return;
+        }
+        List<AbnormalRecord> filteredRecords = filterAbnormalRecordsForSelectedSymbol();
+        if (filteredRecords.isEmpty()) {
+            binding.tvChartRiskBanner.setText(getString(R.string.chart_risk_banner_clear));
+            binding.tvChartRiskMeta.setText(getString(R.string.chart_risk_banner_clear_meta));
+            return;
+        }
+        AbnormalRecord latestRecord = filteredRecords.get(0);
+        binding.tvChartRiskBanner.setText(getString(
+                R.string.chart_risk_banner_alert,
+                safeTrim(latestRecord.getTriggerSummary()).isEmpty()
+                        ? getString(R.string.chart_risk_banner_action)
+                        : safeTrim(latestRecord.getTriggerSummary())
+        ));
+        binding.tvChartRiskMeta.setText(getString(
+                R.string.chart_risk_banner_alert_meta,
+                filteredRecords.size(),
+                FormatUtils.formatTime(latestRecord.getTimestamp())
+        ));
+    }
+
+    // 刷新当前品种摘要里的异常统计，让风险信息不再只停留在图表标记上。
+    private void updateCurrentSymbolAbnormalSummary() {
+        if (binding == null || binding.tvChartAbnormalSummary == null) {
+            return;
+        }
+        List<AbnormalRecord> filteredRecords = filterAbnormalRecordsForSelectedSymbol();
+        if (filteredRecords.isEmpty()) {
+            binding.tvChartAbnormalSummary.setText(getString(R.string.chart_abnormal_summary_empty));
+            return;
+        }
+        binding.tvChartAbnormalSummary.setText(getString(
+                R.string.chart_abnormal_summary_text,
+                filteredRecords.size()
+        ));
+    }
+
+    // 打开当前品种的异常快看弹层，供风险提示条和摘要区复用。
+    private void showChartAbnormalQuickView() {
+        if (chartAbnormalBottomSheetController == null) {
+            return;
+        }
+        chartAbnormalBottomSheetController.show(selectedSymbol, filterAbnormalRecordsForSelectedSymbol());
     }
 
     // 统一创建持仓明细排序下拉项，保证主题切换后选项仍可见。
@@ -2381,7 +2447,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         if (binding == null) {
             return;
         }
-        binding.tvChartPositionTitle.setText("图上持仓状态");
+        binding.tvChartPositionTitle.setText("当前品种摘要");
         binding.tvChartOverlayMeta.setText(overlaySnapshot.getOverlayMetaText());
         if (masked) {
             if (overlaySnapshot.getPositionAnnotations().isEmpty()) {
@@ -2389,9 +2455,11 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             } else {
                 binding.tvChartPositionSummary.setText("持仓盈亏: **** | 持仓收益率: ****");
             }
+            updateCurrentSymbolAbnormalSummary();
             return;
         }
         binding.tvChartPositionSummary.setText(overlaySnapshot.getPositionSummaryText());
+        updateCurrentSymbolAbnormalSummary();
     }
 
     // 年线自动缺口补拉仍走月线底稿，再聚合成年桶，保持时间桶语义和手动翻页一致。
@@ -2880,6 +2948,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         }
         lastAbnormalOverlaySignature = abnormalOverlaySignature;
         binding.klineChartView.setAbnormalAnnotations(abnormalAnnotations);
+        refreshTradingSignalPanels();
     }
 
     // 先按当前选中标的筛掉无关异常记录，避免聚合器承担页面状态判断。
@@ -4189,6 +4258,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                 binding.btnIndicatorAvl, binding.btnIndicatorRsi, binding.btnIndicatorKdj,
                 binding.btnTogglePositionOverlays,
                 binding.btnToggleHistoryTrades,
+                binding.btnChartRiskAction,
                 binding.btnChartTradeBuy, binding.btnChartTradeSell, binding.btnChartTradePending
         };
         for (Button button : buttons) {
@@ -4209,13 +4279,20 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         binding.klineChartView.applyPalette(palette);
         binding.cardSymbolPanel.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
         binding.cardChartPanel.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
+        binding.cardChartRiskBanner.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
+        binding.cardChartTradeActions.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
         binding.cardChartPositions.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.btnGlobalStatus.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
         binding.btnGlobalStatus.setTextColor(palette.textPrimary);
+        binding.btnChartRiskAction.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
+        binding.btnChartRiskAction.setTextColor(palette.textPrimary);
         applyStripBackground(binding.btnInterval1m, palette);
         applyStripBackground(binding.btnIndicatorVolume, palette);
         applyStripBackground(binding.btnChartTradeBuy, palette);
+        binding.tvChartRiskBanner.setTextColor(palette.textPrimary);
+        binding.tvChartRiskMeta.setTextColor(palette.textSecondary);
+        binding.tvChartTradeActionsTitle.setTextColor(palette.textPrimary);
         binding.tvChartSymbolPickerLabel.setTextColor(palette.textPrimary);
         applyChartSymbolPickerIndicator();
         binding.btnRetryLoad.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
@@ -4228,6 +4305,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         binding.tvError.setTextColor(palette.fall);
         binding.tvChartPositionTitle.setTextColor(palette.textPrimary);
         binding.tvChartPositionSummary.setTextColor(palette.textPrimary);
+        binding.tvChartAbnormalSummary.setTextColor(palette.textSecondary);
         binding.tvChartOverlayMeta.setTextColor(palette.textSecondary);
         binding.btnScrollToLatest.setBackground(UiPaletteManager.createOutlinedDrawable(
                 this,
