@@ -11,15 +11,16 @@ import java.nio.file.Paths;
 public class HostTabNavigatorSourceTest {
 
     @Test
-    public void hostTabShouldExposeFiveStableEntries() throws Exception {
+    public void hostTabShouldExposeTradingAccountAnalysisAndCompatibilityAliases() throws Exception {
         String source = new String(Files.readAllBytes(
                 Paths.get("src/main/java/com/binance/monitor/ui/host/HostTab.java")
         ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("MARKET_MONITOR(\"market_monitor\""));
-        assertTrue(source.contains("MARKET_CHART(\"market_chart\""));
-        assertTrue(source.contains("ACCOUNT_STATS(\"account_stats\""));
-        assertTrue(source.contains("ACCOUNT_POSITION(\"account_position\""));
+        assertTrue(source.contains("TRADING(\"trading\""));
+        assertTrue(source.contains("ACCOUNT(\"account\""));
+        assertTrue(source.contains("ANALYSIS(\"analysis\""));
+        assertTrue(source.contains("public static final HostTab MARKET_MONITOR = TRADING;"));
+        assertTrue(source.contains("public static final HostTab MARKET_CHART = TRADING;"));
         assertTrue(source.contains("SETTINGS(\"settings\""));
     }
 

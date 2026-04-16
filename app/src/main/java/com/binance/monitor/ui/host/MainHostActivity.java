@@ -25,17 +25,15 @@ public class MainHostActivity extends AppCompatActivity {
     private static final int REQUEST_CODE_NOTIFICATION = 100;
 
     private final HostTabNavigator navigator = new HostTabNavigator();
-    private HostTab selectedTab = HostTab.MARKET_MONITOR;
+    private HostTab selectedTab = HostTab.TRADING;
     @Nullable
     private View bottomNavigationView;
     @Nullable
-    private TextView tabMarketMonitor;
+    private TextView tabTrading;
     @Nullable
-    private TextView tabMarketChart;
+    private TextView tabAccount;
     @Nullable
-    private TextView tabAccountPosition;
-    @Nullable
-    private TextView tabAccountStats;
+    private TextView tabAnalysis;
     @Nullable
     private TextView tabSettings;
 
@@ -49,10 +47,9 @@ public class MainHostActivity extends AppCompatActivity {
             selectedTab = HostTab.fromKey(getIntent().getStringExtra(EXTRA_TARGET_TAB));
         }
         bottomNavigationView = findViewById(R.id.hostBottomNavigation);
-        tabMarketMonitor = findViewById(R.id.tabMarketMonitor);
-        tabMarketChart = findViewById(R.id.tabMarketChart);
-        tabAccountPosition = findViewById(R.id.tabAccountPosition);
-        tabAccountStats = findViewById(R.id.tabAccountStats);
+        tabTrading = findViewById(R.id.tabTrading);
+        tabAccount = findViewById(R.id.tabAccount);
+        tabAnalysis = findViewById(R.id.tabAnalysis);
         tabSettings = findViewById(R.id.tabSettings);
         setupBottomTabs();
         showSelectedTab();
@@ -80,17 +77,14 @@ public class MainHostActivity extends AppCompatActivity {
     }
 
     private void setupBottomTabs() {
-        if (tabMarketMonitor != null) {
-            tabMarketMonitor.setOnClickListener(v -> switchTo(HostTab.MARKET_MONITOR));
+        if (tabTrading != null) {
+            tabTrading.setOnClickListener(v -> switchTo(HostTab.TRADING));
         }
-        if (tabMarketChart != null) {
-            tabMarketChart.setOnClickListener(v -> switchTo(HostTab.MARKET_CHART));
+        if (tabAccount != null) {
+            tabAccount.setOnClickListener(v -> switchTo(HostTab.ACCOUNT));
         }
-        if (tabAccountPosition != null) {
-            tabAccountPosition.setOnClickListener(v -> switchTo(HostTab.ACCOUNT_POSITION));
-        }
-        if (tabAccountStats != null) {
-            tabAccountStats.setOnClickListener(v -> switchTo(HostTab.ACCOUNT_STATS));
+        if (tabAnalysis != null) {
+            tabAnalysis.setOnClickListener(v -> switchTo(HostTab.ANALYSIS));
         }
         if (tabSettings != null) {
             tabSettings.setOnClickListener(v -> switchTo(HostTab.SETTINGS));
@@ -115,16 +109,14 @@ public class MainHostActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applySystemBars(this, palette);
         BottomTabVisibilityManager.apply(this,
-                tabMarketMonitor,
-                tabMarketChart,
-                tabAccountStats,
-                tabAccountPosition,
+                tabTrading,
+                tabAccount,
+                tabAnalysis,
                 tabSettings);
         bottomNavigationView.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
-        UiPaletteManager.styleBottomNavTab(tabMarketMonitor, selectedTab == HostTab.MARKET_MONITOR, palette);
-        UiPaletteManager.styleBottomNavTab(tabMarketChart, selectedTab == HostTab.MARKET_CHART, palette);
-        UiPaletteManager.styleBottomNavTab(tabAccountPosition, selectedTab == HostTab.ACCOUNT_POSITION, palette);
-        UiPaletteManager.styleBottomNavTab(tabAccountStats, selectedTab == HostTab.ACCOUNT_STATS, palette);
+        UiPaletteManager.styleBottomNavTab(tabTrading, selectedTab == HostTab.TRADING, palette);
+        UiPaletteManager.styleBottomNavTab(tabAccount, selectedTab == HostTab.ACCOUNT, palette);
+        UiPaletteManager.styleBottomNavTab(tabAnalysis, selectedTab == HostTab.ANALYSIS, palette);
         UiPaletteManager.styleBottomNavTab(tabSettings, selectedTab == HostTab.SETTINGS, palette);
     }
 

@@ -13,12 +13,14 @@ public class MarketChartLoadMoreStateSourceTest {
 
     @Test
     public void activityShouldReuseSharedLoadMoreStateMethods() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        Path activityFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        Path coordinatorFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java");
+        String activitySource = new String(Files.readAllBytes(activityFile), StandardCharsets.UTF_8);
+        String coordinatorSource = new String(Files.readAllBytes(coordinatorFile), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("private void applyLoadMoreSuccessState("));
-        assertTrue(source.contains("private void finishLoadMoreState()"));
-        assertTrue(source.contains("applyLoadMoreSuccessState(reqSymbol, reqInterval, older);"));
-        assertTrue(source.contains("finishLoadMoreState();"));
+        assertTrue(activitySource.contains("private void applyLoadMoreSuccessState("));
+        assertTrue(activitySource.contains("private void finishLoadMoreState()"));
+        assertTrue(coordinatorSource.contains("host.applyLoadMoreSuccessState(reqSymbol, reqInterval, older);"));
+        assertTrue(coordinatorSource.contains("host.finishLoadMoreState();"));
     }
 }

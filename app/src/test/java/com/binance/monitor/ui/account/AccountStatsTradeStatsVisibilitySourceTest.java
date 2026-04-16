@@ -34,7 +34,7 @@ public class AccountStatsTradeStatsVisibilitySourceTest {
         assertFalse(activitySource.contains("binding.recyclerStats.getViewTreeObserver().addOnPreDrawListener("));
         assertFalse(screenSource.contains("boolean firstReveal = binding.cardTradeStatsSection.getVisibility() != View.VISIBLE;"));
         assertFalse(activitySource.contains("boolean firstReveal = binding.cardTradeStatsSection.getVisibility() != View.VISIBLE;"));
-        assertTrue(screenSource.contains("binding.tvTradePnlLegend.setVisibility(View.GONE);\n        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);"));
+        assertTrue(screenSource.contains("binding.tvTradePnlLegend.setVisibility(View.GONE);\n        binding.cardTradeStatsSection.setVisibility(View.GONE);"));
         assertTrue(activitySource.contains("binding.tvTradePnlLegend.setVisibility(View.GONE);\n        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);"));
     }
 

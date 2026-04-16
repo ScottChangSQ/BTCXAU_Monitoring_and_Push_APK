@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/tvChartAbnormalQuickTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+        <TextView
+            android:id="@+id/tvChartAbnormalQuickSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+        <TextView
+            android:id="@+id/tvChartAbnormalQuickDetails"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+
+        <Button
+            android:id="@+id/btnChartAbnormalViewAll"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/control_height_sm"
+            android:layout_marginTop="16dp"
+            android:minWidth="0dp"
+            android:text="@string/chart_abnormal_quick_view_all"
+            android:textAllCaps="false" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

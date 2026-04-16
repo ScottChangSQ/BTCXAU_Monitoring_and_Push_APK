@@ -39,6 +39,7 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
         ActivityMarketChartBinding chartBinding = ActivityMarketChartBinding.bind(chartContentView);
         screen = new MarketChartScreen(
                 (AppCompatActivity) requireActivity(),
+                getViewLifecycleOwner(),
                 chartBinding
         );
         screen.initialize();

@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/tvGlobalStatusTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/global_status_sheet_title"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+        <TextView
+            android:id="@+id/tvGlobalStatusSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/global_status_sheet_subtitle"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/global_status_label_connection"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvGlobalStatusConnectionValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/global_status_label_account"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvGlobalStatusAccountValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/global_status_label_sync"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvGlobalStatusSyncValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/global_status_label_updated"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvGlobalStatusUpdatedValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/global_status_label_abnormal"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvGlobalStatusAbnormalValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnGlobalStatusSettings"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/control_height_sm"
+                android:layout_weight="1"
+                android:minWidth="0dp"
+                android:text="@string/global_status_action_settings"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnGlobalStatusLogs"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/control_height_sm"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:minWidth="0dp"
+                android:text="@string/global_status_action_logs"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnGlobalStatusAbnormal"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/control_height_sm"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:minWidth="0dp"
+                android:text="@string/global_status_action_abnormal"
+                android:textAllCaps="false" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

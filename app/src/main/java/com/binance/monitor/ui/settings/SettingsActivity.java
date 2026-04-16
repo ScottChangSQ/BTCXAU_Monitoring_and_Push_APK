@@ -16,6 +16,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     public static final String SECTION_DISPLAY = "display";
     public static final String SECTION_GATEWAY = "gateway";
+    public static final String SECTION_DIAGNOSTICS = "diagnostics";
     public static final String SECTION_THEME = "theme";
     public static final String SECTION_TAB = "tab";
     public static final String SECTION_CACHE = "cache";

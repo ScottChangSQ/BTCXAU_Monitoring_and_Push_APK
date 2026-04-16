@@ -24,8 +24,13 @@ public class AccountStatsBridgeActivityTradeWeekdayToggleSourceTest {
         assertTrue("应能定位按星期盈亏切换按钮逻辑", start >= 0 && end > start);
 
         String block = source.substring(start, end);
-        assertTrue("切换星期统计基准后应直接刷新星期图", block.contains("refreshTradeWeekdayStats("));
-        assertFalse("切换星期统计基准时不应整页重算 refreshTradeStats()", block.contains("refreshTradeStats();"));
+        assertTrue("切换星期统计基准时应只改动星期统计基准字段",
+                block.contains("tradeWeekdayBasis = checkedId == R.id.btnTradeWeekdayOpenTime"));
+        assertTrue("切换星期统计基准后应通过统一渲染协调器刷新统计内容",
+                block.contains("if (renderCoordinator != null) {")
+                        && block.contains("renderCoordinator.refreshTradeStats();"));
+        assertFalse("切换星期统计基准时不应直接在按钮逻辑里重建整页数据链",
+                block.contains("requestForegroundEntrySnapshot();"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

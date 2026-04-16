@@ -83,7 +83,7 @@ public final class UiPaletteManager {
     }
 
     private static final Palette[] PALETTES = new Palette[]{
-            new Palette(0, "金融专业风", "#061018", "#0D1B24", "#12202D", "#18293B", "#27425D", "#23C26B", "#123123", "#28D97A", "#F5B34B", "#F1F7FF", "#8AA8BE", "#28D97A", "#F05D5E"),
+            new Palette(0, "Linear深色", "#08090A", "#0F1011", "#191A1B", "#1E2125", "#2A2D33", "#7170FF", "#1B1E40", "#27A644", "#D6A34A", "#F7F8F8", "#8A8F98", "#27A644", "#F05D5E"),
             new Palette(1, "复古风", "#EEE2C8", "#E4D2AF", "#F4E9D2", "#EADBBC", "#B99E6A", "#7B5E3B", "#D7C3A0", "#8B6D45", "#B88746", "#3E2E1F", "#8A7155", "#4F8A5B", "#B85C38"),
             new Palette(2, "币安风格", "#11161F", "#181F2A", "#1B2430", "#202C3C", "#37465D", "#F0B90B", "#3A2D00", "#29C46A", "#F5C45B", "#ECF3FF", "#92A3B8", "#29C46A", "#F6465D"),
             new Palette(3, "TradingView风格", "#0C1017", "#151B23", "#171F2A", "#1F2935", "#304256", "#42A5F5", "#14273A", "#2EC7C9", "#F9D65C", "#E7EEF7", "#8FA0B6", "#2EC7C9", "#E05A6E"),
@@ -226,13 +226,11 @@ public final class UiPaletteManager {
     @Nullable
     private static Drawable resolveBottomNavIconDrawable(Context context, int viewId, int tintColor) {
         int iconRes;
-        if (viewId == R.id.tabMarketMonitor) {
-            iconRes = R.drawable.ic_nav_monitor;
-        } else if (viewId == R.id.tabMarketChart) {
+        if (viewId == R.id.tabTrading) {
             iconRes = R.drawable.ic_nav_chart;
-        } else if (viewId == R.id.tabAccountStats) {
+        } else if (viewId == R.id.tabAccount) {
             iconRes = R.drawable.ic_nav_account;
-        } else if (viewId == R.id.tabAccountPosition) {
+        } else if (viewId == R.id.tabAnalysis) {
             iconRes = R.drawable.ic_nav_account;
         } else if (viewId == R.id.tabSettings) {
             iconRes = R.drawable.ic_nav_settings;

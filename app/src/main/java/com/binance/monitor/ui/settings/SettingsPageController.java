@@ -55,6 +55,7 @@ public final class SettingsPageController {
         binding.itemTheme.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_THEME, "主题设置"));
         binding.itemTab.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_TAB, "Tab 页管理"));
         binding.itemCache.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_CACHE, "缓存管理"));
+        binding.itemDiagnostics.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_DIAGNOSTICS, "连接与诊断"));
         binding.itemLogs.setOnClickListener(v -> host.openLogPage());
     }
 
@@ -112,6 +113,7 @@ public final class SettingsPageController {
         styleEntry(binding.itemTheme, palette);
         styleEntry(binding.itemTab, palette);
         styleEntry(binding.itemCache, palette);
+        styleEntry(binding.itemDiagnostics, palette);
         styleEntry(binding.itemLogs, palette);
     }
 

@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.main;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -12,22 +13,20 @@ import java.nio.file.Paths;
 public class MainActivityStateRestoreSourceTest {
 
     @Test
-    public void mainActivityShouldRestoreSelectedSymbolFromSavedInstanceState() throws Exception {
+    public void mainActivityShouldStayAsStatelessBridgeEntry() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/main/MainActivity.java",
                 "src/main/java/com/binance/monitor/ui/main/MainActivity.java"
-        ).replace("\r\n", "\n").replace('\r', '\n');
+        );
 
-        assertTrue("主界面应声明可恢复的当前品种 key",
-                source.contains("private static final String STATE_SELECTED_SYMBOL = \"state_selected_symbol\";"));
-        assertTrue("onCreate 应先从 savedInstanceState 恢复当前品种，再加载配置",
-                source.contains("restoreSelectedSymbol(savedInstanceState);")
-                        && source.contains("loadSymbolConfig(selectedSymbol);"));
-        assertTrue("主界面应提供统一的当前品种恢复入口",
-                source.contains("private void restoreSelectedSymbol(@Nullable Bundle savedInstanceState) {"));
-        assertTrue("主界面销毁重建时应把当前品种写回 Bundle",
-                source.contains("protected void onSaveInstanceState(@NonNull Bundle outState) {")
-                        && source.contains("outState.putString(STATE_SELECTED_SYMBOL, selectedSymbol);"));
+        assertTrue("桥接页应只保留 onCreate 即时转发入口",
+                source.contains("protected void onCreate(@Nullable Bundle savedInstanceState)"));
+        assertFalse("桥接页不应继续保留旧的品种状态恢复 key",
+                source.contains("STATE_SELECTED_SYMBOL"));
+        assertFalse("桥接页不应继续保留旧的状态恢复函数",
+                source.contains("restoreSelectedSymbol("));
+        assertFalse("桥接页不应继续覆写 onSaveInstanceState",
+                source.contains("onSaveInstanceState("));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

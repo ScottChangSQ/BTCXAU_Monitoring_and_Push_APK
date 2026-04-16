@@ -101,7 +101,7 @@ public class MarketChartTradeSourceTest {
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(activitySource.contains("private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> {\n        scheduleChartOverlayRefresh();\n        consumePendingTradeActionIfNeeded();\n    };"));
+        assertTrue(activitySource.contains("private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> {\n        if (pageRuntime != null) {\n            pageRuntime.scheduleChartOverlayRefresh();\n        }\n        consumePendingTradeActionIfNeeded();\n    };"));
         assertTrue(activitySource.contains("if (snapshot == null) {\n            return;\n        }"));
         assertTrue(activitySource.contains("if (targetItem == null) {\n            Toast.makeText(this, \"未找到目标持仓或挂单，暂时不能执行该操作\", Toast.LENGTH_SHORT).show();\n            lastConsumedTradeActionToken = token;\n            return;\n        }"));
     }

@@ -28,6 +28,7 @@ import com.binance.monitor.ui.host.HostTab;
 import com.binance.monitor.ui.account.AccountPositionActivity;
 import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.ui.chart.MarketChartActivity;
+import com.binance.monitor.ui.log.LogActivity;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.main.MainViewModel;
@@ -129,6 +130,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
     // 绑定各个设置控件行为。
     private void setupActions() {
         binding.btnClearCache.setOnClickListener(v -> confirmAndClearCache());
+        binding.btnOpenDiagnosticsLogs.setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
         binding.switchFloatingEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (applying) {
                 return;
@@ -362,6 +364,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.switchTabMarketChart.setChecked(viewModel.isTabMarketChartVisible());
         binding.switchTabAccountStats.setChecked(viewModel.isTabAccountStatsVisible());
         binding.switchTabAccountPosition.setChecked(viewModel.isTabAccountPositionVisible());
+        binding.tvDiagnosticsGatewayValue.setText(AppConstants.MT5_GATEWAY_BASE_URL);
         lockGatewayEntrySection();
         applying = false;
     }
@@ -391,9 +394,12 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.btnSaveMt5GatewayUrl.setTextColor(ContextCompat.getColor(this, R.color.white));
         binding.cardFloatingSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.cardGatewaySection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
+        binding.cardDiagnosticsSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.cardThemeSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.cardTabSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.cardCacheSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
+        binding.btnOpenDiagnosticsLogs.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        binding.btnOpenDiagnosticsLogs.setTextColor(palette.textPrimary);
         applyThemeItems(palette.id);
     }
 
@@ -470,6 +476,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
     private void applyVisibleSection() {
         binding.cardFloatingSection.setVisibility(SettingsActivity.SECTION_DISPLAY.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardGatewaySection.setVisibility(SettingsActivity.SECTION_GATEWAY.equals(sectionKey) ? View.VISIBLE : View.GONE);
+        binding.cardDiagnosticsSection.setVisibility(SettingsActivity.SECTION_DIAGNOSTICS.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardThemeSection.setVisibility(SettingsActivity.SECTION_THEME.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardTabSection.setVisibility(SettingsActivity.SECTION_TAB.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardCacheSection.setVisibility(SettingsActivity.SECTION_CACHE.equals(sectionKey) ? View.VISIBLE : View.GONE);

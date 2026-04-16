@@ -19,14 +19,14 @@ public class MainHostBottomTabSourceTest {
                 Paths.get("src/main/java/com/binance/monitor/ui/host/MainHostActivity.java")
         ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(layout.contains("@+id/tabMarketMonitor"));
-        assertTrue(layout.contains("@+id/tabMarketChart"));
-        assertTrue(layout.contains("@+id/tabAccountPosition"));
-        assertTrue(layout.contains("@+id/tabAccountStats"));
+        assertTrue(layout.contains("@+id/tabTrading"));
+        assertTrue(layout.contains("@+id/tabAccount"));
+        assertTrue(layout.contains("@+id/tabAnalysis"));
         assertTrue(layout.contains("@+id/tabSettings"));
         assertTrue(source.contains("BottomTabVisibilityManager.apply("));
         assertTrue(source.contains("UiPaletteManager.styleBottomNavTab("));
-        assertTrue(source.contains("tabMarketMonitor.setOnClickListener"));
-        assertTrue(source.contains("tabMarketChart.setOnClickListener"));
+        assertTrue(source.contains("tabTrading.setOnClickListener"));
+        assertTrue(source.contains("tabAccount.setOnClickListener"));
+        assertTrue(source.contains("tabAnalysis.setOnClickListener"));
     }
 }
