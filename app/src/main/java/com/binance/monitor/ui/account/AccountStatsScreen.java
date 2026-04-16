@@ -2594,6 +2594,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         setupDatePickers();
         setupCurveInteraction();
         setupOverviewHeader();
+        setupAnalysisSummaryActions();
     }
 
     void placeCurveSectionToBottom() {
@@ -2694,9 +2695,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         long stageStartedAt = SystemClock.elapsedRealtime();
-        binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);
-        binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
-        binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);
+        binding.layoutCurveSecondarySection.setVisibility(View.GONE);
+        binding.cardReturnStatsSection.setVisibility(View.GONE);
+        binding.cardTradeRecordsSection.setVisibility(View.GONE);
+        binding.cardTradeStatsSection.setVisibility(View.GONE);
+        refreshAnalysisSummaryCards();
         secondarySectionsAttached = true;
         traceAccountRenderPhase("attach_secondary_sections",
                 stageStartedAt,
@@ -2730,6 +2733,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.tradeDistributionScatterView.setMasked(masked);
         binding.holdingDurationDistributionView.setMasked(masked);
         updateOverviewHeader();
+        refreshAnalysisSummaryCards();
         if (!hasImmediateAccountContent()) {
             return;
         }
@@ -2756,9 +2760,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         boolean hasVisibleSection = binding.cardCurveSection.getVisibility() == View.VISIBLE
-                || binding.cardReturnStatsSection.getVisibility() == View.VISIBLE
-                || binding.cardTradeRecordsSection.getVisibility() == View.VISIBLE
-                || binding.cardTradeStatsSection.getVisibility() == View.VISIBLE;
+                || binding.cardStatsSummarySection.getVisibility() == View.VISIBLE
+                || binding.cardStructureAnalysisSection.getVisibility() == View.VISIBLE
+                || binding.cardTradeAnalysisEntrySection.getVisibility() == View.VISIBLE;
         if (hasVisibleSection) {
             binding.cardStatsEmptyState.setVisibility(View.GONE);
             return;
@@ -2767,14 +2771,120 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.tvCurveMeta.setVisibility(View.VISIBLE);
         binding.tvCurveMeta.setText("暂无历史曲线数据");
         binding.layoutCurveSecondarySection.setVisibility(View.GONE);
-        binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
+        binding.cardReturnStatsSection.setVisibility(View.GONE);
         binding.tvReturnsPeriod.setText("--");
         binding.tableMonthlyReturns.removeAllViews();
         binding.tvMonthlyReturnsHint.setVisibility(View.VISIBLE);
         binding.tvMonthlyReturnsHint.setText("暂无历史收益数据");
-        binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);
+        binding.cardTradeRecordsSection.setVisibility(View.GONE);
         binding.cardTradeStatsSection.setVisibility(View.GONE);
+        refreshAnalysisSummaryCards();
         binding.cardStatsEmptyState.setVisibility(View.GONE);
+    }
+
+    // 绑定分析页首屏摘要卡的点击入口，深内容统一跳到完整分析页。
+    private void setupAnalysisSummaryActions() {
+        if (binding == null) {
+            return;
+        }
+        View.OnClickListener openDetailsListener = v -> openTradeAnalysisPage();
+        binding.cardStructureAnalysisSection.setOnClickListener(openDetailsListener);
+        binding.btnOpenStructureAnalysis.setOnClickListener(openDetailsListener);
+        binding.cardTradeAnalysisEntrySection.setOnClickListener(openDetailsListener);
+        binding.btnOpenTradeAnalysis.setOnClickListener(openDetailsListener);
+        refreshAnalysisSummaryCards();
+    }
+
+    // 一级分析页只保留摘要，完整历史统计继续复用既有深页。
+    void openTradeAnalysisPage() {
+        Intent intent = new Intent(activity, AccountStatsBridgeActivity.class);
+        intent.putExtras(activity.getIntent());
+        activity.startActivity(intent);
+    }
+
+    // 根据当前快照刷新分析页首屏摘要卡，避免再次把长列表堆回一级页。
+    private void refreshAnalysisSummaryCards() {
+        if (binding == null) {
+            return;
+        }
+        binding.cardStatsSummarySection.setVisibility(View.VISIBLE);
+        binding.cardStructureAnalysisSection.setVisibility(View.VISIBLE);
+        binding.cardTradeAnalysisEntrySection.setVisibility(View.VISIBLE);
+        binding.cardReturnStatsSection.setVisibility(View.GONE);
+        binding.cardTradeRecordsSection.setVisibility(View.GONE);
+        binding.cardTradeStatsSection.setVisibility(View.GONE);
+
+        bindSummaryMetricValue(binding.tvStatsSummaryMetricOneValue,
+                findSummaryMetricValue("累计收益额", "累计盈亏"));
+        bindSummaryMetricValue(binding.tvStatsSummaryMetricTwoValue,
+                findSummaryMetricValue("最大回撤"));
+        bindSummaryMetricValue(binding.tvStatsSummaryMetricThreeValue,
+                findSummaryMetricValue("胜率"));
+        binding.tvStatsSummaryMetricFourValue.setText(String.format(
+                Locale.getDefault(),
+                "%d笔",
+                baseTrades == null ? 0 : baseTrades.size()
+        ));
+
+        int tradeCount = baseTrades == null ? 0 : baseTrades.size();
+        if (tradeCount > 0) {
+            binding.tvStructureAnalysisSummary.setText(String.format(
+                    Locale.getDefault(),
+                    "已生成 %d 笔历史成交的交易分布、持仓时长和按星期表现摘要。",
+                    tradeCount
+            ));
+            binding.tvTradeAnalysisEntrySummary.setText(String.format(
+                    Locale.getDefault(),
+                    "当前已有 %d 笔历史成交，点击进入逐笔成交和完整分析页。",
+                    tradeCount
+            ));
+            return;
+        }
+        if (!allCurvePoints.isEmpty() || !latestStatsMetrics.isEmpty()) {
+            binding.tvStructureAnalysisSummary.setText("当前已有收益与统计快照，完整结构分析会在产生历史成交后自动补齐。");
+            binding.tvTradeAnalysisEntrySummary.setText("当前还没有历史成交记录，后续产生交易后可进入逐笔分析。");
+            return;
+        }
+        binding.tvStructureAnalysisSummary.setText("当前还没有结构分析数据，连接账户并产生历史成交后这里会自动显示摘要。");
+        binding.tvTradeAnalysisEntrySummary.setText("当前还没有历史成交或收益快照，后续产生数据后可进入完整分析页。");
+    }
+
+    // 读取核心统计里的优先指标，首屏只展示最关键的几项。
+    @NonNull
+    private String findSummaryMetricValue(@NonNull String... preferredNames) {
+        if (latestStatsMetrics == null || latestStatsMetrics.isEmpty()) {
+            return "--";
+        }
+        for (String preferredName : preferredNames) {
+            for (AccountMetric metric : latestStatsMetrics) {
+                if (metric == null || metric.getName() == null) {
+                    continue;
+                }
+                String name = metric.getName();
+                if (preferredName.equals(name) || name.contains(preferredName)) {
+                    return safeMetricValue(metric.getValue());
+                }
+            }
+        }
+        return safeMetricValue(latestStatsMetrics.get(0).getValue());
+    }
+
+    // 首屏摘要值统一走这里，便于和隐私打码状态保持一致。
+    private void bindSummaryMetricValue(@NonNull TextView view, @NonNull String value) {
+        if (isPrivacyMasked() && !"--".equals(value)) {
+            view.setText(SensitiveDisplayMasker.MASK_TEXT);
+            return;
+        }
+        view.setText(value);
+    }
+
+    // 规整摘要值的空态文本，避免出现空字符串。
+    @NonNull
+    private String safeMetricValue(@Nullable String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "--";
+        }
+        return value;
     }
 
     private boolean isPrivacyMasked() {
@@ -4527,6 +4637,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         if (source != null && !source.isEmpty()) {
             curveHistory.addAll(source);
         }
+        refreshAnalysisSummaryCards();
     }
 
     private void replaceTradeHistory(List<TradeRecordItem> source) {
@@ -4534,6 +4645,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         if (source != null && !source.isEmpty()) {
             tradeHistory.addAll(source);
         }
+        refreshAnalysisSummaryCards();
     }
 
     private String buildDataQualitySummary(List<TradeRecordItem> trades,
@@ -4605,6 +4717,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 holdingDurationBuckets == null ? new ArrayList<>() : new ArrayList<>(holdingDurationBuckets));
         binding.tradeWeekdayBarChart.setEntries(
                 weekdayEntries == null ? new ArrayList<>() : new ArrayList<>(weekdayEntries));
+        refreshAnalysisSummaryCards();
         String sideLabel;
         if (tradePnlSideMode == TradePnlSideMode.BUY) {
             sideLabel = "买入";
@@ -4622,7 +4735,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     SensitiveDisplayMasker.MASK_TEXT));
             binding.tvTradePnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
             binding.tvTradePnlLegend.setVisibility(View.GONE);
-            binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+            binding.cardTradeStatsSection.setVisibility(View.GONE);
             return;
         }
         String summaryText = String.format(
@@ -4639,7 +4752,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
         binding.tvTradePnlSummary.setText(summarySpan);
         binding.tvTradePnlLegend.setVisibility(View.GONE);
-        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+        binding.cardTradeStatsSection.setVisibility(View.GONE);
     }
 
     private long resolveOpenTime(TradeRecordItem item) {
@@ -4766,6 +4879,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         defaultCurveMeta = result.getDefaultCurveMeta();
         curveBaseBalance = result.getCurveBaseBalance();
         clearSharedCurveHighlight();
+        refreshAnalysisSummaryCards();
     }
 
     // 绑定后台已准备好的曲线投影结果，避免主线程再次重复推导附图。
@@ -4786,6 +4900,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         displayedDailyReturnPoints = result.getDisplayedDailyReturnPoints();
         defaultCurveMeta = result.getDefaultCurveMeta();
         curveBaseBalance = result.getCurveBaseBalance();
+        refreshAnalysisSummaryCards();
         clearSharedCurveHighlight();
     }
 
