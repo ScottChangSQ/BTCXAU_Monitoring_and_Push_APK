@@ -88,6 +88,9 @@
     <string name="nav_account_stats">账户统计</string>
     <string name="nav_account_position">账户持仓</string>
     <string name="nav_settings">设置</string>
+    <string name="nav_trading">交易</string>
+    <string name="nav_account">账户</string>
+    <string name="nav_analysis">分析</string>
     <string name="account_overview_title">账户总览</string>
     <string name="account_position_aggregate_title">按产品统计</string>
     <string name="equity_curve_title">净值曲线</string>

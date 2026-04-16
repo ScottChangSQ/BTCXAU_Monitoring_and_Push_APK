@@ -14,27 +14,38 @@ public final class BottomTabVisibilityManager {
     }
 
     public static void apply(Context context,
-                             @Nullable TextView tabMarketMonitor,
-                             @Nullable TextView tabMarketChart,
-                             @Nullable TextView tabAccountStats,
-                             @Nullable TextView tabAccountPosition,
+                             @Nullable TextView tabTrading,
+                             @Nullable TextView tabAccount,
+                             @Nullable TextView tabAnalysis,
                              @Nullable TextView tabSettings) {
         if (context == null) {
             return;
         }
         ConfigManager config = ConfigManager.getInstance(context.getApplicationContext());
-        boolean showMarket = config.isTabMarketMonitorVisible();
         boolean showChart = config.isTabMarketChartVisible();
         boolean showAccountStats = config.isTabAccountStatsVisible();
         boolean showAccountPosition = config.isTabAccountPositionVisible();
-        if (!showMarket && !showChart && !showAccountStats && !showAccountPosition) {
-            showMarket = true;
+        boolean showTrading = showChart || config.isTabMarketMonitorVisible();
+        if (!showTrading && !showAccountStats && !showAccountPosition) {
+            showTrading = true;
         }
-        setVisibility(tabMarketMonitor, showMarket);
-        setVisibility(tabMarketChart, showChart);
-        setVisibility(tabAccountStats, showAccountStats);
-        setVisibility(tabAccountPosition, showAccountPosition);
+        setVisibility(tabTrading, showTrading);
+        setVisibility(tabAccount, showAccountPosition);
+        setVisibility(tabAnalysis, showAccountStats);
         setVisibility(tabSettings, true);
+    }
+
+    public static void apply(Context context,
+                             @Nullable TextView tabMarketMonitor,
+                             @Nullable TextView tabMarketChart,
+                             @Nullable TextView tabAccountStats,
+                             @Nullable TextView tabAccountPosition,
+                             @Nullable TextView tabSettings) {
+        apply(context, tabMarketChart != null ? tabMarketChart : tabMarketMonitor,
+                tabAccountPosition,
+                tabAccountStats,
+                tabSettings);
+        setVisibility(tabMarketMonitor, false);
     }
 
     private static void setVisibility(@Nullable View view, boolean visible) {

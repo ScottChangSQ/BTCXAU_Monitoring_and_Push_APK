@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_primary">#08111F</color>
-    <color name="bg_surface">#0B1528</color>
-    <color name="bg_card">#101D34</color>
-    <color name="bg_input">#162845</color>
-    <color name="stroke_card">#223A5F</color>
-    <color name="text_primary">#ECF3FF</color>
-    <color name="text_secondary">#8AA0BD</color>
-    <color name="accent_cyan">#23C4FF</color>
-    <color name="accent_gold">#F8B84E</color>
+    <color name="bg_primary">#08090A</color>
+    <color name="bg_surface">#0F1011</color>
+    <color name="bg_card">#191A1B</color>
+    <color name="bg_input">#1E2125</color>
+    <color name="stroke_card">#2A2D33</color>
+    <color name="text_primary">#F7F8F8</color>
+    <color name="text_secondary">#8A8F98</color>
+    <color name="accent_cyan">#7170FF</color>
+    <color name="accent_gold">#D6A34A</color>
     <color name="accent_red">#FF6B6B</color>
-    <color name="accent_green">#2AD39B</color>
-    <color name="accent_blue">#23A8F2</color>
-    <color name="divider">#1B2E4B</color>
-    <color name="vintage_orange">#193155</color>
-    <color name="vintage_mustard">#203C63</color>
-    <color name="vintage_paper_dark">#13233D</color>
-    <color name="vintage_ink">#23A8F2</color>
-    <color name="grain_overlay">#0DFFFFFF</color>
+    <color name="accent_green">#27A644</color>
+    <color name="accent_blue">#7170FF</color>
+    <color name="divider">#1E2125</color>
+    <color name="vintage_orange">#1B1E40</color>
+    <color name="vintage_mustard">#242744</color>
+    <color name="vintage_paper_dark">#171923</color>
+    <color name="vintage_ink">#7170FF</color>
+    <color name="grain_overlay">#08FFFFFF</color>
     <color name="white">#FFFFFF</color>
     <color name="transparent">#00000000</color>
 </resources>
