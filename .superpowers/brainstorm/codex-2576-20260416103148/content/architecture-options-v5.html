@@ -1,0 +1,296 @@
+<style>
+  .wide-wrap { width: min(1600px, calc(100vw - 64px)); margin: 0 auto; }
+  .scheme { margin-bottom: 28px; }
+  .scheme .option { display:block; padding: 18px 20px 20px; }
+  .scheme-grid { display:grid; grid-template-columns: 1.35fr 1fr; gap: 16px; margin-top: 14px; }
+  .panel-grid { display:grid; grid-template-columns: repeat(12, 1fr); gap: 10px; }
+  .box {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    min-height: 84px;
+    color: var(--text-primary);
+    white-space: pre-line;
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+  .muted { color: var(--text-secondary); font-size: 0.82rem; }
+  .title-sm { font-size: 0.92rem; font-weight: 700; margin-bottom: 4px; }
+  .nav-bar {
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    background:#131722; border:1px solid var(--border); border-radius:10px;
+    padding:10px 12px; margin-bottom:10px;
+  }
+  .nav-pill, .status-pill {
+    padding: 6px 10px; border-radius: 999px; border:1px solid var(--border);
+    background: var(--bg-secondary); font-size: 0.82rem;
+  }
+  .nav-pill.active { background: var(--accent); color:#fff; border-color: var(--accent); }
+  .status-pill { margin-left:auto; background:#20283a; }
+  .subsection { margin-top: 12px; }
+  .subsection h4 { font-size: 0.92rem; margin-bottom: 8px; }
+  @media (max-width: 980px) {
+    .wide-wrap { width: calc(100vw - 32px); }
+    .scheme-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="wide-wrap">
+  <h2>BTCXAU 新 UI 架构对比</h2>
+  <p class="subtitle">这版重新按大横版排版。每套方案单独占一整段，清楚展示：一级入口、交易主界面、账户/分析二级页、以及底部弹层怎么打开。</p>
+
+  <div class="scheme">
+    <div class="option" data-choice="A" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>交易中枢型（推荐）</h3>
+        <p>核心思路：`交易` 成为真正首页和主场，异常直接并进图表；`账户` 负责资产和持仓；`分析` 只做账户交易分析；`设置` 放系统项。</p>
+
+        <div class="scheme-grid">
+          <div class="mockup">
+            <div class="mockup-header">一级主界面：交易</div>
+            <div class="mockup-body">
+              <div class="nav-bar">
+                <span class="nav-pill active">交易</span>
+                <span class="nav-pill">账户</span>
+                <span class="nav-pill">分析</span>
+                <span class="nav-pill">设置</span>
+                <span class="status-pill">状态按钮：在线 / 账户 / 3条异常</span>
+              </div>
+              <div class="panel-grid">
+                <div class="box" style="grid-column: span 8;">
+                  <div class="title-sm">顶部工具条</div>
+                  当前品种 BTCUSD / XAUUSD
+                  周期切换
+                  指标按钮
+                  图表工具
+                </div>
+                <div class="box" style="grid-column: span 4;">
+                  <div class="title-sm">图表右上快捷区</div>
+                  异常列表按钮
+                  快速下单入口
+                </div>
+
+                <div class="box" style="grid-column: span 12; min-height: 230px;">
+                  <div class="title-sm">K 线主图区域</div>
+                  图上直接显示异常标记
+                  顶部显示风险提示条
+                  历史成交和仓位标注也在这里
+                  <div class="muted">用户一进入 App，先看到的就是交易全貌，不再先经过单独的仪表盘页。</div>
+                </div>
+
+                <div class="box" style="grid-column: span 6;">
+                  <div class="title-sm">底部操作区</div>
+                  买入
+                  卖出
+                  平仓
+                  修改止盈止损
+                </div>
+                <div class="box" style="grid-column: span 6;">
+                  <div class="title-sm">当前品种摘要</div>
+                  当前仓位
+                  当前挂单
+                  风险提示
+                  最近异常
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="mockup">
+              <div class="mockup-header">二级整页：账户</div>
+              <div class="mockup-body">
+                <div class="panel-grid">
+                  <div class="box" style="grid-column: span 12;">
+                    <div class="title-sm">账户总览</div>
+                    净值 / 余额 / 保证金 / 浮盈亏
+                  </div>
+                  <div class="box" style="grid-column: span 12;">
+                    <div class="title-sm">当前持仓列表</div>
+                    每个持仓卡片可点开
+                  </div>
+                  <div class="box" style="grid-column: span 12;">
+                    <div class="title-sm">当前挂单列表</div>
+                    每条挂单可点开
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mockup">
+              <div class="mockup-header">底部弹层：状态按钮</div>
+              <div class="mockup-body">
+                <div class="panel-grid">
+                  <div class="box" style="grid-column: span 12;">
+                    <div class="title-sm">全局状态弹层</div>
+                    连接状态
+                    当前账户
+                    同步状态
+                    最近刷新时间
+                    异常数量
+                  </div>
+                  <div class="box" style="grid-column: span 6;">去设置</div>
+                  <div class="box" style="grid-column: span 6;">看诊断</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pros-cons">
+          <div class="pros">
+            <h4>为什么推荐 A</h4>
+            <ul>
+              <li>最符合你现在“不要仪表盘”的要求</li>
+              <li>异常直接并进图表，使用路径最短</li>
+              <li>账户和分析的职责最清楚</li>
+            </ul>
+          </div>
+          <div class="cons">
+            <h4>代价</h4>
+            <ul>
+              <li>交易页会成为最重的一页</li>
+              <li>状态按钮必须设计得非常清楚</li>
+              <li>旧的“首页看全局”心智会消失</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scheme">
+    <div class="option" data-choice="B" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>账户并重型</h3>
+        <p>核心思路：交易页只保留最核心的图表和操作，更多状态和风险信息下沉到账户页。适合希望“交易”和“账户”分得更开的结构。</p>
+
+        <div class="scheme-grid">
+          <div class="mockup">
+            <div class="mockup-header">一级主界面：交易</div>
+            <div class="mockup-body">
+              <div class="nav-bar">
+                <span class="nav-pill active">交易</span>
+                <span class="nav-pill">账户</span>
+                <span class="nav-pill">分析</span>
+                <span class="nav-pill">设置</span>
+                <span class="status-pill">状态按钮</span>
+              </div>
+              <div class="panel-grid">
+                <div class="box" style="grid-column: span 9;">
+                  <div class="title-sm">顶部工具条</div>
+                  品种 / 周期 / 指标 / 工具
+                </div>
+                <div class="box" style="grid-column: span 3;">
+                  <div class="title-sm">异常入口</div>
+                  单独按钮
+                </div>
+                <div class="box" style="grid-column: span 12; min-height: 220px;">
+                  <div class="title-sm">K 线主图</div>
+                  图上只保留重点异常标记
+                  页面整体更干净
+                </div>
+                <div class="box" style="grid-column: span 12;">
+                  <div class="title-sm">底部轻量操作</div>
+                  买入 / 卖出 / 平仓
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="mockup">
+              <div class="mockup-header">二级整页：账户（更重）</div>
+              <div class="mockup-body">
+                <div class="panel-grid">
+                  <div class="box" style="grid-column: span 12;">账户总览</div>
+                  <div class="box" style="grid-column: span 6;">当前持仓</div>
+                  <div class="box" style="grid-column: span 6;">当前挂单</div>
+                  <div class="box" style="grid-column: span 12;">风险与异常关联信息</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mockup">
+              <div class="mockup-header">底部弹层：异常快看</div>
+              <div class="mockup-body">
+                <div class="panel-grid">
+                  <div class="box" style="grid-column: span 12;">异常标题 / 严重等级 / 处理建议</div>
+                  <div class="box" style="grid-column: span 6;">跳转交易</div>
+                  <div class="box" style="grid-column: span 6;">跳转账户</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="muted">这套更稳，但产品重心没有 A 那么集中。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scheme">
+    <div class="option" data-choice="C" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>分析前置型</h3>
+        <p>核心思路：交易页里就明显引导去看“表现”和“复盘”，分析页在产品中的存在感更强。适合想把分析做成卖点的方向。</p>
+
+        <div class="scheme-grid">
+          <div class="mockup">
+            <div class="mockup-header">一级主界面：交易</div>
+            <div class="mockup-body">
+              <div class="nav-bar">
+                <span class="nav-pill active">交易</span>
+                <span class="nav-pill">账户</span>
+                <span class="nav-pill">分析</span>
+                <span class="nav-pill">设置</span>
+                <span class="status-pill">状态按钮</span>
+              </div>
+              <div class="panel-grid">
+                <div class="box" style="grid-column: span 8;">顶部工具条 + 分析入口高亮</div>
+                <div class="box" style="grid-column: span 4;">最近表现卡片</div>
+                <div class="box" style="grid-column: span 12; min-height: 220px;">
+                  <div class="title-sm">K 线主图</div>
+                  异常标记仍在图上
+                  但页面会更强调“看表现、去分析”
+                </div>
+                <div class="box" style="grid-column: span 6;">交易操作区</div>
+                <div class="box" style="grid-column: span 6;">最近表现摘要</div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="mockup">
+              <div class="mockup-header">二级整页：分析（更强）</div>
+              <div class="mockup-body">
+                <div class="panel-grid">
+                  <div class="box" style="grid-column: span 12;">收益曲线</div>
+                  <div class="box" style="grid-column: span 6;">回撤</div>
+                  <div class="box" style="grid-column: span 6;">胜率 / 分布</div>
+                  <div class="box" style="grid-column: span 12;">历史成交明细</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mockup">
+              <div class="mockup-header">底部弹层：成交快看</div>
+              <div class="mockup-body">
+                <div class="panel-grid">
+                  <div class="box" style="grid-column: span 12;">本笔成交：时间 / 盈亏 / 时长</div>
+                  <div class="box" style="grid-column: span 12;">进入完整分析详情</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="muted">这套专业感更强，但会让产品更像“复盘工具”，不如 A 那么直接聚焦交易。</div>
+      </div>
+    </div>
+  </div>
+</div>

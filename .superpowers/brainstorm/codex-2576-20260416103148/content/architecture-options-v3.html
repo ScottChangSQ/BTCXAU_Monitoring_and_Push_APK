@@ -1,0 +1,176 @@
+<h2>BTCXAU 新 UI 架构对比（去掉仪表盘版）</h2>
+<p class="subtitle">已按你的新要求修订：不保留仪表盘，顶部只保留一个全局状态按钮，异常提醒整合进交易/图表页，分析页只做账户交易分析。</p>
+
+<div class="cards">
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 交易中枢型（推荐）</div>
+        <div class="mockup-body">
+          <div style="display:grid;gap:10px;">
+            <div class="mock-nav">交易 | 账户 | 分析 | 设置</div>
+            <div style="display:grid;grid-template-columns:1.5fr auto;gap:8px;">
+              <div class="placeholder" style="min-height:72px;">交易页顶部\n当前品种 | 周期 | 指标 | 图表工具</div>
+              <div class="placeholder" style="min-width:110px;min-height:72px;">状态按钮\n连接/账户/异常数</div>
+            </div>
+            <div class="placeholder" style="min-height:150px;">K 线主图\n异常标记直接打在图上\n顶部风险提示条\n右上角异常列表按钮</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div class="placeholder">当前品种操作区\n买入 | 卖出 | 平仓</div>
+              <div class="placeholder">当前品种摘要\n仓位 | 挂单 | 风险提示</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="split" style="margin-top:10px;">
+        <div class="mockup">
+          <div class="mockup-header">二级整页：账户</div>
+          <div class="mockup-body">
+            <div style="display:grid;gap:8px;">
+              <div class="placeholder">账户总览\n净值 | 余额 | 保证金 | 浮盈亏</div>
+              <div class="placeholder">当前持仓列表</div>
+              <div class="placeholder">当前挂单列表</div>
+              <div class="placeholder">历史成交入口</div>
+            </div>
+          </div>
+        </div>
+        <div class="mockup">
+          <div class="mockup-header">底部弹层：状态按钮</div>
+          <div class="mockup-body">
+            <div style="display:grid;gap:8px;">
+              <div class="placeholder">连接状态 / 当前账户</div>
+              <div class="placeholder">同步状态 / 最近刷新</div>
+              <div class="placeholder">异常数量 / 快捷入口</div>
+              <button class="mock-button">进入设置或诊断</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 交易中枢型</h3>
+      <p>交易页成为真正主场，异常和图表合成一页。账户和分析各自独立，产品结构清楚，最符合你现在的新方向。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. 账户并重型</div>
+        <div class="mockup-body">
+          <div style="display:grid;gap:10px;">
+            <div class="mock-nav">交易 | 账户 | 分析 | 设置</div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:8px;">
+              <div class="placeholder" style="min-height:72px;">交易页顶部较精简\n品种 | 周期 | 工具</div>
+              <div class="placeholder" style="min-width:110px;min-height:72px;">状态按钮</div>
+            </div>
+            <div class="placeholder" style="min-height:120px;">图表区\n异常标记较轻，只保留重点提示</div>
+            <div class="placeholder" style="min-height:98px;">底部只保留轻量操作按钮</div>
+            <div class="placeholder">更多当前状态下沉到账户页</div>
+          </div>
+        </div>
+      </div>
+      <div class="split" style="margin-top:10px;">
+        <div class="mockup">
+          <div class="mockup-header">二级整页：账户（更重）</div>
+          <div class="mockup-body">
+            <div style="display:grid;gap:8px;">
+              <div class="placeholder">账户总览</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div class="placeholder">当前持仓</div>
+                <div class="placeholder">当前挂单</div>
+              </div>
+              <div class="placeholder">风险与异常关联</div>
+              <div class="placeholder">去分析页按钮</div>
+            </div>
+          </div>
+        </div>
+        <div class="mockup">
+          <div class="mockup-header">底部弹层：异常快看</div>
+          <div class="mockup-body">
+            <div style="display:grid;gap:8px;">
+              <div class="placeholder">异常标题 + 等级</div>
+              <div class="placeholder">简要处理建议</div>
+              <button class="mock-button">跳转账户或交易</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 账户并重型</h3>
+      <p>交易页更纯，账户页更重。适合把交易和账户分得更开，但整体节奏没有 A 那么集中。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. 分析前置型</div>
+        <div class="mockup-body">
+          <div style="display:grid;gap:10px;">
+            <div class="mock-nav">交易 | 账户 | 分析 | 设置</div>
+            <div style="display:grid;grid-template-columns:1.2fr auto;gap:8px;">
+              <div class="placeholder" style="min-height:72px;">交易页顶部\n品种 | 周期 | 工具 | 分析入口高亮</div>
+              <div class="placeholder" style="min-width:110px;min-height:72px;">状态按钮</div>
+            </div>
+            <div class="placeholder" style="min-height:135px;">K 线主图\n异常标记 + 右侧分析提示</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div class="placeholder">交易操作区</div>
+              <div class="placeholder">“最近表现”卡片\n强引导去分析页</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="split" style="margin-top:10px;">
+        <div class="mockup">
+          <div class="mockup-header">二级整页：分析（更强）</div>
+          <div class="mockup-body">
+            <div style="display:grid;gap:8px;">
+              <div class="placeholder">收益曲线</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div class="placeholder">回撤</div>
+                <div class="placeholder">胜率/分布</div>
+              </div>
+              <div class="placeholder">历史成交明细</div>
+            </div>
+          </div>
+        </div>
+        <div class="mockup">
+          <div class="mockup-header">底部弹层：成交快看</div>
+          <div class="mockup-body">
+            <div style="display:grid;gap:8px;">
+              <div class="placeholder">本笔成交盈亏与时间</div>
+              <button class="mock-button">进入分析详情</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 分析前置型</h3>
+      <p>更强调“复盘与表现”，适合把分析作为卖点，但它会让交易页多一层分析导向，不如 A 纯粹。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>我的建议</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>推荐 A 的原因</h4>
+      <ul>
+        <li>最贴合你现在“不要仪表盘”的方向</li>
+        <li>异常整合进图表后，交易页会更完整</li>
+        <li>账户和分析边界最清楚，统一感最好</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>你需要接受的变化</h4>
+      <ul>
+        <li>交易页会成为最重的一页</li>
+        <li>旧的异常独立展示心智会消失</li>
+        <li>顶部状态按钮需要做得足够清楚</li>
+      </ul>
+    </div>
+  </div>
+</div>
