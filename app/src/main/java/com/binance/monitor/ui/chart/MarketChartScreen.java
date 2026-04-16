@@ -55,6 +55,7 @@ import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.model.v2.MarketSeriesPayload;
+import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
@@ -76,6 +77,7 @@ import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.ui.chart.MarketChartPageController;
 import com.binance.monitor.ui.chart.MarketChartPageRuntime;
+import com.binance.monitor.ui.host.GlobalStatusBottomSheetController;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
@@ -164,12 +166,15 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     private ActivityMarketChartBinding binding;
     private AppCompatActivity activity;
+    private final LifecycleOwner lifecycleOwner;
 
 
     MarketChartScreen(@NonNull AppCompatActivity activity,
+                      @NonNull LifecycleOwner lifecycleOwner,
                       @NonNull ActivityMarketChartBinding binding) {
         super(activity, activity.getTheme());
         this.activity = activity;
+        this.lifecycleOwner = lifecycleOwner;
         this.binding = binding;
     }
 
@@ -186,6 +191,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
         abnormalRecordManager = AbnormalRecordManager.getInstance(getApplicationContext());
         secureSessionPrefs = new SecureSessionPrefs(getApplicationContext());
+        globalStatusBottomSheetController = new GlobalStatusBottomSheetController(activity);
         tradeExecutionCoordinator = createTradeExecutionCoordinator();
         tradeDialogCoordinator = new MarketChartTradeDialogCoordinator(
                 activity,
@@ -206,6 +212,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     }
 
     void bindPageContent() {
+        setupGlobalStatusButton();
+        observeStatusSources();
         setupChart();
         setupSymbolSelector();
         setupIntervalButtons();
@@ -379,6 +387,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private AccountStatsPreloadManager accountStatsPreloadManager;
     private AbnormalRecordManager abnormalRecordManager;
     private SecureSessionPrefs secureSessionPrefs;
+    private GlobalStatusBottomSheetController globalStatusBottomSheetController;
     private Future<?> chartCacheInvalidationTask;
     private Future<?> storedChartOverlayRestoreTask;
     private AccountSnapshot storedChartOverlaySnapshot;
@@ -440,6 +449,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private long lastSuccessUpdateMs;
     private long lastSuccessfulRequestLatencyMs = -1L;
     private List<AbnormalRecord> abnormalRecords = new ArrayList<>();
+    private boolean statusSourcesObserved;
     private String lastAccountOverlaySignature = "";
     private String lastAbnormalOverlaySignature = "";
     private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> {
@@ -970,6 +980,180 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         updatePositionOverlayToggleButton();
         updateHistoryTradeToggleButton();
         bindChartOverlayStatus(lastChartOverlaySnapshot, masked);
+    }
+
+    // 绑定顶部状态入口，把全局状态收口成一个轻按钮。
+    private void setupGlobalStatusButton() {
+        if (binding == null || binding.btnGlobalStatus == null) {
+            return;
+        }
+        binding.btnGlobalStatus.setOnClickListener(v -> {
+            if (globalStatusBottomSheetController == null) {
+                return;
+            }
+            globalStatusBottomSheetController.show(buildGlobalStatusSnapshot());
+        });
+        refreshGlobalStatusButton();
+    }
+
+    // 观察连接、刷新时间和异常记录，保证按钮与图表异常标注走同一套真值。
+    private void observeStatusSources() {
+        if (statusSourcesObserved) {
+            return;
+        }
+        statusSourcesObserved = true;
+        if (monitorRepository != null) {
+            monitorRepository.getConnectionStatus().observe(lifecycleOwner, ignored -> refreshGlobalStatusButton());
+            monitorRepository.getLastUpdateTime().observe(lifecycleOwner, ignored -> refreshGlobalStatusButton());
+            monitorRepository.getMonitoringEnabled().observe(lifecycleOwner, ignored -> refreshGlobalStatusButton());
+        }
+        if (abnormalRecordManager != null) {
+            abnormalRecordManager.getRecordsLiveData().observe(lifecycleOwner, records -> {
+                abnormalRecords = records == null ? new ArrayList<>() : new ArrayList<>(records);
+                refreshGlobalStatusButton();
+                updateAbnormalAnnotationsOverlay();
+            });
+        }
+        refreshGlobalStatusButton();
+    }
+
+    // 构造全局状态快照，供顶部按钮与底部弹层共用。
+    @NonNull
+    private GlobalStatusBottomSheetController.StatusSnapshot buildGlobalStatusSnapshot() {
+        SessionSummarySnapshot sessionSummary = secureSessionPrefs == null
+                ? SessionSummarySnapshot.empty()
+                : secureSessionPrefs.loadSessionSummary();
+        String connectionText = resolveConnectionStatusText();
+        long refreshedAt = resolveLatestRefreshTimeMs();
+        return new GlobalStatusBottomSheetController.StatusSnapshot(
+                resolveStatusStageText(connectionText),
+                connectionText,
+                resolveAccountDisplayText(sessionSummary),
+                resolveSyncStatusText(connectionText, refreshedAt),
+                refreshedAt > 0L
+                        ? FormatUtils.formatDateTime(refreshedAt)
+                        : getString(R.string.global_status_value_pending),
+                abnormalRecords == null ? 0 : abnormalRecords.size(),
+                abnormalRecords
+        );
+    }
+
+    // 刷新状态按钮文案，让一级入口始终显示最新摘要。
+    private void refreshGlobalStatusButton() {
+        if (binding == null || binding.btnGlobalStatus == null || globalStatusBottomSheetController == null) {
+            return;
+        }
+        globalStatusBottomSheetController.bindCompactButton(binding.btnGlobalStatus, buildGlobalStatusSnapshot());
+    }
+
+    // 读取当前连接状态文案，没有真值时统一回退到离线态。
+    @NonNull
+    private String resolveConnectionStatusText() {
+        if (monitorRepository == null) {
+            return getString(R.string.connection_disconnected);
+        }
+        String value = monitorRepository.getConnectionStatus().getValue();
+        return value == null || value.trim().isEmpty()
+                ? getString(R.string.connection_disconnected)
+                : value.trim();
+    }
+
+    // 选择当前账户展示名，优先展示活动账户，其次回退到最近草稿账号。
+    @NonNull
+    private String resolveAccountDisplayText(@NonNull SessionSummarySnapshot sessionSummary) {
+        RemoteAccountProfile activeAccount = sessionSummary.getActiveAccount();
+        if (activeAccount != null) {
+            String displayName = safeTrim(activeAccount.getDisplayName());
+            if (!displayName.isEmpty()) {
+                return displayName;
+            }
+            String maskedLogin = safeTrim(activeAccount.getLoginMasked());
+            if (!maskedLogin.isEmpty()) {
+                return maskedLogin;
+            }
+            String login = safeTrim(activeAccount.getLogin());
+            if (!login.isEmpty()) {
+                return login;
+            }
+        }
+        String draftAccount = safeTrim(sessionSummary.getDraftAccount());
+        if (!draftAccount.isEmpty()) {
+            return draftAccount;
+        }
+        return getString(R.string.global_status_value_no_account);
+    }
+
+    // 用现有连接状态收口成按钮短标签，避免入口文案过长。
+    @NonNull
+    private String resolveStatusStageText(@NonNull String connectionText) {
+        if (!isMonitoringEnabled()) {
+            return getString(R.string.global_status_stage_paused);
+        }
+        if (isConnectedStatus(connectionText)) {
+            return getString(R.string.global_status_stage_online);
+        }
+        if (isRecoveringStatus(connectionText)) {
+            return getString(R.string.global_status_stage_recovering);
+        }
+        return getString(R.string.global_status_stage_offline);
+    }
+
+    // 在没有独立同步状态源时，按连接状态和最近刷新时间生成同步文案。
+    @NonNull
+    private String resolveSyncStatusText(@NonNull String connectionText, long refreshedAt) {
+        if (!isMonitoringEnabled()) {
+            return getString(R.string.global_status_sync_paused);
+        }
+        if (isConnectedStatus(connectionText)) {
+            return getString(R.string.global_status_sync_live);
+        }
+        if (isRecoveringStatus(connectionText)) {
+            return getString(R.string.global_status_sync_recovering);
+        }
+        if (refreshedAt > 0L) {
+            return getString(R.string.global_status_sync_waiting);
+        }
+        return getString(R.string.global_status_sync_initial);
+    }
+
+    // 统一选出最近一次有效刷新时间，避免状态弹层显示旧值。
+    private long resolveLatestRefreshTimeMs() {
+        long repositoryUpdateAt = 0L;
+        if (monitorRepository != null && monitorRepository.getLastUpdateTime().getValue() != null) {
+            Long value = monitorRepository.getLastUpdateTime().getValue();
+            repositoryUpdateAt = value == null ? 0L : value;
+        }
+        return Math.max(lastSuccessUpdateMs, repositoryUpdateAt);
+    }
+
+    // 读取当前监控开关，供状态按钮与弹层共同判断是否暂停。
+    private boolean isMonitoringEnabled() {
+        if (monitorRepository == null || monitorRepository.getMonitoringEnabled().getValue() == null) {
+            return true;
+        }
+        Boolean value = monitorRepository.getMonitoringEnabled().getValue();
+        return value == null || value;
+    }
+
+    // 判断当前连接是否已经进入可用态。
+    private boolean isConnectedStatus(@NonNull String connectionText) {
+        return connectionText.contains(getString(R.string.connection_connected))
+                || connectionText.contains("已连接")
+                || connectionText.contains("正常");
+    }
+
+    // 判断当前连接是否仍在恢复链路中。
+    private boolean isRecoveringStatus(@NonNull String connectionText) {
+        return connectionText.contains(getString(R.string.connection_connecting))
+                || connectionText.contains(getString(R.string.connection_reconnecting))
+                || connectionText.contains("连接中")
+                || connectionText.contains("重连");
+    }
+
+    // 去掉状态文本中的空白，避免展示层出现空占位。
+    @NonNull
+    private String safeTrim(@Nullable String value) {
+        return value == null ? "" : value.trim();
     }
 
     private void setupSymbolSelector() {
@@ -4027,6 +4211,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         binding.cardChartPanel.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
         binding.cardChartPositions.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
+        binding.btnGlobalStatus.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
+        binding.btnGlobalStatus.setTextColor(palette.textPrimary);
         applyStripBackground(binding.btnInterval1m, palette);
         applyStripBackground(binding.btnIndicatorVolume, palette);
         applyStripBackground(binding.btnChartTradeBuy, palette);
@@ -4061,6 +4247,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         updatePositionOverlayToggleButton();
         updateHistoryTradeToggleButton();
         applyPrivacyMaskState();
+        refreshGlobalStatusButton();
     }
 
     // 图表页交易按钮保持和横向轻量按钮一致的样式层级。
