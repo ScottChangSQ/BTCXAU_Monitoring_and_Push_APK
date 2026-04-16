@@ -5,11 +5,11 @@ model_reasoning_effort = "high"
 disable_response_storage = true
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
-model_context_window = 1000000
-model_auto_compact_token_limit = 900000
+model_context_window = 280000
+model_auto_compact_token_limit = 280000
 
 [model_providers.OpenAI]
 name = "OpenAI"
-base_url = "https://od1.site"
+base_url = "https://www.testvideo.site"
 wire_api = "responses"
 requires_openai_auth = true
