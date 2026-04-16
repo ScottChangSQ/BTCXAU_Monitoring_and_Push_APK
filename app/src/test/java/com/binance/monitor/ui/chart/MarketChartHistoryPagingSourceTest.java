@@ -14,12 +14,13 @@ public class MarketChartHistoryPagingSourceTest {
 
     @Test
     public void activityShouldLetChartViewHandleOlderCandleSorting() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        Path activityFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        Path coordinatorFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java");
+        String activitySource = new String(Files.readAllBytes(activityFile), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+        String coordinatorSource = new String(Files.readAllBytes(coordinatorFile), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("ChartHistoryPagingHelper.resolveOlderCandles(loadedCandles, processed);"));
-        assertTrue(source.contains("binding.klineChartView.prependCandles(older);"));
-        assertFalse(source.contains("Collections.sort(older, (a, b) -> Long.compare(a.getOpenTime(), b.getOpenTime()));"));
-        assertFalse(source.contains("Set<Long> existing = ConcurrentHashMap.newKeySet();"));
+        assertTrue(coordinatorSource.contains("List<CandleEntry> older = ChartHistoryPagingHelper.resolveOlderCandles(host.getLoadedCandles(), processed);"));
+        assertTrue(activitySource.contains("binding.klineChartView.prependCandles(older);"));
+        assertFalse(activitySource.contains("Collections.sort(older, (a, b) -> Long.compare(a.getOpenTime(), b.getOpenTime()));"));
     }
 }

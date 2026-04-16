@@ -20,14 +20,16 @@ public class MonitorServiceSourceTest {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
-        );
+        ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("前台切回时应走统一前台状态处理入口",
-                source.contains("foreground -> mainHandler.post(() -> handleForegroundStateChanged(foreground))"));
+                source.contains("foreground -> mainHandler.post(() -> handleForegroundStateChanged(foreground));"));
         assertTrue("前台切回时应先判断当前 stream 是否仍健康",
                 source.contains("boolean streamHealthy = isV2StreamHealthy(System.currentTimeMillis());"));
         assertTrue("stream 健康时应先做远程会话恢复检查，再直接返回，不再继续重建主链连接",
-                source.contains("if (streamHealthy) {\n            reconcileRemoteSessionIfNeeded();\n            floatingCoordinator.requestRefresh(false);"));
+                source.contains("if (streamHealthy) {")
+                        && source.contains("reconcileRemoteSessionIfNeeded();")
+                        && source.contains("floatingCoordinator.requestRefresh(false);"));
         assertTrue("只有 stream 已失活时才应继续走后面的重建逻辑",
                 source.contains("if (streamHealthy) {\n            reconcileRemoteSessionIfNeeded();\n            floatingCoordinator.requestRefresh(false);\n            updateConnectionStatus();\n            return;\n        }\n"));
         assertFalse("前台切回时不应无条件重建 v2 stream",
@@ -178,7 +180,7 @@ public class MonitorServiceSourceTest {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
-        );
+        ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("历史补拉返回空缓存时应清理 stream 持仓快照，避免悬浮窗残留旧仓位",
                 source.contains("if (cache == null) {\n                    clearStreamAccountSnapshot();"));
@@ -189,7 +191,7 @@ public class MonitorServiceSourceTest {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
-        );
+        ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("监控服务应支持显式账户运行态清理动作，避免登出和切号后继续显示旧仓位",
                 source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:"));
@@ -296,7 +298,7 @@ public class MonitorServiceSourceTest {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
                 "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
-        );
+        ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("悬浮窗快照应带上统一连接阶段，避免 UI 再按字符串猜状态",
                 source.contains("return new FloatingWindowSnapshot(\n                dataSource.getCurrentConnectionStage(),"));

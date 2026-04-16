@@ -14,10 +14,10 @@ public class MarketChartRefreshPlanSourceTest {
 
     @Test
     public void requestKlinesShouldReusePlanningSeriesForLatestVisibleTime() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("long latestVisibleTime = resolveLatestVisibleCandleTime(localForPlan);"));
+        assertTrue(source.contains("long latestVisibleTime = host.resolveLatestVisibleCandleTime(localForPlan);"));
         assertFalse(source.contains("resolveLatestVisibleCandleTime(selectedSymbol)"));
     }
 }

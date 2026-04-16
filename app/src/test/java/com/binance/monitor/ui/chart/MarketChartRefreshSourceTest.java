@@ -24,14 +24,16 @@ public class MarketChartRefreshSourceTest {
 
     @Test
     public void activityShouldDebounceAccountOverlayRefreshes() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        Path activityFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        Path runtimeFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartPageRuntime.java");
+        String activitySource = new String(Files.readAllBytes(activityFile), StandardCharsets.UTF_8);
+        String runtimeSource = new String(Files.readAllBytes(runtimeFile), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("scheduleChartOverlayRefresh"));
-        assertTrue(source.contains("accountOverlayRefreshPending"));
-        assertTrue(source.contains("lastAccountOverlaySignature"));
-        assertFalse(source.contains("AccountSnapshotDisplayResolver.resolve("));
-        assertFalse(source.contains("ChartHistoricalTradeSourceResolver.resolve("));
+        assertTrue(runtimeSource.contains("scheduleChartOverlayRefresh"));
+        assertTrue(runtimeSource.contains("accountOverlayRefreshPending"));
+        assertTrue(activitySource.contains("lastAccountOverlaySignature"));
+        assertFalse(activitySource.contains("AccountSnapshotDisplayResolver.resolve("));
+        assertFalse(activitySource.contains("ChartHistoricalTradeSourceResolver.resolve("));
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.main;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -12,14 +13,15 @@ import java.nio.file.Paths;
 public class MainActivityOverviewClosedCandleSourceTest {
 
     @Test
-    public void mainActivityShouldConsumeClosedMinuteOverviewSnapshot() throws Exception {
+    public void mainActivityShouldBridgeInsteadOfConsumingOverviewSnapshot() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/main/MainActivity.java",
                 "src/main/java/com/binance/monitor/ui/main/MainActivity.java"
         );
 
-        assertTrue(source.contains("viewModel.getDisplayOverviewKlines().getValue()"));
-        assertTrue(source.contains("viewModel.getDisplayOverviewKlines().observe(this"));
+        assertTrue(source.contains("startActivity(HostNavigationIntentFactory.forTab(this, HostTab.MARKET_MONITOR));"));
+        assertFalse(source.contains("getDisplayOverviewKlines()"));
+        assertFalse(source.contains("observe(this"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

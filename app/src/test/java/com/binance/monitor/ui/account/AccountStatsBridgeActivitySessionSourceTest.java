@@ -71,24 +71,21 @@ public class AccountStatsBridgeActivitySessionSourceTest {
     }
 
     @Test
-    public void loginDialogOnlyModeShouldNotRenderAccountStatsTabBeforeShowingDialog() throws Exception {
+    public void legacyAccountStatsEntryShouldBridgeToHostShellBeforeRenderingLegacyPage() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
-        String themeSource = readUtf8(
-                "app/src/main/res/values/themes.xml",
-                "src/main/res/values/themes.xml"
-        ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("登录弹窗专用模式应在 onCreate 最开始切到透明宿主题，避免先闪到账户统计页",
-                source.contains("if (isLoginDialogOnlyMode(getIntent())) {\n            setTheme(R.style.Theme_BinanceMonitor_TranslucentHost);\n        }\n        super.onCreate(savedInstanceState);"));
-        assertTrue("登录弹窗专用模式应在正文 view 建好后立刻隐藏统计页内容，只留下弹窗承载层",
-                source.contains("if (finishAfterLoginDialog) {\n            binding.getRoot().setVisibility(View.INVISIBLE);\n        }"));
-        assertTrue("主题文件应定义透明宿主主题，确保底层仍显示账户持仓页而不是统计页背景",
-                themeSource.contains("<style name=\"Theme.BinanceMonitor.TranslucentHost\" parent=\"Theme.BinanceMonitor\">")
-                        && themeSource.contains("<item name=\"android:windowIsTranslucent\">true</item>")
-                        && themeSource.contains("<item name=\"android:windowBackground\">@android:color/transparent</item>"));
+        assertTrue("旧账户统计入口应在 onCreate 开头先桥接到主壳，避免继续渲染旧页面",
+                source.contains("if (bridgeLegacyEntryToMainHost(getIntent())) {\n            return;\n        }"));
+        assertTrue("桥接时应把原始 extras 透传给主壳，保留登录弹窗等后续意图",
+                source.contains("Bundle sourceExtras = sourceIntent == null ? null : sourceIntent.getExtras();")
+                        && source.contains("bridgeIntent.putExtras(sourceExtras);"));
+        assertTrue("桥接时应关闭切换动画并结束旧页面，避免闪到旧统计页",
+                source.contains("startActivity(bridgeIntent);")
+                        && source.contains("overridePendingTransition(0, 0);")
+                        && source.contains("finish();"));
     }
 
     @Test

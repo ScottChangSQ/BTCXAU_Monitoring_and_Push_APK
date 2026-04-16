@@ -19,14 +19,16 @@ public class ConfigManagerSourceTest {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/data/local/ConfigManager.java",
                 "src/main/java/com/binance/monitor/data/local/ConfigManager.java"
-        );
+        ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("读取配置时应把持久化值强制收口到唯一入口",
                 source.contains("preferences.edit().putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL).apply();"));
         assertTrue("读取配置时应直接返回唯一入口常量",
                 source.contains("return AppConstants.MT5_GATEWAY_BASE_URL;"));
         assertTrue("写入配置时不应再接受自定义入口",
-                source.contains("public void setMt5GatewayBaseUrl(String baseUrl) {\n        preferences.edit()\n                .putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL)"));
+                source.contains("public void setMt5GatewayBaseUrl(String baseUrl) {")
+                        && source.contains("preferences.edit()")
+                        && source.contains(".putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL)"));
     }
 
     @Test

@@ -16,15 +16,19 @@ public class AccountStatsBridgeActivityTradeHistorySourceTest {
 
     @Test
     public void applySnapshotShouldReplaceTradeHistoryInsteadOfMergingLocalMemory() throws Exception {
-        String source = readUtf8(
+        String activitySource = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
         );
+        String coordinatorSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsRenderCoordinator.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsRenderCoordinator.java"
+        );
 
         assertTrue("applySnapshot 应直接用服务端 canonical trades 覆盖页面历史",
-                source.contains("replaceTradeHistory(snapshotTrades);"));
+                coordinatorSource.contains("host.replaceTradeHistory(snapshotTrades);"));
         assertTrue("页面主链不应再把快照历史和本地内存历史做 merge",
-                !source.contains("mergeTradeHistory(snapshotTrades);"));
+                !activitySource.contains("mergeTradeHistory(snapshotTrades);"));
     }
 
     @Test

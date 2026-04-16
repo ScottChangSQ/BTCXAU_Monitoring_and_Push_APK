@@ -14,11 +14,14 @@ public class MarketChartRealtimeSourceTest {
 
     @Test
     public void activityShouldObserveRealtimeDisplayKlinesForChartTail() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        Path activityFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+        Path coordinatorFile = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java");
+        String activitySource = new String(Files.readAllBytes(activityFile), StandardCharsets.UTF_8);
+        String coordinatorSource = new String(Files.readAllBytes(coordinatorFile), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("getDisplayKlines().observe(this"));
-        assertFalse(source.contains("private boolean hasRealtimeTailSourceForChart() {\r\n        return false;\r\n    }"));
+        assertTrue(activitySource.contains("dataCoordinator.observeRealtimeDisplayKlines();"));
+        assertTrue(coordinatorSource.contains("repository.getDisplayKlines().observe(host.getLifecycleOwner(), snapshot -> {"));
+        assertFalse(activitySource.contains("private boolean hasRealtimeTailSourceForChart() {\r\n        return false;\r\n    }"));
     }
 
     @Test
