@@ -34,8 +34,6 @@ public class MainHostActivity extends AppCompatActivity {
     private TextView tabAccount;
     @Nullable
     private TextView tabAnalysis;
-    @Nullable
-    private TextView tabSettings;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -50,7 +48,6 @@ public class MainHostActivity extends AppCompatActivity {
         tabTrading = findViewById(R.id.tabTrading);
         tabAccount = findViewById(R.id.tabAccount);
         tabAnalysis = findViewById(R.id.tabAnalysis);
-        tabSettings = findViewById(R.id.tabSettings);
         setupBottomTabs();
         showSelectedTab();
         promptNotificationPermissionIfNeeded();
@@ -86,9 +83,6 @@ public class MainHostActivity extends AppCompatActivity {
         if (tabAnalysis != null) {
             tabAnalysis.setOnClickListener(v -> switchTo(HostTab.ANALYSIS));
         }
-        if (tabSettings != null) {
-            tabSettings.setOnClickListener(v -> switchTo(HostTab.SETTINGS));
-        }
         updateBottomTabs();
     }
 
@@ -112,23 +106,25 @@ public class MainHostActivity extends AppCompatActivity {
                 tabTrading,
                 tabAccount,
                 tabAnalysis,
-                tabSettings);
+                null);
         bottomNavigationView.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
         UiPaletteManager.styleBottomNavTab(tabTrading, selectedTab == HostTab.TRADING, palette);
         UiPaletteManager.styleBottomNavTab(tabAccount, selectedTab == HostTab.ACCOUNT, palette);
         UiPaletteManager.styleBottomNavTab(tabAnalysis, selectedTab == HostTab.ANALYSIS, palette);
-        UiPaletteManager.styleBottomNavTab(tabSettings, selectedTab == HostTab.SETTINGS, palette);
     }
 
     private void promptNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                 && !PermissionHelper.hasNotificationPermission(this)) {
-            new MaterialAlertDialogBuilder(this)
+            UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+            androidx.appcompat.app.AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                     .setMessage(R.string.notification_permission_required)
-                    .setPositiveButton(R.string.permission_settings, (dialog, which) ->
+                    .setPositiveButton(R.string.permission_settings, (dialogInterface, which) ->
                             PermissionHelper.requestNotificationPermission(this, REQUEST_CODE_NOTIFICATION))
                     .setNegativeButton(R.string.dismiss, null)
-                    .show();
+                    .create();
+            dialog.show();
+            UiPaletteManager.applyAlertDialogSurface(dialog, palette);
         }
     }
 }

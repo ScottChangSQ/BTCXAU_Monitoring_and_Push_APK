@@ -3,6 +3,7 @@ package com.binance.monitor.ui.account.adapter;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
+import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -10,6 +11,7 @@ import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
@@ -18,6 +20,8 @@ import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
 import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
+import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
@@ -33,9 +37,11 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
     private static final String PAYLOAD_EXPAND_STATE = "payload_expand_state";
     private static final String PAYLOAD_CONTENT_STATE = "payload_content_state";
 
+    private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();
     private final List<PositionItem> items = new ArrayList<>();
     private final List<String> rowKeys = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
+    private final Map<String, Integer> productCounts = new HashMap<>();
     private boolean masked;
     private ActionListener actionListener;
 
@@ -53,6 +59,8 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
     public void submitList(List<PositionItem> data) {
         List<PositionItem> nextItems = data == null ? new ArrayList<>() : new ArrayList<>(data);
         List<String> nextRowKeys = buildRowKeys(nextItems);
+        Map<String, Integer> previousProductCounts = new HashMap<>(productCounts);
+        Map<String, Integer> nextProductCounts = buildProductCounts(nextItems);
         Set<String> nextExpanded = new HashSet<>();
         for (String key : nextRowKeys) {
             if (expandedKeys.contains(key)) {
@@ -65,13 +73,17 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         DiffUtil.DiffResult diffResult = DiffUtil.calculateDiff(new RowDiffCallback(
                 previousItems,
                 previousRowKeys,
+                previousProductCounts,
                 nextItems,
-                nextRowKeys));
+                nextRowKeys,
+                nextProductCounts));
 
         expandedKeys.clear();
         expandedKeys.addAll(nextExpanded);
         items.clear();
         rowKeys.clear();
+        productCounts.clear();
+        productCounts.putAll(buildProductCounts(nextItems));
         items.addAll(nextItems);
         rowKeys.addAll(nextRowKeys);
         diffResult.dispatchUpdatesTo(this);
@@ -101,6 +113,21 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         return keys;
     }
 
+    private Map<String, Integer> buildProductCounts(List<PositionItem> data) {
+        Map<String, Integer> counts = new HashMap<>();
+        if (data == null || data.isEmpty()) {
+            return counts;
+        }
+        for (PositionItem item : data) {
+            String productSymbol = buildProductSymbolKey(item);
+            if (productSymbol.isEmpty()) {
+                continue;
+            }
+            counts.put(productSymbol, counts.getOrDefault(productSymbol, 0) + 1);
+        }
+        return counts;
+    }
+
     @NonNull
     @Override
     public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -112,7 +139,9 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, false, masked, actionListener != null);
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        int productCount = resolveProductCount(productCounts, item);
+        holder.bind(item, expanded, false, masked, actionListener != null, productCount, runtimeSnapshot);
         holder.binding.layoutHeader.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= rowKeys.size()) {
@@ -159,7 +188,15 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE), masked, actionListener != null);
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        int productCount = resolveProductCount(productCounts, item);
+        holder.bind(item,
+                expanded,
+                hasPayload(payloads, PAYLOAD_EXPAND_STATE),
+                masked,
+                actionListener != null,
+                productCount,
+                runtimeSnapshot);
     }
 
     @Override
@@ -184,7 +221,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                 + "|" + safe(item.getProductName());
     }
 
-    private String contentKeyOf(PositionItem item) {
+    private String contentKeyOf(PositionItem item, @NonNull Map<String, Integer> counts) {
         if (item == null) {
             return "";
         }
@@ -203,10 +240,17 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         long takeProfit = Math.round(item.getTakeProfit() * 100d);
         long stopLoss = Math.round(item.getStopLoss() * 100d);
         long storage = Math.round(item.getStorageFee() * 100d);
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        int productCount = resolveProductCount(counts, item);
+        String runtimePositionSignature = productCount == 1 && runtimeSnapshot.getPositionCount() == 1
+                ? runtimeSnapshot.getSymbol() + "|" + runtimeSnapshot.getProductRevision()
+                + "|" + Math.round(runtimeSnapshot.getTotalLots() * 10_000d)
+                + "|" + Math.round(runtimeSnapshot.getNetPnl() * 100d)
+                : "";
         return identityKeyOf(item) + "|" + qty + "|" + sellable + "|" + latest + "|" + marketValue + "|"
                 + positionRatio + "|" + dayPnl + "|" + totalPnl + "|" + returnRate + "|"
                 + openTime + "|" + costPrice + "|" + takeProfit + "|" + stopLoss + "|" + storage
-                + "|" + productName + "|" + side;
+                + "|" + productName + "|" + side + "|" + runtimePositionSignature;
     }
 
     private boolean hasPayload(List<Object> payloads, String expected) {
@@ -222,20 +266,47 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         return value == null ? "" : value;
     }
 
+    @NonNull
+    private String buildProductSymbolKey(@Nullable PositionItem item) {
+        if (item == null) {
+            return "";
+        }
+        String symbol = safe(item.getCode()).trim();
+        if (symbol.isEmpty()) {
+            symbol = safe(item.getProductName()).trim();
+        }
+        return symbol.toUpperCase(Locale.US);
+    }
+
+    private int resolveProductCount(@NonNull Map<String, Integer> counts, @Nullable PositionItem item) {
+        String productSymbol = buildProductSymbolKey(item);
+        if (productSymbol.isEmpty()) {
+            return 0;
+        }
+        Integer count = counts.get(productSymbol);
+        return count == null ? 0 : count;
+    }
+
     private final class RowDiffCallback extends DiffUtil.Callback {
         private final List<PositionItem> oldItems;
         private final List<String> oldKeys;
+        private final Map<String, Integer> oldProductCounts;
         private final List<PositionItem> newItems;
         private final List<String> newKeys;
+        private final Map<String, Integer> newProductCounts;
 
         private RowDiffCallback(List<PositionItem> oldItems,
                                 List<String> oldKeys,
+                                Map<String, Integer> oldProductCounts,
                                 List<PositionItem> newItems,
-                                List<String> newKeys) {
+                                List<String> newKeys,
+                                Map<String, Integer> newProductCounts) {
             this.oldItems = oldItems;
             this.oldKeys = oldKeys;
+            this.oldProductCounts = oldProductCounts;
             this.newItems = newItems;
             this.newKeys = newKeys;
+            this.newProductCounts = newProductCounts;
         }
 
         @Override
@@ -255,8 +326,8 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
 
         @Override
         public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
-            return contentKeyOf(oldItems.get(oldItemPosition))
-                    .equals(contentKeyOf(newItems.get(newItemPosition)));
+            return contentKeyOf(oldItems.get(oldItemPosition), oldProductCounts)
+                    .equals(contentKeyOf(newItems.get(newItemPosition), newProductCounts));
         }
 
         @Override
@@ -277,7 +348,10 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                   boolean expanded,
                   boolean animateExpand,
                   boolean masked,
-                  boolean actionEnabled) {
+                  boolean actionEnabled,
+                  int productCount,
+                  @NonNull ProductRuntimeSnapshot runtimeSnapshot) {
+            enforceSummarySingleLine();
             binding.btnPositionCloseAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
             binding.btnPositionModifyAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
             binding.btnPositionDeleteAction.setVisibility(View.GONE);
@@ -299,14 +373,19 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             }
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
+            boolean useRuntimeSummary = shouldUseRuntimePositionSummary(productCount, runtimeSnapshot);
             double displayPnl = item.getTotalPnL() + item.getStorageFee();
+            if (useRuntimeSummary) {
+                displayPnl = runtimeSnapshot.getNetPnl();
+            }
             int pnlColor = resolveAmountColor(binding.getRoot(), displayPnl, R.color.text_primary);
             String pnlText = signedMoney(displayPnl);
-            double displayQty = Math.abs(item.getQuantity());
+            double displayQty = useRuntimeSummary
+                    ? runtimeSnapshot.getTotalLots()
+                    : Math.abs(item.getQuantity());
             String qtyText = String.format(Locale.getDefault(), "%.2f 手", displayQty);
-            String openPriceText = "$" + FormatUtils.formatPrice(item.getCostPrice());
-            String raw = String.format(Locale.getDefault(), "%s | %s | %s | 开仓 %s | %s",
-                    item.getProductName(), sideText, qtyText, openPriceText, pnlText);
+            String raw = String.format(Locale.getDefault(), "%s | %s | %s | %s",
+                    resolveDisplayProductName(item, runtimeSnapshot), sideText, qtyText, pnlText);
             SpannableStringBuilder span = new SpannableStringBuilder(raw);
             int sideStart = raw.indexOf(sideText);
             if (sideStart >= 0) {
@@ -377,6 +456,38 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             }
             binding.tvPnL.setText(pnlSpan);
             binding.tvPnL.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+        }
+
+        private static boolean shouldUseRuntimePositionSummary(int productCount,
+                                                               @NonNull ProductRuntimeSnapshot runtimeSnapshot) {
+            return productCount == 1 && runtimeSnapshot.getPositionCount() == 1;
+        }
+
+        @NonNull
+        private static String resolveDisplayProductName(@NonNull PositionItem item,
+                                                        @NonNull ProductRuntimeSnapshot runtimeSnapshot) {
+            String productName = safe(item.getProductName()).trim();
+            if (!productName.isEmpty()) {
+                return productName;
+            }
+            if (!runtimeSnapshot.getDisplayLabel().isEmpty()) {
+                return runtimeSnapshot.getDisplayLabel();
+            }
+            if (!runtimeSnapshot.getSymbol().isEmpty()) {
+                return runtimeSnapshot.getSymbol();
+            }
+            return safe(item.getCode()).trim();
+        }
+
+        // 每次绑定时重新锁定摘要文本单行约束，避免 RecyclerView 复用后出现错误换行或多行高度。
+        private void enforceSummarySingleLine() {
+            binding.tvSummary.setIncludeFontPadding(false);
+            binding.tvSummary.setSingleLine(true);
+            binding.tvSummary.setLines(1);
+            binding.tvSummary.setMinLines(1);
+            binding.tvSummary.setMaxLines(1);
+            binding.tvSummary.setHorizontallyScrolling(true);
+            binding.tvSummary.setEllipsize(TextUtils.TruncateAt.END);
         }
 
         private void updateExpandState(boolean expanded, boolean animate) {

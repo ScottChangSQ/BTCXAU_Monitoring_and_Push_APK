@@ -120,7 +120,7 @@ public final class AccountSessionDialogController {
         int top = dpToPx(8);
         int bottom = dpToPx(4);
         container.setPadding(horizontal, top, horizontal, bottom);
-        container.setBackground(UiPaletteManager.createFilledDrawable(activity, palette.surfaceEnd));
+        container.setBackground(UiPaletteManager.createSurfaceDrawable(activity, palette.card, palette.stroke));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             container.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         }
@@ -152,7 +152,6 @@ public final class AccountSessionDialogController {
         activeLoginDialog = dialog;
         if (dialog.getWindow() != null) {
             dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-            dialog.getWindow().setBackgroundDrawable(UiPaletteManager.createFilledDrawable(activity, palette.surfaceEnd));
         }
         dialog.setOnDismissListener(ignored -> {
             if (activeLoginDialog == dialog) {
@@ -166,6 +165,7 @@ public final class AccountSessionDialogController {
             refreshSavedAccountsForDialog(savedAccountsContainer, palette, dialog);
         });
         dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
     }
 
     // 使用自管按钮避免系统正按钮链吞掉提交。
@@ -323,7 +323,9 @@ public final class AccountSessionDialogController {
             MaterialButton actionButton = new MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
             actionButton.setText(profile.isActive() ? "当前账号" : "切换");
             actionButton.setEnabled(!profile.isActive());
-            actionButton.setTextColor(profile.isActive() ? palette.textSecondary : palette.primary);
+            actionButton.setTextColor(profile.isActive()
+                    ? UiPaletteManager.controlUnselectedText(activity)
+                    : UiPaletteManager.controlSelectedText(activity));
             actionButton.setStrokeColor(ColorStateList.valueOf(palette.stroke));
             actionButton.setOnClickListener(v -> {
                 loginDialogSubmissionInFlight = true;
@@ -651,7 +653,7 @@ public final class AccountSessionDialogController {
 
     // 记录会话调试日志，便于真机排查。
     private void logRemoteSessionDebug(@NonNull String message) {
-        logManager.info("RemoteSessionDebug: " + message);
+        // 远程会话链路已稳定，默认不再写入调试日志。
     }
 
     @NonNull

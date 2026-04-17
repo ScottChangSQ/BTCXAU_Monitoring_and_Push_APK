@@ -47,23 +47,20 @@ public class AccountPositionLayoutResourceTest {
         assertTrue("挂单应在底部 Tab 之前", pendingIndex < tabBarIndex);
     }
 
-    // 所有底部导航页都必须固定为同一套 5 Tab 结构和统一文案引用。
+    // 所有底部导航页都必须固定为同一套 4 Tab 结构和统一文案引用。
     @Test
-    public void allBottomNavLayoutsShouldKeepUnifiedFiveTabs() throws Exception {
+    public void allBottomNavLayoutsShouldKeepUnifiedFourTabs() throws Exception {
         Map<String, String> expectedTabs = new LinkedHashMap<>();
         expectedTabs.put("tabMarketMonitor", "@string/nav_market_monitor");
         expectedTabs.put("tabMarketChart", "@string/nav_market_chart");
         expectedTabs.put("tabAccountStats", "@string/nav_account_stats");
         expectedTabs.put("tabAccountPosition", "@string/nav_account_position");
-        expectedTabs.put("tabSettings", "@string/nav_settings");
 
         String[] layoutCandidates = new String[]{
                 "app/src/main/res/layout/activity_main.xml",
                 "app/src/main/res/layout/activity_market_chart.xml",
                 "app/src/main/res/layout/activity_account_stats.xml",
-                "app/src/main/res/layout/activity_account_position.xml",
-                "app/src/main/res/layout/activity_settings.xml",
-                "app/src/main/res/layout/activity_settings_detail.xml"
+                "app/src/main/res/layout/activity_account_position.xml"
         };
         for (String candidate : layoutCandidates) {
             Document document = parseXml(resolveProjectFile(candidate, candidate.replace("app/", "")));
@@ -73,6 +70,8 @@ public class AccountPositionLayoutResourceTest {
                 assertTrue(candidate + " 的 " + entry.getKey() + " 文案不一致",
                         entry.getValue().equals(element.getAttribute("android:text")));
             }
+            assertTrue(candidate + " 不应再保留设置 tab",
+                    findElement(document, "tabSettings") == null);
             int accountPositionIndex = findElementOrder(document, "tabAccountPosition");
             int accountStatsIndex = findElementOrder(document, "tabAccountStats");
             assertTrue(candidate + " 应让账户持仓排在账户统计之前",

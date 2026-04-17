@@ -22,8 +22,7 @@
             android:minHeight="0dp"
             android:text="@string/back"
             android:textAllCaps="false"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -66,8 +65,7 @@
             android:minHeight="0dp"
             android:text="@string/select_all"
             android:textAllCaps="false"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
 
         <Button
             android:id="@+id/btnDeleteSelected"
@@ -81,8 +79,7 @@
             android:minHeight="0dp"
             android:text="@string/delete_selected"
             android:textAllCaps="false"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView

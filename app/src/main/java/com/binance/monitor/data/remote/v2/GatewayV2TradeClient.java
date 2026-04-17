@@ -9,6 +9,7 @@ import android.content.Context;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.local.ConfigManager;
+import com.binance.monitor.data.remote.OkHttpTransportResetHelper;
 import com.binance.monitor.data.model.v2.trade.ExecutionError;
 import com.binance.monitor.data.model.v2.trade.TradeCheckResult;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
@@ -55,7 +56,7 @@ public class GatewayV2TradeClient {
     public synchronized void resetTransport() {
         OkHttpClient previous = client;
         client = buildClient();
-        closeClient(previous);
+        OkHttpTransportResetHelper.closeClientAsync(previous);
     }
 
     // 构建交易命令请求体，固定带 8 个关键字段。
@@ -184,15 +185,6 @@ public class GatewayV2TradeClient {
                 .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .build();
-    }
-
-    // 释放旧交易 transport 的连接池和调度线程，避免多次重建后累积资源。
-    private static void closeClient(@Nullable OkHttpClient previous) {
-        if (previous == null) {
-            return;
-        }
-        previous.connectionPool().evictAll();
-        previous.dispatcher().executorService().shutdown();
     }
 
     // 尽量保留服务端 detail/error 里的结构化错误信息，避免只剩 HTTP 状态码。

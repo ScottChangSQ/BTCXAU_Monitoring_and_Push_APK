@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import com.binance.monitor.data.model.v2.AccountHistoryPayload;
+import com.binance.monitor.data.model.v2.AccountFullPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.data.model.v2.MarketSnapshotPayload;
 
@@ -167,6 +168,54 @@ public class GatewayV2ClientTest {
             fail("expected missing curvePoints array error");
         } catch (IllegalStateException expected) {
             assertEquals("v2 account history missing curvePoints array", expected.getMessage());
+        }
+    }
+
+    @Test
+    public void parseAccountFullShouldKeepAccountRuntimeAndHistorySections() throws Exception {
+        String body = "{"
+                + "\"accountMeta\":{\"serverTime\":5555,\"syncToken\":\"full-sync\",\"historyRevision\":\"hist-1\"},"
+                + "\"account\":{\"balance\":1000.5,\"equity\":1001.5,\"leverage\":400,\"margin\":12.3,\"freeMargin\":989.2,\"marginLevel\":8130.1,\"profit\":1.0},"
+                + "\"overviewMetrics\":[{\"name\":\"总资产\",\"value\":\"$1001.50\"}],"
+                + "\"statsMetrics\":[{\"name\":\"交易笔数\",\"value\":\"2\"}],"
+                + "\"curveIndicators\":[{\"name\":\"当日收益\",\"value\":\"+1.2%\"}],"
+                + "\"positions\":[{\"code\":\"BTCUSD\",\"quantity\":0.05}],"
+                + "\"orders\":[{\"code\":\"XAUUSD\",\"pendingLots\":0.1}],"
+                + "\"trades\":[{\"dealTicket\":11,\"code\":\"BTCUSD\"}],"
+                + "\"curvePoints\":[{\"timestamp\":1000,\"equity\":100.0,\"balance\":90.0}]"
+                + "}";
+
+        AccountFullPayload payload = GatewayV2Client.parseAccountFull(body);
+
+        assertEquals(5555L, payload.getServerTime());
+        assertEquals("full-sync", payload.getSyncToken());
+        assertEquals("hist-1", payload.getAccountMeta().optString("historyRevision"));
+        assertEquals(1000.5d, payload.getAccount().optDouble("balance"), 0.0001d);
+        assertEquals(1, payload.getPositions().length());
+        assertEquals(1, payload.getOrders().length());
+        assertEquals(1, payload.getTrades().length());
+        assertEquals(1, payload.getCurvePoints().length());
+        assertEquals(1, payload.getOverviewMetrics().length());
+        assertEquals(1, payload.getStatsMetrics().length());
+        assertEquals(1, payload.getCurveIndicators().length());
+        assertTrue(payload.getRawJson().contains("\"trades\""));
+    }
+
+    @Test
+    public void parseAccountFullShouldRejectMissingTradesArray() throws Exception {
+        String body = "{"
+                + "\"accountMeta\":{\"serverTime\":5555,\"historyRevision\":\"hist-1\"},"
+                + "\"account\":{\"balance\":1000.0},"
+                + "\"positions\":[],"
+                + "\"orders\":[],"
+                + "\"curvePoints\":[]"
+                + "}";
+
+        try {
+            GatewayV2Client.parseAccountFull(body);
+            fail("expected missing trades array error");
+        } catch (IllegalStateException expected) {
+            assertEquals("v2 account full missing trades array", expected.getMessage());
         }
     }
 }

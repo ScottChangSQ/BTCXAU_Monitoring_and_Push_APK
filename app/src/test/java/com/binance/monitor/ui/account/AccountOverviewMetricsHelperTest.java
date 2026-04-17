@@ -16,9 +16,9 @@ import java.util.TimeZone;
 
 public class AccountOverviewMetricsHelperTest {
 
-    // 累计盈亏与累计收益率应提前到第 3、4 位，保证账户持仓页优先展示累计结果。
+    // 账户总览不再展示累计盈亏与累计收益率，首屏只保留当前账户核心状态。
     @Test
-    public void buildOverviewMetricsShouldPlaceCumulativeMetricsBeforeMarginRows() {
+    public void buildOverviewMetricsShouldExcludeCumulativeMetrics() {
         List<AccountMetric> overview = Arrays.asList(
                 new AccountMetric("保证金", "$300.00"),
                 new AccountMetric("总资产", "$1000.00"),
@@ -43,9 +43,11 @@ public class AccountOverviewMetricsHelperTest {
 
         assertEquals("总资产", result.get(0).getName());
         assertEquals("净值", result.get(1).getName());
-        assertEquals("累计盈亏", result.get(2).getName());
-        assertEquals("累计收益率", result.get(3).getName());
-        assertEquals("可用预付款", result.get(4).getName());
-        assertEquals("保证金", result.get(5).getName());
+        assertEquals("可用预付款", result.get(2).getName());
+        assertEquals("保证金", result.get(3).getName());
+        assertEquals("当日盈亏", result.get(4).getName());
+        assertEquals("当日收益率", result.get(5).getName());
+        assertEquals("持仓盈亏", result.get(6).getName());
+        assertEquals("持仓收益率", result.get(7).getName());
     }
 }

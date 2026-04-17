@@ -24,24 +24,12 @@ public class TopLevelTabNavigationSourceTest {
                 "app/src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java",
                 "src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java",
                 "MarketChartActivity",
-                "HostTab.MARKET_MONITOR"
+                "HostTab.MARKET_CHART"
         );
         assertNavigationUsesClearTopOrHostBridge(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
                 "AccountStatsBridgeActivity",
-                "HostTab.MARKET_MONITOR"
-        );
-        assertNavigationUsesClearTopOrHostBridge(
-                "app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java",
-                "src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java",
-                "SettingsActivity",
-                "HostTab.SETTINGS"
-        );
-        assertNavigationUsesClearTopOrHostBridge(
-                "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
-                "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
-                "SettingsSectionActivity",
                 "HostTab.MARKET_MONITOR"
         );
     }

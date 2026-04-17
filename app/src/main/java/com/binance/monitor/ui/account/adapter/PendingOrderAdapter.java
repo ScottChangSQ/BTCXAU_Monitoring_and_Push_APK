@@ -2,6 +2,7 @@ package com.binance.monitor.ui.account.adapter;
 
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
+import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -10,12 +11,15 @@ import android.view.animation.DecelerateInterpolator;
 
 import androidx.core.content.ContextCompat;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
 import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
+import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
@@ -31,9 +35,11 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
     private static final String PAYLOAD_EXPAND_STATE = "payload_expand_state";
     private static final String PAYLOAD_CONTENT_STATE = "payload_content_state";
 
+    private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();
     private final List<PositionItem> items = new ArrayList<>();
     private final List<String> rowKeys = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
+    private final Map<String, Integer> productCounts = new HashMap<>();
     private boolean masked;
     private ActionListener actionListener;
 
@@ -50,6 +56,8 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
     public void submitList(List<PositionItem> data) {
         List<PositionItem> nextItems = data == null ? new ArrayList<>() : new ArrayList<>(data);
         List<String> nextRowKeys = buildRowKeys(nextItems);
+        Map<String, Integer> previousProductCounts = new HashMap<>(productCounts);
+        Map<String, Integer> nextProductCounts = buildProductCounts(nextItems);
         Set<String> nextExpanded = new HashSet<>();
         for (String key : nextRowKeys) {
             if (expandedKeys.contains(key)) {
@@ -62,13 +70,17 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         DiffUtil.DiffResult diffResult = DiffUtil.calculateDiff(new RowDiffCallback(
                 previousItems,
                 previousRowKeys,
+                previousProductCounts,
                 nextItems,
-                nextRowKeys));
+                nextRowKeys,
+                nextProductCounts));
 
         expandedKeys.clear();
         expandedKeys.addAll(nextExpanded);
         items.clear();
         rowKeys.clear();
+        productCounts.clear();
+        productCounts.putAll(buildProductCounts(nextItems));
         items.addAll(nextItems);
         rowKeys.addAll(nextRowKeys);
         diffResult.dispatchUpdatesTo(this);
@@ -98,6 +110,21 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         return keys;
     }
 
+    private Map<String, Integer> buildProductCounts(List<PositionItem> data) {
+        Map<String, Integer> counts = new HashMap<>();
+        if (data == null || data.isEmpty()) {
+            return counts;
+        }
+        for (PositionItem item : data) {
+            String productSymbol = buildProductSymbolKey(item);
+            if (productSymbol.isEmpty()) {
+                continue;
+            }
+            counts.put(productSymbol, counts.getOrDefault(productSymbol, 0) + 1);
+        }
+        return counts;
+    }
+
     @NonNull
     @Override
     public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -109,7 +136,9 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, false, masked, actionListener != null);
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        int productCount = resolveProductCount(productCounts, item);
+        holder.bind(item, expanded, false, masked, actionListener != null, productCount, runtimeSnapshot);
         holder.binding.layoutHeader.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION || adapterPosition >= rowKeys.size()) {
@@ -156,7 +185,15 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        holder.bind(item, expanded, hasPayload(payloads, PAYLOAD_EXPAND_STATE), masked, actionListener != null);
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        int productCount = resolveProductCount(productCounts, item);
+        holder.bind(item,
+                expanded,
+                hasPayload(payloads, PAYLOAD_EXPAND_STATE),
+                masked,
+                actionListener != null,
+                productCount,
+                runtimeSnapshot);
     }
 
     @Override
@@ -181,7 +218,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                 + "|" + safe(item.getProductName());
     }
 
-    private String contentKeyOf(PositionItem item) {
+    private String contentKeyOf(PositionItem item, @NonNull Map<String, Integer> counts) {
         if (item == null) {
             return "";
         }
@@ -196,9 +233,15 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         long pendingPrice = Math.round(item.getPendingPrice() * 100d);
         long takeProfit = Math.round(item.getTakeProfit() * 100d);
         long stopLoss = Math.round(item.getStopLoss() * 100d);
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        int productCount = resolveProductCount(counts, item);
+        String runtimePendingSignature = productCount == 1 && runtimeSnapshot.getPendingCount() == 1
+                ? runtimeSnapshot.getSymbol() + "|" + runtimeSnapshot.getProductRevision()
+                + "|" + runtimeSnapshot.getPendingCount()
+                : "";
         return identityKeyOf(item) + "|" + lots + "|" + quantity + "|" + latest + "|" + pendingPrice + "|"
                 + takeProfit + "|" + stopLoss + "|" + item.getPendingCount()
-                + "|" + productName + "|" + side;
+                + "|" + productName + "|" + side + "|" + runtimePendingSignature;
     }
 
     private boolean hasPayload(List<Object> payloads, String expected) {
@@ -214,20 +257,47 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         return value == null ? "" : value;
     }
 
+    @NonNull
+    private String buildProductSymbolKey(@Nullable PositionItem item) {
+        if (item == null) {
+            return "";
+        }
+        String symbol = safe(item.getCode()).trim();
+        if (symbol.isEmpty()) {
+            symbol = safe(item.getProductName()).trim();
+        }
+        return symbol.toUpperCase(Locale.US);
+    }
+
+    private int resolveProductCount(@NonNull Map<String, Integer> counts, @Nullable PositionItem item) {
+        String productSymbol = buildProductSymbolKey(item);
+        if (productSymbol.isEmpty()) {
+            return 0;
+        }
+        Integer count = counts.get(productSymbol);
+        return count == null ? 0 : count;
+    }
+
     private final class RowDiffCallback extends DiffUtil.Callback {
         private final List<PositionItem> oldItems;
         private final List<String> oldKeys;
+        private final Map<String, Integer> oldProductCounts;
         private final List<PositionItem> newItems;
         private final List<String> newKeys;
+        private final Map<String, Integer> newProductCounts;
 
         private RowDiffCallback(List<PositionItem> oldItems,
                                 List<String> oldKeys,
+                                Map<String, Integer> oldProductCounts,
                                 List<PositionItem> newItems,
-                                List<String> newKeys) {
+                                List<String> newKeys,
+                                Map<String, Integer> newProductCounts) {
             this.oldItems = oldItems;
             this.oldKeys = oldKeys;
+            this.oldProductCounts = oldProductCounts;
             this.newItems = newItems;
             this.newKeys = newKeys;
+            this.newProductCounts = newProductCounts;
         }
 
         @Override
@@ -247,8 +317,8 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
 
         @Override
         public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
-            return contentKeyOf(oldItems.get(oldItemPosition))
-                    .equals(contentKeyOf(newItems.get(newItemPosition)));
+            return contentKeyOf(oldItems.get(oldItemPosition), oldProductCounts)
+                    .equals(contentKeyOf(newItems.get(newItemPosition), newProductCounts));
         }
 
         @Override
@@ -269,7 +339,10 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                   boolean expanded,
                   boolean animateExpand,
                   boolean masked,
-                  boolean actionEnabled) {
+                  boolean actionEnabled,
+                  int productCount,
+                  @NonNull ProductRuntimeSnapshot runtimeSnapshot) {
+            enforceSummarySingleLine();
             binding.btnPositionCloseAction.setVisibility(View.GONE);
             binding.btnPositionModifyAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
             binding.btnPositionDeleteAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
@@ -289,19 +362,23 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             }
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
+            boolean useRuntimePendingSummary = shouldUseRuntimePendingSummary(productCount, runtimeSnapshot);
             double pendingPrice = item.getPendingPrice() > 0d ? item.getPendingPrice() : item.getLatestPrice();
             double displayLots = Math.abs(item.getPendingLots()) > 1e-9
                     ? Math.abs(item.getPendingLots())
                     : Math.abs(item.getQuantity());
+            int pendingCount = item.getPendingCount() > 0
+                    ? item.getPendingCount()
+                    : (useRuntimePendingSummary ? runtimeSnapshot.getPendingCount() : 0);
             String qtyText = displayLots > 1e-9
                     ? String.format(Locale.getDefault(), "%.2f 手", displayLots)
-                    : (item.getPendingCount() > 0
-                    ? (item.getPendingCount() + " 单")
+                    : (pendingCount > 0
+                    ? (pendingCount + " 单")
                     : "0.00 手");
-            String pendingPriceText = String.format(Locale.getDefault(), "%,.2f", pendingPrice);
+            String pendingPriceText = formatCollapsedPendingPrice(pendingPrice);
             String summaryRaw = String.format(Locale.getDefault(),
                     "%s | %s | %s | %s",
-                    item.getProductName(),
+                    resolveDisplayProductName(item, runtimeSnapshot),
                     sideText,
                     qtyText,
                     "$" + pendingPriceText);
@@ -329,6 +406,38 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                     optionalPrice(item.getTakeProfit()),
                     optionalPrice(item.getStopLoss())));
             binding.tvPnL.setVisibility(View.GONE);
+        }
+
+        private static boolean shouldUseRuntimePendingSummary(int productCount,
+                                                              @NonNull ProductRuntimeSnapshot runtimeSnapshot) {
+            return productCount == 1 && runtimeSnapshot.getPendingCount() == 1;
+        }
+
+        @NonNull
+        private static String resolveDisplayProductName(@NonNull PositionItem item,
+                                                        @NonNull ProductRuntimeSnapshot runtimeSnapshot) {
+            String productName = safe(item.getProductName()).trim();
+            if (!productName.isEmpty()) {
+                return productName;
+            }
+            if (!runtimeSnapshot.getDisplayLabel().isEmpty()) {
+                return runtimeSnapshot.getDisplayLabel();
+            }
+            if (!runtimeSnapshot.getSymbol().isEmpty()) {
+                return runtimeSnapshot.getSymbol();
+            }
+            return safe(item.getCode()).trim();
+        }
+
+        // 每次绑定时重新锁定摘要文本单行约束，避免 RecyclerView 复用后出现错误换行或多行高度。
+        private void enforceSummarySingleLine() {
+            binding.tvSummary.setIncludeFontPadding(false);
+            binding.tvSummary.setSingleLine(true);
+            binding.tvSummary.setLines(1);
+            binding.tvSummary.setMinLines(1);
+            binding.tvSummary.setMaxLines(1);
+            binding.tvSummary.setHorizontallyScrolling(true);
+            binding.tvSummary.setEllipsize(TextUtils.TruncateAt.END);
         }
 
         private void updateExpandState(boolean expanded, boolean animate) {
@@ -376,6 +485,11 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                 return "--";
             }
             return "$" + FormatUtils.formatPrice(value);
+        }
+
+        private static String formatCollapsedPendingPrice(double price) {
+            double roundedPrice = Math.rint(price);
+            return String.format(Locale.getDefault(), "%,.0f", roundedPrice);
         }
 
         private static String sideCn(String side) {

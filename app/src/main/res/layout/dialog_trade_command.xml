@@ -9,7 +9,7 @@
         android:layout_height="wrap_content"
         android:background="@drawable/bg_trade_dialog_surface"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="@dimen/card_content_padding">
 
         <TextView
             android:id="@+id/tvTradeCommandHint"
@@ -22,7 +22,7 @@
             android:id="@+id/layoutTradeOrderType"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="@dimen/page_section_gap"
             android:orientation="vertical"
             android:visibility="gone">
 
@@ -37,7 +37,7 @@
                 android:id="@+id/spinnerTradeOrderType"
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/control_height_lg"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="@dimen/space_2"
                 android:background="@drawable/bg_spinner_filter"
                 android:popupBackground="@drawable/bg_spinner_popup"
                 android:spinnerMode="dropdown" />
@@ -47,7 +47,7 @@
             android:id="@+id/tvTradeVolumeLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="@dimen/page_section_gap"
             android:text="手数"
             android:textColor="@color/text_primary"
             android:textSize="12sp" />
@@ -56,14 +56,12 @@
             android:id="@+id/etTradeVolume"
             android:layout_width="match_parent"
             android:layout_height="@dimen/control_height_lg"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="@dimen/space_2"
             android:background="@drawable/bg_trade_field"
             android:gravity="center_vertical"
-            android:includeFontPadding="false"
             android:inputType="numberDecimal"
             android:minHeight="@dimen/control_height_lg"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="10dp"
+            android:paddingHorizontal="@dimen/space_2"
             android:singleLine="true"
             android:textColor="@color/text_primary"
             android:textSize="13sp" />
@@ -72,7 +70,7 @@
             android:id="@+id/tvTradePriceLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="@dimen/page_section_gap"
             android:text="价格"
             android:textColor="@color/text_primary"
             android:textSize="12sp" />
@@ -81,14 +79,12 @@
             android:id="@+id/etTradePrice"
             android:layout_width="match_parent"
             android:layout_height="@dimen/control_height_lg"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="@dimen/space_2"
             android:background="@drawable/bg_trade_field"
             android:gravity="center_vertical"
-            android:includeFontPadding="false"
             android:inputType="numberDecimal"
             android:minHeight="@dimen/control_height_lg"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="10dp"
+            android:paddingHorizontal="@dimen/space_2"
             android:singleLine="true"
             android:textColor="@color/text_primary"
             android:textSize="13sp" />
@@ -97,7 +93,7 @@
             android:id="@+id/tvTradeSlLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="@dimen/page_section_gap"
             android:text="止损"
             android:textColor="@color/text_primary"
             android:textSize="12sp" />
@@ -106,14 +102,12 @@
             android:id="@+id/etTradeSl"
             android:layout_width="match_parent"
             android:layout_height="@dimen/control_height_lg"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="@dimen/space_2"
             android:background="@drawable/bg_trade_field"
             android:gravity="center_vertical"
-            android:includeFontPadding="false"
             android:inputType="numberDecimal"
             android:minHeight="@dimen/control_height_lg"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="10dp"
+            android:paddingHorizontal="@dimen/space_2"
             android:singleLine="true"
             android:textColor="@color/text_primary"
             android:textSize="13sp" />
@@ -122,7 +116,7 @@
             android:id="@+id/tvTradeTpLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="@dimen/page_section_gap"
             android:text="止盈"
             android:textColor="@color/text_primary"
             android:textSize="12sp" />
@@ -131,14 +125,12 @@
             android:id="@+id/etTradeTp"
             android:layout_width="match_parent"
             android:layout_height="@dimen/control_height_lg"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="@dimen/space_2"
             android:background="@drawable/bg_trade_field"
             android:gravity="center_vertical"
-            android:includeFontPadding="false"
             android:inputType="numberDecimal"
             android:minHeight="@dimen/control_height_lg"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="10dp"
+            android:paddingHorizontal="@dimen/space_2"
             android:singleLine="true"
             android:textColor="@color/text_primary"
             android:textSize="13sp" />

@@ -28,14 +28,29 @@ public class AccountStatsBridgeCoordinatorSourceTest {
                 source.contains("private AccountSnapshotRefreshCoordinator snapshotRefreshCoordinator;"));
         assertTrue("账户页初始化时应装配快照刷新协调器",
                 source.contains("snapshotRefreshCoordinator = new AccountSnapshotRefreshCoordinator("));
-        assertTrue("账户页进入前台应委托协调器处理",
-                source.contains("snapshotRefreshCoordinator.enterAccountScreen("));
         assertTrue("账户页主动前台拉取应委托协调器处理",
                 source.contains("snapshotRefreshCoordinator.requestForegroundEntrySnapshot();"));
-        assertTrue("账户页快照请求应委托协调器处理",
-                source.contains("snapshotRefreshCoordinator.requestSnapshot();"));
         assertTrue("账户页不应再保留纯转发的 requestSnapshot 包装方法",
                 !source.contains("private void requestSnapshot()"));
+    }
+
+    @Test
+    public void accountStatsBridgeActivityPageRuntimeHostShouldTreatSharedScreenAsOnlyRealHost() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("桥接页 pageRuntime 宿主应只把前台刷新交给共享 screen",
+                source.contains("public void attachForegroundRefresh() {\n                if (screen != null) {\n                    screen.attachForegroundRefresh();\n                }\n            }"));
+        assertTrue("桥接页 pageRuntime 宿主应只把进入页面交给共享 screen",
+                source.contains("public void enterAccountScreen(boolean coldStart) {\n                if (screen != null) {\n                    screen.enterAccountScreen(coldStart);\n                }\n            }"));
+        assertTrue("桥接页 pageRuntime 宿主应只把定时快照请求交给共享 screen",
+                source.contains("public void requestScheduledSnapshot() {\n                if (screen != null) {\n                    screen.requestScheduledSnapshot();\n                }\n            }"));
+        assertTrue("桥接页不应再把真实页面前台刷新回退到 Activity 自己的 preload 分支",
+                !source.contains("preloadManager.addCacheListener(preloadCacheListener);"));
+        assertTrue("桥接页不应再把真实页面进入逻辑回退到 Activity 自己的 snapshot 协调器分支",
+                !source.contains("snapshotRefreshCoordinator.enterAccountScreen(coldStart);"));
     }
 
     private static boolean exists(String... candidates) {

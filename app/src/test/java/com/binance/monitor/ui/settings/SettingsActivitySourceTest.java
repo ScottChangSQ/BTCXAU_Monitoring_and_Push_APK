@@ -12,15 +12,16 @@ import java.nio.file.Paths;
 public class SettingsActivitySourceTest {
 
     @Test
-    public void settingsActivityShouldBridgeToMainHostSettingsTab() throws Exception {
+    public void settingsActivityShouldRenderStandaloneSettingsHome() throws Exception {
         String source = new String(Files.readAllBytes(
                 Paths.get("src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java")
         ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("import com.binance.monitor.ui.host.HostNavigationIntentFactory;"));
-        assertTrue(source.contains("import com.binance.monitor.ui.host.HostTab;"));
-        assertTrue(source.contains("startActivity(HostNavigationIntentFactory.forTab(this, HostTab.SETTINGS));"));
-        assertTrue(source.contains("finish();"));
-        assertFalse(source.contains("private ActivitySettingsBinding binding;"));
+        assertTrue(source.contains("private ContentSettingsBinding binding;"));
+        assertTrue(source.contains("private SettingsPageController pageController;"));
+        assertTrue(source.contains("binding = ContentSettingsBinding.inflate(getLayoutInflater());"));
+        assertTrue(source.contains("setContentView(binding.getRoot());"));
+        assertTrue(source.contains("pageController = new SettingsPageController("));
+        assertFalse(source.contains("HostNavigationIntentFactory.forTab(this, HostTab.SETTINGS)"));
     }
 }

@@ -22,7 +22,6 @@ public class MainHostBottomTabSourceTest {
         assertTrue(layout.contains("@+id/tabTrading"));
         assertTrue(layout.contains("@+id/tabAccount"));
         assertTrue(layout.contains("@+id/tabAnalysis"));
-        assertTrue(layout.contains("@+id/tabSettings"));
         assertTrue(source.contains("BottomTabVisibilityManager.apply("));
         assertTrue(source.contains("UiPaletteManager.styleBottomNavTab("));
         assertTrue(source.contains("tabTrading.setOnClickListener"));

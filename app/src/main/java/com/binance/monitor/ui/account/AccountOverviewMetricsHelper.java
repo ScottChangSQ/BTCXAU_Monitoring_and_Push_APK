@@ -67,20 +67,6 @@ public final class AccountOverviewMetricsHelper {
         replaceOrAppendOverviewMetric(result, "当日盈亏", FormatUtils.formatSignedMoney(dailyValues.getTodayPnl()));
         replaceOrAppendOverviewMetric(result, "当日收益率", formatPercent(dailyValues.getTodayReturnRate()));
 
-        AccountOverviewCumulativeMetricsCalculator.OverviewCumulativeValues cumulativeValues =
-                AccountOverviewCumulativeMetricsCalculator.calculate(
-                        castTrades(trades),
-                        castPositions(safePositions),
-                        castCurves(curvePoints)
-                );
-        if (cumulativeValues.hasCumulativePnlTruth()) {
-            replaceOrAppendOverviewMetric(result, "累计盈亏",
-                    FormatUtils.formatSignedMoney(cumulativeValues.getCumulativePnl()));
-        }
-        if (cumulativeValues.hasCumulativeReturnRateTruth()) {
-            replaceOrAppendOverviewMetric(result, "累计收益率",
-                    formatPercent(cumulativeValues.getCumulativeReturnRate()));
-        }
         return sortOverviewMetricsForDisplay(result);
     }
 
@@ -142,8 +128,6 @@ public final class AccountOverviewMetricsHelper {
         Set<AccountMetric> appended = new HashSet<>();
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "总资产");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "净资产");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "累计盈亏");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "累计收益率");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "可用预付款");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "保证金");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "当日盈亏");

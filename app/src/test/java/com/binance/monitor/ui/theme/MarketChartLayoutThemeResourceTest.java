@@ -3,7 +3,6 @@
  */
 package com.binance.monitor.ui.theme;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 import org.junit.Before;
@@ -42,9 +41,12 @@ public class MarketChartLayoutThemeResourceTest {
     }
 
     @Test
-    public void marketChartLayoutShouldUseSmallerCountdownTextSize() {
-        org.w3c.dom.Element countdown = findElementById("tvChartRefreshCountdown");
-        assertEquals("9sp", countdown.getAttribute("android:textSize"));
+    public void marketChartLayoutShouldRemoveLegacyCountdownView() throws Exception {
+        String xml = readUtf8(
+                "app/src/main/res/layout/activity_market_chart.xml",
+                "src/main/res/layout/activity_market_chart.xml"
+        );
+        assertFalse(xml.contains("@+id/tvChartRefreshCountdown"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {
@@ -71,19 +73,4 @@ public class MarketChartLayoutThemeResourceTest {
         throw new IllegalStateException("找不到布局文件");
     }
 
-    private org.w3c.dom.Element findElementById(String viewId) {
-        NodeList elements = document.getElementsByTagName("*");
-        for (int i = 0; i < elements.getLength(); i++) {
-            org.w3c.dom.Element element = (org.w3c.dom.Element) elements.item(i);
-            String rawId = element.getAttribute("android:id");
-            if (rawId == null || rawId.isEmpty()) {
-                continue;
-            }
-            String shortId = rawId.substring(rawId.indexOf('/') + 1);
-            if (viewId.equals(shortId)) {
-                return element;
-            }
-        }
-        throw new IllegalStateException("找不到控件: " + viewId);
-    }
 }

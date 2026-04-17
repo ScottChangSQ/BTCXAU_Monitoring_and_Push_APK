@@ -14,9 +14,6 @@ import java.util.List;
 import java.util.Locale;
 
 final class HistoricalTradeAnnotationBuilder {
-    private static final int BUY_COLOR = 0xFF16C784;
-    private static final int SELL_COLOR = 0xFFF6465D;
-
     private HistoricalTradeAnnotationBuilder() {
     }
 
@@ -30,6 +27,9 @@ final class HistoricalTradeAnnotationBuilder {
                 || candles == null || candles.isEmpty()) {
             return result;
         }
+        long firstOpen = candles.get(0).getOpenTime();
+        long intervalMs = estimateIntervalMs(candles);
+        long lastVisibleTime = resolveLastVisibleTime(candles, candles.get(candles.size() - 1).getOpenTime(), intervalMs);
         for (TradeRecordItem trade : trades) {
             String groupId = buildGroupId(trade);
             String normalizedSide = normalizeTradeSide(trade == null ? null : trade.getSide());
@@ -40,12 +40,15 @@ final class HistoricalTradeAnnotationBuilder {
                 continue;
             }
             long closeTime = resolveCloseTime(trade);
-            long exitAnchorTime = resolveAnchorTime(candles, closeTime, false);
+            long openTime = resolveOpenTime(trade);
+            if (closeTime < firstOpen || openTime > lastVisibleTime) {
+                continue;
+            }
+            long exitAnchorTime = resolveAnchorTime(candles, closeTime, false, intervalMs, firstOpen, lastVisibleTime);
             if (exitAnchorTime <= 0L) {
                 continue;
             }
-            long openTime = resolveOpenTime(trade);
-            long entryAnchorTime = resolveAnchorTime(candles, openTime, false);
+            long entryAnchorTime = resolveAnchorTime(candles, openTime, false, intervalMs, firstOpen, lastVisibleTime);
             double openPrice = resolveOpenPrice(trade);
             double closePrice = resolveClosePrice(trade);
             if (entryAnchorTime <= 0L || openPrice <= 0d || closePrice <= 0d) {
@@ -88,37 +91,70 @@ final class HistoricalTradeAnnotationBuilder {
         return entryType == 1 || entryType == 2 || entryType == 3;
     }
 
-    // 只校验成交时间是否落在当前图表窗口允许的时间范围内；一旦可见，就保留真实时间。
-    // 这样长周期图上的成交点会落在该周期内部的真实相对位置，而不是被压到整根 K 线开头。
+    // 1 分钟图直接锚到分钟桶开头，保证历史成交点稳定落在可见 K 线槽位里；
+    // 更高周期继续保留真实时间，避免长周期图上的点位都被压到整根 K 线开头。
     private static long resolveAnchorTime(List<CandleEntry> candles, long targetTime, boolean clampToWindowStart) {
+        long intervalMs = estimateIntervalMs(candles);
+        long firstOpen = candles.get(0).getOpenTime();
+        long lastOpen = candles.get(candles.size() - 1).getOpenTime();
+        long lastVisibleTime = resolveLastVisibleTime(candles, lastOpen, intervalMs);
+        return resolveAnchorTime(candles, targetTime, clampToWindowStart, intervalMs, firstOpen, lastVisibleTime);
+    }
+
+    private static long resolveAnchorTime(List<CandleEntry> candles,
+                                          long targetTime,
+                                          boolean clampToWindowStart,
+                                          long intervalMs,
+                                          long firstOpen,
+                                          long lastVisibleTime) {
         if (candles == null || candles.isEmpty() || targetTime <= 0L) {
             return 0L;
         }
-        long firstOpen = candles.get(0).getOpenTime();
-        long lastOpen = candles.get(candles.size() - 1).getOpenTime();
-        long intervalMs = estimateIntervalMs(candles);
-        long lastVisibleTime = resolveLastVisibleTime(candles, lastOpen, intervalMs);
         if (targetTime < firstOpen) {
             return clampToWindowStart ? firstOpen : targetTime;
         }
         if (targetTime > lastVisibleTime) {
             return 0L;
         }
-        for (int i = 0; i < candles.size(); i++) {
-            CandleEntry candle = candles.get(i);
-            if (candle == null) {
-                continue;
-            }
-            long openTime = candle.getOpenTime();
-            long candleClose = candle.getCloseTime() > openTime ? candle.getCloseTime() : openTime + intervalMs;
-            boolean isLast = i == candles.size() - 1;
-            boolean inBucket = targetTime >= openTime
-                    && (targetTime < candleClose || (isLast && targetTime <= candleClose));
-            if (inBucket) {
-                return targetTime;
-            }
+        int index = findBucketIndex(candles, targetTime);
+        if (index < 0 || index >= candles.size()) {
+            return 0L;
+        }
+        CandleEntry candle = candles.get(index);
+        if (candle == null) {
+            return targetTime;
+        }
+        long openTime = candle.getOpenTime();
+        long candleClose = candle.getCloseTime() > openTime ? candle.getCloseTime() : openTime + intervalMs;
+        boolean isLast = index == candles.size() - 1;
+        boolean inBucket = targetTime >= openTime
+                && (targetTime < candleClose || (isLast && targetTime <= candleClose));
+        if (inBucket) {
+            return shouldSnapToBucketOpen(intervalMs) ? openTime : targetTime;
         }
         return targetTime;
+    }
+
+    private static int findBucketIndex(List<CandleEntry> candles, long targetTime) {
+        int low = 0;
+        int high = candles.size() - 1;
+        int best = -1;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            CandleEntry candle = candles.get(mid);
+            long openTime = candle == null ? 0L : candle.getOpenTime();
+            if (openTime <= targetTime) {
+                best = mid;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return best;
+    }
+
+    private static boolean shouldSnapToBucketOpen(long intervalMs) {
+        return intervalMs <= 60_000L;
     }
 
     private static long resolveLastVisibleTime(List<CandleEntry> candles, long lastOpen, long intervalMs) {

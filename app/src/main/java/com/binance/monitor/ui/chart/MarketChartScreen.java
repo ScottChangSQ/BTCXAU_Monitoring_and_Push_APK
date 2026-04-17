@@ -63,6 +63,7 @@ import com.binance.monitor.data.remote.v2.GatewayV2TradeClient;
 import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.databinding.DialogTradeCommandBinding;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
 import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.ui.account.AccountPositionActivity;
@@ -77,6 +78,9 @@ import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.ui.chart.MarketChartPageController;
 import com.binance.monitor.ui.chart.MarketChartPageRuntime;
+import com.binance.monitor.ui.chart.runtime.ChartRefreshBudget;
+import com.binance.monitor.ui.chart.runtime.ChartRefreshEvent;
+import com.binance.monitor.ui.chart.runtime.ChartRefreshScheduler;
 import com.binance.monitor.ui.host.GlobalStatusBottomSheetController;
 import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.settings.SettingsActivity;
@@ -192,10 +196,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         abnormalRecordManager = AbnormalRecordManager.getInstance(getApplicationContext());
         secureSessionPrefs = new SecureSessionPrefs(getApplicationContext());
         globalStatusBottomSheetController = new GlobalStatusBottomSheetController(activity);
-        chartAbnormalBottomSheetController = new ChartAbnormalBottomSheetController(
-                activity,
-                globalStatusBottomSheetController
-        );
         tradeExecutionCoordinator = createTradeExecutionCoordinator();
         tradeDialogCoordinator = new MarketChartTradeDialogCoordinator(
                 activity,
@@ -211,6 +211,12 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                         dataCoordinator.refreshChartOverlays();
                     }
                 }
+        );
+        chartQuickTradeCoordinator = new ChartQuickTradeCoordinator(
+                this::resolveQuickTradeAccountId,
+                () -> MarketChartTradeSupport.toTradeSymbol(selectedSymbol),
+                this::resolveQuickTradeCurrentPrice,
+                this::executeQuickTradeCommand
         );
         dataCoordinator = new MarketChartDataCoordinator(createDataCoordinatorHost());
     }
@@ -308,7 +314,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         binding.klineChartView.setIndicatorsVisible(showVolume, showMacd, showStochRsi, showBoll);
         binding.klineChartView.setExtendedIndicatorsVisible(showMa, showEma, showSra, showAvl, showRsi, showKdj);
         updateIndicatorButtons();
-        refreshChartOverlays();
+        dispatchChartRefresh(ChartRefreshEvent.uiStateChanged(), null, null);
         binding.klineChartView.post(this::updateScrollToLatestButtonPosition);
     }
 
@@ -319,7 +325,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     void commitSelectedSymbol(@NonNull String symbol) {
         selectedSymbol = symbol;
         syncSymbolSelector();
-        refreshTradingSignalPanels();
     }
 
     boolean canApplySelectedInterval(@NonNull String intervalKey) {
@@ -393,7 +398,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private AbnormalRecordManager abnormalRecordManager;
     private SecureSessionPrefs secureSessionPrefs;
     private GlobalStatusBottomSheetController globalStatusBottomSheetController;
-    private ChartAbnormalBottomSheetController chartAbnormalBottomSheetController;
     private Future<?> chartCacheInvalidationTask;
     private Future<?> storedChartOverlayRestoreTask;
     private AccountSnapshot storedChartOverlaySnapshot;
@@ -440,6 +444,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private final DecimalFormat qtyFormat = new DecimalFormat("0.####");
     private final DecimalFormat pnlFormat = new DecimalFormat("0.##");
     private final ChartOverlaySnapshotFactory chartOverlaySnapshotFactory = new ChartOverlaySnapshotFactory();
+    private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();
+    private final ChartRefreshScheduler chartRefreshScheduler = new ChartRefreshScheduler();
     private ChartOverlaySnapshot lastChartOverlaySnapshot = ChartOverlaySnapshot.empty();
     private Future<?> chartOverlayBuildTask;
     private int chartOverlayBuildVersion;
@@ -458,6 +464,9 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private boolean statusSourcesObserved;
     private String lastAccountOverlaySignature = "";
     private String lastAbnormalOverlaySignature = "";
+    private ChartQuickTradeMode quickTradeMode = ChartQuickTradeMode.CLOSED;
+    private double pendingLinePrice = Double.NaN;
+    private ChartQuickTradeCoordinator chartQuickTradeCoordinator;
     private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> {
         if (pageRuntime != null) {
             pageRuntime.scheduleChartOverlayRefresh();
@@ -469,6 +478,57 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private ViewTreeObserver.OnDrawListener pendingStartupDrawListener;
     private String pendingStartupDrawKey = "";
     private String lastConsumedTradeActionToken = "";
+    @Nullable
+    private KlineData pendingRealtimeTailKline;
+    private boolean realtimeTailDrainScheduled;
+    @Nullable
+    private Runnable pendingOverlayRefreshAction;
+    @Nullable
+    private Runnable pendingSummaryRefreshAction;
+    private boolean overlaySummaryDrainScheduled;
+    private boolean dialogDrainScheduled;
+    private final Runnable realtimeTailDrainRunnable = new Runnable() {
+        @Override
+        public void run() {
+            realtimeTailDrainScheduled = false;
+            String renderToken = chartRefreshScheduler.drainPendingRenderToken();
+            KlineData latestKline = pendingRealtimeTailKline;
+            pendingRealtimeTailKline = null;
+            if (renderToken == null || latestKline == null) {
+                return;
+            }
+            applyRealtimeChartTailNow(latestKline);
+        }
+    };
+    private final Runnable overlaySummaryDrainRunnable = new Runnable() {
+        @Override
+        public void run() {
+            overlaySummaryDrainScheduled = false;
+            String overlayToken = chartRefreshScheduler.drainPendingOverlayRenderToken();
+            String summaryToken = chartRefreshScheduler.drainPendingSummaryBindToken();
+            Runnable overlayAction = pendingOverlayRefreshAction;
+            Runnable summaryAction = pendingSummaryRefreshAction;
+            pendingOverlayRefreshAction = null;
+            pendingSummaryRefreshAction = null;
+            if (overlayToken != null && overlayAction != null) {
+                overlayAction.run();
+            }
+            if (summaryToken != null && summaryAction != null) {
+                summaryAction.run();
+            }
+        }
+    };
+    private final Runnable dialogDrainRunnable = new Runnable() {
+        @Override
+        public void run() {
+            dialogDrainScheduled = false;
+            String dialogToken = chartRefreshScheduler.drainPendingDialogBindToken();
+            if (dialogToken == null) {
+                return;
+            }
+            applyDialogStateRefresh();
+        }
+    };
 
     // 装配图表页数据协调器，把请求入口、实时观察和叠加层主链从旧 Activity 抽离。
     private MarketChartDataCoordinator.Host createDataCoordinatorHost() {
@@ -939,6 +999,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                 });
             }
         });
+        binding.klineChartView.setOnQuickPendingLineChangeListener(price -> pendingLinePrice = price);
         binding.btnScrollToLatest.setOnClickListener(v -> {
             binding.klineChartView.scrollToLatest();
             updateScrollToLatestButtonPosition();
@@ -947,7 +1008,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         binding.btnToggleHistoryTrades.setOnClickListener(v -> pageRuntime.toggleHistoryTradeVisibility());
         binding.btnScrollToLatest.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updateScrollToLatestButtonPosition());
-        binding.tvChartRefreshCountdown.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+        binding.tvChartPositionSummary.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updateRefreshCountdownPosition());
         binding.btnTogglePositionOverlays.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updatePositionOverlayButtonPosition());
@@ -1009,19 +1070,18 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         }
         statusSourcesObserved = true;
         if (monitorRepository != null) {
-            monitorRepository.getConnectionStatus().observe(lifecycleOwner, ignored -> refreshGlobalStatusButton());
-            monitorRepository.getLastUpdateTime().observe(lifecycleOwner, ignored -> refreshGlobalStatusButton());
-            monitorRepository.getMonitoringEnabled().observe(lifecycleOwner, ignored -> refreshGlobalStatusButton());
+            monitorRepository.getConnectionStatus().observe(lifecycleOwner, ignored -> dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null));
+            monitorRepository.getLastUpdateTime().observe(lifecycleOwner, ignored -> dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null));
+            monitorRepository.getMonitoringEnabled().observe(lifecycleOwner, ignored -> dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null));
         }
         if (abnormalRecordManager != null) {
             abnormalRecordManager.getRecordsLiveData().observe(lifecycleOwner, records -> {
                 abnormalRecords = records == null ? new ArrayList<>() : new ArrayList<>(records);
-                refreshGlobalStatusButton();
-                refreshTradingSignalPanels();
+                dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);
                 updateAbnormalAnnotationsOverlay();
             });
         }
-        refreshGlobalStatusButton();
+        dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);
     }
 
     // 构造全局状态快照，供顶部按钮与底部弹层共用。
@@ -1033,9 +1093,10 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         String connectionText = resolveConnectionStatusText();
         long refreshedAt = resolveLatestRefreshTimeMs();
         return new GlobalStatusBottomSheetController.StatusSnapshot(
-                resolveStatusStageText(connectionText),
+                resolveCompactConnectionStatusText(connectionText),
                 connectionText,
                 resolveAccountDisplayText(sessionSummary),
+                resolveCompactAccountStatusText(sessionSummary),
                 resolveSyncStatusText(connectionText, refreshedAt),
                 refreshedAt > 0L
                         ? FormatUtils.formatDateTime(refreshedAt)
@@ -1092,17 +1153,25 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     // 用现有连接状态收口成按钮短标签，避免入口文案过长。
     @NonNull
-    private String resolveStatusStageText(@NonNull String connectionText) {
+    private String resolveCompactConnectionStatusText(@NonNull String connectionText) {
         if (!isMonitoringEnabled()) {
             return getString(R.string.global_status_stage_paused);
         }
         if (isConnectedStatus(connectionText)) {
-            return getString(R.string.global_status_stage_online);
+            return getString(R.string.global_status_compact_connected);
         }
         if (isRecoveringStatus(connectionText)) {
             return getString(R.string.global_status_stage_recovering);
         }
-        return getString(R.string.global_status_stage_offline);
+        return getString(R.string.global_status_compact_disconnected);
+    }
+
+    // 状态按钮只展示账户在线态，不在一级入口暴露具体账号名。
+    @NonNull
+    private String resolveCompactAccountStatusText(@NonNull SessionSummarySnapshot sessionSummary) {
+        return sessionSummary.getActiveAccount() == null
+                ? getString(R.string.global_status_account_offline)
+                : getString(R.string.global_status_account_online);
     }
 
     // 在没有独立同步状态源时，按连接状态和最近刷新时间生成同步文案。
@@ -1194,21 +1263,19 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private ArrayAdapter<String> createSymbolAdapter(List<String> symbols) {
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(
                 this,
-                R.layout.item_spinner_filter,
+                R.layout.item_spinner_filter_anchor,
                 android.R.id.text1,
                 symbols
         ) {
             @Override
             public View getView(int position, @Nullable View convertView, ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                styleSymbolSpinnerItem(view);
-                return view;
+                return super.getView(position, convertView, parent);
             }
 
             @Override
             public View getDropDownView(int position, @Nullable View convertView, ViewGroup parent) {
                 View view = super.getDropDownView(position, convertView, parent);
-                styleSymbolSpinnerItem(view);
+                styleSymbolSpinnerDropdownItem(view);
                 return view;
             }
         };
@@ -1217,7 +1284,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     }
 
     // 强制设置颜色与字号，保证产品选项可读。
-    private void styleSymbolSpinnerItem(@Nullable View view) {
+    private void styleSymbolSpinnerDropdownItem(@Nullable View view) {
         if (!(view instanceof TextView)) {
             return;
         }
@@ -1581,85 +1648,183 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     }
 
     private void setupChartPositionPanel() {
-        binding.btnChartTradeBuy.setOnClickListener(
-                v -> tradeDialogCoordinator.showTradeCommandDialog(
-                        MarketChartTradeDialogCoordinator.ChartTradeAction.OPEN_BUY,
-                        null
-                )
-        );
-        binding.btnChartTradeSell.setOnClickListener(
-                v -> tradeDialogCoordinator.showTradeCommandDialog(
-                        MarketChartTradeDialogCoordinator.ChartTradeAction.OPEN_SELL,
-                        null
-                )
-        );
-        binding.btnChartTradePending.setOnClickListener(
-                v -> tradeDialogCoordinator.showTradeCommandDialog(
-                        MarketChartTradeDialogCoordinator.ChartTradeAction.PENDING_ADD,
-                        null
-                )
-        );
-        binding.btnChartRiskAction.setOnClickListener(v -> showChartAbnormalQuickView());
-        binding.tvChartAbnormalSummary.setOnClickListener(v -> showChartAbnormalQuickView());
-        binding.tvChartOverlayMeta.setText("更新时间 --");
-        updateChartRiskBanner();
-        updateCurrentSymbolAbnormalSummary();
+        binding.layoutChartQuickTradeBar.setVisibility(View.GONE);
+        binding.btnChartModeMarket.setOnClickListener(v -> toggleQuickTradeMode(ChartQuickTradeMode.MARKET));
+        binding.btnChartModePending.setOnClickListener(v -> toggleQuickTradeMode(ChartQuickTradeMode.PENDING));
+        binding.btnQuickTradePrimary.setOnClickListener(v -> executePrimaryQuickTrade());
+        binding.btnQuickTradeSecondary.setOnClickListener(v -> executeSecondaryQuickTrade());
+        updateQuickTradeBar();
+        dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);
         dataCoordinator.restoreChartOverlayFromLatestCacheOrEmpty();
     }
 
-    // 统一刷新交易页的风险提示条和当前品种异常摘要。
-    private void refreshTradingSignalPanels() {
-        updateChartRiskBanner();
-        updateCurrentSymbolAbnormalSummary();
-    }
-
-    // 刷新顶部风险提示条，优先展示当前品种最新的一条异常。
-    private void updateChartRiskBanner() {
-        if (binding == null || binding.tvChartRiskBanner == null || binding.tvChartRiskMeta == null) {
+    // 切换快捷交易模式；再次点击当前模式时直接收起。
+    private void toggleQuickTradeMode(@NonNull ChartQuickTradeMode targetMode) {
+        if (quickTradeMode == targetMode) {
+            applyQuickTradeMode(ChartQuickTradeMode.CLOSED);
             return;
         }
-        List<AbnormalRecord> filteredRecords = filterAbnormalRecordsForSelectedSymbol();
-        if (filteredRecords.isEmpty()) {
-            binding.tvChartRiskBanner.setText(getString(R.string.chart_risk_banner_clear));
-            binding.tvChartRiskMeta.setText(getString(R.string.chart_risk_banner_clear_meta));
-            return;
-        }
-        AbnormalRecord latestRecord = filteredRecords.get(0);
-        binding.tvChartRiskBanner.setText(getString(
-                R.string.chart_risk_banner_alert,
-                safeTrim(latestRecord.getTriggerSummary()).isEmpty()
-                        ? getString(R.string.chart_risk_banner_action)
-                        : safeTrim(latestRecord.getTriggerSummary())
-        ));
-        binding.tvChartRiskMeta.setText(getString(
-                R.string.chart_risk_banner_alert_meta,
-                filteredRecords.size(),
-                FormatUtils.formatTime(latestRecord.getTimestamp())
-        ));
+        applyQuickTradeMode(targetMode);
     }
 
-    // 刷新当前品种摘要里的异常统计，让风险信息不再只停留在图表标记上。
+    // 统一应用当前快捷模式，后续挂单线显示也从这里收口。
+    private void applyQuickTradeMode(@NonNull ChartQuickTradeMode mode) {
+        quickTradeMode = mode;
+        if (mode == ChartQuickTradeMode.PENDING) {
+            pendingLinePrice = resolveQuickTradeCurrentPrice();
+            binding.klineChartView.showQuickPendingLine(pendingLinePrice);
+        } else {
+            binding.klineChartView.hideQuickPendingLine();
+            pendingLinePrice = Double.NaN;
+        }
+        updateQuickTradeBar();
+        dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);
+    }
+
+    // 根据当前模式刷新快捷条可见性和主按钮文案。
+    private void updateQuickTradeBar() {
+        boolean visible = quickTradeMode != ChartQuickTradeMode.CLOSED;
+        binding.layoutChartQuickTradeBar.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (binding.etQuickTradeVolume.getText() == null
+                || binding.etQuickTradeVolume.getText().toString().trim().isEmpty()) {
+            binding.etQuickTradeVolume.setText(R.string.chart_quick_trade_default_volume);
+        }
+        if (quickTradeMode == ChartQuickTradeMode.PENDING) {
+            binding.btnQuickTradePrimary.setText(R.string.chart_quick_trade_pending_buy);
+            binding.btnQuickTradeSecondary.setText(R.string.chart_quick_trade_pending_sell);
+            binding.layoutChartQuickTradeBar.post(this::applyQuickTradeBarLayoutContract);
+            return;
+        }
+        binding.btnQuickTradePrimary.setText(R.string.chart_quick_trade_buy);
+        binding.btnQuickTradeSecondary.setText(R.string.chart_quick_trade_sell);
+        binding.layoutChartQuickTradeBar.post(this::applyQuickTradeBarLayoutContract);
+    }
+
+    // 运行时再次锁定快捷交易条的宽度合同，避免不同设备上权重布局被测量成内容宽度。
+    private void applyQuickTradeBarLayoutContract() {
+        if (binding == null || binding.layoutChartQuickTradeBar == null) {
+            return;
+        }
+        int controlGapPx = getResources().getDimensionPixelSize(R.dimen.control_group_gap);
+        applyWeightedQuickTradeButtonLayout(binding.btnQuickTradePrimary, 0);
+        applyQuickTradeVolumeLayout(controlGapPx);
+        applyWeightedQuickTradeButtonLayout(binding.btnQuickTradeSecondary, controlGapPx);
+        binding.layoutChartQuickTradeBar.requestLayout();
+    }
+
+    // 快捷条左右按钮必须平分剩余宽度，避免看起来像靠左堆在一起。
+    private void applyWeightedQuickTradeButtonLayout(@Nullable View button, int marginStartPx) {
+        if (button == null) {
+            return;
+        }
+        ViewGroup.LayoutParams rawParams = button.getLayoutParams();
+        LinearLayout.LayoutParams params = rawParams instanceof LinearLayout.LayoutParams
+                ? (LinearLayout.LayoutParams) rawParams
+                : new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.width = 0;
+        params.weight = 1f;
+        params.setMarginStart(marginStartPx);
+        params.setMarginEnd(0);
+        button.setLayoutParams(params);
+    }
+
+    // 中间手数输入框继续保持固定宽度，只保留左右统一间距。
+    private void applyQuickTradeVolumeLayout(int controlGapPx) {
+        if (binding == null || binding.etQuickTradeVolume == null) {
+            return;
+        }
+        int widthPx = getResources().getDimensionPixelSize(R.dimen.chart_quick_trade_volume_width);
+        ViewGroup.LayoutParams rawParams = binding.etQuickTradeVolume.getLayoutParams();
+        LinearLayout.LayoutParams params = rawParams instanceof LinearLayout.LayoutParams
+                ? (LinearLayout.LayoutParams) rawParams
+                : new LinearLayout.LayoutParams(widthPx, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.width = widthPx;
+        params.weight = 0f;
+        params.setMarginStart(controlGapPx);
+        params.setMarginEnd(controlGapPx);
+        binding.etQuickTradeVolume.setLayoutParams(params);
+    }
+
+    // 快捷条左按钮按当前模式执行买入或挂单买入。
+    private void executePrimaryQuickTrade() {
+        if (chartQuickTradeCoordinator == null || quickTradeMode == ChartQuickTradeMode.CLOSED) {
+            return;
+        }
+        try {
+            String volumeText = resolveQuickTradeVolumeText();
+            if (quickTradeMode == ChartQuickTradeMode.MARKET) {
+                chartQuickTradeCoordinator.executeMarketBuy(volumeText);
+            } else if (quickTradeMode == ChartQuickTradeMode.PENDING) {
+                chartQuickTradeCoordinator.executePendingBuy(volumeText, pendingLinePrice);
+            }
+        } catch (IllegalArgumentException exception) {
+            Toast.makeText(this, exception.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // 快捷条右按钮按当前模式执行卖出或挂单卖出。
+    private void executeSecondaryQuickTrade() {
+        if (chartQuickTradeCoordinator == null || quickTradeMode == ChartQuickTradeMode.CLOSED) {
+            return;
+        }
+        try {
+            String volumeText = resolveQuickTradeVolumeText();
+            if (quickTradeMode == ChartQuickTradeMode.MARKET) {
+                chartQuickTradeCoordinator.executeMarketSell(volumeText);
+            } else if (quickTradeMode == ChartQuickTradeMode.PENDING) {
+                chartQuickTradeCoordinator.executePendingSell(volumeText, pendingLinePrice);
+            }
+        } catch (IllegalArgumentException exception) {
+            Toast.makeText(this, exception.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @NonNull
+    private String resolveQuickTradeVolumeText() {
+        if (binding.etQuickTradeVolume.getText() == null) {
+            return "";
+        }
+        return binding.etQuickTradeVolume.getText().toString();
+    }
+
+    @NonNull
+    private String resolveQuickTradeAccountId() {
+        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
+                ? null
+                : accountStatsPreloadManager.getLatestCache();
+        if (cache == null || !matchesActiveSessionIdentity(cache.getAccount(), cache.getServer())) {
+            return "";
+        }
+        return trimToEmpty(cache.getAccount());
+    }
+
+    // 快捷交易优先复用最新K线收盘价，拿不到时直接返回未就绪。
+    private double resolveQuickTradeCurrentPrice() {
+        double latestPrice = MarketChartTradeSupport.resolveReferencePrice(loadedCandles, null, null);
+        if (latestPrice > 0d) {
+            return latestPrice;
+        }
+        if (!loadedCandles.isEmpty()) {
+            CandleEntry latest = loadedCandles.get(loadedCandles.size() - 1);
+            if (latest != null && latest.getClose() > 0d) {
+                return latest.getClose();
+            }
+        }
+        return 0d;
+    }
+
+    // 继续复用现有交易协调器主链，不在图表页复制第二套检查/提交逻辑。
+    private void executeQuickTradeCommand(@NonNull TradeCommand command) {
+        if (tradeDialogCoordinator == null) {
+            Toast.makeText(this, "交易链路未初始化", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        tradeDialogCoordinator.submitDirectTradeCommand(command);
+    }
+
+    // 当前页已不再保留独立异常摘要区，风险信息统一由图表内异常标记承接。
     private void updateCurrentSymbolAbnormalSummary() {
-        if (binding == null || binding.tvChartAbnormalSummary == null) {
-            return;
-        }
-        List<AbnormalRecord> filteredRecords = filterAbnormalRecordsForSelectedSymbol();
-        if (filteredRecords.isEmpty()) {
-            binding.tvChartAbnormalSummary.setText(getString(R.string.chart_abnormal_summary_empty));
-            return;
-        }
-        binding.tvChartAbnormalSummary.setText(getString(
-                R.string.chart_abnormal_summary_text,
-                filteredRecords.size()
-        ));
-    }
-
-    // 打开当前品种的异常快看弹层，供风险提示条和摘要区复用。
-    private void showChartAbnormalQuickView() {
-        if (chartAbnormalBottomSheetController == null) {
-            return;
-        }
-        chartAbnormalBottomSheetController.show(selectedSymbol, filterAbnormalRecordsForSelectedSymbol());
+        // no-op
     }
 
     // 统一创建持仓明细排序下拉项，保证主题切换后选项仍可见。
@@ -1849,18 +2014,9 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     }
 
     void renderRefreshCountdown(long nextAutoRefreshAtMs) {
-        if (binding == null || binding.tvChartRefreshCountdown == null) {
+        if (binding == null || binding.tvChartPositionSummary == null) {
             return;
         }
-        binding.tvChartRefreshCountdown.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8f);
-        binding.tvChartRefreshCountdown.setText(shouldShowRefreshCountdown()
-                ? ChartRefreshMetaFormatter.buildCountdownText(
-                        nextAutoRefreshAtMs,
-                        System.currentTimeMillis(),
-                        resolveAutoRefreshDelayMs(),
-                        lastSuccessfulRequestLatencyMs
-                )
-                : ChartRefreshMetaFormatter.buildLatencyOnlyText(lastSuccessfulRequestLatencyMs));
         updateRefreshCountdownPosition();
     }
 
@@ -1927,6 +2083,14 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     // 用最新分钟 K 线修正当前图表的末尾，避免只能每 5 秒靠轮询回填。
     private void applyRealtimeChartTail(@Nullable KlineData latestKline) {
+        dispatchChartRefresh(
+                ChartRefreshEvent.marketTickChanged(),
+                null,
+                () -> scheduleRealtimeTailRefresh(latestKline)
+        );
+    }
+
+    private void scheduleRealtimeTailRefresh(@Nullable KlineData latestKline) {
         if (latestKline == null || binding == null || !hasRealtimeTailSourceForChart()) {
             return;
         }
@@ -1938,6 +2102,20 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             startupGate.replacePendingRealtime(key, () -> applyRealtimeChartTail(latestKline));
             return;
         }
+        pendingRealtimeTailKline = latestKline;
+        chartRefreshScheduler.requestChartRender(buildRealtimeTailRenderToken(latestKline));
+        if (realtimeTailDrainScheduled) {
+            return;
+        }
+        realtimeTailDrainScheduled = true;
+        mainHandler.post(realtimeTailDrainRunnable);
+    }
+
+    private void applyRealtimeChartTailNow(@NonNull KlineData latestKline) {
+        if (binding == null || !hasRealtimeTailSourceForChart()) {
+            return;
+        }
+        String key = buildCacheKey(selectedSymbol, selectedInterval);
         CandleEntry realtimeBaseCandle = toRealtimeCandleEntry(latestKline);
         if (realtimeTailHelper == null) {
             return;
@@ -1984,13 +2162,23 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         );
         lastSuccessUpdateMs = System.currentTimeMillis();
         updateStateCount();
-        dataCoordinator.refreshChartOverlays();
         if (!binding.klineChartView.hasActiveCrosshair()) {
             renderInfoWithLatest();
         }
         if (pageRuntime != null) {
             pageRuntime.refreshRefreshCountdownDisplay();
         }
+    }
+
+    @NonNull
+    private String buildRealtimeTailRenderToken(@NonNull KlineData latestKline) {
+        return latestKline.getSymbol()
+                + '|'
+                + latestKline.getOpenTime()
+                + '|'
+                + latestKline.getCloseTime()
+                + '|'
+                + latestKline.getClosePrice();
     }
 
     // 统一把服务层实时 K 线转成图表层 CandleEntry，避免两边字段口径再次分叉。
@@ -2093,7 +2281,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         }
         android.view.ViewParent parent = anchorButton.getParent();
         if (parent instanceof View) {
-            ((View) parent).setBackground(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+            ((View) parent).setBackground(UiPaletteManager.createSurfaceDrawable(this, palette.card, palette.stroke));
         }
     }
 
@@ -2319,7 +2507,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private void clearChartDisplayForEmptyState() {
         binding.klineChartView.setCandles(new ArrayList<>());
         dataCoordinator.refreshChartOverlays();
-        binding.tvChartInfo.setText(R.string.chart_info_empty);
     }
 
     // 切产品或切周期时，先失效上一组图表上下文，避免旧数据挂在新选择下继续显示。
@@ -2340,7 +2527,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         binding.klineChartView.setAggregateCostAnnotation(null);
         lastChartOverlaySnapshot = ChartOverlaySnapshot.empty();
         bindChartOverlayStatus(lastChartOverlaySnapshot, SensitiveDisplayMasker.isEnabled(this));
-        binding.tvChartInfo.setText(R.string.chart_info_empty);
         updateStateCount();
     }
 
@@ -2447,19 +2633,76 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         if (binding == null) {
             return;
         }
-        binding.tvChartPositionTitle.setText("当前品种摘要");
-        binding.tvChartOverlayMeta.setText(overlaySnapshot.getOverlayMetaText());
         if (masked) {
-            if (overlaySnapshot.getPositionAnnotations().isEmpty()) {
-                binding.tvChartPositionSummary.setText("当前持仓：**** | 当前挂单：****");
-            } else {
-                binding.tvChartPositionSummary.setText("持仓盈亏: **** | 持仓收益率: ****");
-            }
-            updateCurrentSymbolAbnormalSummary();
+            binding.tvChartPositionSummary.setText("盈亏：**** | 持仓：****");
             return;
         }
         binding.tvChartPositionSummary.setText(overlaySnapshot.getPositionSummaryText());
-        updateCurrentSymbolAbnormalSummary();
+    }
+
+    // 把图表刷新预算真正接到主链，按区块执行必要刷新。
+    private void dispatchChartRefresh(@NonNull ChartRefreshEvent event,
+                                      @Nullable Runnable overlayAction,
+                                      @Nullable Runnable realtimeAction) {
+        ChartRefreshBudget budget = ChartRefreshBudget.resolve(event);
+        if (budget.needsUiStateBind()) {
+            applyUiStateRefresh();
+        }
+        if (budget.needsDialogBind()) {
+            chartRefreshScheduler.requestDialogBind(event.getType().name() + "|dialog");
+            scheduleDialogDrain();
+        }
+        if (budget.needsOverlayRebuild() && overlayAction != null) {
+            pendingOverlayRefreshAction = overlayAction;
+            chartRefreshScheduler.requestOverlayRender(event.getType().name() + "|overlay");
+        }
+        if (budget.needsSummaryBind()) {
+            pendingSummaryRefreshAction = this::applySummaryRefresh;
+            chartRefreshScheduler.requestSummaryBind(event.getType().name() + "|summary");
+        }
+        if ((budget.needsOverlayRebuild() && overlayAction != null) || budget.needsSummaryBind()) {
+            scheduleOverlaySummaryDrain();
+        }
+        if (budget.needsRealtimeTailInvalidate() && realtimeAction != null) {
+            realtimeAction.run();
+        }
+    }
+
+    private void applyUiStateRefresh() {
+        updateStateCount();
+    }
+
+    private void applyDialogStateRefresh() {
+        updateTradeActionButtons();
+        refreshGlobalStatusButton();
+        refreshVisibleGlobalStatusSheet();
+    }
+
+    private void applySummaryRefresh() {
+        bindChartOverlayStatus(lastChartOverlaySnapshot, SensitiveDisplayMasker.isEnabled(this));
+    }
+
+    private void scheduleOverlaySummaryDrain() {
+        if (overlaySummaryDrainScheduled) {
+            return;
+        }
+        overlaySummaryDrainScheduled = true;
+        mainHandler.post(overlaySummaryDrainRunnable);
+    }
+
+    private void scheduleDialogDrain() {
+        if (dialogDrainScheduled) {
+            return;
+        }
+        dialogDrainScheduled = true;
+        mainHandler.post(dialogDrainRunnable);
+    }
+
+    private void refreshVisibleGlobalStatusSheet() {
+        if (globalStatusBottomSheetController == null) {
+            return;
+        }
+        globalStatusBottomSheetController.updateVisibleSheet(buildGlobalStatusSnapshot());
     }
 
     // 年线自动缺口补拉仍走月线底稿，再聚合成年桶，保持时间桶语义和手动翻页一致。
@@ -2836,21 +3079,11 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     }
 
     private void renderInfoWithLatest() {
-        if (loadedCandles.isEmpty()) {
-            binding.tvChartInfo.setText(R.string.chart_info_empty);
-            return;
-        }
-        CandleEntry latest = loadedCandles.get(loadedCandles.size() - 1);
-        binding.tvChartInfo.setText(buildInfo(latest,
-                Double.NaN,
-                Double.NaN,
-                Double.NaN,
-                Double.NaN,
-                Double.NaN));
+        // 当前布局已不再展示独立十字线信息条，这里保留入口避免监听链断裂。
     }
 
     private void renderInfo(CandleEntry candle, double dif, double dea, double macd, double k, double d) {
-        binding.tvChartInfo.setText(buildInfo(candle, dif, dea, macd, k, d));
+        // 当前布局已不再展示独立十字线信息条，这里保留入口避免监听链断裂。
     }
 
     private String buildInfo(CandleEntry candle,
@@ -2948,7 +3181,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         }
         lastAbnormalOverlaySignature = abnormalOverlaySignature;
         binding.klineChartView.setAbnormalAnnotations(abnormalAnnotations);
-        refreshTradingSignalPanels();
     }
 
     // 先按当前选中标的筛掉无关异常记录，避免聚合器承担页面状态判断。
@@ -3038,7 +3270,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             }
             return;
         }
-        String overlaySignature = buildAccountOverlaySignature(cache);
+        String overlaySignature = buildAccountOverlaySignature(cache, snapshot);
         if (overlaySignature.equals(lastAccountOverlaySignature)) {
             return;
         }
@@ -3148,7 +3380,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         if (snapshot == null) {
             applyBuiltChartOverlaySnapshot(buildVersion,
                     ChartOverlaySnapshot.empty(),
-                    buildAccountOverlaySignature(cache),
+                    buildAccountOverlaySignature(cache, null),
                     resolveOverlayAccount(cache),
                     resolveOverlayServer(cache));
             return;
@@ -3158,25 +3390,29 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                     selectedSymbol,
                     new ArrayList<>(loadedCandles),
                     snapshot,
-                    cache
+                    cache,
+                    cache == null ? null : runtimeSnapshotStore.selectChartProductRuntime(selectedSymbol)
             );
             applyBuiltChartOverlaySnapshot(buildVersion,
                     overlaySnapshot,
-                    buildAccountOverlaySignature(cache),
+                    buildAccountOverlaySignature(cache, snapshot),
                     resolveOverlayAccount(cache),
                     resolveOverlayServer(cache));
             return;
         }
-        String overlaySignature = buildAccountOverlaySignature(cache);
+        String overlaySignature = buildAccountOverlaySignature(cache, snapshot);
         String overlayAccount = resolveOverlayAccount(cache);
         String overlayServer = resolveOverlayServer(cache);
         List<CandleEntry> candleSnapshot = new ArrayList<>(loadedCandles);
+        final com.binance.monitor.runtime.state.model.ChartProductRuntimeModel chartRuntimeModel =
+                cache == null ? null : runtimeSnapshotStore.selectChartProductRuntime(selectedSymbol);
         chartOverlayBuildTask = ioExecutor.submit(() -> {
             ChartOverlaySnapshot overlaySnapshot = chartOverlaySnapshotFactory.build(
                     selectedSymbol,
                     candleSnapshot,
                     snapshot,
-                    cache
+                    cache,
+                    chartRuntimeModel
             );
             mainHandler.post(() -> applyBuiltChartOverlaySnapshot(
                     buildVersion,
@@ -3201,11 +3437,16 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             return;
         }
         lastChartOverlaySnapshot = overlaySnapshot;
-        binding.klineChartView.setPositionAnnotations(overlaySnapshot.getPositionAnnotations());
-        binding.klineChartView.setPendingAnnotations(overlaySnapshot.getPendingAnnotations());
-        binding.klineChartView.setHistoryTradeAnnotations(overlaySnapshot.getHistoryTradeAnnotations());
-        binding.klineChartView.setAggregateCostAnnotation(overlaySnapshot.getAggregateCostAnnotation());
-        bindChartOverlayStatus(overlaySnapshot, SensitiveDisplayMasker.isEnabled(this));
+        dispatchChartRefresh(
+                ChartRefreshEvent.productRuntimeChanged(true),
+                () -> {
+                    binding.klineChartView.setPositionAnnotations(overlaySnapshot.getPositionAnnotations());
+                    binding.klineChartView.setPendingAnnotations(overlaySnapshot.getPendingAnnotations());
+                    binding.klineChartView.setHistoryTradeAnnotations(overlaySnapshot.getHistoryTradeAnnotations());
+                    binding.klineChartView.setAggregateCostAnnotation(overlaySnapshot.getAggregateCostAnnotation());
+                },
+                null
+        );
         syncLastAppliedOverlayIdentity(overlayAccount, overlayServer);
         lastAccountOverlaySignature = overlaySignature;
     }
@@ -3290,6 +3531,15 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     // 页面销毁时统一关闭图表 IO 执行器，避免多个宿主入口重复展开相同逻辑。
     void shutdownIoExecutor() {
+        mainHandler.removeCallbacks(realtimeTailDrainRunnable);
+        mainHandler.removeCallbacks(overlaySummaryDrainRunnable);
+        mainHandler.removeCallbacks(dialogDrainRunnable);
+        realtimeTailDrainScheduled = false;
+        overlaySummaryDrainScheduled = false;
+        dialogDrainScheduled = false;
+        pendingRealtimeTailKline = null;
+        pendingOverlayRefreshAction = null;
+        pendingSummaryRefreshAction = null;
         if (ioExecutor != null) {
             ioExecutor.shutdownNow();
         }
@@ -3312,7 +3562,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         clearStoredChartOverlaySnapshot();
         lastChartOverlaySnapshot = ChartOverlaySnapshot.empty();
         lastAccountOverlaySignature = buildAccountOverlaySignature(
-                accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache()
+                accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache(),
+                null
         );
         syncLastAppliedOverlayIdentity("", "");
         binding.klineChartView.setPositionAnnotations(new ArrayList<>());
@@ -3323,16 +3574,18 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     }
 
     // 用轻量签名识别账户叠加层是否真的变化，避免无效重算。
-    private String buildAccountOverlaySignature(@Nullable AccountStatsPreloadManager.Cache cache) {
-        String chartDataKey = buildCacheKey(selectedSymbol, selectedInterval);
-        long firstOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(0).getOpenTime();
-        long lastOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
-        long cacheUpdatedAt = cache == null ? 0L : cache.getUpdatedAt();
-        String historyRevision = cache == null ? "" : cache.getHistoryRevision();
-        String account = cache == null ? resolveActiveSessionAccount() : trimToEmpty(cache.getAccount());
-        String server = cache == null ? resolveActiveSessionServer() : trimToEmpty(cache.getServer());
-        return chartDataKey + "|" + loadedCandles.size() + "|" + firstOpenTime + "|" + lastOpenTime
-                + "|" + cacheUpdatedAt + "|" + historyRevision + "|" + account + "|" + server;
+    private String buildAccountOverlaySignature(@Nullable AccountStatsPreloadManager.Cache cache,
+                                                @Nullable AccountSnapshot snapshot) {
+        AccountSnapshot resolvedSnapshot = snapshot;
+        if (resolvedSnapshot == null && cache != null) {
+            resolvedSnapshot = cache.getSnapshot();
+        }
+        return chartOverlaySnapshotFactory.buildInputSignature(
+                selectedSymbol,
+                loadedCandles,
+                resolvedSnapshot,
+                cache
+        );
     }
 
     private void syncStoredChartOverlaySnapshot(@Nullable AccountSnapshot snapshot,
@@ -3909,23 +4162,23 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     // 将倒计时固定在K线价格绘图区内右上角，不受外层容器留白影响。
     private boolean updateRefreshCountdownPosition() {
-        if (binding == null || binding.tvChartRefreshCountdown == null || binding.klineChartView == null) {
+        if (binding == null || binding.tvChartPositionSummary == null || binding.klineChartView == null) {
             return false;
         }
         if (pricePaneRightPx <= 0 || pricePaneBottomPx <= 0) {
             return false;
         }
-        int viewWidth = binding.tvChartRefreshCountdown.getWidth();
-        int viewHeight = binding.tvChartRefreshCountdown.getHeight();
+        int viewWidth = binding.tvChartPositionSummary.getWidth();
+        int viewHeight = binding.tvChartPositionSummary.getHeight();
         if (viewWidth <= 0 || viewHeight <= 0) {
-            binding.tvChartRefreshCountdown.post(this::updateRefreshCountdownPosition);
+            binding.tvChartPositionSummary.post(this::updateRefreshCountdownPosition);
             return false;
         }
         int inset = dpToPx(2f);
         int targetLeft = Math.max(pricePaneLeftPx, pricePaneRightPx - viewWidth - inset);
         int targetTop = Math.max(0, pricePaneTopPx + inset);
         android.widget.FrameLayout.LayoutParams params =
-                (android.widget.FrameLayout.LayoutParams) binding.tvChartRefreshCountdown.getLayoutParams();
+                (android.widget.FrameLayout.LayoutParams) binding.tvChartPositionSummary.getLayoutParams();
         int targetGravity = Gravity.TOP | Gravity.START;
         if (params.gravity == targetGravity
                 && params.leftMargin == targetLeft
@@ -3939,7 +4192,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         params.topMargin = targetTop;
         params.rightMargin = 0;
         params.bottomMargin = 0;
-        binding.tvChartRefreshCountdown.setLayoutParams(params);
+        binding.tvChartPositionSummary.setLayoutParams(params);
         return true;
     }
 
@@ -4122,7 +4375,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                 pricePaneBottomPx
         );
         KlineOverlayButtonLayoutHelper.Position position =
-                KlineOverlayButtonLayoutHelper.resolveBottomLeftStackedButtonPosition(
+                KlineOverlayButtonLayoutHelper.resolveBottomLeftInlineButtonPosition(
                         priceBounds,
                         buttonWidth,
                         buttonHeight,
@@ -4155,6 +4408,9 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         }
         int buttonWidth = binding.btnTogglePositionOverlays.getWidth();
         int buttonHeight = binding.btnTogglePositionOverlays.getHeight();
+        int historyButtonWidth = binding.btnToggleHistoryTrades == null
+                ? 0
+                : binding.btnToggleHistoryTrades.getWidth();
         if (buttonWidth <= 0 || buttonHeight <= 0) {
             ViewGroup.LayoutParams rawParams = binding.btnTogglePositionOverlays.getLayoutParams();
             if (rawParams != null) {
@@ -4170,6 +4426,16 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                 return false;
             }
         }
+        if (historyButtonWidth <= 0 && binding.btnToggleHistoryTrades != null) {
+            ViewGroup.LayoutParams rawHistoryParams = binding.btnToggleHistoryTrades.getLayoutParams();
+            if (rawHistoryParams != null && rawHistoryParams.width > 0) {
+                historyButtonWidth = rawHistoryParams.width;
+            }
+        }
+        if (historyButtonWidth <= 0) {
+            binding.btnTogglePositionOverlays.post(this::updatePositionOverlayButtonPosition);
+            return false;
+        }
         KlineOverlayButtonLayoutHelper.Bounds priceBounds = new KlineOverlayButtonLayoutHelper.Bounds(
                 pricePaneLeftPx,
                 pricePaneTopPx,
@@ -4177,12 +4443,12 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                 pricePaneBottomPx
         );
         KlineOverlayButtonLayoutHelper.Position position =
-                KlineOverlayButtonLayoutHelper.resolveBottomLeftStackedButtonPosition(
+                KlineOverlayButtonLayoutHelper.resolveBottomLeftInlineButtonPosition(
                         priceBounds,
                         buttonWidth,
                         buttonHeight,
                         dpToPx(2f),
-                        1,
+                        historyButtonWidth,
                         dpToPx(4f)
                 );
         android.widget.FrameLayout.LayoutParams params =
@@ -4258,8 +4524,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                 binding.btnIndicatorAvl, binding.btnIndicatorRsi, binding.btnIndicatorKdj,
                 binding.btnTogglePositionOverlays,
                 binding.btnToggleHistoryTrades,
-                binding.btnChartRiskAction,
-                binding.btnChartTradeBuy, binding.btnChartTradeSell, binding.btnChartTradePending
+                binding.btnChartModeMarket, binding.btnChartModePending,
+                binding.btnQuickTradePrimary, binding.btnQuickTradeSecondary
         };
         for (Button button : buttons) {
             if (button == null) {
@@ -4277,40 +4543,23 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(activity, palette);
         binding.klineChartView.applyPalette(palette);
-        binding.cardSymbolPanel.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
-        binding.cardChartPanel.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
-        binding.cardChartRiskBanner.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
-        binding.cardChartTradeActions.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
-        binding.cardChartPositions.setBackground(UiPaletteManager.createFilledDrawable(this, palette.card));
-        binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
-        binding.btnGlobalStatus.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
-        binding.btnGlobalStatus.setTextColor(palette.textPrimary);
-        binding.btnChartRiskAction.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.control, palette.stroke));
-        binding.btnChartRiskAction.setTextColor(palette.textPrimary);
+        binding.cardSymbolPanel.setBackground(UiPaletteManager.createSurfaceDrawable(this, palette.card, palette.stroke));
+        binding.cardChartPanel.setBackground(UiPaletteManager.createSurfaceDrawable(this, palette.card, palette.stroke));
         applyStripBackground(binding.btnInterval1m, palette);
         applyStripBackground(binding.btnIndicatorVolume, palette);
-        applyStripBackground(binding.btnChartTradeBuy, palette);
-        binding.tvChartRiskBanner.setTextColor(palette.textPrimary);
-        binding.tvChartRiskMeta.setTextColor(palette.textSecondary);
-        binding.tvChartTradeActionsTitle.setTextColor(palette.textPrimary);
-        binding.tvChartSymbolPickerLabel.setTextColor(palette.textPrimary);
-        applyChartSymbolPickerIndicator();
+        applyTopControlGroupStyles();
         binding.btnRetryLoad.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
         binding.btnRetryLoad.setTextColor(ContextCompat.getColor(this, R.color.white));
+        binding.etQuickTradeVolume.setBackground(UiPaletteManager.createFilledDrawable(this, palette.control));
+        binding.etQuickTradeVolume.setTextColor(palette.textPrimary);
+        binding.etQuickTradeVolume.setHintTextColor(palette.textSecondary);
         binding.tvChartState.setTextColor(palette.textSecondary);
-        binding.tvChartInfo.setTextColor(palette.textSecondary);
         binding.tvChartLoading.setTextColor(palette.textSecondary);
-        binding.tvChartRefreshCountdown.setTextColor(palette.textSecondary);
-        binding.tvChartRefreshCountdown.setBackground(null);
         binding.tvError.setTextColor(palette.fall);
-        binding.tvChartPositionTitle.setTextColor(palette.textPrimary);
         binding.tvChartPositionSummary.setTextColor(palette.textPrimary);
-        binding.tvChartAbnormalSummary.setTextColor(palette.textSecondary);
-        binding.tvChartOverlayMeta.setTextColor(palette.textSecondary);
-        binding.btnScrollToLatest.setBackground(UiPaletteManager.createOutlinedDrawable(
+        binding.btnScrollToLatest.setBackground(UiPaletteManager.createFilledDrawable(
                 this,
-                ColorUtils.setAlphaComponent(palette.card, 224),
-                ColorUtils.setAlphaComponent(palette.stroke, 220)));
+                ColorUtils.setAlphaComponent(palette.card, 224)));
         binding.btnScrollToLatest.setImageTintList(ColorStateList.valueOf(palette.textPrimary));
         if (binding.spinnerSymbolPicker.getAdapter() instanceof BaseAdapter) {
             ((BaseAdapter) binding.spinnerSymbolPicker.getAdapter()).notifyDataSetChanged();
@@ -4321,7 +4570,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         syncSymbolSelector();
         updateIntervalButtons();
         updateIndicatorButtons();
-        updateTradeActionButtons();
+        dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);
         updatePositionOverlayToggleButton();
         updateHistoryTradeToggleButton();
         applyPrivacyMaskState();
@@ -4330,9 +4579,50 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     // 图表页交易按钮保持和横向轻量按钮一致的样式层级。
     private void updateTradeActionButtons() {
-        styleTabButton(binding.btnChartTradeBuy, false);
-        styleTabButton(binding.btnChartTradeSell, false);
-        styleTabButton(binding.btnChartTradePending, false);
+        styleTopControlButton(binding.btnChartModeMarket, quickTradeMode == ChartQuickTradeMode.MARKET, false);
+        styleTopControlButton(binding.btnChartModePending, quickTradeMode == ChartQuickTradeMode.PENDING, false);
+        styleQuickTradeActionButton(binding.btnQuickTradePrimary, true);
+        styleQuickTradeActionButton(binding.btnQuickTradeSecondary, false);
+    }
+
+    // 顶部产品、模式和状态入口统一走同一套样式，避免同组控件看起来像不同模块。
+    private void applyTopControlGroupStyles() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createFilledDrawable(this, palette.control));
+        styleTopControlLabel(binding.tvChartSymbolPickerLabel);
+        styleTopControlButton(binding.btnGlobalStatus, false, true);
+        applyChartSymbolPickerIndicator();
+    }
+
+    // 顶部按钮统一复用共享刷色逻辑，选中态只保留轻量强调。
+    private void styleTopControlButton(@Nullable TextView button,
+                                       boolean selected,
+                                       boolean enableAutoSize) {
+        UiPaletteManager.styleTopControlButton(
+                button,
+                UiPaletteManager.resolve(this),
+                selected,
+                enableAutoSize
+        );
+    }
+
+    // 顶部产品标签和相邻按钮保持同一高度、背景和文字层级。
+    private void styleTopControlLabel(@Nullable TextView label) {
+        UiPaletteManager.styleTopControlLabel(label, UiPaletteManager.resolve(this));
+    }
+
+    // 快捷交易按钮保留买卖语义色，但统一到同一套方角、无边框和高度体系。
+    private void styleQuickTradeActionButton(@Nullable Button button, boolean primaryAction) {
+        if (button == null) {
+            return;
+        }
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+        int accentColor = primaryAction ? palette.rise : palette.fall;
+        button.setBackground(UiPaletteManager.createFilledDrawable(
+                this,
+                ColorUtils.setAlphaComponent(accentColor, 26)
+        ));
+        button.setTextColor(accentColor);
     }
 
     void cancelChartBackgroundTasks() {

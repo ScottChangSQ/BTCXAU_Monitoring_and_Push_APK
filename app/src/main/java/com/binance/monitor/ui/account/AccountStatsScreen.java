@@ -78,7 +78,6 @@ import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionCredentialEncryptor;
 import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
-import com.binance.monitor.runtime.account.MetricNameTranslator;
 import com.binance.monitor.service.MonitorServiceController;
 import com.binance.monitor.ui.account.history.AccountHistoryPayload;
 import com.binance.monitor.ui.account.history.AccountHistorySnapshotStore;
@@ -140,6 +139,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private boolean pendingOpenLoginDialogFromIntent;
     private boolean finishAfterLoginDialog;
     private boolean loginDialogSubmissionInFlight;
+    private boolean analysisTargetScrollCompleted;
+    private String pendingAnalysisTargetSection = "";
     private static final String ACCOUNT = "";
     private static final String SERVER = "";
 
@@ -228,7 +229,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         renderCoordinator = new AccountStatsRenderCoordinator(createRenderCoordinatorHost());
         indicatorAdapter = new AccountMetricAdapter();
         tradeAdapter = new TradeRecordAdapterV2();
-        statsAdapter = new StatsMetricAdapter();
+        statsSummaryDetailAdapter = new StatsMetricAdapter();
         curveRenderHelper = new AccountStatsCurveRenderHelper(binding, indicatorAdapter);
         returnsTableHelper = createReturnsTableHelper();
         restoreUiState();
@@ -245,6 +246,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
     void attachPageRuntime(@NonNull AccountStatsPageRuntime runtime) {
         this.pageRuntime = runtime;
+    }
+
+    void setPendingAnalysisTargetSection(@NonNull String targetSection) {
+        pendingAnalysisTargetSection = targetSection;
+        analysisTargetScrollCompleted = false;
     }
 
     void onNewIntent(@NonNull Intent intent) {
@@ -300,7 +306,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private AccountStatsCurveRenderHelper curveRenderHelper;
     private AccountStatsReturnsTableHelper returnsTableHelper;
     private TradeRecordAdapterV2 tradeAdapter;
-    private StatsMetricAdapter statsAdapter;
+    private StatsMetricAdapter statsSummaryDetailAdapter;
     private LogManager logManager;
     private ExecutorService ioExecutor;
     private ExecutorService sessionExecutor;
@@ -348,9 +354,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private List<CurveAnalyticsHelper.DailyReturnPoint> displayedDailyReturnPoints = new ArrayList<>();
     private List<AccountMetric> latestCurveIndicators = new ArrayList<>();
     private List<AccountMetric> latestStatsMetrics = new ArrayList<>();
+    private List<AccountMetric> latestTradeStatsMetrics = new ArrayList<>();
     private String defaultCurveMeta = "--";
     private double curveBaseBalance = ACCOUNT_INITIAL_BALANCE;
     private boolean syncingCurveHighlight;
+    private boolean statsSummaryExpanded;
 
     private String connectedAccount = ACCOUNT;
     private String connectedAccountName = ACCOUNT;
@@ -1540,7 +1548,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setBackground(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+        content.setBackground(UiPaletteManager.createSurfaceDrawable(this, palette.card, palette.stroke));
         content.setPadding(dpToPx(18), dpToPx(14), dpToPx(18), dpToPx(6));
 
         TextView titleView = new TextView(this);
@@ -1593,10 +1601,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             builder.setNegativeButton("退出登录", (dialog, which) -> logoutAccount());
         }
         AlertDialog dialog = builder.create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
-        }
         dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
         if (dialog.getButton(AlertDialog.BUTTON_POSITIVE) != null) {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
         }
@@ -1649,7 +1655,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         int top = dpToPx(8);
         int bottom = dpToPx(4);
         container.setPadding(horizontal, top, horizontal, bottom);
-        container.setBackground(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+        container.setBackground(UiPaletteManager.createSurfaceDrawable(this, palette.card, palette.stroke));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             // 远程交易账号输入只允许用户直接填写，避免系统自动填充抢占弹窗交互。
             container.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
@@ -1683,7 +1689,6 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         activeLoginDialog = dialog;
         if (dialog.getWindow() != null) {
             dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-            dialog.getWindow().setBackgroundDrawable(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
         }
         dialog.setOnDismissListener(ignored -> {
             if (activeLoginDialog == dialog) {
@@ -1701,6 +1706,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             refreshSavedAccountsForDialog(savedAccountsContainer, palette, dialog);
         });
         dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
     }
 
     // 登录弹窗使用页面自管操作按钮，避免部分机型把系统正按钮点击直接吞成 dismiss。
@@ -1865,7 +1871,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             MaterialButton actionButton = new MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
             actionButton.setText(profile.isActive() ? "当前账号" : "切换");
             actionButton.setEnabled(!profile.isActive());
-            actionButton.setTextColor(profile.isActive() ? palette.textSecondary : palette.primary);
+            actionButton.setTextColor(profile.isActive()
+                    ? UiPaletteManager.controlUnselectedText(this)
+                    : UiPaletteManager.controlSelectedText(this));
             actionButton.setStrokeColor(ColorStateList.valueOf(palette.stroke));
             actionButton.setOnClickListener(v -> {
                 loginDialogSubmissionInFlight = true;
@@ -1967,6 +1975,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         displayedCurvePoints = new ArrayList<>();
         latestCurveIndicators = new ArrayList<>();
         latestStatsMetrics = new ArrayList<>();
+        latestTradeStatsMetrics = new ArrayList<>();
         curveHistory.clear();
         tradeHistory.clear();
         lastPositionLogStates.clear();
@@ -2029,6 +2038,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private void applyLoggedOutEmptyState() {
         latestCurveIndicators = new ArrayList<>();
         latestStatsMetrics = new ArrayList<>();
+        latestTradeStatsMetrics = new ArrayList<>();
         AccountSnapshot emptySnapshot = buildEmptyAccountSnapshot();
         if (renderCoordinator != null) {
             renderCoordinator.applySnapshot(emptySnapshot, false);
@@ -2249,10 +2259,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
     // 统一记录远程会话调试日志，便于真机排查点击链和提交链。
     private void logRemoteSessionDebug(@NonNull String message) {
-        if (logManager == null) {
-            return;
-        }
-        logManager.info("RemoteSessionDebug: " + message);
+        // 远程会话链路已稳定，默认不再写入调试日志。
     }
 
     // 提交已保存账号切换。
@@ -2514,6 +2521,12 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         });
     }
 
+    // 兼容桥接页残留失败链路：真实登录弹窗仍统一交给共享屏幕处理。
+    void retryLoginDialogFromBridge() {
+        pendingOpenLoginDialogFromIntent = true;
+        openLoginDialogIfRequested();
+    }
+
     @NonNull
     private char[] readPasswordChars(@Nullable EditText input) {
         if (input == null || input.getText() == null) {
@@ -2626,9 +2639,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.recyclerTrades.setAdapter(tradeAdapter);
         configureTradeScrollHandle();
 
-        binding.recyclerStats.setLayoutManager(new LinearLayoutManager(this));
-        binding.recyclerStats.setAdapter(statsAdapter);
-
+        binding.recyclerStatsSummaryDetails.setLayoutManager(new LinearLayoutManager(this));
+        binding.recyclerStatsSummaryDetails.setAdapter(statsSummaryDetailAdapter);
     }
 
     // 监听账户页第一次真正绘制完成，再开始挂载首屏之外的长列表和图表区块。
@@ -2695,10 +2707,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         long stageStartedAt = SystemClock.elapsedRealtime();
-        binding.layoutCurveSecondarySection.setVisibility(View.GONE);
-        binding.cardReturnStatsSection.setVisibility(View.GONE);
+        binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);
+        binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
         binding.cardTradeRecordsSection.setVisibility(View.GONE);
-        binding.cardTradeStatsSection.setVisibility(View.GONE);
         refreshAnalysisSummaryCards();
         secondarySectionsAttached = true;
         traceAccountRenderPhase("attach_secondary_sections",
@@ -2723,7 +2734,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         boolean masked = isPrivacyMasked();
         indicatorAdapter.setMasked(masked);
         tradeAdapter.setMasked(masked);
-        statsAdapter.setMasked(masked);
+        statsSummaryDetailAdapter.setMasked(masked);
         binding.tradeWeekdayBarChart.setMasked(masked);
         binding.equityCurveView.setMasked(masked);
         binding.positionRatioChartView.setMasked(masked);
@@ -2761,8 +2772,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
         boolean hasVisibleSection = binding.cardCurveSection.getVisibility() == View.VISIBLE
                 || binding.cardStatsSummarySection.getVisibility() == View.VISIBLE
-                || binding.cardStructureAnalysisSection.getVisibility() == View.VISIBLE
-                || binding.cardTradeAnalysisEntrySection.getVisibility() == View.VISIBLE;
+                || binding.cardReturnStatsSection.getVisibility() == View.VISIBLE
+                || binding.cardTradeStatsSection.getVisibility() == View.VISIBLE;
         if (hasVisibleSection) {
             binding.cardStatsEmptyState.setVisibility(View.GONE);
             return;
@@ -2782,24 +2793,36 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.cardStatsEmptyState.setVisibility(View.GONE);
     }
 
-    // 绑定分析页首屏摘要卡的点击入口，深内容统一跳到完整分析页。
+    // 分析页首屏需要立刻露出曲线模块，真实数据到达后再直接覆盖占位内容。
+    private void showInitialCurvePlaceholder() {
+        if (binding == null) {
+            return;
+        }
+        binding.cardCurveSection.setVisibility(View.VISIBLE);
+        binding.tvCurveMeta.setVisibility(View.VISIBLE);
+        if (!displayedCurvePoints.isEmpty() && !defaultCurveMeta.isEmpty()) {
+            binding.tvCurveMeta.setText(defaultCurveMeta);
+            return;
+        }
+        binding.tvCurveMeta.setText(resolveInitialCurvePlaceholderText());
+    }
+
+    // 占位文案只区分“正在拉取曲线”和“当前没有曲线”两种首屏状态。
+    @NonNull
+    private String resolveInitialCurvePlaceholderText() {
+        if (isAccountSessionReady() || storedSnapshotRestorePending || resolveCurrentSessionCache() != null) {
+            return getString(R.string.analysis_curve_loading_placeholder);
+        }
+        return getString(R.string.analysis_curve_empty_placeholder);
+    }
+
+    // 绑定分析页首屏交互，当前仅保留核心统计卡的展开能力。
     private void setupAnalysisSummaryActions() {
         if (binding == null) {
             return;
         }
-        View.OnClickListener openDetailsListener = v -> openTradeAnalysisPage();
-        binding.cardStructureAnalysisSection.setOnClickListener(openDetailsListener);
-        binding.btnOpenStructureAnalysis.setOnClickListener(openDetailsListener);
-        binding.cardTradeAnalysisEntrySection.setOnClickListener(openDetailsListener);
-        binding.btnOpenTradeAnalysis.setOnClickListener(openDetailsListener);
+        binding.cardStatsSummarySection.setOnClickListener(v -> toggleStatsSummaryExpanded());
         refreshAnalysisSummaryCards();
-    }
-
-    // 一级分析页只保留摘要，完整历史统计继续复用既有深页。
-    void openTradeAnalysisPage() {
-        Intent intent = new Intent(activity, AccountStatsBridgeActivity.class);
-        intent.putExtras(activity.getIntent());
-        activity.startActivity(intent);
     }
 
     // 根据当前快照刷新分析页首屏摘要卡，避免再次把长列表堆回一级页。
@@ -2808,11 +2831,24 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         binding.cardStatsSummarySection.setVisibility(View.VISIBLE);
-        binding.cardStructureAnalysisSection.setVisibility(View.VISIBLE);
-        binding.cardTradeAnalysisEntrySection.setVisibility(View.VISIBLE);
-        binding.cardReturnStatsSection.setVisibility(View.GONE);
-        binding.cardTradeRecordsSection.setVisibility(View.GONE);
-        binding.cardTradeStatsSection.setVisibility(View.GONE);
+        binding.cardStructureAnalysisSection.setVisibility(View.GONE);
+        binding.cardTradeAnalysisEntrySection.setVisibility(View.GONE);
+        binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
+
+        List<AccountMetric> detailMetrics = resolveStatsSummaryDetailMetrics();
+        boolean hasDetailMetrics = !detailMetrics.isEmpty();
+        statsSummaryDetailAdapter.submitList(detailMetrics);
+        binding.tvStatsSummaryExpandHint.setText(activity.getString(
+                statsSummaryExpanded
+                        ? R.string.analysis_stats_collapse
+                        : R.string.analysis_stats_expand
+        ));
+        binding.recyclerStatsSummaryDetails.setVisibility(
+                statsSummaryExpanded && hasDetailMetrics ? View.VISIBLE : View.GONE
+        );
+        binding.tvStatsSummaryDetailsEmpty.setVisibility(
+                statsSummaryExpanded && !hasDetailMetrics ? View.VISIBLE : View.GONE
+        );
 
         bindSummaryMetricValue(binding.tvStatsSummaryMetricOneValue,
                 findSummaryMetricValue("累计收益额", "累计盈亏"));
@@ -2825,38 +2861,18 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 "%d笔",
                 baseTrades == null ? 0 : baseTrades.size()
         ));
-
-        int tradeCount = baseTrades == null ? 0 : baseTrades.size();
-        if (tradeCount > 0) {
-            binding.tvStructureAnalysisSummary.setText(String.format(
-                    Locale.getDefault(),
-                    "已生成 %d 笔历史成交的交易分布、持仓时长和按星期表现摘要。",
-                    tradeCount
-            ));
-            binding.tvTradeAnalysisEntrySummary.setText(String.format(
-                    Locale.getDefault(),
-                    "当前已有 %d 笔历史成交，点击进入逐笔成交和完整分析页。",
-                    tradeCount
-            ));
-            return;
-        }
-        if (!allCurvePoints.isEmpty() || !latestStatsMetrics.isEmpty()) {
-            binding.tvStructureAnalysisSummary.setText("当前已有收益与统计快照，完整结构分析会在产生历史成交后自动补齐。");
-            binding.tvTradeAnalysisEntrySummary.setText("当前还没有历史成交记录，后续产生交易后可进入逐笔分析。");
-            return;
-        }
-        binding.tvStructureAnalysisSummary.setText("当前还没有结构分析数据，连接账户并产生历史成交后这里会自动显示摘要。");
-        binding.tvTradeAnalysisEntrySummary.setText("当前还没有历史成交或收益快照，后续产生数据后可进入完整分析页。");
+        maybeScrollToAnalysisTarget();
     }
 
     // 读取核心统计里的优先指标，首屏只展示最关键的几项。
     @NonNull
     private String findSummaryMetricValue(@NonNull String... preferredNames) {
-        if (latestStatsMetrics == null || latestStatsMetrics.isEmpty()) {
+        List<AccountMetric> metrics = resolveStatsSummaryDetailMetrics();
+        if (metrics.isEmpty()) {
             return "--";
         }
         for (String preferredName : preferredNames) {
-            for (AccountMetric metric : latestStatsMetrics) {
+            for (AccountMetric metric : metrics) {
                 if (metric == null || metric.getName() == null) {
                     continue;
                 }
@@ -2866,7 +2882,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 }
             }
         }
-        return safeMetricValue(latestStatsMetrics.get(0).getValue());
+        return safeMetricValue(metrics.get(0).getValue());
     }
 
     // 首屏摘要值统一走这里，便于和隐私打码状态保持一致。
@@ -2885,6 +2901,24 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return "--";
         }
         return value;
+    }
+
+    // 切换核心统计摘要卡的展开态，让一级分析页按需显示更完整的统计指标。
+    private void toggleStatsSummaryExpanded() {
+        statsSummaryExpanded = !statsSummaryExpanded;
+        refreshAnalysisSummaryCards();
+    }
+
+    // 核心统计详细区优先使用当前已计算好的交易统计指标，没有时再回退快照原始指标。
+    @NonNull
+    private List<AccountMetric> resolveStatsSummaryDetailMetrics() {
+        if (latestTradeStatsMetrics != null && !latestTradeStatsMetrics.isEmpty()) {
+            return new ArrayList<>(latestTradeStatsMetrics);
+        }
+        if (latestStatsMetrics != null && !latestStatsMetrics.isEmpty()) {
+            return new ArrayList<>(latestStatsMetrics);
+        }
+        return new ArrayList<>();
     }
 
     private boolean isPrivacyMasked() {
@@ -2957,7 +2991,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
         ArrayAdapter<String> adapter = new ArrayAdapter<>(
                 this,
-                R.layout.item_spinner_filter,
+                R.layout.item_spinner_filter_anchor,
                 android.R.id.text1,
                 items
         );
@@ -3203,95 +3237,21 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     }
 
     private void styleSegmentButton(MaterialButton button, String text, float sizeSp) {
-        if (button == null) {
-            return;
-        }
-        button.setText(text);
-        button.setSingleLine(true);
-        button.setMaxLines(1);
-        button.setEllipsize(null);
-        button.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
-        button.setGravity(Gravity.CENTER);
-        button.setIncludeFontPadding(false);
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
-        button.setInsetTop(0);
-        button.setInsetBottom(0);
-        button.setMinHeight(0);
-        button.setMinimumHeight(0);
-        button.setMinWidth(0);
-        button.setMinimumWidth(0);
-        button.setPadding(0, 0, 0, 0);
-        button.setCornerRadius(0);
-        button.setShapeAppearanceModel(button.getShapeAppearanceModel().toBuilder()
-                .setAllCornerSizes(0f)
-                .build());
-
-        int[][] states = new int[][]{
-                new int[]{android.R.attr.state_checked},
-                new int[]{}
-        };
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        int checkedBg = palette.primary;
-        int uncheckedBg = ContextCompat.getColor(this, R.color.bg_input);
-        int checkedText = ContextCompat.getColor(this, R.color.white);
-        int uncheckedText = ContextCompat.getColor(this, R.color.text_primary);
-        button.setBackgroundTintList(new ColorStateList(states, new int[]{checkedBg, uncheckedBg}));
-        button.setTextColor(new ColorStateList(states, new int[]{checkedText, uncheckedText}));
-        button.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.stroke_card)));
-        button.setStrokeWidth(dpToPx(1));
-        button.setRippleColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.accent_gold)));
+        UiPaletteManager.styleSegmentedButton(button, palette, text, sizeSp);
     }
 
     private void autoFitSegmentButtons(MaterialButtonToggleGroup group,
                                        MaterialButton[] buttons,
                                        float maxTextSizeSp,
                                        float minTextSizeSp) {
-        if (group == null || buttons == null || buttons.length == 0) {
-            return;
-        }
-        int availableWidth = group.getWidth() - group.getPaddingLeft() - group.getPaddingRight();
-        if (availableWidth <= 0) {
-            return;
-        }
-
-        float eachButtonWidth = availableWidth / (float) buttons.length;
-        float resolvedSizeSp = maxTextSizeSp;
-        while (resolvedSizeSp > minTextSizeSp) {
-            boolean fits = true;
-            for (MaterialButton button : buttons) {
-                if (button == null) {
-                    continue;
-                }
-                CharSequence text = button.getText();
-                String label = text == null ? "" : text.toString();
-                if (label.isEmpty()) {
-                    continue;
-                }
-                TextPaint probe = new TextPaint(button.getPaint());
-                probe.setTextSize(TypedValue.applyDimension(
-                        TypedValue.COMPLEX_UNIT_SP,
-                        resolvedSizeSp,
-                        getResources().getDisplayMetrics()));
-                float textWidth = probe.measureText(label);
-                if (textWidth + dpToPx(8) > eachButtonWidth) {
-                    fits = false;
-                    break;
-                }
-            }
-            if (fits) {
-                break;
-            }
-            resolvedSizeSp -= 0.5f;
-        }
-
-        float finalSizeSp = Math.max(minTextSizeSp, resolvedSizeSp);
-        for (MaterialButton button : buttons) {
-            if (button == null) {
-                continue;
-            }
-            button.setTextSize(TypedValue.COMPLEX_UNIT_SP, finalSizeSp);
-            button.setPadding(0, 0, 0, 0);
-        }
+        UiPaletteManager.applyContentAwareButtonGroupLayout(
+                group,
+                buttons,
+                maxTextSizeSp,
+                minTextSizeSp,
+                8
+        );
     }
 
     private void setupDatePickers() {
@@ -3597,10 +3557,10 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
         if (primary) {
             button.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
-            button.setTextColor(palette.surfaceStart);
+            button.setTextColor(UiPaletteManager.controlSelectedText(this));
         } else {
             button.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-            button.setTextColor(palette.textPrimary);
+            button.setTextColor(UiPaletteManager.controlUnselectedText(this));
         }
     }
 
@@ -3808,7 +3768,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         AccountStatsPreloadManager.Cache cache = resolveCurrentSessionCache();
         if (cache != null) {
             applyCacheMeta(cache);
+            showInitialCurvePlaceholder();
             updateEmptyStateVisibility();
+            maybeScrollToAnalysisTarget();
             return;
         }
         if (snapshotRefreshCoordinator != null) {
@@ -3835,7 +3797,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         lastAppliedSnapshotSignature = "";
         setConnectionStatus(false);
         updateOverviewHeader();
+        showInitialCurvePlaceholder();
         updateEmptyStateVisibility();
+        maybeScrollToAnalysisTarget();
     }
 
     // 只要当前页已有本账户可渲染快照，就不应把切页/回前台误当成一次新的页面 bootstrap。
@@ -4708,8 +4672,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                                     List<CurveAnalyticsHelper.DurationBucket> holdingDurationBuckets,
                                     List<TradeWeekdayBarChartHelper.Entry> weekdayEntries,
                                     double totalPnl) {
+        latestTradeStatsMetrics = tradeStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(tradeStatsMetrics);
         boolean masked = isPrivacyMasked();
-        statsAdapter.submitList(tradeStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(tradeStatsMetrics));
         binding.tradePnlBarChart.setEntries(entries == null ? new ArrayList<>() : new ArrayList<>(entries));
         binding.tradeDistributionScatterView.setPoints(
                 tradeScatterPoints == null ? new ArrayList<>() : new ArrayList<>(tradeScatterPoints));
@@ -4718,6 +4682,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.tradeWeekdayBarChart.setEntries(
                 weekdayEntries == null ? new ArrayList<>() : new ArrayList<>(weekdayEntries));
         refreshAnalysisSummaryCards();
+        maybeScrollToAnalysisTarget();
         String sideLabel;
         if (tradePnlSideMode == TradePnlSideMode.BUY) {
             sideLabel = "买入";
@@ -4735,7 +4700,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     SensitiveDisplayMasker.MASK_TEXT));
             binding.tvTradePnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
             binding.tvTradePnlLegend.setVisibility(View.GONE);
-            binding.cardTradeStatsSection.setVisibility(View.GONE);
+            binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+            maybeScrollToAnalysisTarget();
             return;
         }
         String summaryText = String.format(
@@ -4752,7 +4718,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
         binding.tvTradePnlSummary.setText(summarySpan);
         binding.tvTradePnlLegend.setVisibility(View.GONE);
-        binding.cardTradeStatsSection.setVisibility(View.GONE);
+        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+        maybeScrollToAnalysisTarget();
     }
 
     private long resolveOpenTime(TradeRecordItem item) {
@@ -6691,6 +6658,38 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             scrollTradesToTop();
         }
         updateTradePnlSummary(tradeSummary, product, side, FILTER_DATE);
+        maybeScrollToAnalysisTarget();
+    }
+
+    // 从分析摘要卡进入深页后，自动把页面滚到用户点击的那块完整分析区域。
+    private void maybeScrollToAnalysisTarget() {
+        if (analysisTargetScrollCompleted || binding == null) {
+            return;
+        }
+        View targetView = resolveAnalysisTargetView();
+        if (targetView == null || targetView.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        analysisTargetScrollCompleted = true;
+        binding.scrollAccountStats.post(() -> {
+            if (binding == null) {
+                return;
+            }
+            int top = Math.max(0, targetView.getTop() - dpToPx(12));
+            binding.scrollAccountStats.smoothScrollTo(0, top);
+        });
+    }
+
+    // 根据入口决定深页应该停在哪个完整分析模块。
+    @Nullable
+    private View resolveAnalysisTargetView() {
+        if (AccountStatsBridgeActivity.ANALYSIS_TARGET_STRUCTURE.equals(pendingAnalysisTargetSection)) {
+            return binding.cardTradeStatsSection;
+        }
+        if (AccountStatsBridgeActivity.ANALYSIS_TARGET_TRADE_HISTORY.equals(pendingAnalysisTargetSection)) {
+            return binding.cardTradeRecordsSection;
+        }
+        return null;
     }
 
     private List<TradeRecordItem> filterTradeDistributionSymbols(List<TradeRecordItem> source) {
@@ -6724,7 +6723,6 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         lastTradeVisibilitySnapshotSignature = signature;
-        logManager.info("Trade visibility snapshot: " + signature);
     }
 
     // 记录交易筛选条件与筛选结果，判断漏单是否只是被产品/方向/排序状态隐藏。
@@ -6745,7 +6743,6 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         lastTradeFilterVisibilitySignature = signature;
-        logManager.info("Trade visibility filter: " + signature);
     }
 
     private void scrollTradesToTop() {

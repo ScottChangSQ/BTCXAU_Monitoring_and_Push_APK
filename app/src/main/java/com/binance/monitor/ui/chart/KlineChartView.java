@@ -16,7 +16,9 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewConfiguration;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.graphics.ColorUtils;
 
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.ui.theme.UiPaletteManager;
@@ -150,6 +152,10 @@ public class KlineChartView extends View {
         void onVolumePaneLayoutChanged(int left, int top, int right, int bottom);
     }
 
+    public interface OnQuickPendingLineChangeListener {
+        void onPriceChanged(double price);
+    }
+
     private final List<CandleEntry> candles = new ArrayList<>();
     private double[] bollMid = new double[0];
     private double[] bollUp = new double[0];
@@ -224,6 +230,9 @@ public class KlineChartView extends View {
     private final Paint aggregateCostTagTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint aggregateCostHintTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint volumeThresholdPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint quickPendingLinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint quickPendingTagPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint quickPendingTagTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private int secondaryTextColor = 0xFF8FA6C7;
 
     private int maPeriod = 20;
@@ -293,6 +302,9 @@ public class KlineChartView extends View {
     private boolean showAggregateCostAnnotation = true;
     private String highlightedAnnotationGroupId = "";
     private boolean crosshairOnCandle = true;
+    private boolean quickPendingLineVisible;
+    private boolean quickPendingLineDragging;
+    private double quickPendingLinePrice = Double.NaN;
 
     private boolean requestingMore;
     private long lastRequestedBefore = Long.MIN_VALUE;
@@ -304,6 +316,7 @@ public class KlineChartView extends View {
     private OnViewportStateListener onViewportStateListener;
     private OnPricePaneLayoutListener onPricePaneLayoutListener;
     private OnVolumePaneLayoutListener onVolumePaneLayoutListener;
+    private OnQuickPendingLineChangeListener onQuickPendingLineChangeListener;
     private int lastPricePaneLeft = Integer.MIN_VALUE;
     private int lastPricePaneTop = Integer.MIN_VALUE;
     private int lastPricePaneRight = Integer.MIN_VALUE;
@@ -438,7 +451,15 @@ public class KlineChartView extends View {
         volumeThresholdPaint.setStrokeWidth(dp(1f));
         volumeThresholdPaint.setColor(0xE6FFFFFF);
         volumeThresholdPaint.setPathEffect(new DashPathEffect(new float[]{dp(4f), dp(3f)}, 0f));
-        applyClassicIndicatorColors();
+        quickPendingLinePaint.setStyle(Paint.Style.STROKE);
+        quickPendingLinePaint.setStrokeWidth(dp(1f));
+        quickPendingLinePaint.setColor(0xFFF59E0B);
+        quickPendingLinePaint.setPathEffect(new DashPathEffect(new float[]{dp(5f), dp(3f)}, 0f));
+        quickPendingTagPaint.setColor(0xFFF59E0B);
+        quickPendingTagTextPaint.setColor(0xFF0E1626);
+        quickPendingTagTextPaint.setTextSize(dp(9f));
+        quickPendingTagTextPaint.setFakeBoldText(false);
+        applyClassicIndicatorColors(UiPaletteManager.findById(0));
     }
 
     public void applyPalette(@Nullable UiPaletteManager.Palette palette) {
@@ -452,7 +473,7 @@ public class KlineChartView extends View {
         textPaint.setColor(palette.textSecondary);
         upPaint.setColor(palette.rise);
         downPaint.setColor(palette.fall);
-        applyClassicIndicatorColors();
+        applyClassicIndicatorColors(palette);
         crossPaint.setColor(applyAlpha(palette.textSecondary, 235));
         crossLabelBgPaint.setColor(applyAlpha(palette.card, 235));
         crossLabelTextPaint.setColor(palette.textPrimary);
@@ -475,26 +496,33 @@ public class KlineChartView extends View {
         aggregateCostTagTextPaint.setColor(palette.surfaceStart);
         aggregateCostHintTextPaint.setColor(applyAlpha(palette.textPrimary, 205));
         volumeThresholdPaint.setColor(applyAlpha(palette.textPrimary, 210));
+        quickPendingLinePaint.setColor(applyAlpha(palette.primary, 230));
+        quickPendingTagPaint.setColor(applyAlpha(palette.primary, 235));
+        quickPendingTagTextPaint.setColor(palette.textPrimary);
         invalidate();
     }
 
     // 指标曲线使用固定经典配色，避免主题切换后多条线过于接近。
-    private void applyClassicIndicatorColors() {
-        bollMidPaint.setColor(0xFFF5C542);
-        bollUpPaint.setColor(0xFF3B82F6);
-        bollDnPaint.setColor(0xFF8B5CF6);
-        line1Paint.setColor(0xFFF59E0B);
-        line2Paint.setColor(0xFF06B6D4);
-        macdDifPaint.setColor(0xFFF59E0B);
-        macdDeaPaint.setColor(0xFF06B6D4);
-        stochKPaint.setColor(0xFFF59E0B);
-        stochDPaint.setColor(0xFF06B6D4);
-        maPaint.setColor(0xFF2563EB);
-        emaPaint.setColor(0xFF10B981);
-        sraPaint.setColor(0xFFF97316);
-        avlPaint.setColor(0xFF7C3AED);
-        rsiPaint.setColor(0xFFE11D48);
-        kdjJPaint.setColor(0xFFEC4899);
+    private void applyClassicIndicatorColors(@NonNull UiPaletteManager.Palette palette) {
+        bollMidPaint.setColor(palette.xau);
+        bollUpPaint.setColor(palette.primary);
+        bollDnPaint.setColor(blendColor(palette.primary, palette.btc, 0.45f));
+        line1Paint.setColor(palette.rise);
+        line2Paint.setColor(palette.btc);
+        macdDifPaint.setColor(palette.xau);
+        macdDeaPaint.setColor(palette.btc);
+        stochKPaint.setColor(palette.rise);
+        stochDPaint.setColor(palette.primary);
+        maPaint.setColor(palette.primary);
+        emaPaint.setColor(palette.rise);
+        sraPaint.setColor(palette.xau);
+        avlPaint.setColor(blendColor(palette.primary, palette.fall, 0.35f));
+        rsiPaint.setColor(palette.fall);
+        kdjJPaint.setColor(blendColor(palette.fall, palette.primary, 0.35f));
+    }
+
+    private int blendColor(int fromColor, int toColor, float ratio) {
+        return ColorUtils.blendARGB(fromColor, toColor, Math.max(0f, Math.min(1f, ratio)));
     }
 
     public void setOnCrosshairListener(@Nullable OnCrosshairListener listener) {
@@ -528,6 +556,31 @@ public class KlineChartView extends View {
         if (ensureLayoutForMath()) {
             dispatchVolumePaneLayout(true);
         }
+    }
+
+    // 让外层页面接收拖动挂单线后的最新价格。
+    public void setOnQuickPendingLineChangeListener(@Nullable OnQuickPendingLineChangeListener listener) {
+        onQuickPendingLineChangeListener = listener;
+    }
+
+    // 显示图表内快捷挂单线，并以当前价格作为初始位置。
+    public void showQuickPendingLine(double price) {
+        if (!Double.isFinite(price) || price <= 0d) {
+            hideQuickPendingLine();
+            return;
+        }
+        quickPendingLineVisible = true;
+        quickPendingLineDragging = false;
+        quickPendingLinePrice = price;
+        invalidate();
+    }
+
+    // 隐藏图表内快捷挂单线，退出挂单模式时统一调用。
+    public void hideQuickPendingLine() {
+        quickPendingLineVisible = false;
+        quickPendingLineDragging = false;
+        quickPendingLinePrice = Double.NaN;
+        invalidate();
     }
 
     public void setVolumeThreshold(double threshold, boolean visible) {
@@ -776,6 +829,9 @@ public class KlineChartView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (handleQuickPendingLineTouch(event)) {
+            return true;
+        }
         scaleGestureDetector.onTouchEvent(event);
         gestureDetector.onTouchEvent(event);
         int action = event.getActionMasked();
@@ -925,6 +981,7 @@ public class KlineChartView extends View {
         drawCandles(canvas, start, end, visiblePriceMin, visiblePriceMax, drawStep);
         drawVisibleExtremes(canvas, start, end, visiblePriceMin, visiblePriceMax);
         drawLatestPriceGuide(canvas);
+        drawQuickPendingLine(canvas, visiblePriceMin, visiblePriceMax);
         if (showPositionAnnotations) {
             drawOverlayAnnotations(canvas, positionAnnotations);
         }
@@ -1327,6 +1384,29 @@ public class KlineChartView extends View {
         RectF box = new RectF(left, top, left + boxW, top + boxH);
         canvas.drawRoundRect(box, dp(3f), dp(3f), latestPriceTagPaint);
         canvas.drawText(priceText, box.left + padX, box.bottom - padY, latestPriceTagTextPaint);
+    }
+
+    // 在图表内渲染快捷挂单线，并在右侧显示对应价格。
+    private void drawQuickPendingLine(Canvas canvas, double min, double max) {
+        if (!quickPendingLineVisible || !Double.isFinite(quickPendingLinePrice) || quickPendingLinePrice <= 0d) {
+            return;
+        }
+        float y = yFor(quickPendingLinePrice, min, max, priceRect);
+        if (Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
+            return;
+        }
+        canvas.drawLine(priceRect.left, y, priceRect.right, y, quickPendingLinePaint);
+
+        String priceText = FormatUtils.formatPrice(quickPendingLinePrice);
+        float padX = dp(5f);
+        float padY = dp(3f);
+        float boxH = dp(14f);
+        float boxW = quickPendingTagTextPaint.measureText(priceText) + padX * 2f;
+        float left = priceRect.right + dp(3f);
+        float top = clamp(y - boxH / 2f, priceRect.top, priceRect.bottom - boxH);
+        RectF box = new RectF(left, top, left + boxW, top + boxH);
+        canvas.drawRoundRect(box, dp(3f), dp(3f), quickPendingTagPaint);
+        canvas.drawText(priceText, box.left + padX, box.bottom - padY, quickPendingTagTextPaint);
     }
 
     private void drawOverlayAnnotations(Canvas canvas, List<PriceAnnotation> annotations) {
@@ -1992,6 +2072,49 @@ public class KlineChartView extends View {
         crosshairOnCandle = true;
         notifyCrosshair();
         invalidate();
+    }
+
+    // 仅在触点靠近挂单线时接管事件，让图表其余区域仍可正常横向拖动与缩放。
+    private boolean handleQuickPendingLineTouch(@Nullable MotionEvent event) {
+        if (event == null || !quickPendingLineVisible || !Double.isFinite(quickPendingLinePrice) || quickPendingLinePrice <= 0d) {
+            return false;
+        }
+        if (!ensureLayoutForMath() || priceRect.isEmpty()) {
+            return false;
+        }
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            float y = yFor(quickPendingLinePrice, visiblePriceMin, visiblePriceMax, priceRect);
+            boolean touchingLine = event.getX() >= priceRect.left
+                    && event.getX() <= priceRect.right
+                    && !Float.isNaN(y)
+                    && Math.abs(event.getY() - y) <= dp(16f);
+            if (!touchingLine) {
+                return false;
+            }
+            quickPendingLineDragging = true;
+            clearCrosshair();
+            requestDisallow(true);
+            updateQuickPendingLinePrice(event.getY());
+            return true;
+        }
+        if (!quickPendingLineDragging) {
+            return false;
+        }
+        if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
+            updateQuickPendingLinePrice(event.getY());
+            if (action == MotionEvent.ACTION_UP) {
+                quickPendingLineDragging = false;
+                requestDisallow(false);
+            }
+            return true;
+        }
+        if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_DOWN) {
+            quickPendingLineDragging = false;
+            requestDisallow(false);
+            return true;
+        }
+        return true;
     }
 
     private void notifyCrosshair() {
@@ -2729,6 +2852,20 @@ public class KlineChartView extends View {
 
     private float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    // 根据拖动位置实时换算挂单价格，并同步通知外层页面。
+    private void updateQuickPendingLinePrice(float touchY) {
+        float safeY = clamp(touchY, priceRect.top, priceRect.bottom);
+        double price = valueForY(safeY, visiblePriceMin, visiblePriceMax, priceRect);
+        if (!Double.isFinite(price) || price <= 0d) {
+            return;
+        }
+        quickPendingLinePrice = price;
+        if (onQuickPendingLineChangeListener != null) {
+            onQuickPendingLineChangeListener.onPriceChanged(price);
+        }
+        invalidate();
     }
 
     private float dp(float value) {

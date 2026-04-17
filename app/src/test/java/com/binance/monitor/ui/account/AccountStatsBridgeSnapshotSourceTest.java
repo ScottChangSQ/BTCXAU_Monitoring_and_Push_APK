@@ -31,16 +31,21 @@ public class AccountStatsBridgeSnapshotSourceTest {
 
     @Test
     public void preloadListenerShouldSkipUiRefreshUntilPageOwnsForegroundSubscription() throws Exception {
-        Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+        Path activityFile = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
+        Path screenFile = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java");
+        String activitySource = new String(Files.readAllBytes(activityFile), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+        String screenSource = new String(Files.readAllBytes(screenFile), StandardCharsets.UTF_8)
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("if (cache == null || isFinishing() || isDestroyed() || loading) {"));
-        assertTrue(source.contains("preloadManager.addCacheListener(preloadCacheListener);"));
-        assertTrue(source.contains("preloadManager.removeCacheListener(preloadCacheListener);"));
-        assertTrue(source.contains("preloadManager.setLiveScreenActive(true);"));
-        assertTrue(source.contains("preloadManager.setLiveScreenActive(false);"));
+        assertTrue(activitySource.contains("pageController = new AccountStatsPageController("));
+        assertTrue(screenSource.contains("if (cache == null || isHostFinishing() || isHostDestroyed() || loading) {"));
+        assertTrue(screenSource.contains("preloadManager.addCacheListener(preloadCacheListener);"));
+        assertTrue(screenSource.contains("preloadManager.removeCacheListener(preloadCacheListener);"));
+        assertTrue(screenSource.contains("preloadManager.setLiveScreenActive(true);"));
+        assertTrue(screenSource.contains("preloadManager.setLiveScreenActive(false);"));
     }
 
     @Test

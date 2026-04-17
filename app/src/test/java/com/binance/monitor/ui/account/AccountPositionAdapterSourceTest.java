@@ -3,6 +3,7 @@
  */
 package com.binance.monitor.ui.account;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -40,6 +41,41 @@ public class AccountPositionAdapterSourceTest {
     }
 
     @Test
+    public void positionAdapterCollapsedSummaryShouldNotIncludeOpenPrice() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java");
+
+        assertFalse(source.contains("String openPriceText ="));
+        assertFalse(source.contains("开仓 %s"));
+        assertTrue(source.contains("String raw = String.format(Locale.getDefault(), \"%s | %s | %s | %s\","));
+    }
+
+    @Test
+    public void positionAdapterShouldForceSingleLineSummaryAtRuntime() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java");
+
+        assertTrue(source.contains("binding.tvSummary.setIncludeFontPadding(false);"));
+        assertTrue(source.contains("binding.tvSummary.setSingleLine(true);"));
+        assertTrue(source.contains("binding.tvSummary.setLines(1);"));
+        assertTrue(source.contains("binding.tvSummary.setMinLines(1);"));
+        assertTrue(source.contains("binding.tvSummary.setMaxLines(1);"));
+        assertTrue(source.contains("binding.tvSummary.setHorizontallyScrolling(true);"));
+        assertTrue(source.contains("binding.tvSummary.setEllipsize(TextUtils.TruncateAt.END);"));
+    }
+
+    @Test
+    public void positionAdapterShouldReadUnifiedRuntimeOnlyForSingleProductRows() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java");
+
+        assertTrue(source.contains("private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();"));
+        assertTrue(source.contains("private final Map<String, Integer> productCounts = new HashMap<>();"));
+        assertTrue(source.contains("productCounts.clear();"));
+        assertTrue(source.contains("productCounts.putAll(buildProductCounts(nextItems));"));
+        assertTrue(source.contains("ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));"));
+        assertTrue(source.contains("productCount == 1 && runtimeSnapshot.getPositionCount() == 1"));
+        assertTrue(source.contains("runtimeSnapshot.getDisplayLabel()"));
+    }
+
+    @Test
     public void pendingOrderAdapterContentSignatureShouldCoverDisplayedPriceFields() throws Exception {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java");
 
@@ -66,6 +102,41 @@ public class AccountPositionAdapterSourceTest {
         assertTrue(source.contains("binding.btnPositionDeleteAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);"));
         assertTrue(source.contains("listener.onModifyRequested(items.get(adapterPosition));"));
         assertTrue(source.contains("listener.onDeleteRequested(items.get(adapterPosition));"));
+    }
+
+    @Test
+    public void pendingOrderCollapsedSummaryShouldUseIntegerPendingPrice() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java");
+
+        assertTrue(source.contains("String pendingPriceText = formatCollapsedPendingPrice(pendingPrice);"));
+        assertTrue(source.contains("private static String formatCollapsedPendingPrice(double price)"));
+        assertTrue(source.contains("String.format(Locale.getDefault(), \"%,.0f\", roundedPrice)"));
+    }
+
+    @Test
+    public void pendingOrderAdapterShouldForceSingleLineSummaryAtRuntime() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java");
+
+        assertTrue(source.contains("binding.tvSummary.setIncludeFontPadding(false);"));
+        assertTrue(source.contains("binding.tvSummary.setSingleLine(true);"));
+        assertTrue(source.contains("binding.tvSummary.setLines(1);"));
+        assertTrue(source.contains("binding.tvSummary.setMinLines(1);"));
+        assertTrue(source.contains("binding.tvSummary.setMaxLines(1);"));
+        assertTrue(source.contains("binding.tvSummary.setHorizontallyScrolling(true);"));
+        assertTrue(source.contains("binding.tvSummary.setEllipsize(TextUtils.TruncateAt.END);"));
+    }
+
+    @Test
+    public void pendingOrderAdapterShouldReadUnifiedRuntimeOnlyForSingleProductRows() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java");
+
+        assertTrue(source.contains("private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();"));
+        assertTrue(source.contains("private final Map<String, Integer> productCounts = new HashMap<>();"));
+        assertTrue(source.contains("productCounts.clear();"));
+        assertTrue(source.contains("productCounts.putAll(buildProductCounts(nextItems));"));
+        assertTrue(source.contains("ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));"));
+        assertTrue(source.contains("productCount == 1 && runtimeSnapshot.getPendingCount() == 1"));
+        assertTrue(source.contains("runtimeSnapshot.getDisplayLabel()"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

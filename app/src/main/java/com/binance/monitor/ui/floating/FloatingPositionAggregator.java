@@ -7,7 +7,11 @@ package com.binance.monitor.ui.floating;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.runtime.state.model.FloatingCardRuntimeModel;
+import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 import com.binance.monitor.util.ProductSymbolMapper;
+
+import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -124,6 +128,45 @@ public class FloatingPositionAggregator {
             result.add(new FloatingSymbolCardData(
                     symbol,
                     label,
+                    totalPnl,
+                    totalLots,
+                    latestPrice,
+                    hasPrice,
+                    volume,
+                    amount,
+                    updatedAt,
+                    hasPosition
+            ));
+        }
+        return result;
+    }
+
+    // 统一运行态存在时，直接按产品快照构造悬浮窗卡片，避免悬浮窗再次自行聚合持仓。
+    public static List<FloatingSymbolCardData> buildSymbolCardsFromRuntime(List<String> visibleSymbols,
+                                                                           List<FloatingCardRuntimeModel> runtimeCards,
+                                                                           Map<String, KlineData> latestKlines,
+                                                                           Map<String, Double> latestPrices) {
+        List<FloatingSymbolCardData> result = new ArrayList<>();
+        if (visibleSymbols == null || visibleSymbols.isEmpty()) {
+            return result;
+        }
+        for (String symbol : visibleSymbols) {
+            ProductRuntimeSnapshot runtimeSnapshot = findRuntimeSnapshotForSymbol(symbol, runtimeCards);
+            double totalPnl = runtimeSnapshot == null ? 0d : runtimeSnapshot.getNetPnl();
+            double totalLots = runtimeSnapshot == null ? 0d : runtimeSnapshot.getSignedLots();
+            boolean hasPosition = runtimeSnapshot != null && runtimeSnapshot.getPositionCount() > 0;
+            KlineData kline = latestKlines == null ? null : latestKlines.get(symbol);
+            double realtimePrice = resolveMarketPrice(symbol, latestPrices);
+            boolean hasPrice = !Double.isNaN(realtimePrice) || kline != null;
+            double latestPrice = !Double.isNaN(realtimePrice)
+                    ? realtimePrice
+                    : (kline == null ? 0d : kline.getClosePrice());
+            double volume = kline == null ? 0d : kline.getVolume();
+            double amount = kline == null ? 0d : kline.getQuoteAssetVolume();
+            long updatedAt = kline == null ? 0L : Math.max(kline.getCloseTime(), kline.getOpenTime());
+            result.add(new FloatingSymbolCardData(
+                    symbol,
+                    resolveRuntimeCardLabel(symbol, runtimeSnapshot),
                     totalPnl,
                     totalLots,
                     latestPrice,
@@ -272,12 +315,59 @@ public class FloatingPositionAggregator {
         return null;
     }
 
-    // 统一悬浮窗产品标题，优先使用已有持仓标签，否则回退资产简称。
+    // 统一悬浮窗产品标题，BTC/XAU 在悬浮窗里收口成更短的资产简称。
     private static String resolveCardLabel(String symbol, FloatingPositionPnlItem item) {
-        if (item != null && item.getLabel() != null && !item.getLabel().trim().isEmpty()) {
-            return item.getLabel().trim();
+        String rawLabel = item != null && item.getLabel() != null && !item.getLabel().trim().isEmpty()
+                ? item.getLabel().trim()
+                : ProductSymbolMapper.toTradeSymbol(symbol);
+        return resolveCardLabel(symbol, rawLabel);
+    }
+
+    private static String resolveCardLabel(String symbol, String rawLabel) {
+        String displayLabel = rawLabel == null || rawLabel.trim().isEmpty()
+                ? ProductSymbolMapper.toTradeSymbol(symbol)
+                : rawLabel.trim();
+        String tradeSymbol = ProductSymbolMapper.toTradeSymbol(displayLabel);
+        if (ProductSymbolMapper.TRADE_SYMBOL_BTC.equals(tradeSymbol)) {
+            return "BTC";
         }
-        return ProductSymbolMapper.toTradeSymbol(symbol);
+        if (ProductSymbolMapper.TRADE_SYMBOL_XAU.equals(tradeSymbol)) {
+            return "XAU";
+        }
+        return displayLabel;
+    }
+
+    private static String resolveRuntimeCardLabel(String symbol,
+                                                  @Nullable ProductRuntimeSnapshot runtimeSnapshot) {
+        if (runtimeSnapshot == null) {
+            return resolveCardLabel(symbol, (String) null);
+        }
+        if (runtimeSnapshot.getCompactDisplayLabel() != null
+                && !runtimeSnapshot.getCompactDisplayLabel().trim().isEmpty()) {
+            return runtimeSnapshot.getCompactDisplayLabel().trim();
+        }
+        if (runtimeSnapshot.getDisplayLabel() != null
+                && !runtimeSnapshot.getDisplayLabel().trim().isEmpty()) {
+            return runtimeSnapshot.getDisplayLabel().trim();
+        }
+        return resolveCardLabel(symbol, (String) null);
+    }
+
+    private static ProductRuntimeSnapshot findRuntimeSnapshotForSymbol(String symbol,
+                                                                       List<FloatingCardRuntimeModel> runtimeCards) {
+        if (runtimeCards == null || runtimeCards.isEmpty()) {
+            return null;
+        }
+        for (FloatingCardRuntimeModel runtimeCard : runtimeCards) {
+            if (runtimeCard == null || runtimeCard.getProductRuntimeSnapshot() == null) {
+                continue;
+            }
+            ProductRuntimeSnapshot snapshot = runtimeCard.getProductRuntimeSnapshot();
+            if (ProductSymbolMapper.isSameProduct(symbol, snapshot.getSymbol())) {
+                return snapshot;
+            }
+        }
+        return null;
     }
 
     // 聚合同一产品下的悬浮窗持仓状态。

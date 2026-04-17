@@ -73,6 +73,23 @@ public class TradeCommandFactoryTest {
     }
 
     @Test
+    public void pendingAddShouldKeepOrderTypeForQuickPendingTrade() {
+        TradeCommand command = TradeCommandFactory.pendingAdd(
+                "acc-1",
+                "BTCUSD",
+                "buy_stop",
+                0.05d,
+                65100d,
+                0d,
+                0d
+        );
+
+        assertEquals("PENDING_ADD", command.getAction());
+        assertEquals("buy_stop", command.getParams().optString("orderType", ""));
+        assertEquals(0.05d, command.getVolume(), 0.0000001d);
+    }
+
+    @Test
     public void describeShouldProduceReadableText() {
         TradeCommand command = TradeCommandFactory.modifyTpSl(
                 "acc-1",

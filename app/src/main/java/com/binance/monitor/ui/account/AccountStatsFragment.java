@@ -19,6 +19,7 @@ import com.binance.monitor.databinding.ContentAccountStatsBinding;
 import com.binance.monitor.ui.host.HostNavigationIntentFactory;
 import com.binance.monitor.ui.host.HostTab;
 import com.binance.monitor.ui.host.HostTabPage;
+import com.binance.monitor.ui.settings.SettingsActivity;
 
 public class AccountStatsFragment extends Fragment implements HostTabPage {
     private AccountStatsPageController pageController;
@@ -176,7 +177,7 @@ public class AccountStatsFragment extends Fragment implements HostTabPage {
 
                     @Override
                     public void openSettings() {
-                        startActivity(HostNavigationIntentFactory.forTab(requireContext(), HostTab.SETTINGS));
+                        startActivity(new Intent(requireContext(), SettingsActivity.class));
                     }
                 });
         screen.attachPageRuntime(pageRuntime);

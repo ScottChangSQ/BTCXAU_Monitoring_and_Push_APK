@@ -10,6 +10,8 @@ import static org.junit.Assert.assertTrue;
 
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.runtime.state.model.FloatingCardRuntimeModel;
+import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 
 import org.junit.Test;
 
@@ -127,14 +129,14 @@ public class FloatingPositionAggregatorTest {
 
         assertEquals(2, cards.size());
         assertEquals(AppConstants.SYMBOL_BTC, cards.get(0).getCode());
-        assertEquals("BTCUSD", cards.get(0).getLabel());
+        assertEquals("BTC", cards.get(0).getLabel());
         assertEquals(true, cards.get(0).hasActivePosition());
         assertEquals(-20d, cards.get(0).getTotalPnl(), 0.0001d);
         assertEquals(-0.05d, cards.get(0).getTotalLots(), 0.0001d);
         assertEquals(123d, cards.get(0).getVolume(), 0.0001d);
         assertEquals(456_000d, cards.get(0).getAmount(), 0.0001d);
         assertEquals(AppConstants.SYMBOL_XAU, cards.get(1).getCode());
-        assertEquals("XAUUSD", cards.get(1).getLabel());
+        assertEquals("XAU", cards.get(1).getLabel());
         assertEquals(true, cards.get(1).hasActivePosition());
         assertEquals(4d, cards.get(1).getTotalPnl(), 0.0001d);
         assertEquals(0.01d, cards.get(1).getTotalLots(), 0.0001d);
@@ -217,6 +219,45 @@ public class FloatingPositionAggregatorTest {
         assertEquals(2, cards.size());
         assertTrue(cards.get(0).hasPosition());
         assertFalse(cards.get(1).hasPosition());
+    }
+
+    @Test
+    public void buildSymbolCardsFromRuntimeShouldReuseUnifiedProductSnapshot() {
+        Map<String, Double> latestPrices = new HashMap<>();
+        latestPrices.put(AppConstants.SYMBOL_BTC, 67_123.4d);
+
+        List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCardsFromRuntime(
+                Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
+                Collections.singletonList(new FloatingCardRuntimeModel(
+                        new ProductRuntimeSnapshot("BTCUSD", 3L, 2, 0, -0.10d, -28d,
+                                "盈亏：-28.00 | 持仓：-0.10手", "挂单：--")
+                )),
+                Collections.emptyMap(),
+                latestPrices
+        );
+
+        assertEquals(2, cards.size());
+        assertEquals("BTC", cards.get(0).getLabel());
+        assertEquals(-28d, cards.get(0).getTotalPnl(), 0.0001d);
+        assertEquals(-0.10d, cards.get(0).getTotalLots(), 0.0001d);
+        assertTrue(cards.get(0).hasPosition());
+        assertFalse(cards.get(1).hasPosition());
+    }
+
+    @Test
+    public void buildSymbolCardsFromRuntimeShouldFallbackToRuntimeDisplayLabelWhenCompactLabelMissing() {
+        List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCardsFromRuntime(
+                Collections.singletonList(AppConstants.SYMBOL_XAU),
+                Collections.singletonList(new FloatingCardRuntimeModel(
+                        new ProductRuntimeSnapshot("XAUUSD", 7L, 1, 0, 0.05d, 0.05d, 18d,
+                                "伦敦金", "", "盈亏：+$18.00 | 持仓：0.05手", "挂单：--")
+                )),
+                Collections.emptyMap(),
+                Collections.emptyMap()
+        );
+
+        assertEquals(1, cards.size());
+        assertEquals("伦敦金", cards.get(0).getLabel());
     }
 
     @Test

@@ -22,7 +22,7 @@ public class AccountStatsBridgeOverviewSourceTest {
         assertTrue(source.contains("public static List<AccountMetric> buildOverviewMetrics("));
         assertTrue(source.contains("AccountOverviewMetricsCalculator.calculate("));
         assertTrue(source.contains("AccountOverviewDailyMetricsCalculator.calculate("));
-        assertTrue(source.contains("AccountOverviewCumulativeMetricsCalculator.calculate("));
+        assertFalse(source.contains("AccountOverviewCumulativeMetricsCalculator.calculate("));
     }
 
     @Test
@@ -42,7 +42,8 @@ public class AccountStatsBridgeOverviewSourceTest {
         assertTrue(source.contains("private static List<AccountMetric> sortOverviewMetricsForDisplay(@Nullable List<AccountMetric> metrics) {"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"总资产\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"净资产\");"));
-        assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"累计盈亏\");\n        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"累计收益率\");\n        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"可用预付款\");"));
+        assertFalse(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"累计盈亏\");"));
+        assertFalse(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"累计收益率\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"可用预付款\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"保证金\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"当日盈亏\");"));

@@ -3,6 +3,7 @@
  */
 package com.binance.monitor.service;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -43,6 +44,15 @@ public class MonitorServiceCoordinatorSourceTest {
                 source.contains("floatingCoordinator.applyPreferences();"));
         assertTrue("悬浮窗刷新节流应委托给协调器",
                 source.contains("floatingCoordinator.requestRefresh("));
+
+        String foregroundSource = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorForegroundNotificationCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorForegroundNotificationCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+        assertTrue("前台通知协调器应在满足启动要求后立即收起常驻通知",
+                foregroundSource.contains("host.suppressServiceNotification();"));
+        assertFalse("常驻通知收起后不应再继续走持续刷新链路",
+                foregroundSource.contains("notificationHelper.updateServiceNotification("));
     }
 
     private static boolean exists(String... candidates) {

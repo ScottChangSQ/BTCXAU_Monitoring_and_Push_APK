@@ -8,12 +8,11 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.model.CandleEntry;
-import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
-import com.binance.monitor.ui.account.AccountOverviewMetricsHelper;
+import com.binance.monitor.runtime.state.model.ChartProductRuntimeModel;
 import com.binance.monitor.util.FormatUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -39,9 +38,18 @@ public class ChartOverlaySnapshotFactory {
                                       @Nullable List<CandleEntry> candles,
                                       @Nullable AccountSnapshot snapshot,
                                       @Nullable AccountStatsPreloadManager.Cache cache) {
-        String signature = buildSignature(selectedSymbol, candles, snapshot, cache);
+        return build(selectedSymbol, candles, snapshot, cache, null);
+    }
+
+    @NonNull
+    public ChartOverlaySnapshot build(@NonNull String selectedSymbol,
+                                      @Nullable List<CandleEntry> candles,
+                                      @Nullable AccountSnapshot snapshot,
+                                      @Nullable AccountStatsPreloadManager.Cache cache,
+                                      @Nullable ChartProductRuntimeModel chartRuntimeModel) {
+        String signature = buildInputSignature(selectedSymbol, candles, snapshot, cache, chartRuntimeModel);
         if (snapshot == null) {
-            return ChartOverlaySnapshot.empty("持仓盈亏: -- | 持仓收益率: --", "更新时间 --", signature);
+            return ChartOverlaySnapshot.empty("盈亏：-- | 持仓：--", "更新时间 --", signature);
         }
         List<TradeRecordItem> trades = safeTrades(snapshot.getTrades());
         List<PositionItem> positions = safePositions(snapshot.getPositions());
@@ -54,7 +62,7 @@ public class ChartOverlaySnapshotFactory {
                 buildPendingAnnotations(selectedSymbol, candles, pendingOrders, trades);
         KlineChartView.AggregateCostAnnotation aggregateCostAnnotation =
                 buildAggregateCostAnnotation(selectedSymbol, positions);
-        String summaryText = buildSummaryText(snapshot, positions, trades);
+        String summaryText = buildSummaryText(selectedSymbol, snapshot, positions, trades, chartRuntimeModel);
         String updatedAtText = buildUpdatedAtText(cache);
         return new ChartOverlaySnapshot(
                 positionAnnotations,
@@ -65,6 +73,45 @@ public class ChartOverlaySnapshotFactory {
                 updatedAtText,
                 signature
         );
+    }
+
+    // 图表叠加层签名只关心“当前产品 + 当前可见窗口”真正会影响标注的内容。
+    @NonNull
+    public String buildInputSignature(@NonNull String selectedSymbol,
+                                      @Nullable List<CandleEntry> candles,
+                                      @Nullable AccountSnapshot snapshot,
+                                      @Nullable AccountStatsPreloadManager.Cache cache) {
+        return buildInputSignature(selectedSymbol, candles, snapshot, cache, null);
+    }
+
+    @NonNull
+    public String buildInputSignature(@NonNull String selectedSymbol,
+                                      @Nullable List<CandleEntry> candles,
+                                      @Nullable AccountSnapshot snapshot,
+                                      @Nullable AccountStatsPreloadManager.Cache cache,
+                                      @Nullable ChartProductRuntimeModel chartRuntimeModel) {
+        StringBuilder builder = new StringBuilder();
+        long windowStart = resolveWindowStart(candles);
+        long windowEnd = resolveWindowEnd(candles);
+        builder.append("symbol=").append(selectedSymbol).append('\n');
+        builder.append("windowStart=").append(windowStart).append('\n');
+        builder.append("windowEnd=").append(windowEnd).append('\n');
+        builder.append("candleCount=").append(candles == null ? 0 : candles.size()).append('\n');
+        builder.append("account=").append(cache == null ? "" : safeText(cache.getAccount())).append('\n');
+        builder.append("server=").append(cache == null ? "" : safeText(cache.getServer())).append('\n');
+        builder.append("historyRevision=").append(cache == null ? "" : safeText(cache.getHistoryRevision())).append('\n');
+        if (chartRuntimeModel != null && chartRuntimeModel.getProductRuntimeSnapshot() != null) {
+            builder.append("productRevision=")
+                    .append(chartRuntimeModel.getProductRuntimeSnapshot().getProductRevision())
+                    .append('\n');
+        }
+        if (snapshot == null) {
+            return sha256(builder.toString());
+        }
+        appendPositionSignature(builder, "positions", selectedSymbol, snapshot.getPositions(), false);
+        appendPositionSignature(builder, "pending", selectedSymbol, snapshot.getPendingOrders(), true);
+        appendTradeSignature(builder, selectedSymbol, snapshot.getTrades(), windowStart, windowEnd);
+        return sha256(builder.toString());
     }
 
     @NonNull
@@ -287,49 +334,49 @@ public class ChartOverlaySnapshotFactory {
     }
 
     @NonNull
-    private String buildSummaryText(@NonNull AccountSnapshot snapshot,
+    private String buildSummaryText(@NonNull String selectedSymbol,
+                                    @NonNull AccountSnapshot snapshot,
                                     @NonNull List<PositionItem> positions,
-                                    @NonNull List<TradeRecordItem> trades) {
-        boolean hasCanonicalOverviewBase = hasOverviewMetric(snapshot.getOverviewMetrics(), "总资产")
-                && hasOverviewMetric(snapshot.getOverviewMetrics(), "净资产");
-        List<AccountMetric> overviewMetrics = AccountOverviewMetricsHelper.buildOverviewMetrics(
-                snapshot.getOverviewMetrics(),
-                positions,
-                trades,
-                snapshot.getCurvePoints(),
-                System.currentTimeMillis(),
-                TimeZone.getDefault()
-        );
-        String positionPnl = findOverviewMetricValue(overviewMetrics, "持仓盈亏");
-        String positionReturn = findOverviewMetricValue(overviewMetrics, "持仓收益率");
-        if (!hasCanonicalOverviewBase || "--".equals(positionPnl) || "--".equals(positionReturn)) {
-            return buildSummaryTextFromPositions(positions);
+                                    @NonNull List<TradeRecordItem> trades,
+                                    @Nullable ChartProductRuntimeModel chartRuntimeModel) {
+        if (chartRuntimeModel != null
+                && chartRuntimeModel.getProductRuntimeSnapshot() != null
+                && chartRuntimeModel.getProductRuntimeSnapshot().getSymbol() != null
+                && !chartRuntimeModel.getProductRuntimeSnapshot().getPositionSummaryText().trim().isEmpty()) {
+            return chartRuntimeModel.getProductRuntimeSnapshot().getPositionSummaryText();
         }
-        return "持仓盈亏: " + positionPnl + " | 持仓收益率: " + positionReturn;
+        return buildSummaryTextFromPositions(selectedSymbol, positions);
     }
 
     @NonNull
-    private String buildSummaryTextFromPositions(@NonNull List<PositionItem> positions) {
+    private String buildSummaryTextFromPositions(@NonNull String selectedSymbol,
+                                                 @NonNull List<PositionItem> positions) {
+        return buildSummaryTextFromPositions(selectedSymbol, positions, null);
+    }
+
+    @NonNull
+    private String buildSummaryTextFromPositions(@NonNull String selectedSymbol,
+                                                 @NonNull List<PositionItem> positions,
+                                                 @Nullable String resolvedPnlText) {
+        double totalLots = 0d;
         double positionPnl = 0d;
-        double positionCost = 0d;
         for (PositionItem item : positions) {
             if (item == null || Math.abs(item.getQuantity()) <= 1e-9) {
                 continue;
             }
-            positionPnl += item.getTotalPnL() + item.getStorageFee();
-            if (item.getCostPrice() > 0d) {
-                positionCost += Math.abs(item.getQuantity()) * item.getCostPrice();
+            if (!matchesSelectedSymbol(selectedSymbol, item.getCode(), item.getProductName())) {
+                continue;
             }
+            totalLots += Math.abs(item.getQuantity());
+            positionPnl += item.getTotalPnL() + item.getStorageFee();
         }
-        double positionReturn = positionCost <= 1e-9 ? 0d : positionPnl / positionCost;
-        return "持仓盈亏: " + FormatUtils.formatSignedMoney(positionPnl)
-                + " | 持仓收益率: "
-                + String.format(Locale.getDefault(), "%+.2f%%", positionReturn * 100d);
-    }
-
-    private boolean hasOverviewMetric(@Nullable List<AccountMetric> metrics,
-                                      @NonNull String targetName) {
-        return !"--".equals(findOverviewMetricValue(metrics, targetName));
+        if (totalLots <= 1e-9) {
+            return "盈亏：-- | 持仓：--";
+        }
+        String pnlText = resolvedPnlText == null || resolvedPnlText.trim().isEmpty()
+                ? FormatUtils.formatSignedMoney(positionPnl)
+                : resolvedPnlText;
+        return "盈亏：" + pnlText + " | 持仓：" + formatQuantity(totalLots) + "手";
     }
 
     @NonNull
@@ -339,44 +386,6 @@ public class ChartOverlaySnapshotFactory {
         }
         long updatedAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
         return updatedAt <= 0L ? "更新时间 --" : "更新时间 " + FormatUtils.formatDateTime(updatedAt);
-    }
-
-    @NonNull
-    private String findOverviewMetricValue(@Nullable List<AccountMetric> metrics,
-                                           @NonNull String targetName) {
-        if (metrics == null || metrics.isEmpty()) {
-            return "--";
-        }
-        for (AccountMetric metric : metrics) {
-            if (metric == null || metric.getName() == null) {
-                continue;
-            }
-            if (!targetName.equalsIgnoreCase(metric.getName().trim())) {
-                continue;
-            }
-            String value = metric.getValue() == null ? "" : metric.getValue().trim();
-            return value.isEmpty() ? "--" : value;
-        }
-        return "--";
-    }
-
-    @NonNull
-    private String buildSignature(@NonNull String selectedSymbol,
-                                  @Nullable List<CandleEntry> candles,
-                                  @Nullable AccountSnapshot snapshot,
-                                  @Nullable AccountStatsPreloadManager.Cache cache) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("symbol=").append(selectedSymbol).append('\n');
-        builder.append("windowStart=").append(resolveWindowStart(candles)).append('\n');
-        builder.append("windowEnd=").append(resolveWindowEnd(candles)).append('\n');
-        builder.append("updatedAt=").append(cache == null ? 0L : cache.getUpdatedAt()).append('\n');
-        builder.append("historyRevision=").append(cache == null ? "" : safeText(cache.getHistoryRevision())).append('\n');
-        if (snapshot != null) {
-            builder.append("positions=").append(snapshot.getPositions() == null ? 0 : snapshot.getPositions().size()).append('\n');
-            builder.append("pending=").append(snapshot.getPendingOrders() == null ? 0 : snapshot.getPendingOrders().size()).append('\n');
-            builder.append("trades=").append(snapshot.getTrades() == null ? 0 : snapshot.getTrades().size()).append('\n');
-        }
-        return sha256(builder.toString());
     }
 
     private long resolvePositionAnchorTime(@NonNull String selectedSymbol,
@@ -501,6 +510,85 @@ public class ChartOverlaySnapshotFactory {
         }
         CandleEntry last = candles.get(candles.size() - 1);
         return last == null ? 0L : last.getCloseTime();
+    }
+
+    private void appendPositionSignature(@NonNull StringBuilder builder,
+                                         @NonNull String label,
+                                         @NonNull String selectedSymbol,
+                                         @Nullable List<PositionItem> positions,
+                                         boolean pending) {
+        List<PositionItem> relevant = safePositions(positions);
+        relevant.removeIf(item -> item == null
+                || (!pending && Math.abs(item.getQuantity()) <= 1e-9)
+                || !matchesSelectedSymbol(selectedSymbol, item.getCode(), item.getProductName()));
+        relevant.sort(Comparator
+                .comparingLong(PositionItem::getPositionTicket)
+                .thenComparingLong(PositionItem::getOrderId)
+                .thenComparingLong(PositionItem::getOpenTime)
+                .thenComparing(item -> safeText(item.getSide())));
+        builder.append(label).append('=').append(relevant.size()).append('\n');
+        for (PositionItem item : relevant) {
+            builder.append(item.getPositionTicket()).append('|')
+                    .append(item.getOrderId()).append('|')
+                    .append(item.getOpenTime()).append('|')
+                    .append(safeText(item.getSide())).append('|')
+                    .append(item.getQuantity()).append('|')
+                    .append(item.getCostPrice()).append('|')
+                    .append(item.getLatestPrice()).append('|')
+                    .append(item.getTotalPnL()).append('|')
+                    .append(item.getPendingLots()).append('|')
+                    .append(item.getPendingCount()).append('|')
+                    .append(item.getPendingPrice()).append('|')
+                    .append(item.getTakeProfit()).append('|')
+                    .append(item.getStopLoss()).append('|')
+                    .append(item.getStorageFee()).append('\n');
+        }
+    }
+
+    private void appendTradeSignature(@NonNull StringBuilder builder,
+                                      @NonNull String selectedSymbol,
+                                      @Nullable List<TradeRecordItem> trades,
+                                      long windowStart,
+                                      long windowEnd) {
+        List<TradeRecordItem> relevant = safeTrades(trades);
+        relevant.removeIf(item -> item == null
+                || !matchesSelectedSymbol(selectedSymbol, item.getCode(), item.getProductName())
+                || !isTradeRelevantToWindow(item, windowStart, windowEnd));
+        relevant.sort(Comparator
+                .comparingLong(TradeRecordItem::getCloseTime)
+                .thenComparingLong(TradeRecordItem::getOpenTime)
+                .thenComparingLong(TradeRecordItem::getDealTicket)
+                .thenComparingLong(TradeRecordItem::getOrderId)
+                .thenComparingLong(TradeRecordItem::getPositionId));
+        builder.append("trades=").append(relevant.size()).append('\n');
+        for (TradeRecordItem item : relevant) {
+            builder.append(item.getDealTicket()).append('|')
+                    .append(item.getOrderId()).append('|')
+                    .append(item.getPositionId()).append('|')
+                    .append(item.getOpenTime()).append('|')
+                    .append(item.getCloseTime()).append('|')
+                    .append(item.getOpenPrice()).append('|')
+                    .append(item.getClosePrice()).append('|')
+                    .append(item.getQuantity()).append('|')
+                    .append(item.getProfit()).append('|')
+                    .append(item.getStorageFee()).append('|')
+                    .append(item.getEntryType()).append('|')
+                    .append(safeText(item.getSide())).append('\n');
+        }
+    }
+
+    private boolean isTradeRelevantToWindow(@NonNull TradeRecordItem trade,
+                                            long windowStart,
+                                            long windowEnd) {
+        if (windowStart <= 0L || windowEnd <= 0L) {
+            return true;
+        }
+        long openTime = trade.getOpenTime();
+        long closeTime = trade.getCloseTime();
+        if (closeTime <= 0L) {
+            closeTime = openTime;
+        }
+        return closeTime >= windowStart && openTime <= windowEnd;
     }
 
     private boolean matchesSelectedSymbol(@NonNull String selectedSymbol,

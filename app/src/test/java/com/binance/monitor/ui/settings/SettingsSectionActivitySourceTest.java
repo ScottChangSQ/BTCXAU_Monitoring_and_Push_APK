@@ -54,29 +54,27 @@ public class SettingsSectionActivitySourceTest {
         assertTrue("页面初始化时应创建缓存清理执行器",
                 source.contains("cacheExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();"));
         assertTrue("点击清理后应切到后台执行器，而不是主线程直接删库删文件",
-                source.contains(".setPositiveButton(\"清理\", (dialog, which) -> clearCacheDataAsync("));
+                source.contains(".setPositiveButton(\"清理\", (dialogInterface, which) -> clearCacheDataAsync("));
         assertTrue("后台清理完成后应切回主线程展示结果",
-                source.contains("runOnUiThread(() -> Toast.makeText("));
+                source.contains("runOnUiThread(() -> Toast.makeText(this,"));
         assertTrue("页面销毁时应关闭缓存清理执行器",
                 source.contains("if (cacheExecutor != null) {")
                         && source.contains("cacheExecutor.shutdownNow();"));
     }
 
     @Test
-    public void tabSectionShouldManageAccountPositionTogetherWithOtherBusinessTabs() throws Exception {
+    public void settingsSectionShouldNotKeepLegacyTabManagement() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
                 "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("设置页应绑定账户持仓 tab 开关监听",
+        assertFalse("设置二级页不应再保留旧 Tab 管理区块",
                 source.contains("binding.switchTabAccountPosition.setOnCheckedChangeListener"));
-        assertTrue("设置页应把账户持仓 tab 开关写回配置",
-                source.contains("viewModel.setTabAccountPositionVisible(isChecked);"));
-        assertTrue("设置页回显时应同步账户持仓 tab 开关状态",
+        assertFalse("设置二级页不应再回显旧 Tab 可见性开关",
                 source.contains("binding.switchTabAccountPosition.setChecked(viewModel.isTabAccountPositionVisible());"));
-        assertTrue("至少保留一个业务页签的校验应覆盖账户持仓",
-                source.contains("boolean accountPositionVisible = \"accountPosition\".equals(tabKey) ? targetVisible : viewModel.isTabAccountPositionVisible();"));
+        assertFalse("设置二级页不应再按旧一级 Tab 做显示控制",
+                source.contains("SettingsActivity.SECTION_TAB"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

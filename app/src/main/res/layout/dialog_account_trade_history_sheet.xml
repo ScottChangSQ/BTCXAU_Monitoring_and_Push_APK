@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="@dimen/card_content_padding">
+
+    <TextView
+        android:id="@+id/tvTradeHistorySheetTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/account_trade_history_sheet_title"
+        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+    <TextView
+        android:id="@+id/tvTradeHistorySheetSummary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_8"
+        android:text="@string/account_trade_history_sheet_empty"
+        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_12"
+        android:orientation="horizontal">
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="@dimen/control_height_md"
+            android:layout_weight="1">
+
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinnerTradeHistoryProduct"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_spinner_filter"
+                android:minWidth="0dp"
+                android:popupBackground="@drawable/bg_spinner_popup"
+                android:spinnerMode="dropdown" />
+
+            <TextView
+                android:id="@+id/tvTradeHistoryProductLabel"
+                style="@style/Widget.BinanceMonitor.Spinner.Label"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clickable="false"
+                android:focusable="false"
+                android:paddingEnd="32dp" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="@dimen/control_height_md"
+            android:layout_marginStart="@dimen/control_group_gap"
+            android:layout_weight="1">
+
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinnerTradeHistorySide"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_spinner_filter"
+                android:minWidth="0dp"
+                android:popupBackground="@drawable/bg_spinner_popup"
+                android:spinnerMode="dropdown" />
+
+            <TextView
+                android:id="@+id/tvTradeHistorySideLabel"
+                style="@style/Widget.BinanceMonitor.Spinner.Label"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clickable="false"
+                android:focusable="false"
+                android:paddingEnd="32dp" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="@dimen/control_height_md"
+            android:layout_marginStart="@dimen/control_group_gap"
+            android:layout_weight="1">
+
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinnerTradeHistorySort"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_spinner_filter"
+                android:minWidth="0dp"
+                android:popupBackground="@drawable/bg_spinner_popup"
+                android:spinnerMode="dropdown" />
+
+            <TextView
+                android:id="@+id/tvTradeHistorySortLabel"
+                style="@style/Widget.BinanceMonitor.Spinner.Label"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clickable="false"
+                android:focusable="false"
+                android:paddingEnd="32dp" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="420dp"
+        android:layout_marginTop="@dimen/space_12">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerTradeHistory"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:nestedScrollingEnabled="true"
+            android:paddingBottom="@dimen/space_8" />
+
+        <TextView
+            android:id="@+id/tvTradeHistoryEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:padding="@dimen/space_16"
+            android:text="@string/account_trade_history_sheet_empty"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
+            android:visibility="gone" />
+    </FrameLayout>
+</LinearLayout>

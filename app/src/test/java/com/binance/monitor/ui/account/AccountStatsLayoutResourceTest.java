@@ -154,6 +154,21 @@ public class AccountStatsLayoutResourceTest {
         assertTrue("共享内容布局必须保留交易记录滚动容器", contentXml.contains("@+id/scrollAccountStats"));
     }
 
+    @Test
+    public void accountStatsSourcesShouldUseSharedContentAwareSegmentSizing() throws Exception {
+        String screenSource = new String(Files.readAllBytes(Paths.get(
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java"
+        )), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+        String bridgeSource = new String(Files.readAllBytes(Paths.get(
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        )), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("正式页应复用共享分段按钮样式", screenSource.contains("UiPaletteManager.styleSegmentedButton("));
+        assertTrue("正式页应按文案宽度分配分段按钮宽度", screenSource.contains("UiPaletteManager.applyContentAwareButtonGroupLayout("));
+        assertTrue("桥接页应复用共享分段按钮样式", bridgeSource.contains("UiPaletteManager.styleSegmentedButton("));
+        assertTrue("桥接页应按文案宽度分配分段按钮宽度", bridgeSource.contains("UiPaletteManager.applyContentAwareButtonGroupLayout("));
+    }
+
     // 按当前工作目录自动解析项目资源文件，兼容根目录和 app 模块目录两种执行入口。
     private static Path resolveProjectFile(String... candidates) {
         Path workingDir = Paths.get(System.getProperty("user.dir"));

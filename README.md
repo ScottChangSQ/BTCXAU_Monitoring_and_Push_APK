@@ -12,14 +12,14 @@
 - 行情监控页里的开盘价、收盘价、成交量、成交额、价格变化、涨跌幅，已经收口为“上一根已闭合 1 分钟 K 线”口径；实时价格和图表尾部仍继续消费实时 patch
 - 账户展示链已经收口为纯消费层：主字段继续只消费 canonical 字段；仅 `当日盈亏/当日收益率`、`累计盈亏/累计收益率` 这类在 APP 侧已有完整真值的展示位，才允许做严格本地覆盖
 - APP 账户运行态现在直接消费 `v2/stream` 下发的 `accountRuntime`，不再定时补拉 `/v2/account/snapshot`
-- 账户页主动刷新和交易提交后的强一致确认，仍统一通过 `AccountStatsPreloadManager` 走一次显式 canonical `/v2/account/snapshot + /v2/account/history` 刷新，不再各自散落直连接口
+- 账户页主动刷新和交易提交后的强一致确认，现已统一通过 `AccountStatsPreloadManager` 走一次原子 `/v2/account/full` 刷新，不再继续用 `/v2/account/snapshot + /v2/account/history` 双接口拼装
 - 账户统计页“账户概览”里的 `当日盈亏`、`当日收益率` 已收口为 APP 本地口径：用当天已平仓成交和今日起点结余直接计算，不再直接透传服务端日指标
 - 账户统计页“账户概览”里的 `累计盈亏`、`累计收益率` 已收口为“只在 APP 侧能证明有完整真值时才覆盖”：优先净值曲线，其次历史成交 + 当前持仓；仅有当前持仓时不再错误闪成持仓口径
 - APP 从后台回前台、或点悬浮窗切回主界面时，主链不再按“重新打开 APP”处理；只有 stream 真失活时才重建连接，正常情况下只切换刷新节奏
 - 图表页从其他 tab 返回前台时，已收口为“恢复消费节奏”而不是“重新启动页面链路”：普通返回不再在 `onResume()` 里重置 V2 transport，也不再由图表页切账户全量快照节奏
 - 图表页当前持仓/挂单叠加层首帧现在会优先恢复最近一次本地已持久化快照，不再因为内存缓存尚未回填就先清空“当前持仓”
 - 图表页切到“行情持仓”时，实时尾部和持仓叠加层现在会等主图首帧真正画出来后再释放，不再抢在首屏前一起压主线程
-- 底部导航现已收口为 4 个一级页：`交易 / 账户 / 分析 / 设置`
+- 主壳常驻底部导航现已收口为 3 个一级页：`交易 / 账户 / 分析`；`设置` 改为独立入口
 - 实时账户总览、当前持仓、挂单现在统一迁到独立的“账户持仓”页；图表页只保留 K 线主体、图上标注、轻量摘要和交易按钮，账户统计页只保留历史分析
 - K 线图当前持仓、挂单、历史成交、异常记录现在共用统一 annotation 明细消费链；当前持仓/挂单线支持查看开仓时间、数量、浮盈亏、止盈止损等详情
 - 图表页 `1w / 1M / 1y` 长周期恢复前台时，若当前窗口仍新鲜则不再立刻重拉；后续自动刷新也不再走快速 fallback，而是对齐到下一次分钟边界
@@ -48,13 +48,18 @@
 
 - Android：Java + XML + ViewBinding + MVVM + Repository + Room
 - 服务端：Python MT5 Gateway + `server_v2.py` + `admin_panel.py`
+- UI 主壳：`MainHostActivity + Trading / Account / Analysis` 3 个常驻 Tab，`SettingsActivity` 作为独立目录入口
 - 网络主链：App 固定访问 `https://tradeapp.ltd`，服务端统一承接 `/v2/*`、`/admin/*`、`/binance-rest/*`、`/binance-ws/*`
-- 账户主链：服务端只认 `MT5 Python Pull` 的快照、历史、曲线；App 只消费 `orders / trades / curvePoints / accountMeta.historyRevision` 等 canonical 字段
+- 账户主链：服务端只认 `MT5 Python Pull` 的快照、历史、曲线；`/v2/account/full` 提供一次性强一致真值，`/v2/stream` 改为“事件驱动发布 + websocket 定时发送 heartbeat”，App 只消费 `orders / trades / curvePoints / accountMeta.historyRevision` 等 canonical 字段
 - 会话主链：服务端负责远程账号登录、切换、退出和激活账号确认；App 只消费 `activeAccount / active` 这组 canonical 字段
 - 产品命名主链：市场侧统一为 `BTCUSDT / XAUUSDT`，交易侧统一为 `BTCUSD / XAUUSD`，跨层映射集中在 `ProductSymbolMapper`
 - 安全链路：远程登录使用 `rsa-oaep+aes-gcm`，服务器端账号档案使用 Windows DPAPI，客户端本地会话摘要使用 Android Keystore
 - 本地账户缓存链：`AccountStorageRepository` 现已按 `account + server` 分区保存历史交易、持仓、挂单和摘要，不再用单槽位覆盖其他账户
 - 运行时边界：`MonitorServiceController` 统一分发服务动作，`ConfigManager` 统一保存监控开关真值，`V2StreamSequenceGuard` 采用“成功应用后再 commit busSeq”
+- 图表性能链：图表叠加层签名现在只按“当前产品 + 当前可见窗口 + 当前产品相关持仓/挂单/历史成交”计算，历史成交锚点改为二分定位，账户运行态刷新不再做高频写库再读回
+- 第二阶段优化链：`UnifiedRuntimeSnapshotStore` 已开始承接产品级统一运行态，产品快照现在除数量/盈亏外也直接提供展示名称、紧凑名称和方向手数；悬浮窗、图表摘要和账户条目开始直接消费这份产品真值
+- 图表分区刷新链：`ChartRefreshBudget + ChartRefreshScheduler` 现在同时承接实时尾部、叠加层摘要和对话区刷新；市场 tick 不再顺手重建整套账户叠加层，同一帧里的重复摘要/叠加层刷新也会折叠成最后一次有效更新
+- 深页兼容链：`AccountStatsBridgeActivity` 现已把真实深页运行路径委托给共享的 `AccountStatsScreen`，`pageRuntime.Host` 里的真实页面兜底分支也已去掉；桥接页继续只保留旧入口和源码测试兼容壳
 
 ## 远程账号会话
 
@@ -75,22 +80,29 @@
 
 ## 已完成功能列表
 
-- 单主壳 `MainHostActivity`、`HostTabNavigator`、`HostTabPage`、4 个一级页 Fragment 骨架和共享 `PageController` 已建立
+- 单主壳 `MainHostActivity`、`HostTabNavigator`、`HostTabPage`、3 个常驻 Tab Fragment 骨架和共享 `PageController` 已建立，`SettingsActivity` 作为独立目录入口保留
 - launcher alias 已切到 `MainHostActivity`，`MainActivity` 已退成桥接到 `MARKET_MONITOR` Tab
-- `MarketChartActivity`、`AccountStatsBridgeActivity` 已收薄成“启动即桥接到主壳并透传 extras”的兼容入口
+- `MarketChartActivity` 已清成纯桥接旧入口；`AccountStatsBridgeActivity` 继续承接旧分析深页兼容链路
 - 悬浮窗点击入口和通知点击入口现在也直接收口到主壳，不再绕旧底部页
 - 已重新按固定路径补主壳真机验收：`MainActivity` 首启直接进入 `MainHostActivity`，后续 `market_chart / account_stats / account_position / settings / account_stats` 均复用同一个主壳实例，不再出现旧底部页 `Displayed`
 - 主壳固定路径 smoke 期间发现并修复了 `SettingsFragment` 的外层 `FrameLayout` 误绑定崩溃
 - `temp/cpu_battery_20260415_single_host_tab_shell` 已保存主壳固定路径验收原始输出与摘要；当前摘要为 `Total frames rendered: 2035`、`Janky frames: 343 (16.86%)`、`P90=19ms`、`P95=27ms`、`P99=150ms`
 - 账户统计页的 `applySnapshot / deferred secondary render / trade stats / trade records` 主链已继续下沉到 `AccountStatsRenderCoordinator`
 - 行情持仓页的 `requestKlines / requestMoreHistory / observeRealtimeDisplayKlines / overlay restore` 主链已继续下沉到 `MarketChartDataCoordinator`
+- `UnifiedRuntimeSnapshotStore` 已补上产品级 selector、展示名称、紧凑名称和方向手数字段，悬浮窗协调器开始优先消费统一产品运行态，图表摘要与账户条目也已开始读取同一份产品口径
+- `AccountStatsBridgeActivity` 已开始真实委托 `AccountStatsScreen` 承接完整分析深页；共享屏幕对象也已接管“结构分析 / 历史成交”目标区块自动滚动，桥接页 `pageRuntime.Host` 里的真实页面兜底分支已进一步删除
+- 图表实时尾部刷新已开始走 `ChartRefreshBudget / ChartRefreshScheduler`，实时价格推进主图时不再每秒顺手触发账户叠加层重建；叠加层和摘要在同一帧内重复触发时也会合并成最后一次有效刷新
+- 账户持仓/挂单条目已开始读取 `UnifiedRuntimeSnapshotStore`；当同产品仅 1 条当前条目时，折叠摘要会优先使用统一运行态里的产品盈亏/手数口径，多条同产品时仍保持单笔条目文案
 - 账户统计页、行情持仓页的 `PageController.Host` 已继续抽成 `AccountStatsPageHostDelegate`、`MarketChartPageHostDelegate`，Activity 与 Fragment 先共用同一层页面宿主适配
 - `AccountStatsScreen`、`MarketChartScreen` 已建立，`AccountStatsFragment`、`MarketChartFragment` 不再保留空宿主回调
-- `AccountPositionActivity`、`SettingsActivity` 已退成桥接；`AccountStatsBridgeActivity`、`MarketChartActivity` 现已收薄成兼容桥接入口，应用内部主链不再依赖它们做底部主导航
+- `AccountPositionActivity` 已退成桥接；`SettingsActivity` 作为独立设置目录页保留；应用内部主链不再依赖旧底部导航 Activity
 - 行情监控、异常提醒、悬浮窗、图表、账户总览、交易历史、收益曲线已经跑在统一的 `/v2/*` 主链上
 - `GatewayV2Client`、`GatewayV2StreamClient`、`GatewayV2SessionClient` 已经成为 App 主链入口
 - 账户页主动刷新与后台预加载已经统一到同一套 `v2` 数据链
 - 账户预加载现在拆成两条明确链路：运行态只应用 stream 已发布快照，历史只在 `historyRevision` 前进时补拉 `v2/account/history`
+- `/v2/account/full` 已接入客户端强一致刷新主链，`GatewayV2Client -> AccountStatsPreloadManager` 不再继续手工 merge snapshot/history 双载荷
+- 服务端账户发布态已从 `v2_sync_state + v2_bus_state` 收口到单一 `account_publish_state`，成交、登录、切账号、退出会显式唤醒发布线程，不再只能被动等下一拍
+- 账户持仓页展示工厂已删掉 `AccountRuntimePayload / AccountRuntimeSnapshotStore` 这层重复中转，只直接消费正式 `AccountStatsPreloadManager.Cache`
 - 账户统计页现在只承接历史成交、曲线和统计分析；页面进入时会读取当前会话缓存并按需补拉历史，不再依赖前台实时推送刷新整页
 - 账户统计页“账户概览”的 `当日盈亏 / 当日收益率` 现在固定按 APP 本地今日口径计算，只覆盖这两个字段，其余 overview 指标仍消费服务端 canonical metrics
 - 账户统计页“账户概览”的 `累计盈亏 / 累计收益率` 现在只会在净值曲线或历史成交已给出完整真值时才本地覆盖；仅有当前持仓时不会再误写成持仓口径
@@ -100,6 +112,9 @@
 - 图表页历史成交标注现在只认显式生命周期字段，不再本地猜品种和补锚点
 - 图表页当前持仓/挂单标注现在会优先消费 `openTime` 并回退到本地持久化快照恢复，重新进入页面时不会先丢线再回补
 - 图表长周期 K 线现在固定只走 Binance REST 原生周期接口，不再按返回条数切换到日线聚合或历史回退链
+- 图表叠加层签名已从 `cache.updatedAt` 解耦；1 分钟和其他周期现在按同一套运行态内容判断是否需要重算，避免每秒无意义整套重建
+- 历史成交锚点已从线性扫描改成二分定位；1 分钟图上的历史交易与当前仓位加载速度已明显收口
+- `AccountStatsPreloadManager` 应用运行态时已去掉“写库后立刻读回再建缓存”的高频 I/O 回环
 - 行情监控主界面的概览指标现在固定消费服务端 `latestClosedCandle`，不再误用当前分钟未闭合 patch
 - 本地仓储已经停止把旧历史、旧曲线、轻量快照拼回当前真值；轻量快照刷新时只保留上一轮全量历史的展示结果，不再把历史区清空
 - 服务端 `v2/account/history` 已经停止旧别名兼容、价格回填和启发式成交归并
@@ -116,7 +131,8 @@
 - 行情持仓页普通 tab 返回现在只恢复页面消费节奏；长周期窗口改为按上游分钟源节奏刷新，不再制造“像重新打开页面”一样的重复拉取体感
 - 底部 tab 切换语义现已统一，设置页切走时不再先销毁再重建
 - 图表页已经收口为轻量页：只保留 K 线、图上标注、顶部轻量状态和 3 个交易按钮；实时账户总览与持仓/挂单正式承接页为“账户持仓”
-- 2026-04-16 UI 第一轮重做已落地：一级结构已收口为 `交易 / 账户 / 分析 / 设置`，默认首页为 `交易`；顶部状态按钮、图表风险条、账户摘要页、分析摘要页和设置诊断入口都已接入
+- 2026-04-16 UI 第一轮重做已落地：一级结构已收口为 `交易 / 账户 / 分析`，默认首页为 `交易`；顶部状态按钮、图表内快捷交易、账户摘要页与分析摘要页都已接入，设置改由独立目录页承接
+- 2026-04-17 架构/性能/配色收口已完成：统一深色终端风格配色已覆盖页面、按钮、弹窗、抽屉、菜单和边框；`ChainLatencyTracer` 与若干前期调试日志已默认关闭或删除；服务端 `MARKET_CANDLES_CACHE_MS` 默认提高到 `2000ms`、最小值改成 `1500ms`
 
 ## 本地运行方法
 

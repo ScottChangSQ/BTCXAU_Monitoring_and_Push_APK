@@ -44,9 +44,9 @@ public class AccountDomainDependencySourceTest {
                 "src/main/java/com/binance/monitor/data/local/db/repository/AccountStorageRepository.java"
         );
         assertTrue("持久层仓库应依赖领域账户模型",
-                accountStorageRepository.contains("import com.binance.monitor.domain.account.model.AccountMetric;"));
+                accountStorageRepository.contains("import com.binance.monitor.domain.account.model.PositionItem;"));
         assertFalse("持久层仓库不应依赖 UI 账户模型",
-                accountStorageRepository.contains("import com.binance.monitor.ui.account.model.AccountMetric;"));
+                accountStorageRepository.contains("import com.binance.monitor.ui.account.model."));
 
         String gatewayV2Client = readUtf8(
                 "app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java",
@@ -70,11 +70,8 @@ public class AccountDomainDependencySourceTest {
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         );
-        assertTrue("服务层应直接依赖领域持仓模型",
-                monitorService.contains("import com.binance.monitor.domain.account.model.PositionItem;")
-                        || monitorService.contains("com.binance.monitor.domain.account.model.PositionItem"));
         assertFalse("服务层不应再引用 UI 持仓模型",
-                monitorService.contains("com.binance.monitor.ui.account.model.PositionItem"));
+                monitorService.contains("com.binance.monitor.ui.account.model."));
     }
 
     @Test

@@ -32,7 +32,6 @@ public class GatewayV2TradeClientSourceTest {
 
         assertTrue(source.contains("public synchronized void resetTransport()"));
         assertTrue(source.contains("OkHttpClient previous = client;"));
-        assertTrue(source.contains("closeClient(previous);"));
-        assertTrue(source.contains("previous.connectionPool().evictAll();"));
+        assertTrue(source.contains("OkHttpTransportResetHelper.closeClientAsync(previous);"));
     }
 }

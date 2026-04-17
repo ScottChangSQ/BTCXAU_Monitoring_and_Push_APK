@@ -3,6 +3,7 @@
  */
 package com.binance.monitor.ui.account;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -29,11 +30,13 @@ public class AccountPositionEnhancementSourceTest {
     }
 
     @Test
-    public void positionAdapterShouldShowOpenPriceOpenTimeAndExpandedBackgroundState() throws Exception {
+    public void positionAdapterShouldHideOpenPriceInCollapsedSummaryButKeepExpandedDetails() throws Exception {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java");
         String layoutSource = readUtf8("src/main/res/layout/item_position.xml");
 
-        assertTrue(source.contains("开仓 %s"));
+        assertFalse(source.contains("String openPriceText ="));
+        assertFalse(source.contains("开仓 %s"));
+        assertTrue(source.contains("String raw = String.format(Locale.getDefault(), \"%s | %s | %s | %s\","));
         assertTrue(source.contains("开仓时间 %s"));
         assertTrue(source.contains("formatOpenTime(item.getOpenTime())"));
         assertTrue(source.contains("R.drawable.bg_position_row_expanded"));
@@ -42,6 +45,11 @@ public class AccountPositionEnhancementSourceTest {
         assertTrue(layoutSource.contains("android:id=\"@+id/btnPositionCloseAction\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/btnPositionModifyAction\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/btnPositionDeleteAction\""));
+        assertTrue(layoutSource.contains("android:id=\"@+id/layoutSummaryColumn\""));
+        assertTrue(layoutSource.contains("android:id=\"@+id/layoutActionButtons\""));
+        assertTrue(layoutSource.contains("android:gravity=\"center_vertical\""));
+        assertTrue(layoutSource.contains("android:maxLines=\"1\""));
+        assertTrue(layoutSource.contains("android:ellipsize=\"end\""));
     }
 
     @Test

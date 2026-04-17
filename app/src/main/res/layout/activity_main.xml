@@ -21,7 +21,7 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_8">
+            android:layout_marginTop="@dimen/page_section_gap">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -117,7 +117,7 @@
                         android:id="@+id/btnOpenMt5"
                         android:layout_width="0dp"
                         android:layout_height="@dimen/control_height_md"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="@dimen/control_group_gap"
                         android:layout_weight="1"
                         android:background="@drawable/bg_inline_button"
                         android:gravity="center"
@@ -222,21 +222,6 @@
 
                         <include
                             android:id="@+id/layoutMetricClose"
-                            layout="@layout/item_metric" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:orientation="horizontal">
-
-                        <include
-                            android:id="@+id/layoutMetricVolume"
-                            layout="@layout/item_metric" />
-
-                        <include
-                            android:id="@+id/layoutMetricAmount"
                             layout="@layout/item_metric" />
                     </LinearLayout>
 
@@ -367,7 +352,7 @@
                         android:id="@+id/tvVolumeUnit"
                         android:layout_width="44dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="@dimen/control_group_gap"
                         android:gravity="start|center_vertical"
                         android:text="@string/unit_btc"
                         android:textColor="@color/text_secondary"
@@ -377,7 +362,7 @@
                         android:id="@+id/switchVolume"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="@dimen/control_group_gap"
                         android:minHeight="0dp"
                         android:text="@string/enable_short"
                         android:textColor="@color/text_primary"
@@ -412,7 +397,7 @@
                         android:id="@+id/tvAmountUnit"
                         android:layout_width="44dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="@dimen/control_group_gap"
                         android:gravity="start|center_vertical"
                         android:text="@string/unit_musd"
                         android:textColor="@color/text_secondary"
@@ -422,7 +407,7 @@
                         android:id="@+id/switchAmount"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="@dimen/control_group_gap"
                         android:minHeight="0dp"
                         android:text="@string/enable_short"
                         android:textColor="@color/text_primary"
@@ -457,7 +442,7 @@
                         android:id="@+id/tvPriceUnit"
                         android:layout_width="44dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="@dimen/control_group_gap"
                         android:gravity="start|center_vertical"
                         android:text="@string/unit_usd"
                         android:textColor="@color/text_secondary"
@@ -467,7 +452,7 @@
                         android:id="@+id/switchPriceChange"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="@dimen/control_group_gap"
                         android:minHeight="0dp"
                         android:text="@string/enable_short"
                         android:textColor="@color/text_primary"
@@ -505,7 +490,7 @@
                             android:id="@+id/radioLogicAnd"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
+                            android:layout_marginStart="@dimen/control_group_gap"
                             android:background="@null"
                             android:button="@null"
                             android:minHeight="0dp"
@@ -692,21 +677,6 @@
             android:textColor="@color/text_secondary"
             android:textSize="10.5sp" />
 
-        <TextView
-            android:id="@+id/tabSettings"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
-            android:gravity="center"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
-            android:text="@string/nav_settings"
-            android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
     </LinearLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView

@@ -10,8 +10,7 @@ import com.binance.monitor.R;
 public enum HostTab {
     TRADING("trading", R.id.nav_market_chart),
     ACCOUNT("account", R.id.nav_account_position),
-    ANALYSIS("analysis", R.id.nav_account_stats),
-    SETTINGS("settings", R.id.nav_settings);
+    ANALYSIS("analysis", R.id.nav_account_stats);
 
     public static final HostTab MARKET_MONITOR = TRADING;
     public static final HostTab MARKET_CHART = TRADING;

@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 import org.w3c.dom.Document;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,18 +18,36 @@ public class MarketChartLayoutResourceTest {
 
     @Test
     public void activityMarketChartShouldKeepOnlyLightweightOverlayViews() throws Exception {
-        Document document = parseXml(resolveProjectFile(
+        Path layoutPath = resolveProjectFile(
                 "app/src/main/res/layout/activity_market_chart.xml",
                 "src/main/res/layout/activity_market_chart.xml"
-        ));
+        );
+        Document document = parseXml(layoutPath);
+        String xml = new String(Files.readAllBytes(layoutPath), StandardCharsets.UTF_8);
 
         assertTrue(hasViewId(document, "klineChartView"));
-        assertTrue(hasViewId(document, "tvChartPositionTitle"));
         assertTrue(hasViewId(document, "tvChartPositionSummary"));
-        assertTrue(hasViewId(document, "tvChartOverlayMeta"));
-        assertTrue(hasViewId(document, "btnChartTradeBuy"));
-        assertTrue(hasViewId(document, "btnChartTradeSell"));
-        assertTrue(hasViewId(document, "btnChartTradePending"));
+        assertTrue(hasViewId(document, "btnChartModeMarket"));
+        assertTrue(hasViewId(document, "btnChartModePending"));
+        assertTrue(hasViewId(document, "layoutChartQuickTradeBar"));
+        assertTrue(hasViewId(document, "btnQuickTradePrimary"));
+        assertTrue(hasViewId(document, "etQuickTradeVolume"));
+        assertTrue(hasViewId(document, "btnQuickTradeSecondary"));
+        assertTrue(hasViewId(document, "btnToggleHistoryTrades"));
+        assertTrue(hasViewId(document, "btnTogglePositionOverlays"));
+        assertTrue(xml.contains("style=\"@style/Widget.BinanceMonitor.Button.SecondaryContentSquare\""));
+        assertTrue(xml.contains("android:id=\"@+id/btnChartModeMarket\""));
+        assertTrue(xml.contains("android:id=\"@+id/btnChartModePending\""));
+        assertTrue(xml.contains("android:id=\"@+id/btnGlobalStatus\""));
+        assertTrue(xml.contains("android:id=\"@+id/btnQuickTradePrimary\""));
+        assertTrue(xml.contains("android:id=\"@+id/btnQuickTradeSecondary\""));
+        assertTrue(xml.contains("android:id=\"@+id/layoutChartQuickTradeBar\""));
+        assertTrue(xml.contains("android:paddingStart=\"3dp\""));
+        assertTrue(xml.contains("android:paddingEnd=\"3dp\""));
+        assertTrue(xml.contains("android:id=\"@+id/btnQuickTradePrimary\""));
+        assertTrue(xml.contains("android:id=\"@+id/btnQuickTradeSecondary\""));
+        assertTrue(xml.contains("android:layout_width=\"0dp\""));
+        assertTrue(xml.contains("android:layout_weight=\"1\""));
 
         assertFalse(hasViewId(document, "recyclerChartOverview"));
         assertFalse(hasViewId(document, "recyclerChartPositionByProduct"));
@@ -37,6 +56,18 @@ public class MarketChartLayoutResourceTest {
         assertFalse(hasViewId(document, "spinnerChartPositionSort"));
         assertFalse(hasViewId(document, "tvChartPositionSortLabel"));
         assertFalse(hasViewId(document, "layoutChartLegacyCompat"));
+        assertFalse(hasViewId(document, "tvChartInfo"));
+        assertFalse(hasViewId(document, "tvChartRefreshCountdown"));
+        assertFalse(hasViewId(document, "cardChartPositions"));
+        assertFalse(hasViewId(document, "cardChartTradeActions"));
+        assertFalse(hasViewId(document, "cardChartRiskBanner"));
+        assertFalse(hasViewId(document, "btnChartRiskAction"));
+        assertFalse(hasViewId(document, "tvChartRiskBanner"));
+        assertFalse(hasViewId(document, "tvChartRiskMeta"));
+        assertFalse(hasViewId(document, "tvChartPositionTitle"));
+        assertFalse(hasViewId(document, "tvChartOverlayMeta"));
+        assertFalse(hasViewId(document, "tvChartAbnormalSummary"));
+        assertTrue(xml.indexOf("@+id/btnToggleHistoryTrades") < xml.indexOf("@+id/btnTogglePositionOverlays"));
     }
 
     private static Path resolveProjectFile(String... candidates) {

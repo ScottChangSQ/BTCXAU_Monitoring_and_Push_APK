@@ -39,7 +39,6 @@ public class GatewayV2SessionClientSourceTest {
         assertTrue(source.contains("client = buildClient();"));
         assertTrue(source.contains("private static OkHttpClient buildClient()"));
         assertTrue(source.contains("OkHttpClient previous = client;"));
-        assertTrue(source.contains("closeClient(previous);"));
-        assertTrue(source.contains("previous.connectionPool().evictAll();"));
+        assertTrue(source.contains("OkHttpTransportResetHelper.closeClientAsync(previous);"));
     }
 }

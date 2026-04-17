@@ -27,13 +27,6 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="点击分类进入下一级页面"
-                android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_16"
                 android:text="常规设置"
                 android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
@@ -154,41 +147,6 @@
                 android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
             <LinearLayout
-                android:id="@+id/itemTab"
-                android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:layout_marginTop="@dimen/space_8"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackgroundBorderless"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/page_horizontal_padding">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Tab 页管理"
-                    android:textColor="@color/text_primary"
-                    android:textSize="15sp" />
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:layout_marginStart="@dimen/space_8"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_chevron_right"
-                    android:tint="@color/text_secondary" />
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginStart="@dimen/page_horizontal_padding"
-                android:background="@color/divider" />
-
-            <LinearLayout
                 android:id="@+id/itemCache"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
@@ -205,41 +163,6 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="缓存管理"
-                    android:textColor="@color/text_primary"
-                    android:textSize="15sp" />
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:layout_marginStart="@dimen/space_8"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_chevron_right"
-                    android:tint="@color/text_secondary" />
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginStart="@dimen/page_horizontal_padding"
-                android:background="@color/divider" />
-
-            <LinearLayout
-                android:id="@+id/itemDiagnostics"
-                android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:layout_marginTop="@dimen/space_2"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackgroundBorderless"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/page_horizontal_padding">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="连接与诊断"
                     android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
@@ -292,94 +215,4 @@
                 android:layout_height="@dimen/space_20" />
         </LinearLayout>
     </ScrollView>
-
-    <LinearLayout
-        android:id="@+id/tabBar"
-        android:layout_width="match_parent"
-        android:layout_height="@dimen/bottom_nav_height"
-        android:background="@android:color/transparent"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:padding="0dp">
-
-        <TextView
-            android:id="@+id/tabMarketMonitor"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
-            android:gravity="center"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
-            android:text="@string/nav_market_monitor"
-            android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
-
-        <TextView
-            android:id="@+id/tabMarketChart"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
-            android:gravity="center"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
-            android:text="@string/nav_market_chart"
-            android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
-
-        <TextView
-            android:id="@+id/tabAccountPosition"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
-            android:gravity="center"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
-            android:text="@string/nav_account_position"
-            android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
-
-        <TextView
-            android:id="@+id/tabAccountStats"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
-            android:gravity="center"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
-            android:text="@string/nav_account_stats"
-            android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
-
-        <TextView
-            android:id="@+id/tabSettings"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
-            android:gravity="center"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
-            android:text="@string/nav_settings"
-            android:textColor="@color/white"
-            android:textSize="10.5sp" />
-    </LinearLayout>
 </LinearLayout>

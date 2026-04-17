@@ -653,7 +653,7 @@ public class FloatingWindowManager {
         context.startActivity(launchIntent);
     }
 
-    // 让产品名保持主文字色，只让盈亏金额部分按涨跌或中性色着色。
+    // 让产品名保持主文字色，并分别给手数与盈亏应用各自的涨跌颜色。
     private CharSequence buildStyledCardTitle(FloatingSymbolCardData card,
                                               UiPaletteManager.Palette palette,
                                               boolean masked) {
@@ -661,9 +661,19 @@ public class FloatingWindowManager {
         double totalPnl = card == null ? 0d : card.getTotalPnl();
         double totalLots = card == null ? 0d : card.getTotalLots();
         boolean hasPosition = card != null && card.hasPosition();
+        String lotsText = hasPosition ? FloatingWindowTextFormatter.formatLotsText(totalLots) : "";
         String pnlText = FloatingWindowTextFormatter.formatPnlAmount(totalPnl, masked);
         String title = FloatingWindowTextFormatter.formatCardTitle(label, totalLots, totalPnl, hasPosition, masked);
         SpannableStringBuilder styled = new SpannableStringBuilder(title);
+        int lotsStart = hasPosition ? title.lastIndexOf(lotsText) : -1;
+        int lotsEnd = lotsStart < 0 ? -1 : Math.min(title.length(), lotsStart + lotsText.length());
+        if (lotsStart < lotsEnd) {
+            int lotsColor = resolvePnlColor(totalLots, true);
+            styled.setSpan(new ForegroundColorSpan(lotsColor),
+                    lotsStart,
+                    lotsEnd,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
         int pnlStart = title.lastIndexOf(pnlText);
         if (pnlStart < 0) {
             pnlStart = Math.min(title.length(), label.length() + 1);

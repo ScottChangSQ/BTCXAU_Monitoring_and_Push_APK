@@ -108,7 +108,8 @@ TRADE_REQUEST_STORE_MAX_ENTRIES = max(100, int(os.getenv("TRADE_REQUEST_STORE_MA
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
 HEALTH_CACHE_MS = max(1000, int(os.getenv("HEALTH_CACHE_MS", "5000")))
-MARKET_CANDLES_CACHE_MS = max(1000, int(os.getenv("MARKET_CANDLES_CACHE_MS", "1000")))
+# 行情 stream 默认每秒推送一次；缓存寿命必须略长于推送节奏，否则每轮都会重新打上游。
+MARKET_CANDLES_CACHE_MS = max(1500, int(os.getenv("MARKET_CANDLES_CACHE_MS", "2000")))
 MARKET_CANDLES_CACHE_MAX_ENTRIES = max(8, int(os.getenv("MARKET_CANDLES_CACHE_MAX_ENTRIES", "120")))
 MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT = max(100, min(1000, int(os.getenv("MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT", "500"))))
 MARKET_CANDLES_UPSTREAM_RETRY = max(0, int(os.getenv("MARKET_CANDLES_UPSTREAM_RETRY", "1")))
@@ -141,8 +142,20 @@ ea_snapshot_change_digest = ""
 mt5_last_connected_path = ""
 snapshot_build_cache: Dict[str, Dict[str, Any]] = {}
 snapshot_sync_cache: Dict[str, Dict[str, Any]] = {}
-v2_sync_state: Dict[str, Any] = {}
-v2_bus_state: Dict[str, Any] = {
+# 账户运行态真值缓存：只承载 MT5 拉取快照及其投影缓存。
+account_runtime_cache: Dict[str, Any] = {
+    "snapshotBuildCache": snapshot_build_cache,
+    "snapshotSyncCache": snapshot_sync_cache,
+}
+# 账户发布态：统一承载“上次发布给客户端的运行态”和 bus 序号，避免再拆成两套并行状态。
+account_publish_state: Dict[str, Any] = {
+    "runtimeSeq": 0,
+    "runtimeToken": "",
+    "runtimeDigest": "",
+    "runtimeSnapshot": None,
+    "previousRuntimeSeq": 0,
+    "previousRuntimeToken": "",
+    "previousRuntimeSnapshot": None,
     "busSeq": 0,
     "publishedAt": 0,
     "revisions": {
@@ -152,13 +165,18 @@ v2_bus_state: Dict[str, Any] = {
         "abnormalRevision": "",
     },
     "event": None,
-    "runtimeSnapshot": None,
     "abnormalSnapshot": None,
+    "pendingEventType": "",
+    "pendingReasons": [],
 }
+# 兼容旧测试/旧引用：发布态现已统一并入 account_publish_state。
+v2_sync_state: Dict[str, Any] = {}
+v2_bus_state = account_publish_state
 v2_bus_producer_lock = Lock()
 v2_bus_producer_started = False
 v2_bus_producer_thread: Optional[Thread] = None
 v2_bus_stop_event = Event()
+v2_bus_wake_event = Event()
 market_candles_cache: Dict[str, Dict[str, Any]] = {}
 health_status_cache: Dict[str, Any] = {}
 abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
@@ -247,18 +265,95 @@ def _clone_json_value(value: Any) -> Any:
     return json.loads(json.dumps(value, ensure_ascii=False))
 
 
-def _read_v2_bus_state() -> Dict[str, Any]:
+def _reset_account_publish_state_locked() -> None:
+    """重置账户发布态，保证 bus 与运行态序号一起清零。"""
+    account_publish_state.clear()
+    account_publish_state.update({
+        "runtimeSeq": 0,
+        "runtimeToken": "",
+        "runtimeDigest": "",
+        "runtimeSnapshot": None,
+        "previousRuntimeSeq": 0,
+        "previousRuntimeToken": "",
+        "previousRuntimeSnapshot": None,
+        "busSeq": 0,
+        "publishedAt": 0,
+        "revisions": {
+            "marketRevision": "",
+            "accountRuntimeRevision": "",
+            "accountHistoryRevision": "",
+            "abnormalRevision": "",
+        },
+        "event": None,
+        "abnormalSnapshot": None,
+        "pendingEventType": "",
+        "pendingReasons": [],
+    })
+    _mirror_legacy_v2_bus_state_locked()
+
+
+def _read_account_publish_state() -> Dict[str, Any]:
     with snapshot_cache_lock:
-        state = v2_bus_state or {}
+        state = account_publish_state or {}
         event = state.get("event")
         return {
+            "runtimeSeq": int(state.get("runtimeSeq", 0) or 0),
+            "runtimeToken": str(state.get("runtimeToken", "")),
+            "runtimeDigest": str(state.get("runtimeDigest", "")),
+            "runtimeSnapshot": _clone_json_value(state.get("runtimeSnapshot")) if state.get("runtimeSnapshot") is not None else None,
+            "previousRuntimeSeq": int(state.get("previousRuntimeSeq", 0) or 0),
+            "previousRuntimeToken": str(state.get("previousRuntimeToken", "")),
+            "previousRuntimeSnapshot": _clone_json_value(state.get("previousRuntimeSnapshot")) if state.get("previousRuntimeSnapshot") is not None else None,
             "busSeq": int(state.get("busSeq", 0) or 0),
             "publishedAt": int(state.get("publishedAt", 0) or 0),
             "revisions": _clone_json_value(state.get("revisions") or {}),
             "event": _clone_json_value(event) if event is not None else None,
-            "runtimeSnapshot": _clone_json_value(state.get("runtimeSnapshot")) if state.get("runtimeSnapshot") is not None else None,
             "abnormalSnapshot": _clone_json_value(state.get("abnormalSnapshot")) if state.get("abnormalSnapshot") is not None else None,
+            "pendingEventType": str(state.get("pendingEventType", "") or ""),
+            "pendingReasons": [str(item) for item in (state.get("pendingReasons") or [])],
         }
+
+
+def _read_v2_bus_state() -> Dict[str, Any]:
+    """兼容旧调用名，统一读取新的账户发布态。"""
+    legacy_state = v2_bus_state if isinstance(v2_bus_state, dict) else {}
+    if legacy_state is account_publish_state or not legacy_state:
+        state = _read_account_publish_state()
+    else:
+        event = legacy_state.get("event")
+        state = {
+            "busSeq": int(legacy_state.get("busSeq", 0) or 0),
+            "publishedAt": int(legacy_state.get("publishedAt", 0) or 0),
+            "revisions": _clone_json_value(legacy_state.get("revisions") or {}),
+            "event": _clone_json_value(event) if event is not None else None,
+            "runtimeSnapshot": _clone_json_value(legacy_state.get("runtimeSnapshot")) if legacy_state.get("runtimeSnapshot") is not None else None,
+            "abnormalSnapshot": _clone_json_value(legacy_state.get("abnormalSnapshot")) if legacy_state.get("abnormalSnapshot") is not None else None,
+        }
+    return {
+        "busSeq": int(state.get("busSeq", 0) or 0),
+        "publishedAt": int(state.get("publishedAt", 0) or 0),
+        "revisions": _clone_json_value(state.get("revisions") or {}),
+        "event": _clone_json_value(state.get("event")) if state.get("event") is not None else None,
+        "runtimeSnapshot": _clone_json_value(state.get("runtimeSnapshot")) if state.get("runtimeSnapshot") is not None else None,
+        "abnormalSnapshot": _clone_json_value(state.get("abnormalSnapshot")) if state.get("abnormalSnapshot") is not None else None,
+    }
+
+
+def _mirror_legacy_v2_bus_state_locked() -> None:
+    """把新发布态镜像回旧变量，保证过渡期内旧测试仍能读到最新状态。"""
+    global v2_bus_state
+    if not isinstance(v2_bus_state, dict) or v2_bus_state is account_publish_state:
+        v2_bus_state = account_publish_state
+        return
+    v2_bus_state.clear()
+    v2_bus_state.update({
+        "busSeq": int(account_publish_state.get("busSeq", 0) or 0),
+        "publishedAt": int(account_publish_state.get("publishedAt", 0) or 0),
+        "revisions": _clone_json_value(account_publish_state.get("revisions") or {}),
+        "event": _clone_json_value(account_publish_state.get("event")) if account_publish_state.get("event") is not None else None,
+        "runtimeSnapshot": _clone_json_value(account_publish_state.get("runtimeSnapshot")) if account_publish_state.get("runtimeSnapshot") is not None else None,
+        "abnormalSnapshot": _clone_json_value(account_publish_state.get("abnormalSnapshot")) if account_publish_state.get("abnormalSnapshot") is not None else None,
+    })
 
 
 def _publish_v2_bus_event(event_type: str,
@@ -268,7 +363,7 @@ def _publish_v2_bus_event(event_type: str,
                           runtime_snapshot: Optional[Dict[str, Any]] = None,
                           abnormal_snapshot: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     with snapshot_cache_lock:
-        bus_seq = int(v2_bus_state.get("busSeq", 0) or 0) + 1
+        bus_seq = int(account_publish_state.get("busSeq", 0) or 0) + 1
         event = {
             "type": str(event_type or "syncEvent"),
             "busSeq": bus_seq,
@@ -276,15 +371,33 @@ def _publish_v2_bus_event(event_type: str,
             "revisions": _clone_json_value(revisions or {}),
             "changes": _clone_json_value(changes or {}),
         }
-        v2_bus_state.update({
+        account_publish_state.update({
             "busSeq": bus_seq,
             "publishedAt": int(published_at or 0),
             "revisions": _clone_json_value(revisions or {}),
             "event": _clone_json_value(event),
-            "runtimeSnapshot": _clone_json_value(runtime_snapshot) if runtime_snapshot is not None else None,
+            "runtimeSnapshot": _clone_json_value(runtime_snapshot) if runtime_snapshot is not None else account_publish_state.get("runtimeSnapshot"),
             "abnormalSnapshot": _clone_json_value(abnormal_snapshot) if abnormal_snapshot is not None else None,
+            "pendingEventType": "",
+            "pendingReasons": [],
         })
+        _mirror_legacy_v2_bus_state_locked()
         return _clone_json_value(event)
+
+
+def _request_v2_publish(reason: str, event_type: str = "syncEvent") -> None:
+    """标记需要尽快发布，让登录/切账号/成交等事件不必被动等待下一拍。"""
+    reason_text = str(reason or "").strip()
+    event_type_text = str(event_type or "syncEvent").strip() or "syncEvent"
+    with snapshot_cache_lock:
+        pending_reasons = [str(item) for item in (account_publish_state.get("pendingReasons") or [])]
+        if reason_text and reason_text not in pending_reasons:
+            pending_reasons.append(reason_text)
+        account_publish_state["pendingReasons"] = pending_reasons
+        current_event_type = str(account_publish_state.get("pendingEventType", "") or "")
+        if event_type_text == "syncBootstrap" or not current_event_type:
+            account_publish_state["pendingEventType"] = event_type_text
+    v2_bus_wake_event.set()
 
 
 def _read_abnormal_sync_state_for_bus() -> Dict[str, Any]:
@@ -771,53 +884,53 @@ def _build_v2_sync_delta_events(previous_snapshot: Dict[str, Any], current_snaps
     return market_delta, account_delta
 
 
-# 提交 v2 同步状态，保留“当前 + 上一版本”用于单步增量计算。
-def _commit_v2_sync_state(runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
-    with snapshot_cache_lock:
-        if not v2_sync_state:
-            seq = 1
-            token = _build_v2_state_token(seq, str(runtime_snapshot.get("digest", "")))
-            v2_sync_state.update({
-                "seq": seq,
-                "token": token,
-                "digest": runtime_snapshot.get("digest"),
-                "snapshot": runtime_snapshot,
-                "previousSeq": 0,
-                "previousToken": "",
-                "previousSnapshot": None,
-            })
-        elif str(v2_sync_state.get("digest", "")) == str(runtime_snapshot.get("digest", "")):
-            v2_sync_state["snapshot"] = runtime_snapshot
-        else:
-            previous_seq = int(v2_sync_state.get("seq", 0) or 0)
-            previous_token = str(v2_sync_state.get("token", ""))
-            previous_snapshot = v2_sync_state.get("snapshot")
-            seq = previous_seq + 1
-            token = _build_v2_state_token(seq, str(runtime_snapshot.get("digest", "")))
-            v2_sync_state.update({
-                "seq": seq,
-                "token": token,
-                "digest": runtime_snapshot.get("digest"),
-                "snapshot": runtime_snapshot,
-                "previousSeq": previous_seq,
-                "previousToken": previous_token,
-                "previousSnapshot": previous_snapshot,
-            })
+# 提交账户运行态发布序号，保留“当前 + 上一版本”用于单步增量计算。
+def _commit_account_publish_runtime_locked(runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    runtime_digest = str(runtime_snapshot.get("digest", ""))
+    current_digest = str(account_publish_state.get("runtimeDigest", "") or "")
+    if not current_digest:
+        seq = 1
+        token = _build_v2_state_token(seq, runtime_digest)
+        account_publish_state.update({
+            "runtimeSeq": seq,
+            "runtimeToken": token,
+            "runtimeDigest": runtime_digest,
+            "runtimeSnapshot": runtime_snapshot,
+            "previousRuntimeSeq": 0,
+            "previousRuntimeToken": "",
+            "previousRuntimeSnapshot": None,
+        })
+    elif current_digest == runtime_digest:
+        account_publish_state["runtimeSnapshot"] = runtime_snapshot
+    else:
+        previous_seq = int(account_publish_state.get("runtimeSeq", 0) or 0)
+        previous_token = str(account_publish_state.get("runtimeToken", "") or "")
+        previous_snapshot = account_publish_state.get("runtimeSnapshot")
+        seq = previous_seq + 1
+        token = _build_v2_state_token(seq, runtime_digest)
+        account_publish_state.update({
+            "runtimeSeq": seq,
+            "runtimeToken": token,
+            "runtimeDigest": runtime_digest,
+            "runtimeSnapshot": runtime_snapshot,
+            "previousRuntimeSeq": previous_seq,
+            "previousRuntimeToken": previous_token,
+            "previousRuntimeSnapshot": previous_snapshot,
+        })
 
-        return {
-            "seq": int(v2_sync_state.get("seq", 1) or 1),
-            "token": str(v2_sync_state.get("token", "")),
-            "snapshot": v2_sync_state.get("snapshot") or runtime_snapshot,
-            "previousSeq": int(v2_sync_state.get("previousSeq", 0) or 0),
-            "previousToken": str(v2_sync_state.get("previousToken", "")),
-            "previousSnapshot": v2_sync_state.get("previousSnapshot"),
-        }
+    return {
+        "seq": int(account_publish_state.get("runtimeSeq", 1) or 1),
+        "token": str(account_publish_state.get("runtimeToken", "")),
+        "snapshot": account_publish_state.get("runtimeSnapshot") or runtime_snapshot,
+        "previousSeq": int(account_publish_state.get("previousRuntimeSeq", 0) or 0),
+        "previousToken": str(account_publish_state.get("previousRuntimeToken", "")),
+        "previousSnapshot": account_publish_state.get("previousRuntimeSnapshot"),
+    }
 
 
 def _v2_bus_publish_current_state() -> None:
     now_ms = _now_ms()
     runtime_snapshot = _build_v2_sync_runtime_snapshot(now_ms)
-    _commit_v2_sync_state(runtime_snapshot)
     _refresh_abnormal_state()
     abnormal_state = _read_abnormal_sync_state_for_bus()
     current_revisions = {
@@ -826,18 +939,21 @@ def _v2_bus_publish_current_state() -> None:
         "accountHistoryRevision": str(runtime_snapshot.get("historyRevision", "")),
         "abnormalRevision": str(abnormal_state.get("seq", "")),
     }
-    previous_bus_state = _read_v2_bus_state()
+    previous_bus_state = _read_account_publish_state()
     previous_revisions = dict(previous_bus_state.get("revisions") or {})
     bootstrap = int(previous_bus_state.get("busSeq", 0) or 0) <= 0
+    pending_event_type = str(previous_bus_state.get("pendingEventType", "") or "")
     changes = _build_v2_bus_changes(
         runtime_snapshot=runtime_snapshot,
         abnormal_state=abnormal_state,
         previous_revisions=previous_revisions,
         bootstrap=bootstrap,
     )
-    if not bootstrap and not changes:
+    if not bootstrap and not changes and not pending_event_type:
         return
-    event_type = "syncBootstrap" if bootstrap else "syncEvent"
+    event_type = "syncBootstrap" if bootstrap else (pending_event_type or "syncEvent")
+    with snapshot_cache_lock:
+        _commit_account_publish_runtime_locked(runtime_snapshot)
     _publish_v2_bus_event(
         event_type=event_type,
         changes=changes,
@@ -851,16 +967,20 @@ def _v2_bus_publish_current_state() -> None:
 def _v2_bus_producer_loop() -> None:
     interval_sec = max(0.2, float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0)
     while not v2_bus_stop_event.is_set():
+        v2_bus_wake_event.wait(interval_sec)
+        v2_bus_wake_event.clear()
+        if v2_bus_stop_event.is_set():
+            break
         try:
             _v2_bus_publish_current_state()
         except Exception:
             pass
-        v2_bus_stop_event.wait(interval_sec)
 
 
 def _start_v2_bus_producer_locked() -> None:
     global v2_bus_producer_started, v2_bus_producer_thread
     v2_bus_stop_event.clear()
+    v2_bus_wake_event.clear()
     thread = Thread(target=_v2_bus_producer_loop, name="v2-bus-producer", daemon=True)
     thread.start()
     v2_bus_producer_thread = thread
@@ -883,6 +1003,7 @@ def _stop_v2_bus_producer() -> None:
             v2_bus_producer_started = False
             return
         v2_bus_stop_event.set()
+        v2_bus_wake_event.set()
         if thread.is_alive():
             thread.join(timeout=1.0)
         v2_bus_producer_thread = None
@@ -2067,6 +2188,7 @@ def _invalidate_account_runtime_cache_after_trade_commit() -> None:
 def _publish_account_trade_commit_sync_state() -> None:
     """成交成功后立即发布最新 bus 状态，推动客户端尽快看到新的 historyRevision。"""
     try:
+        _request_v2_publish("trade_commit")
         _v2_bus_publish_current_state()
     except Exception as exc:
         sys.stderr.write(f"[v2_trade_submit] publish current state failed: {exc}\n")
@@ -2085,6 +2207,7 @@ def _build_session_summary() -> Dict[str, Any]:
 def _on_session_changed(action: str, profile: Optional[Dict[str, Any]]) -> None:
     """会话变化回调，统一清理缓存并维护运行态。"""
     _clear_session_related_runtime_state()
+    _request_v2_publish(str(action or "session_changed"))
     if str(action or "") == "logout":
         _clear_runtime_session_credentials()
 
@@ -5350,6 +5473,44 @@ def v2_account_history(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.get("/v2/account/full")
+def v2_account_full():
+    try:
+        now_ms = _now_ms()
+        session_status = session_manager.build_status_payload()
+        active_account = (session_status or {}).get("activeAccount") or None
+        if active_account:
+            snapshot = _build_snapshot_with_cache("all")
+        else:
+            snapshot = _build_logged_out_account_snapshot()
+        account_section = _build_v2_account_section_from_snapshot(snapshot)
+        full_model = v2_account.build_account_full_model(
+            {
+                "accountMeta": {
+                    **(snapshot.get("accountMeta") or {}),
+                    "historyRevision": (account_section.get("accountMeta") or {}).get("historyRevision", ""),
+                },
+                "overviewMetrics": [dict(item) for item in (snapshot.get("overviewMetrics") or [])],
+                "curveIndicators": [dict(item) for item in (snapshot.get("curveIndicators") or [])],
+                "statsMetrics": [dict(item) for item in (snapshot.get("statsMetrics") or [])],
+                "positions": account_section.get("positions") or [],
+                "orders": account_section.get("orders") or [],
+                "trades": snapshot.get("trades") or [],
+                "curvePoints": snapshot.get("curvePoints") or [],
+            }
+        )
+        return v2_account.build_account_full_response(
+            full_model,
+            account_meta={
+                **(account_section.get("accountMeta") or {}),
+                "serverTime": now_ms,
+                "syncToken": _build_sync_token(now_ms, "account-full"),
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/v2/trade/check")
 def v2_trade_check(payload: Dict[str, Any]):
     try:
@@ -5700,8 +5861,9 @@ def admin_cache_clear():
             "snapshotBuildCache": len(snapshot_build_cache),
             "snapshotSyncCache": len(snapshot_sync_cache),
             "marketCandlesCache": len(market_candles_cache),
-            "v2SyncState": 1 if v2_sync_state else 0,
-            "v2BusState": 1 if v2_bus_state.get("busSeq", 0) else 0,
+            "accountPublishState": 1 if account_publish_state.get("runtimeSeq", 0) or account_publish_state.get("busSeq", 0) else 0,
+            "v2SyncState": 1 if account_publish_state.get("runtimeSeq", 0) else 0,
+            "v2BusState": 1 if account_publish_state.get("busSeq", 0) else 0,
             "abnormalSyncState": 1 if abnormal_sync_state else 0,
             "tradeRequestStore": len(trade_request_store),
         }
@@ -5709,20 +5871,7 @@ def admin_cache_clear():
         snapshot_sync_cache.clear()
         market_candles_cache.clear()
         v2_sync_state.clear()
-        v2_bus_state.clear()
-        v2_bus_state.update({
-            "busSeq": 0,
-            "publishedAt": 0,
-            "revisions": {
-                "marketRevision": "",
-                "accountRuntimeRevision": "",
-                "accountHistoryRevision": "",
-                "abnormalRevision": "",
-            },
-            "event": None,
-            "runtimeSnapshot": None,
-            "abnormalSnapshot": None,
-        })
+        _reset_account_publish_state_locked()
         abnormal_sync_state.clear()
         trade_request_store.clear()
     return {"ok": True, "cleared": cleared}

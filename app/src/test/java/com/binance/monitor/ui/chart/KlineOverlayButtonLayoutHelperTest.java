@@ -7,12 +7,12 @@ import org.junit.Test;
 public class KlineOverlayButtonLayoutHelperTest {
 
     @Test
-    public void resolveBottomLeftStackedButtonPositionShouldPinHistoryTradeToPricePaneBottomLeft() {
+    public void resolveBottomLeftInlineButtonPositionShouldPinHistoryTradeToPricePaneBottomLeft() {
         KlineOverlayButtonLayoutHelper.Bounds priceBounds =
                 new KlineOverlayButtonLayoutHelper.Bounds(20, 10, 220, 150);
 
         KlineOverlayButtonLayoutHelper.Position position =
-                KlineOverlayButtonLayoutHelper.resolveBottomLeftStackedButtonPosition(
+                KlineOverlayButtonLayoutHelper.resolveBottomLeftInlineButtonPosition(
                         priceBounds,
                         60,
                         20,
@@ -26,21 +26,21 @@ public class KlineOverlayButtonLayoutHelperTest {
     }
 
     @Test
-    public void resolveBottomLeftStackedButtonPositionShouldPlacePositionToggleAboveHistoryTrade() {
+    public void resolveBottomLeftInlineButtonPositionShouldPlacePositionToggleOnSameRowAtHistoryTradeRightSide() {
         KlineOverlayButtonLayoutHelper.Bounds priceBounds =
                 new KlineOverlayButtonLayoutHelper.Bounds(20, 10, 220, 150);
 
         KlineOverlayButtonLayoutHelper.Position position =
-                KlineOverlayButtonLayoutHelper.resolveBottomLeftStackedButtonPosition(
+                KlineOverlayButtonLayoutHelper.resolveBottomLeftInlineButtonPosition(
                         priceBounds,
                         60,
                         20,
                         2,
-                        1,
+                        60,
                         4
                 );
 
-        assertEquals(22, position.left);
-        assertEquals(104, position.top);
+        assertEquals(86, position.left);
+        assertEquals(128, position.top);
     }
 }

@@ -12,7 +12,6 @@ import androidx.fragment.app.FragmentTransaction;
 import com.binance.monitor.ui.account.AccountPositionFragment;
 import com.binance.monitor.ui.account.AccountStatsFragment;
 import com.binance.monitor.ui.chart.MarketChartFragment;
-import com.binance.monitor.ui.settings.SettingsFragment;
 
 public final class HostTabNavigator {
 
@@ -55,10 +54,8 @@ public final class HostTabNavigator {
             case ACCOUNT:
                 return new AccountPositionFragment();
             case ANALYSIS:
-                return new AccountStatsFragment();
-            case SETTINGS:
             default:
-                return new SettingsFragment();
+                return new AccountStatsFragment();
         }
     }
 

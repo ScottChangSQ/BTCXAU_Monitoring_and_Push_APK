@@ -212,6 +212,50 @@ def build_account_history_model(raw_history: Mapping[str, Any]) -> Dict[str, Any
     }
 
 
+def build_account_full_model(raw_full: Mapping[str, Any]) -> Dict[str, Any]:
+    """把完整账户快照收口成单次强一致刷新可直接消费的完整模型。"""
+    snapshot_model = build_account_snapshot_model(
+        {
+            "metrics": {
+                "balance": ((raw_full.get("accountMeta") or {}) or {}).get("balance"),
+                "equity": ((raw_full.get("accountMeta") or {}) or {}).get("equity"),
+                "margin": ((raw_full.get("accountMeta") or {}) or {}).get("margin"),
+                "freeMargin": ((raw_full.get("accountMeta") or {}) or {}).get("freeMargin"),
+                "marginLevel": ((raw_full.get("accountMeta") or {}) or {}).get("marginLevel"),
+                "profit": ((raw_full.get("accountMeta") or {}) or {}).get("profit"),
+            },
+            "positions": raw_full.get("positions") or [],
+            "orders": raw_full.get("orders") or [],
+        }
+    )
+    history_model = build_account_history_model(
+        {
+            "trades": raw_full.get("trades") or [],
+            "orders": raw_full.get("orders") or [],
+            "curvePoints": raw_full.get("curvePoints") or [],
+        }
+    )
+    account_meta = (raw_full.get("accountMeta") or {}) or {}
+    return {
+        "account": {
+            "balance": snapshot_model.get("balance"),
+            "equity": snapshot_model.get("equity"),
+            "margin": snapshot_model.get("margin"),
+            "freeMargin": snapshot_model.get("freeMargin"),
+            "marginLevel": snapshot_model.get("marginLevel"),
+            "profit": snapshot_model.get("profit"),
+            "leverage": _to_int(account_meta.get("leverage")),
+        },
+        "positions": snapshot_model.get("positions") or [],
+        "orders": snapshot_model.get("orders") or [],
+        "trades": history_model.get("trades") or [],
+        "curvePoints": history_model.get("curvePoints") or [],
+        "overviewMetrics": [dict(item) for item in (raw_full.get("overviewMetrics") or [])],
+        "curveIndicators": [dict(item) for item in (raw_full.get("curveIndicators") or [])],
+        "statsMetrics": [dict(item) for item in (raw_full.get("statsMetrics") or [])],
+    }
+
+
 def build_account_snapshot_response(
     snapshot_model: Mapping[str, Any],
     account_meta: Optional[Mapping[str, Any]] = None,
@@ -249,6 +293,28 @@ def build_account_history_response(
 
     response: Dict[str, Any] = {"accountMeta": dict(meta)}
     response.update({k: v for k, v in history_model.items()})
+    if is_delta:
+        response["isDelta"] = True
+    if unchanged:
+        response["unchanged"] = True
+    return response
+
+
+def build_account_full_response(
+    full_model: Mapping[str, Any],
+    account_meta: Optional[Mapping[str, Any]] = None,
+    sync_seq: Optional[int] = None,
+    *,
+    is_delta: bool = False,
+    unchanged: bool = False,
+) -> Dict[str, Any]:
+    """为 /v2/account/full 构造响应体，保持单次强一致刷新结构稳定。"""
+    meta: MutableMapping[str, Any] = dict(account_meta or {})
+    if sync_seq is not None:
+        meta["syncSeq"] = sync_seq
+
+    response: Dict[str, Any] = {"accountMeta": dict(meta)}
+    response.update({k: v for k, v in full_model.items()})
     if is_delta:
         response["isDelta"] = True
     if unchanged:

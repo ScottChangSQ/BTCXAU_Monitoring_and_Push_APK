@@ -3,6 +3,7 @@
  */
 package com.binance.monitor.ui.chart;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -18,6 +19,7 @@ import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.ui.host.HostNavigationIntentFactory;
 import com.binance.monitor.ui.host.HostTab;
 import com.binance.monitor.ui.host.HostTabPage;
+import com.binance.monitor.ui.settings.SettingsActivity;
 
 public class MarketChartFragment extends Fragment implements HostTabPage {
     private MarketChartPageController pageController;
@@ -278,7 +280,7 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
 
                     @Override
                     public void openSettings() {
-                        startActivity(HostNavigationIntentFactory.forTab(requireContext(), HostTab.SETTINGS));
+                        startActivity(new Intent(requireContext(), SettingsActivity.class));
                     }
                 });
         screen.attachPageRuntime(pageRuntime);
@@ -290,8 +292,7 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
                         chartBinding.tabMarketMonitor,
                         chartBinding.tabMarketChart,
                         chartBinding.tabAccountPosition,
-                        chartBinding.tabAccountStats,
-                        chartBinding.tabSettings
+                        chartBinding.tabAccountStats
                 ));
         pageController.bind();
         pageController.onColdStart();

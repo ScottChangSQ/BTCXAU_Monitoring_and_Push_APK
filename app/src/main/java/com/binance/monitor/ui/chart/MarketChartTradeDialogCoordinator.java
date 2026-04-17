@@ -165,6 +165,11 @@ final class MarketChartTradeDialogCoordinator {
         applyDialogSurface(dialog);
     }
 
+    // 供图表快捷交易直接提交命令，继续复用统一检查、确认、提交和刷新链路。
+    void submitDirectTradeCommand(@NonNull TradeCommand command) {
+        requestTradeExecution(command);
+    }
+
     // 页面离开时取消仍在排队的交易任务。
     void cancelTradeTasks() {
         if (tradePrepareTask != null) {
@@ -334,6 +339,24 @@ final class MarketChartTradeDialogCoordinator {
         if (input == null) {
             return;
         }
+        AccountStatsPreloadManager.Cache baselineCache = resolveTradeBaselineCache();
+        String accountId = resolveTradeAccountId(baselineCache);
+        if (accountId.isEmpty()) {
+            throw new IllegalArgumentException("当前账户未连接，暂时不能交易");
+        }
+        requestTradeExecution(buildTradeCommand(accountId, input), baselineCache);
+    }
+
+    // 直接用已有命令进入执行链，避免页面层复制提交流程。
+    private void requestTradeExecution(@Nullable TradeCommand command) {
+        requestTradeExecution(command, resolveTradeBaselineCache());
+    }
+
+    private void requestTradeExecution(@Nullable TradeCommand command,
+                                       @Nullable AccountStatsPreloadManager.Cache baselineCache) {
+        if (command == null) {
+            return;
+        }
         if (tradeFlowRunning) {
             showTradeMessage("上一笔交易仍在处理中");
             return;
@@ -345,13 +368,10 @@ final class MarketChartTradeDialogCoordinator {
         tradeFlowRunning = true;
         tradePrepareTask = ioExecutor.submit(() -> {
             try {
-                AccountStatsPreloadManager.Cache baselineCache = resolveTradeBaselineCache();
-                String accountId = resolveTradeAccountId(baselineCache);
-                if (accountId.isEmpty()) {
+                if (resolveTradeAccountId(baselineCache).isEmpty()) {
                     postTradeError("当前账户未连接，暂时不能交易");
                     return;
                 }
-                TradeCommand command = buildTradeCommand(accountId, input);
                 TradeExecutionCoordinator.PreparedTrade prepared =
                         tradeExecutionCoordinator.prepareExecution(command);
                 mainHandler.post(() -> handlePreparedTrade(command, prepared, baselineCache));
@@ -384,14 +404,16 @@ final class MarketChartTradeDialogCoordinator {
             return;
         }
         String message = TradeCommandFactory.describe(command) + "\n\n" + preparedTrade.getMessage();
-        new MaterialAlertDialogBuilder(activity)
+        AlertDialog confirmDialog = new MaterialAlertDialogBuilder(activity)
                 .setTitle("确认交易")
                 .setMessage(message)
-                .setNegativeButton("取消", (dialog, which) -> tradeFlowRunning = false)
-                .setOnCancelListener(dialog -> tradeFlowRunning = false)
-                .setPositiveButton("确认", (dialog, which) ->
+                .setNegativeButton("取消", (dialogInterface, which) -> tradeFlowRunning = false)
+                .setOnCancelListener(dialogInterface -> tradeFlowRunning = false)
+                .setPositiveButton("确认", (dialogInterface, which) ->
                         submitTradeAfterConfirmation(preparedTrade.markConfirmed(), baselineCache))
-                .show();
+                .create();
+        confirmDialog.show();
+        applyDialogSurface(confirmDialog);
     }
 
     // 提交确认后的交易，并把结果回写到页面提示。
@@ -588,11 +610,7 @@ final class MarketChartTradeDialogCoordinator {
             return;
         }
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(activity);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(
-                    UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke)
-            );
-        }
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
         if (dialog.getButton(AlertDialog.BUTTON_POSITIVE) != null) {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
         }

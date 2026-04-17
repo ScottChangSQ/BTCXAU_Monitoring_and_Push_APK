@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.host;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -21,7 +22,7 @@ public class HostTabNavigatorSourceTest {
         assertTrue(source.contains("ANALYSIS(\"analysis\""));
         assertTrue(source.contains("public static final HostTab MARKET_MONITOR = TRADING;"));
         assertTrue(source.contains("public static final HostTab MARKET_CHART = TRADING;"));
-        assertTrue(source.contains("SETTINGS(\"settings\""));
+        assertFalse(source.contains("SETTINGS(\"settings\""));
     }
 
     @Test

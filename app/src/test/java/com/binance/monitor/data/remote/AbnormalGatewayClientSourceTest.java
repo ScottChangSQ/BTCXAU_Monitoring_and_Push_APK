@@ -18,7 +18,6 @@ public class AbnormalGatewayClientSourceTest {
 
         assertTrue(source.contains("public synchronized void resetTransport()"));
         assertTrue(source.contains("OkHttpClient previous = client;"));
-        assertTrue(source.contains("closeClient(previous);"));
-        assertTrue(source.contains("previous.connectionPool().evictAll();"));
+        assertTrue(source.contains("OkHttpTransportResetHelper.closeClientAsync(previous);"));
     }
 }

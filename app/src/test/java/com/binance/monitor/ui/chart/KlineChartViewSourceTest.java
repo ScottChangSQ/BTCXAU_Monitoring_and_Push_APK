@@ -110,4 +110,19 @@ public class KlineChartViewSourceTest {
         assertTrue(source.contains("private void syncVisibleEndFloat() {\n        visibleEndFloat = candles.isEmpty() ? 0f : (candles.size() - 1f - offsetCandles);\n    }"));
         assertTrue(source.contains("private void clampOffset() {\n        offsetCandles = clamp(offsetCandles, 0f, maxOffset());\n        syncVisibleEndFloat();\n    }"));
     }
+
+    @Test
+    public void klineChartViewShouldExposeQuickPendingLineDrawingAndDragHooks() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private boolean quickPendingLineVisible;"));
+        assertTrue(source.contains("private double quickPendingLinePrice = Double.NaN;"));
+        assertTrue(source.contains("public void showQuickPendingLine(double price) {"));
+        assertTrue(source.contains("public void hideQuickPendingLine() {"));
+        assertTrue(source.contains("public void setOnQuickPendingLineChangeListener("));
+        assertTrue(source.contains("drawQuickPendingLine(canvas"));
+    }
 }

@@ -41,7 +41,7 @@ public final class MarketChartPageController {
 
     public void onPageShown() {
         if (!host.isEmbeddedInHostShell()) {
-            updateBottomTabs(false, true, false, false, false);
+            updateBottomTabs(false, true, false, false);
         }
         host.onPageShown();
     }
@@ -63,19 +63,17 @@ public final class MarketChartPageController {
             return;
         }
         bottomNavBinding.tabBar.setVisibility(View.VISIBLE);
-        updateBottomTabs(false, true, false, false, false);
+        updateBottomTabs(false, true, false, false);
         bottomNavBinding.tabMarketMonitor.setOnClickListener(v -> host.openMarketMonitor());
-        bottomNavBinding.tabMarketChart.setOnClickListener(v -> updateBottomTabs(false, true, false, false, false));
+        bottomNavBinding.tabMarketChart.setOnClickListener(v -> updateBottomTabs(false, true, false, false));
         bottomNavBinding.tabAccountStats.setOnClickListener(v -> host.openAccountStats());
         bottomNavBinding.tabAccountPosition.setOnClickListener(v -> host.openAccountPosition());
-        bottomNavBinding.tabSettings.setOnClickListener(v -> host.openSettings());
     }
 
     private void updateBottomTabs(boolean marketSelected,
                                   boolean chartSelected,
                                   boolean accountSelected,
-                                  boolean accountPositionSelected,
-                                  boolean settingsSelected) {
+                                  boolean accountPositionSelected) {
         if (bottomNavBinding == null) {
             return;
         }
@@ -86,13 +84,12 @@ public final class MarketChartPageController {
                 bottomNavBinding.tabMarketChart,
                 bottomNavBinding.tabAccountStats,
                 bottomNavBinding.tabAccountPosition,
-                bottomNavBinding.tabSettings);
+                null);
         bottomNavBinding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.surfaceEnd, palette.stroke));
         styleNavTab(bottomNavBinding.tabMarketMonitor, marketSelected);
         styleNavTab(bottomNavBinding.tabMarketChart, chartSelected);
         styleNavTab(bottomNavBinding.tabAccountStats, accountSelected);
         styleNavTab(bottomNavBinding.tabAccountPosition, accountPositionSelected);
-        styleNavTab(bottomNavBinding.tabSettings, settingsSelected);
     }
 
     private void styleNavTab(@Nullable TextView tab, boolean selected) {
@@ -160,20 +157,17 @@ public final class MarketChartPageController {
         final TextView tabMarketChart;
         final TextView tabAccountPosition;
         final TextView tabAccountStats;
-        final TextView tabSettings;
 
         public BottomNavBinding(@NonNull View tabBar,
                                 @NonNull TextView tabMarketMonitor,
                                 @NonNull TextView tabMarketChart,
                                 @NonNull TextView tabAccountPosition,
-                                @NonNull TextView tabAccountStats,
-                                @NonNull TextView tabSettings) {
+                                @NonNull TextView tabAccountStats) {
             this.tabBar = tabBar;
             this.tabMarketMonitor = tabMarketMonitor;
             this.tabMarketChart = tabMarketChart;
             this.tabAccountPosition = tabAccountPosition;
             this.tabAccountStats = tabAccountStats;
-            this.tabSettings = tabSettings;
         }
     }
 }

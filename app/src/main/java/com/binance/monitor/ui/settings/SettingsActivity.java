@@ -1,31 +1,69 @@
 /*
- * 设置首页旧 Activity 桥接页，统一把旧入口收口到主壳设置 Tab。
- * 设置首页真实页面由 SettingsFragment 和 SettingsPageController 承担。
+ * 设置首页 Activity，负责承接状态弹层进入后的设置目录页。
+ * 通过 SettingsPageController 复用设置首页的目录和跳转逻辑。
  */
 package com.binance.monitor.ui.settings;
 
+import android.content.Intent;
 import android.os.Bundle;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.binance.monitor.ui.host.HostNavigationIntentFactory;
-import com.binance.monitor.ui.host.HostTab;
+import com.binance.monitor.databinding.ContentSettingsBinding;
+import com.binance.monitor.ui.log.LogActivity;
 
 public class SettingsActivity extends AppCompatActivity {
 
     public static final String SECTION_DISPLAY = "display";
     public static final String SECTION_GATEWAY = "gateway";
-    public static final String SECTION_DIAGNOSTICS = "diagnostics";
     public static final String SECTION_THEME = "theme";
-    public static final String SECTION_TAB = "tab";
     public static final String SECTION_CACHE = "cache";
+    private ContentSettingsBinding binding;
+    private SettingsPageController pageController;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.SETTINGS));
-        overridePendingTransition(0, 0);
-        finish();
+        binding = ContentSettingsBinding.inflate(getLayoutInflater());
+        setContentView(binding.getRoot());
+        pageController = new SettingsPageController(new SettingsPageController.Host() {
+            @Override
+            public AppCompatActivity requireActivity() {
+                return SettingsActivity.this;
+            }
+
+            @Override
+            public void openSettingsSection(@androidx.annotation.NonNull String section, @androidx.annotation.NonNull String title) {
+                Intent intent = new Intent(SettingsActivity.this, SettingsSectionActivity.class);
+                intent.putExtra(SettingsSectionActivity.EXTRA_SECTION, section);
+                intent.putExtra(SettingsSectionActivity.EXTRA_TITLE, title);
+                startActivity(intent);
+            }
+
+            @Override
+            public void openLogPage() {
+                startActivity(new Intent(SettingsActivity.this, LogActivity.class));
+            }
+        }, binding);
+        pageController.bind();
+        pageController.onPageShown();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (pageController != null) {
+            pageController.onPageShown();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (pageController != null) {
+            pageController.onDestroy();
+            pageController = null;
+        }
+        super.onDestroy();
     }
 }

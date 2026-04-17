@@ -43,21 +43,23 @@ final class KlineOverlayButtonLayoutHelper {
     private KlineOverlayButtonLayoutHelper() {
     }
 
-    // 左下角图层开关统一按堆叠层级定位，最底部贴主图左下角，其余按钮依次向上排布。
+    // 左下角图层开关统一按单行横向排列定位，历史成交贴主图左下角，其他按钮依次向右排布。
     @NonNull
-    static Position resolveBottomLeftStackedButtonPosition(Bounds priceBounds,
-                                                           int buttonWidth,
-                                                           int buttonHeight,
-                                                           int insetPx,
-                                                           int stackIndex,
-                                                           int spacingPx) {
+    static Position resolveBottomLeftInlineButtonPosition(Bounds priceBounds,
+                                                          int buttonWidth,
+                                                          int buttonHeight,
+                                                          int insetPx,
+                                                          int precedingWidthPx,
+                                                          int spacingPx) {
         Bounds anchor = priceBounds;
         if (anchor == null || anchor.isEmpty()) {
             return new Position(0, 0);
         }
         int left = Math.max(0, anchor.left + Math.max(0, insetPx));
-        int verticalOffset = Math.max(0, stackIndex) * (Math.max(0, buttonHeight) + Math.max(0, spacingPx));
-        int top = Math.max(0, anchor.bottom - Math.max(0, buttonHeight) - Math.max(0, insetPx) - verticalOffset);
+        if (precedingWidthPx > 0) {
+            left += precedingWidthPx + Math.max(0, spacingPx);
+        }
+        int top = Math.max(0, anchor.bottom - Math.max(0, buttonHeight) - Math.max(0, insetPx));
         return new Position(left, top);
     }
 }

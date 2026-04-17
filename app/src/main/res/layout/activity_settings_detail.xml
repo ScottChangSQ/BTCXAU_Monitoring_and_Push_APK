@@ -18,8 +18,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="←"
-            android:textColor="@color/text_primary"
-            android:textSize="18sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Value" />
 
         <TextView
             android:id="@+id/tvSettingsDetailTitle"
@@ -62,8 +61,7 @@
                     android:layout_marginTop="@dimen/space_12"
                     android:minHeight="0dp"
                     android:text="@string/floating_window"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
 
                 <TextView
                     android:id="@+id/tvAlphaValue"
@@ -87,8 +85,7 @@
                     android:layout_marginTop="@dimen/space_12"
                     android:minHeight="0dp"
                     android:text="@string/show_btc"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
 
                 <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchShowXau"
@@ -96,8 +93,7 @@
                     android:layout_height="wrap_content"
                     android:minHeight="0dp"
                     android:text="@string/show_xau"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
             </LinearLayout>
 
             <LinearLayout
@@ -125,8 +121,7 @@
                         android:layout_height="wrap_content"
                         android:inputType="textUri"
                         android:maxLines="1"
-                        android:textColor="@color/text_primary"
-                        android:textSize="14sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <Button
@@ -136,51 +131,6 @@
                     android:layout_marginTop="@dimen/space_12"
                     android:background="@android:color/transparent"
                     android:text="@string/mt5_gateway_save"
-                    android:textAllCaps="false" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/cardDiagnosticsSection"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingVertical="@dimen/space_10">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="连接与诊断"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:text="顶部状态按钮可查看连接、同步和异常数量；这里提供固定入口和日志排查入口。"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_12"
-                    android:text="当前正式入口"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
-
-                <TextView
-                    android:id="@+id/tvDiagnosticsGatewayValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_4"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-
-                <Button
-                    android:id="@+id/btnOpenDiagnosticsLogs"
-                    android:layout_width="match_parent"
-                    android:layout_height="@dimen/control_height_md"
-                    android:layout_marginTop="@dimen/space_12"
-                    android:background="@android:color/transparent"
-                    android:text="打开运行日志"
                     android:textAllCaps="false" />
             </LinearLayout>
 
@@ -224,8 +174,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="金融专业风"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
 
                         <TextView
                             android:id="@+id/tvThemeFinancialDesc"
@@ -233,8 +182,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:text="深色交易屏，绿涨红跌。"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.Micro" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -511,64 +459,6 @@
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/cardTabSection"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingVertical="@dimen/space_10">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Tab 页管理"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:text="可隐藏底部导航中的页签（至少保留一个业务页签）。"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
-
-                <androidx.appcompat.widget.AppCompatCheckBox
-                    android:id="@+id/switchTabMarketMonitor"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_12"
-                    android:minHeight="0dp"
-                    android:text="@string/nav_market_monitor"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-
-                <androidx.appcompat.widget.AppCompatCheckBox
-                    android:id="@+id/switchTabMarketChart"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="0dp"
-                    android:text="@string/nav_market_chart"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-
-                <androidx.appcompat.widget.AppCompatCheckBox
-                    android:id="@+id/switchTabAccountStats"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="0dp"
-                    android:text="@string/nav_account_stats"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-
-                <androidx.appcompat.widget.AppCompatCheckBox
-                    android:id="@+id/switchTabAccountPosition"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="0dp"
-                    android:text="@string/nav_account_position"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-            </LinearLayout>
-
-            <LinearLayout
                 android:id="@+id/cardCacheSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -605,71 +495,6 @@
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
-
-    <LinearLayout
-        android:id="@+id/tabBar"
-        android:layout_width="match_parent"
-        android:layout_height="@dimen/bottom_nav_height"
-        android:background="@android:color/transparent"
-        android:orientation="horizontal"
-        android:padding="0dp">
-
-        <TextView
-            android:id="@+id/tabMarketMonitor"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:gravity="center"
-            android:text="@string/nav_market_monitor"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/tabMarketChart"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:gravity="center"
-            android:text="@string/nav_market_chart"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/tabAccountPosition"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:gravity="center"
-            android:text="@string/nav_account_position"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/tabAccountStats"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:gravity="center"
-            android:text="@string/nav_account_stats"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/tabSettings"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:gravity="center"
-            android:text="@string/nav_settings"
-            android:textColor="@color/white"
-            android:textSize="13sp" />
-    </LinearLayout>
-
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNavigation"
         android:layout_width="0dp"

@@ -32,7 +32,7 @@ public final class BottomTabVisibilityManager {
         setVisibility(tabTrading, showTrading);
         setVisibility(tabAccount, showAccountPosition);
         setVisibility(tabAnalysis, showAccountStats);
-        setVisibility(tabSettings, true);
+        setVisibility(tabSettings, false);
     }
 
     public static void apply(Context context,

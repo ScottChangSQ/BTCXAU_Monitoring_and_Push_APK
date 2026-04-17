@@ -13,23 +13,22 @@ import java.nio.file.Paths;
 public class MarketChartTradeSourceTest {
 
     @Test
-    public void chartActivityShouldWireTradeCoordinatorIntoThreeActionButtons() throws Exception {
-        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java");
+    public void chartScreenShouldWireTradeCoordinatorAndQuickTradeBar() throws Exception {
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java");
         String coordinatorSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
 
-        assertTrue(activitySource.contains("private MarketChartTradeDialogCoordinator tradeDialogCoordinator;"));
-        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION = \"extra_trade_action\";"));
-        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION_CLOSE_POSITION = \"close_position\";"));
-        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION_MODIFY_POSITION = \"modify_position\";"));
-        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION_MODIFY_PENDING = \"modify_pending\";"));
-        assertTrue(activitySource.contains("public static final String EXTRA_TRADE_ACTION_CANCEL_PENDING = \"cancel_pending\";"));
-        assertTrue(activitySource.contains("tradeDialogCoordinator = new MarketChartTradeDialogCoordinator("));
-        assertTrue(activitySource.contains("binding.btnChartTradeBuy.setOnClickListener"));
-        assertTrue(activitySource.contains("binding.btnChartTradeSell.setOnClickListener"));
-        assertTrue(activitySource.contains("binding.btnChartTradePending.setOnClickListener"));
-        assertTrue(activitySource.contains("consumePendingTradeActionIfNeeded();"));
-        assertFalse(activitySource.contains("chartPositionAdapter.setActionListener"));
-        assertFalse(activitySource.contains("chartPendingOrderAdapter.setActionListener"));
+        assertTrue(screenSource.contains("private MarketChartTradeDialogCoordinator tradeDialogCoordinator;"));
+        assertTrue(screenSource.contains("private ChartQuickTradeCoordinator chartQuickTradeCoordinator;"));
+        assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION = \"extra_trade_action\";"));
+        assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION_CLOSE_POSITION = \"close_position\";"));
+        assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION_MODIFY_POSITION = \"modify_position\";"));
+        assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION_MODIFY_PENDING = \"modify_pending\";"));
+        assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION_CANCEL_PENDING = \"cancel_pending\";"));
+        assertTrue(screenSource.contains("tradeDialogCoordinator = new MarketChartTradeDialogCoordinator("));
+        assertTrue(screenSource.contains("chartQuickTradeCoordinator = new ChartQuickTradeCoordinator("));
+        assertTrue(screenSource.contains("binding.btnQuickTradePrimary.setOnClickListener(v -> executePrimaryQuickTrade());"));
+        assertTrue(screenSource.contains("binding.btnQuickTradeSecondary.setOnClickListener(v -> executeSecondaryQuickTrade());"));
+        assertTrue(screenSource.contains("consumePendingTradeActionIfNeeded();"));
         assertTrue(coordinatorSource.contains("tradeExecutionCoordinator.prepareExecution("));
         assertTrue(coordinatorSource.contains("tradeExecutionCoordinator.submitAfterConfirmation("));
         assertTrue(coordinatorSource.contains("applyDialogSurface(dialog);"));
@@ -78,8 +77,21 @@ public class MarketChartTradeSourceTest {
     }
 
     @Test
+    public void tradeDialogFixedHeightInputsShouldNotClipTextVertically() throws Exception {
+        String layoutSource = readUtf8("src/main/res/layout/dialog_trade_command.xml");
+
+        assertTrue(layoutSource.contains("android:id=\"@+id/etTradeVolume\""));
+        assertTrue(layoutSource.contains("android:layout_height=\"@dimen/control_height_lg\""));
+        assertTrue(layoutSource.contains("android:gravity=\"center_vertical\""));
+        assertFalse("固定高度输入框不应再关闭字体内边距，否则文字容易被裁掉下半部分",
+                layoutSource.contains("android:includeFontPadding=\"false\""));
+        assertFalse("固定高度输入框不应再额外塞统一上下 padding，否则会把文本基线继续往下挤",
+                layoutSource.contains("android:paddingVertical=\"10dp\""));
+    }
+
+    @Test
     public void tradeCallbacksShouldGuardLifecycleAndCancelOutstandingTasks() throws Exception {
-        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java")
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
         String coordinatorSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java")
@@ -91,29 +103,30 @@ public class MarketChartTradeSourceTest {
         assertTrue(coordinatorSource.contains("private boolean canPresentTradeUi() {"));
         assertTrue(coordinatorSource.contains("tradePrepareTask = ioExecutor.submit(() -> {"));
         assertTrue(coordinatorSource.contains("tradeSubmitTask = ioExecutor.submit(() -> {"));
-        assertTrue(activitySource.contains("tradeDialogCoordinator.cancelTradeTasks();"));
+        assertTrue(screenSource.contains("tradeDialogCoordinator.cancelTradeTasks();"));
         assertTrue(coordinatorSource.contains("if (!canPresentTradeUi()) {\n            tradeFlowRunning = false;\n            return;\n        }"));
     }
 
     @Test
     public void pendingIntentTradeActionShouldWaitForCacheReadyInsteadOfBeingConsumedPrematurely() throws Exception {
-        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java")
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(activitySource.contains("private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> {\n        if (pageRuntime != null) {\n            pageRuntime.scheduleChartOverlayRefresh();\n        }\n        consumePendingTradeActionIfNeeded();\n    };"));
-        assertTrue(activitySource.contains("if (snapshot == null) {\n            return;\n        }"));
-        assertTrue(activitySource.contains("if (targetItem == null) {\n            Toast.makeText(this, \"未找到目标持仓或挂单，暂时不能执行该操作\", Toast.LENGTH_SHORT).show();\n            lastConsumedTradeActionToken = token;\n            return;\n        }"));
+        assertTrue(screenSource.contains("private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> {"));
+        assertTrue(screenSource.contains("consumePendingTradeActionIfNeeded();"));
+        assertTrue(screenSource.contains("if (snapshot == null) {\n            return;\n        }"));
+        assertTrue(screenSource.contains("if (targetItem == null) {\n            Toast.makeText(this, \"未找到目标持仓或挂单，暂时不能执行该操作\", Toast.LENGTH_SHORT).show();\n            lastConsumedTradeActionToken = token;\n            return;\n        }"));
     }
 
     @Test
     public void targetSymbolFromExternalTradeShortcutShouldBeNormalizedToMarketSymbol() throws Exception {
-        String activitySource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java")
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(activitySource.contains("import com.binance.monitor.util.ProductSymbolMapper;"));
-        assertTrue(activitySource.contains("return ProductSymbolMapper.toMarketSymbol(raw);"));
+        assertTrue(screenSource.contains("import com.binance.monitor.util.ProductSymbolMapper;"));
+        assertTrue(screenSource.contains("return ProductSymbolMapper.toMarketSymbol(raw);"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

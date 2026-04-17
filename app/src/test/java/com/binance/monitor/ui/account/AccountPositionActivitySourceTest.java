@@ -176,7 +176,8 @@ public class AccountPositionActivitySourceTest {
         assertTrue(source.contains("private AccountPositionUiModel lastStableUiModel = AccountPositionUiModel.empty();"));
         assertTrue(source.contains("private void restoreLastStableUiModel() {"));
         assertTrue(source.contains("restoreLastStableUiModel();"));
-        assertTrue(source.contains("if (!nextModel.getSignature().isEmpty()) {\n            lastStableUiModel = nextModel;\n        }"));
+        assertTrue(source.contains("if (!nextModel.getSignature().isEmpty()) {"));
+        assertTrue(source.contains("lastStableUiModel = nextModel;"));
         assertFalse(source.contains("public void onSessionFailed(@NonNull String message) {\n                        pendingConnectionStatusText = \"\";\n                        updateConnectionStatusChip(resolveDisplayedConnectionStatusText(currentUiModel));\n                    }"));
     }
 

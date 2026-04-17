@@ -12,7 +12,7 @@ import java.nio.file.Paths;
 public class MainHostTradingIaSourceTest {
 
     @Test
-    public void mainHostShouldUseTradingAccountAnalysisSettingsTabs() throws Exception {
+    public void mainHostShouldUseTradingAccountAnalysisTabs() throws Exception {
         String layout = new String(Files.readAllBytes(
                 Paths.get("src/main/res/layout/activity_main_host.xml")
         ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
@@ -26,7 +26,7 @@ public class MainHostTradingIaSourceTest {
         assertTrue(layout.contains("@+id/tabTrading"));
         assertTrue(layout.contains("@+id/tabAccount"));
         assertTrue(layout.contains("@+id/tabAnalysis"));
-        assertTrue(layout.contains("@+id/tabSettings"));
+        assertFalse(layout.contains("@+id/tabSettings"));
         assertFalse(layout.contains("@+id/tabMarketMonitor"));
 
         assertTrue(hostTab.contains("TRADING(\"trading\""));

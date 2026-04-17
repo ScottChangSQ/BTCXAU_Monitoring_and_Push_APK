@@ -10,6 +10,7 @@ import androidx.annotation.Nullable;
 
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
+import com.binance.monitor.data.remote.OkHttpTransportResetHelper;
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
 import com.binance.monitor.data.model.v2.session.SessionReceipt;
@@ -57,7 +58,7 @@ public class GatewayV2SessionClient {
     public synchronized void resetTransport() {
         OkHttpClient previous = client;
         client = buildClient();
-        closeClient(previous);
+        OkHttpTransportResetHelper.closeClientAsync(previous);
     }
 
     // 解析 /v2/session/public-key 响应。
@@ -242,12 +243,4 @@ public class GatewayV2SessionClient {
                 .build();
     }
 
-    // 释放旧会话 transport 的连接池和调度线程，避免重复重建后积压旧资源。
-    private static void closeClient(@Nullable OkHttpClient previous) {
-        if (previous == null) {
-            return;
-        }
-        previous.connectionPool().evictAll();
-        previous.dispatcher().executorService().shutdown();
-    }
 }

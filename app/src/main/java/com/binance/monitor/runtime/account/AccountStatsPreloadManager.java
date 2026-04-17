@@ -12,10 +12,12 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.model.v2.AccountHistoryPayload;
+import com.binance.monitor.data.model.v2.AccountFullPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 import com.binance.monitor.runtime.AppForegroundTracker;
+import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
 import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.AccountSnapshot;
@@ -45,6 +47,7 @@ public class AccountStatsPreloadManager {
     private final AccountStorageRepository accountStorageRepository;
     private final ConfigManager configManager;
     private final SecureSessionPrefs secureSessionPrefs;
+    private final UnifiedRuntimeSnapshotStore unifiedRuntimeSnapshotStore;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Set<CacheListener> cacheListeners = new CopyOnWriteArraySet<>();
@@ -69,6 +72,7 @@ public class AccountStatsPreloadManager {
         accountStorageRepository = new AccountStorageRepository(context.getApplicationContext());
         configManager = ConfigManager.getInstance(context.getApplicationContext());
         secureSessionPrefs = new SecureSessionPrefs(context.getApplicationContext());
+        unifiedRuntimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();
     }
 
     public static AccountStatsPreloadManager getInstance(Context context) {
@@ -297,10 +301,8 @@ public class AccountStatsPreloadManager {
             AccountStorageRepository.StoredSnapshot storedSnapshot =
                     buildStoredSnapshotFromPublishedRuntime(accountRuntimeSnapshot, publishedAt);
             accountStorageRepository.persistIncrementalSnapshot(storedSnapshot);
-            AccountStorageRepository.StoredSnapshot cachedSnapshot =
-                    loadStoredSnapshotForWorkerThread();
             String resolvedRevision = resolveHistoryRevisionFromPublishedRuntime(accountRuntimeSnapshot);
-            Cache cache = buildCache(cachedSnapshot, resolvedRevision);
+            Cache cache = buildCache(storedSnapshot, resolvedRevision);
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
             return cache;
@@ -381,9 +383,13 @@ public class AccountStatsPreloadManager {
         return latestCache;
     }
 
-    // 供账户页主动刷新与交易后强一致确认复用；显式入口仍走 canonical snapshot/history。
-    // 这里写回本地的是“全局账户历史缓存”，不能把页面当前时间范围裁短后覆盖进去。
+    // 供账户页主动刷新与交易后强一致确认复用；显式入口统一走单次完整快照。
     public Cache fetchForUi(AccountTimeRange range) {
+        return fetchFullForUi(range);
+    }
+
+    // 显式 UI 刷新必须一次取回当前运行态和历史主体，避免客户端继续双接口拼装。
+    public Cache fetchFullForUi(AccountTimeRange range) {
         if (!isAccountSessionActive()) {
             clearStoredSnapshotForResolvedIdentity();
             clearLatestCache();
@@ -391,13 +397,11 @@ public class AccountStatsPreloadManager {
             return null;
         }
         try {
-            AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();
-            // 显式 UI 刷新必须始终走“快照 + 全量历史”主链，不能因为 historyRevision 未前进就跳过历史补拉。
-            AccountHistoryPayload historyPayload = fetchCompleteHistoryPayload(AccountTimeRange.ALL);
+            AccountFullPayload fullPayload = gatewayV2Client.fetchAccountFull();
             AccountStorageRepository.StoredSnapshot mergedSnapshot =
-                    buildStoredSnapshotFromV2(snapshotPayload, historyPayload);
+                    buildStoredSnapshotFromFullPayload(fullPayload);
             accountStorageRepository.persistV2Snapshot(mergedSnapshot);
-            String resolvedRevision = resolveHistoryRevisionFromPayload(snapshotPayload, historyPayload);
+            String resolvedRevision = resolveHistoryRevisionFromFullPayload(fullPayload);
             Cache cache = buildCache(mergedSnapshot, resolvedRevision);
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
@@ -419,6 +423,11 @@ public class AccountStatsPreloadManager {
     // 更新最新缓存并把刷新结果派发给前台页面。
     private void updateLatestCache(Cache cache) {
         latestCache = cache;
+        if (cache == null) {
+            unifiedRuntimeSnapshotStore.clearAccountRuntime();
+        } else {
+            unifiedRuntimeSnapshotStore.applyAccountCache(cache);
+        }
         notifyCacheListeners(cache);
     }
 
@@ -489,6 +498,33 @@ public class AccountStatsPreloadManager {
                 parsePositionItems(orders, true),
                 parseTradeItems(trades),
                 parseMetrics(historyPayload == null ? null : historyPayload.getStatsMetrics())
+        );
+    }
+
+    // 将单次完整快照转换成本地完整账户真值，避免客户端继续双接口拼装。
+    private AccountStorageRepository.StoredSnapshot buildStoredSnapshotFromFullPayload(AccountFullPayload fullPayload) {
+        JSONObject accountMeta = fullPayload == null ? new JSONObject() : fullPayload.getAccountMeta();
+        JSONArray positions = fullPayload == null ? new JSONArray() : fullPayload.getPositions();
+        JSONArray orders = fullPayload == null ? new JSONArray() : fullPayload.getOrders();
+        JSONArray trades = fullPayload == null ? new JSONArray() : fullPayload.getTrades();
+        JSONArray curvePoints = fullPayload == null ? new JSONArray() : fullPayload.getCurvePoints();
+        return new AccountStorageRepository.StoredSnapshot(
+                resolveRuntimeConnected(accountMeta),
+                optString(accountMeta, "login", ""),
+                optString(accountMeta, "server", ""),
+                resolveV2Source(accountMeta),
+                resolveGatewayEndpoint(),
+                resolveUpdatedAt(fullPayload),
+                "",
+                System.currentTimeMillis(),
+                resolveHistoryRevisionFromFullPayload(fullPayload),
+                parseMetrics(fullPayload == null ? null : fullPayload.getOverviewMetrics()),
+                parseCurvePoints(curvePoints),
+                parseMetrics(fullPayload == null ? null : fullPayload.getCurveIndicators()),
+                parsePositionItems(positions, false),
+                parsePositionItems(orders, true),
+                parseTradeItems(trades),
+                parseMetrics(fullPayload == null ? null : fullPayload.getStatsMetrics())
         );
     }
 
@@ -792,6 +828,16 @@ public class AccountStatsPreloadManager {
         throw new IllegalStateException("v2 account snapshot missing historyRevision");
     }
 
+    // 单次完整快照强刷只接受服务端显式返回的 historyRevision。
+    private String resolveHistoryRevisionFromFullPayload(AccountFullPayload fullPayload) {
+        JSONObject accountMeta = fullPayload == null ? new JSONObject() : fullPayload.getAccountMeta();
+        String historyRevision = optString(accountMeta, "historyRevision", "");
+        if (!historyRevision.trim().isEmpty()) {
+            return historyRevision.trim();
+        }
+        throw new IllegalStateException("v2 account full missing historyRevision");
+    }
+
     // history revision 真值来自 stream revisions，空值时直接视为协议断裂。
     private String requireHistoryRevision(String historyRevision) {
         String safeRevision = historyRevision == null ? "" : historyRevision.trim();
@@ -930,6 +976,11 @@ public class AccountStatsPreloadManager {
             return snapshotTime;
         }
         return historyPayload == null ? 0L : historyPayload.getServerTime();
+    }
+
+    // 显式完整快照优先使用 full 接口时间，不再拆快照/历史时间来源。
+    private long resolveUpdatedAt(AccountFullPayload fullPayload) {
+        return fullPayload == null ? 0L : fullPayload.getServerTime();
     }
 
     // 统一读取当前网关地址，用于页面元信息展示。

@@ -16,8 +16,6 @@ import androidx.fragment.app.Fragment;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ContentSettingsBinding;
-import com.binance.monitor.ui.host.HostNavigationIntentFactory;
-import com.binance.monitor.ui.host.HostTab;
 import com.binance.monitor.ui.host.HostTabPage;
 import com.binance.monitor.ui.log.LogActivity;
 
@@ -45,31 +43,6 @@ public class SettingsFragment extends Fragment implements HostTabPage {
             }
 
             @Override
-            public boolean isEmbeddedInHostShell() {
-                return true;
-            }
-
-            @Override
-            public void openMarketMonitor() {
-                startActivity(HostNavigationIntentFactory.forTab(requireContext(), HostTab.MARKET_MONITOR));
-            }
-
-            @Override
-            public void openMarketChart() {
-                startActivity(HostNavigationIntentFactory.forTab(requireContext(), HostTab.MARKET_CHART));
-            }
-
-            @Override
-            public void openAccountStats() {
-                startActivity(HostNavigationIntentFactory.forTab(requireContext(), HostTab.ACCOUNT_STATS));
-            }
-
-            @Override
-            public void openAccountPosition() {
-                startActivity(HostNavigationIntentFactory.forTab(requireContext(), HostTab.ACCOUNT_POSITION));
-            }
-
-            @Override
             public void openSettingsSection(@NonNull String section, @NonNull String title) {
                 Intent intent = new Intent(requireContext(), SettingsSectionActivity.class);
                 intent.putExtra(SettingsSectionActivity.EXTRA_SECTION, section);
@@ -81,7 +54,7 @@ public class SettingsFragment extends Fragment implements HostTabPage {
             public void openLogPage() {
                 startActivity(new Intent(requireContext(), LogActivity.class));
             }
-        }, ContentSettingsBinding.bind(settingsContentView), null);
+        }, ContentSettingsBinding.bind(settingsContentView));
         pageController.bind();
     }
 

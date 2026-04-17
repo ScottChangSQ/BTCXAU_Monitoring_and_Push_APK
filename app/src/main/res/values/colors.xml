@@ -1,23 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_primary">#08090A</color>
-    <color name="bg_surface">#0F1011</color>
-    <color name="bg_card">#191A1B</color>
-    <color name="bg_input">#1E2125</color>
-    <color name="stroke_card">#2A2D33</color>
-    <color name="text_primary">#F7F8F8</color>
-    <color name="text_secondary">#8A8F98</color>
-    <color name="accent_cyan">#7170FF</color>
-    <color name="accent_gold">#D6A34A</color>
-    <color name="accent_red">#FF6B6B</color>
-    <color name="accent_green">#27A644</color>
-    <color name="accent_blue">#7170FF</color>
-    <color name="divider">#1E2125</color>
-    <color name="vintage_orange">#1B1E40</color>
-    <color name="vintage_mustard">#242744</color>
-    <color name="vintage_paper_dark">#171923</color>
-    <color name="vintage_ink">#7170FF</color>
+    <color name="bg_primary">#06080B</color>
+    <color name="bg_surface">#0A0E12</color>
+    <color name="bg_card">#12181F</color>
+    <color name="bg_input">#161D25</color>
+    <color name="stroke_card">#27313A</color>
+    <color name="text_primary">#F2F5F7</color>
+    <color name="text_secondary">#93A0AA</color>
+    <color name="text_control_selected">#FFFFFF</color>
+    <color name="text_control_unselected">#93A0AA</color>
+    <color name="accent_cyan">#4F8CFF</color>
+    <color name="accent_gold">#D1A055</color>
+    <color name="accent_red">#E85C5C</color>
+    <color name="accent_green">#2DB784</color>
+    <color name="accent_blue">#4F8CFF</color>
+    <color name="divider">#1A222B</color>
+    <color name="vintage_orange">#5A3F1F</color>
+    <color name="vintage_mustard">#7E6741</color>
+    <color name="vintage_paper_dark">#19140F</color>
+    <color name="vintage_ink">#C9A46A</color>
     <color name="grain_overlay">#08FFFFFF</color>
+    <color name="log_level_warn_bg">#18D1A055</color>
+    <color name="log_level_info_bg">#184F8CFF</color>
+    <color name="log_level_error_bg">#18E85C5C</color>
     <color name="white">#FFFFFF</color>
     <color name="transparent">#00000000</color>
 </resources>

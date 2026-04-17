@@ -79,16 +79,14 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
-    public void monitorServiceShouldStayForegroundInsteadOfSuppressingNotification() throws Exception {
+    public void monitorServiceShouldSuppressPersistentForegroundNotificationAfterStartup() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         );
 
-        assertFalse("监控服务不应在启动后立刻撤销前台服务身份，否则息屏后会被系统限制",
-                source.contains("suppressForegroundNotification();"));
-        assertFalse("监控服务不应主动调用 stopForeground(true) 撤掉持续运行资格",
-                source.contains("stopForeground(true);"));
+        assertTrue("监控服务应提供单独的常驻通知收口入口，避免状态栏长期保留运行中通知",
+                source.contains("private void suppressForegroundNotification() {"));
     }
 
     @Test
@@ -122,13 +120,9 @@ public class MonitorServiceSourceTest {
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         );
 
-        assertTrue("服务启动时应打印构建默认 MT5 网关地址",
+        assertFalse("地址诊断明细日志默认应关闭，避免继续污染主链日志",
                 source.contains("APP诊断 BuildConfig MT5="));
-        assertTrue("服务启动时应打印运行时解析后的 MT5 网关地址",
-                source.contains("APP诊断 Runtime MT5="));
-        assertTrue("服务启动时应打印运行时解析后的 Binance WS 地址",
-                source.contains("APP诊断 Runtime BinanceWS="));
-        assertTrue("服务启动时应统一走地址诊断入口",
+        assertTrue("如需专项排查，服务启动仍应统一走地址诊断入口占位",
                 source.contains("logResolvedGatewayAddresses();"));
     }
 
@@ -176,18 +170,20 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
-    public void accountRefreshShouldClearStreamSnapshotWhenSessionBecomesInactive() throws Exception {
+    public void accountRefreshShouldNotMaintainPrivateStreamSnapshotWhenSessionBecomesInactive() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("历史补拉返回空缓存时应清理 stream 持仓快照，避免悬浮窗残留旧仓位",
+        assertFalse("历史补拉返回空缓存时不应再清理服务层私有 stream 副本，因为该副本已经删除",
                 source.contains("if (cache == null) {\n                    clearStreamAccountSnapshot();"));
+        assertTrue("历史补拉结束后仍应刷新悬浮窗，让正式 cache/runtime 生效",
+                source.contains("floatingCoordinator.requestRefresh(false);"));
     }
 
     @Test
-    public void explicitAccountRuntimeClearActionShouldResetStreamSnapshotAndRefreshFloating() throws Exception {
+    public void explicitAccountRuntimeClearActionShouldClearPreloadCacheAndRefreshFloating() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
@@ -195,10 +191,10 @@ public class MonitorServiceSourceTest {
 
         assertTrue("监控服务应支持显式账户运行态清理动作，避免登出和切号后继续显示旧仓位",
                 source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:"));
-        assertTrue("显式账户运行态清理动作应清空 stream 持仓快照",
-                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                clearStreamAccountSnapshot();"));
+        assertTrue("显式账户运行态清理动作应清空正式账户缓存",
+                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                if (accountStatsPreloadManager != null) {\n                    accountStatsPreloadManager.clearLatestCache();\n                }"));
         assertTrue("显式账户运行态清理动作后应立即刷新悬浮窗",
-                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                clearStreamAccountSnapshot();\n                floatingCoordinator.requestRefresh(true);"));
+                source.contains("floatingCoordinator.requestRefresh(true);"));
     }
 
     @Test
@@ -215,14 +211,16 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
-    public void malformedAccountRuntimePayloadShouldClearStaleStreamSnapshot() throws Exception {
+    public void malformedAccountRuntimePayloadShouldNotReferenceRemovedStreamSnapshotState() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("stream 账户运行态解析失败时也应清理旧持仓快照，避免悬浮窗残留上一次仓位",
-                source.contains("} catch (Exception exception) {\n                clearStreamAccountSnapshot();\n                logManager.warn(\"v2 stream 账户运行态应用失败: \" + exception.getMessage());"));
+        assertFalse("stream 账户运行态解析失败时不应再引用已删除的私有 stream 副本",
+                source.contains("clearStreamAccountSnapshot();"));
+        assertTrue("stream 账户运行态解析失败时仍应记录明确日志",
+                source.contains("logManager.warn(\"v2 stream 账户运行态应用失败: \" + exception.getMessage());"));
     }
 
     @Test
@@ -260,18 +258,22 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
-    public void floatingSnapshotShouldKeepAllPositionsInsteadOfOverwritingByCode() throws Exception {
+    public void monitorServiceShouldNotKeepSecondAccountRuntimeSnapshotForFloatingWindow() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         );
 
-        assertTrue("stream 持仓快照应保留完整列表，避免同产品多笔仓位被覆盖",
+        assertFalse("服务层不应继续维护第二份 stream 持仓副本",
                 source.contains("private final List<PositionItem> streamPositionSnapshot = new ArrayList<>();"));
-        assertTrue("stream 账户快照应用时应追加所有仓位，而不是按 code 覆盖",
-                source.contains("streamPositionSnapshot.add(item);"));
-        assertFalse("不应按 code 覆盖 stream 持仓快照",
-                source.contains("streamPositionSnapshot.put(item.getCode().trim().toUpperCase(), item);"));
+        assertFalse("服务层不应继续维护 stream 账户是否已收到的私有标志",
+                source.contains("private volatile boolean streamAccountSnapshotReceived;"));
+        assertFalse("服务层不应继续维护 stream 持仓更新时间私有副本",
+                source.contains("private volatile long streamPositionsUpdatedAt;"));
+        assertTrue("收到 stream 账户运行态后应直接交给账户预加载管理器",
+                source.contains("accountStatsPreloadManager.applyPublishedAccountRuntime("));
+        assertTrue("stream 账户运行态应用结束后应继续触发悬浮窗刷新",
+                source.contains("mainHandler.post(() -> floatingCoordinator.requestRefresh(false));"));
     }
 
     @Test

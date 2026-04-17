@@ -36,7 +36,7 @@ public class HistoricalTradeAnnotationBuilderTest {
 
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME, annotations.get(0).entryAnchorTimeMs);
-        assertEquals(BASE_TIME + 20_000L, annotations.get(0).exitAnchorTimeMs);
+        assertEquals(BASE_TIME, annotations.get(0).exitAnchorTimeMs);
         assertEquals(100d, annotations.get(0).entryPrice, 1e-9);
         assertEquals(101d, annotations.get(0).exitPrice, 1e-9);
     }
@@ -65,7 +65,7 @@ public class HistoricalTradeAnnotationBuilderTest {
 
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME, annotations.get(0).entryAnchorTimeMs);
-        assertEquals(BASE_TIME + 95_000L, annotations.get(0).exitAnchorTimeMs);
+        assertEquals(BASE_TIME + 60_000L, annotations.get(0).exitAnchorTimeMs);
         assertEquals(101d, annotations.get(0).entryPrice, 1e-9);
         assertEquals(99d, annotations.get(0).exitPrice, 1e-9);
     }
@@ -140,7 +140,7 @@ public class HistoricalTradeAnnotationBuilderTest {
 
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME - 120_000L, annotations.get(0).entryAnchorTimeMs);
-        assertEquals(BASE_TIME + 30_000L, annotations.get(0).exitAnchorTimeMs);
+        assertEquals(BASE_TIME, annotations.get(0).exitAnchorTimeMs);
     }
 
     @Test
@@ -197,6 +197,34 @@ public class HistoricalTradeAnnotationBuilderTest {
         assertEquals(1, annotations.size());
         assertEquals(openTime, annotations.get(0).entryAnchorTimeMs);
         assertEquals(closeTime, annotations.get(0).exitAnchorTimeMs);
+    }
+
+    @Test
+    public void shouldSnapIntraMinuteTradeTimeToMinuteBucketOpen() {
+        List<CandleEntry> candles = Arrays.asList(
+                buildCandle(BASE_TIME, BASE_TIME + 60_000L),
+                buildCandle(BASE_TIME + 60_000L, BASE_TIME + 120_000L)
+        );
+        long openTime = BASE_TIME + 12_000L;
+        long closeTime = BASE_TIME + 48_000L;
+        TradeRecordItem trade = buildTrade(
+                "BTCUSD",
+                "buy",
+                openTime,
+                closeTime,
+                100d,
+                101d,
+                8d,
+                0d,
+                2001L
+        );
+
+        List<HistoricalTradeAnnotationBuilder.TradeAnnotation> annotations =
+                HistoricalTradeAnnotationBuilder.build("BTCUSDT", Collections.singletonList(trade), candles);
+
+        assertEquals(1, annotations.size());
+        assertEquals(BASE_TIME, annotations.get(0).entryAnchorTimeMs);
+        assertEquals(BASE_TIME, annotations.get(0).exitAnchorTimeMs);
     }
 
     @Test

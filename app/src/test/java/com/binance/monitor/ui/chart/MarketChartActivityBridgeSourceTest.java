@@ -16,10 +16,11 @@ public class MarketChartActivityBridgeSourceTest {
                 Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartActivity.java")
         ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("private boolean bridgeLegacyEntryToMainHost(@Nullable Intent sourceIntent) {"));
+        assertTrue(source.contains("private void bridgeLegacyEntryToMainHost(@Nullable Intent sourceIntent) {"));
         assertTrue(source.contains("HostNavigationIntentFactory.forTab(this, HostTab.MARKET_CHART)"));
         assertTrue(source.contains("bridgeIntent.putExtras(sourceExtras);"));
         assertTrue(source.contains("startActivity(bridgeIntent);"));
+        assertTrue(source.contains("overridePendingTransition(0, 0);"));
         assertTrue(source.contains("finish();"));
     }
 }

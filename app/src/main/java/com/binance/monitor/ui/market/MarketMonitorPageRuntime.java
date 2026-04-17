@@ -97,8 +97,6 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
     private AbnormalRecordAdapter recordAdapter;
     private ItemMetricBinding metricOpenBinding;
     private ItemMetricBinding metricCloseBinding;
-    private ItemMetricBinding metricVolumeBinding;
-    private ItemMetricBinding metricAmountBinding;
     private ItemMetricBinding metricChangeBinding;
     private ItemMetricBinding metricPercentBinding;
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
@@ -141,8 +139,6 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         recordAdapter = new AbnormalRecordAdapter();
         metricOpenBinding = binding.layoutMetricOpen;
         metricCloseBinding = binding.layoutMetricClose;
-        metricVolumeBinding = binding.layoutMetricVolume;
-        metricAmountBinding = binding.layoutMetricAmount;
         metricChangeBinding = binding.layoutMetricChange;
         metricPercentBinding = binding.layoutMetricPercent;
         setupMetrics();
@@ -209,8 +205,6 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
     private void setupMetrics() {
         metricOpenBinding.tvMetricLabel.setText(getString(R.string.open_price));
         metricCloseBinding.tvMetricLabel.setText(getString(R.string.close_price));
-        metricVolumeBinding.tvMetricLabel.setText(getString(R.string.volume));
-        metricAmountBinding.tvMetricLabel.setText(getString(R.string.amount));
         metricChangeBinding.tvMetricLabel.setText(getString(R.string.price_change));
         metricPercentBinding.tvMetricLabel.setText(getString(R.string.percent_change));
     }
@@ -304,21 +298,19 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
     private ArrayAdapter<String> createSymbolAdapter(List<String> symbols) {
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(
                 requireActivity(),
-                R.layout.item_spinner_filter,
+                R.layout.item_spinner_filter_anchor,
                 android.R.id.text1,
                 symbols
         ) {
             @Override
             public View getView(int position, @Nullable View convertView, ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                styleSymbolSpinnerItem(view);
-                return view;
+                return super.getView(position, convertView, parent);
             }
 
             @Override
             public View getDropDownView(int position, @Nullable View convertView, ViewGroup parent) {
                 View view = super.getDropDownView(position, convertView, parent);
-                styleSymbolSpinnerItem(view);
+                styleSymbolSpinnerDropdownItem(view);
                 return view;
             }
         };
@@ -326,7 +318,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         return adapter;
     }
 
-    private void styleSymbolSpinnerItem(@Nullable View view) {
+    private void styleSymbolSpinnerDropdownItem(@Nullable View view) {
         if (!(view instanceof TextView)) {
             return;
         }
@@ -451,9 +443,6 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         androidx.appcompat.app.AlertDialog dialog = builder.create();
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(requireActivity());
         UiPaletteManager.applyPageTheme(dialogBinding.getRoot(), palette);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-        }
         bindAllAbnormalRecords(dialogBinding, dialogAdapter, "");
         dialogBinding.etAbnormalSearch.addTextChangedListener(new TextWatcher() {
             @Override
@@ -470,6 +459,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
             }
         });
         dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
         if (dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE) != null) {
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
         }
@@ -522,16 +512,12 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         if (data == null) {
             setMetric(metricOpenBinding, "--");
             setMetric(metricCloseBinding, "--");
-            setMetric(metricVolumeBinding, "--");
-            setMetric(metricAmountBinding, "--");
             setMetric(metricChangeBinding, "--");
             setMetric(metricPercentBinding, "--");
             return;
         }
         setMetric(metricOpenBinding, FormatUtils.formatPriceWithUnit(data.getOpenPrice()));
         setMetric(metricCloseBinding, FormatUtils.formatPriceWithUnit(data.getClosePrice()));
-        setMetric(metricVolumeBinding, FormatUtils.formatVolumeWithUnit(data.getVolume(), unit));
-        setMetric(metricAmountBinding, FormatUtils.formatAmount(data.getQuoteAssetVolume()).replace("M$", " M$"));
         setMetric(metricChangeBinding, FormatUtils.formatSignedPriceWithUnit(data.getPriceChange()));
         setMetric(metricPercentBinding, FormatUtils.formatPercent(data.getPercentChange()));
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(requireActivity());
@@ -592,7 +578,9 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         if (optionView == null || palette == null) {
             return;
         }
-        optionView.setTextColor(selected ? palette.primary : palette.textSecondary);
+        optionView.setTextColor(selected
+                ? UiPaletteManager.controlSelectedText(optionView.getContext())
+                : UiPaletteManager.controlUnselectedText(optionView.getContext()));
         optionView.setTypeface(null, Typeface.NORMAL);
         optionView.setPaintFlags(selected
                 ? (optionView.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG)
@@ -656,7 +644,6 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         String volumeUnit = AppConstants.symbolToAsset(symbol);
         binding.tvVolumeUnit.setText(volumeUnit);
         binding.inputLayoutVolumeThreshold.setHint(getString(R.string.volume_threshold_hint) + " (" + volumeUnit + ")");
-        metricVolumeBinding.tvMetricLabel.setText(getString(R.string.volume) + " (" + volumeUnit + ")");
     }
 
     private void applyConnectionChipStyle() {
@@ -693,7 +680,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
 
         android.widget.LinearLayout content = new android.widget.LinearLayout(requireActivity());
         content.setOrientation(android.widget.LinearLayout.VERTICAL);
-        content.setBackground(UiPaletteManager.createFilledDrawable(requireActivity(), palette.surfaceEnd));
+        content.setBackground(UiPaletteManager.createSurfaceDrawable(requireActivity(), palette.card, palette.stroke));
         content.setPadding(dp(18), dp(14), dp(18), dp(6));
 
         android.widget.TextView titleView = new android.widget.TextView(requireActivity());
@@ -729,10 +716,8 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
                 .setView(content)
                 .setPositiveButton("确定", null)
                 .create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(UiPaletteManager.createFilledDrawable(requireActivity(), palette.surfaceEnd));
-        }
         dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
         if (dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE) != null) {
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
         }

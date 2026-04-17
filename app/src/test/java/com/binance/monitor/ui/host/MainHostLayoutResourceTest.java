@@ -12,7 +12,7 @@ import java.nio.file.Paths;
 public class MainHostLayoutResourceTest {
 
     @Test
-    public void activityMainHostShouldExposeFragmentContainerAndFourTabBottomNav() throws Exception {
+    public void activityMainHostShouldExposeFragmentContainerAndThreeTabBottomNav() throws Exception {
         String xml = new String(Files.readAllBytes(
                 Paths.get("src/main/res/layout/activity_main_host.xml")
         ), StandardCharsets.UTF_8);
@@ -22,7 +22,7 @@ public class MainHostLayoutResourceTest {
         assertTrue(xml.contains("@+id/tabTrading"));
         assertTrue(xml.contains("@+id/tabAccount"));
         assertTrue(xml.contains("@+id/tabAnalysis"));
-        assertTrue(xml.contains("@+id/tabSettings"));
+        assertFalse(xml.contains("@+id/tabSettings"));
         assertFalse(xml.contains("@+id/tabMarketMonitor"));
         assertFalse(xml.contains("@+id/tabMarketChart"));
         assertFalse(xml.contains("@+id/tabAccountPosition"));

@@ -17,7 +17,7 @@
                 android:id="@+id/cardOverviewSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_8">
+                android:layout_marginTop="@dimen/page_section_gap">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -59,7 +59,7 @@
                             android:id="@+id/ivAccountPrivacyToggle"
                             android:layout_width="32dp"
                             android:layout_height="32dp"
-                            android:layout_marginStart="6dp"
+                            android:layout_marginStart="@dimen/control_group_gap"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:clickable="true"
                             android:focusable="true"
@@ -209,14 +209,6 @@
                         android:layout_height="wrap_content"
                         android:text="@string/trade_records_title"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
-
-                    <TextView
-                        android:id="@+id/tvHistorySummary"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_8"
-                        android:text="@string/account_history_entry_summary"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                     <Button
                         android:id="@+id/btnOpenAccountHistory"

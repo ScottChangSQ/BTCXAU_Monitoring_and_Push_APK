@@ -13,14 +13,14 @@ public class FloatingWindowTextFormatterTest {
     public void formatCardTitleShouldCombineAssetAndPnl() {
         String title = FloatingWindowTextFormatter.formatCardTitle("BTC", -0.10d, -1250d, true, false);
 
-        assertEquals("BTC\n（-0.10手）-$1,250.0", title);
+        assertEquals("BTC | -0.10手\n-$1,250.0", title);
     }
 
     @Test
     public void formatCardTitleShouldMaskPnlOnly() {
         String title = FloatingWindowTextFormatter.formatCardTitle("XAU", 0.05d, 88d, true, true);
 
-        assertEquals("XAU\n*", title);
+        assertEquals("XAU | +0.05手\n*", title);
     }
 
     @Test
@@ -34,7 +34,13 @@ public class FloatingWindowTextFormatterTest {
     public void formatCardTitleShouldPrefixVisiblePnlWithLots() {
         String title = FloatingWindowTextFormatter.formatCardTitle("BTC", 0.03d, -28d, true, false);
 
-        assertEquals("BTC\n（+0.03手）-$28.0", title);
+        assertEquals("BTC | +0.03手\n-$28.0", title);
+    }
+
+    @Test
+    public void formatLotsTextShouldUseSignedTwoDecimalLots() {
+        assertEquals("+0.03手", FloatingWindowTextFormatter.formatLotsText(0.03d));
+        assertEquals("-0.10手", FloatingWindowTextFormatter.formatLotsText(-0.10d));
     }
 
     @Test

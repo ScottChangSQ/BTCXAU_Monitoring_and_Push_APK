@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.account;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -21,8 +22,9 @@ public class AccountPositionStructureSourceTest {
 
         assertTrue(layout.contains("@+id/cardHistorySection"));
         assertTrue(layout.contains("@+id/btnOpenAccountHistory"));
-        assertTrue(layout.contains("@+id/tvHistorySummary"));
-        assertTrue(source.contains("binding.btnOpenAccountHistory.setOnClickListener(v -> host.openAccountStats())"));
+        assertFalse(layout.contains("@+id/tvHistorySummary"));
+        assertTrue(source.contains("binding.btnOpenAccountHistory.setOnClickListener(v -> openTradeHistorySheet())"));
+        assertTrue(source.contains("tradeHistoryBottomSheetController.show(currentTradeHistory);"));
         assertTrue(source.contains("binding.recyclerPositionAggregates.setVisibility(View.GONE);"));
     }
 }

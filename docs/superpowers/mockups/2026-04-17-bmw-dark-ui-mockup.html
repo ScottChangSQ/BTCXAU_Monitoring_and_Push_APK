@@ -1,0 +1,127 @@
+<!-- BMW 深色 showroom 版网页示意图：只表达视觉，不改 App 结构。 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BTCXAU BMW Dark Mockup</title>
+  <style>
+    :root{--bg:#0a0c0f;--shell:#0f1318;--p1:#13171c;--p2:#1a2027;--b:#2c333c;--bs:#495261;--t:#f5f7fa;--ts:#b3bac4;--tm:#7e8793;--blue:#1c69d4;--green:#3fcb7f;--red:#d95c5c}
+    *{box-sizing:border-box}body{margin:0;font-family:"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;background:radial-gradient(circle at top,rgba(28,105,212,.08),transparent 22%),linear-gradient(180deg,#0b0d10,#090b0d);color:var(--t)}
+    .page{width:min(1480px,calc(100vw - 32px));margin:0 auto;padding:32px 0 72px}.hero,.grid{display:grid;gap:24px}.hero{grid-template-columns:1.3fr .9fr}.grid{grid-template-columns:repeat(3,minmax(280px,1fr))}
+    .card,.phone,.hud{border:1px solid var(--b);background:linear-gradient(180deg,rgba(19,23,28,.98),rgba(10,12,15,.98));box-shadow:0 24px 60px rgba(0,0,0,.45)}
+    .card{padding:24px}.eyebrow{color:var(--tm);font-size:12px;letter-spacing:.22em;text-transform:uppercase;margin-bottom:14px}.title{margin:0;font-size:clamp(34px,5vw,58px);line-height:1.05;font-weight:300;text-transform:uppercase;max-width:10ch}.sub{margin-top:14px;max-width:58ch;color:var(--ts);font-size:15px;line-height:1.35}
+    .chips{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}.chip{min-width:148px;padding:12px;border:1px solid var(--bs);background:rgba(26,32,39,.92)}.chip small{display:block;color:var(--tm);font-size:11px;text-transform:uppercase;margin-bottom:6px}.chip strong{font-size:14px}.legend{display:grid;gap:10px}.legend div{display:grid;grid-template-columns:18px 1fr;gap:10px;color:var(--ts);font-size:14px;line-height:1.4}.sw{width:18px;height:18px;border:1px solid var(--b)}
+    .head{margin:32px 0 18px;display:flex;justify-content:space-between;align-items:end;gap:16px}.head h3{margin:0;font-size:24px;font-weight:300;text-transform:uppercase;letter-spacing:.08em}.head p{margin:0;color:var(--tm);font-size:13px}
+    .label{display:flex;justify-content:space-between;color:var(--ts);font-size:13px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}.phone{padding:10px}.device{min-height:740px;border:1px solid #1c2128;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}.sb{height:34px;display:flex;justify-content:space-between;align-items:center;padding:0 14px;color:var(--ts);font-size:12px;border-bottom:1px solid rgba(255,255,255,.04)}
+    .screen{padding:10px;flex:1;display:flex;flex-direction:column;gap:10px}.row4{display:grid;grid-template-columns:1.2fr .65fr .65fr 1.25fr;gap:2px;border:1px solid var(--b);background:var(--b)}.btn,.tab,.mini,.gbtn,.pbtn,.pill{display:flex;align-items:center;justify-content:center;padding:0 10px;border:1px solid transparent;white-space:nowrap}
+    .btn{min-height:42px;background:var(--p1);color:var(--ts);font-size:12px;font-weight:700}.tab,.pill,.mini{min-height:30px;background:var(--p2);color:var(--ts);font-size:11px;font-weight:600;border-color:var(--b)}.gbtn,.pbtn{min-height:34px;padding:0 12px;font-size:11px;font-weight:700;text-transform:uppercase}.active{color:var(--t)!important;border-color:rgba(28,105,212,.35)!important;box-shadow:inset 0 -2px 0 var(--blue)!important;background:var(--p2)!important}.surf{border:1px solid var(--b);background:var(--p1)}.chart{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:492px}.scroll{display:flex;gap:6px;border:1px solid var(--b);background:var(--shell);padding:4px}
+    .plot{position:relative;min-height:370px;border:1px solid var(--b);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent 22%),repeating-linear-gradient(to right,transparent 0,transparent 66px,rgba(255,255,255,.035) 66px,rgba(255,255,255,.035) 67px),repeating-linear-gradient(to bottom,transparent 0,transparent 74px,rgba(255,255,255,.035) 74px,rgba(255,255,255,.035) 75px),#0b0f14;overflow:hidden}.hud2{position:absolute;top:10px;right:10px;padding:8px 10px;border:1px solid var(--b);background:rgba(10,12,15,.92);font-size:11px;line-height:1.4;text-align:right}
+    .marks span{position:absolute;padding:4px 6px;border:1px solid rgba(28,105,212,.22);background:rgba(16,23,33,.92);font-size:10px}.tog{position:absolute;left:12px;bottom:14px;display:flex;gap:8px}.mini{padding:0 10px}
+    .meta{display:flex;justify-content:space-between;color:var(--ts);font-size:12px}.section,.chartc,.list{border:1px solid var(--b);background:var(--p1)}.section,.chartc{padding:12px;display:flex;flex-direction:column;gap:10px}.st{display:flex;justify-content:space-between;align-items:center;gap:8px}.st strong{font-size:14px;font-weight:400;letter-spacing:.06em;text-transform:uppercase}
+    .metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.metric{border:1px solid var(--b);background:var(--p1);padding:10px;min-height:78px}.metric label,.meta label{display:block;color:var(--tm);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}.metric strong{display:block;font-size:26px;font-weight:300;line-height:1.05}
+    .pos,.set{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid var(--b);background:var(--p2);padding:10px;min-height:64px}.main{font-size:13px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.actions{display:flex;gap:6px}.gbtn{background:var(--p1);color:var(--t);border-color:var(--b)}.pbtn{background:var(--p2);color:var(--t);border-color:rgba(28,105,212,.38);box-shadow:inset 0 -2px 0 var(--blue)}
+    .box{height:160px;border:1px solid var(--b);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent 18%),repeating-linear-gradient(to right,transparent 0,transparent 48px,rgba(255,255,255,.03) 48px,rgba(255,255,255,.03) 49px),repeating-linear-gradient(to bottom,transparent 0,transparent 38px,rgba(255,255,255,.03) 38px,rgba(255,255,255,.03) 39px),#0c1015;position:relative;overflow:hidden}
+    .bars:before,.line:before,.scatter:before,.line:after{content:"";position:absolute;inset:0}.bars:before{background:linear-gradient(90deg,transparent 0 7%,rgba(28,105,212,.9) 7% 11%,transparent 11% 20%,rgba(217,92,92,.78) 20% 24%,transparent 24% 31%,rgba(28,105,212,.72) 31% 35%,transparent 35% 45%,rgba(63,203,127,.78) 45% 49%,transparent 49% 58%,rgba(217,92,92,.82) 58% 62%,transparent 62% 100%);clip-path:polygon(0 100%,0 68%,11% 68%,11% 34%,20% 34%,20% 76%,31% 76%,31% 42%,45% 42%,45% 55%,58% 55%,58% 28%,72% 28%,72% 82%,100% 82%,100% 100%)}
+    .line:before{background:linear-gradient(transparent 0%,transparent 70%,rgba(63,203,127,.08) 100%);clip-path:polygon(0 72%,8% 66%,16% 68%,24% 54%,33% 57%,42% 47%,50% 41%,58% 48%,66% 35%,76% 38%,84% 29%,92% 34%,100% 22%,100% 100%,0 100%)}.line:after{border-top:2px solid var(--blue);clip-path:polygon(0 72%,8% 66%,16% 68%,24% 54%,33% 57%,42% 47%,50% 41%,58% 48%,66% 35%,76% 38%,84% 29%,92% 34%,100% 22%,100% 24%,92% 36%,84% 31%,76% 40%,66% 37%,58% 50%,50% 43%,42% 49%,33% 59%,24% 56%,16% 70%,8% 68%,0 74%)}
+    .scatter:before{background:radial-gradient(circle at 12% 70%,rgba(63,203,127,.95) 0 4px,transparent 5px),radial-gradient(circle at 25% 42%,rgba(28,105,212,.95) 0 4px,transparent 5px),radial-gradient(circle at 38% 58%,rgba(217,92,92,.95) 0 4px,transparent 5px),radial-gradient(circle at 52% 34%,rgba(63,203,127,.95) 0 4px,transparent 5px),radial-gradient(circle at 66% 48%,rgba(28,105,212,.95) 0 4px,transparent 5px),radial-gradient(circle at 78% 28%,rgba(217,92,92,.95) 0 4px,transparent 5px),radial-gradient(circle at 88% 54%,rgba(63,203,127,.95) 0 4px,transparent 5px)}
+    .list{display:flex;flex-direction:column}.set{grid-template-columns:1fr 20px;min-height:56px;border-width:0 0 1px 0;background:transparent;padding-inline:14px}.set:last-child{border-bottom:0}.nav{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--b);background:#090b0e;min-height:72px;margin-top:auto}.ni{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;color:var(--tm);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-top:2px solid transparent}.ni.active{color:var(--t);border-top-color:var(--blue);background:#11161d}
+    .sheet{border:1px solid var(--b);background:linear-gradient(180deg,rgba(17,21,26,.98),rgba(10,12,15,.98));padding:14px;display:flex;flex-direction:column;gap:10px}.sr{display:grid;grid-template-columns:1fr auto;gap:12px;color:var(--ts);font-size:13px}.sr strong{color:var(--t);font-weight:400}.sa{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:4px}
+    .hud{width:180px;padding:10px}.ht{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:14px;font-weight:700}.hs{color:var(--tm);font-size:11px;margin-bottom:8px}.hc{border:1px solid var(--b);background:var(--p2);padding:8px;display:flex;flex-direction:column;gap:4px}
+    .blue{color:var(--blue)}.green{color:var(--green)}.red{color:var(--red)}
+    @media (max-width:1180px){.hero,.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="card">
+        <div class="eyebrow">BMW Dark Showroom / BTCXAU Monitoring</div>
+        <h1 class="title">Precision Trading Cockpit</h1>
+        <p class="sub">这版网页示意图严格沿用当前 App 的页面结构，只把视觉语言改成 BMW 深色 showroom 风格：深黑底、金属灰边框、白灰文字、BMW Blue 只做交互高亮，所有模块保持直角和硬边。</p>
+        <div class="chips">
+          <div class="chip"><small>Layout Rule</small><strong>不改结构，只改视觉</strong></div>
+          <div class="chip"><small>Interaction Accent</small><strong class="blue">BMW Blue #1C69D4</strong></div>
+          <div class="chip"><small>Geometry</small><strong>0px Radius / Sharp Edge</strong></div>
+        </div>
+      </div>
+      <aside class="card">
+        <div class="eyebrow">Design Rules</div>
+        <div class="legend">
+          <div><span class="sw" style="background:#0a0c0f"></span><span>全局背景使用近黑色，减少工具台感，改成更像高端控制台的基底。</span></div>
+          <div><span class="sw" style="background:#13171c"></span><span>模块统一深灰面板，层次主要通过不同深灰和细边框区分。</span></div>
+          <div><span class="sw" style="background:#1c69d4"></span><span>BMW 蓝只用于选中、聚焦、可交互状态，不做整块背景。</span></div>
+          <div><span class="sw" style="background:#3fcb7f"></span><span>正负盈亏继续保留交易语义色，避免影响读数判断。</span></div>
+        </div>
+      </aside>
+    </section>
+
+    <div class="head"><h3>Main Screens</h3><p>交易页 / 账户页 / 分析页</p></div>
+    <section class="grid">
+      <div>
+        <div class="label"><span>Trading</span><span class="blue">BMW Dark Shell</span></div>
+        <div class="phone"><div class="device"><div class="sb"><span>11:38</span><span>5G • 88%</span></div><div class="screen">
+          <div class="row4"><div class="btn active">BTCUSDT</div><div class="btn active">交易</div><div class="btn">挂单</div><div class="btn">已连接 | 账户在线</div></div>
+          <div class="surf chart">
+            <div class="scroll"><div class="tab active">1分</div><div class="tab">5分</div><div class="tab">15分</div><div class="tab">30分</div><div class="tab">1小时</div><div class="tab">4小时</div><div class="tab">日线</div></div>
+            <div class="plot">
+              <div class="hud2">盈亏：<span class="green">+$4.72</span><br>持仓：0.05手</div>
+              <div class="marks"><span style="left:18px;top:96px" class="green">BUY 0.05</span><span style="left:102px;top:142px" class="red">卖出</span><span style="left:214px;top:188px">平仓</span><span style="left:268px;top:268px" class="green">+$20.70</span></div>
+              <div class="tog"><div class="mini active">历史成交 开</div><div class="mini active">当前仓位 开</div></div>
+            </div>
+            <div class="meta"><span><label>状态</label>共 500 根 K 线</span><span><label>模式</label><span class="blue">实时同步中</span></span></div>
+            <div class="scroll"><div class="tab active">VOL</div><div class="tab">MACD</div><div class="tab">STOCHRSI</div><div class="tab">BOLL</div><div class="tab">MA</div><div class="tab">EMA</div></div>
+          </div>
+        </div><div class="nav"><div class="ni active">交易</div><div class="ni">账户</div><div class="ni">分析</div></div></div></div>
+      </div>
+
+      <div>
+        <div class="label"><span>Account</span><span>Overview / Positions</span></div>
+        <div class="phone"><div class="device"><div class="sb"><span>11:38</span><span>5G • 88%</span></div><div class="screen">
+          <div class="section"><div class="st"><strong>账户总览</strong><span class="pill active">已连接账户 7400048</span></div><div class="meta"><span>更新时间 2026-04-17 11:38:04</span><span style="font-size:11px;font-weight:600;color:var(--ts)">隐私显示</span></div>
+            <div class="metrics"><div class="metric"><label>总资产</label><strong>$19,805</strong></div><div class="metric"><label>净资产</label><strong>$19,809</strong></div><div class="metric"><label>可用预付款</label><strong>$19,802</strong></div><div class="metric"><label>保证金</label><strong>$7.47</strong></div></div>
+          </div>
+          <div class="section"><div class="st"><strong>当前持仓</strong><span>当前持仓 1 条</span></div><div class="pos"><div class="main">BTCUSD | <span class="green">买入</span> | 0.05 手 | <span class="green">+$4.36</span></div><div class="actions"><div class="gbtn">平仓</div><div class="pbtn">修改</div></div></div></div>
+          <div class="section"><div class="st"><strong>挂单</strong><span>挂单 0 条</span></div><div class="pos"><div class="main" style="color:var(--tm)">暂无挂单</div><div class="actions"><div class="gbtn">筛选</div></div></div></div>
+          <div class="section"><div class="st"><strong>交易记录</strong><span>历史成交入口</span></div><div class="pbtn" style="width:100%">查看完整历史成交</div></div>
+        </div><div class="nav"><div class="ni">交易</div><div class="ni active">账户</div><div class="ni">分析</div></div></div></div>
+      </div>
+
+      <div>
+        <div class="label"><span>Analysis</span><span>Performance / Charts</span></div>
+        <div class="phone"><div class="device"><div class="sb"><span>11:38</span><span>5G • 88%</span></div><div class="screen">
+          <div class="chartc"><div class="st"><strong>核心统计</strong><span style="font-size:11px;font-weight:600;color:var(--ts)">展开详细统计</span></div><div class="metrics"><div class="metric"><label>累计收益</label><strong class="green">+12.8%</strong></div><div class="metric"><label>最大回撤</label><strong class="red">-4.1%</strong></div></div><div class="scroll"><div class="pill active">1D</div><div class="pill">7D</div><div class="pill">1M</div><div class="pill">3M</div><div class="pill">ALL</div></div><div class="box line"></div></div>
+          <div class="chartc"><div class="st"><strong>交易统计</strong><span style="font-size:11px;font-weight:600;color:var(--ts)">全部 / 买入 / 卖出</span></div><div class="scroll"><div class="pill active">全部</div><div class="pill">买入</div><div class="pill">卖出</div></div><div class="meta"><span>总盈亏 <span class="green">+$1,286</span></span><span>胜率 62%</span></div><div class="box bars"></div></div>
+          <div class="chartc"><div class="st"><strong>全周期历史交易分布</strong><span>散点图</span></div><div class="box scatter"></div></div>
+        </div><div class="nav"><div class="ni">交易</div><div class="ni">账户</div><div class="ni active">分析</div></div></div></div>
+      </div>
+    </section>
+
+    <div class="head"><h3>System Panels</h3><p>设置页 / 全局状态弹层 / 悬浮窗 HUD</p></div>
+    <section class="grid" style="grid-template-columns:1.05fr 1.05fr .75fr">
+      <div>
+        <div class="label"><span>Settings</span><span>List Navigation</span></div>
+        <div class="phone"><div class="device"><div class="sb"><span>11:38</span><span>5G • 88%</span></div><div class="screen">
+          <div class="section"><div class="st"><strong>设置</strong><span style="font-size:11px;font-weight:600;color:var(--ts)">System</span></div></div>
+          <div class="list"><div class="set"><div>悬浮窗与显示</div><div class="blue">›</div></div><div class="set"><div>MT5 网关设置</div><div class="blue">›</div></div><div class="set"><div>主题设置</div><div class="blue">›</div></div></div>
+          <div class="section"><div class="st"><strong>辅助工具</strong><span style="font-size:11px;font-weight:600;color:var(--ts)">Tools</span></div><div class="list"><div class="set"><div>缓存管理</div><div class="blue">›</div></div><div class="set"><div>运行日志</div><div class="blue">›</div></div></div></div>
+        </div></div></div>
+      </div>
+
+      <div>
+        <div class="label"><span>Global Status Sheet</span><span>Bottom Sheet</span></div>
+        <div class="phone"><div class="device"><div class="sb"><span>11:38</span><span>5G • 88%</span></div><div class="screen" style="justify-content:end">
+          <div class="sheet"><div class="st"><strong>全局状态</strong><span style="font-size:11px;font-weight:600;color:var(--ts)">System Panel</span></div><div class="sr"><span>连接状态</span><strong>实时连接正常</strong></div><div class="sr"><span>当前账户</span><strong>ICMarketsSC-MT5-6 ****0048</strong></div><div class="sr"><span>同步状态</span><strong class="blue">实时同步中</strong></div><div class="sr"><span>最近刷新</span><strong>2026-04-17 11:37:54</strong></div><div class="sr"><span>异常数量</span><strong>0 条</strong></div><div class="sa"><div class="gbtn">设置</div><div class="gbtn">日志</div><div class="pbtn">异常列表</div></div></div>
+        </div></div></div>
+      </div>
+
+      <div>
+        <div class="label"><span>Floating HUD</span><span>Compact Runtime</span></div>
+        <div class="phone" style="display:flex;align-items:flex-start;justify-content:center;min-height:420px">
+          <div class="hud"><div class="ht"><span class="green">+$4.8</span><span>−</span></div><div class="hs">实时连接正常</div><div class="hc"><div style="font-size:13px;font-weight:700">BTC | <span class="green">+0.05手</span></div><div class="green" style="font-size:11px;font-weight:700">+$4.8</div><div style="font-size:14px;margin-top:2px">$74,802.3</div><div class="hs" style="margin:0">1M量 156.35 BTC</div><div class="hs" style="margin:0">1M额 1169.09万$</div></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginHorizontal="8dp">
+    android:layout_marginHorizontal="@dimen/page_horizontal_padding">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="@dimen/card_content_padding">
 
         <TextView
             android:id="@+id/tvAbnormalDialogTitle"
@@ -21,7 +22,7 @@
             android:id="@+id/tvAbnormalDialogSubtitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="@dimen/space_2"
             android:text="最多显示 500 条，可按产品、时间、触发条件筛选"
             android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
@@ -29,7 +30,7 @@
             android:id="@+id/inputLayoutAbnormalSearch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="@dimen/page_section_gap"
             android:hint="搜索产品/时间/触发条件">
 
             <com.google.android.material.textfield.TextInputEditText
@@ -44,7 +45,7 @@
             android:id="@+id/recyclerAbnormalRecords"
             android:layout_width="match_parent"
             android:layout_height="360dp"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="@dimen/page_section_gap"
             android:fadeScrollbars="false"
             android:scrollbars="vertical" />
 
@@ -52,7 +53,7 @@
             android:id="@+id/tvAbnormalRecordsEmpty"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="@dimen/page_section_gap"
             android:gravity="center"
             android:text="暂无异常记录"
             android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"

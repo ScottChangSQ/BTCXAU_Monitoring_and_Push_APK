@@ -189,7 +189,7 @@
                             android:id="@+id/etRangeEnd"
                             android:layout_width="0dp"
                             android:layout_height="@dimen/control_height_md"
-                            android:layout_marginStart="6dp"
+                            android:layout_marginStart="@dimen/control_group_gap"
                             android:layout_weight="1"
                             android:background="@drawable/bg_inline_button"
                             android:focusable="false"
@@ -202,21 +202,13 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnApplyManualRange"
+                            style="@style/Widget.BinanceMonitor.Button.PrimaryContentSquare"
                             android:layout_width="wrap_content"
                             android:layout_height="@dimen/control_height_md"
-                            android:layout_marginStart="6dp"
+                            android:layout_marginStart="@dimen/control_group_gap"
                             android:background="@drawable/bg_chip_selected"
-                            android:gravity="center"
-                            android:includeFontPadding="false"
-                            android:minHeight="0dp"
-                            android:minWidth="0dp"
-                            android:paddingHorizontal="10dp"
-                            android:paddingVertical="0dp"
                             android:text="应用"
-                            android:textAllCaps="false"
-                            android:textColor="@color/white"
-                            android:textSize="12sp"
-                            />
+                            android:textColor="@color/white" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -270,24 +262,22 @@
 
                             <Button
                                 android:id="@+id/btnManualDateCancel"
+                                style="@style/Widget.BinanceMonitor.TextAction.Medium"
                                 android:layout_width="0dp"
                                 android:layout_height="@dimen/control_height_md"
                                 android:layout_weight="1"
                                 android:background="@drawable/bg_inline_button"
-                                android:text="取消"
-                                android:textAllCaps="false"
-                                android:textSize="12sp" />
+                                android:text="取消" />
 
                             <Button
                                 android:id="@+id/btnManualDateConfirm"
+                                style="@style/Widget.BinanceMonitor.TextAction.Medium"
                                 android:layout_width="0dp"
                                 android:layout_height="@dimen/control_height_md"
-                                android:layout_marginStart="6dp"
+                                android:layout_marginStart="@dimen/control_group_gap"
                                 android:layout_weight="1"
                                 android:background="@drawable/bg_chip_selected"
-                                android:text="确定"
-                                android:textAllCaps="false"
-                                android:textSize="12sp" />
+                                android:text="确定" />
                         </LinearLayout>
                     </LinearLayout>
 
@@ -538,24 +528,22 @@
 
                             <Button
                                 android:id="@+id/btnReturnPeriodCancel"
+                                style="@style/Widget.BinanceMonitor.TextAction.Medium"
                                 android:layout_width="0dp"
                                 android:layout_height="@dimen/control_height_md"
                                 android:layout_weight="1"
                                 android:background="@drawable/bg_inline_button"
-                                android:text="取消"
-                                android:textAllCaps="false"
-                                android:textSize="12sp" />
+                                android:text="取消" />
 
                             <Button
                                 android:id="@+id/btnReturnPeriodConfirm"
+                                style="@style/Widget.BinanceMonitor.TextAction.Medium"
                                 android:layout_width="0dp"
                                 android:layout_height="@dimen/control_height_md"
-                                android:layout_marginStart="6dp"
+                                android:layout_marginStart="@dimen/control_group_gap"
                                 android:layout_weight="1"
                                 android:background="@drawable/bg_chip_selected"
-                                android:text="确定"
-                                android:textAllCaps="false"
-                                android:textSize="12sp" />
+                                android:text="确定" />
                         </LinearLayout>
                     </LinearLayout>
 
@@ -647,7 +635,7 @@
                         <FrameLayout
                             android:layout_width="0dp"
                             android:layout_height="@dimen/control_height_md"
-                            android:layout_marginStart="@dimen/space_8"
+                            android:layout_marginStart="@dimen/control_group_gap"
                             android:layout_weight="1">
 
                             <androidx.appcompat.widget.AppCompatSpinner
@@ -678,7 +666,7 @@
                         <FrameLayout
                             android:layout_width="0dp"
                             android:layout_height="@dimen/control_height_md"
-                            android:layout_marginStart="@dimen/space_8"
+                            android:layout_marginStart="@dimen/control_group_gap"
                             android:layout_weight="1">
 
                             <androidx.appcompat.widget.AppCompatSpinner
@@ -1109,21 +1097,6 @@
             android:textColor="@color/white"
             android:textSize="10.5sp" />
 
-        <TextView
-            android:id="@+id/tabSettings"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
-            android:gravity="center"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
-            android:text="@string/nav_settings"
-            android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
     </LinearLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
@@ -1132,6 +1105,153 @@
         android:layout_height="0dp"
         android:visibility="gone"
         app:menu="@menu/menu_bottom_nav" />
+
+    <!-- 桥接页仍复用共享绑定类，这里补齐摘要页专属视图契约，避免新增绑定字段时旧深页崩溃 -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardStatsSummarySection"
+            android:layout_width="0dp"
+            android:layout_height="0dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryExpandHint"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricOneLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricOneValue"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricTwoLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricTwoValue"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricThreeLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricThreeValue"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricFourLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricFourValue"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryDetailsEmpty"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerStatsSummaryDetails"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardStructureAnalysisSection"
+            android:layout_width="0dp"
+            android:layout_height="0dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvStructureAnalysisEmpty"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerStructureAnalysisMetrics"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardTradeAnalysisEntrySection"
+            android:layout_width="0dp"
+            android:layout_height="0dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvTradeAnalysisEmpty"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerTradeAnalysisMetrics"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardStatsEmptyState"
+            android:layout_width="0dp"
+            android:layout_height="0dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:id="@+id/layoutStatsEmptyChartPlaceholder"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:orientation="vertical" />
+
+                <TextView
+                    android:id="@+id/tvStatsEmptyReturnHint"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsEmptyTradeHint"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
 
     <ViewStub
         android:id="@+id/stubSharedAccountStatsContent"

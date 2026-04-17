@@ -8,10 +8,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.domain.account.model.AccountMetric;
+import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
-import com.binance.monitor.ui.account.runtime.AccountRuntimePayload;
-import com.binance.monitor.ui.account.runtime.AccountRuntimeSnapshotStore;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -27,23 +26,23 @@ import java.util.Map;
 import java.util.TimeZone;
 
 public class AccountPositionUiModelFactory {
-    private final AccountRuntimeSnapshotStore runtimeSnapshotStore = new AccountRuntimeSnapshotStore();
-
     // 将预加载缓存转换为账户持仓页只读模型。
     @NonNull
     public AccountPositionUiModel build(@Nullable AccountStatsPreloadManager.Cache cache) {
-        AccountRuntimePayload payload = runtimeSnapshotStore.build(cache);
-        List<AccountMetric> overviewMetrics = buildOverviewMetrics(payload);
-        List<PositionItem> positions = sortPositionItems(payload.getPositions());
+        AccountSnapshot snapshot = cache == null ? null : cache.getSnapshot();
+        long updatedAt = cache == null ? 0L : cache.getUpdatedAt();
+        List<AccountMetric> overviewMetrics = buildOverviewMetrics(snapshot, updatedAt);
+        List<PositionItem> positions = sortPositionItems(snapshot == null ? null : snapshot.getPositions());
         List<PositionAggregateItem> positionAggregates = buildPositionAggregates(positions);
-        List<PositionItem> pendingOrders = sortPositionItems(payload.getPendingOrders());
+        List<PositionItem> pendingOrders = sortPositionItems(snapshot == null ? null : snapshot.getPendingOrders());
 
-        String connectionStatusText = resolveConnectionStatusText(payload);
+        String connectionStatusText = resolveConnectionStatusText(cache);
         String positionSummary = buildSummaryText("当前持仓", positions.size());
         String pendingSummary = buildSummaryText("挂单", pendingOrders.size());
-        String updatedAtText = formatUpdatedAt(payload.getUpdatedAt());
-        long snapshotVersionMs = resolveSnapshotVersionMs(payload);
-        String signature = buildSignature(payload,
+        long fetchedAt = cache == null ? 0L : cache.getFetchedAt();
+        String updatedAtText = formatUpdatedAt(updatedAt);
+        long snapshotVersionMs = resolveSnapshotVersionMs(updatedAt, fetchedAt);
+        String signature = buildSignature(cache,
                 overviewMetrics,
                 positionAggregates,
                 positions,
@@ -66,16 +65,16 @@ public class AccountPositionUiModelFactory {
 
     // 账户概览沿用统一帮助类，在后台补齐固定顺序和累计指标后再给 UI。
     @NonNull
-    private List<AccountMetric> buildOverviewMetrics(@NonNull AccountRuntimePayload payload) {
-        if (payload.getOverviewMetrics().isEmpty()) {
+    private List<AccountMetric> buildOverviewMetrics(@Nullable AccountSnapshot snapshot, long updatedAt) {
+        if (snapshot == null || snapshot.getOverviewMetrics() == null || snapshot.getOverviewMetrics().isEmpty()) {
             return Collections.emptyList();
         }
         List<AccountMetric> overview = AccountOverviewMetricsHelper.buildOverviewMetrics(
-                payload.getOverviewMetrics(),
-                payload.getPositions(),
+                snapshot.getOverviewMetrics(),
+                snapshot.getPositions(),
                 Collections.emptyList(),
                 Collections.emptyList(),
-                payload.getUpdatedAt(),
+                updatedAt,
                 TimeZone.getDefault()
         );
         return overview.isEmpty() ? Collections.emptyList() : overview;
@@ -165,22 +164,22 @@ public class AccountPositionUiModelFactory {
 
     // 顶部状态按钮文案统一由缓存推导，避免页面层再次拼接。
     @NonNull
-    private String resolveConnectionStatusText(@NonNull AccountRuntimePayload payload) {
-        if (!payload.isConnected()) {
-            return safeText(payload.getAccount()).isEmpty() ? "未连接账户" : "已登录账户";
+    private String resolveConnectionStatusText(@Nullable AccountStatsPreloadManager.Cache cache) {
+        boolean connected = cache != null && cache.isConnected();
+        String account = safeText(cache == null ? null : cache.getAccount());
+        if (!connected) {
+            return account.isEmpty() ? "未连接账户" : "已登录账户";
         }
-        String account = safeText(payload.getAccount());
         return account.isEmpty() ? "已连接账户" : "已连接账户 " + account;
     }
 
     // 用更新时间优先、拉取时间兜底的方式生成单调版本，避免旧缓存异步回盖新界面。
-    private long resolveSnapshotVersionMs(@NonNull AccountRuntimePayload payload) {
-        return Math.max(payload.getUpdatedAt(), payload.getFetchedAt());
+    private long resolveSnapshotVersionMs(long updatedAt, long fetchedAt) {
+        return Math.max(updatedAt, fetchedAt);
     }
 
     // 组合缓存核心字段与已排序内容，生成稳定签名。
-    @NonNull
-    private String buildSignature(@NonNull AccountRuntimePayload payload,
+    private String buildSignature(@Nullable AccountStatsPreloadManager.Cache cache,
                                   @NonNull List<AccountMetric> overviewMetrics,
                                   @NonNull List<PositionAggregateItem> positionAggregates,
                                   @NonNull List<PositionItem> positions,
@@ -188,11 +187,11 @@ public class AccountPositionUiModelFactory {
                                   @NonNull String connectionStatusText,
                                   @NonNull String updatedAtText) {
         StringBuilder builder = new StringBuilder();
-        builder.append("connected=").append(payload.isConnected()).append('\n');
-        builder.append("account=").append(safeText(payload.getAccount())).append('\n');
-        builder.append("server=").append(safeText(payload.getServer())).append('\n');
-        builder.append("updatedAt=").append(payload.getUpdatedAt()).append('\n');
-        builder.append("fetchedAt=").append(payload.getFetchedAt()).append('\n');
+        builder.append("connected=").append(cache != null && cache.isConnected()).append('\n');
+        builder.append("account=").append(safeText(cache == null ? null : cache.getAccount())).append('\n');
+        builder.append("server=").append(safeText(cache == null ? null : cache.getServer())).append('\n');
+        builder.append("updatedAt=").append(cache == null ? 0L : cache.getUpdatedAt()).append('\n');
+        builder.append("fetchedAt=").append(cache == null ? 0L : cache.getFetchedAt()).append('\n');
         builder.append("overview=").append(serializeMetrics(overviewMetrics)).append('\n');
         builder.append("aggregates=").append(serializePositionAggregates(positionAggregates)).append('\n');
         builder.append("positions=").append(serializePositions(positions)).append('\n');

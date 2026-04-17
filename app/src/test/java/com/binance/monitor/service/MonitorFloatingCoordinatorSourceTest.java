@@ -3,6 +3,7 @@
  */
 package com.binance.monitor.service;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -29,19 +30,30 @@ public class MonitorFloatingCoordinatorSourceTest {
     }
 
     @Test
-    public void emptyStreamSnapshotShouldWaitForCanonicalCacheBeforeShowingNoPositions() throws Exception {
+    public void floatingCoordinatorShouldNotDependOnRemovedStreamSnapshotFallback() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
                 "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("private List<PositionItem> resolveFloatingPositions(@Nullable AccountStatsPreloadManager.Cache cache) {"));
-        assertTrue(source.contains("List<PositionItem> streamPositions = dataSource.copyStreamPositions();"));
-        assertTrue(source.contains("List<PositionItem> cachePositions = copyCachePositions(cache);"));
-        assertTrue(source.contains("boolean cacheCaughtUp = cache != null\n                && cache.getFetchedAt() >= dataSource.getStreamPositionsUpdatedAt();"));
-        assertTrue(source.contains("if (!streamPositions.isEmpty()) {\n            return streamPositions;\n        }"));
-        assertTrue(source.contains("if (!cachePositions.isEmpty()) {\n            return cachePositions;\n        }"));
-        assertTrue(source.contains("if (dataSource.hasStreamAccountSnapshot() && !cacheCaughtUp) {\n            return streamPositions;\n        }"));
+        assertFalse(source.contains("resolveFloatingPositions("));
+        assertFalse(source.contains("copyStreamPositions()"));
+        assertFalse(source.contains("hasStreamAccountSnapshot()"));
+        assertFalse(source.contains("getStreamPositionsUpdatedAt()"));
+        assertTrue(source.contains("List<com.binance.monitor.domain.account.model.PositionItem> positions = copyCachePositions(cache);"));
+        assertTrue(source.contains("return FloatingPositionAggregator.buildSymbolCards("));
+    }
+
+    @Test
+    public void floatingSnapshotShouldPreferUnifiedRuntimeCardsWhenCanonicalCacheExists() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private List<FloatingSymbolCardData> buildFloatingCards(@Nullable AccountStatsPreloadManager.Cache cache) {"));
+        assertTrue(source.contains("runtimeCards.add(runtimeSnapshotStore.selectFloatingCard(symbol));"));
+        assertTrue(source.contains("return FloatingPositionAggregator.buildSymbolCardsFromRuntime("));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

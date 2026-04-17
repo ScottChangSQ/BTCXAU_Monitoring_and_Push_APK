@@ -11,10 +11,12 @@ import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.repository.MonitorRepository;
-import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.runtime.ConnectionStage;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
+import com.binance.monitor.runtime.state.model.FloatingCardRuntimeModel;
 import com.binance.monitor.ui.floating.FloatingPositionAggregator;
 import com.binance.monitor.ui.floating.FloatingSymbolCardData;
 import com.binance.monitor.ui.floating.FloatingWindowManager;
@@ -22,6 +24,7 @@ import com.binance.monitor.ui.floating.FloatingWindowSnapshot;
 import com.binance.monitor.util.ChainLatencyTracer;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 final class MonitorFloatingCoordinator {
@@ -29,13 +32,6 @@ final class MonitorFloatingCoordinator {
     interface DataSource {
         @Nullable
         AccountStatsPreloadManager.Cache getLatestAccountCache();
-
-        @NonNull
-        List<PositionItem> copyStreamPositions();
-
-        boolean hasStreamAccountSnapshot();
-
-        long getStreamPositionsUpdatedAt();
 
         @NonNull
         ConnectionStage getCurrentConnectionStage();
@@ -49,6 +45,7 @@ final class MonitorFloatingCoordinator {
     private final ConfigManager configManager;
     private final MonitorRepository repository;
     private final DataSource dataSource;
+    private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore;
     private boolean floatingRefreshScheduled;
     private long lastFloatingRefreshAt;
     private final Runnable floatingRefreshRunnable = new Runnable() {
@@ -71,6 +68,7 @@ final class MonitorFloatingCoordinator {
         this.configManager = configManager;
         this.repository = repository;
         this.dataSource = dataSource;
+        this.runtimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();
     }
 
     // 应用悬浮窗显示偏好，并触发一次立即刷新。
@@ -150,42 +148,48 @@ final class MonitorFloatingCoordinator {
     // 组装一份统一悬浮窗快照，确保所有字段在同一次 UI 刷新中一起变化。
     private FloatingWindowSnapshot buildFloatingSnapshot() {
         AccountStatsPreloadManager.Cache cache = dataSource.getLatestAccountCache();
-        List<PositionItem> positions = resolveFloatingPositions(cache);
-        List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
-                positions,
-                repository == null ? null : repository.getDisplayOverviewKlineSnapshot(),
-                repository == null ? null : repository.getDisplayPriceSnapshot(),
-                configManager != null && configManager.isShowBtc(),
-                configManager != null && configManager.isShowXau()
-        );
+        List<FloatingSymbolCardData> cards = buildFloatingCards(cache);
         return new FloatingWindowSnapshot(
                 dataSource.getCurrentConnectionStage(),
                 dataSource.getCurrentConnectionStatus(),
-                Math.max(resolveFloatingUpdatedAt(cards), dataSource.getStreamPositionsUpdatedAt()),
+                resolveFloatingUpdatedAt(cards),
                 cards
         );
     }
 
-    // 统一决定悬浮窗使用哪一份持仓真值，避免空 stream 快照瞬时覆盖掉已确认的账户缓存。
-    private List<PositionItem> resolveFloatingPositions(@Nullable AccountStatsPreloadManager.Cache cache) {
-        List<PositionItem> streamPositions = dataSource.copyStreamPositions();
-        List<PositionItem> cachePositions = copyCachePositions(cache);
-        boolean cacheCaughtUp = cache != null
-                && cache.getFetchedAt() >= dataSource.getStreamPositionsUpdatedAt();
-        if (!streamPositions.isEmpty()) {
-            return streamPositions;
+    @NonNull
+    private List<FloatingSymbolCardData> buildFloatingCards(@Nullable AccountStatsPreloadManager.Cache cache) {
+        boolean showBtc = configManager != null && configManager.isShowBtc();
+        boolean showXau = configManager != null && configManager.isShowXau();
+        List<String> visibleSymbols = FloatingPositionAggregator.filterMarketSymbols(
+                Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
+                showBtc,
+                showXau
+        );
+        if (cache != null && cache.getSnapshot() != null) {
+            List<FloatingCardRuntimeModel> runtimeCards = new ArrayList<>();
+            for (String symbol : visibleSymbols) {
+                runtimeCards.add(runtimeSnapshotStore.selectFloatingCard(symbol));
+            }
+            return FloatingPositionAggregator.buildSymbolCardsFromRuntime(
+                    visibleSymbols,
+                    runtimeCards,
+                    repository == null ? null : repository.getDisplayOverviewKlineSnapshot(),
+                    repository == null ? null : repository.getDisplayPriceSnapshot()
+            );
         }
-        if (!cachePositions.isEmpty()) {
-            return cachePositions;
-        }
-        if (dataSource.hasStreamAccountSnapshot() && !cacheCaughtUp) {
-            return streamPositions;
-        }
-        return cachePositions;
+        List<com.binance.monitor.domain.account.model.PositionItem> positions = copyCachePositions(cache);
+        return FloatingPositionAggregator.buildSymbolCards(
+                positions,
+                repository == null ? null : repository.getDisplayOverviewKlineSnapshot(),
+                repository == null ? null : repository.getDisplayPriceSnapshot(),
+                showBtc,
+                showXau
+        );
     }
 
     // 复制账户正式缓存里的持仓列表，避免悬浮窗直接持有可变对象引用。
-    private List<PositionItem> copyCachePositions(@Nullable AccountStatsPreloadManager.Cache cache) {
+    private List<com.binance.monitor.domain.account.model.PositionItem> copyCachePositions(@Nullable AccountStatsPreloadManager.Cache cache) {
         if (cache == null || cache.getSnapshot() == null || cache.getSnapshot().getPositions() == null) {
             return new ArrayList<>();
         }

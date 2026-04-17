@@ -10,6 +10,8 @@ import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.state.model.ChartProductRuntimeModel;
+import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 
 import org.junit.Test;
 
@@ -25,7 +27,7 @@ public class ChartOverlaySnapshotFactoryTest {
 
         ChartOverlaySnapshot snapshot = factory.build("BTC", Collections.emptyList(), null, null);
 
-        assertEquals("持仓盈亏: -- | 持仓收益率: --", snapshot.getPositionSummaryText());
+        assertEquals("盈亏：-- | 持仓：--", snapshot.getPositionSummaryText());
         assertEquals("更新时间 --", snapshot.getOverlayMetaText());
         assertTrue(snapshot.getPositionAnnotations().isEmpty());
         assertTrue(snapshot.getPendingAnnotations().isEmpty());
@@ -68,7 +70,7 @@ public class ChartOverlaySnapshotFactoryTest {
 
         assertEquals(1, snapshot.getPositionAnnotations().size());
         assertEquals(1, snapshot.getPendingAnnotations().size());
-        assertEquals("持仓盈亏: +$20.00 | 持仓收益率: +2.00%", snapshot.getPositionSummaryText());
+        assertEquals("盈亏：+$20.00 | 持仓：2手", snapshot.getPositionSummaryText());
         assertTrue(snapshot.getOverlayMetaText().startsWith("更新时间 "));
         assertNotEquals("", snapshot.getSignature());
         assertEquals(100d, snapshot.getAggregateCostAnnotation().price, 0.0001d);
@@ -108,7 +110,7 @@ public class ChartOverlaySnapshotFactoryTest {
 
         ChartOverlaySnapshot snapshot = factory.build("BTC", candles, snapshotData, cache);
 
-        assertEquals("持仓盈亏: +$22.50 | 持仓收益率: +2.25%", snapshot.getPositionSummaryText());
+        assertEquals("盈亏：+$22.50 | 持仓：2手", snapshot.getPositionSummaryText());
     }
 
     @Test
@@ -130,7 +132,69 @@ public class ChartOverlaySnapshotFactoryTest {
 
         ChartOverlaySnapshot snapshot = factory.build("BTC", candles, snapshotData, null);
 
-        assertEquals("持仓盈亏: +$22.50 | 持仓收益率: +11.25%", snapshot.getPositionSummaryText());
+        assertEquals("盈亏：+$22.50 | 持仓：2手", snapshot.getPositionSummaryText());
+    }
+
+    @Test
+    public void buildShouldPreferUnifiedRuntimeSummaryWhenProvided() {
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        List<CandleEntry> candles = Arrays.asList(
+                new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
+                new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
+        );
+        AccountSnapshot snapshotData = new AccountSnapshot(
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.singletonList(createPosition("BTCUSD", "Buy", 11L, 21L, 1710000000000L, 2d, 100d, 102d, 20d)),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList()
+        );
+
+        ChartOverlaySnapshot snapshot = factory.build(
+                "BTC",
+                candles,
+                snapshotData,
+                null,
+                new ChartProductRuntimeModel(
+                        new ProductRuntimeSnapshot("BTCUSD", 5L, 1, 0, 3d, 88d,
+                                "盈亏：+$88.00 | 持仓：3手", "挂单：--")
+                )
+        );
+
+        assertEquals("盈亏：+$88.00 | 持仓：3手", snapshot.getPositionSummaryText());
+    }
+
+    @Test
+    public void buildShouldRespectRuntimeSignedLotsForShortSummary() {
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        List<CandleEntry> candles = Arrays.asList(
+                new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
+                new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
+        );
+        AccountSnapshot snapshotData = new AccountSnapshot(
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.singletonList(createPosition("BTCUSD", "Sell", 11L, 21L, 1710000000000L, 2d, 100d, 102d, -20d)),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList()
+        );
+
+        ChartOverlaySnapshot snapshot = factory.build(
+                "BTC",
+                candles,
+                snapshotData,
+                null,
+                new ChartProductRuntimeModel(
+                        new ProductRuntimeSnapshot("BTCUSD", 5L, 1, 0, 0.10d, -0.10d, -28d,
+                                "BTCUSD", "BTC", "盈亏：-$28.00 | 持仓：-0.10手", "挂单：--")
+                )
+        );
+
+        assertEquals("盈亏：-$28.00 | 持仓：-0.10手", snapshot.getPositionSummaryText());
     }
 
     @Test

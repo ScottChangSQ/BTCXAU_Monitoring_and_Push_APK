@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginHorizontal="8dp">
+    android:layout_marginHorizontal="3dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="@dimen/card_content_padding">
 
         <TextView
             android:id="@+id/tvGlobalStatusTitle"
@@ -17,18 +18,10 @@
             android:text="@string/global_status_sheet_title"
             android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
-        <TextView
-            android:id="@+id/tvGlobalStatusSubtitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/global_status_sheet_subtitle"
-            android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
-
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="@dimen/page_section_gap"
             android:orientation="vertical">
 
             <LinearLayout
@@ -54,7 +47,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/page_section_gap"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -75,7 +68,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/page_section_gap"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -96,7 +89,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/page_section_gap"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -117,7 +110,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/page_section_gap"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -139,37 +132,35 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/page_section_gap"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnGlobalStatusSettings"
+                style="@style/Widget.BinanceMonitor.Button.SecondaryCompactContentSquare"
                 android:layout_width="0dp"
                 android:layout_height="@dimen/control_height_sm"
                 android:layout_weight="1"
-                android:minWidth="0dp"
-                android:text="@string/global_status_action_settings"
-                android:textAllCaps="false" />
+                android:text="@string/global_status_action_settings" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnGlobalStatusLogs"
+                style="@style/Widget.BinanceMonitor.Button.SecondaryCompactContentSquare"
                 android:layout_width="0dp"
                 android:layout_height="@dimen/control_height_sm"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="@dimen/control_group_gap"
                 android:layout_weight="1"
-                android:minWidth="0dp"
-                android:text="@string/global_status_action_logs"
-                android:textAllCaps="false" />
+                android:text="@string/global_status_action_logs" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnGlobalStatusAbnormal"
+                style="@style/Widget.BinanceMonitor.Button.SecondaryCompactContentSquare"
                 android:layout_width="0dp"
                 android:layout_height="@dimen/control_height_sm"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="@dimen/control_group_gap"
                 android:layout_weight="1"
-                android:minWidth="0dp"
-                android:text="@string/global_status_action_abnormal"
-                android:textAllCaps="false" />
+                android:text="@string/global_status_action_abnormal" />
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

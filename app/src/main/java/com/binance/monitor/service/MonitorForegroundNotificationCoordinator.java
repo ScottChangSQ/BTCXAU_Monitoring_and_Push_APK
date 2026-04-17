@@ -1,20 +1,17 @@
 /*
- * 监控服务前台通知协调器，统一处理启动、去重刷新和销毁收口。
+ * 监控服务通知协调器，统一处理历史常驻通知收口和异常提醒链路隔离。
  */
 package com.binance.monitor.service;
 
-import android.app.Notification;
-
 import androidx.annotation.Nullable;
 
-import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.util.NotificationHelper;
 
 final class MonitorForegroundNotificationCoordinator {
 
     interface Host {
-        void startServiceForeground(int notificationId, Notification notification);
+        void suppressServiceNotification();
     }
 
     private final NotificationHelper notificationHelper;
@@ -41,15 +38,12 @@ final class MonitorForegroundNotificationCoordinator {
         }
         String safeConnectionState = safeText(connectionState);
         String signature = buildForegroundNotificationSignature(safeConnectionState, monitoringEnabled);
-        host.startServiceForeground(
-                AppConstants.SERVICE_NOTIFICATION_ID,
-                notificationHelper.buildServiceNotification(safeConnectionState, monitoringEnabled)
-        );
+        host.suppressServiceNotification();
         lastForegroundNotificationSignature = signature;
         foregroundStarted = true;
     }
 
-    // 刷新前台通知文案，避免重复 notify。
+    // 常驻通知已在启动后收起，这里只保留签名去重状态，避免重复进入前台链路。
     void refreshNotification(@Nullable String connectionState) {
         if (!foregroundStarted || notificationHelper == null || repository == null) {
             return;
@@ -60,7 +54,6 @@ final class MonitorForegroundNotificationCoordinator {
         if (signature.equals(lastForegroundNotificationSignature)) {
             return;
         }
-        notificationHelper.updateServiceNotification(safeConnectionState, monitoringEnabled);
         lastForegroundNotificationSignature = signature;
     }
 

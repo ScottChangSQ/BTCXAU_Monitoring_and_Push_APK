@@ -1,6 +1,6 @@
 /*
- * 账户统计桥接页，负责历史分析、交易记录与统计图表展示。
- * 该页面只保留历史分析链路，并对接网关快照、历史缓存和本地筛选交互。
+ * 账户统计桥接页，当前只保留旧入口兼容壳。
+ * 真实分析深页运行链已委托给共享的 AccountStatsScreen，Activity 仅继续保留旧字段和兼容入口。
  */
 package com.binance.monitor.ui.account;
 
@@ -85,6 +85,8 @@ import com.binance.monitor.ui.account.history.AccountHistorySnapshotStore;
 import com.binance.monitor.ui.account.history.AccountStatsRenderSignature;
 import com.binance.monitor.ui.account.history.AccountStatsSectionDiff;
 import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
+import com.binance.monitor.ui.account.navigation.AccountStatsRouteResolver;
+import com.binance.monitor.ui.account.navigation.AnalysisDeepLinkTarget;
 import com.binance.monitor.ui.account.session.AccountSessionRestoreHelper;
 import com.binance.monitor.ui.account.adapter.StatsMetricAdapter;
 import com.binance.monitor.ui.account.adapter.TradeRecordAdapterV2;
@@ -130,6 +132,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     public static final String EXTRA_LOGIN_DIALOG_RESULT_MESSAGE = "com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_MESSAGE";
     public static final String EXTRA_LOGIN_DIALOG_RESULT_ACCOUNT = "com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_ACCOUNT";
     public static final String EXTRA_LOGIN_DIALOG_RESULT_SERVER = "com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_SERVER";
+    public static final String EXTRA_FORCE_DIRECT_ANALYSIS = "com.binance.monitor.ui.account.extra.FORCE_DIRECT_ANALYSIS";
+    public static final String EXTRA_ANALYSIS_TARGET_SECTION = "com.binance.monitor.ui.account.extra.ANALYSIS_TARGET_SECTION";
+    public static final String ANALYSIS_TARGET_STRUCTURE = "structure";
+    public static final String ANALYSIS_TARGET_TRADE_HISTORY = "trade_history";
     private static final double ACCOUNT_INITIAL_BALANCE = 15_019.45d;
     private static final double TRADE_PNL_ZERO_THRESHOLD = 0.01d;
     private static final int RETURNS_CELL_MARGIN_DP = 1;
@@ -142,6 +148,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private boolean pendingOpenLoginDialogFromIntent;
     private boolean finishAfterLoginDialog;
     private boolean loginDialogSubmissionInFlight;
+    private boolean analysisTargetScrollCompleted;
+    private String pendingAnalysisTargetSection = "";
     private static final String ACCOUNT = "";
     private static final String SERVER = "";
 
@@ -225,6 +233,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private AccountStatsRenderCoordinator renderCoordinator;
     private AccountStatsPageController pageController;
     private AccountStatsPageRuntime pageRuntime;
+    private AccountStatsScreen screen;
     private final AccountHistorySnapshotStore historySnapshotStore = new AccountHistorySnapshotStore();
 
     private final AccountSnapshotRequestGuard snapshotRequestGuard = new AccountSnapshotRequestGuard();
@@ -1247,6 +1256,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (bridgeLegacyEntryToMainHost(getIntent())) {
             return;
         }
+        pendingAnalysisTargetSection = normalizeAnalysisTargetSection(getIntent());
         if (isLoginDialogOnlyMode(getIntent())) {
             setTheme(R.style.Theme_BinanceMonitor_TranslucentHost);
         }
@@ -1259,6 +1269,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (finishAfterLoginDialog) {
             binding.getRoot().setVisibility(View.INVISIBLE);
         }
+        screen = new AccountStatsScreen(this, contentBinding);
+        screen.initialize();
+        screen.setPendingAnalysisTargetSection(pendingAnalysisTargetSection);
+        screen.onNewIntent(getIntent());
         registerFirstFrameCompletionListener();
         MonitorServiceController.ensureStarted(this);
         traceAccountRenderPhase("on_create_inflate_and_content",
@@ -1289,89 +1303,105 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
             @Override
             public void bindPageContent(@NonNull ContentAccountStatsBinding binding) {
-                initializePageContent();
+                if (screen != null) {
+                    screen.bindPageContent();
+                }
             }
 
             @Override
             public void placeCurveSectionToBottom() {
-                AccountStatsBridgeActivity.this.placeCurveSectionToBottom();
+                if (screen != null) {
+                    screen.placeCurveSectionToBottom();
+                }
             }
 
             @Override
             public void bindLocalMeta() {
-                AccountStatsBridgeActivity.this.bindLocalMeta();
+                if (screen != null) {
+                    screen.bindLocalMeta();
+                }
             }
 
             @Override
             public void attachForegroundRefresh() {
-                if (preloadManager != null) {
-                    preloadManager.addCacheListener(preloadCacheListener);
-                    preloadManager.setLiveScreenActive(true);
+                if (screen != null) {
+                    screen.attachForegroundRefresh();
                 }
             }
 
             @Override
             public void applyPagePalette() {
-                AccountStatsBridgeActivity.this.applyPaletteStyles();
+                if (screen != null) {
+                    screen.applyPagePalette();
+                }
             }
 
             @Override
             public void applyPrivacyMaskState() {
-                AccountStatsBridgeActivity.this.applyPrivacyMaskState();
+                if (screen != null) {
+                    screen.applyPrivacyMaskState();
+                }
             }
 
             public void enterAccountScreen(boolean coldStart) {
-                if (snapshotRefreshCoordinator != null) {
-                    snapshotRefreshCoordinator.enterAccountScreen(coldStart);
+                if (screen != null) {
+                    screen.enterAccountScreen(coldStart);
                 }
             }
 
             @Override
             public void openLoginDialogIfRequested() {
-                AccountStatsBridgeActivity.this.openLoginDialogIfRequested();
+                if (screen != null) {
+                    screen.openLoginDialogIfRequested();
+                }
             }
 
             @Override
             public void dismissActiveLoginDialog() {
-                AccountStatsBridgeActivity.this.dismissActiveLoginDialog();
+                if (screen != null) {
+                    screen.dismissActiveLoginDialog();
+                }
             }
 
             @Override
             public void clearTransientUiCallbacks() {
-                binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
-                binding.scrollAccountStats.removeCallbacks(deferredSecondarySectionAttachRunnable);
-                deferredSecondarySectionAttachPosted = false;
-                clearFirstFrameCompletionListener();
-                hideLoginSuccessBannerNow();
+                if (screen != null) {
+                    screen.clearTransientUiCallbacks();
+                }
             }
 
             @Override
             public void detachForegroundRefresh() {
-                if (preloadManager != null) {
-                    preloadManager.removeCacheListener(preloadCacheListener);
-                    preloadManager.setLiveScreenActive(false);
+                if (screen != null) {
+                    screen.detachForegroundRefresh();
                 }
             }
 
             @Override
             public void persistUiState() {
-                AccountStatsBridgeActivity.this.persistUiState();
+                if (screen != null) {
+                    screen.persistUiState();
+                }
             }
 
             @Override
             public void clearDestroyCallbacks() {
-                clearTransientUiCallbacks();
+                if (screen != null) {
+                    screen.clearDestroyCallbacks();
+                }
             }
 
             @Override
             public void shutdownExecutors() {
-                AccountStatsBridgeActivity.this.shutdownExecutors();
+                if (screen != null) {
+                    screen.shutdownExecutors();
+                }
             }
 
             @Override
             public void requestScheduledSnapshot() {
-                if (snapshotRefreshCoordinator != null) {
-                    snapshotRefreshCoordinator.requestSnapshot();
+                if (screen != null) {
+                    screen.requestScheduledSnapshot();
                 }
             }
 
@@ -1408,9 +1438,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                         binding.tabMarketMonitor,
                         binding.tabMarketChart,
                         binding.tabAccountPosition,
-                        binding.tabAccountStats,
-                        binding.tabSettings
+                        binding.tabAccountStats
                 ));
+        if (screen != null) {
+            screen.attachPageRuntime(pageRuntime);
+        }
         traceAccountRenderPhase("on_create_runtime_init",
                 stageStartedAt,
                 0,
@@ -1491,8 +1523,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         setIntent(intent);
+        pendingAnalysisTargetSection = normalizeAnalysisTargetSection(intent);
         consumeLoginDialogIntent(intent);
-        openLoginDialogIfRequested();
+        if (screen != null) {
+            screen.setPendingAnalysisTargetSection(pendingAnalysisTargetSection);
+        }
+        if (screen != null) {
+            screen.onNewIntent(intent);
+        }
     }
 
     @Override
@@ -1522,7 +1560,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private boolean bridgeLegacyEntryToMainHost(@Nullable Intent sourceIntent) {
-        Intent bridgeIntent = HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_STATS);
+        AnalysisDeepLinkTarget analysisTarget = AccountStatsRouteResolver.resolve(sourceIntent, "bridge");
+        if (analysisTarget.requiresDirectAnalysisPage()) {
+            return false;
+        }
+        Intent bridgeIntent = HostNavigationIntentFactory.forAnalysisTarget(this, analysisTarget);
         Bundle sourceExtras = sourceIntent == null ? null : sourceIntent.getExtras();
         if (sourceExtras != null) {
             bridgeIntent.putExtras(sourceExtras);
@@ -1531,6 +1573,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         overridePendingTransition(0, 0);
         finish();
         return true;
+    }
+
+    // 从分析 tab 主动进入完整分析页时，桥接页不能再把用户送回当前主壳 tab。
+    private boolean shouldOpenDirectAnalysisPage(@Nullable Intent sourceIntent) {
+        return AccountStatsRouteResolver.resolve(sourceIntent, "bridge").requiresDirectAnalysisPage();
+    }
+
+    // 规范化深页落点，避免无效参数导致重复尝试滚动。
+    @NonNull
+    private String normalizeAnalysisTargetSection(@Nullable Intent sourceIntent) {
+        return AccountStatsRouteResolver.normalizeFocusSection(sourceIntent);
     }
 
     private void setupOverviewHeader() {
@@ -1702,7 +1755,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setBackground(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+        content.setBackground(UiPaletteManager.createSurfaceDrawable(this, palette.card, palette.stroke));
         content.setPadding(dpToPx(18), dpToPx(14), dpToPx(18), dpToPx(6));
 
         TextView titleView = new TextView(this);
@@ -1755,10 +1808,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             builder.setNegativeButton("退出登录", (dialog, which) -> logoutAccount());
         }
         AlertDialog dialog = builder.create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
-        }
         dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
         if (dialog.getButton(AlertDialog.BUTTON_POSITIVE) != null) {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
         }
@@ -1811,7 +1862,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         int top = dpToPx(8);
         int bottom = dpToPx(4);
         container.setPadding(horizontal, top, horizontal, bottom);
-        container.setBackground(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
+        container.setBackground(UiPaletteManager.createSurfaceDrawable(this, palette.card, palette.stroke));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             // 远程交易账号输入只允许用户直接填写，避免系统自动填充抢占弹窗交互。
             container.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
@@ -1845,7 +1896,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         activeLoginDialog = dialog;
         if (dialog.getWindow() != null) {
             dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-            dialog.getWindow().setBackgroundDrawable(UiPaletteManager.createFilledDrawable(this, palette.surfaceEnd));
         }
         dialog.setOnDismissListener(ignored -> {
             if (activeLoginDialog == dialog) {
@@ -1863,6 +1913,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             refreshSavedAccountsForDialog(savedAccountsContainer, palette, dialog);
         });
         dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
     }
 
     // 登录弹窗使用页面自管操作按钮，避免部分机型把系统正按钮点击直接吞成 dismiss。
@@ -2027,7 +2078,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             MaterialButton actionButton = new MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
             actionButton.setText(profile.isActive() ? "当前账号" : "切换");
             actionButton.setEnabled(!profile.isActive());
-            actionButton.setTextColor(profile.isActive() ? palette.textSecondary : palette.primary);
+            actionButton.setTextColor(profile.isActive()
+                    ? UiPaletteManager.controlUnselectedText(this)
+                    : UiPaletteManager.controlSelectedText(this));
             actionButton.setStrokeColor(ColorStateList.valueOf(palette.stroke));
             actionButton.setOnClickListener(v -> {
                 loginDialogSubmissionInFlight = true;
@@ -2410,10 +2463,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 统一记录远程会话调试日志，便于真机排查点击链和提交链。
     private void logRemoteSessionDebug(@NonNull String message) {
-        if (logManager == null) {
-            return;
-        }
-        logManager.info("RemoteSessionDebug: " + message);
+        // 远程会话链路已稳定，默认不再写入调试日志。
     }
 
     // 提交已保存账号切换。
@@ -2546,6 +2596,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     // 统一处理远程会话失败，避免残留伪成功状态。
+    // 真实登录弹窗链优先回到共享 screen，桥接页自己的弹窗字段只保留兼容壳。
     private void handleRemoteSessionFailed(@Nullable String message) {
         loginDialogSubmissionInFlight = false;
         String safeMessage = trim(message).isEmpty() ? "远程会话失败" : trim(message);
@@ -2556,8 +2607,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         updateOverviewHeader();
         Toast.makeText(this, safeMessage, Toast.LENGTH_SHORT).show();
         if (finishAfterLoginDialog) {
-            pendingOpenLoginDialogFromIntent = true;
-            openLoginDialogIfRequested();
+            if (screen != null) {
+                screen.retryLoginDialogFromBridge();
+            } else {
+                pendingOpenLoginDialogFromIntent = true;
+                openLoginDialogIfRequested();
+            }
         }
     }
 
@@ -2626,7 +2681,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         });
     }
 
+    // 兼容残留：真实深页销毁链优先交给共享 screen，以下本地字段仅为旧源码测试和未迁尽兼容逻辑保留。
     private void dismissActiveLoginDialog() {
+        if (screen != null) {
+            screen.dismissActiveLoginDialog();
+            return;
+        }
         if (activeLoginDialog == null) {
             return;
         }
@@ -2637,8 +2697,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
     }
 
-    // 统一关闭页面内部执行器，避免控制器在多个宿主入口重复展开同一段释放逻辑。
+    // 兼容残留：真实深页释放链优先交给共享 screen，以下本地执行器只为旧兼容路径保留。
     private void shutdownExecutors() {
+        if (screen != null) {
+            screen.shutdownExecutors();
+            return;
+        }
         if (ioExecutor != null) {
             ioExecutor.shutdownNow();
         }
@@ -2660,7 +2724,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         intent.removeExtra(EXTRA_FINISH_AFTER_LOGIN_DIALOG);
     }
 
-    // 只在页面可交互时真正拉起登录弹窗，避免 onCreate/onNewIntent 阶段过早操作窗口。
+    // 兼容残留：真实登录弹窗已迁给共享 screen，这里只保留桥接页历史路径的最小 fallback。
     private void openLoginDialogIfRequested() {
         if (!pendingOpenLoginDialogFromIntent || binding == null) {
             return;
@@ -2858,6 +2922,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
         binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);
         secondarySectionsAttached = true;
+        maybeScrollToAnalysisTarget();
         traceAccountRenderPhase("attach_secondary_sections",
                 stageStartedAt,
                 baseTrades.size(),
@@ -2983,7 +3048,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         ArrayAdapter<String> adapter = new ArrayAdapter<>(
                 this,
-                R.layout.item_spinner_filter,
+                R.layout.item_spinner_filter_anchor,
                 android.R.id.text1,
                 items
         );
@@ -3229,95 +3294,21 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private void styleSegmentButton(MaterialButton button, String text, float sizeSp) {
-        if (button == null) {
-            return;
-        }
-        button.setText(text);
-        button.setSingleLine(true);
-        button.setMaxLines(1);
-        button.setEllipsize(null);
-        button.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
-        button.setGravity(Gravity.CENTER);
-        button.setIncludeFontPadding(false);
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
-        button.setInsetTop(0);
-        button.setInsetBottom(0);
-        button.setMinHeight(0);
-        button.setMinimumHeight(0);
-        button.setMinWidth(0);
-        button.setMinimumWidth(0);
-        button.setPadding(0, 0, 0, 0);
-        button.setCornerRadius(0);
-        button.setShapeAppearanceModel(button.getShapeAppearanceModel().toBuilder()
-                .setAllCornerSizes(0f)
-                .build());
-
-        int[][] states = new int[][]{
-                new int[]{android.R.attr.state_checked},
-                new int[]{}
-        };
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        int checkedBg = palette.primary;
-        int uncheckedBg = ContextCompat.getColor(this, R.color.bg_input);
-        int checkedText = ContextCompat.getColor(this, R.color.white);
-        int uncheckedText = ContextCompat.getColor(this, R.color.text_primary);
-        button.setBackgroundTintList(new ColorStateList(states, new int[]{checkedBg, uncheckedBg}));
-        button.setTextColor(new ColorStateList(states, new int[]{checkedText, uncheckedText}));
-        button.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.stroke_card)));
-        button.setStrokeWidth(dpToPx(1));
-        button.setRippleColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.accent_gold)));
+        UiPaletteManager.styleSegmentedButton(button, palette, text, sizeSp);
     }
 
     private void autoFitSegmentButtons(MaterialButtonToggleGroup group,
                                        MaterialButton[] buttons,
                                        float maxTextSizeSp,
                                        float minTextSizeSp) {
-        if (group == null || buttons == null || buttons.length == 0) {
-            return;
-        }
-        int availableWidth = group.getWidth() - group.getPaddingLeft() - group.getPaddingRight();
-        if (availableWidth <= 0) {
-            return;
-        }
-
-        float eachButtonWidth = availableWidth / (float) buttons.length;
-        float resolvedSizeSp = maxTextSizeSp;
-        while (resolvedSizeSp > minTextSizeSp) {
-            boolean fits = true;
-            for (MaterialButton button : buttons) {
-                if (button == null) {
-                    continue;
-                }
-                CharSequence text = button.getText();
-                String label = text == null ? "" : text.toString();
-                if (label.isEmpty()) {
-                    continue;
-                }
-                TextPaint probe = new TextPaint(button.getPaint());
-                probe.setTextSize(TypedValue.applyDimension(
-                        TypedValue.COMPLEX_UNIT_SP,
-                        resolvedSizeSp,
-                        getResources().getDisplayMetrics()));
-                float textWidth = probe.measureText(label);
-                if (textWidth + dpToPx(8) > eachButtonWidth) {
-                    fits = false;
-                    break;
-                }
-            }
-            if (fits) {
-                break;
-            }
-            resolvedSizeSp -= 0.5f;
-        }
-
-        float finalSizeSp = Math.max(minTextSizeSp, resolvedSizeSp);
-        for (MaterialButton button : buttons) {
-            if (button == null) {
-                continue;
-            }
-            button.setTextSize(TypedValue.COMPLEX_UNIT_SP, finalSizeSp);
-            button.setPadding(0, 0, 0, 0);
-        }
+        UiPaletteManager.applyContentAwareButtonGroupLayout(
+                group,
+                buttons,
+                maxTextSizeSp,
+                minTextSizeSp,
+                8
+        );
     }
 
     private void setupDatePickers() {
@@ -3623,10 +3614,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         if (primary) {
             button.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
-            button.setTextColor(palette.surfaceStart);
+            button.setTextColor(UiPaletteManager.controlSelectedText(this));
         } else {
             button.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-            button.setTextColor(palette.textPrimary);
+            button.setTextColor(UiPaletteManager.controlUnselectedText(this));
         }
     }
 
@@ -4757,6 +4748,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             binding.tvTradePnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
             binding.tvTradePnlLegend.setVisibility(View.GONE);
             binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+            maybeScrollToAnalysisTarget();
             return;
         }
         String summaryText = String.format(
@@ -4774,6 +4766,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         binding.tvTradePnlSummary.setText(summarySpan);
         binding.tvTradePnlLegend.setVisibility(View.GONE);
         binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+        maybeScrollToAnalysisTarget();
     }
 
     private long resolveOpenTime(TradeRecordItem item) {
@@ -6706,6 +6699,38 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             scrollTradesToTop();
         }
         updateTradePnlSummary(tradeSummary, product, side, FILTER_DATE);
+        maybeScrollToAnalysisTarget();
+    }
+
+    // 从分析摘要卡进入深页后，自动把页面滚到用户点击的那块完整分析区域。
+    private void maybeScrollToAnalysisTarget() {
+        if (analysisTargetScrollCompleted || binding == null) {
+            return;
+        }
+        View targetView = resolveAnalysisTargetView();
+        if (targetView == null || targetView.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        analysisTargetScrollCompleted = true;
+        binding.scrollAccountStats.post(() -> {
+            if (binding == null) {
+                return;
+            }
+            int top = Math.max(0, targetView.getTop() - dpToPx(12));
+            binding.scrollAccountStats.smoothScrollTo(0, top);
+        });
+    }
+
+    // 根据入口决定深页应该停在哪个完整分析模块。
+    @Nullable
+    private View resolveAnalysisTargetView() {
+        if (ANALYSIS_TARGET_STRUCTURE.equals(pendingAnalysisTargetSection)) {
+            return binding.cardTradeStatsSection;
+        }
+        if (ANALYSIS_TARGET_TRADE_HISTORY.equals(pendingAnalysisTargetSection)) {
+            return binding.cardTradeRecordsSection;
+        }
+        return null;
     }
 
     private List<TradeRecordItem> filterTradeDistributionSymbols(List<TradeRecordItem> source) {
@@ -6739,7 +6764,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         lastTradeVisibilitySnapshotSignature = signature;
-        logManager.info("Trade visibility snapshot: " + signature);
     }
 
     // 记录交易筛选条件与筛选结果，判断漏单是否只是被产品/方向/排序状态隐藏。
@@ -6760,7 +6784,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             return;
         }
         lastTradeFilterVisibilitySignature = signature;
-        logManager.info("Trade visibility filter: " + signature);
     }
 
     private void scrollTradesToTop() {
@@ -7154,7 +7177,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         MonitorServiceController.dispatch(this, AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME);
     }
     private void openSettings() {
-        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.SETTINGS));
+        startActivity(new Intent(this, SettingsActivity.class));
         overridePendingTransition(0, 0);
     }
 

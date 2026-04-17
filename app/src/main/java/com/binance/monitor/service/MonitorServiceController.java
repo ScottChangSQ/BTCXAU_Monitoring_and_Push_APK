@@ -9,7 +9,6 @@ import android.content.Intent;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
@@ -34,7 +33,7 @@ public final class MonitorServiceController {
         }
         Intent intent = new Intent(appContext, MonitorService.class);
         intent.setAction(resolvedAction);
-        ContextCompat.startForegroundService(appContext, intent);
+        appContext.startService(intent);
     }
 
     // 确保监控服务至少已启动一次，避免页面直达时后台主链尚未建立。

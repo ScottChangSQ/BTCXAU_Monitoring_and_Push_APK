@@ -34,7 +34,6 @@ import com.binance.monitor.data.remote.v2.GatewayV2SessionClient;
 import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.domain.account.AccountTimeRange;
-import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.ConnectionStage;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
@@ -75,6 +74,7 @@ public class MonitorService extends Service {
             scheduleConnectionWatchdog(resolveHeartbeatDelayMs());
         }
     };
+    private final Runnable suppressForegroundNotificationRunnable = this::suppressForegroundNotification;
 
     private MonitorRepository repository;
     private LogManager logManager;
@@ -100,9 +100,6 @@ public class MonitorService extends Service {
     private volatile ConnectionStage v2StreamStage = ConnectionStage.CONNECTING;
     private volatile boolean v2StreamConnected;
     private volatile long lastV2StreamMessageAt;
-    private final List<PositionItem> streamPositionSnapshot = new ArrayList<>();
-    private volatile boolean streamAccountSnapshotReceived;
-    private volatile long streamPositionsUpdatedAt;
     private String lastPublishedConnectionStatus = "";
     private final Set<String> dispatchedServerAlertIds = new HashSet<>();
 
@@ -138,21 +135,6 @@ public class MonitorService extends Service {
                     }
 
                     @Override
-                    public List<PositionItem> copyStreamPositions() {
-                        return copyStreamPositionSnapshot();
-                    }
-
-                    @Override
-                    public boolean hasStreamAccountSnapshot() {
-                        return streamAccountSnapshotReceived;
-                    }
-
-                    @Override
-                    public long getStreamPositionsUpdatedAt() {
-                        return streamPositionsUpdatedAt;
-                    }
-
-                    @Override
                     public ConnectionStage getCurrentConnectionStage() {
                         return MonitorService.this.getCurrentConnectionStage();
                     }
@@ -181,7 +163,12 @@ public class MonitorService extends Service {
         if (action == null) {
             action = AppConstants.ACTION_BOOTSTRAP;
         }
-        foregroundNotificationCoordinator.ensureForeground(this::startForeground, getCurrentConnectionStatus());
+        foregroundNotificationCoordinator.ensureForeground(new MonitorForegroundNotificationCoordinator.Host() {
+            @Override
+            public void suppressServiceNotification() {
+                requestSuppressForegroundNotification();
+            }
+        }, getCurrentConnectionStatus());
         startPipelineIfNeeded();
         switch (action) {
             case AppConstants.ACTION_START_MONITORING:
@@ -198,7 +185,9 @@ public class MonitorService extends Service {
                 syncAbnormalConfigAsync();
                 break;
             case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:
-                clearStreamAccountSnapshot();
+                if (accountStatsPreloadManager != null) {
+                    accountStatsPreloadManager.clearLatestCache();
+                }
                 floatingCoordinator.requestRefresh(true);
                 break;
             case AppConstants.ACTION_BOOTSTRAP:
@@ -237,6 +226,19 @@ public class MonitorService extends Service {
             foregroundNotificationCoordinator.onDestroy();
         }
         logManager.info("服务已销毁");
+    }
+
+    // 服务完成前台启动握手后立即收起常驻通知，只保留异常交易时的即时提醒。
+    private void suppressForegroundNotification() {
+        if (notificationHelper != null) {
+            notificationHelper.cancelServiceNotification();
+        }
+    }
+
+    // 统一在主线程下一拍清理历史服务通知，避免旧版本残留。
+    private void requestSuppressForegroundNotification() {
+        mainHandler.removeCallbacks(suppressForegroundNotificationRunnable);
+        mainHandler.post(suppressForegroundNotificationRunnable);
     }
 
     // 返回当前进程内监控服务是否已经创建完成，供入口页避免重复启动。
@@ -285,10 +287,6 @@ public class MonitorService extends Service {
                         v2StreamSequenceGuard.reset();
                         lastV2StreamMessageAt = System.currentTimeMillis();
                     }
-                    String message = event == null ? "" : event.getMessage();
-                    if (!v2StreamConnected && message != null && !message.trim().isEmpty()) {
-                        logManager.warn("v2 stream: " + message);
-                    }
                     updateConnectionStatus();
                 });
             }
@@ -310,7 +308,7 @@ public class MonitorService extends Service {
             public void onError(String message) {
                 mainHandler.post(() -> {
                     if (message != null && !message.trim().isEmpty()) {
-                        logManager.warn("v2 stream: " + message);
+                        logManager.warn("行情流连接异常: " + message.trim());
                     }
                 });
             }
@@ -366,9 +364,6 @@ public class MonitorService extends Service {
             try {
                 AccountStatsPreloadManager.Cache cache =
                         accountStatsPreloadManager.refreshHistoryForRevision(startDecision.getRevision());
-                if (cache == null) {
-                    clearStreamAccountSnapshot();
-                }
             } catch (Exception exception) {
                 logManager.warn("v2 stream 账户历史补拉失败: " + exception.getMessage());
             } finally {
@@ -386,43 +381,9 @@ public class MonitorService extends Service {
         }
     }
 
-    // 会话清空后同步清掉 stream 持仓快照，避免悬浮窗短时显示旧仓位。
-    private void clearStreamAccountSnapshot() {
-        synchronized (streamPositionSnapshot) {
-            streamPositionSnapshot.clear();
-            streamAccountSnapshotReceived = false;
-            streamPositionsUpdatedAt = 0L;
-        }
-    }
-
-    // 复制一份当前 stream 持仓快照，避免悬浮窗拼装直接暴露内部可变列表。
-    private List<PositionItem> copyStreamPositionSnapshot() {
-        synchronized (streamPositionSnapshot) {
-            return new ArrayList<>(streamPositionSnapshot);
-        }
-    }
-
-    // 启动时打印构建默认值和运行时解析值，便于直接确认 APP 实际在用哪个入口。
+    // 运行态地址诊断只在专项排查时临时开启，默认不写入用户日志。
     private void logResolvedGatewayAddresses() {
-        if (logManager == null || configManager == null) {
-            return;
-        }
-        String runtimeMt5 = configManager.getMt5GatewayBaseUrl();
-        String runtimeRoot = GatewayUrlResolver.resolveGatewayRootBaseUrl(
-                runtimeMt5,
-                AppConstants.MT5_GATEWAY_BASE_URL
-        );
-        String runtimeRest = configManager.getBinanceRestBaseUrl();
-        String runtimeWs = configManager.getBinanceWebSocketBaseUrl();
-        String runtimeV2Stream = GatewayUrlResolver.buildEndpoint(runtimeMt5, "/v2/stream");
-        logManager.info("APP诊断 BuildConfig MT5=" + AppConstants.MT5_GATEWAY_BASE_URL);
-        logManager.info("APP诊断 BuildConfig BinanceREST=" + AppConstants.BASE_REST_URL);
-        logManager.info("APP诊断 BuildConfig BinanceWS=" + AppConstants.BASE_WS_URL);
-        logManager.info("APP诊断 Runtime MT5=" + runtimeMt5);
-        logManager.info("APP诊断 Runtime GatewayRoot=" + runtimeRoot);
-        logManager.info("APP诊断 Runtime BinanceREST=" + runtimeRest);
-        logManager.info("APP诊断 Runtime BinanceWS=" + runtimeWs);
-        logManager.info("APP诊断 Runtime V2Stream=" + runtimeV2Stream);
+        // no-op
     }
 
     // 应用 stream 市场快照，直接回写监控页/悬浮窗共用真值。
@@ -469,52 +430,6 @@ public class MonitorService extends Service {
         if (accountSnapshot == null) {
             return;
         }
-        JSONArray positions = accountSnapshot.optJSONArray("positions");
-        if (positions == null) {
-            return;
-        }
-        List<com.binance.monitor.domain.account.model.PositionItem> mappedPositions = new ArrayList<>();
-        for (int i = 0; i < positions.length(); i++) {
-            JSONObject item = positions.optJSONObject(i);
-            if (item == null) {
-                continue;
-            }
-            String tradeSymbol = requireCanonicalTradeSymbol(item, "v2 stream position");
-            String productName = requireCanonicalProductName(item, tradeSymbol, "v2 stream position");
-            mappedPositions.add(new com.binance.monitor.domain.account.model.PositionItem(
-                    productName,
-                    tradeSymbol,
-                    optString(item, "side", ""),
-                    optLong(item, "positionTicket", 0L),
-                    optLong(item, "orderId", 0L),
-                    requireFiniteDouble(item, "quantity", "v2 stream position"),
-                    requireFiniteDouble(item, "sellableQuantity", "v2 stream position"),
-                    requireFiniteDouble(item, "costPrice", "v2 stream position"),
-                    requireFiniteDouble(item, "latestPrice", "v2 stream position"),
-                    requireFiniteDouble(item, "marketValue", "v2 stream position"),
-                    requireFiniteDouble(item, "positionRatio", "v2 stream position"),
-                    requireFiniteDouble(item, "dayPnL", "v2 stream position"),
-                    requireFiniteDouble(item, "totalPnL", "v2 stream position"),
-                    requireFiniteDouble(item, "returnRate", "v2 stream position"),
-                    requireFiniteDouble(item, "pendingLots", "v2 stream position"),
-                    item.optInt("pendingCount", 0),
-                    requireFiniteDouble(item, "pendingPrice", "v2 stream position"),
-                    requireFiniteDouble(item, "takeProfit", "v2 stream position"),
-                    requireFiniteDouble(item, "stopLoss", "v2 stream position"),
-                    requireFiniteDouble(item, "storageFee", "v2 stream position")
-            ));
-        }
-        synchronized (streamPositionSnapshot) {
-            streamPositionSnapshot.clear();
-            for (com.binance.monitor.domain.account.model.PositionItem item : mappedPositions) {
-                if (item == null || item.getCode() == null || item.getCode().trim().isEmpty()) {
-                    continue;
-                }
-                streamPositionSnapshot.add(item);
-            }
-            streamAccountSnapshotReceived = true;
-            streamPositionsUpdatedAt = System.currentTimeMillis();
-        }
         if (executorService == null || accountStatsPreloadManager == null) {
             return;
         }
@@ -524,11 +439,7 @@ public class MonitorService extends Service {
                 JSONObject snapshotCopy = new JSONObject(snapshotBody);
                 AccountStatsPreloadManager.Cache cache =
                         accountStatsPreloadManager.applyPublishedAccountRuntime(snapshotCopy, publishedAt);
-                if (cache == null) {
-                    clearStreamAccountSnapshot();
-                }
             } catch (Exception exception) {
-                clearStreamAccountSnapshot();
                 logManager.warn("v2 stream 账户运行态应用失败: " + exception.getMessage());
             } finally {
                 mainHandler.post(() -> floatingCoordinator.requestRefresh(false));
@@ -706,7 +617,6 @@ public class MonitorService extends Service {
                 settleRemoteLoggedOutLocally(savedAccounts, localSummary, localActiveAccount);
                 return;
             }
-            clearStreamAccountSnapshot();
             accountStatsPreloadManager.clearLatestCache();
             accountStatsPreloadManager.setFullSnapshotActive(true);
             SessionReceipt receipt = sessionClient.switchAccount(targetProfile.getProfileId(), UUID.randomUUID().toString());
@@ -770,7 +680,6 @@ public class MonitorService extends Service {
             accountStatsPreloadManager.setFullSnapshotActive(false);
             accountStatsPreloadManager.clearLatestCache();
         }
-        clearStreamAccountSnapshot();
         clearPersistedAccountSnapshot(localActiveAccount);
         mainHandler.post(() -> {
             if (floatingCoordinator != null) {

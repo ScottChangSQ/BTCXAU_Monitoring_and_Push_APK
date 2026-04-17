@@ -4,22 +4,38 @@
  */
 package com.binance.monitor.ui.host;
 
+import android.text.TextUtils;
 import android.content.Intent;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.widget.TextViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.binance.monitor.R;
+import com.binance.monitor.constants.AppConstants;
+import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.AbnormalRecord;
+import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.databinding.DialogAbnormalRecordsBinding;
+import com.binance.monitor.databinding.DialogAbnormalThresholdSettingsBinding;
 import com.binance.monitor.databinding.DialogGlobalStatusSheetBinding;
+import com.binance.monitor.service.MonitorServiceController;
 import com.binance.monitor.ui.adapter.AbnormalRecordAdapter;
 import com.binance.monitor.ui.log.LogActivity;
+import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -31,6 +47,10 @@ import java.util.Locale;
 public final class GlobalStatusBottomSheetController {
 
     private final AppCompatActivity activity;
+    @Nullable
+    private BottomSheetDialog activeDialog;
+    @Nullable
+    private DialogGlobalStatusSheetBinding activeBinding;
 
     // 创建交易页全局状态底部弹层控制器。
     public GlobalStatusBottomSheetController(@NonNull AppCompatActivity activity) {
@@ -42,8 +62,7 @@ public final class GlobalStatusBottomSheetController {
         button.setText(activity.getString(
                 R.string.global_status_button_compact,
                 snapshot.getStageText(),
-                snapshot.getAccountText(),
-                snapshot.getAbnormalCount()
+                snapshot.getCompactAccountText()
         ));
     }
 
@@ -58,17 +77,10 @@ public final class GlobalStatusBottomSheetController {
         styleActionButton(binding.btnGlobalStatusSettings, palette);
         styleActionButton(binding.btnGlobalStatusLogs, palette);
         styleActionButton(binding.btnGlobalStatusAbnormal, palette);
-        binding.tvGlobalStatusConnectionValue.setText(snapshot.getConnectionText());
-        binding.tvGlobalStatusAccountValue.setText(snapshot.getAccountText());
-        binding.tvGlobalStatusSyncValue.setText(snapshot.getSyncText());
-        binding.tvGlobalStatusUpdatedValue.setText(snapshot.getRefreshedText());
-        binding.tvGlobalStatusAbnormalValue.setText(activity.getString(
-                R.string.global_status_abnormal_count,
-                snapshot.getAbnormalCount()
-        ));
+        bindSnapshot(binding, snapshot);
         binding.btnGlobalStatusSettings.setOnClickListener(v -> {
             dialog.dismiss();
-            activity.startActivity(HostNavigationIntentFactory.forTab(activity, HostTab.SETTINGS));
+            activity.startActivity(new Intent(activity, SettingsActivity.class));
         });
         binding.btnGlobalStatusLogs.setOnClickListener(v -> {
             dialog.dismiss();
@@ -78,7 +90,25 @@ public final class GlobalStatusBottomSheetController {
             dialog.dismiss();
             showAbnormalRecords(snapshot.getAbnormalRecords());
         });
+        dialog.setOnDismissListener(ignored -> {
+            if (activeDialog == dialog) {
+                activeDialog = null;
+                activeBinding = null;
+            }
+        });
+        activeDialog = dialog;
+        activeBinding = binding;
         dialog.show();
+        UiPaletteManager.applyBottomSheetSurface(dialog, palette);
+        binding.getRoot().post(() -> applyActionRowLayout(binding));
+    }
+
+    // 仅在状态弹层当前可见时刷新内容，避免图表页自己持有弹层内部视图。
+    public void updateVisibleSheet(@NonNull StatusSnapshot snapshot) {
+        if (activeDialog == null || activeBinding == null || !activeDialog.isShowing()) {
+            return;
+        }
+        bindSnapshot(activeBinding, snapshot);
     }
 
     // 对外暴露异常列表弹窗，供交易页风险提示条和摘要区复用。
@@ -88,8 +118,50 @@ public final class GlobalStatusBottomSheetController {
 
     // 统一渲染底部弹层里的轻操作按钮，避免与主界面风格脱节。
     private void styleActionButton(@NonNull TextView button, @NonNull UiPaletteManager.Palette palette) {
-        button.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.control, palette.stroke));
-        button.setTextColor(palette.textPrimary);
+        UiPaletteManager.styleSquareTextAction(
+                button,
+                palette,
+                palette.control,
+                palette.textPrimary,
+                14f,
+                4,
+                R.dimen.control_height_sm,
+                true
+        );
+    }
+
+    private void bindSnapshot(@NonNull DialogGlobalStatusSheetBinding binding,
+                              @NonNull StatusSnapshot snapshot) {
+        binding.tvGlobalStatusConnectionValue.setText(snapshot.getConnectionText());
+        binding.tvGlobalStatusAccountValue.setText(snapshot.getAccountText());
+        binding.tvGlobalStatusSyncValue.setText(snapshot.getSyncText());
+        binding.tvGlobalStatusUpdatedValue.setText(snapshot.getRefreshedText());
+        binding.tvGlobalStatusAbnormalValue.setText(activity.getString(
+                R.string.global_status_abnormal_count,
+                snapshot.getAbnormalCount()
+        ));
+    }
+
+    // 底部弹层三个快捷入口统一按等分宽度铺满整行，避免不同设备上退回内容宽度。
+    private void applyActionRowLayout(@NonNull DialogGlobalStatusSheetBinding binding) {
+        int controlGapPx = activity.getResources().getDimensionPixelSize(R.dimen.control_group_gap);
+        applyWeightedActionButton(binding.btnGlobalStatusSettings, 0);
+        applyWeightedActionButton(binding.btnGlobalStatusLogs, controlGapPx);
+        applyWeightedActionButton(binding.btnGlobalStatusAbnormal, controlGapPx);
+        binding.btnGlobalStatusAbnormal.requestLayout();
+    }
+
+    // 统一动作按钮的运行时布局参数，确保三个按钮继续等宽对齐。
+    private void applyWeightedActionButton(@NonNull View button, int marginStartPx) {
+        ViewGroup.LayoutParams rawParams = button.getLayoutParams();
+        LinearLayout.LayoutParams params = rawParams instanceof LinearLayout.LayoutParams
+                ? (LinearLayout.LayoutParams) rawParams
+                : new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.width = 0;
+        params.weight = 1f;
+        params.setMarginStart(marginStartPx);
+        params.setMarginEnd(0);
+        button.setLayoutParams(params);
     }
 
     // 复用现有异常列表样式，把状态弹层里的“异常列表”收口到完整弹窗。
@@ -101,6 +173,10 @@ public final class GlobalStatusBottomSheetController {
         dialogBinding.recyclerAbnormalRecords.setAdapter(dialogAdapter);
         MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(activity)
                 .setView(dialogBinding.getRoot())
+                .setNeutralButton(R.string.global_status_action_threshold,
+                        (dialogInterface, which) -> {
+                            showAbnormalThresholdDialog();
+                        })
                 .setPositiveButton(R.string.global_status_action_close, null);
         androidx.appcompat.app.AlertDialog dialog = builder.create();
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(activity);
@@ -121,8 +197,158 @@ public final class GlobalStatusBottomSheetController {
             }
         });
         dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
+        if (dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL) != null) {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).setTextColor(palette.primary);
+        }
         if (dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE) != null) {
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
+        }
+    }
+
+    // 展示异常阈值快捷设置弹窗，直接复用现有 SymbolConfig 存储和刷新主链。
+    private void showAbnormalThresholdDialog() {
+        DialogAbnormalThresholdSettingsBinding dialogBinding =
+                DialogAbnormalThresholdSettingsBinding.inflate(activity.getLayoutInflater());
+        ConfigManager configManager = ConfigManager.getInstance(activity);
+        List<String> symbols = new ArrayList<>(AppConstants.MONITOR_SYMBOLS);
+        if (symbols.isEmpty()) {
+            symbols.add(AppConstants.SYMBOL_BTC);
+        }
+        ArrayAdapter<String> adapter = buildThresholdSymbolAdapter(symbols);
+        dialogBinding.spinnerAbnormalThresholdSymbol.setAdapter(adapter);
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(activity);
+        UiPaletteManager.applyPageTheme(dialogBinding.getRoot(), palette);
+        String initialSymbol = symbols.get(0);
+        dialogBinding.spinnerAbnormalThresholdSymbol.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                Object item = parent.getItemAtPosition(position);
+                bindAbnormalThresholdFields(dialogBinding, configManager.getSymbolConfig(resolveThresholdSymbol(item)));
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        bindAbnormalThresholdFields(dialogBinding, configManager.getSymbolConfig(initialSymbol));
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(activity)
+                .setView(dialogBinding.getRoot())
+                .setNegativeButton(R.string.global_status_action_close, null)
+                .setPositiveButton(R.string.global_status_action_save, (dialogInterface, which) -> {
+                    saveAbnormalThresholdConfig(dialogBinding);
+                    Toast.makeText(activity, R.string.global_status_threshold_saved, Toast.LENGTH_SHORT).show();
+                });
+        androidx.appcompat.app.AlertDialog dialog = builder.create();
+        dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, palette);
+        if (dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEGATIVE) != null) {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEGATIVE).setTextColor(palette.textSecondary);
+        }
+        if (dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE) != null) {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setTextColor(palette.primary);
+        }
+    }
+
+    // 统一绑定当前产品的阈值输入框，保持异常列表里的快捷设置和正式配置使用同一套数值。
+    private void bindAbnormalThresholdFields(@NonNull DialogAbnormalThresholdSettingsBinding binding,
+                                             @NonNull SymbolConfig config) {
+        binding.etAbnormalThresholdVolume.setText(String.valueOf(config.getVolumeThreshold()));
+        binding.etAbnormalThresholdAmount.setText(String.valueOf(config.getAmountThreshold() / 1_000_000d));
+        binding.etAbnormalThresholdPrice.setText(String.valueOf(config.getPriceChangeThreshold()));
+    }
+
+    // 保存异常阈值后直接通知服务刷新配置并回推后端。
+    private void saveAbnormalThresholdConfig(@NonNull DialogAbnormalThresholdSettingsBinding binding) {
+        ConfigManager configManager = ConfigManager.getInstance(activity);
+        String symbol = resolveThresholdSymbol(binding.spinnerAbnormalThresholdSymbol.getSelectedItem());
+        SymbolConfig current = configManager.getSymbolConfig(symbol);
+        current.setVolumeThreshold(parseThresholdInput(
+                binding.etAbnormalThresholdVolume.getText() == null
+                        ? null
+                        : binding.etAbnormalThresholdVolume.getText().toString(),
+                current.getVolumeThreshold()
+        ));
+        current.setAmountThreshold(parseThresholdInput(
+                binding.etAbnormalThresholdAmount.getText() == null
+                        ? null
+                        : binding.etAbnormalThresholdAmount.getText().toString(),
+                current.getAmountThreshold() / 1_000_000d
+        ) * 1_000_000d);
+        current.setPriceChangeThreshold(parseThresholdInput(
+                binding.etAbnormalThresholdPrice.getText() == null
+                        ? null
+                        : binding.etAbnormalThresholdPrice.getText().toString(),
+                current.getPriceChangeThreshold()
+        ));
+        configManager.saveSymbolConfig(current);
+        MonitorServiceController.dispatch(activity, AppConstants.ACTION_REFRESH_CONFIG);
+    }
+
+    // 给产品选择器统一提供短标签，避免弹窗里继续显示冗长交易代码。
+    @NonNull
+    private ArrayAdapter<String> buildThresholdSymbolAdapter(@NonNull List<String> symbols) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
+                activity,
+                R.layout.item_spinner_filter,
+                android.R.id.text1,
+                symbols
+        ) {
+            @NonNull
+            @Override
+            public View getView(int position, View convertView, android.view.ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                bindThresholdSymbolLabel(view, getItem(position));
+                return view;
+            }
+
+            @Override
+            public View getDropDownView(int position, View convertView, android.view.ViewGroup parent) {
+                View view = super.getDropDownView(position, convertView, parent);
+                bindThresholdSymbolLabel(view, getItem(position));
+                return view;
+            }
+        };
+        adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
+        return adapter;
+    }
+
+    // 把 BTCUSDT/XAUUSDT 收口成更短的产品文案，便于弹窗里快速切换。
+    private void bindThresholdSymbolLabel(@NonNull View view, String symbol) {
+        if (!(view instanceof TextView)) {
+            return;
+        }
+        ((TextView) view).setText(shortSymbolName(symbol));
+    }
+
+    // 把选择器里的展示名映射回系统内部使用的标准产品代码。
+    @NonNull
+    private String resolveThresholdSymbol(Object item) {
+        String value = item == null ? "" : String.valueOf(item).trim().toUpperCase(Locale.ROOT);
+        if ("XAU".equals(value) || AppConstants.SYMBOL_XAU.equalsIgnoreCase(value)) {
+            return AppConstants.SYMBOL_XAU;
+        }
+        return AppConstants.SYMBOL_BTC;
+    }
+
+    // 统一把产品代码转成更短的展示名。
+    @NonNull
+    private String shortSymbolName(String symbol) {
+        if (AppConstants.SYMBOL_XAU.equalsIgnoreCase(symbol)) {
+            return "XAU";
+        }
+        return "BTC";
+    }
+
+    // 解析用户输入的阈值，空值或异常时保留原值，避免误写成 0。
+    private double parseThresholdInput(String value, double fallback) {
+        if (TextUtils.isEmpty(value)) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(value.trim());
+        } catch (NumberFormatException exception) {
+            return fallback;
         }
     }
 
@@ -178,6 +404,7 @@ public final class GlobalStatusBottomSheetController {
         private final String stageText;
         private final String connectionText;
         private final String accountText;
+        private final String compactAccountText;
         private final String syncText;
         private final String refreshedText;
         private final int abnormalCount;
@@ -187,6 +414,7 @@ public final class GlobalStatusBottomSheetController {
         public StatusSnapshot(@NonNull String stageText,
                               @NonNull String connectionText,
                               @NonNull String accountText,
+                              @NonNull String compactAccountText,
                               @NonNull String syncText,
                               @NonNull String refreshedText,
                               int abnormalCount,
@@ -194,6 +422,7 @@ public final class GlobalStatusBottomSheetController {
             this.stageText = stageText;
             this.connectionText = connectionText;
             this.accountText = accountText;
+            this.compactAccountText = compactAccountText;
             this.syncText = syncText;
             this.refreshedText = refreshedText;
             this.abnormalCount = Math.max(0, abnormalCount);
@@ -213,6 +442,11 @@ public final class GlobalStatusBottomSheetController {
         @NonNull
         public String getAccountText() {
             return accountText;
+        }
+
+        @NonNull
+        public String getCompactAccountText() {
+            return compactAccountText;
         }
 
         @NonNull

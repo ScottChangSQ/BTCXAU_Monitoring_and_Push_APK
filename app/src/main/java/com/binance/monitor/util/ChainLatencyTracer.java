@@ -20,6 +20,7 @@ public final class ChainLatencyTracer {
     private static final String TAG = "ChainTrace";
     private static final int MAX_TRACE_POINTS = 512;
     private static final long TRACE_EXPIRE_MS = 180_000L;
+    private static final boolean ENABLED = false;
 
     private static final Map<String, TracePoint> TRACE_POINTS = new LinkedHashMap<>();
     private static final Map<String, Long> PENDING_MARKET_TRIGGER_AT = new HashMap<>();
@@ -30,6 +31,9 @@ public final class ChainLatencyTracer {
 
     // 记录 stream 到达节奏，并在触发市场刷新时为每个产品登记触发时间。
     public static synchronized void markStreamMessage(@Nullable String messageType, boolean shouldRefreshMarket) {
+        if (!ENABLED) {
+            return;
+        }
         long now = SystemClock.elapsedRealtime();
         long gapMs = lastStreamMessageAtMs > 0L ? now - lastStreamMessageAtMs : -1L;
         lastStreamMessageAtMs = now;
@@ -46,6 +50,9 @@ public final class ChainLatencyTracer {
 
     // 取出某个产品最近一次市场触发时间，供补拉链路计算 trigger->fetch 延迟。
     public static synchronized long consumePendingMarketTriggerAt(String symbol) {
+        if (!ENABLED) {
+            return -1L;
+        }
         Long triggerAt = PENDING_MARKET_TRIGGER_AT.remove(normalizeSymbol(symbol));
         return triggerAt == null ? -1L : triggerAt;
     }
@@ -54,6 +61,9 @@ public final class ChainLatencyTracer {
     public static synchronized void markMarketFetchStart(String symbol,
                                                          long triggerAtMs,
                                                          long fetchStartAtMs) {
+        if (!ENABLED) {
+            return;
+        }
         long triggerToFetchStartMs = triggerAtMs > 0L
                 ? Math.max(0L, fetchStartAtMs - triggerAtMs)
                 : -1L;
@@ -68,6 +78,9 @@ public final class ChainLatencyTracer {
                                                              long triggerAtMs,
                                                              long fetchStartAtMs,
                                                              long fetchDoneAtMs) {
+        if (!ENABLED) {
+            return;
+        }
         if (closeTimeMs <= 0L) {
             return;
         }
@@ -99,6 +112,9 @@ public final class ChainLatencyTracer {
 
     // 记录仓库发布 K 线时刻。
     public static synchronized void markRepositoryKlinePublished(String symbol, long closeTimeMs) {
+        if (!ENABLED) {
+            return;
+        }
         if (closeTimeMs <= 0L) {
             return;
         }
@@ -117,6 +133,9 @@ public final class ChainLatencyTracer {
 
     // 记录监控主页行情模块渲染时刻。
     public static synchronized void markMainRender(String symbol, long closeTimeMs) {
+        if (!ENABLED) {
+            return;
+        }
         if (closeTimeMs <= 0L) {
             return;
         }
@@ -139,6 +158,9 @@ public final class ChainLatencyTracer {
     public static synchronized void markChartRealtimeRender(String symbol,
                                                             long closeTimeMs,
                                                             @Nullable String intervalKey) {
+        if (!ENABLED) {
+            return;
+        }
         if (closeTimeMs <= 0L) {
             return;
         }
@@ -160,6 +182,9 @@ public final class ChainLatencyTracer {
 
     // 记录悬浮窗刷新请求进入窗口管理器的时刻。
     public static synchronized void markFloatingUpdate(String symbol, long closeTimeMs) {
+        if (!ENABLED) {
+            return;
+        }
         if (closeTimeMs <= 0L) {
             return;
         }
@@ -177,6 +202,9 @@ public final class ChainLatencyTracer {
 
     // 记录悬浮窗完成重绘时刻。
     public static synchronized void markFloatingRender(String symbol, long closeTimeMs) {
+        if (!ENABLED) {
+            return;
+        }
         if (closeTimeMs <= 0L) {
             return;
         }
@@ -204,6 +232,9 @@ public final class ChainLatencyTracer {
                                                        String phase,
                                                        long durationMs,
                                                        int itemCount) {
+        if (!ENABLED) {
+            return;
+        }
         long now = SystemClock.elapsedRealtime();
         Log.i(TAG, "chart_pull phase=" + safe(phase)
                 + " symbol=" + normalizeSymbol(symbol)
@@ -221,6 +252,9 @@ public final class ChainLatencyTracer {
                                                            int tradeCount,
                                                            int positionCount,
                                                            int curveCount) {
+        if (!ENABLED) {
+            return;
+        }
         long now = SystemClock.elapsedRealtime();
         Log.i(TAG, "account_render phase=" + safe(phase)
                 + " account=" + safe(accountKey)

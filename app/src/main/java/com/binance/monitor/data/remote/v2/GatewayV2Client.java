@@ -12,9 +12,11 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.v2.AccountHistoryPayload;
+import com.binance.monitor.data.model.v2.AccountFullPayload;
 import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.data.model.v2.MarketSeriesPayload;
 import com.binance.monitor.data.model.v2.MarketSnapshotPayload;
+import com.binance.monitor.data.remote.OkHttpTransportResetHelper;
 import com.binance.monitor.domain.account.AccountTimeRange;
 
 import org.json.JSONArray;
@@ -55,7 +57,7 @@ public class GatewayV2Client {
     public synchronized void resetTransport() {
         OkHttpClient previous = client;
         client = buildClient();
-        closeClient(previous);
+        OkHttpTransportResetHelper.closeClientAsync(previous);
     }
 
     // 解析 v2 market snapshot，供测试和页面预加载复用。
@@ -140,6 +142,31 @@ public class GatewayV2Client {
         );
     }
 
+    // 解析 v2 account full，保留当前运行态与历史主体，供强一致刷新复用。
+    public static AccountFullPayload parseAccountFull(String body) throws Exception {
+        JSONObject json = new JSONObject(safeBody(body));
+        JSONObject accountMeta = requireObject(json, "accountMeta", "v2 account full");
+        JSONObject account = requireObject(json, "account", "v2 account full");
+        JSONArray positions = requireArray(json, "positions", "v2 account full");
+        JSONArray orders = requireArray(json, "orders", "v2 account full");
+        JSONArray trades = requireArray(json, "trades", "v2 account full");
+        JSONArray curvePoints = requireArray(json, "curvePoints", "v2 account full");
+        return new AccountFullPayload(
+                extractServerTime(json, accountMeta),
+                extractSyncToken(json, accountMeta),
+                accountMeta,
+                account,
+                json.optJSONArray("overviewMetrics"),
+                json.optJSONArray("curveIndicators"),
+                json.optJSONArray("statsMetrics"),
+                positions,
+                orders,
+                trades,
+                curvePoints,
+                safeBody(body)
+        );
+    }
+
     // 请求 market snapshot，供主线程后续接入图表页时直接使用。
     public MarketSnapshotPayload fetchMarketSnapshot() throws Exception {
         return parseMarketSnapshot(get("/v2/market/snapshot"));
@@ -183,6 +210,11 @@ public class GatewayV2Client {
     // 请求账户当前运行态快照，供页面主动刷新与交易后强一致确认复用。
     public AccountSnapshotPayload fetchAccountSnapshot() throws Exception {
         return parseAccountSnapshot(get("/v2/account/snapshot"));
+    }
+
+    // 请求账户单次强一致完整快照，供账户页主动刷新与交易后确认复用。
+    public AccountFullPayload fetchAccountFull() throws Exception {
+        return parseAccountFull(get("/v2/account/full"));
     }
 
     // 请求账户历史交易、挂单历史和净值曲线。
@@ -283,12 +315,4 @@ public class GatewayV2Client {
                 .build();
     }
 
-    // 释放旧 transport 持有的连接池和调度线程，避免频繁重建后累积旧资源。
-    private static void closeClient(@Nullable OkHttpClient previous) {
-        if (previous == null) {
-            return;
-        }
-        previous.connectionPool().evictAll();
-        previous.dispatcher().executorService().shutdown();
-    }
 }

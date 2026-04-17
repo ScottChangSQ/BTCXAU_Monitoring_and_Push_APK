@@ -25,6 +25,7 @@ import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 import com.binance.monitor.databinding.ContentAccountPositionBinding;
 import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionSummarySnapshot;
@@ -39,6 +40,8 @@ import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -60,8 +63,11 @@ public final class AccountPositionPageController {
     private SecureSessionPrefs secureSessionPrefs;
     private AccountPositionUiModelFactory uiModelFactory;
     private AccountSessionDialogController accountSessionDialogController;
+    private AccountTradeHistoryBottomSheetController tradeHistoryBottomSheetController;
     private AccountPositionUiModel currentUiModel = AccountPositionUiModel.empty();
     private AccountPositionUiModel lastStableUiModel = AccountPositionUiModel.empty();
+    private List<TradeRecordItem> currentTradeHistory = Collections.emptyList();
+    private List<TradeRecordItem> lastStableTradeHistory = Collections.emptyList();
     private String pendingConnectionStatusText = "";
     private boolean bound;
     private boolean destroyed;
@@ -111,6 +117,7 @@ public final class AccountPositionPageController {
                     }
                 }
         );
+        tradeHistoryBottomSheetController = new AccountTradeHistoryBottomSheetController(host.requireActivity());
         uiModelExecutor = Executors.newSingleThreadExecutor();
         ensureMonitorServiceStarted();
         preloadManager.start();
@@ -133,7 +140,7 @@ public final class AccountPositionPageController {
         applyPaletteStyles();
         applyPrivacyToggleState(isPrivacyMasked());
         if (!host.isEmbeddedInHostShell()) {
-            updateBottomTabs(false, false, false, true, false);
+            updateBottomTabs(false, false, false, true);
         }
         if (!cacheListenerRegistered && preloadManager != null) {
             preloadManager.addCacheListener(cacheListener);
@@ -211,7 +218,7 @@ public final class AccountPositionPageController {
     private void setupActions() {
         binding.ivAccountPrivacyToggle.setOnClickListener(v -> togglePrivacyMaskState());
         binding.tvAccountConnectionStatus.setOnClickListener(v -> openAccountLogin());
-        binding.btnOpenAccountHistory.setOnClickListener(v -> host.openAccountStats());
+        binding.btnOpenAccountHistory.setOnClickListener(v -> openTradeHistorySheet());
     }
 
     // 绑定底部导航；主壳承载时隐藏页内 Tab，避免双层导航。
@@ -224,12 +231,11 @@ public final class AccountPositionPageController {
             return;
         }
         bottomNavBinding.tabBar.setVisibility(View.VISIBLE);
-        updateBottomTabs(false, false, false, true, false);
+        updateBottomTabs(false, false, false, true);
         bottomNavBinding.tabMarketMonitor.setOnClickListener(v -> host.openMarketMonitor());
         bottomNavBinding.tabMarketChart.setOnClickListener(v -> host.openMarketChart());
         bottomNavBinding.tabAccountStats.setOnClickListener(v -> host.openAccountStats());
-        bottomNavBinding.tabAccountPosition.setOnClickListener(v -> updateBottomTabs(false, false, false, true, false));
-        bottomNavBinding.tabSettings.setOnClickListener(v -> host.openSettings());
+        bottomNavBinding.tabAccountPosition.setOnClickListener(v -> updateBottomTabs(false, false, false, true));
     }
 
     // 装配账户持仓页的静态页面结构，供 Activity 和 Fragment 共用。
@@ -243,8 +249,7 @@ public final class AccountPositionPageController {
     private void updateBottomTabs(boolean marketSelected,
                                   boolean chartSelected,
                                   boolean accountStatsSelected,
-                                  boolean accountPositionSelected,
-                                  boolean settingsSelected) {
+                                  boolean accountPositionSelected) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(host.requireActivity());
         if (bottomNavBinding == null) {
             return;
@@ -254,7 +259,7 @@ public final class AccountPositionPageController {
                 bottomNavBinding.tabMarketChart,
                 bottomNavBinding.tabAccountStats,
                 bottomNavBinding.tabAccountPosition,
-                bottomNavBinding.tabSettings);
+                null);
         bottomNavBinding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(
                 host.requireActivity(),
                 palette.surfaceEnd,
@@ -263,7 +268,6 @@ public final class AccountPositionPageController {
         styleNavTab(bottomNavBinding.tabMarketChart, chartSelected);
         styleNavTab(bottomNavBinding.tabAccountStats, accountStatsSelected);
         styleNavTab(bottomNavBinding.tabAccountPosition, accountPositionSelected);
-        styleNavTab(bottomNavBinding.tabSettings, settingsSelected);
     }
 
     // 绘制底部导航项。
@@ -278,8 +282,18 @@ public final class AccountPositionPageController {
         }
         uiModelExecutor.execute(() -> {
             AccountPositionUiModel nextModel = uiModelFactory.build(cache);
-            mainHandler.post(() -> applyUiModel(nextModel));
+            List<TradeRecordItem> tradeHistory = resolveTradeHistory(cache);
+            mainHandler.post(() -> applyUiModel(nextModel, tradeHistory));
         });
+    }
+
+    // 从当前缓存里提取完整历史成交，供账户页底部抽屉直接展示。
+    @NonNull
+    private List<TradeRecordItem> resolveTradeHistory(@Nullable AccountStatsPreloadManager.Cache cache) {
+        if (cache == null || cache.getSnapshot() == null || cache.getSnapshot().getTrades() == null) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>(cache.getSnapshot().getTrades());
     }
 
     // 只消费当前活动远程会话对应的内存缓存，避免切号后短暂回灌旧账号数据。
@@ -358,13 +372,15 @@ public final class AccountPositionPageController {
     }
 
     // 按分段差异只刷新发生变化的区块。
-    private void applyUiModel(@NonNull AccountPositionUiModel nextModel) {
+    private void applyUiModel(@NonNull AccountPositionUiModel nextModel,
+                              @NonNull List<TradeRecordItem> tradeHistory) {
         if (destroyed || !host.isPageReady()) {
             return;
         }
         if (nextModel.getSnapshotVersionMs() < currentUiModel.getSnapshotVersionMs()) {
             return;
         }
+        currentTradeHistory = Collections.unmodifiableList(new ArrayList<>(tradeHistory));
         boolean masked = isPrivacyMasked();
         AccountPositionSectionDiff.Result diff = AccountPositionSectionDiff.diff(currentUiModel, nextModel);
         if (diff.isOverviewChanged()) {
@@ -381,6 +397,7 @@ public final class AccountPositionPageController {
         }
         if (!nextModel.getSignature().isEmpty()) {
             lastStableUiModel = nextModel;
+            lastStableTradeHistory = currentTradeHistory;
         }
         updateConnectionStatusChip(resolveDisplayedConnectionStatusText(nextModel));
         applyPrivacyToggleState(masked);
@@ -437,7 +454,6 @@ public final class AccountPositionPageController {
         binding.tvPositionAggregateTitle.setTextColor(palette.textSecondary);
         binding.tvPendingSummary.setTextColor(palette.textSecondary);
         binding.tvHistorySectionTitle.setTextColor(palette.textPrimary);
-        binding.tvHistorySummary.setTextColor(palette.textSecondary);
         binding.tvPositionsEmpty.setTextColor(palette.textSecondary);
         binding.tvPendingOrdersEmpty.setTextColor(palette.textSecondary);
         binding.btnOpenAccountHistory.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.control, palette.stroke));
@@ -522,6 +538,7 @@ public final class AccountPositionPageController {
         pendingConnectionStatusText = trimToEmpty(statusMessage).isEmpty()
                 ? "正在同步账户"
                 : trimToEmpty(statusMessage);
+        currentTradeHistory = Collections.emptyList();
         currentUiModel = AccountPositionUiModel.empty();
         boolean masked = isPrivacyMasked();
         bindOverview(currentUiModel, masked);
@@ -541,7 +558,7 @@ public final class AccountPositionPageController {
     // 会话提交失败后恢复上一份稳定读模型，避免页面长期停在空白态。
     private void restoreLastStableUiModel() {
         if (!lastStableUiModel.getSignature().isEmpty()) {
-            applyUiModel(lastStableUiModel);
+            applyUiModel(lastStableUiModel, lastStableTradeHistory);
             return;
         }
         scheduleUiModelBuild(resolveCurrentSessionCache());
@@ -560,6 +577,14 @@ public final class AccountPositionPageController {
             return;
         }
         accountSessionDialogController.showLoginDialog();
+    }
+
+    // 历史成交入口直接弹出完整列表抽屉，不再跳转到分析页。
+    private void openTradeHistorySheet() {
+        if (tradeHistoryBottomSheetController == null) {
+            return;
+        }
+        tradeHistoryBottomSheetController.show(currentTradeHistory);
     }
 
     // 账户持仓页也需要保证监控服务在线，避免只剩本地旧缓存而没有实时主链。
@@ -585,7 +610,6 @@ public final class AccountPositionPageController {
         void openAccountStats();
 
         void openSettings();
-
         void openChartTradeAction(@Nullable PositionItem item, @NonNull String tradeAction);
     }
 
@@ -595,20 +619,17 @@ public final class AccountPositionPageController {
         final TextView tabMarketChart;
         final TextView tabAccountPosition;
         final TextView tabAccountStats;
-        final TextView tabSettings;
 
         public BottomNavBinding(@NonNull View tabBar,
                                 @NonNull TextView tabMarketMonitor,
                                 @NonNull TextView tabMarketChart,
                                 @NonNull TextView tabAccountPosition,
-                                @NonNull TextView tabAccountStats,
-                                @NonNull TextView tabSettings) {
+                                @NonNull TextView tabAccountStats) {
             this.tabBar = tabBar;
             this.tabMarketMonitor = tabMarketMonitor;
             this.tabMarketChart = tabMarketChart;
             this.tabAccountPosition = tabAccountPosition;
             this.tabAccountStats = tabAccountStats;
-            this.tabSettings = tabSettings;
         }
     }
 }

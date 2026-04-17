@@ -23,14 +23,8 @@ import com.binance.monitor.data.local.db.repository.ChartHistoryRepository;
 import com.binance.monitor.databinding.ActivitySettingsDetailBinding;
 import com.binance.monitor.service.MonitorServiceController;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
-import com.binance.monitor.ui.host.HostNavigationIntentFactory;
-import com.binance.monitor.ui.host.HostTab;
-import com.binance.monitor.ui.account.AccountPositionActivity;
-import com.binance.monitor.ui.account.AccountStatsBridgeActivity;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.log.LogActivity;
-import com.binance.monitor.ui.main.BottomTabVisibilityManager;
-import com.binance.monitor.ui.main.MainActivity;
 import com.binance.monitor.ui.main.MainViewModel;
 import com.binance.monitor.ui.theme.ThemeLauncherIconManager;
 import com.binance.monitor.ui.theme.UiPaletteManager;
@@ -61,7 +55,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         sectionTitle = readExtra(EXTRA_TITLE, "设置");
         viewModel = new ViewModelProvider(this).get(MainViewModel.class);
         cacheExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
-        setupBottomNav();
+        binding.btnBack.setOnClickListener(v -> finish());
         setupThemeItems();
         setupActions();
         lockGatewayEntrySection();
@@ -80,7 +74,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         applyPaletteStyles();
-        updateBottomTabs();
         applySettings();
         applyVisibleSection();
     }
@@ -94,43 +87,9 @@ public class SettingsSectionActivity extends AppCompatActivity {
         return value.trim();
     }
 
-    // 绑定顶部返回和底部导航。
-    private void setupBottomNav() {
-        updateBottomTabs();
-        binding.btnBack.setOnClickListener(v -> finish());
-        binding.tabMarketMonitor.setOnClickListener(v -> openMarketMonitor());
-        binding.tabMarketChart.setOnClickListener(v -> openMarketChart());
-        binding.tabAccountStats.setOnClickListener(v -> openAccountStats());
-        binding.tabAccountPosition.setOnClickListener(v -> openAccountPosition());
-        binding.tabSettings.setOnClickListener(v -> openSettingsHome());
-    }
-
-    // 刷新底部导航状态。
-    private void updateBottomTabs() {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        BottomTabVisibilityManager.apply(this,
-                binding.tabMarketMonitor,
-                binding.tabMarketChart,
-                binding.tabAccountStats,
-                binding.tabAccountPosition,
-                binding.tabSettings);
-        binding.tabBar.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.surfaceEnd, palette.stroke));
-        styleNavTab(binding.tabMarketMonitor, false);
-        styleNavTab(binding.tabMarketChart, false);
-        styleNavTab(binding.tabAccountStats, false);
-        styleNavTab(binding.tabAccountPosition, false);
-        styleNavTab(binding.tabSettings, true);
-    }
-
-    // 绘制单个底部导航按钮。
-    private void styleNavTab(TextView tab, boolean selected) {
-        UiPaletteManager.styleBottomNavTab(tab, selected, UiPaletteManager.resolve(this));
-    }
-
     // 绑定各个设置控件行为。
     private void setupActions() {
         binding.btnClearCache.setOnClickListener(v -> confirmAndClearCache());
-        binding.btnOpenDiagnosticsLogs.setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
         binding.switchFloatingEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (applying) {
                 return;
@@ -175,50 +134,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
             viewModel.setShowXau(isChecked);
             MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         });
-        binding.switchTabMarketMonitor.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            if (!canApplyTabVisibility("market", isChecked)) {
-                resetTabSwitches();
-                return;
-            }
-            viewModel.setTabMarketMonitorVisible(isChecked);
-            updateBottomTabs();
-        });
-        binding.switchTabMarketChart.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            if (!canApplyTabVisibility("chart", isChecked)) {
-                resetTabSwitches();
-                return;
-            }
-            viewModel.setTabMarketChartVisible(isChecked);
-            updateBottomTabs();
-        });
-        binding.switchTabAccountStats.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            if (!canApplyTabVisibility("accountStats", isChecked)) {
-                resetTabSwitches();
-                return;
-            }
-            viewModel.setTabAccountStatsVisible(isChecked);
-            updateBottomTabs();
-        });
-        binding.switchTabAccountPosition.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (applying) {
-                return;
-            }
-            if (!canApplyTabVisibility("accountPosition", isChecked)) {
-                resetTabSwitches();
-                return;
-            }
-            viewModel.setTabAccountPositionVisible(isChecked);
-            updateBottomTabs();
-        });
     }
 
     // 绑定主题选项。
@@ -230,40 +145,19 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.cardThemeLight.setOnClickListener(v -> selectTheme(4));
     }
 
-    // 防止用户把三个业务页签都关掉。
-    private boolean canApplyTabVisibility(String tabKey, boolean targetVisible) {
-        boolean marketVisible = "market".equals(tabKey) ? targetVisible : viewModel.isTabMarketMonitorVisible();
-        boolean chartVisible = "chart".equals(tabKey) ? targetVisible : viewModel.isTabMarketChartVisible();
-        boolean accountStatsVisible = "accountStats".equals(tabKey) ? targetVisible : viewModel.isTabAccountStatsVisible();
-        boolean accountPositionVisible = "accountPosition".equals(tabKey) ? targetVisible : viewModel.isTabAccountPositionVisible();
-        if (marketVisible || chartVisible || accountStatsVisible || accountPositionVisible) {
-            return true;
-        }
-        Toast.makeText(this, "至少保留一个业务 Tab 页", Toast.LENGTH_SHORT).show();
-        return false;
-    }
-
-    // 设置非法时回滚开关状态。
-    private void resetTabSwitches() {
-        applying = true;
-        binding.switchTabMarketMonitor.setChecked(viewModel.isTabMarketMonitorVisible());
-        binding.switchTabMarketChart.setChecked(viewModel.isTabMarketChartVisible());
-        binding.switchTabAccountStats.setChecked(viewModel.isTabAccountStatsVisible());
-        binding.switchTabAccountPosition.setChecked(viewModel.isTabAccountPositionVisible());
-        applying = false;
-    }
-
     // 弹出缓存清理分类选择。
     private void confirmAndClearCache() {
         final boolean[] checked = new boolean[]{true, false, true};
         final String[] items = new String[]{"历史行情数据", "历史交易数据", "运行时缓存"};
-        new MaterialAlertDialogBuilder(this)
+        androidx.appcompat.app.AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle("清理缓存")
-                .setMultiChoiceItems(items, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setMultiChoiceItems(items, checked, (dialogInterface, which, isChecked) -> checked[which] = isChecked)
                 .setNegativeButton("取消", null)
-                .setPositiveButton("清理", (dialog, which) -> clearCacheDataAsync(
+                .setPositiveButton("清理", (dialogInterface, which) -> clearCacheDataAsync(
                         CacheSectionClassifier.fromSelection(checked[0], checked[1], checked[2])))
-                .show();
+                .create();
+        dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, UiPaletteManager.resolve(this));
     }
 
     private void clearCacheDataAsync(CacheSectionClassifier.CacheSelection selection) {
@@ -360,11 +254,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.tvAlphaValue.setText(getString(R.string.alpha_suffix, alpha));
         binding.switchShowBtc.setChecked(viewModel.isShowBtc());
         binding.switchShowXau.setChecked(viewModel.isShowXau());
-        binding.switchTabMarketMonitor.setChecked(viewModel.isTabMarketMonitorVisible());
-        binding.switchTabMarketChart.setChecked(viewModel.isTabMarketChartVisible());
-        binding.switchTabAccountStats.setChecked(viewModel.isTabAccountStatsVisible());
-        binding.switchTabAccountPosition.setChecked(viewModel.isTabAccountPositionVisible());
-        binding.tvDiagnosticsGatewayValue.setText(AppConstants.MT5_GATEWAY_BASE_URL);
         lockGatewayEntrySection();
         applying = false;
     }
@@ -394,12 +283,8 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.btnSaveMt5GatewayUrl.setTextColor(ContextCompat.getColor(this, R.color.white));
         binding.cardFloatingSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.cardGatewaySection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
-        binding.cardDiagnosticsSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.cardThemeSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
-        binding.cardTabSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.cardCacheSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
-        binding.btnOpenDiagnosticsLogs.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-        binding.btnOpenDiagnosticsLogs.setTextColor(palette.textPrimary);
         applyThemeItems(palette.id);
     }
 
@@ -476,37 +361,8 @@ public class SettingsSectionActivity extends AppCompatActivity {
     private void applyVisibleSection() {
         binding.cardFloatingSection.setVisibility(SettingsActivity.SECTION_DISPLAY.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardGatewaySection.setVisibility(SettingsActivity.SECTION_GATEWAY.equals(sectionKey) ? View.VISIBLE : View.GONE);
-        binding.cardDiagnosticsSection.setVisibility(SettingsActivity.SECTION_DIAGNOSTICS.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardThemeSection.setVisibility(SettingsActivity.SECTION_THEME.equals(sectionKey) ? View.VISIBLE : View.GONE);
-        binding.cardTabSection.setVisibility(SettingsActivity.SECTION_TAB.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardCacheSection.setVisibility(SettingsActivity.SECTION_CACHE.equals(sectionKey) ? View.VISIBLE : View.GONE);
-    }
-
-    private void openMarketMonitor() {
-        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.MARKET_MONITOR));
-        overridePendingTransition(0, 0);
-    }
-
-    private void openAccountStats() {
-        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_STATS));
-        overridePendingTransition(0, 0);
-    }
-
-    private void openMarketChart() {
-        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.MARKET_CHART));
-        overridePendingTransition(0, 0);
-    }
-
-    private void openAccountPosition() {
-        startActivity(HostNavigationIntentFactory.forTab(this, HostTab.ACCOUNT_POSITION));
-        overridePendingTransition(0, 0);
-    }
-
-    private void openSettingsHome() {
-        Intent intent = new Intent(this, SettingsActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
-        overridePendingTransition(0, 0);
     }
 
 }

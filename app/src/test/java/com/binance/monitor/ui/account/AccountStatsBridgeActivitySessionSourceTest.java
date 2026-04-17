@@ -107,9 +107,10 @@ public class AccountStatsBridgeActivitySessionSourceTest {
                         && source.contains("if (dialog != null) {")
                         && source.contains("dialog.dismiss();")
                         && source.contains("submitSavedAccountSwitch(profile);"));
-        assertTrue("登录或切换失败后，应清掉提交中标记并重新拉起登录弹窗，避免专用模式停在空白统计页",
+        assertTrue("登录或切换失败后，应清掉提交中标记并优先把重试弹窗交还给共享 screen，避免桥接页继续自持真实弹窗链",
                 source.contains("loginDialogSubmissionInFlight = false;")
-                        && source.contains("if (finishAfterLoginDialog) {\n            pendingOpenLoginDialogFromIntent = true;\n            openLoginDialogIfRequested();\n        }"));
+                        && source.contains("if (finishAfterLoginDialog) {")
+                        && source.contains("if (screen != null) {\n                screen.retryLoginDialogFromBridge();\n            } else {\n                pendingOpenLoginDialogFromIntent = true;\n                openLoginDialogIfRequested();\n            }"));
     }
 
     @Test

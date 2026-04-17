@@ -55,7 +55,7 @@ public class AbnormalGatewayClient {
     public synchronized void resetTransport() {
         OkHttpClient previous = client;
         client = buildClient();
-        closeClient(previous);
+        OkHttpTransportResetHelper.closeClientAsync(previous);
     }
 
     // 拉取服务端异常记录，首次返回全量，后续根据 syncSeq 请求增量。
@@ -232,15 +232,6 @@ public class AbnormalGatewayClient {
                 .writeTimeout(6, TimeUnit.SECONDS)
                 .callTimeout(8, TimeUnit.SECONDS)
                 .build();
-    }
-
-    // 释放旧异常同步 transport 的连接池和调度线程，避免反复重建后残留旧资源。
-    private static void closeClient(@Nullable OkHttpClient previous) {
-        if (previous == null) {
-            return;
-        }
-        previous.connectionPool().evictAll();
-        previous.dispatcher().executorService().shutdown();
     }
 
     private List<String> buildCandidateBaseUrls() {

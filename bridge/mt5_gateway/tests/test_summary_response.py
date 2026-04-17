@@ -1633,16 +1633,17 @@ class SummaryResponseTests(unittest.TestCase):
             }
         ]
 
-        points = helper(
-            deal_history=deals,
-            start_balance=1000.0,
-            open_positions=open_positions,
-            current_balance=1010.0,
-            current_equity=1030.0,
-            leverage=10.0,
-            contract_size_fn=lambda symbol: 1.0,
-            now_ms=2000,
-        )
+        with _configured_mt5_server_timezone("UTC"):
+            points = helper(
+                deal_history=deals,
+                start_balance=1000.0,
+                open_positions=open_positions,
+                current_balance=1010.0,
+                current_equity=1030.0,
+                leverage=10.0,
+                contract_size_fn=lambda symbol: 1.0,
+                now_ms=2000,
+            )
 
         self.assertGreater(len(points), 2)
         self.assertAlmostEqual(points[0]["equity"] - points[0]["balance"], 5.0)
@@ -1777,16 +1778,17 @@ class SummaryResponseTests(unittest.TestCase):
             },
         ]
 
-        points = helper(
-            deal_history=deals,
-            start_balance=1000.0,
-            open_positions=[],
-            current_balance=999.0,
-            current_equity=999.0,
-            leverage=100.0,
-            contract_size_fn=lambda symbol: 1.0,
-            now_ms=4000,
-        )
+        with _configured_mt5_server_timezone("UTC"):
+            points = helper(
+                deal_history=deals,
+                start_balance=1000.0,
+                open_positions=[],
+                current_balance=999.0,
+                current_equity=999.0,
+                leverage=100.0,
+                contract_size_fn=lambda symbol: 1.0,
+                now_ms=4000,
+            )
 
         point_after_close = next(point for point in points if point["timestamp"] == 2000)
         point_after_later_open = next(point for point in points if point["timestamp"] == 3000)
