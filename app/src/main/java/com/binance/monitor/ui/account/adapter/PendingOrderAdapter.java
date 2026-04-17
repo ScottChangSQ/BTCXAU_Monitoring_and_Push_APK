@@ -9,9 +9,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 
-import androidx.core.content.ContextCompat;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.graphics.ColorUtils;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -20,6 +20,7 @@ import com.binance.monitor.databinding.ItemPositionBinding;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
 import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
@@ -342,26 +343,25 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                   boolean actionEnabled,
                   int productCount,
                   @NonNull ProductRuntimeSnapshot runtimeSnapshot) {
+            UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());
             enforceSummarySingleLine();
+            applyRowPalette(palette, expanded);
             binding.btnPositionCloseAction.setVisibility(View.GONE);
             binding.btnPositionModifyAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
             binding.btnPositionDeleteAction.setVisibility(actionEnabled ? View.VISIBLE : View.GONE);
             if (masked) {
                 binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
-                binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
-                binding.layoutHeader.setBackgroundResource(expanded
-                        ? R.drawable.bg_position_row_expanded
-                        : R.drawable.bg_position_row_collapsed);
+                binding.tvSummary.setTextColor(palette.textPrimary);
                 updateExpandState(expanded, animateExpand);
                 binding.tvProduct.setVisibility(View.GONE);
                 binding.tvBase.setVisibility(View.GONE);
                 binding.tvMetrics.setText(SensitiveDisplayMasker.MASK_TEXT);
-                binding.tvMetrics.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                binding.tvMetrics.setTextColor(palette.textSecondary);
                 binding.tvPnL.setVisibility(View.GONE);
                 return;
             }
             String sideText = sideCn(item.getSide());
-            int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
+            int sideColor = resolveSideColor(palette, item.getSide());
             boolean useRuntimePendingSummary = shouldUseRuntimePendingSummary(productCount, runtimeSnapshot);
             double pendingPrice = item.getPendingPrice() > 0d ? item.getPendingPrice() : item.getLatestPrice();
             double displayLots = Math.abs(item.getPendingLots()) > 1e-9
@@ -390,15 +390,14 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                         sideStart + sideText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
+            binding.tvSummary.setTextColor(palette.textPrimary);
             binding.tvSummary.setText(summarySpan);
-            binding.layoutHeader.setBackgroundResource(expanded
-                    ? R.drawable.bg_position_row_expanded
-                    : R.drawable.bg_position_row_collapsed);
 
             updateExpandState(expanded, animateExpand);
 
             binding.tvProduct.setVisibility(View.GONE);
             binding.tvBase.setVisibility(View.GONE);
+            binding.tvMetrics.setTextColor(palette.textSecondary);
             binding.tvMetrics.setText(String.format(Locale.getDefault(),
                     "价位 %s | 现价 %s\n止盈 %s | 止损 %s",
                     "$" + pendingPriceText,
@@ -406,6 +405,39 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                     optionalPrice(item.getTakeProfit()),
                     optionalPrice(item.getStopLoss())));
             binding.tvPnL.setVisibility(View.GONE);
+        }
+
+        // 挂单行统一跟随主题面板和动作按钮样式。
+        private void applyRowPalette(@NonNull UiPaletteManager.Palette palette, boolean expanded) {
+            android.content.Context context = binding.getRoot().getContext();
+            int rowFill = expanded ? palette.surfaceEnd : palette.card;
+            binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground(
+                    context,
+                    rowFill,
+                    palette.stroke
+            ));
+            styleActionButton(binding.btnPositionModifyAction, palette, false);
+            styleActionButton(binding.btnPositionDeleteAction, palette, true);
+        }
+
+        // 挂单行操作按钮统一走 palette，避免 Notion 主题下继续出现旧黑块。
+        private void styleActionButton(@NonNull android.widget.TextView button,
+                                       @NonNull UiPaletteManager.Palette palette,
+                                       boolean danger) {
+            int fillColor = danger
+                    ? ColorUtils.setAlphaComponent(palette.fall, 24)
+                    : palette.primarySoft;
+            int textColor = danger ? palette.fall : palette.textPrimary;
+            UiPaletteManager.styleSquareTextAction(
+                    button,
+                    palette,
+                    fillColor,
+                    textColor,
+                    12f,
+                    8,
+                    R.dimen.position_row_action_height,
+                    false
+            );
         }
 
         private static boolean shouldUseRuntimePendingSummary(int productCount,
@@ -496,9 +528,8 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
         }
 
-        private static int resolveSideColor(View root, String side) {
-            return ContextCompat.getColor(root.getContext(),
-                    "buy".equalsIgnoreCase(side) ? R.color.accent_green : R.color.accent_red);
+        private static int resolveSideColor(@NonNull UiPaletteManager.Palette palette, String side) {
+            return "buy".equalsIgnoreCase(side) ? palette.rise : palette.fall;
         }
     }
 }

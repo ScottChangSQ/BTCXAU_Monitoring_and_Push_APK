@@ -28,4 +28,15 @@ public class AccountSnapshotRefreshCoordinatorSourceTest {
         assertTrue(activitySource.contains("AccountSnapshotRefreshHostDelegate"));
         assertTrue(activitySource.contains("new AccountSnapshotRefreshHostDelegate("));
     }
+
+    @Test
+    public void enterAccountScreenShouldWaitForStoredSnapshotRestoreBeforeForegroundFetch() throws Exception {
+        String source = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("if (host.isStoredSnapshotRestorePending()) {\n            host.updateOverviewHeader();\n            return;\n        }"));
+        assertTrue(source.contains("if (host.hasRenderableCurrentSessionState()) {"));
+        assertTrue(source.contains("requestForegroundEntrySnapshot();"));
+    }
 }

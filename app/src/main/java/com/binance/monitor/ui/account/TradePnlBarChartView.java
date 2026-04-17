@@ -12,9 +12,8 @@ import android.util.AttributeSet;
 import android.view.View;
 
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 
-import com.binance.monitor.R;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 
 import java.util.ArrayList;
@@ -54,25 +53,30 @@ public class TradePnlBarChartView extends View {
 
     public TradePnlBarChartView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        axisPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
-        axisPaint.setStrokeWidth(dp(1f));
-
-        gridPaint.setColor(ContextCompat.getColor(context, R.color.divider));
-        gridPaint.setStrokeWidth(dp(1f));
-
-        labelPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
         labelPaint.setTextSize(dp(9f));
         labelPaint.setTextAlign(Paint.Align.CENTER);
 
         valuePaint.setTextSize(dp(9f));
         valuePaint.setTextAlign(Paint.Align.CENTER);
 
-        positivePaint.setColor(ContextCompat.getColor(context, R.color.accent_green));
-        negativePaint.setColor(ContextCompat.getColor(context, R.color.accent_red));
-
-        emptyPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
         emptyPaint.setTextSize(dp(10f));
         emptyPaint.setTextAlign(Paint.Align.CENTER);
+        refreshPalette();
+    }
+
+    // 刷新主题色，保证账户/分析页切换主题后柱状图同步更新。
+    public void refreshPalette() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(getContext());
+        axisPaint.setColor(applyAlpha(palette.textSecondary, 185));
+        axisPaint.setStrokeWidth(dp(1f));
+        gridPaint.setColor(applyAlpha(palette.stroke, 150));
+        gridPaint.setStrokeWidth(dp(0.8f));
+        labelPaint.setColor(palette.textSecondary);
+        valuePaint.setColor(palette.textPrimary);
+        positivePaint.setColor(applyAlpha(palette.rise, 220));
+        negativePaint.setColor(applyAlpha(palette.fall, 220));
+        emptyPaint.setColor(palette.textSecondary);
+        invalidate();
     }
 
     public void setEntries(@Nullable List<Entry> source) {
@@ -166,7 +170,7 @@ public class TradePnlBarChartView extends View {
                 float barHeight = positiveHeight * ratio;
                 rect = new RectF(centerX - barWidth / 2f, zeroY - barHeight, centerX + barWidth / 2f, zeroY);
                 canvas.drawRoundRect(rect, dp(3f), dp(3f), positivePaint);
-                valuePaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_green));
+                valuePaint.setColor(positivePaint.getColor());
                 float positiveValueY = Math.max(dp(18f), rect.top - dp(10f));
                 canvas.drawText(formatPnl(entry.pnl), centerX, positiveValueY, valuePaint);
             } else {
@@ -174,7 +178,7 @@ public class TradePnlBarChartView extends View {
                 float barHeight = negativeHeight * ratio;
                 rect = new RectF(centerX - barWidth / 2f, zeroY, centerX + barWidth / 2f, zeroY + barHeight);
                 canvas.drawRoundRect(rect, dp(3f), dp(3f), negativePaint);
-                valuePaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_red));
+                valuePaint.setColor(negativePaint.getColor());
                 float negativeValueY = Math.max(negativeLabelBaseline, rect.bottom + dp(14f));
                 negativeValueY = Math.min(codeBaseline - dp(10f), negativeValueY);
                 canvas.drawText(formatPnl(entry.pnl), centerX, negativeValueY, valuePaint);
@@ -191,5 +195,10 @@ public class TradePnlBarChartView extends View {
 
     private float dp(float value) {
         return value * getResources().getDisplayMetrics().density;
+    }
+
+    private int applyAlpha(int color, int alpha) {
+        int safeAlpha = Math.max(0, Math.min(255, alpha));
+        return (color & 0x00FFFFFF) | (safeAlpha << 24);
     }
 }

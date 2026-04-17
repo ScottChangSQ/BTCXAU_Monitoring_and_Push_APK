@@ -26,7 +26,6 @@ import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.log.LogActivity;
 import com.binance.monitor.ui.main.MainViewModel;
-import com.binance.monitor.ui.theme.ThemeLauncherIconManager;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.PermissionHelper;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -56,7 +55,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         viewModel = new ViewModelProvider(this).get(MainViewModel.class);
         cacheExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
         binding.btnBack.setOnClickListener(v -> finish());
-        setupThemeItems();
         setupActions();
         lockGatewayEntrySection();
         applyVisibleSection();
@@ -134,15 +132,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
             viewModel.setShowXau(isChecked);
             MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
         });
-    }
-
-    // 绑定主题选项。
-    private void setupThemeItems() {
-        binding.cardThemeFinancial.setOnClickListener(v -> selectTheme(0));
-        binding.cardThemeVintage.setOnClickListener(v -> selectTheme(1));
-        binding.cardThemeBinance.setOnClickListener(v -> selectTheme(2));
-        binding.cardThemeTradingView.setOnClickListener(v -> selectTheme(3));
-        binding.cardThemeLight.setOnClickListener(v -> selectTheme(4));
     }
 
     // 弹出缓存清理分类选择。
@@ -283,68 +272,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.btnSaveMt5GatewayUrl.setTextColor(ContextCompat.getColor(this, R.color.white));
         binding.cardFloatingSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.cardGatewaySection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
-        binding.cardThemeSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
         binding.cardCacheSection.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
-        applyThemeItems(palette.id);
-    }
-
-    // 绘制主题预览卡片。
-    private void applyThemeItems(int selectedId) {
-        styleThemeItem(binding.cardThemeFinancial, binding.tvThemeFinancialTitle, binding.tvThemeFinancialDesc,
-                binding.viewThemeFinancialA, binding.viewThemeFinancialB, binding.viewThemeFinancialC,
-                UiPaletteManager.findById(0), selectedId == 0);
-        styleThemeItem(binding.cardThemeVintage, binding.tvThemeVintageTitle, binding.tvThemeVintageDesc,
-                binding.viewThemeVintageA, binding.viewThemeVintageB, binding.viewThemeVintageC,
-                UiPaletteManager.findById(1), selectedId == 1);
-        styleThemeItem(binding.cardThemeBinance, binding.tvThemeBinanceTitle, binding.tvThemeBinanceDesc,
-                binding.viewThemeBinanceA, binding.viewThemeBinanceB, binding.viewThemeBinanceC,
-                UiPaletteManager.findById(2), selectedId == 2);
-        styleThemeItem(binding.cardThemeTradingView, binding.tvThemeTradingViewTitle, binding.tvThemeTradingViewDesc,
-                binding.viewThemeTradingViewA, binding.viewThemeTradingViewB, binding.viewThemeTradingViewC,
-                UiPaletteManager.findById(3), selectedId == 3);
-        styleThemeItem(binding.cardThemeLight, binding.tvThemeLightTitle, binding.tvThemeLightDesc,
-                binding.viewThemeLightA, binding.viewThemeLightB, binding.viewThemeLightC,
-                UiPaletteManager.findById(4), selectedId == 4);
-    }
-
-    // 绘制单个主题条目。
-    private void styleThemeItem(View item,
-                                TextView titleView,
-                                TextView descView,
-                                View previewA,
-                                View previewB,
-                                View previewC,
-                                UiPaletteManager.Palette palette,
-                                boolean selected) {
-        if (item != null) {
-            int border = selected ? palette.primary : palette.stroke;
-            int fill = selected ? palette.control : palette.surfaceEnd;
-            item.setBackground(UiPaletteManager.createThemeItemDrawable(this, fill, border));
-        }
-        if (titleView != null) {
-            titleView.setTextColor(palette.textPrimary);
-        }
-        if (descView != null) {
-            descView.setTextColor(palette.textSecondary);
-        }
-        if (previewA != null) {
-            previewA.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
-        }
-        if (previewB != null) {
-            previewB.setBackground(UiPaletteManager.createFilledDrawable(this, palette.rise));
-        }
-        if (previewC != null) {
-            previewC.setBackground(UiPaletteManager.createFilledDrawable(this, palette.fall));
-        }
-    }
-
-    // 切换主题并通知服务刷新悬浮窗。
-    private void selectTheme(int paletteId) {
-        viewModel.setColorPalette(paletteId);
-        ThemeLauncherIconManager.apply(this, paletteId);
-        applyPaletteStyles();
-        MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
-        Toast.makeText(this, "主题已切换为 " + UiPaletteManager.findById(paletteId).label, Toast.LENGTH_SHORT).show();
     }
 
     // 保存网关地址设置。
@@ -361,7 +289,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
     private void applyVisibleSection() {
         binding.cardFloatingSection.setVisibility(SettingsActivity.SECTION_DISPLAY.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardGatewaySection.setVisibility(SettingsActivity.SECTION_GATEWAY.equals(sectionKey) ? View.VISIBLE : View.GONE);
-        binding.cardThemeSection.setVisibility(SettingsActivity.SECTION_THEME.equals(sectionKey) ? View.VISIBLE : View.GONE);
         binding.cardCacheSection.setVisibility(SettingsActivity.SECTION_CACHE.equals(sectionKey) ? View.VISIBLE : View.GONE);
     }
 

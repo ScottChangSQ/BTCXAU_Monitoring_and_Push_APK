@@ -1,5 +1,5 @@
 /*
- * 悬浮窗文案格式测试，确保产品名称和产品盈亏按两行稳定展示。
+ * 悬浮窗文案格式测试，确保产品卡片标题只保留产品名和手数主信息。
  */
 package com.binance.monitor.ui.floating;
 
@@ -10,31 +10,31 @@ import org.junit.Test;
 public class FloatingWindowTextFormatterTest {
 
     @Test
-    public void formatCardTitleShouldCombineAssetAndPnl() {
+    public void formatCardTitleShouldOnlyKeepAssetAndLots() {
         String title = FloatingWindowTextFormatter.formatCardTitle("BTC", -0.10d, -1250d, true, false);
 
-        assertEquals("BTC | -0.10手\n-$1,250.0", title);
+        assertEquals("BTC | -0.10手", title);
     }
 
     @Test
-    public void formatCardTitleShouldMaskPnlOnly() {
+    public void formatCardTitleShouldIgnoreMaskWhenOnlyShowingTitleLine() {
         String title = FloatingWindowTextFormatter.formatCardTitle("XAU", 0.05d, 88d, true, true);
 
-        assertEquals("XAU | +0.05手\n*", title);
+        assertEquals("XAU | +0.05手", title);
     }
 
     @Test
-    public void formatCardTitleShouldShowDashWhenPnlIsZero() {
+    public void formatCardTitleShouldOnlyShowAssetWhenThereIsNoPosition() {
         String title = FloatingWindowTextFormatter.formatCardTitle("BTC", 0d, 0d, false, false);
 
-        assertEquals("BTC\n$-", title);
+        assertEquals("BTC", title);
     }
 
     @Test
-    public void formatCardTitleShouldPrefixVisiblePnlWithLots() {
+    public void formatCardTitleShouldKeepSignedLotsWithoutPnlLine() {
         String title = FloatingWindowTextFormatter.formatCardTitle("BTC", 0.03d, -28d, true, false);
 
-        assertEquals("BTC | +0.03手\n-$28.0", title);
+        assertEquals("BTC | +0.03手", title);
     }
 
     @Test

@@ -14,7 +14,9 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.cardview.widget.CardView;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
@@ -122,6 +124,8 @@ public final class AccountPositionPageController {
         ensureMonitorServiceStarted();
         preloadManager.start();
         initializePageContent();
+        applyPaletteStyles();
+        applyPrivacyToggleState(isPrivacyMasked());
         AccountStatsPreloadManager.Cache initialCache = resolveCurrentSessionCache();
         scheduleUiModelBuild(initialCache);
         if (initialCache == null) {
@@ -444,10 +448,10 @@ public final class AccountPositionPageController {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(activity);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(activity, palette);
-        binding.cardOverviewSection.setBackground(UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));
-        binding.cardPositionSection.setBackground(UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));
-        binding.cardPendingSection.setBackground(UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));
-        binding.cardHistorySection.setBackground(UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));
+        applySectionCardStyle(binding.cardOverviewSection, palette);
+        applySectionCardStyle(binding.cardPositionSection, palette);
+        applySectionCardStyle(binding.cardPendingSection, palette);
+        applySectionCardStyle(binding.cardHistorySection, palette);
         binding.tvOverviewTitle.setTextColor(palette.textPrimary);
         binding.tvUpdatedAt.setTextColor(palette.textSecondary);
         binding.tvPositionSummary.setTextColor(palette.textSecondary);
@@ -456,10 +460,20 @@ public final class AccountPositionPageController {
         binding.tvHistorySectionTitle.setTextColor(palette.textPrimary);
         binding.tvPositionsEmpty.setTextColor(palette.textSecondary);
         binding.tvPendingOrdersEmpty.setTextColor(palette.textSecondary);
-        binding.btnOpenAccountHistory.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.control, palette.stroke));
+        binding.btnOpenAccountHistory.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));
+        ViewCompat.setBackgroundTintList(binding.btnOpenAccountHistory, null);
         binding.btnOpenAccountHistory.setTextColor(palette.textPrimary);
         binding.ivAccountPrivacyToggle.setImageTintList(ColorStateList.valueOf(palette.textSecondary));
         updateConnectionStatusChip(resolveDisplayedConnectionStatusText(currentUiModel));
+    }
+
+    // 账户页四个主卡片是 CardView，需要直接刷卡片自身底色和圆角，setBackground 不会真正改掉卡片面板。
+    private void applySectionCardStyle(@NonNull CardView cardView,
+                                       @NonNull UiPaletteManager.Palette palette) {
+        AppCompatActivity activity = host.requireActivity();
+        cardView.setCardBackgroundColor(palette.surfaceEnd);
+        cardView.setCardElevation(0f);
+        cardView.setRadius(UiPaletteManager.radiusLgPx(activity, palette));
     }
 
     // 判断当前是否启用隐私隐藏。

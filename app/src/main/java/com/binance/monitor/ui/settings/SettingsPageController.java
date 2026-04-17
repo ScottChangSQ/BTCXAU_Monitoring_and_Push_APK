@@ -44,7 +44,6 @@ public final class SettingsPageController {
     private void setupEntries() {
         binding.itemDisplay.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_DISPLAY, "悬浮窗与显示"));
         binding.itemGateway.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_GATEWAY, "正式入口"));
-        binding.itemTheme.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_THEME, "主题设置"));
         binding.itemCache.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_CACHE, "缓存管理"));
         binding.itemLogs.setOnClickListener(v -> host.openLogPage());
     }
@@ -57,7 +56,6 @@ public final class SettingsPageController {
         UiPaletteManager.applySystemBars(activity, palette);
         styleEntry(binding.itemDisplay, palette);
         styleEntry(binding.itemGateway, palette);
-        styleEntry(binding.itemTheme, palette);
         styleEntry(binding.itemCache, palette);
         styleEntry(binding.itemLogs, palette);
     }

@@ -86,8 +86,9 @@ public class VisualDesignTokenResourceTest {
         assertTrue(styles.contains("<style name=\"TextAppearance.BinanceMonitor.TinyStrong\""));
         assertTrue(paletteManager.contains("public static GradientDrawable createSurfaceDrawable("));
         assertTrue(paletteManager.contains("R.dimen.control_group_gap"));
-        assertTrue(paletteManager.contains("R.color.text_control_selected"));
-        assertTrue(paletteManager.contains("R.color.text_control_unselected"));
+        assertTrue(paletteManager.contains("return resolve(context).controlSelectedText;"));
+        assertTrue(paletteManager.contains("return resolve(context).controlUnselectedText;"));
+        assertFalse(paletteManager.contains("Notion Data Desk"));
         assertTrue(paletteManager.contains("window.setBackgroundDrawable(createSurfaceDrawable("));
         assertTrue(paletteManager.contains("bottomSheet.setBackground(createSurfaceDrawable("));
         assertTrue(paletteManager.contains("card.setStrokeWidth(dp(context, 1));"));

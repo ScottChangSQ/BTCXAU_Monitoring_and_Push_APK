@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.floating;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -23,7 +24,7 @@ public class FloatingWindowManagerTitleSourceTest {
     }
 
     @Test
-    public void titleViewShouldColorLotsAndPnlIndependently() throws Exception {
+    public void titleViewShouldOnlyColorLotsInCompactTitle() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
                 .replace("\r\n", "\n")
@@ -32,6 +33,6 @@ public class FloatingWindowManagerTitleSourceTest {
         assertTrue(source.contains("String lotsText = hasPosition ? FloatingWindowTextFormatter.formatLotsText(totalLots) : \"\";"));
         assertTrue(source.contains("int lotsColor = resolvePnlColor(totalLots, true);"));
         assertTrue(source.contains("styled.setSpan(new ForegroundColorSpan(lotsColor)"));
-        assertTrue(source.contains("styled.setSpan(new ForegroundColorSpan(pnlColor)"));
+        assertFalse(source.contains("styled.setSpan(new ForegroundColorSpan(pnlColor)"));
     }
 }

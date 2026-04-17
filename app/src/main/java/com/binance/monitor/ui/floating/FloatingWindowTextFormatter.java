@@ -15,16 +15,14 @@ final class FloatingWindowTextFormatter {
     private FloatingWindowTextFormatter() {
     }
 
-    // 生成“产品名 | 手数\n盈亏金额”格式的标题，隐私开启时仅隐藏金额部分。
+    // 生成悬浮窗产品卡片标题，仅保留“产品名 | 手数”主信息。
     static String formatCardTitle(String label,
                                   double totalLots,
                                   double totalPnl,
                                   boolean hasPosition,
                                   boolean masked) {
         String safeLabel = label == null ? "" : label.trim();
-        String firstLine = hasPosition ? safeLabel + " | " + formatLotsText(totalLots) : safeLabel;
-        String pnlText = formatCardPnlLine(totalLots, totalPnl, hasPosition, masked);
-        return firstLine + "\n" + pnlText;
+        return hasPosition ? safeLabel + " | " + formatLotsText(totalLots) : safeLabel;
     }
 
     // 统一格式化悬浮窗盈亏金额，顶部汇总和产品标题都复用这套规则。
@@ -75,20 +73,6 @@ final class FloatingWindowTextFormatter {
                 ? SensitiveDisplayMasker.MASK_TEXT
                 : FormatUtils.formatAmountWithChineseUnit(amount);
         return "1M额 " + amountText;
-    }
-
-    // 统一格式化产品卡片第二行：始终只显示盈亏金额。
-    static String formatCardPnlLine(double totalLots,
-                                    double totalPnl,
-                                    boolean hasPosition,
-                                    boolean masked) {
-        if (masked) {
-            return SensitiveDisplayMasker.MASK_TEXT;
-        }
-        if (!hasPosition) {
-            return formatVisiblePnl(totalPnl);
-        }
-        return formatVisiblePnl(totalPnl);
     }
 
     // 统一格式化悬浮窗第一行里的方向手数。

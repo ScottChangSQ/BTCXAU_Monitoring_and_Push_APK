@@ -30,6 +30,7 @@ import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.core.view.ViewCompat;
 import androidx.core.widget.CompoundButtonCompat;
 import androidx.core.widget.TextViewCompat;
 
@@ -59,6 +60,11 @@ public final class UiPaletteManager {
         public final int textSecondary;
         public final int rise;
         public final int fall;
+        public final int controlSelectedText;
+        public final int controlUnselectedText;
+        public final int radiusSmDp;
+        public final int radiusMdDp;
+        public final int radiusLgDp;
 
         private Palette(int id,
                         String label,
@@ -74,7 +80,12 @@ public final class UiPaletteManager {
                         String textPrimaryHex,
                         String textSecondaryHex,
                         String riseHex,
-                        String fallHex) {
+                        String fallHex,
+                        String controlSelectedTextHex,
+                        String controlUnselectedTextHex,
+                        int radiusSmDp,
+                        int radiusMdDp,
+                        int radiusLgDp) {
             this.id = id;
             this.label = label;
             this.surfaceStart = Color.parseColor(surfaceStartHex);
@@ -90,15 +101,16 @@ public final class UiPaletteManager {
             this.textSecondary = Color.parseColor(textSecondaryHex);
             this.rise = Color.parseColor(riseHex);
             this.fall = Color.parseColor(fallHex);
+            this.controlSelectedText = Color.parseColor(controlSelectedTextHex);
+            this.controlUnselectedText = Color.parseColor(controlUnselectedTextHex);
+            this.radiusSmDp = radiusSmDp;
+            this.radiusMdDp = radiusMdDp;
+            this.radiusLgDp = radiusLgDp;
         }
     }
 
     private static final Palette[] PALETTES = new Palette[]{
-            new Palette(0, "石墨金", "#06080B", "#0A0E12", "#12181F", "#161D25", "#27313A", "#D1A055", "#2C2114", "#4F8CFF", "#D8B061", "#F2F5F7", "#93A0AA", "#2DB784", "#E85C5C"),
-            new Palette(1, "复古铜", "#080605", "#110E0B", "#1B1612", "#231D18", "#3A3027", "#B9884A", "#302114", "#8BA9C8", "#D1A055", "#F4EEE7", "#A99A89", "#5E9B73", "#C56E52"),
-            new Palette(2, "终端金", "#06080B", "#0A0E12", "#131920", "#171E26", "#2A343D", "#F0B44F", "#3A2A10", "#56A6FF", "#F3C86B", "#F3F5F7", "#94A1AA", "#31C78A", "#F06464"),
-            new Palette(3, "蓝灰屏", "#070A0E", "#0E1319", "#141B23", "#19212A", "#2B3641", "#5C95FF", "#1A2942", "#46C6E9", "#CDB56E", "#EFF3F7", "#90A0AD", "#39C0A2", "#E76D7C"),
-            new Palette(4, "墨绿屏", "#070907", "#0C100C", "#131914", "#182019", "#28342B", "#7DBA6E", "#1F2C1A", "#6E9ED8", "#C3A668", "#F1F5F1", "#96A69A", "#44BF88", "#D96868")
+            new Palette(0, "金融专业风", "#06080B", "#0A0E12", "#12181F", "#161D25", "#27313A", "#D1A055", "#2C2114", "#4F8CFF", "#D8B061", "#F2F5F7", "#93A0AA", "#2DB784", "#E85C5C", "#FFFFFF", "#93A0AA", 0, 0, 0)
     };
 
     private UiPaletteManager() {
@@ -110,7 +122,7 @@ public final class UiPaletteManager {
             selectedId = ConfigManager.getInstance(context.getApplicationContext()).getColorPalette();
         } catch (Exception ignored) {
         }
-        return findById(selectedId);
+        return findById(normalizePaletteId(selectedId));
     }
 
     public static String[] labels() {
@@ -126,8 +138,9 @@ public final class UiPaletteManager {
     }
 
     public static Palette findById(int paletteId) {
+        int normalizedId = normalizePaletteId(paletteId);
         for (Palette palette : PALETTES) {
-            if (palette.id == paletteId) {
+            if (palette.id == normalizedId) {
                 return palette;
             }
         }
@@ -138,7 +151,7 @@ public final class UiPaletteManager {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{palette.surfaceStart, palette.surfaceEnd});
-        drawable.setCornerRadius(0f);
+        drawable.setCornerRadius(resolveCornerRadiusPx(context, palette.radiusLgDp));
         return drawable;
     }
 
@@ -146,30 +159,48 @@ public final class UiPaletteManager {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{palette.surfaceStart, palette.surfaceEnd});
-        drawable.setCornerRadius(resolveRadiusPx(context, R.dimen.radius_lg));
+        drawable.setCornerRadius(resolveCornerRadiusPx(context, palette.radiusLgDp));
         return drawable;
     }
 
     public static GradientDrawable createFilledDrawable(Context context, int fillColor) {
-        return createRectDrawable(context, fillColor, android.graphics.Color.TRANSPARENT, R.dimen.radius_lg);
+        Palette palette = resolve(context);
+        return createRectDrawable(
+                context,
+                fillColor,
+                android.graphics.Color.TRANSPARENT,
+                resolveCornerRadiusPx(context, palette.radiusLgDp)
+        );
     }
 
     // 统一模块、弹窗和抽屉的 surface 外观，后续边框类调整只改这里。
     public static GradientDrawable createSurfaceDrawable(Context context, int fillColor, int strokeColor) {
-        return createRectDrawable(context, fillColor, strokeColor, R.dimen.radius_lg);
+        Palette palette = resolve(context);
+        return createRectDrawable(
+                context,
+                fillColor,
+                strokeColor,
+                resolveCornerRadiusPx(context, palette.radiusLgDp)
+        );
     }
 
     public static GradientDrawable createOutlinedDrawable(Context context, int fillColor, int strokeColor) {
-        return createRectDrawable(context, fillColor, strokeColor, R.dimen.radius_md);
+        Palette palette = resolve(context);
+        return createRectDrawable(
+                context,
+                fillColor,
+                strokeColor,
+                resolveCornerRadiusPx(context, palette.radiusMdDp)
+        );
     }
 
     private static GradientDrawable createRectDrawable(Context context,
                                                        int fillColor,
                                                        int strokeColor,
-                                                       int cornerResId) {
+                                                       float cornerRadiusPx) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setCornerRadius(resolveRadiusPx(context, cornerResId));
+        drawable.setCornerRadius(cornerRadiusPx);
         drawable.setColor(fillColor);
         if (strokeColor != android.graphics.Color.TRANSPARENT) {
             drawable.setStroke(dp(context, 1), strokeColor);
@@ -178,7 +209,13 @@ public final class UiPaletteManager {
     }
 
     public static GradientDrawable createListRowBackground(Context context, int fillColor, int strokeColor) {
-        return createRectDrawable(context, fillColor, strokeColor, R.dimen.radius_md);
+        Palette palette = resolve(context);
+        return createRectDrawable(
+                context,
+                fillColor,
+                strokeColor,
+                resolveCornerRadiusPx(context, palette.radiusMdDp)
+        );
     }
 
     public static GradientDrawable createSectionBackground(Context context, int fillColor, int strokeColor) {
@@ -186,7 +223,13 @@ public final class UiPaletteManager {
     }
 
     public static GradientDrawable createThemeItemDrawable(Context context, int fillColor, int strokeColor) {
-        return createRectDrawable(context, fillColor, strokeColor, R.dimen.radius_md);
+        Palette palette = resolve(context);
+        return createRectDrawable(
+                context,
+                fillColor,
+                strokeColor,
+                resolveCornerRadiusPx(context, palette.radiusMdDp)
+        );
     }
 
     public static void applyPageTheme(View root, Palette palette) {
@@ -253,7 +296,7 @@ public final class UiPaletteManager {
         }
         Context context = tab.getContext();
         int tintColor = selected ? controlSelectedText(context) : controlUnselectedText(context);
-        tab.setBackgroundColor(palette.surfaceStart);
+        tab.setBackgroundColor(selected ? palette.primarySoft : palette.surfaceStart);
         tab.setTextColor(tintColor);
         tab.setTypeface(null, android.graphics.Typeface.NORMAL);
         tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
@@ -276,7 +319,7 @@ public final class UiPaletteManager {
         } else if (viewId == R.id.tabAccount) {
             iconRes = R.drawable.ic_nav_account;
         } else if (viewId == R.id.tabAnalysis) {
-            iconRes = R.drawable.ic_nav_account;
+            iconRes = R.drawable.ic_nav_analysis;
         } else {
             return null;
         }
@@ -297,7 +340,7 @@ public final class UiPaletteManager {
         if (button == null || palette == null) {
             return;
         }
-        int fillColor = selected ? palette.card : palette.surfaceStart;
+        int fillColor = selected ? palette.primarySoft : palette.surfaceStart;
         button.setBackground(createFilledDrawable(button.getContext(), fillColor));
         button.setTextColor(selected
                 ? controlSelectedText(button.getContext())
@@ -323,6 +366,7 @@ public final class UiPaletteManager {
         int minHeightPx = context.getResources().getDimensionPixelSize(minHeightResId);
         int horizontalPaddingPx = dp(context, horizontalPaddingDp);
         button.setBackground(createFilledDrawable(context, fillColor));
+        ViewCompat.setBackgroundTintList(button, null);
         button.setTextColor(textColor);
         button.setGravity(Gravity.CENTER);
         button.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
@@ -358,11 +402,11 @@ public final class UiPaletteManager {
             return;
         }
         int fillColor = selected
-                ? ColorUtils.setAlphaComponent(palette.primary, 44)
+                ? palette.primarySoft
                 : palette.control;
         int textColor = selected
                 ? controlSelectedText(button.getContext())
-                : palette.textPrimary;
+                : controlUnselectedText(button.getContext());
         styleSquareTextAction(
                 button,
                 palette,
@@ -384,8 +428,8 @@ public final class UiPaletteManager {
         styleSquareTextAction(
                 label,
                 palette,
-                palette.control,
-                palette.textPrimary,
+                palette.primarySoft,
+                palette.controlSelectedText,
                 13f,
                 8,
                 R.dimen.control_height_lg,
@@ -507,7 +551,7 @@ public final class UiPaletteManager {
         Context context = view.getContext();
         if (view instanceof MaterialCardView) {
             MaterialCardView card = (MaterialCardView) view;
-            card.setRadius(0f);
+            card.setRadius(resolveCornerRadiusPx(context, palette.radiusLgDp));
             card.setCardElevation(0f);
             card.setStrokeColor(palette.stroke);
             card.setStrokeWidth(dp(context, 1));
@@ -543,27 +587,51 @@ public final class UiPaletteManager {
     }
 
     public static int neutralFill(Context context) {
-        return ContextCompat.getColor(context, R.color.bg_input);
+        return resolve(context).control;
     }
 
     public static int neutralStroke(Context context) {
-        return ContextCompat.getColor(context, R.color.stroke_card);
+        return resolve(context).stroke;
     }
 
     public static int neutralText(Context context) {
-        return ContextCompat.getColor(context, R.color.text_primary);
+        return resolve(context).textPrimary;
     }
 
     public static int subtleText(Context context) {
-        return ContextCompat.getColor(context, R.color.text_secondary);
+        return resolve(context).textSecondary;
     }
 
     public static int controlSelectedText(Context context) {
-        return ContextCompat.getColor(context, R.color.text_control_selected);
+        return resolve(context).controlSelectedText;
     }
 
     public static int controlUnselectedText(Context context) {
-        return ContextCompat.getColor(context, R.color.text_control_unselected);
+        return resolve(context).controlUnselectedText;
+    }
+
+    public static float radiusSmPx(Context context, @Nullable Palette palette) {
+        Palette activePalette = palette == null ? resolve(context) : palette;
+        return resolveCornerRadiusPx(context, activePalette.radiusSmDp);
+    }
+
+    public static float radiusMdPx(Context context, @Nullable Palette palette) {
+        Palette activePalette = palette == null ? resolve(context) : palette;
+        return resolveCornerRadiusPx(context, activePalette.radiusMdDp);
+    }
+
+    public static float radiusLgPx(Context context, @Nullable Palette palette) {
+        Palette activePalette = palette == null ? resolve(context) : palette;
+        return resolveCornerRadiusPx(context, activePalette.radiusLgDp);
+    }
+
+    public static int strokeWidthPx(Context context) {
+        return dp(context, 1);
+    }
+
+    // 主题设置入口已删除，历史 palette id 统一回落到默认主题。
+    private static int normalizePaletteId(int paletteId) {
+        return 0;
     }
 
     private static float measureButtonWidth(@Nullable MaterialButton button,
@@ -604,7 +672,7 @@ public final class UiPaletteManager {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
-    private static float resolveRadiusPx(Context context, int dimenResId) {
-        return context.getResources().getDimension(dimenResId);
+    private static float resolveCornerRadiusPx(Context context, int radiusDp) {
+        return dp(context, radiusDp);
     }
 }

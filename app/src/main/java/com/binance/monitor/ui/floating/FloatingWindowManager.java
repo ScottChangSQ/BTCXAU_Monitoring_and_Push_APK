@@ -461,7 +461,7 @@ public class FloatingWindowManager {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
-        titleView.setText(buildStyledCardTitle(card, palette, masked));
+        titleView.setText(buildStyledCardTitle(card, masked));
         titleView.setTypeface(null, android.graphics.Typeface.BOLD);
         titleView.setTextColor(palette.textPrimary);
         titleView.setTextSize(9f);
@@ -653,17 +653,14 @@ public class FloatingWindowManager {
         context.startActivity(launchIntent);
     }
 
-    // 让产品名保持主文字色，并分别给手数与盈亏应用各自的涨跌颜色。
+    // 让产品名保持主文字色，仅对第一行里的方向手数应用涨跌颜色。
     private CharSequence buildStyledCardTitle(FloatingSymbolCardData card,
-                                              UiPaletteManager.Palette palette,
                                               boolean masked) {
         String label = card == null || card.getLabel() == null ? "" : card.getLabel().trim();
-        double totalPnl = card == null ? 0d : card.getTotalPnl();
         double totalLots = card == null ? 0d : card.getTotalLots();
         boolean hasPosition = card != null && card.hasPosition();
         String lotsText = hasPosition ? FloatingWindowTextFormatter.formatLotsText(totalLots) : "";
-        String pnlText = FloatingWindowTextFormatter.formatPnlAmount(totalPnl, masked);
-        String title = FloatingWindowTextFormatter.formatCardTitle(label, totalLots, totalPnl, hasPosition, masked);
+        String title = FloatingWindowTextFormatter.formatCardTitle(label, totalLots, 0d, hasPosition, masked);
         SpannableStringBuilder styled = new SpannableStringBuilder(title);
         int lotsStart = hasPosition ? title.lastIndexOf(lotsText) : -1;
         int lotsEnd = lotsStart < 0 ? -1 : Math.min(title.length(), lotsStart + lotsText.length());
@@ -672,18 +669,6 @@ public class FloatingWindowManager {
             styled.setSpan(new ForegroundColorSpan(lotsColor),
                     lotsStart,
                     lotsEnd,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        int pnlStart = title.lastIndexOf(pnlText);
-        if (pnlStart < 0) {
-            pnlStart = Math.min(title.length(), label.length() + 1);
-        }
-        int pnlEnd = Math.min(title.length(), pnlStart + pnlText.length());
-        if (pnlStart < pnlEnd) {
-            int pnlColor = masked ? palette.textPrimary : resolvePnlColor(totalPnl, true);
-            styled.setSpan(new ForegroundColorSpan(pnlColor),
-                    pnlStart,
-                    pnlEnd,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         return styled;

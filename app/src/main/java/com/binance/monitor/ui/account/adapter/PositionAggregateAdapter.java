@@ -8,13 +8,12 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
 import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.ui.account.PositionAggregateItem;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 import com.binance.monitor.util.FormatUtils;
 
@@ -68,13 +67,18 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
         }
 
         void bind(PositionAggregateItem item, boolean masked) {
+            UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());
             binding.btnPositionCloseAction.setVisibility(View.GONE);
             binding.btnPositionModifyAction.setVisibility(View.GONE);
             binding.btnPositionDeleteAction.setVisibility(View.GONE);
             if (masked) {
                 binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
-                binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
-                binding.layoutHeader.setBackgroundResource(R.drawable.bg_position_row_collapsed);
+                binding.tvSummary.setTextColor(palette.textPrimary);
+                binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground(
+                        binding.getRoot().getContext(),
+                        palette.card,
+                        palette.stroke
+                ));
                 binding.tvProduct.setVisibility(View.GONE);
                 binding.tvBase.setVisibility(View.GONE);
                 binding.tvMetrics.setVisibility(View.GONE);
@@ -82,7 +86,7 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
                 binding.layoutDetail.setVisibility(View.GONE);
                 return;
             }
-            int pnlColor = resolveAmountColor(item.getTotalPnl());
+            int pnlColor = resolveAmountColor(palette, item.getTotalPnl());
             String pnlText = signedMoney(item.getTotalPnl());
             String qtyText = String.format(Locale.getDefault(), "%.2f 手", item.getQuantity());
             String costText = "$" + FormatUtils.formatPrice(item.getAverageCostPrice());
@@ -97,7 +101,7 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             SpannableString span = new SpannableString(raw);
             int sideStart = raw.indexOf(sideText);
             if (sideStart >= 0) {
-                span.setSpan(new ForegroundColorSpan(resolveSideColor(sideText)),
+                span.setSpan(new ForegroundColorSpan(resolveSideColor(palette, sideText)),
                         sideStart,
                         sideStart + sideText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -106,8 +110,13 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             if (start >= 0) {
                 span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
+            binding.tvSummary.setTextColor(palette.textPrimary);
             binding.tvSummary.setText(span);
-            binding.layoutHeader.setBackgroundResource(R.drawable.bg_position_row_collapsed);
+            binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground(
+                    binding.getRoot().getContext(),
+                    palette.card,
+                    palette.stroke
+            ));
             binding.tvProduct.setVisibility(View.GONE);
             binding.tvBase.setVisibility(View.GONE);
             binding.tvMetrics.setVisibility(View.GONE);
@@ -119,24 +128,23 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
         }
 
-        private int resolveSideColor(String sideText) {
-            return ContextCompat.getColor(binding.getRoot().getContext(),
-                    "买入".equals(sideText) ? R.color.accent_green : R.color.accent_red);
+        private int resolveSideColor(@NonNull UiPaletteManager.Palette palette, String sideText) {
+            return "买入".equals(sideText) ? palette.rise : palette.fall;
         }
 
         private static String signedMoney(double value) {
             return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
         }
 
-        private int resolveAmountColor(double value) {
+        private int resolveAmountColor(@NonNull UiPaletteManager.Palette palette, double value) {
             AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
             if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
-                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_green);
+                return palette.rise;
             }
             if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
-                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_red);
+                return palette.fall;
             }
-            return ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary);
+            return palette.textPrimary;
         }
     }
 

@@ -192,6 +192,21 @@ public class AccountPositionActivitySourceTest {
         assertFalse(source.contains("AccountPositionPageController"));
     }
 
+    @Test
+    public void accountPositionActivityShouldStyleCardViewsByCardSurfaceInsteadOfPlainBackground() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
+
+        assertTrue(source.contains("applySectionCardStyle(binding.cardOverviewSection, palette);"));
+        assertTrue(source.contains("applySectionCardStyle(binding.cardPositionSection, palette);"));
+        assertTrue(source.contains("applySectionCardStyle(binding.cardPendingSection, palette);"));
+        assertTrue(source.contains("applySectionCardStyle(binding.cardHistorySection, palette);"));
+        assertTrue(source.contains("cardView.setCardBackgroundColor(palette.surfaceEnd);"));
+        assertTrue(source.contains("cardView.setRadius(UiPaletteManager.radiusLgPx(activity, palette));"));
+        assertTrue(source.contains("initializePageContent();\n        applyPaletteStyles();\n        applyPrivacyToggleState(isPrivacyMasked());"));
+        assertTrue(source.contains("ViewCompat.setBackgroundTintList(binding.btnOpenAccountHistory, null);"));
+        assertFalse(source.contains("binding.cardOverviewSection.setBackground(UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));"));
+    }
+
     private static String readUtf8(String relativePath) throws Exception {
         Path path = Paths.get(relativePath);
         return new String(Files.readAllBytes(path), StandardCharsets.UTF_8)

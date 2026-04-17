@@ -125,4 +125,20 @@ public class KlineChartViewSourceTest {
         assertTrue(source.contains("public void setOnQuickPendingLineChangeListener("));
         assertTrue(source.contains("drawQuickPendingLine(canvas"));
     }
+
+    @Test
+    public void klineChartViewShouldExposePriceInfoTextMetricsForOverlayAlignment() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("float chartPriceInfoTextSizePx = getResources().getDimension(R.dimen.chart_price_info_text_size);"));
+        assertTrue(source.contains("textPaint.setTextSize(chartPriceInfoTextSizePx);"));
+        assertFalse(source.contains("textPaint.setTextSize(dp(9f));"));
+        assertTrue(source.contains("float getPriceInfoTextSizePx() {\n        return textPaint.getTextSize();\n    }"));
+        assertTrue(source.contains("int getPricePaneTitleBaselineOffsetPx() {\n        return Math.round(dp(KlinePaneTextLayoutHelper.resolvePaneTitleBaselineOffsetDp()));\n    }"));
+        assertFalse(source.contains("drawPriceOhlcInfo(canvas, infoIndex);"));
+        assertFalse(source.contains("private void drawPriceOhlcInfo(Canvas canvas, int index) {"));
+    }
 }

@@ -16,6 +16,7 @@
     <dimen name="page_section_gap">5dp</dimen>
     <dimen name="card_content_padding">2dp</dimen>
     <dimen name="control_group_gap">2dp</dimen>
+    <dimen name="chart_price_info_text_size">9dp</dimen>
     <dimen name="chart_quick_trade_volume_width">88dp</dimen>
 
     <dimen name="radius_sm">0dp</dimen>

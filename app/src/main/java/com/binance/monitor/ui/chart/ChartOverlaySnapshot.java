@@ -73,7 +73,7 @@ public final class ChartOverlaySnapshot {
 
     @NonNull
     public static ChartOverlaySnapshot empty() {
-        return empty("持仓盈亏: -- | 持仓收益率: --", "更新时间 --", "");
+        return empty("盈亏：-- | 持仓：--", "更新时间 --", "");
     }
 
     @NonNull

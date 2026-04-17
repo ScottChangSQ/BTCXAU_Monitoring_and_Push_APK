@@ -4,13 +4,12 @@ import android.view.LayoutInflater;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.databinding.ItemAbnormalRecordBinding;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 
 import java.util.ArrayList;
@@ -64,16 +63,24 @@ public class AbnormalRecordAdapter extends RecyclerView.Adapter<AbnormalRecordAd
         }
 
         void bind(AbnormalRecord record, boolean showDetails) {
+            UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());
+            binding.getRoot().setCardBackgroundColor(palette.card);
+            binding.getRoot().setStrokeColor(palette.stroke);
+            binding.getRoot().setStrokeWidth(UiPaletteManager.strokeWidthPx(binding.getRoot().getContext()));
+            binding.getRoot().setRadius(UiPaletteManager.radiusMdPx(binding.getRoot().getContext(), palette));
+            binding.tvTime.setTextColor(palette.textSecondary);
+            binding.tvTrigger.setTextColor(palette.textPrimary);
+            binding.tvDetails.setTextColor(palette.textSecondary);
             String symbol = record.getSymbol();
             if ("BOTH".equals(symbol)) {
                 binding.tvSymbol.setText("BTC+XAU");
-                binding.tvSymbol.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_red));
+                binding.tvSymbol.setTextColor(palette.fall);
             } else if ("XAU".equals(symbol) || AppConstants.SYMBOL_XAU.equals(symbol)) {
                 binding.tvSymbol.setText("XAU");
-                binding.tvSymbol.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_cyan));
+                binding.tvSymbol.setTextColor(palette.xau);
             } else {
                 binding.tvSymbol.setText("BTC");
-                binding.tvSymbol.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_gold));
+                binding.tvSymbol.setTextColor(palette.primary);
             }
             binding.tvTime.setText(FormatUtils.formatDateTime(record.getTimestamp()));
             binding.tvTrigger.setText(record.getTriggerSummary());

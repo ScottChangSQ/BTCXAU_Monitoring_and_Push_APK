@@ -38,6 +38,11 @@ public class AccountTradeHistoryBottomSheetSourceTest {
         assertTrue(source.contains("AccountDeferredSnapshotRenderHelper.buildFilteredTrades(baseTrades, request)"));
         assertTrue(source.contains("AccountDeferredSnapshotRenderHelper.SortMode.CLOSE_TIME"));
         assertTrue(source.contains("UiPaletteManager.applyBottomSheetSurface(dialog, palette);"));
+        assertTrue(source.contains("binding.recyclerTradeHistory.setBackground("));
+        assertTrue(source.contains("UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke)"));
+        assertTrue(source.contains("styleFilterField(binding.spinnerTradeHistoryProduct, binding.tvTradeHistoryProductLabel, palette);"));
+        assertTrue(source.contains("spinner.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));"));
+        assertTrue(source.contains("labelView.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));"));
 
         assertTrue(layout.contains("@+id/spinnerTradeHistoryProduct"));
         assertTrue(layout.contains("@+id/spinnerTradeHistorySide"));

@@ -11,11 +11,7 @@ import android.content.pm.PackageManager;
 public final class ThemeLauncherIconManager {
 
     private static final String[] ALIAS_SUFFIXES = new String[]{
-            ".launcher.IconFinancialAlias",
-            ".launcher.IconVintageAlias",
-            ".launcher.IconBinanceAlias",
-            ".launcher.IconTradingViewAlias",
-            ".launcher.IconLightAlias"
+            ".launcher.IconFinancialAlias"
     };
 
     private ThemeLauncherIconManager() {
@@ -28,17 +24,11 @@ public final class ThemeLauncherIconManager {
         }
         PackageManager packageManager = context.getPackageManager();
         String packageName = context.getPackageName();
-        int targetIndex = Math.max(0, Math.min(ALIAS_SUFFIXES.length - 1, paletteId));
-        for (int i = 0; i < ALIAS_SUFFIXES.length; i++) {
-            ComponentName componentName = new ComponentName(packageName, packageName + ALIAS_SUFFIXES[i]);
-            int state = i == targetIndex
-                    ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                    : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-            packageManager.setComponentEnabledSetting(
-                    componentName,
-                    state,
-                    PackageManager.DONT_KILL_APP
-            );
-        }
+        ComponentName componentName = new ComponentName(packageName, packageName + ALIAS_SUFFIXES[0]);
+        packageManager.setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+        );
     }
 }

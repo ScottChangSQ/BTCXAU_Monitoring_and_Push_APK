@@ -317,10 +317,12 @@
                         android:layout_gravity="end|top"
                         android:layout_marginEnd="4dp"
                         android:layout_marginTop="4dp"
+                        android:gravity="end"
                         android:includeFontPadding="false"
-                        android:text="持仓手数: -- | 持仓盈亏: --"
+                        android:text="盈亏：-- | 持仓：--"
+                        android:textAlignment="viewEnd"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
-                        android:textSize="10sp" />
+                        android:textSize="@dimen/chart_price_info_text_size" />
 
                     <LinearLayout
                         android:layout_width="wrap_content"

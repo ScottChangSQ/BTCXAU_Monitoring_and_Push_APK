@@ -1,0 +1,1224 @@
+<!-- Notion Data Desk 首版网页示意图：保留现有结构与功能，仅重做视觉语言。 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BTCXAU Notion Data Desk Mockup</title>
+  <style>
+    :root {
+      --bg: #f6f5f4;
+      --paper: #ffffff;
+      --paper-soft: #fbfaf9;
+      --ink: rgba(0, 0, 0, 0.95);
+      --text: #615d59;
+      --muted: #a39e98;
+      --line: rgba(0, 0, 0, 0.1);
+      --line-strong: rgba(0, 0, 0, 0.18);
+      --blue: #0075de;
+      --blue-soft: rgba(0, 117, 222, 0.1);
+      --green: #1f9d55;
+      --green-soft: rgba(31, 157, 85, 0.1);
+      --red: #d94841;
+      --red-soft: rgba(217, 72, 65, 0.1);
+      --orange: #dd5b00;
+      --shadow: rgba(0, 0, 0, 0.04) 0 18px 40px;
+      --shadow-soft: rgba(0, 0, 0, 0.04) 0 10px 24px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(0, 117, 222, 0.06), transparent 28%),
+        linear-gradient(180deg, #fcfbfa 0%, #f4f2ef 100%);
+      color: var(--ink);
+    }
+
+    .page {
+      width: min(1480px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 28px 0 72px;
+    }
+
+    .hero,
+    .grid {
+      display: grid;
+      gap: 24px;
+    }
+
+    .hero {
+      grid-template-columns: 1.2fr 0.95fr;
+      margin-bottom: 28px;
+    }
+
+    .grid {
+      grid-template-columns: repeat(3, minmax(280px, 1fr));
+    }
+
+    .card,
+    .phone,
+    .hud-shell {
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .card {
+      padding: 26px;
+      border-radius: 18px;
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .title {
+      margin: 0;
+      max-width: 11ch;
+      font-size: clamp(34px, 5vw, 60px);
+      line-height: 0.98;
+      letter-spacing: -0.06em;
+      font-weight: 700;
+    }
+
+    .sub {
+      max-width: 58ch;
+      margin-top: 16px;
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .chip {
+      min-width: 150px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      border-radius: 14px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .chip small {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .chip strong {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .legend {
+      display: grid;
+      gap: 12px;
+    }
+
+    .legend-item {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 10px;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.55;
+      align-items: start;
+    }
+
+    .swatch {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+    }
+
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+      margin: 34px 0 18px;
+    }
+
+    .head h3 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .phone {
+      padding: 10px;
+      border-radius: 22px;
+    }
+
+    .device {
+      min-height: 760px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #f9f7f5 100%);
+    }
+
+    .status-bar {
+      height: 34px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 10px;
+    }
+
+    .hero-strip {
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(0, 117, 222, 0.08), rgba(255, 255, 255, 0.95));
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .hero-strip strong {
+      display: block;
+      font-size: 22px;
+      line-height: 1.05;
+      letter-spacing: -0.05em;
+      margin-bottom: 6px;
+    }
+
+    .hero-strip p {
+      margin: 0;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .row4 {
+      display: grid;
+      grid-template-columns: 1.2fr 0.72fr 0.72fr 1.2fr;
+      gap: 8px;
+    }
+
+    .btn,
+    .pill,
+    .mini,
+    .gbtn,
+    .pbtn,
+    .tab {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--text);
+    }
+
+    .btn {
+      min-height: 42px;
+      padding: 0 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .pill,
+    .mini,
+    .tab {
+      min-height: 30px;
+      padding: 0 10px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--paper-soft);
+    }
+
+    .gbtn,
+    .pbtn {
+      min-height: 34px;
+      padding: 0 12px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .active {
+      background: var(--blue-soft) !important;
+      color: var(--ink) !important;
+      border-color: rgba(0, 117, 222, 0.25) !important;
+      box-shadow: inset 0 -2px 0 var(--blue);
+    }
+
+    .accent {
+      color: var(--blue);
+    }
+
+    .surface,
+    .section,
+    .chart-card,
+    .list {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 16px;
+    }
+
+    .chart-shell {
+      min-height: 492px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .scroll {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .plot {
+      position: relative;
+      min-height: 340px;
+      overflow: hidden;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(0, 117, 222, 0.04), transparent 20%),
+        repeating-linear-gradient(to right, transparent 0, transparent 62px, rgba(0, 0, 0, 0.05) 62px, rgba(0, 0, 0, 0.05) 63px),
+        repeating-linear-gradient(to bottom, transparent 0, transparent 68px, rgba(0, 0, 0, 0.05) 68px, rgba(0, 0, 0, 0.05) 69px),
+        #fffcfa;
+    }
+
+    .plot::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(transparent 0%, transparent 68%, rgba(0, 117, 222, 0.08) 100%);
+      clip-path: polygon(0 74%, 8% 66%, 16% 68%, 24% 57%, 32% 60%, 42% 46%, 51% 42%, 60% 49%, 69% 37%, 78% 33%, 88% 39%, 100% 26%, 100% 100%, 0 100%);
+    }
+
+    .plot::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-top: 2px solid var(--blue);
+      clip-path: polygon(0 74%, 8% 66%, 16% 68%, 24% 57%, 32% 60%, 42% 46%, 51% 42%, 60% 49%, 69% 37%, 78% 33%, 88% 39%, 100% 26%, 100% 28%, 88% 41%, 78% 35%, 69% 39%, 60% 51%, 51% 44%, 42% 48%, 32% 62%, 24% 59%, 16% 70%, 8% 68%, 0 76%);
+    }
+
+    .data-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .data-head strong {
+      font-size: 16px;
+      letter-spacing: -0.03em;
+    }
+
+    .data-head span,
+    .meta,
+    .meta-row,
+    .state {
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .hud-note {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      min-width: 126px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: var(--shadow-soft);
+      text-align: right;
+      line-height: 1.45;
+      font-size: 11px;
+    }
+
+    .marks span {
+      position: absolute;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.92);
+      font-size: 10px;
+      font-weight: 600;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .toggles {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .section,
+    .chart-card {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-title strong {
+      font-size: 15px;
+      letter-spacing: -0.03em;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .metric {
+      min-height: 86px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #faf8f6 100%);
+    }
+
+    .metric label,
+    .meta label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1.08;
+      letter-spacing: -0.05em;
+    }
+
+    .list-row,
+    .setting {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 68px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #faf8f5 100%);
+    }
+
+    .main {
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .gbtn {
+      background: #ffffff;
+      color: var(--ink);
+    }
+
+    .pbtn {
+      background: var(--blue);
+      color: #ffffff;
+      border-color: transparent;
+    }
+
+    .chart-box {
+      position: relative;
+      height: 160px;
+      overflow: hidden;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(0, 117, 222, 0.04), transparent 18%),
+        repeating-linear-gradient(to right, transparent 0, transparent 48px, rgba(0, 0, 0, 0.04) 48px, rgba(0, 0, 0, 0.04) 49px),
+        repeating-linear-gradient(to bottom, transparent 0, transparent 40px, rgba(0, 0, 0, 0.04) 40px, rgba(0, 0, 0, 0.04) 41px),
+        #fffdfb;
+    }
+
+    .bars::before,
+    .line-chart::before,
+    .line-chart::after,
+    .scatter::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+    }
+
+    .bars::before {
+      background: linear-gradient(
+        90deg,
+        transparent 0 7%,
+        rgba(0, 117, 222, 0.9) 7% 11%,
+        transparent 11% 19%,
+        rgba(217, 72, 65, 0.75) 19% 23%,
+        transparent 23% 31%,
+        rgba(0, 117, 222, 0.75) 31% 35%,
+        transparent 35% 44%,
+        rgba(31, 157, 85, 0.75) 44% 48%,
+        transparent 48% 57%,
+        rgba(217, 72, 65, 0.8) 57% 61%,
+        transparent 61% 100%
+      );
+      clip-path: polygon(0 100%, 0 70%, 11% 70%, 11% 36%, 19% 36%, 19% 75%, 31% 75%, 31% 46%, 44% 46%, 44% 58%, 57% 58%, 57% 30%, 69% 30%, 69% 84%, 100% 84%, 100% 100%);
+    }
+
+    .line-chart::before {
+      background: linear-gradient(transparent 0%, transparent 70%, rgba(0, 117, 222, 0.08) 100%);
+      clip-path: polygon(0 76%, 9% 71%, 18% 73%, 28% 58%, 36% 60%, 45% 48%, 54% 43%, 64% 49%, 74% 38%, 83% 34%, 91% 42%, 100% 28%, 100% 100%, 0 100%);
+    }
+
+    .line-chart::after {
+      border-top: 2px solid var(--blue);
+      clip-path: polygon(0 76%, 9% 71%, 18% 73%, 28% 58%, 36% 60%, 45% 48%, 54% 43%, 64% 49%, 74% 38%, 83% 34%, 91% 42%, 100% 28%, 100% 30%, 91% 44%, 83% 36%, 74% 40%, 64% 51%, 54% 45%, 45% 50%, 36% 62%, 28% 60%, 18% 75%, 9% 73%, 0 78%);
+    }
+
+    .scatter::before {
+      background:
+        radial-gradient(circle at 12% 70%, rgba(31, 157, 85, 0.92) 0 4px, transparent 5px),
+        radial-gradient(circle at 24% 44%, rgba(0, 117, 222, 0.92) 0 4px, transparent 5px),
+        radial-gradient(circle at 38% 58%, rgba(217, 72, 65, 0.92) 0 4px, transparent 5px),
+        radial-gradient(circle at 52% 32%, rgba(31, 157, 85, 0.92) 0 4px, transparent 5px),
+        radial-gradient(circle at 66% 50%, rgba(0, 117, 222, 0.92) 0 4px, transparent 5px),
+        radial-gradient(circle at 80% 28%, rgba(217, 72, 65, 0.92) 0 4px, transparent 5px),
+        radial-gradient(circle at 90% 56%, rgba(31, 157, 85, 0.92) 0 4px, transparent 5px);
+    }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .setting {
+      min-height: 58px;
+      border: none;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      background: transparent;
+      padding-inline: 14px;
+    }
+
+    .setting:first-child {
+      border-top-left-radius: 16px;
+      border-top-right-radius: 16px;
+    }
+
+    .setting:last-child {
+      border-bottom: none;
+      border-bottom-left-radius: 16px;
+      border-bottom-right-radius: 16px;
+    }
+
+    .nav {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      min-height: 72px;
+      margin-top: auto;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.86);
+    }
+
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .nav-item.active {
+      color: var(--ink);
+      background: rgba(0, 117, 222, 0.06);
+      box-shadow: inset 0 2px 0 var(--blue);
+    }
+
+    .sheet {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 20px 20px 16px 16px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #f7f4f1 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .state {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+    }
+
+    .state strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .sheet-actions {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .dialog {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #f7f4f1 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .dialog-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .dialog-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.88);
+    }
+
+    .dialog-item-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .dialog-item p {
+      margin: 0;
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .dialog-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .hud-shell {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      min-height: 420px;
+      padding: 18px;
+      border-radius: 22px;
+    }
+
+    .hud {
+      width: 192px;
+      padding: 12px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .hud-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .hud-sub {
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+
+    .hud-card {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #f9f6f2 100%);
+    }
+
+    .blue {
+      color: var(--blue);
+    }
+
+    .green {
+      color: var(--green);
+    }
+
+    .red {
+      color: var(--red);
+    }
+
+    .soft {
+      color: var(--muted);
+    }
+
+    @media (max-width: 1180px) {
+      .hero,
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="card">
+        <div class="eyebrow">Notion Data Desk / BTCXAU Monitoring</div>
+        <h1 class="title">High Density, But Calm</h1>
+        <p class="sub">
+          这一版按你选的 `C` 方向来做：保留现在的功能入口和页面顺序，不删任何模块，只把整体语言换成
+          Notion 式暖白工作台，让交易、账户、分析、设置和状态层看起来更像统一的数据文档系统。
+        </p>
+        <div class="chips">
+          <div class="chip">
+            <small>Structure</small>
+            <strong>不重排主结构</strong>
+          </div>
+          <div class="chip">
+            <small>Density</small>
+            <strong>保留高密度扫读</strong>
+          </div>
+          <div class="chip">
+            <small>Visual Accent</small>
+            <strong class="accent">单一蓝色高亮</strong>
+          </div>
+        </div>
+      </div>
+      <aside class="card">
+        <div class="eyebrow">Direction Notes</div>
+        <div class="legend">
+          <div class="legend-item">
+            <span class="swatch" style="background:#ffffff"></span>
+            <span>主体改成白纸面板和暖白背景，减少旧版黑色金融工具的压迫感，但不牺牲信息量。</span>
+          </div>
+          <div class="legend-item">
+            <span class="swatch" style="background:#f6f5f4"></span>
+            <span>模块之间用轻边框和留白分层，不靠重阴影，不做花哨卡片。</span>
+          </div>
+          <div class="legend-item">
+            <span class="swatch" style="background:#0075de"></span>
+            <span>当前选中、关键操作、图表焦点统一只用一支蓝色，其他状态回归中性。</span>
+          </div>
+          <div class="legend-item">
+            <span class="swatch" style="background:#1f9d55"></span>
+            <span>盈亏保留红绿语义，只在数据本身发声，不再影响普通按钮和框架颜色。</span>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <div class="head">
+      <h3>主页面</h3>
+      <p>交易页 / 账户页 / 分析页</p>
+    </div>
+
+    <section class="grid">
+      <div>
+        <div class="label">
+          <span>Trading</span>
+          <span class="accent">Top controls + chart + indicator bar</span>
+        </div>
+        <div class="phone">
+          <div class="device">
+            <div class="status-bar">
+              <span>11:38</span>
+              <span>5G • 88%</span>
+            </div>
+            <div class="screen">
+              <div class="row4">
+                <div class="btn active">BTCUSDT</div>
+                <div class="btn">交易</div>
+                <div class="btn">挂单</div>
+                <div class="btn active">已连接 | 账户在线</div>
+              </div>
+              <div class="surface chart-shell">
+                <div class="data-head">
+                  <strong>市场图表</strong>
+                  <span>1 分钟实时数据</span>
+                </div>
+                <div class="scroll">
+                  <div class="tab active">1分</div>
+                  <div class="tab">5分</div>
+                  <div class="tab">15分</div>
+                  <div class="tab">30分</div>
+                  <div class="tab">1小时</div>
+                  <div class="tab">4小时</div>
+                  <div class="tab">日线</div>
+                </div>
+                <div class="plot">
+                  <div class="hud-note">
+                    盈亏：<span class="green">+$4.72</span><br />
+                    持仓：0.05 手
+                  </div>
+                  <div class="marks">
+                    <span class="green" style="left:18px;top:92px">BUY 0.05</span>
+                    <span class="red" style="left:108px;top:146px">卖出</span>
+                    <span style="left:220px;top:188px">平仓</span>
+                    <span class="green" style="left:278px;top:262px">+$20.70</span>
+                  </div>
+                  <div class="toggles">
+                    <div class="mini active">历史成交 开</div>
+                    <div class="mini active">当前仓位 开</div>
+                  </div>
+                </div>
+                <div class="meta-row">
+                  <span><label>状态</label>共 500 根 K 线</span>
+                  <span><label>同步</label><span class="accent">实时同步中</span></span>
+                </div>
+                <div class="scroll">
+                  <div class="tab active">VOL</div>
+                  <div class="tab">MACD</div>
+                  <div class="tab">STOCHRSI</div>
+                  <div class="tab">BOLL</div>
+                  <div class="tab">MA</div>
+                  <div class="tab">EMA</div>
+                </div>
+              </div>
+            </div>
+            <div class="nav">
+              <div class="nav-item active">交易</div>
+              <div class="nav-item">账户</div>
+              <div class="nav-item">分析</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="label">
+          <span>Account</span>
+          <span>Overview / positions / pending / history</span>
+        </div>
+        <div class="phone">
+          <div class="device">
+            <div class="status-bar">
+              <span>11:38</span>
+              <span>5G • 88%</span>
+            </div>
+            <div class="screen">
+              <div class="section">
+                <div class="section-title">
+                  <strong>账户总览</strong>
+                  <span class="pill active">已连接账户 7400048</span>
+                </div>
+                <div class="meta-row">
+                  <span>更新时间 2026-04-17 11:38:04</span>
+                  <span>隐私显示</span>
+                </div>
+                <div class="metrics">
+                  <div class="metric">
+                    <label>总资产</label>
+                    <strong>$19,805</strong>
+                  </div>
+                  <div class="metric">
+                    <label>净资产</label>
+                    <strong>$19,809</strong>
+                  </div>
+                  <div class="metric">
+                    <label>可用预付款</label>
+                    <strong>$19,802</strong>
+                  </div>
+                  <div class="metric">
+                    <label>保证金</label>
+                    <strong>$7.47</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="section">
+                <div class="section-title">
+                  <strong>当前持仓</strong>
+                  <span>当前持仓 1 条</span>
+                </div>
+                <div class="list-row">
+                  <div class="main">BTCUSD | <span class="green">买入</span> | 0.05 手 | <span class="green">+$4.36</span></div>
+                  <div class="actions">
+                    <div class="gbtn">平仓</div>
+                    <div class="pbtn">修改</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="section">
+                <div class="section-title">
+                  <strong>挂单</strong>
+                  <span>挂单 0 条</span>
+                </div>
+                <div class="list-row">
+                  <div class="main soft">暂无挂单</div>
+                  <div class="actions">
+                    <div class="gbtn">筛选</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="section">
+                <div class="section-title">
+                  <strong>交易记录</strong>
+                  <span>历史成交入口</span>
+                </div>
+                <div class="pbtn" style="width:100%">查看完整历史成交</div>
+              </div>
+            </div>
+            <div class="nav">
+              <div class="nav-item">交易</div>
+              <div class="nav-item active">账户</div>
+              <div class="nav-item">分析</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="label">
+          <span>Analysis</span>
+          <span>Summary + charts + distribution</span>
+        </div>
+        <div class="phone">
+          <div class="device">
+            <div class="status-bar">
+              <span>11:38</span>
+              <span>5G • 88%</span>
+            </div>
+            <div class="screen">
+              <div class="chart-card">
+                <div class="section-title">
+                  <strong>核心统计</strong>
+                  <span>展开详细统计</span>
+                </div>
+                <div class="metrics">
+                  <div class="metric">
+                    <label>累计收益</label>
+                    <strong class="green">+12.8%</strong>
+                  </div>
+                  <div class="metric">
+                    <label>最大回撤</label>
+                    <strong class="red">-4.1%</strong>
+                  </div>
+                </div>
+                <div class="scroll">
+                  <div class="pill active">1D</div>
+                  <div class="pill">7D</div>
+                  <div class="pill">1M</div>
+                  <div class="pill">3M</div>
+                  <div class="pill">ALL</div>
+                </div>
+                <div class="chart-box line-chart"></div>
+              </div>
+
+              <div class="chart-card">
+                <div class="section-title">
+                  <strong>交易统计</strong>
+                  <span>全部 / 买入 / 卖出</span>
+                </div>
+                <div class="scroll">
+                  <div class="pill active">全部</div>
+                  <div class="pill">买入</div>
+                  <div class="pill">卖出</div>
+                </div>
+                <div class="meta-row">
+                  <span>总盈亏 <span class="green">+$1,286</span></span>
+                  <span>胜率 62%</span>
+                </div>
+                <div class="chart-box bars"></div>
+              </div>
+
+              <div class="chart-card">
+                <div class="section-title">
+                  <strong>全周期历史交易分布</strong>
+                  <span>散点图</span>
+                </div>
+                <div class="chart-box scatter"></div>
+              </div>
+            </div>
+            <div class="nav">
+              <div class="nav-item">交易</div>
+              <div class="nav-item">账户</div>
+              <div class="nav-item active">分析</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="head">
+      <h3>系统层</h3>
+      <p>设置页 / 全局状态弹层 / 悬浮窗</p>
+    </div>
+
+    <section class="grid" style="grid-template-columns:1.05fr 1.05fr 0.78fr 0.95fr">
+      <div>
+        <div class="label">
+          <span>Settings</span>
+          <span>List navigation</span>
+        </div>
+        <div class="phone">
+          <div class="device">
+            <div class="status-bar">
+              <span>11:38</span>
+              <span>5G • 88%</span>
+            </div>
+            <div class="screen">
+              <div class="section">
+                <div class="section-title">
+                  <strong>设置</strong>
+                  <span>System</span>
+                </div>
+              </div>
+              <div class="list">
+                <div class="setting">
+                  <div>悬浮窗与显示</div>
+                  <div class="accent">›</div>
+                </div>
+                <div class="setting">
+                  <div>MT5 网关设置</div>
+                  <div class="accent">›</div>
+                </div>
+                <div class="setting">
+                  <div>主题设置</div>
+                  <div class="accent">›</div>
+                </div>
+                <div class="setting">
+                  <div>缓存管理</div>
+                  <div class="accent">›</div>
+                </div>
+                <div class="setting">
+                  <div>运行日志</div>
+                  <div class="accent">›</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="label">
+          <span>Global Status Sheet</span>
+          <span>Bottom sheet</span>
+        </div>
+        <div class="phone">
+          <div class="device">
+            <div class="status-bar">
+              <span>11:38</span>
+              <span>5G • 88%</span>
+            </div>
+            <div class="screen" style="justify-content:end">
+              <div class="sheet">
+                <div class="section-title">
+                  <strong>全局状态</strong>
+                  <span>System Panel</span>
+                </div>
+                <div class="state">
+                  <span>连接状态</span>
+                  <strong>实时连接正常</strong>
+                </div>
+                <div class="state">
+                  <span>当前账户</span>
+                  <strong>ICMarketsSC-MT5-6 ****0048</strong>
+                </div>
+                <div class="state">
+                  <span>同步状态</span>
+                  <strong class="blue">实时同步中</strong>
+                </div>
+                <div class="state">
+                  <span>最近刷新</span>
+                  <strong>2026-04-17 11:37:54</strong>
+                </div>
+                <div class="state">
+                  <span>异常数量</span>
+                  <strong>0 条</strong>
+                </div>
+                <div class="sheet-actions">
+                  <div class="gbtn">设置</div>
+                  <div class="gbtn">日志</div>
+                  <div class="pbtn">异常列表</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="label">
+          <span>Floating HUD</span>
+          <span>Compact runtime</span>
+        </div>
+        <div class="hud-shell">
+          <div class="hud">
+            <div class="hud-top">
+              <span class="green">+$4.8</span>
+              <span>−</span>
+            </div>
+            <div class="hud-sub">实时连接正常</div>
+            <div class="hud-card">
+              <div style="font-size:13px;font-weight:700">BTC | <span class="green">+0.05手</span></div>
+              <div class="green" style="font-size:11px;font-weight:700">+$4.8</div>
+              <div style="font-size:14px;margin-top:2px">$74,802.3</div>
+              <div class="hud-sub" style="margin:0">1M量 156.35 BTC</div>
+              <div class="hud-sub" style="margin:0">1M额 1169.09万$</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="label">
+          <span>Abnormal List Dialog</span>
+          <span>点击“异常列表”后的弹窗</span>
+        </div>
+        <div class="phone">
+          <div class="device">
+            <div class="status-bar">
+              <span>11:38</span>
+              <span>5G • 88%</span>
+            </div>
+            <div class="screen" style="justify-content:center">
+              <div class="dialog">
+                <div class="section-title">
+                  <strong>异常列表</strong>
+                  <span>3 条记录</span>
+                </div>
+                <div class="meta-row">
+                  <span><label>当前阈值</label>单笔波动 > 3.0%</span>
+                  <span><label>状态</label><span class="accent">实时监控中</span></span>
+                </div>
+                <div class="dialog-list">
+                  <div class="dialog-item">
+                    <div class="dialog-item-head">
+                      <span>BTCUSDT</span>
+                      <span class="red">-3.42%</span>
+                    </div>
+                    <p>2026-04-17 11:32:08 · 1 分钟内快速下跌，已触发异常提醒。</p>
+                  </div>
+                  <div class="dialog-item">
+                    <div class="dialog-item-head">
+                      <span>XAUUSD</span>
+                      <span class="green">+3.18%</span>
+                    </div>
+                    <p>2026-04-17 10:58:41 · 短时间内向上拉升，达到预警阈值。</p>
+                  </div>
+                  <div class="dialog-item">
+                    <div class="dialog-item-head">
+                      <span>BTCUSDT</span>
+                      <span class="red">-3.07%</span>
+                    </div>
+                    <p>2026-04-17 09:46:12 · 二次快速回撤，保留在异常记录中。</p>
+                  </div>
+                </div>
+                <div class="dialog-actions">
+                  <div class="gbtn">阈值设置</div>
+                  <div class="pbtn">关闭</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

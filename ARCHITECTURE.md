@@ -141,7 +141,7 @@
 - [app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java)
   设置首页目录，只负责显示设置分类入口。
 - [app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java)
-  设置二级页，负责显示悬浮窗、固定公网入口、主题、Tab、缓存管理等具体设置，并去掉重复隐私入口；网关项当前只读展示正式入口。
+  设置二级页，负责显示悬浮窗、固定公网入口、缓存管理等具体设置，并去掉重复隐私入口；网关项当前只读展示正式入口。
 - [app/src/main/java/com/binance/monitor/data/local/ConfigManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/ConfigManager.java)
   本地配置中心，负责保存主题、悬浮窗、Tab 和其他持久化开关；当前 MT5 网关入口已固定为唯一 HTTPS 入口 `https://tradeapp.ltd`，不再接受运行时改写。监控开关现在也由这里持久化，避免服务重启或开机时丢失用户真实选择。
 - [app/src/main/java/com/binance/monitor/ui/trade/TradeExecutionCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/trade/TradeExecutionCoordinator.java)
@@ -149,7 +149,7 @@
 - [app/src/main/java/com/binance/monitor/runtime/AppForegroundTracker.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/AppForegroundTracker.java)
   应用前后台状态跟踪器，负责给服务层和预加载层提供统一的前后台切换信号。
 - [app/src/main/java/com/binance/monitor/ui/theme/UiPaletteManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/theme/UiPaletteManager.java)
-  主题与控件样式管理器，负责页面底色、底部导航、图表按钮条、按钮、复选控件和整体深色终端风格；本轮已成为背景、按钮、弹窗、抽屉、菜单、边框和图表指标色的统一配色入口。
+  主题与控件样式管理器，负责页面底色、底部导航、图表按钮条、按钮、复选控件和整体深色终端风格；当前已收口为单一默认主题，并继续作为背景、按钮、弹窗、抽屉、菜单、边框和图表指标色的统一配色入口。
 - [app/src/main/java/com/binance/monitor/util/GatewayUrlResolver.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/util/GatewayUrlResolver.java)
   网关地址标准化工具，把用户输入整理成统一可用的基础地址。
 - [app/src/main/java/com/binance/monitor/util/NotificationHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/util/NotificationHelper.java)
@@ -288,7 +288,7 @@
 - `SettingsActivity` -> `SettingsSectionActivity`
   设置首页只负责分类入口，具体设置都在二级页里完成。
 - `SettingsSectionActivity` -> `ConfigManager`
-  持久化主题、悬浮窗、Tab、缓存设置，并只读展示固定正式入口。
+  持久化悬浮窗、Tab、缓存设置，并只读展示固定正式入口。
 - `NotificationHelper` <- `MonitorService`
   异常交易触发后统一发系统通知。
 - `MainViewModel` / `MainActivity` -> `MonitorRepository`
@@ -308,6 +308,7 @@
 
 ## 关键的设计决定和原因
 
+- 主题切换功能和 `Notion Data Desk` 主题已删除，设置页也不再保留“主题设置”入口；原因是用户明确确认该主题未达到预期，当前最小完整方案是回到单一默认主题，避免继续保留无效入口和无效配置。
 - 2026-04-16 UI 第一轮重做已落地：主壳常驻结构已收口为 `交易 / 账户 / 分析`，`设置` 改由独立目录页承接；原因是用户已明确不再需要旧版“行情概览”型首页，也不需要把低频设置入口继续占在底部常驻导航里。
 - 实盘升级先按“交易网关 -> 命令状态机 -> 强一致同步 -> 交易界面增强”四阶段推进；原因是当前项目最大缺口不在图表展示，而在没有真正的下单、校验、确认、回执和审计主链。
 - APP 从实盘阶段开始要采用“命令式 + 快照式”双轨；原因是用户发出交易指令后，页面不能只靠旧快照轮询判断结果，必须显式区分草稿、预检查、待确认、提交中、已受理、已拒绝、超时和已结算。

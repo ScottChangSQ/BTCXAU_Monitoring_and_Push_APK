@@ -194,6 +194,10 @@ final class AccountSnapshotRefreshCoordinator {
             host.updateOverviewHeader();
             return;
         }
+        if (host.isStoredSnapshotRestorePending()) {
+            host.updateOverviewHeader();
+            return;
+        }
         if (host.hasRenderableCurrentSessionState()) {
             if (host.shouldKeepRefreshLoop()) {
                 host.scheduleNextSnapshot(host.getDynamicRefreshDelayMs());

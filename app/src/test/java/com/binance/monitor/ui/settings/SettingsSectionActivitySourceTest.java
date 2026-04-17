@@ -77,6 +77,47 @@ public class SettingsSectionActivitySourceTest {
                 source.contains("SettingsActivity.SECTION_TAB"));
     }
 
+    @Test
+    public void settingsShouldRemoveThemeSectionAndThemeEntry() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
+        );
+        String layout = readUtf8(
+                "app/src/main/res/layout/activity_settings_detail.xml",
+                "src/main/res/layout/activity_settings_detail.xml"
+        );
+        String settingsPage = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsPageController.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsPageController.java"
+        );
+        String settingsHomeLayout = readUtf8(
+                "app/src/main/res/layout/content_settings.xml",
+                "src/main/res/layout/content_settings.xml"
+        );
+        String settingsActivity = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java"
+        );
+
+        assertFalse("设置二级页不应再保留主题卡片切换逻辑",
+                source.contains("selectTheme("));
+        assertFalse("设置二级页不应再保留主题模块背景或可见性控制",
+                source.contains("cardThemeSection"));
+        assertFalse("设置目录控制器不应再保留主题入口",
+                settingsPage.contains("binding.itemTheme"));
+        assertFalse("设置首页布局不应再保留主题设置入口",
+                settingsHomeLayout.contains("android:id=\"@+id/itemTheme\""));
+        assertFalse("设置详情布局不应再保留主题设置区块",
+                layout.contains("android:text=\"主题设置\""));
+        assertFalse("设置详情布局不应再保留金融专业风主题卡片",
+                layout.contains("android:id=\"@+id/cardThemeFinancial\""));
+        assertFalse("设置详情布局不应再保留 Notion Data Desk 主题卡片",
+                layout.contains("android:id=\"@+id/cardThemeNotion\""));
+        assertFalse("设置 Activity 不应再保留主题 section 常量",
+                settingsActivity.contains("SECTION_THEME"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

@@ -121,7 +121,7 @@ public final class GlobalStatusBottomSheetController {
         UiPaletteManager.styleSquareTextAction(
                 button,
                 palette,
-                palette.control,
+                palette.card,
                 palette.textPrimary,
                 14f,
                 4,
@@ -181,6 +181,13 @@ public final class GlobalStatusBottomSheetController {
         androidx.appcompat.app.AlertDialog dialog = builder.create();
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(activity);
         UiPaletteManager.applyPageTheme(dialogBinding.getRoot(), palette);
+        dialogBinding.tvAbnormalDialogTitle.setTextColor(palette.textPrimary);
+        dialogBinding.tvAbnormalDialogSubtitle.setTextColor(palette.textSecondary);
+        dialogBinding.tvAbnormalRecordsEmpty.setTextColor(palette.textSecondary);
+        dialogBinding.recyclerAbnormalRecords.setBackground(
+                UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke));
+        dialogBinding.etAbnormalSearch.setTextColor(palette.textPrimary);
+        dialogBinding.etAbnormalSearch.setHintTextColor(palette.textSecondary);
         bindAllAbnormalRecords(dialogBinding, dialogAdapter, records, "");
         dialogBinding.etAbnormalSearch.addTextChangedListener(new TextWatcher() {
             @Override

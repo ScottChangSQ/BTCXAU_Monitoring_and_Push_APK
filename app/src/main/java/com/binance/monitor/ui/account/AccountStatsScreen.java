@@ -1734,7 +1734,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
         MaterialButton continueButton = new MaterialButton(this, null, com.google.android.material.R.attr.materialButtonStyle);
         continueButton.setText("继续");
-        continueButton.setTextColor(Color.WHITE);
+        continueButton.setTextColor(UiPaletteManager.controlSelectedText(this));
         continueButton.setBackgroundTintList(ColorStateList.valueOf(palette.primary));
         LinearLayout.LayoutParams continueParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -4698,7 +4698,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     "全周期总计盈亏（%s）: %s",
                     sideLabel,
                     SensitiveDisplayMasker.MASK_TEXT));
-            binding.tvTradePnlSummary.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+            binding.tvTradePnlSummary.setTextColor(UiPaletteManager.resolve(this).textPrimary);
             binding.tvTradePnlLegend.setVisibility(View.GONE);
             binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
             maybeScrollToAnalysisTarget();
@@ -5158,7 +5158,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     View ghostCell = createDailyReturnsCell(
                             ghostLabel,
                             null,
-                            ContextCompat.getColor(this, R.color.text_secondary),
+                            UiPaletteManager.resolve(this).textSecondary,
                             null,
                             null,
                             null);
@@ -5188,7 +5188,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 View dayCell = createDailyReturnsCell(
                         String.valueOf(dayValue),
                         valueText,
-                        ContextCompat.getColor(this, R.color.text_primary),
+                        UiPaletteManager.resolve(this).textPrimary,
                         color,
                         click,
                         heatRate);
@@ -5736,7 +5736,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     View emptyCell = createDailyReturnsCell(
                             ghostLabel,
                             null,
-                            ContextCompat.getColor(this, R.color.text_secondary),
+                            UiPaletteManager.resolve(this).textSecondary,
                             null,
                             null,
                             null);
@@ -5751,7 +5751,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     View dayCell = createDailyReturnsCell(
                             String.valueOf(day),
                             formatReturnValue(0d, 0d, true),
-                            ContextCompat.getColor(this, R.color.text_primary),
+                            UiPaletteManager.resolve(this).textPrimary,
                             resolveReturnDisplayColor(0d, 0d, R.color.text_secondary),
                             null,
                             0d);
@@ -5778,7 +5778,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     View dayCell = createDailyReturnsCell(
                             String.valueOf(day),
                             valueText,
-                            ContextCompat.getColor(this, R.color.text_primary),
+                            UiPaletteManager.resolve(this).textPrimary,
                             color,
                             v -> applyCurveRangeFromTableSelection(startMs, endMs),
                             dayReturn);
@@ -6283,8 +6283,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
         valueView.setText(makeNonBreakingText(displayValue));
         valueView.setTextColor(masked
-                ? ContextCompat.getColor(this, R.color.text_secondary)
-                : (valueColor != null ? valueColor : ContextCompat.getColor(this, R.color.text_secondary)));
+                ? UiPaletteManager.resolve(this).textSecondary
+                : (valueColor != null ? valueColor : UiPaletteManager.resolve(this).textSecondary));
         valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.0f);
         valueView.setSingleLine(true);
         valueView.setMaxLines(1);
@@ -6843,18 +6843,20 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             binding.tvTradeSummaryBalanceValue.setText(SensitiveDisplayMasker.MASK_TEXT);
             binding.tvTradeSummaryPnlValue.setText(SensitiveDisplayMasker.MASK_TEXT);
             binding.tvTradeSummaryStorageValue.setText(SensitiveDisplayMasker.MASK_TEXT);
-            int defaultColor = ContextCompat.getColor(this, R.color.text_primary);
+            UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
+            int defaultColor = palette.textPrimary;
             binding.tvTradeSummaryCountValue.setTextColor(defaultColor);
             binding.tvTradeSummaryBalanceValue.setTextColor(defaultColor);
             binding.tvTradeSummaryPnlValue.setTextColor(defaultColor);
             binding.tvTradeSummaryStorageValue.setTextColor(defaultColor);
             return;
         }
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         binding.tvTradeSummaryCountValue.setText(tradeCount + "次");
         binding.tvTradeSummaryBalanceValue.setText(storageText);
         binding.tvTradeSummaryPnlValue.setText(pnlText);
         binding.tvTradeSummaryStorageValue.setText(balanceText);
-        binding.tvTradeSummaryCountValue.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        binding.tvTradeSummaryCountValue.setTextColor(palette.textPrimary);
         binding.tvTradeSummaryBalanceValue.setTextColor(resolveSignedValueColor(storageTotal));
         binding.tvTradeSummaryPnlValue.setTextColor(resolveSignedValueColor(total));
         binding.tvTradeSummaryStorageValue.setTextColor(resolveSignedValueColor(balanceTotal));
@@ -6867,14 +6869,17 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
     // 允许调用方按场景传入中性色，避免列表明细的 0 值比正文更醒目。
     private int resolveSignedValueColor(double value, int neutralColorRes) {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
         if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
-            return ContextCompat.getColor(this, R.color.accent_green);
+            return palette.rise;
         }
         if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
-            return ContextCompat.getColor(this, R.color.accent_red);
+            return palette.fall;
         }
-        return ContextCompat.getColor(this, neutralColorRes);
+        return neutralColorRes == R.color.text_secondary
+                ? palette.textSecondary
+                : palette.textPrimary;
     }
 
     // 收益统计根据当前显示模式切换颜色口径，收益率或收益额为 0 时统一回到中性色。
@@ -7016,6 +7021,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.positionRatioChartView.refreshPalette();
         binding.drawdownChartView.refreshPalette();
         binding.dailyReturnChartView.refreshPalette();
+        binding.tradePnlBarChart.refreshPalette();
+        binding.tradeWeekdayBarChart.refreshPalette();
         binding.tradeDistributionScatterView.refreshPalette();
         binding.holdingDurationDistributionView.refreshPalette();
         updateLoginSuccessBannerStyle();
@@ -7055,7 +7062,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         binding.tvLoginSuccessBanner.setText(R.string.account_login_success_banner);
         binding.tvLoginSuccessBanner.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
-        binding.tvLoginSuccessBanner.setTextColor(ContextCompat.getColor(this, R.color.white));
+        binding.tvLoginSuccessBanner.setTextColor(UiPaletteManager.controlSelectedText(this));
     }
 
     // 让成功提示快速淡出，避免遮挡中间操作区。
@@ -7092,17 +7099,27 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     }
 
     private void flattenCardSections(View view, UiPaletteManager.Palette palette) {
+        flattenCardSections(view, palette, false);
+    }
+
+    private void flattenCardSections(View view, UiPaletteManager.Palette palette, boolean insideCard) {
+        boolean currentInsideCard = insideCard;
         if (view instanceof MaterialCardView) {
             MaterialCardView cardView = (MaterialCardView) view;
+            boolean nestedCard = insideCard;
             cardView.setCardElevation(0f);
-            cardView.setRadius(0f);
-            cardView.setStrokeWidth(0);
-            cardView.setCardBackgroundColor(palette.surfaceEnd);
+            cardView.setRadius(nestedCard
+                    ? UiPaletteManager.radiusMdPx(this, palette)
+                    : UiPaletteManager.radiusLgPx(this, palette));
+            cardView.setStrokeWidth(UiPaletteManager.strokeWidthPx(this));
+            cardView.setStrokeColor(palette.stroke);
+            cardView.setCardBackgroundColor(nestedCard ? palette.surfaceEnd : palette.card);
+            currentInsideCard = true;
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
-                flattenCardSections(group.getChildAt(i), palette);
+                flattenCardSections(group.getChildAt(i), palette, currentInsideCard);
             }
         }
     }

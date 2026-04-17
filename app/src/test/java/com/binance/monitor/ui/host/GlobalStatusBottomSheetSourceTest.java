@@ -25,6 +25,12 @@ public class GlobalStatusBottomSheetSourceTest {
         String thresholdLayout = new String(Files.readAllBytes(
                 Paths.get("src/main/res/layout/dialog_abnormal_threshold_settings.xml")
         ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+        String abnormalAdapter = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/adapter/AbnormalRecordAdapter.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+        String paletteManager = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/theme/UiPaletteManager.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue(layout.contains("@+id/btnGlobalStatus"));
         assertTrue(layout.contains("@+id/spinnerSymbolPicker"));
@@ -40,6 +46,7 @@ public class GlobalStatusBottomSheetSourceTest {
         assertTrue(controller.contains("binding.btnGlobalStatusSettings"));
         assertTrue(controller.contains("binding.btnGlobalStatusLogs"));
         assertTrue(controller.contains("binding.btnGlobalStatusAbnormal"));
+        assertTrue(controller.contains("palette.card"));
         assertTrue(controller.contains("binding.getRoot().post(() -> applyActionRowLayout(binding));"));
         assertTrue(controller.contains("applyActionRowLayout(@NonNull DialogGlobalStatusSheetBinding binding)"));
         assertTrue(controller.contains("params.weight = 1f;"));
@@ -47,10 +54,18 @@ public class GlobalStatusBottomSheetSourceTest {
         assertTrue(controller.contains("showAbnormalThresholdDialog();"));
         assertTrue(controller.contains("ConfigManager.getInstance(activity)"));
         assertTrue(controller.contains("MonitorServiceController.dispatch(activity, AppConstants.ACTION_REFRESH_CONFIG);"));
+        assertTrue(controller.contains("dialogBinding.tvAbnormalDialogTitle.setTextColor(palette.textPrimary);"));
+        assertTrue(controller.contains("dialogBinding.recyclerAbnormalRecords.setBackground("));
+        assertTrue(controller.contains("dialogBinding.etAbnormalSearch.setTextColor(palette.textPrimary);"));
         assertTrue(thresholdLayout.contains("@+id/spinnerAbnormalThresholdSymbol"));
         assertTrue(thresholdLayout.contains("@+id/etAbnormalThresholdVolume"));
         assertTrue(thresholdLayout.contains("@+id/etAbnormalThresholdAmount"));
         assertTrue(thresholdLayout.contains("@+id/etAbnormalThresholdPrice"));
+        assertTrue(paletteManager.contains("ViewCompat.setBackgroundTintList(button, null);"));
+        assertTrue(abnormalAdapter.contains("UiPaletteManager.resolve(binding.getRoot().getContext())"));
+        assertTrue(abnormalAdapter.contains("binding.getRoot().setCardBackgroundColor(palette.card);"));
+        assertTrue(abnormalAdapter.contains("binding.tvSymbol.setTextColor(palette.primary);"));
+        assertTrue(abnormalAdapter.contains("binding.tvSymbol.setTextColor(palette.xau);"));
         assertTrue(strings.contains("<string name=\"global_status_button_offline\">未连接 | 账户离线</string>"));
         assertTrue(strings.contains("<string name=\"global_status_button_compact\">%1$s | %2$s</string>"));
         assertTrue(strings.contains("<string name=\"global_status_action_threshold\">阈值设置</string>"));

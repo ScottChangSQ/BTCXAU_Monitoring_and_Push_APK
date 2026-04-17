@@ -37,7 +37,7 @@ public class AccountPositionAdapterSourceTest {
         assertTrue(source.contains("String pnlText = signedMoney(displayPnl);"));
         assertTrue(source.contains("String totalPnlText = signedMoney(displayPnl);"));
         assertTrue(source.contains("\"持仓盈亏 %s | 收益率 %s\""));
-        assertTrue(source.contains("resolveAmountColor(binding.getRoot(), displayPnl, R.color.text_secondary)"));
+        assertTrue(source.contains("resolveAmountColor(palette, displayPnl, palette.textSecondary)"));
     }
 
     @Test
@@ -137,6 +137,31 @@ public class AccountPositionAdapterSourceTest {
         assertTrue(source.contains("ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));"));
         assertTrue(source.contains("productCount == 1 && runtimeSnapshot.getPendingCount() == 1"));
         assertTrue(source.contains("runtimeSnapshot.getDisplayLabel()"));
+    }
+
+    @Test
+    public void accountPositionAdaptersShouldUsePaletteDrivenRowSurfacesInsteadOfLegacyDarkDrawables() throws Exception {
+        String positionAdapter = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java");
+        String pendingAdapter = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java");
+        String aggregateAdapter = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAggregateAdapter.java");
+
+        assertTrue(positionAdapter.contains("UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());"));
+        assertTrue(positionAdapter.contains("binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground("));
+        assertTrue(positionAdapter.contains("UiPaletteManager.styleSquareTextAction("));
+        assertFalse(positionAdapter.contains("binding.layoutHeader.setBackgroundResource(expanded"));
+        assertFalse(positionAdapter.contains("R.drawable.bg_position_row_collapsed"));
+        assertFalse(positionAdapter.contains("R.drawable.bg_position_row_expanded"));
+
+        assertTrue(pendingAdapter.contains("UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());"));
+        assertTrue(pendingAdapter.contains("binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground("));
+        assertTrue(pendingAdapter.contains("UiPaletteManager.styleSquareTextAction("));
+        assertFalse(pendingAdapter.contains("binding.layoutHeader.setBackgroundResource(expanded"));
+        assertFalse(pendingAdapter.contains("R.drawable.bg_position_row_collapsed"));
+        assertFalse(pendingAdapter.contains("R.drawable.bg_position_row_expanded"));
+
+        assertTrue(aggregateAdapter.contains("UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());"));
+        assertTrue(aggregateAdapter.contains("binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground("));
+        assertFalse(aggregateAdapter.contains("binding.layoutHeader.setBackgroundResource(R.drawable.bg_position_row_collapsed);"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

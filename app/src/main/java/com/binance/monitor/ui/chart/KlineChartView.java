@@ -20,6 +20,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
+import com.binance.monitor.R;
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
@@ -374,12 +375,13 @@ public class KlineChartView extends View {
     }
 
     private void initPaints() {
+        float chartPriceInfoTextSizePx = getResources().getDimension(R.dimen.chart_price_info_text_size);
         bgPaint.setColor(0xFF0E1626);
         gridPaint.setColor(0xFF1E2D43);
         axisPaint.setColor(0xFF3D5577);
         axisPaint.setStrokeWidth(dp(1f));
         textPaint.setColor(secondaryTextColor);
-        textPaint.setTextSize(dp(9f));
+        textPaint.setTextSize(chartPriceInfoTextSizePx);
         upPaint.setColor(0xFF16C784);
         downPaint.setColor(0xFFF6465D);
         bollMidPaint.setStrokeWidth(dp(1f));
@@ -996,7 +998,6 @@ public class KlineChartView extends View {
             drawAggregateCostAnnotation(canvas);
         }
         int infoIndex = resolveInfoIndex(end);
-        drawPriceOhlcInfo(canvas, infoIndex);
         if (showBoll) {
             drawSeries(canvas, bollMid, start, end, visiblePriceMin, visiblePriceMax, priceRect, bollMidPaint, drawStep);
             drawSeries(canvas, bollUp, start, end, visiblePriceMin, visiblePriceMax, priceRect, bollUpPaint, drawStep);
@@ -1227,19 +1228,6 @@ public class KlineChartView extends View {
             canvas.drawText(label, priceRect.right + dp(4f), clampAxisBaseline(priceRect, y + dp(3f)), textPaint);
         }
         canvas.drawLine(priceRect.right, priceRect.top, priceRect.right, priceRect.bottom, axisPaint);
-    }
-
-    private void drawPriceOhlcInfo(Canvas canvas, int index) {
-        if (index < 0 || index >= candles.size()) {
-            return;
-        }
-        CandleEntry candle = candles.get(index);
-        textPaint.setColor(secondaryTextColor);
-        String info = "O:" + FormatUtils.formatPrice(candle.getOpen())
-                + "  H:" + FormatUtils.formatPrice(candle.getHigh())
-                + "  L:" + FormatUtils.formatPrice(candle.getLow())
-                + "  C:" + FormatUtils.formatPrice(candle.getClose());
-        canvas.drawText(info, priceRect.left + dp(2f), resolvePaneTitleBaseline(priceRect), textPaint);
     }
 
     private void drawBollInfo(Canvas canvas, int index) {
@@ -2203,6 +2191,14 @@ public class KlineChartView extends View {
         }
         layoutAreas(width, height);
         return !priceRect.isEmpty();
+    }
+
+    float getPriceInfoTextSizePx() {
+        return textPaint.getTextSize();
+    }
+
+    int getPricePaneTitleBaselineOffsetPx() {
+        return Math.round(dp(KlinePaneTextLayoutHelper.resolvePaneTitleBaselineOffsetDp()));
     }
 
     private float resolveViewportFocusX(boolean hasLayout) {

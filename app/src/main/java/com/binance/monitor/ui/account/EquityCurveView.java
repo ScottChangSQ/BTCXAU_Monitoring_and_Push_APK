@@ -2,7 +2,6 @@ package com.binance.monitor.ui.account;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -12,12 +11,10 @@ import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
-
-import com.binance.monitor.R;
-import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.domain.account.model.CurvePoint;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 
 import java.text.SimpleDateFormat;
@@ -89,29 +86,18 @@ public class EquityCurveView extends View {
 
     public EquityCurveView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        gridPaint.setColor(ContextCompat.getColor(context, R.color.divider));
-        gridPaint.setStrokeWidth(dp(1f));
-
-        axisPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
-        axisPaint.setStrokeWidth(dp(1f));
-
-        labelPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
         labelPaint.setTextSize(dp(9f));
 
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(context);
-        equityPaint.setColor(palette.primary);
         equityPaint.setStyle(Paint.Style.STROKE);
         equityPaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveEquityStrokeDp()));
         equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(3f), dp(2f)}, 0f));
 
-        balancePaint.setColor(Color.WHITE);
         balancePaint.setStyle(Paint.Style.STROKE);
         balancePaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveBalanceStrokeDp()));
         balancePaint.setPathEffect(null);
 
         markerPaint.setStyle(Paint.Style.FILL);
 
-        crosshairPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
         crosshairPaint.setStrokeWidth(dp(1f));
 
         drawdownFillPaint.setStyle(Paint.Style.FILL);
@@ -121,16 +107,12 @@ public class EquityCurveView extends View {
         drawdownValleyMarkerPaint.setStyle(Paint.Style.FILL);
         drawdownStrokePaint.setStrokeWidth(dp(1.6f));
         drawdownBoundaryPaint.setStrokeWidth(dp(1f));
-        applyDrawdownPalette();
-
-        tooltipBgPaint.setColor(ContextCompat.getColor(context, R.color.bg_surface));
         tooltipBgPaint.setStyle(Paint.Style.FILL);
-
-        tooltipTextPaint.setColor(ContextCompat.getColor(context, R.color.text_primary));
         tooltipTextPaint.setTextSize(dp(9f));
 
         emptyPaint.setTextAlign(Paint.Align.CENTER);
         emptyPaint.setTextSize(dp(10f));
+        refreshPalette();
 
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override
@@ -163,10 +145,10 @@ public class EquityCurveView extends View {
         gridPaint.setColor(applyAlpha(palette.stroke, 170));
         equityPaint.setColor(palette.primary);
         equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(3f), dp(2f)}, 0f));
-        balancePaint.setColor(Color.WHITE);
+        balancePaint.setColor(applyAlpha(palette.textPrimary, 232));
         balancePaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveBalanceStrokeDp()));
         balancePaint.setPathEffect(null);
-        applyDrawdownPalette();
+        applyDrawdownPalette(palette);
         crosshairPaint.setColor(applyAlpha(palette.textSecondary, 220));
         tooltipBgPaint.setColor(applyAlpha(palette.card, 240));
         tooltipTextPaint.setColor(palette.textPrimary);
@@ -667,12 +649,12 @@ public class EquityCurveView extends View {
         return Math.max(0f, Math.min(1f, ratio));
     }
 
-    private void applyDrawdownPalette() {
-        drawdownFillPaint.setColor(0x33FFD54F);
-        drawdownStrokePaint.setColor(0xFFFFB300);
-        drawdownBoundaryPaint.setColor(0xCCFFB300);
-        drawdownPeakMarkerPaint.setColor(0xFFFFECB3);
-        drawdownValleyMarkerPaint.setColor(0xFFFF7043);
+    private void applyDrawdownPalette(@NonNull UiPaletteManager.Palette palette) {
+        drawdownFillPaint.setColor(applyAlpha(palette.xau, 56));
+        drawdownStrokePaint.setColor(applyAlpha(palette.xau, 225));
+        drawdownBoundaryPaint.setColor(applyAlpha(palette.xau, 155));
+        drawdownPeakMarkerPaint.setColor(blendColor(palette.card, palette.xau, 0.18f));
+        drawdownValleyMarkerPaint.setColor(blendColor(palette.xau, palette.fall, 0.32f));
     }
 
     private void drawPeakMarker(Canvas canvas, float x, float y) {
@@ -696,5 +678,21 @@ public class EquityCurveView extends View {
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
         return (color & 0x00FFFFFF) | (safeAlpha << 24);
+    }
+
+    private int blendColor(int startColor, int endColor, float ratio) {
+        float safeRatio = Math.max(0f, Math.min(1f, ratio));
+        int startA = (startColor >> 24) & 0xFF;
+        int startR = (startColor >> 16) & 0xFF;
+        int startG = (startColor >> 8) & 0xFF;
+        int startB = startColor & 0xFF;
+        int endA = (endColor >> 24) & 0xFF;
+        int endR = (endColor >> 16) & 0xFF;
+        int endG = (endColor >> 8) & 0xFF;
+        int endB = endColor & 0xFF;
+        return ((Math.round(startA + (endA - startA) * safeRatio) & 0xFF) << 24)
+                | ((Math.round(startR + (endR - startR) * safeRatio) & 0xFF) << 16)
+                | ((Math.round(startG + (endG - startG) * safeRatio) & 0xFF) << 8)
+                | (Math.round(startB + (endB - startB) * safeRatio) & 0xFF);
     }
 }

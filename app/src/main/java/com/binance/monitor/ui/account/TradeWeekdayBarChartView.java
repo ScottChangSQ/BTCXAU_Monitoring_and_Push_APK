@@ -12,9 +12,8 @@ import android.util.AttributeSet;
 import android.view.View;
 
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 
-import com.binance.monitor.R;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 
 import java.util.ArrayList;
@@ -44,25 +43,30 @@ public class TradeWeekdayBarChartView extends View {
 
     public TradeWeekdayBarChartView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        axisPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
-        axisPaint.setStrokeWidth(dp(1f));
-
-        gridPaint.setColor(ContextCompat.getColor(context, R.color.divider));
-        gridPaint.setStrokeWidth(dp(1f));
-
-        labelPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
         labelPaint.setTextAlign(Paint.Align.CENTER);
         labelPaint.setTextSize(dp(9f));
 
         valuePaint.setTextAlign(Paint.Align.CENTER);
         valuePaint.setTextSize(dp(8f));
 
-        positivePaint.setColor(ContextCompat.getColor(context, R.color.accent_green));
-        negativePaint.setColor(ContextCompat.getColor(context, R.color.accent_red));
-
-        emptyPaint.setColor(ContextCompat.getColor(context, R.color.text_secondary));
         emptyPaint.setTextAlign(Paint.Align.CENTER);
         emptyPaint.setTextSize(dp(10f));
+        refreshPalette();
+    }
+
+    // 刷新主题色，保证分析页切换主题后柱状图同步更新。
+    public void refreshPalette() {
+        UiPaletteManager.Palette palette = UiPaletteManager.resolve(getContext());
+        axisPaint.setColor(applyAlpha(palette.textSecondary, 185));
+        axisPaint.setStrokeWidth(dp(1f));
+        gridPaint.setColor(applyAlpha(palette.stroke, 150));
+        gridPaint.setStrokeWidth(dp(0.8f));
+        labelPaint.setColor(palette.textSecondary);
+        valuePaint.setColor(palette.textPrimary);
+        positivePaint.setColor(applyAlpha(palette.rise, 220));
+        negativePaint.setColor(applyAlpha(palette.fall, 220));
+        emptyPaint.setColor(palette.textSecondary);
+        invalidate();
     }
 
     public void setEntries(@Nullable List<TradeWeekdayBarChartHelper.Entry> source) {
@@ -154,14 +158,14 @@ public class TradeWeekdayBarChartView extends View {
                 float barHeight = positiveHeight * ratio;
                 RectF rect = new RectF(centerX - barWidth / 2f, zeroY - barHeight, centerX + barWidth / 2f, zeroY);
                 canvas.drawRoundRect(rect, dp(3f), dp(3f), positivePaint);
-                valuePaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_green));
+                valuePaint.setColor(positivePaint.getColor());
                 canvas.drawText(formatPnl(entry.pnl), centerX, Math.max(dp(14f), rect.top - dp(8f)), valuePaint);
             } else {
                 float ratio = (float) (Math.abs(entry.pnl) / negativeBase);
                 float barHeight = negativeHeight * ratio;
                 RectF rect = new RectF(centerX - barWidth / 2f, zeroY, centerX + barWidth / 2f, zeroY + barHeight);
                 canvas.drawRoundRect(rect, dp(3f), dp(3f), negativePaint);
-                valuePaint.setColor(ContextCompat.getColor(getContext(), R.color.accent_red));
+                valuePaint.setColor(negativePaint.getColor());
                 float textY = Math.min(labelBaseline - dp(10f), rect.bottom + dp(12f));
                 canvas.drawText(formatPnl(entry.pnl), centerX, textY, valuePaint);
             }
@@ -177,5 +181,10 @@ public class TradeWeekdayBarChartView extends View {
 
     private float dp(float value) {
         return value * getResources().getDisplayMetrics().density;
+    }
+
+    private int applyAlpha(int color, int alpha) {
+        int safeAlpha = Math.max(0, Math.min(255, alpha));
+        return (color & 0x00FFFFFF) | (safeAlpha << 24);
     }
 }

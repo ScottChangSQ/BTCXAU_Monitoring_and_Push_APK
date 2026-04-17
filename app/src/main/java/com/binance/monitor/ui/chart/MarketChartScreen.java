@@ -946,6 +946,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     }
 
     private void setupChart() {
+        binding.tvChartPositionSummary.setText("盈亏：-- | 持仓：--");
         binding.klineChartView.setIndicatorsVisible(showVolume, showMacd, showStochRsi, showBoll);
         binding.klineChartView.setExtendedIndicatorsVisible(showMa, showEma, showSra, showAvl, showRsi, showKdj);
         applyCoreIndicatorParamsToChart();
@@ -967,7 +968,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             pricePaneTopPx = top;
             pricePaneRightPx = right;
             pricePaneBottomPx = bottom;
-            updateRefreshCountdownPosition();
+            updateChartPositionSummaryPosition();
             boolean positioned = updateScrollToLatestButtonPosition();
             updateHistoryTradeButtonPosition();
             if (positioned && binding.klineChartView.isLatestCandleOutOfBounds()) {
@@ -1009,14 +1010,14 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         binding.btnScrollToLatest.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updateScrollToLatestButtonPosition());
         binding.tvChartPositionSummary.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-                updateRefreshCountdownPosition());
+                updateChartPositionSummaryPosition());
         binding.btnTogglePositionOverlays.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updatePositionOverlayButtonPosition());
         binding.btnToggleHistoryTrades.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 updateHistoryTradeButtonPosition());
         binding.klineChartView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
         {
-            updateRefreshCountdownPosition();
+            updateChartPositionSummaryPosition();
             updateScrollToLatestButtonPosition();
             updatePositionOverlayButtonPosition();
             updateHistoryTradeButtonPosition();
@@ -2017,7 +2018,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         if (binding == null || binding.tvChartPositionSummary == null) {
             return;
         }
-        updateRefreshCountdownPosition();
+        updateChartPositionSummaryPosition();
     }
 
     // 当前图表已切到推送优先链路，不再展示固定秒级刷新倒计时。
@@ -4160,34 +4161,45 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         return true;
     }
 
-    // 将倒计时固定在K线价格绘图区内右上角，不受外层容器留白影响。
-    private boolean updateRefreshCountdownPosition() {
+    // 将右上角持仓摘要固定在K线价格绘图区内右上角，最右侧贴近右轴竖线左边。
+    private boolean updateChartPositionSummaryPosition() {
         if (binding == null || binding.tvChartPositionSummary == null || binding.klineChartView == null) {
             return false;
         }
         if (pricePaneRightPx <= 0 || pricePaneBottomPx <= 0) {
             return false;
         }
-        int viewWidth = binding.tvChartPositionSummary.getWidth();
-        int viewHeight = binding.tvChartPositionSummary.getHeight();
-        if (viewWidth <= 0 || viewHeight <= 0) {
-            binding.tvChartPositionSummary.post(this::updateRefreshCountdownPosition);
+        float targetTextSizePx = binding.klineChartView.getPriceInfoTextSizePx();
+        if (targetTextSizePx > 0f
+                && Math.abs(binding.tvChartPositionSummary.getTextSize() - targetTextSizePx) > 0.5f) {
+            binding.tvChartPositionSummary.setTextSize(TypedValue.COMPLEX_UNIT_PX, targetTextSizePx);
+            binding.tvChartPositionSummary.post(this::updateChartPositionSummaryPosition);
             return false;
         }
-        int inset = dpToPx(2f);
-        int targetLeft = Math.max(pricePaneLeftPx, pricePaneRightPx - viewWidth - inset);
-        int targetTop = Math.max(0, pricePaneTopPx + inset);
+        int viewHeight = binding.tvChartPositionSummary.getHeight();
+        int baseline = binding.tvChartPositionSummary.getBaseline();
+        if (viewHeight <= 0 || baseline <= 0) {
+            binding.tvChartPositionSummary.post(this::updateChartPositionSummaryPosition);
+            return false;
+        }
+        int inset = dpToPx(1f);
+        int targetLeft = Math.max(0, pricePaneLeftPx);
+        int targetBaseline = pricePaneTopPx + binding.klineChartView.getPricePaneTitleBaselineOffsetPx();
+        int targetTop = Math.max(0, targetBaseline - baseline);
+        int targetWidth = Math.max(0, pricePaneRightPx - pricePaneLeftPx - inset);
         android.widget.FrameLayout.LayoutParams params =
                 (android.widget.FrameLayout.LayoutParams) binding.tvChartPositionSummary.getLayoutParams();
         int targetGravity = Gravity.TOP | Gravity.START;
         if (params.gravity == targetGravity
                 && params.leftMargin == targetLeft
                 && params.topMargin == targetTop
+                && params.width == targetWidth
                 && params.rightMargin == 0
                 && params.bottomMargin == 0) {
             return true;
         }
         params.gravity = targetGravity;
+        params.width = targetWidth;
         params.leftMargin = targetLeft;
         params.topMargin = targetTop;
         params.rightMargin = 0;

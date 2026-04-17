@@ -58,6 +58,12 @@ public final class AccountTradeHistoryBottomSheetController {
         binding.tvTradeHistoryProductLabel.setTextColor(palette.textPrimary);
         binding.tvTradeHistorySideLabel.setTextColor(palette.textPrimary);
         binding.tvTradeHistorySortLabel.setTextColor(palette.textPrimary);
+        binding.recyclerTradeHistory.setBackground(
+                UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke)
+        );
+        styleFilterField(binding.spinnerTradeHistoryProduct, binding.tvTradeHistoryProductLabel, palette);
+        styleFilterField(binding.spinnerTradeHistorySide, binding.tvTradeHistorySideLabel, palette);
+        styleFilterField(binding.spinnerTradeHistorySort, binding.tvTradeHistorySortLabel, palette);
 
         TradeRecordAdapterV2 tradeAdapter = new TradeRecordAdapterV2();
         binding.recyclerTradeHistory.setLayoutManager(new LinearLayoutManager(activity));
@@ -67,6 +73,15 @@ public final class AccountTradeHistoryBottomSheetController {
         setupFilters(binding, tradeAdapter, baseTrades);
         dialog.show();
         UiPaletteManager.applyBottomSheetSurface(dialog, palette);
+    }
+
+    // 抽屉筛选条统一走主题浅色控件面板，避免 Notion 主题下仍混入旧深色输入框。
+    private void styleFilterField(@NonNull Spinner spinner,
+                                  @NonNull TextView labelView,
+                                  @NonNull UiPaletteManager.Palette palette) {
+        spinner.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));
+        labelView.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));
+        labelView.setTextColor(palette.textPrimary);
     }
 
     // 初始化筛选控件，并把筛选变化统一收口到同一套列表刷新逻辑。

@@ -136,11 +136,11 @@ public class ConfigManager {
     }
 
     public int getColorPalette() {
-        return preferences.getInt(KEY_COLOR_PALETTE, 0);
+        return 0;
     }
 
     public void setColorPalette(int paletteId) {
-        preferences.edit().putInt(KEY_COLOR_PALETTE, Math.max(0, paletteId)).apply();
+        preferences.edit().putInt(KEY_COLOR_PALETTE, 0).apply();
     }
 
     public boolean isTabMarketMonitorVisible() {

@@ -27,6 +27,11 @@ public class MarketChartLayoutResourceTest {
 
         assertTrue(hasViewId(document, "klineChartView"));
         assertTrue(hasViewId(document, "tvChartPositionSummary"));
+        assertTrue(xml.contains("android:id=\"@+id/tvChartPositionSummary\""));
+        assertTrue(xml.contains("android:text=\"盈亏：-- | 持仓：--\""));
+        assertTrue(xml.contains("android:textSize=\"@dimen/chart_price_info_text_size\""));
+        assertTrue(xml.contains("android:gravity=\"end\""));
+        assertTrue(xml.contains("android:textAlignment=\"viewEnd\""));
         assertTrue(hasViewId(document, "btnChartModeMarket"));
         assertTrue(hasViewId(document, "btnChartModePending"));
         assertTrue(hasViewId(document, "layoutChartQuickTradeBar"));
@@ -67,7 +72,19 @@ public class MarketChartLayoutResourceTest {
         assertFalse(hasViewId(document, "tvChartPositionTitle"));
         assertFalse(hasViewId(document, "tvChartOverlayMeta"));
         assertFalse(hasViewId(document, "tvChartAbnormalSummary"));
+        assertFalse(xml.contains("持仓手数: -- | 持仓盈亏: --"));
         assertTrue(xml.indexOf("@+id/btnToggleHistoryTrades") < xml.indexOf("@+id/btnTogglePositionOverlays"));
+    }
+
+    @Test
+    public void chartPriceInfoTextSizeShouldComeFromSharedDimen() throws Exception {
+        Path dimenPath = resolveProjectFile(
+                "app/src/main/res/values/dimens.xml",
+                "src/main/res/values/dimens.xml"
+        );
+        String xml = new String(Files.readAllBytes(dimenPath), StandardCharsets.UTF_8);
+
+        assertTrue(xml.contains("<dimen name=\"chart_price_info_text_size\">9dp</dimen>"));
     }
 
     private static Path resolveProjectFile(String... candidates) {

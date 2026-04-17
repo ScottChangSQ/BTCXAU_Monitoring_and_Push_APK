@@ -10,7 +10,6 @@ import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -18,6 +17,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemTradeRecordBinding;
 import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
+import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
@@ -236,25 +236,27 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
         }
 
         void bind(TradeRecordItem item, boolean expanded, boolean animateExpand, boolean masked) {
+            UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());
+            applyRowPalette(palette, expanded);
             if (masked) {
                 binding.tvSummary.setText(SensitiveDisplayMasker.MASK_TEXT);
-                binding.tvSummary.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
+                binding.tvSummary.setTextColor(palette.textPrimary);
                 binding.tvTime.setText(SensitiveDisplayMasker.MASK_TEXT);
                 binding.tvProduct.setText(SensitiveDisplayMasker.MASK_TEXT);
                 binding.tvSide.setText(SensitiveDisplayMasker.MASK_TEXT);
                 binding.tvDetail.setText(SensitiveDisplayMasker.MASK_TEXT);
-                binding.tvTime.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
-                binding.tvProduct.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
-                binding.tvSide.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
-                binding.tvDetail.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+                binding.tvTime.setTextColor(palette.textSecondary);
+                binding.tvProduct.setTextColor(palette.textSecondary);
+                binding.tvSide.setTextColor(palette.textSecondary);
+                binding.tvDetail.setTextColor(palette.textSecondary);
                 binding.tvRemark.setVisibility(View.GONE);
                 updateExpandState(expanded, animateExpand);
                 return;
             }
             String sideText = sideCn(item.getSide());
-            int sideColor = resolveSideColor(binding.getRoot(), item.getSide());
+            int sideColor = resolveSideColor(palette, item.getSide());
             double summaryProfit = item.getProfit() + item.getStorageFee();
-            int pnlColor = resolveAmountColor(binding.getRoot(), summaryProfit, R.color.text_primary);
+            int pnlColor = resolveAmountColor(palette, summaryProfit, palette.textPrimary);
             String amount = signedMoney(summaryProfit);
             String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
                     item.getProductName(), sideText, item.getQuantity(), amount);
@@ -270,18 +272,21 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             if (start >= 0) {
                 span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
+            binding.tvSummary.setTextColor(palette.textPrimary);
             binding.tvSummary.setText(span);
             updateExpandState(expanded, animateExpand);
 
             long openTime = item.getOpenTime();
             long closeTime = item.getCloseTime();
+            binding.tvTime.setTextColor(palette.textSecondary);
             binding.tvTime.setText("开仓时间: " + FormatUtils.formatDateTime(openTime));
+            binding.tvProduct.setTextColor(palette.textSecondary);
             binding.tvProduct.setText("平仓时间: " + FormatUtils.formatDateTime(closeTime));
             binding.tvSide.setText(String.format(Locale.getDefault(),
                     "开仓价格 $%s | 平仓价格 $%s",
                     FormatUtils.formatPrice(item.getOpenPrice()),
                     FormatUtils.formatPrice(item.getClosePrice())));
-            binding.tvSide.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_secondary));
+            binding.tvSide.setTextColor(palette.textSecondary);
             String profitText = signedMoney(item.getProfit());
             String storageFeeText = "$" + FormatUtils.formatPrice(item.getStorageFee());
             String detailRaw = String.format(Locale.getDefault(),
@@ -291,20 +296,32 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             SpannableStringBuilder detailSpan = new SpannableStringBuilder(detailRaw);
             int profitStart = detailRaw.indexOf(profitText);
             if (profitStart >= 0) {
-                detailSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(binding.getRoot(), item.getProfit(), R.color.text_secondary)),
+                detailSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(palette, item.getProfit(), palette.textSecondary)),
                         profitStart,
                         profitStart + profitText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             int storageStart = detailRaw.lastIndexOf(storageFeeText);
             if (storageStart >= 0) {
-                detailSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(binding.getRoot(), item.getStorageFee(), R.color.text_secondary)),
+                detailSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(palette, item.getStorageFee(), palette.textSecondary)),
                         storageStart,
                         storageStart + storageFeeText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
+            binding.tvDetail.setTextColor(palette.textSecondary);
             binding.tvDetail.setText(detailSpan);
+            binding.tvRemark.setTextColor(palette.textSecondary);
             binding.tvRemark.setVisibility(View.GONE);
+        }
+
+        // 历史成交行统一使用当前主题行面板。
+        private void applyRowPalette(@NonNull UiPaletteManager.Palette palette, boolean expanded) {
+            binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground(
+                    binding.getRoot().getContext(),
+                    expanded ? palette.surfaceEnd : palette.card,
+                    palette.stroke
+            ));
+            binding.tvExpandHint.setTextColor(palette.textSecondary);
         }
 
         private void updateExpandState(boolean expanded, boolean animate) {
@@ -356,20 +373,21 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
         }
 
-        private static int resolveSideColor(View root, String side) {
-            return ContextCompat.getColor(root.getContext(),
-                    "buy".equalsIgnoreCase(side) ? R.color.accent_green : R.color.accent_red);
+        private static int resolveSideColor(@NonNull UiPaletteManager.Palette palette, String side) {
+            return "buy".equalsIgnoreCase(side) ? palette.rise : palette.fall;
         }
 
-        private static int resolveAmountColor(View root, double value, int neutralColorRes) {
+        private static int resolveAmountColor(@NonNull UiPaletteManager.Palette palette,
+                                              double value,
+                                              int neutralColor) {
             AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
             if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
-                return ContextCompat.getColor(root.getContext(), R.color.accent_green);
+                return palette.rise;
             }
             if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
-                return ContextCompat.getColor(root.getContext(), R.color.accent_red);
+                return palette.fall;
             }
-            return ContextCompat.getColor(root.getContext(), neutralColorRes);
+            return neutralColor;
         }
     }
 }
