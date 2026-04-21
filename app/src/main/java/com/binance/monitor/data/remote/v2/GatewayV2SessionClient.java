@@ -44,6 +44,32 @@ public class GatewayV2SessionClient {
     @Nullable
     private final ConfigManager configManager;
 
+    // 保留会话接口结构化失败回执，便于上层继续展示 requestId/stage/loginError。
+    public static final class SessionHttpException extends IOException {
+        @NonNull
+        private final String requestId;
+        @Nullable
+        private final SessionReceipt receipt;
+
+        public SessionHttpException(@NonNull String message,
+                                    @Nullable String requestId,
+                                    @Nullable SessionReceipt receipt) {
+            super(message == null ? "" : message);
+            this.requestId = requestId == null ? "" : requestId.trim();
+            this.receipt = receipt;
+        }
+
+        @NonNull
+        public String getRequestId() {
+            return requestId;
+        }
+
+        @Nullable
+        public SessionReceipt getReceipt() {
+            return receipt;
+        }
+    }
+
     // 创建不依赖 Context 的会话客户端实例。
     public GatewayV2SessionClient() {
         this.client = buildClient();
@@ -182,7 +208,7 @@ public class GatewayV2SessionClient {
         try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                throw new IOException(buildHttpFailureMessage(response.code(), path, responseBody));
+                throw buildHttpFailureException(response.code(), path, responseBody);
             }
             return responseBody;
         }
@@ -196,7 +222,7 @@ public class GatewayV2SessionClient {
         try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                throw new IOException(buildHttpFailureMessage(response.code(), path, responseBody));
+                throw buildHttpFailureException(response.code(), path, responseBody);
             }
             return responseBody;
         }
@@ -238,6 +264,14 @@ public class GatewayV2SessionClient {
         } catch (Exception ignored) {
         }
         return fallback + " " + text;
+    }
+
+    // 优先把结构化会话失败回执透传出去，避免上层只能拿到一段普通字符串。
+    @NonNull
+    private static IOException buildHttpFailureException(int httpCode, @NonNull String path, @Nullable String body) {
+        String fallbackMessage = buildHttpFailureMessage(httpCode, path, body);
+        SessionHttpException structured = buildStructuredHttpException(body, fallbackMessage);
+        return structured == null ? new IOException(fallbackMessage) : structured;
     }
 
     // 把服务端诊断时间线格式化成人能直接阅读的多行文本。
@@ -283,7 +317,33 @@ public class GatewayV2SessionClient {
         return builder.toString().trim();
     }
 
-    // 统一提取 detail/error 里的 message，兼容字符串和对象两种结构。
+    // 从 HTTP 错误体里恢复结构化会话回执，供 UI 继续显示 stage/requestId 等字段。
+    @Nullable
+    private static SessionHttpException buildStructuredHttpException(@Nullable String body,
+                                                                     @NonNull String fallbackMessage) {
+        String text = body == null ? "" : body.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            JSONObject json = new JSONObject(text);
+            SessionReceipt receipt = parseStructuredErrorReceipt(json.opt("detail"), text);
+            if (receipt == null) {
+                receipt = parseStructuredErrorReceipt(json.opt("error"), text);
+            }
+            if (receipt == null) {
+                return null;
+            }
+            String summary = buildSessionFailureSummary(receipt);
+            String message = summary.isEmpty()
+                    ? resolveStructuredReceiptMessage(receipt, fallbackMessage)
+                    : summary;
+            return new SessionHttpException(message, receipt.getRequestId(), receipt);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     @NonNull
     private static String extractStructuredErrorMessage(@Nullable Object payload) {
         if (payload instanceof JSONObject) {
@@ -311,17 +371,44 @@ public class GatewayV2SessionClient {
     // 把服务端切号失败 detail 收口成可直接展示的多行摘要。
     @NonNull
     private static String buildSessionFailureSummary(@NonNull JSONObject object) {
-        String message = object.optString("message", "").trim();
-        String stage = object.optString("stage", "").trim();
-        String loginError = object.optString("loginError", "").trim();
-        RemoteAccountProfile lastObserved = parseProfile(object.optJSONObject("lastObservedAccount"));
-        if (message.isEmpty() && stage.isEmpty() && loginError.isEmpty() && lastObserved == null) {
+        return buildSessionFailureSummary(
+                object.optString("message", ""),
+                object.optString("stage", ""),
+                object.optString("loginError", ""),
+                parseProfile(object.optJSONObject("lastObservedAccount"))
+        );
+    }
+
+    // 结构化异常已经解析成 SessionReceipt 时，沿用同一套摘要格式。
+    @NonNull
+    private static String buildSessionFailureSummary(@Nullable SessionReceipt receipt) {
+        if (receipt == null) {
+            return "";
+        }
+        return buildSessionFailureSummary(
+                receipt.getMessage(),
+                receipt.getStage(),
+                receipt.getLoginError(),
+                receipt.getLastObservedAccount()
+        );
+    }
+
+    // 统一拼装会话失败摘要，避免 JSON/SessionReceipt 两套逻辑分叉。
+    @NonNull
+    private static String buildSessionFailureSummary(@Nullable String message,
+                                                     @Nullable String stage,
+                                                     @Nullable String loginError,
+                                                     @Nullable RemoteAccountProfile lastObserved) {
+        String safeMessage = message == null ? "" : message.trim();
+        String safeStage = stage == null ? "" : stage.trim();
+        String safeLoginError = loginError == null ? "" : loginError.trim();
+        if (safeMessage.isEmpty() && safeStage.isEmpty() && safeLoginError.isEmpty() && lastObserved == null) {
             return "";
         }
         StringBuilder builder = new StringBuilder();
-        appendLine(builder, message);
-        appendLine(builder, stage.isEmpty() ? "" : "stage=" + stage);
-        appendLine(builder, loginError.isEmpty() ? "" : "loginError=" + loginError);
+        appendLine(builder, safeMessage);
+        appendLine(builder, safeStage.isEmpty() ? "" : "stage=" + safeStage);
+        appendLine(builder, safeLoginError.isEmpty() ? "" : "loginError=" + safeLoginError);
         if (lastObserved != null && !lastObserved.getLogin().trim().isEmpty()) {
             appendLine(
                     builder,
@@ -341,6 +428,60 @@ public class GatewayV2SessionClient {
             builder.append('\n');
         }
         builder.append(safeLine);
+    }
+
+    // 从 detail/error 对象里恢复会话失败回执，供上层继续拿结构化字段。
+    @Nullable
+    private static SessionReceipt parseStructuredErrorReceipt(@Nullable Object payload, @NonNull String rawJson) {
+        if (!(payload instanceof JSONObject)) {
+            return null;
+        }
+        JSONObject object = (JSONObject) payload;
+        SessionReceipt receipt = new SessionReceipt(
+                false,
+                object.optString("state", "failed"),
+                object.optString("requestId", ""),
+                parseProfile(object.optJSONObject("activeAccount")),
+                object.optString("message", ""),
+                object.optString("errorCode", object.optString("code", "")),
+                object.optBoolean("retryable", false),
+                rawJson,
+                object.optString("stage", ""),
+                object.optLong("elapsedMs", 0L),
+                parseProfile(object.optJSONObject("baselineAccount")),
+                parseProfile(object.optJSONObject("finalAccount")),
+                object.optString("loginError", ""),
+                parseProfile(object.optJSONObject("lastObservedAccount"))
+        );
+        return hasStructuredReceiptPayload(receipt) ? receipt : null;
+    }
+
+    // 过滤掉空壳对象，避免任意 JSON 都被误判成会话结构化异常。
+    private static boolean hasStructuredReceiptPayload(@NonNull SessionReceipt receipt) {
+        return !receipt.getRequestId().trim().isEmpty()
+                || !receipt.getMessage().trim().isEmpty()
+                || !receipt.getErrorCode().trim().isEmpty()
+                || !receipt.getStage().trim().isEmpty()
+                || !receipt.getLoginError().trim().isEmpty()
+                || receipt.getBaselineAccount() != null
+                || receipt.getFinalAccount() != null
+                || receipt.getLastObservedAccount() != null;
+    }
+
+    // 结构化回执若没有可展示摘要，则退回 message/errorCode/fallback。
+    @NonNull
+    private static String resolveStructuredReceiptMessage(@Nullable SessionReceipt receipt,
+                                                          @NonNull String fallbackMessage) {
+        if (receipt == null) {
+            return fallbackMessage;
+        }
+        if (!receipt.getMessage().trim().isEmpty()) {
+            return receipt.getMessage().trim();
+        }
+        if (!receipt.getErrorCode().trim().isEmpty()) {
+            return receipt.getErrorCode().trim();
+        }
+        return fallbackMessage;
     }
 
     // 解析单个账号摘要对象。

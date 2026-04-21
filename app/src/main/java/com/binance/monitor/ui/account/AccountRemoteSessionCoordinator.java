@@ -11,6 +11,7 @@ import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
 import com.binance.monitor.data.model.v2.session.SessionReceipt;
 import com.binance.monitor.data.model.v2.session.SessionStatusPayload;
+import com.binance.monitor.data.remote.v2.GatewayV2SessionClient;
 import com.binance.monitor.security.SessionCredentialEncryptor;
 import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.security.SessionSummaryStore;
@@ -289,11 +290,13 @@ public final class AccountRemoteSessionCoordinator {
             try {
                 receipt = sessionGateway.login(envelope, request.isRemember());
             } catch (Exception submitError) {
+                GatewayV2SessionClient.SessionHttpException structuredError = asSessionHttpException(submitError);
                 throw new SessionActionException(
                         "login",
-                        requestId,
+                        resolveSessionActionRequestId(structuredError, requestId),
                         resolveThrowableMessage(submitError, "登录失败"),
-                        submitError
+                        submitError,
+                        structuredError == null ? null : structuredError.getReceipt()
                 );
             }
             return handleAcceptedReceipt(
@@ -321,11 +324,13 @@ public final class AccountRemoteSessionCoordinator {
         try {
             receipt = sessionGateway.switchAccount(safeProfileId, requestId);
         } catch (Exception switchError) {
+            GatewayV2SessionClient.SessionHttpException structuredError = asSessionHttpException(switchError);
             throw new SessionActionException(
                     "switch",
-                    requestId,
+                    resolveSessionActionRequestId(structuredError, requestId),
                     resolveThrowableMessage(switchError, "切换账户失败"),
-                    switchError
+                    switchError,
+                    structuredError == null ? null : structuredError.getReceipt()
             );
         }
         return handleAcceptedReceipt(receipt, "正在同步账户数据", safeProfileId, "", "");
@@ -543,6 +548,28 @@ public final class AccountRemoteSessionCoordinator {
             return;
         }
         Arrays.fill(password, '\0');
+    }
+
+    @Nullable
+    private static GatewayV2SessionClient.SessionHttpException asSessionHttpException(@Nullable Throwable throwable) {
+        if (throwable instanceof GatewayV2SessionClient.SessionHttpException) {
+            return (GatewayV2SessionClient.SessionHttpException) throwable;
+        }
+        return null;
+    }
+
+    @NonNull
+    private static String resolveSessionActionRequestId(@Nullable GatewayV2SessionClient.SessionHttpException error,
+                                                        @Nullable String fallbackRequestId) {
+        if (error == null) {
+            return safeTrim(fallbackRequestId);
+        }
+        SessionReceipt receipt = error.getReceipt();
+        return preferNonEmpty(
+                error.getRequestId(),
+                receipt == null ? "" : receipt.getRequestId(),
+                fallbackRequestId
+        );
     }
 
     @NonNull

@@ -224,6 +224,27 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertIn('Join-Path (Split-Path -Parent $gatewayDir) "bundle_manifest.json"', run_gateway_script)
         self.assertIn('$env:MT5_BUNDLE_MANIFEST_PATH = (Resolve-Path $bundleManifestPath).Path', run_gateway_script)
 
+    def test_start_gateway_should_log_current_identity_and_session_for_mt5_gui_diagnostics(self) -> None:
+        start_gateway_script = (builder.SOURCE_GATEWAY_DIR / "start_gateway.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("WindowsIdentity", start_gateway_script)
+        self.assertIn("GetCurrentProcess().SessionId", start_gateway_script)
+        self.assertIn("Gateway process identity:", start_gateway_script)
+        self.assertIn("Gateway process session id:", start_gateway_script)
+
+    def test_register_task_scripts_should_prefer_interactive_user_and_fallback_to_system(self) -> None:
+        gateway_task_script = (builder.SOURCE_WINDOWS_DIR / "02_register_startup_task.ps1").read_text(encoding="utf-8")
+        admin_task_script = (builder.SOURCE_WINDOWS_DIR / "04_register_admin_panel_task.ps1").read_text(encoding="utf-8")
+
+        for script in (gateway_task_script, admin_task_script):
+            self.assertIn("Resolve-InteractiveTaskUser", script)
+            self.assertIn("Resolve-TaskRegistrationProfile", script)
+            self.assertIn("New-ScheduledTaskTrigger -AtLogOn -User $interactiveUser", script)
+            self.assertIn("New-ScheduledTaskPrincipal -UserId $interactiveUser -LogonType Interactive -RunLevel Highest", script)
+            self.assertIn('New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest', script)
+            self.assertIn('LaunchMode = "interactive_user"', script)
+            self.assertIn('LaunchMode = "service_account"', script)
+
     def test_default_caddyfile_should_expose_tradeapp_https_entry(self) -> None:
         caddyfile = (builder.SOURCE_WINDOWS_DIR / "Caddyfile").read_text(encoding="utf-8")
 

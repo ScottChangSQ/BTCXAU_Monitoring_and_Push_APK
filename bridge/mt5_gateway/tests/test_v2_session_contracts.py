@@ -381,6 +381,44 @@ class V2SessionContractsTests(unittest.TestCase):
         self.assertIn("exactPathCount", command)
         self.assertNotIn("MainWindowHandle", command)
 
+    def test_build_mt5_terminal_window_probe_command_should_include_window_and_interactive_session_checks(self):
+        """直登窗口探测应显式检查 MainWindowHandle 和交互会话。"""
+        command = server_v2._build_mt5_terminal_window_probe_command(r"C:\Program Files\MetaTrader 5\terminal64.exe")
+
+        self.assertIn("MainWindowHandle", command)
+        self.assertIn("interactiveSessionIds", command)
+        self.assertIn("interactiveVisibleWindowCount", command)
+        self.assertIn("Get-Process explorer", command)
+
+    def test_resolve_visible_mt5_terminal_path_should_require_interactive_visible_window(self):
+        """直登只应接受进入交互会话且已有可见窗口的终端。"""
+        payload = {
+            "items": [
+                {
+                    "processId": 1234,
+                    "sessionId": 3,
+                    "interactiveSession": True,
+                    "hasVisibleWindow": True,
+                    "executablePath": r"C:\MT5\terminal64.exe",
+                    "normalizedExecutablePath": "c:/mt5/terminal64.exe",
+                    "exactPath": True,
+                },
+                {
+                    "processId": 5678,
+                    "sessionId": 0,
+                    "interactiveSession": False,
+                    "hasVisibleWindow": False,
+                    "executablePath": r"C:\MT5\terminal64.exe",
+                    "normalizedExecutablePath": "c:/mt5/terminal64.exe",
+                    "exactPath": True,
+                },
+            ]
+        }
+
+        resolved = server_v2._resolve_visible_mt5_terminal_path(payload, preferred_path=r"C:\MT5\terminal64.exe")
+
+        self.assertEqual(r"C:\MT5\terminal64.exe", resolved)
+
     def test_detect_mt5_gui_window_should_accept_same_session_terminal_process_without_main_window_handle(self):
         """同会话 MT5 终端即便没有窗口句柄，也应被认作可附着实例。"""
         completed = subprocess.CompletedProcess(
@@ -458,10 +496,12 @@ class V2SessionContractsTests(unittest.TestCase):
         }
         with mock.patch.object(server_v2, "PATH", r"C:\MT5\terminal64.exe"), \
                 mock.patch.object(server_v2, "_inspect_mt5_gui_terminals", return_value=payload), \
+                mock.patch.object(server_v2, "_shutdown_mt5") as shutdown_mock, \
                 mock.patch.object(server_v2, "_mt5_initialize", return_value=(True, "")) as initialize_mock:
             attached = server_v2._attach_current_mt5_gui_terminal(15000)
 
         self.assertTrue(attached["ok"])
+        shutdown_mock.assert_called_once_with()
         initialize_mock.assert_called_once_with(r"C:\MT5\terminal64.exe", timeout_ms=5000)
 
     def test_attach_current_mt5_gui_terminal_should_recycle_terminal_and_retry_initialize(self):
@@ -483,14 +523,54 @@ class V2SessionContractsTests(unittest.TestCase):
         }
         with mock.patch.object(server_v2, "PATH", r"C:\MT5\terminal64.exe"), \
                 mock.patch.object(server_v2, "_inspect_mt5_gui_terminals", return_value=payload), \
+                mock.patch.object(server_v2, "_shutdown_mt5") as shutdown_mock, \
                 mock.patch.object(server_v2, "_mt5_initialize", side_effect=[(False, "IPC timeout"), (True, "")]) as initialize_mock, \
                 mock.patch.object(server_v2, "_recycle_mt5_terminal_for_attach", return_value={"remainingBudgetMs": 8000}) as recycle_mock:
             attached = server_v2._attach_current_mt5_gui_terminal(15000)
 
         self.assertTrue(attached["ok"])
         self.assertEqual("recycled_terminal_then_initialize", attached["detail"]["attachMode"])
+        self.assertEqual(2, shutdown_mock.call_count)
         recycle_mock.assert_called_once()
         self.assertEqual(2, initialize_mock.call_count)
+
+    def test_attach_current_mt5_gui_terminal_should_poll_initialize_after_recycle_until_ready(self):
+        """重启终端后不能只尝试一次附着，应在剩余预算内短轮询直到终端真正可附着。"""
+        payload = {
+            "processCount": 1,
+            "sameSessionCount": 1,
+            "exactPathCount": 1,
+            "items": [
+                {
+                    "processId": 1234,
+                    "sessionId": 0,
+                    "sameSession": True,
+                    "executablePath": r"C:\MT5\terminal64.exe",
+                    "normalizedExecutablePath": "c:/mt5/terminal64.exe",
+                    "exactPath": True,
+                }
+            ],
+        }
+        with mock.patch.object(server_v2, "PATH", r"C:\MT5\terminal64.exe"), \
+                mock.patch.object(server_v2, "_inspect_mt5_gui_terminals", return_value=payload), \
+                mock.patch.object(server_v2, "_shutdown_mt5") as shutdown_mock, \
+                mock.patch.object(
+                    server_v2,
+                    "_mt5_initialize",
+                    side_effect=[(False, "IPC timeout"), (False, "IPC timeout"), (True, "")],
+                ) as initialize_mock, \
+                mock.patch.object(server_v2, "_recycle_mt5_terminal_for_attach", return_value={"remainingBudgetMs": 9000}) as recycle_mock, \
+                mock.patch("bridge.mt5_gateway.server_v2.time.monotonic", side_effect=[0.0, 0.0, 0.5, 2.0]), \
+                mock.patch("bridge.mt5_gateway.server_v2.time.sleep") as sleep_mock:
+            attached = server_v2._attach_current_mt5_gui_terminal(15000)
+
+        self.assertTrue(attached["ok"])
+        self.assertEqual("recycled_terminal_then_initialize", attached["detail"]["attachMode"])
+        self.assertEqual(2, int(attached["detail"]["retryInitializeAttemptCount"]))
+        self.assertEqual(3, initialize_mock.call_count)
+        self.assertEqual(3, shutdown_mock.call_count)
+        recycle_mock.assert_called_once()
+        sleep_mock.assert_called_once()
 
     def test_resolve_direct_login_terminal_path_should_use_discovered_candidate_when_mt5_path_missing(self):
         """未显式配置 MT5_PATH 时，直登链应使用已发现的终端候选路径。"""
@@ -501,23 +581,54 @@ class V2SessionContractsTests(unittest.TestCase):
         self.assertEqual(r"C:\Discovered\terminal64.exe", resolved_path)
         self.assertEqual("discovered_candidate", source)
 
-    def test_session_gateway_adapter_should_delegate_to_standalone_switch_flow(self):
-        """登录适配器应把显式登录委托给新的 GUI 切号主链。"""
+    def test_login_mt5_direct_with_input_credentials_should_fail_when_terminal_window_is_not_visible(self):
+        """直登在未检测到可见交互窗口时应提前失败，而不是继续盲目 initialize。"""
+        with mock.patch.object(server_v2, "mt5", mock.Mock()), \
+                mock.patch.object(server_v2, "_shutdown_mt5"), \
+                mock.patch.object(server_v2, "_resolve_direct_login_terminal_path", return_value=(r"C:\MT5\terminal64.exe", "configured_path")), \
+                mock.patch.object(server_v2, "_restart_mt5_terminal_for_direct_login", return_value={"terminalPath": r"C:\MT5\terminal64.exe", "matchedCount": 1, "remainingCount": 0}), \
+                mock.patch.object(server_v2, "_start_mt5_terminal_for_direct_login", return_value={"terminalPath": r"C:\MT5\terminal64.exe", "matchedCount": 1}), \
+                mock.patch.object(
+                    server_v2,
+                    "_resolve_mt5_terminal_window_state",
+                    return_value={
+                        "ready": False,
+                        "resolvedPath": None,
+                        "payload": {
+                            "currentSessionId": 0,
+                            "interactiveSessionIds": [3],
+                            "processCount": 1,
+                            "sameSessionCount": 1,
+                            "exactPathCount": 1,
+                            "interactiveSessionCount": 0,
+                            "visibleWindowCount": 0,
+                            "interactiveVisibleWindowCount": 0,
+                            "items": [],
+                        },
+                    },
+                ), \
+                mock.patch.object(server_v2, "_login_mt5_in_isolated_process") as direct_login_mock:
+            with self.assertRaises(RuntimeError) as error_ctx:
+                server_v2._login_mt5_direct_with_input_credentials(
+                    login_value=12345678,
+                    password_value="secret",
+                    server_value="ICMarketsSC-MT5-6",
+                    request_id="req-window-missing-001",
+                    action="login",
+                )
+
+        self.assertIn("no visible interactive window", str(error_ctx.exception))
+        direct_login_mock.assert_not_called()
+
+    def test_session_gateway_adapter_should_delegate_to_direct_login_flow(self):
+        """登录适配器应改为委托独立 MT5 实例直登主链。"""
         fake_flow = mock.Mock(
             return_value={
-                "ok": True,
-                "stage": "switch_succeeded",
-                "message": "切换前=11111111 / Old-Server；切换后=12345678 / New-Server；耗时=8000ms",
-                "elapsedMs": 8000,
-                "baselineAccount": {"login": "11111111", "server": "Old-Server"},
-                "finalAccount": {"login": "12345678", "server": "New-Server"},
-                "loginError": "",
-                "lastObservedAccount": {"login": "12345678", "server": "New-Server"},
                 "login": "12345678",
                 "server": "New-Server",
             }
         )
-        with mock.patch.object(server_v2, "_switch_mt5_account_via_gui_flow", fake_flow), \
+        with mock.patch.object(server_v2, "_login_mt5_direct_with_input_credentials", fake_flow), \
                 mock.patch.object(server_v2, "_set_runtime_session_credentials") as set_runtime_mock:
             payload = server_v2._SessionGatewayAdapter().login_mt5(
                 login="12345678",
@@ -527,29 +638,32 @@ class V2SessionContractsTests(unittest.TestCase):
             )
 
         fake_flow.assert_called_once_with(
-            login="12345678",
-            password="secret",
-            server="New-Server",
+            login_value=12345678,
+            password_value="secret",
+            server_value="New-Server",
             request_id="req-switch-1",
             action="login",
         )
         set_runtime_mock.assert_called_once_with("12345678", "secret", "New-Server")
-        self.assertEqual("switch_succeeded", payload["stage"])
+        self.assertEqual("direct_identity_confirmed", payload["stage"])
         self.assertEqual("12345678", payload["login"])
+        self.assertEqual("acct_12345678_new-server", payload["finalAccount"]["profileId"])
+        self.assertEqual("****5678", payload["finalAccount"]["loginMasked"])
 
-    def test_session_gateway_adapter_should_raise_structured_switch_flow_error_on_failure(self):
-        """GUI 切号主链失败时，适配器应抛出可透传结构化结果的错误。"""
-        failure = {
-            "ok": False,
-            "stage": "switch_timeout_account_not_changed",
-            "message": "30s 内未切换到目标账号",
-            "elapsedMs": 30000,
-            "baselineAccount": {"login": "11111111", "server": "Old-Server"},
-            "finalAccount": None,
-            "loginError": "(-6, 'Authorization failed')",
-            "lastObservedAccount": {"login": "11111111", "server": "Old-Server"},
-        }
-        with mock.patch.object(server_v2, "_switch_mt5_account_via_gui_flow", return_value=failure):
+    def test_session_gateway_adapter_should_raise_structured_direct_login_error_on_failure(self):
+        """独立直登主链失败时，适配器应抛出可透传结构化结果的错误。"""
+        server_v2.session_diagnostic_store.clear()
+        server_v2.session_diagnostic_store.append(
+            request_id="req-switch-failed",
+            action="login",
+            stage="direct_login_failed",
+            status="failed",
+            message="MT5 账号登录失败: Authorization failed",
+            server_time=123456,
+            error_code="SESSION_DIRECT_LOGIN_FAILED",
+            detail={},
+        )
+        with mock.patch.object(server_v2, "_login_mt5_direct_with_input_credentials", side_effect=RuntimeError("MT5 账号登录失败: Authorization failed")):
             with self.assertRaises(server_v2.Mt5AccountSwitchFlowError) as error_ctx:
                 server_v2._SessionGatewayAdapter().login_mt5(
                     login="12345678",
@@ -558,7 +672,68 @@ class V2SessionContractsTests(unittest.TestCase):
                     request_id="req-switch-failed",
                 )
 
-        self.assertEqual("switch_timeout_account_not_changed", error_ctx.exception.result["stage"])
+        self.assertEqual("direct_login_failed", error_ctx.exception.result["stage"])
+        self.assertIn("Authorization failed", error_ctx.exception.result["message"])
+
+    def test_build_failed_direct_session_result_should_recover_expected_and_actual_accounts(self):
+        """直登失败回执应尽量从诊断 detail 里恢复 expected/actual 账号摘要。"""
+        server_v2.session_diagnostic_store.clear()
+        server_v2.session_diagnostic_store.append(
+            request_id="req-direct-identity-mismatch",
+            action="login",
+            stage="direct_identity_failed",
+            status="failed",
+            message="MT5 当前账号与输入账号不一致",
+            server_time=123456,
+            error_code="SESSION_DIRECT_IDENTITY_MISMATCH",
+            detail={
+                "expectedLogin": "12345678",
+                "expectedServer": "Input-Server",
+                "actualLogin": "87654321",
+                "actualServer": "Actual-Server",
+            },
+        )
+
+        payload = server_v2._build_failed_direct_session_result(
+            action="login",
+            request_id="req-direct-identity-mismatch",
+            error=RuntimeError("MT5 canonical account identity mismatch after direct login"),
+        )
+
+        self.assertEqual("12345678", payload["baselineAccount"]["login"])
+        self.assertEqual("87654321", payload["finalAccount"]["login"])
+        self.assertEqual("87654321", payload["lastObservedAccount"]["login"])
+        self.assertEqual("acct_87654321_actual-server", payload["lastObservedAccount"]["profileId"])
+
+    def test_session_gateway_adapter_should_delegate_switch_to_direct_login_flow(self):
+        """已保存账号切换也应改为独立 MT5 实例直登主链。"""
+        fake_flow = mock.Mock(
+            return_value={
+                "login": "87654321",
+                "server": "Switch-Server",
+            }
+        )
+        with mock.patch.object(server_v2, "_login_mt5_direct_with_input_credentials", fake_flow), \
+                mock.patch.object(server_v2, "_set_runtime_session_credentials") as set_runtime_mock:
+            payload = server_v2._SessionGatewayAdapter().switch_mt5_account(
+                login="87654321",
+                password="secret2",
+                server="Switch-Server",
+                request_id="req-switch-2",
+            )
+
+        fake_flow.assert_called_once_with(
+            login_value=87654321,
+            password_value="secret2",
+            server_value="Switch-Server",
+            request_id="req-switch-2",
+            action="switch",
+        )
+        set_runtime_mock.assert_called_once_with("87654321", "secret2", "Switch-Server")
+        self.assertEqual("direct_identity_confirmed", payload["stage"])
+        self.assertEqual("87654321", payload["login"])
+        self.assertEqual("acct_87654321_switch-server", payload["finalAccount"]["profileId"])
+        self.assertEqual("****4321", payload["lastObservedAccount"]["loginMasked"])
 
     def test_switch_mt5_account_via_gui_flow_should_append_real_stage_to_diagnostic(self):
         """切号主链应把真实阶段直接写入诊断时间线。"""
@@ -702,6 +877,40 @@ class V2SessionContractsTests(unittest.TestCase):
         self.assertEqual(True, result["ok"])
         self.assertEqual("12345678", result["login"])
         self.assertEqual("ICMarketsSC-MT5-6", result["server"])
+
+    def test_mt5_direct_login_should_retry_initialize_when_ipc_timeout_then_succeed(self):
+        """直登脚本遇到冷启动 IPC timeout 时应等待后重试 initialize。"""
+        fake_mt5 = mock.Mock()
+        fake_mt5.initialize.side_effect = [False, True]
+        fake_mt5.login.return_value = True
+        fake_mt5.account_info.return_value = types.SimpleNamespace(login=12345678, server="ICMarketsSC-MT5-6")
+        fake_mt5.last_error.return_value = (-10005, "IPC timeout")
+        payload = {
+            "login": 12345678,
+            "password": "secret",
+            "server": "ICMarketsSC-MT5-6",
+            "path": r"C:\MT5\terminal64.exe",
+            "timeoutMs": 50000,
+        }
+        stdin_buffer = io.BytesIO(json.dumps(payload).encode("utf-8"))
+        stdout_buffer = io.StringIO()
+        fake_stdin = types.SimpleNamespace(buffer=stdin_buffer)
+
+        from bridge.mt5_gateway import mt5_direct_login
+
+        with mock.patch.dict(sys.modules, {"MetaTrader5": fake_mt5}), \
+                mock.patch.object(sys, "stdin", fake_stdin), \
+                mock.patch.object(sys, "stdout", stdout_buffer), \
+                mock.patch("bridge.mt5_gateway.mt5_direct_login.time.sleep") as sleep_mock:
+            exit_code = mt5_direct_login.main()
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual(2, fake_mt5.initialize.call_count)
+        sleep_mock.assert_called_once_with(2.0)
+        self.assertGreaterEqual(fake_mt5.shutdown.call_count, 2)
+        result = json.loads(stdout_buffer.getvalue())
+        self.assertEqual(True, result["ok"])
+        self.assertTrue(any(item["stage"] == "direct_initialize_retry_wait" for item in result["trace"]))
 
     def test_mt5_direct_login_should_fail_when_login_failed(self):
         """隔离直登脚本若 login 失败，应直接返回 MT5 的真实错误。"""

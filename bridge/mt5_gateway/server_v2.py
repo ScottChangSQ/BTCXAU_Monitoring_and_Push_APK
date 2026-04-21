@@ -2842,6 +2842,85 @@ def _parse_mt5_gui_detection_payload(payload_text: str) -> Dict[str, Any]:
     }
 
 
+def _build_mt5_terminal_window_probe_command(path_value: Optional[str] = None) -> str:
+    """按精确路径探测 MT5 终端是否已进入可见交互会话并拥有窗口句柄。"""
+    normalized_target_path = _normalize_windows_executable_identity(str(path_value or ""))
+    return (
+        "$targetPath = "
+        + _ps_quote(normalized_target_path)
+        + "; "
+        + "$currentSessionId = [int](Get-Process -Id $PID -ErrorAction SilentlyContinue).SessionId; "
+        + "$interactiveSessionIds = @(); "
+        + "try { "
+        + "$interactiveSessionIds = @(Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -ExpandProperty SessionId -Unique) "
+        + "} catch { $interactiveSessionIds = @() }; "
+        + "$normalizePath = { "
+        + "param([string]$value) "
+        + "if ([string]::IsNullOrWhiteSpace($value)) { return '' } "
+        + "return (($value -replace '\\\\', '/').ToLowerInvariant()) "
+        + "}; "
+        + "$items = @(); "
+        + "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { "
+        + "$_.Name -eq 'terminal64.exe' -or $_.Name -eq 'terminal.exe' -or $_.Name -eq 'terminal64' -or $_.Name -eq 'terminal' "
+        + "} | ForEach-Object { "
+        + "$rawExecutablePath = [string]$_.ExecutablePath; "
+        + "$normalizedExecutablePath = & $normalizePath ([string]$_.ExecutablePath); "
+        + "$processDetails = Get-Process -Id ([int]$_.ProcessId) -ErrorAction SilentlyContinue; "
+        + "$mainWindowHandle = 0; "
+        + "if ($processDetails) { $mainWindowHandle = [int64]$processDetails.MainWindowHandle }; "
+        + "$items += @{ "
+        + "processId = [int]$_.ProcessId; "
+        + "sessionId = [int]$_.SessionId; "
+        + "sameSession = ([int]$_.SessionId -eq $currentSessionId); "
+        + "interactiveSession = ($interactiveSessionIds -contains [int]$_.SessionId); "
+        + "mainWindowHandle = $mainWindowHandle; "
+        + "hasVisibleWindow = ($mainWindowHandle -gt 0); "
+        + "executablePath = $rawExecutablePath; "
+        + "normalizedExecutablePath = $normalizedExecutablePath; "
+        + "exactPath = (-not [string]::IsNullOrWhiteSpace($targetPath)) -and ($normalizedExecutablePath -eq $targetPath) "
+        + "} "
+        + "}; "
+        + "@{ "
+        + "currentSessionId = $currentSessionId; "
+        + "interactiveSessionIds = @($interactiveSessionIds); "
+        + "processCount = $items.Count; "
+        + "sameSessionCount = @($items | Where-Object { $_.sameSession }).Count; "
+        + "exactPathCount = @($items | Where-Object { $_.exactPath }).Count; "
+        + "interactiveSessionCount = @($items | Where-Object { $_.interactiveSession }).Count; "
+        + "visibleWindowCount = @($items | Where-Object { $_.hasVisibleWindow }).Count; "
+        + "interactiveVisibleWindowCount = @($items | Where-Object { $_.interactiveSession -and $_.hasVisibleWindow }).Count; "
+        + "items = $items "
+        + "} | ConvertTo-Json -Compress"
+    )
+
+
+def _parse_mt5_terminal_window_probe_payload(payload_text: str) -> Dict[str, Any]:
+    """解析 MT5 终端窗口探测结果。"""
+    try:
+        payload = json.loads(str(payload_text or "").strip() or "{}")
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    items = payload.get("items")
+    if not isinstance(items, list):
+        items = []
+    interactive_session_ids = payload.get("interactiveSessionIds")
+    if not isinstance(interactive_session_ids, list):
+        interactive_session_ids = []
+    return {
+        "currentSessionId": int(payload.get("currentSessionId") or 0),
+        "interactiveSessionIds": [int(item) for item in interactive_session_ids if str(item).strip()],
+        "processCount": int(payload.get("processCount") or 0),
+        "sameSessionCount": int(payload.get("sameSessionCount") or 0),
+        "exactPathCount": int(payload.get("exactPathCount") or 0),
+        "interactiveSessionCount": int(payload.get("interactiveSessionCount") or 0),
+        "visibleWindowCount": int(payload.get("visibleWindowCount") or 0),
+        "interactiveVisibleWindowCount": int(payload.get("interactiveVisibleWindowCount") or 0),
+        "items": items,
+    }
+
+
 def _inspect_mt5_gui_terminals(path_value: Optional[str] = None) -> Dict[str, Any]:
     """读取当前机器上 MT5 终端进程明细。"""
     completed = subprocess.run(
@@ -2868,6 +2947,90 @@ def _inspect_mt5_gui_terminals(path_value: Optional[str] = None) -> Dict[str, An
         }
     stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
     return _parse_mt5_gui_detection_payload(stdout_text)
+
+
+def _inspect_mt5_terminal_windows(path_value: Optional[str] = None) -> Dict[str, Any]:
+    """读取当前机器上 MT5 终端的窗口与交互会话状态。"""
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            _build_mt5_terminal_window_probe_command(path_value),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=15,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return {
+            "currentSessionId": 0,
+            "interactiveSessionIds": [],
+            "processCount": 0,
+            "sameSessionCount": 0,
+            "exactPathCount": 0,
+            "interactiveSessionCount": 0,
+            "visibleWindowCount": 0,
+            "interactiveVisibleWindowCount": 0,
+            "items": [],
+        }
+    stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+    return _parse_mt5_terminal_window_probe_payload(stdout_text)
+
+
+def _resolve_visible_mt5_terminal_path(payload: Optional[Dict[str, Any]], preferred_path: Optional[str] = None) -> Optional[str]:
+    """只把已进入交互会话且拥有可见窗口的 MT5 终端视作直登可驱动实例。"""
+    normalized_preferred_path = _normalize_path(str(preferred_path or ""))
+    items = (dict(payload or {})).get("items")
+    if not isinstance(items, list):
+        items = []
+    visible_items: List[Dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if not bool(item.get("interactiveSession")):
+            continue
+        if not bool(item.get("hasVisibleWindow")):
+            continue
+        normalized_path = _normalize_path(str(item.get("executablePath") or ""))
+        if not normalized_path:
+            continue
+        normalized_item = dict(item)
+        normalized_item["normalizedExecutablePath"] = normalized_path
+        visible_items.append(normalized_item)
+    if normalized_preferred_path:
+        for item in visible_items:
+            if bool(item.get("exactPath")) or str(item.get("normalizedExecutablePath") or "") == normalized_preferred_path:
+                return normalized_preferred_path
+    if len(visible_items) == 1:
+        return str(visible_items[0].get("normalizedExecutablePath") or "").strip() or None
+    return None
+
+
+def _resolve_mt5_terminal_window_state(path_value: Optional[str], timeout_ms: int) -> Dict[str, Any]:
+    """轮询直到目标 MT5 终端真正进入可见交互会话，或超时返回最后一次探测结果。"""
+    deadline = time.monotonic() + max(0.5, float(timeout_ms or 0) / 1000.0)
+    latest_payload = _inspect_mt5_terminal_windows(path_value)
+    while True:
+        resolved_path = _resolve_visible_mt5_terminal_path(latest_payload, preferred_path=path_value)
+        if resolved_path:
+            return {
+                "ready": True,
+                "resolvedPath": resolved_path,
+                "payload": latest_payload,
+            }
+        if time.monotonic() >= deadline:
+            return {
+                "ready": False,
+                "resolvedPath": None,
+                "payload": latest_payload,
+            }
+        time.sleep(0.25)
+        latest_payload = _inspect_mt5_terminal_windows(path_value)
 
 
 def _resolve_attachable_mt5_gui_terminal_path(payload: Optional[Dict[str, Any]], preferred_path: Optional[str] = None) -> Optional[str]:
@@ -2969,6 +3132,9 @@ def _attach_current_mt5_gui_terminal(timeout_ms: int) -> Dict[str, Any]:
         }
     attempt_budget_ms = max(1000, int(timeout_ms or MT5_INIT_TIMEOUT_MS))
     initialize_budget_ms = _split_attach_phase_budget(attempt_budget_ms, phase_count=3, phase_index=0)
+    # 附着现有 GUI 终端前，先断开 Python 侧可能残留的旧 MT5 句柄，
+    # 避免上一轮失败态继续污染这次按路径 initialize。
+    _shutdown_mt5()
     initialized, init_message = _mt5_initialize(attach_path, timeout_ms=initialize_budget_ms)
     if initialized:
         return {
@@ -3007,7 +3173,10 @@ def _attach_current_mt5_gui_terminal(timeout_ms: int) -> Dict[str, Any]:
             },
         }
     retry_budget_ms = max(1000, int(recycled.get("remainingBudgetMs") or 0))
-    retried, retry_message = _mt5_initialize(attach_path, timeout_ms=retry_budget_ms)
+    retried, retry_message, retry_attempt_count = _retry_attach_initialize_after_recycle(
+        attach_path,
+        retry_budget_ms,
+    )
     if retried:
         return {
             "ok": True,
@@ -3016,6 +3185,7 @@ def _attach_current_mt5_gui_terminal(timeout_ms: int) -> Dict[str, Any]:
                 "attachPath": attach_path,
                 "attachMode": "recycled_terminal_then_initialize",
                 "initializeError": str(init_message or "").strip(),
+                "retryInitializeAttemptCount": int(retry_attempt_count),
                 "timeoutMs": retry_budget_ms,
             },
         }
@@ -3027,6 +3197,7 @@ def _attach_current_mt5_gui_terminal(timeout_ms: int) -> Dict[str, Any]:
             "attachMode": "recycled_terminal_then_initialize_failed",
             "initializeError": str(init_message or "").strip(),
             "retryInitializeError": str(retry_message or "").strip(),
+            "retryInitializeAttemptCount": int(retry_attempt_count),
             "timeoutMs": retry_budget_ms,
         },
     }
@@ -3202,6 +3373,30 @@ def _split_attach_phase_budget(total_timeout_ms: int, phase_count: int, phase_in
         spent_ms = fair_share_ms * index
         return max(1000, timeout_ms - spent_ms)
     return fair_share_ms
+
+
+def _retry_attach_initialize_after_recycle(path_value: str, wait_timeout_ms: int) -> Tuple[bool, str, int]:
+    """重启终端后在剩余预算内短轮询附着，避免进程刚出现就立刻判死。"""
+    total_budget_ms = max(1000, int(wait_timeout_ms or 0))
+    deadline = time.monotonic() + (float(total_budget_ms) / 1000.0)
+    last_message = ""
+    attempt_count = 0
+    while True:
+        remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+        if remaining_ms <= 0:
+            break
+        attempt_count += 1
+        attempt_timeout_ms = min(4000, max(1000, remaining_ms))
+        _shutdown_mt5()
+        initialized, init_message = _mt5_initialize(path_value, timeout_ms=attempt_timeout_ms)
+        if initialized:
+            return True, "", attempt_count
+        last_message = str(init_message or "").strip()
+        remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+        if remaining_ms <= 1500:
+            break
+        time.sleep(min(1.5, float(remaining_ms) / 1000.0))
+    return False, last_message, attempt_count
 
 
 def _mt5_login() -> Tuple[bool, str]:
@@ -3788,6 +3983,59 @@ def _login_mt5_direct_with_input_credentials(*,
         },
     )
 
+    window_wait_timeout_ms = min(max(5000, int(MT5_INIT_TIMEOUT_MS / 3)), int(MT5_INIT_TIMEOUT_MS))
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_terminal_window_wait_start",
+        status="pending",
+        message="开始确认 MT5 是否已进入可见交互会话并出现窗口",
+        server_time=_now_ms(),
+        detail={
+            "terminalPath": str(terminal_path or "").strip(),
+            "pathSource": terminal_path_source,
+            "timeoutMs": window_wait_timeout_ms,
+        },
+    )
+    terminal_window_state = _resolve_mt5_terminal_window_state(terminal_path, window_wait_timeout_ms)
+    terminal_window_payload = dict(terminal_window_state.get("payload") or {})
+    terminal_window_detail = {
+        "terminalPath": str(terminal_path or "").strip(),
+        "pathSource": terminal_path_source,
+        "currentSessionId": int(terminal_window_payload.get("currentSessionId") or 0),
+        "interactiveSessionIds": list(terminal_window_payload.get("interactiveSessionIds") or []),
+        "processCount": int(terminal_window_payload.get("processCount") or 0),
+        "sameSessionCount": int(terminal_window_payload.get("sameSessionCount") or 0),
+        "exactPathCount": int(terminal_window_payload.get("exactPathCount") or 0),
+        "interactiveSessionCount": int(terminal_window_payload.get("interactiveSessionCount") or 0),
+        "visibleWindowCount": int(terminal_window_payload.get("visibleWindowCount") or 0),
+        "interactiveVisibleWindowCount": int(terminal_window_payload.get("interactiveVisibleWindowCount") or 0),
+    }
+    if not bool(terminal_window_state.get("ready")):
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage="direct_terminal_window_not_ready",
+            status="failed",
+            message="MT5 进程已启动，但未检测到可见交互窗口，无法确认当前前台终端可被驱动",
+            server_time=_now_ms(),
+            error_code="SESSION_DIRECT_TERMINAL_WINDOW_NOT_READY",
+            detail=terminal_window_detail,
+        )
+        raise RuntimeError(
+            "MT5 terminal started but no visible interactive window was detected; "
+            "the gateway may be launching MT5 in a non-interactive Windows session"
+        )
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_terminal_window_ready",
+        status="ok",
+        message="已确认 MT5 终端进入可见交互会话",
+        server_time=_now_ms(),
+        detail=terminal_window_detail,
+    )
+
     return _login_mt5_in_isolated_process(
         login_value=login_value,
         password_value=password_value,
@@ -3798,48 +4046,189 @@ def _login_mt5_direct_with_input_credentials(*,
     )
 
 
+def _build_direct_session_result(*,
+                                 action: str,
+                                 login: str,
+                                 server: str,
+                                 request_id: str = "") -> Dict[str, Any]:
+    """把独立 MT5 实例直登结果映射成统一会话回执结构。"""
+    safe_login = str(login or "").strip()
+    safe_server = str(server or "").strip()
+    message_action = "登录" if str(action or "").strip() == "login" else "切换"
+    account_summary = _build_direct_session_account_summary(login=safe_login, server=safe_server) or {
+        "login": safe_login,
+        "server": safe_server,
+    }
+    return {
+        "ok": True,
+        "state": "activated",
+        "requestId": str(request_id or "").strip(),
+        "stage": "direct_identity_confirmed",
+        "message": f"已通过独立 MT5 实例{message_action}目标账号",
+        "elapsedMs": 0,
+        "baselineAccount": None,
+        "finalAccount": account_summary,
+        "loginError": "",
+        "lastObservedAccount": dict(account_summary),
+        "login": safe_login,
+        "server": safe_server,
+    }
+
+
+def _mask_direct_session_login(login: str) -> str:
+    """把登录账号裁剪成统一掩码格式。"""
+    safe_login = str(login or "").strip()
+    return f"****{safe_login[-4:]}" if safe_login else "****"
+
+
+def _build_direct_session_profile_id(login: str, server: str) -> str:
+    """按账号和服务器构造稳定 profileId，保证直登链回执字段齐全。"""
+    safe_login = str(login or "").strip()
+    safe_server = str(server or "").strip().lower().replace(" ", "_")
+    normalized_server = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in safe_server)
+    if not safe_login or not normalized_server:
+        return ""
+    return f"acct_{safe_login}_{normalized_server}"
+
+
+def _build_direct_session_account_summary(*, login: str, server: str) -> Optional[Dict[str, Any]]:
+    """把账号身份补全成会话摘要结构，避免上层只拿到半截字段。"""
+    safe_login = str(login or "").strip()
+    safe_server = str(server or "").strip()
+    if not safe_login or not safe_server:
+        return None
+    masked_login = _mask_direct_session_login(safe_login)
+    return {
+        "profileId": _build_direct_session_profile_id(safe_login, safe_server),
+        "login": safe_login,
+        "loginMasked": masked_login,
+        "server": safe_server,
+        "displayName": f"{safe_server} {masked_login}",
+        "active": False,
+        "state": "",
+    }
+
+
+def _build_direct_session_account_summary_from_detail(*,
+                                                      detail: Dict[str, Any],
+                                                      login_keys: Tuple[str, ...],
+                                                      server_keys: Tuple[str, ...]) -> Optional[Dict[str, Any]]:
+    """从诊断 detail 里恢复账号摘要，兼容 expected/actual 等不同键名。"""
+    login_value = ""
+    server_value = ""
+    for key in login_keys:
+        text = str(detail.get(key) or "").strip()
+        if text:
+            login_value = text
+            break
+    for key in server_keys:
+        text = str(detail.get(key) or "").strip()
+        if text:
+            server_value = text
+            break
+    return _build_direct_session_account_summary(login=login_value, server=server_value)
+
+
+def _build_failed_direct_session_result(*,
+                                        action: str,
+                                        request_id: str,
+                                        error: Exception) -> Dict[str, Any]:
+    """从最新诊断时间线提取失败阶段，统一包装直登主链异常。"""
+    safe_request_id = str(request_id or "").strip()
+    timeline = session_diagnostic_store.lookup(safe_request_id) if safe_request_id else []
+    latest_item = timeline[-1] if timeline else {}
+    latest_detail = dict(latest_item.get("detail") or {}) if isinstance(latest_item, dict) else {}
+    baseline_account = latest_detail.get("baselineAccount")
+    if not isinstance(baseline_account, dict) or not baseline_account:
+        baseline_account = _build_direct_session_account_summary_from_detail(
+            detail=latest_detail,
+            login_keys=("expectedLogin", "login"),
+            server_keys=("expectedServer", "server"),
+        )
+    final_account = latest_detail.get("finalAccount")
+    if not isinstance(final_account, dict) or not final_account:
+        final_account = _build_direct_session_account_summary_from_detail(
+            detail=latest_detail,
+            login_keys=("actualLogin", "login"),
+            server_keys=("actualServer", "server"),
+        )
+    last_observed_account = latest_detail.get("lastObservedAccount")
+    if not isinstance(last_observed_account, dict) or not last_observed_account:
+        last_observed_account = final_account
+    return {
+        "ok": False,
+        "stage": str(latest_item.get("stage") or "direct_login_failed").strip(),
+        "message": str(error or "").strip() or str(latest_item.get("message") or "").strip() or "独立 MT5 实例直登失败",
+        "elapsedMs": 0,
+        "baselineAccount": baseline_account,
+        "finalAccount": final_account,
+        "loginError": str(latest_detail.get("loginError") or error or "").strip(),
+        "lastObservedAccount": last_observed_account,
+        "requestId": safe_request_id,
+        "action": str(action or "").strip(),
+    }
+
+
 class _SessionGatewayAdapter:
     """会话管理器使用的最小 MT5 网关适配器。"""
 
     def login_mt5(self, login: str, password: str, server: str, request_id: str = "") -> Dict[str, Any]:
-        """按给定账号参数执行 MT5 登录。"""
+        """按给定账号参数执行独立 MT5 实例直登。"""
         password_value = str(password or "")
-        switch_result = _switch_mt5_account_via_gui_flow(
-            login=str(login or "").strip(),
-            password=password_value,
-            server=str(server or "").strip(),
-            request_id=request_id,
-            action="login",
-        )
-        if not bool(switch_result.get("ok")):
-            raise Mt5AccountSwitchFlowError(switch_result)
-        canonical_login = str(switch_result.get("login") or "").strip()
-        canonical_server = str(switch_result.get("server") or "").strip()
+        try:
+            direct_result = _login_mt5_direct_with_input_credentials(
+                login_value=int(str(login or "").strip() or "0"),
+                password_value=password_value,
+                server_value=str(server or "").strip(),
+                request_id=request_id,
+                action="login",
+            )
+        except Exception as exc:
+            raise Mt5AccountSwitchFlowError(
+                _build_failed_direct_session_result(
+                    action="login",
+                    request_id=request_id,
+                    error=exc,
+                )
+            ) from exc
+        canonical_login = str(direct_result.get("login") or "").strip()
+        canonical_server = str(direct_result.get("server") or "").strip()
         _set_runtime_session_credentials(canonical_login, password_value, canonical_server)
-        result = dict(switch_result)
-        result["login"] = canonical_login
-        result["server"] = canonical_server
-        return result
+        return _build_direct_session_result(
+            action="login",
+            login=canonical_login,
+            server=canonical_server,
+            request_id=request_id,
+        )
 
     def switch_mt5_account(self, login: str, password: str, server: str, request_id: str = "") -> Dict[str, Any]:
-        """按已保存账号执行 MT5 切换。"""
+        """按已保存账号执行独立 MT5 实例直登切换。"""
         password_value = str(password or "")
-        switch_result = _switch_mt5_account_via_gui_flow(
-            login=str(login or "").strip(),
-            password=password_value,
-            server=str(server or "").strip(),
-            request_id=request_id,
-            action="switch",
-        )
-        if not bool(switch_result.get("ok")):
-            raise Mt5AccountSwitchFlowError(switch_result)
-        canonical_login = str(switch_result.get("login") or "").strip()
-        canonical_server = str(switch_result.get("server") or "").strip()
+        try:
+            direct_result = _login_mt5_direct_with_input_credentials(
+                login_value=int(str(login or "").strip() or "0"),
+                password_value=password_value,
+                server_value=str(server or "").strip(),
+                request_id=request_id,
+                action="switch",
+            )
+        except Exception as exc:
+            raise Mt5AccountSwitchFlowError(
+                _build_failed_direct_session_result(
+                    action="switch",
+                    request_id=request_id,
+                    error=exc,
+                )
+            ) from exc
+        canonical_login = str(direct_result.get("login") or "").strip()
+        canonical_server = str(direct_result.get("server") or "").strip()
         _set_runtime_session_credentials(canonical_login, password_value, canonical_server)
-        result = dict(switch_result)
-        result["login"] = canonical_login
-        result["server"] = canonical_server
-        return result
+        return _build_direct_session_result(
+            action="switch",
+            login=canonical_login,
+            server=canonical_server,
+            request_id=request_id,
+        )
 
     def clear_account_caches(self) -> None:
         """清理会话切换后的运行时缓存。"""
