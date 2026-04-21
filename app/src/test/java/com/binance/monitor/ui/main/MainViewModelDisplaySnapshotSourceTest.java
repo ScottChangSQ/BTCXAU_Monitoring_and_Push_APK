@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.main;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -12,15 +13,18 @@ import java.nio.file.Paths;
 public class MainViewModelDisplaySnapshotSourceTest {
 
     @Test
-    public void mainViewModelShouldExposeDisplaySnapshotApis() throws Exception {
+    public void mainViewModelShouldExposeUnifiedMarketRuntimeSnapshotOnly() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/main/MainViewModel.java",
                 "src/main/java/com/binance/monitor/ui/main/MainViewModel.java"
         );
 
-        assertTrue(source.contains("getDisplayPrices()"));
-        assertTrue(source.contains("getDisplayKlines()"));
-        assertTrue(source.contains("getDisplayOverviewKlines()"));
+        assertTrue(source.contains("getMarketRuntimeSnapshotLiveData()"));
+        assertTrue(source.contains("selectLatestPrice(String symbol)"));
+        assertTrue(source.contains("selectClosedMinute(String symbol)"));
+        assertFalse(source.contains("getDisplayPrices()"));
+        assertFalse(source.contains("getDisplayKlines()"));
+        assertFalse(source.contains("getDisplayOverviewKlines()"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

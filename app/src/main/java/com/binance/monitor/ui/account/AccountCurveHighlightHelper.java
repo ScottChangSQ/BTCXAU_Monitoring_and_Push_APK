@@ -84,12 +84,11 @@ final class AccountCurveHighlightHelper {
         if (curvePoint == null) {
             return null;
         }
-        long actualTimestamp = curvePoint.getTimestamp();
         return new HighlightSnapshot(
-                actualTimestamp,
+                targetTimestamp,
                 curvePoint,
-                CurveSeriesInterpolationHelper.interpolateDrawdownPoint(drawdownPoints, actualTimestamp),
-                CurveSeriesInterpolationHelper.interpolateDailyReturnPoint(dailyReturnPoints, actualTimestamp)
+                CurveSeriesInterpolationHelper.interpolateDrawdownPoint(drawdownPoints, targetTimestamp),
+                CurveSeriesInterpolationHelper.interpolateDailyReturnPoint(dailyReturnPoints, targetTimestamp)
         );
     }
 

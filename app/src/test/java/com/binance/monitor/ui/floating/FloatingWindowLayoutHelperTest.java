@@ -5,6 +5,8 @@ package com.binance.monitor.ui.floating;
 
 import android.view.Gravity;
 
+import com.binance.monitor.R;
+
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -12,15 +14,10 @@ import static org.junit.Assert.assertEquals;
 public class FloatingWindowLayoutHelperTest {
 
     @Test
-    public void expandedLayoutShouldUseStableWiderPresetForPnlTitles() {
-        assertEquals(90, FloatingWindowLayoutHelper.resolveExpandedWidthDp());
-        assertEquals(82, FloatingWindowLayoutHelper.resolveExpandedContentWidthDp());
-        assertEquals(0, FloatingWindowLayoutHelper.resolveTrailingInsetDp());
-    }
-
-    @Test
-    public void valueRowsShouldFillContentWidth() {
-        assertEquals(82, FloatingWindowLayoutHelper.resolveValueRowWidthDp());
+    public void expandedLayoutShouldUseSharedGeometryTokens() {
+        assertEquals(R.dimen.floating_window_expanded_width, FloatingWindowLayoutHelper.resolveExpandedWidthRes());
+        assertEquals(R.dimen.floating_window_padding_x, FloatingWindowLayoutHelper.resolveHorizontalPaddingRes());
+        assertEquals(R.dimen.floating_window_trailing_inset, FloatingWindowLayoutHelper.resolveTrailingInsetRes());
     }
 
     @Test
@@ -33,9 +30,14 @@ public class FloatingWindowLayoutHelperTest {
 
     @Test
     public void minimizedLayoutShouldUseSmallerTrailingSpace() {
-        assertEquals(14, FloatingWindowLayoutHelper.resolveMinimizeButtonSizeDp());
-        assertEquals(30, FloatingWindowLayoutHelper.resolveMiniMinWidthDp());
-        assertEquals(6, FloatingWindowLayoutHelper.resolveMiniHorizontalPaddingDp());
-        assertEquals(4, FloatingWindowLayoutHelper.resolveMiniEndMarginDp());
+        assertEquals(R.dimen.floating_window_minimize_button_size, FloatingWindowLayoutHelper.resolveMinimizeButtonSizeRes());
+        assertEquals(R.dimen.floating_window_mini_min_width, FloatingWindowLayoutHelper.resolveMiniMinWidthRes());
+        assertEquals(R.dimen.floating_window_mini_padding_x, FloatingWindowLayoutHelper.resolveMiniHorizontalPaddingRes());
+        assertEquals(R.dimen.floating_window_mini_end_margin, FloatingWindowLayoutHelper.resolveMiniEndMarginRes());
+    }
+
+    @Test
+    public void amountRowShouldUseTighterDedicatedGapToken() {
+        assertEquals(R.dimen.floating_window_amount_row_gap, FloatingWindowLayoutHelper.resolveAmountRowGapRes());
     }
 }

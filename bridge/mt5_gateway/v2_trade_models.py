@@ -12,6 +12,17 @@ STATUS_NOT_EXECUTABLE = "NOT_EXECUTABLE"
 STATUS_ACCEPTED = "ACCEPTED"
 STATUS_FAILED = "FAILED"
 STATUS_DUPLICATE = "DUPLICATE"
+STATUS_PARTIAL = "PARTIAL"
+STATUS_REJECTED = "REJECTED"
+
+STRATEGY_BEST_EFFORT = "BEST_EFFORT"
+STRATEGY_ALL_OR_NONE = "ALL_OR_NONE"
+STRATEGY_GROUPED = "GROUPED"
+SUPPORTED_BATCH_STRATEGIES = {
+    STRATEGY_BEST_EFFORT,
+    STRATEGY_ALL_OR_NONE,
+    STRATEGY_GROUPED,
+}
 
 ERROR_INVALID_ACTION = "TRADE_INVALID_ACTION"
 ERROR_INVALID_SYMBOL = "TRADE_INVALID_SYMBOL"
@@ -32,6 +43,12 @@ ERROR_UNSAFE_ACCOUNT_MODE = "TRADE_UNSAFE_ACCOUNT_MODE"
 ERROR_RESULT_UNKNOWN = "TRADE_RESULT_UNKNOWN"
 ERROR_EXECUTION_FAILED = "TRADE_EXECUTION_FAILED"
 ERROR_REQUEST_NOT_FOUND = "TRADE_REQUEST_NOT_FOUND"
+ERROR_BATCH_INVALID_ID = "TRADE_BATCH_INVALID_ID"
+ERROR_BATCH_INVALID_STRATEGY = "TRADE_BATCH_INVALID_STRATEGY"
+ERROR_BATCH_EMPTY_ITEMS = "TRADE_BATCH_EMPTY_ITEMS"
+ERROR_BATCH_UNSUPPORTED_ACTION = "TRADE_BATCH_UNSUPPORTED_ACTION"
+ERROR_BATCH_ITEM_INVALID_ID = "TRADE_BATCH_ITEM_INVALID_ID"
+ERROR_BATCH_NOT_FOUND = "TRADE_BATCH_NOT_FOUND"
 
 SUCCESS_RETCODES = {0, 10008, 10009, 10010}
 
@@ -157,5 +174,51 @@ def build_trade_submit_response(
         "check": None if check is None else dict(check),
         "result": None if result is None else dict(result),
         "idempotent": bool(idempotent),
+        "serverTime": int(server_time or 0),
+    }
+
+
+def build_trade_batch_item_response(
+    *,
+    item_id: str,
+    action: str,
+    status: str,
+    error: Optional[Dict[str, Any]],
+    check: Optional[Dict[str, Any]],
+    result: Optional[Dict[str, Any]],
+    group_key: str = "",
+) -> Dict[str, Any]:
+    """构建批量交易的单项返回。"""
+    payload = {
+        "itemId": str(item_id or ""),
+        "action": str(action or ""),
+        "status": str(status or STATUS_FAILED),
+        "error": None if error is None else dict(error),
+        "check": None if check is None else dict(check),
+        "result": None if result is None else dict(result),
+    }
+    if str(group_key or "").strip():
+        payload["groupKey"] = str(group_key or "").strip()
+    return payload
+
+
+def build_trade_batch_submit_response(
+    *,
+    batch_id: str,
+    strategy: str,
+    account_mode: str,
+    status: str,
+    error: Optional[Dict[str, Any]],
+    items: Optional[list],
+    server_time: int,
+) -> Dict[str, Any]:
+    """构建 `/v2/trade/batch/submit` 的标准返回。"""
+    return {
+        "batchId": str(batch_id or ""),
+        "strategy": str(strategy or STRATEGY_BEST_EFFORT),
+        "accountMode": str(account_mode or "unknown"),
+        "status": str(status or STATUS_FAILED),
+        "error": None if error is None else dict(error),
+        "items": list(items or []),
         "serverTime": int(server_time or 0),
     }

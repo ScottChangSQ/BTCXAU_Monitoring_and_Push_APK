@@ -13,12 +13,12 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemTradeRecordBinding;
-import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
+import com.binance.monitor.ui.rules.IndicatorFormatterCenter;
+import com.binance.monitor.ui.rules.IndicatorId;
+import com.binance.monitor.ui.rules.IndicatorPresentationPolicy;
 import com.binance.monitor.ui.theme.UiPaletteManager;
-import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
@@ -256,8 +256,7 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             String sideText = sideCn(item.getSide());
             int sideColor = resolveSideColor(palette, item.getSide());
             double summaryProfit = item.getProfit() + item.getStorageFee();
-            int pnlColor = resolveAmountColor(palette, summaryProfit, palette.textPrimary);
-            String amount = signedMoney(summaryProfit);
+            String amount = IndicatorFormatterCenter.formatMoney(summaryProfit, 2, false);
             String raw = String.format(Locale.getDefault(), "%s | %s | %.2f 手 | %s",
                     item.getProductName(), sideText, item.getQuantity(), amount);
             SpannableStringBuilder span = new SpannableStringBuilder(raw);
@@ -270,7 +269,15 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             }
             int start = raw.lastIndexOf(amount);
             if (start >= 0) {
-                span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                IndicatorPresentationPolicy.applyDirectionalSpanForExactToken(
+                        span,
+                        binding.getRoot().getContext(),
+                        raw,
+                        amount,
+                        IndicatorId.ACCOUNT_POSITION_PNL,
+                        com.binance.monitor.R.color.text_primary,
+                        true
+                );
             }
             binding.tvSummary.setTextColor(palette.textPrimary);
             binding.tvSummary.setText(span);
@@ -279,16 +286,16 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             long openTime = item.getOpenTime();
             long closeTime = item.getCloseTime();
             binding.tvTime.setTextColor(palette.textSecondary);
-            binding.tvTime.setText("开仓时间: " + FormatUtils.formatDateTime(openTime));
+            binding.tvTime.setText("开仓时间: " + com.binance.monitor.util.FormatUtils.formatDateTime(openTime));
             binding.tvProduct.setTextColor(palette.textSecondary);
-            binding.tvProduct.setText("平仓时间: " + FormatUtils.formatDateTime(closeTime));
+            binding.tvProduct.setText("平仓时间: " + com.binance.monitor.util.FormatUtils.formatDateTime(closeTime));
             binding.tvSide.setText(String.format(Locale.getDefault(),
                     "开仓价格 $%s | 平仓价格 $%s",
-                    FormatUtils.formatPrice(item.getOpenPrice()),
-                    FormatUtils.formatPrice(item.getClosePrice())));
+                    com.binance.monitor.util.FormatUtils.formatPrice(item.getOpenPrice()),
+                    com.binance.monitor.util.FormatUtils.formatPrice(item.getClosePrice())));
             binding.tvSide.setTextColor(palette.textSecondary);
-            String profitText = signedMoney(item.getProfit());
-            String storageFeeText = "$" + FormatUtils.formatPrice(item.getStorageFee());
+            String profitText = IndicatorFormatterCenter.formatMoney(item.getProfit(), 2, false);
+            String storageFeeText = IndicatorFormatterCenter.formatMoney(item.getStorageFee(), 2, false);
             String detailRaw = String.format(Locale.getDefault(),
                     "盈亏 %s | 库存费 %s",
                     profitText,
@@ -296,17 +303,27 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             SpannableStringBuilder detailSpan = new SpannableStringBuilder(detailRaw);
             int profitStart = detailRaw.indexOf(profitText);
             if (profitStart >= 0) {
-                detailSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(palette, item.getProfit(), palette.textSecondary)),
-                        profitStart,
-                        profitStart + profitText.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                IndicatorPresentationPolicy.applyDirectionalSpanForExactToken(
+                        detailSpan,
+                        binding.getRoot().getContext(),
+                        detailRaw,
+                        profitText,
+                        IndicatorId.ACCOUNT_POSITION_PNL,
+                        com.binance.monitor.R.color.text_secondary,
+                        false
+                );
             }
             int storageStart = detailRaw.lastIndexOf(storageFeeText);
             if (storageStart >= 0) {
-                detailSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(palette, item.getStorageFee(), palette.textSecondary)),
-                        storageStart,
-                        storageStart + storageFeeText.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                IndicatorPresentationPolicy.applyDirectionalSpanForExactToken(
+                        detailSpan,
+                        binding.getRoot().getContext(),
+                        detailRaw,
+                        storageFeeText,
+                        IndicatorId.ACCOUNT_POSITION_PNL,
+                        com.binance.monitor.R.color.text_secondary,
+                        true
+                );
             }
             binding.tvDetail.setTextColor(palette.textSecondary);
             binding.tvDetail.setText(detailSpan);
@@ -369,25 +386,8 @@ public class TradeRecordAdapterV2 extends RecyclerView.Adapter<TradeRecordAdapte
             return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
         }
 
-        private static String signedMoney(double value) {
-            return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
-        }
-
         private static int resolveSideColor(@NonNull UiPaletteManager.Palette palette, String side) {
             return "buy".equalsIgnoreCase(side) ? palette.rise : palette.fall;
-        }
-
-        private static int resolveAmountColor(@NonNull UiPaletteManager.Palette palette,
-                                              double value,
-                                              int neutralColor) {
-            AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
-            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
-                return palette.rise;
-            }
-            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
-                return palette.fall;
-            }
-            return neutralColor;
         }
     }
 }

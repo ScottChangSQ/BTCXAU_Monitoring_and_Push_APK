@@ -15,8 +15,7 @@ public final class ProductRuntimeSnapshot {
     private final double netPnl;
     private final String displayLabel;
     private final String compactDisplayLabel;
-    private final String positionSummaryText;
-    private final String pendingSummaryText;
+    private final String crossPageSummaryText;
 
     public ProductRuntimeSnapshot(String symbol,
                                   long productRevision,
@@ -35,8 +34,29 @@ public final class ProductRuntimeSnapshot {
                 netPnl,
                 symbol,
                 resolveCompactDisplayLabel(symbol),
-                positionSummaryText,
-                pendingSummaryText);
+                positionSummaryText);
+    }
+
+    public ProductRuntimeSnapshot(String symbol,
+                                  long productRevision,
+                                  int positionCount,
+                                  int pendingCount,
+                                  double totalLots,
+                                  double signedLots,
+                                  double netPnl,
+                                  String displayLabel,
+                                  String compactDisplayLabel,
+                                  String crossPageSummaryText) {
+        this.symbol = symbol == null ? "" : symbol;
+        this.productRevision = productRevision;
+        this.positionCount = positionCount;
+        this.pendingCount = pendingCount;
+        this.totalLots = totalLots;
+        this.signedLots = signedLots;
+        this.netPnl = netPnl;
+        this.displayLabel = displayLabel == null ? "" : displayLabel;
+        this.compactDisplayLabel = compactDisplayLabel == null ? "" : compactDisplayLabel;
+        this.crossPageSummaryText = crossPageSummaryText == null ? "" : crossPageSummaryText;
     }
 
     public ProductRuntimeSnapshot(String symbol,
@@ -50,17 +70,16 @@ public final class ProductRuntimeSnapshot {
                                   String compactDisplayLabel,
                                   String positionSummaryText,
                                   String pendingSummaryText) {
-        this.symbol = symbol == null ? "" : symbol;
-        this.productRevision = productRevision;
-        this.positionCount = positionCount;
-        this.pendingCount = pendingCount;
-        this.totalLots = totalLots;
-        this.signedLots = signedLots;
-        this.netPnl = netPnl;
-        this.displayLabel = displayLabel == null ? "" : displayLabel;
-        this.compactDisplayLabel = compactDisplayLabel == null ? "" : compactDisplayLabel;
-        this.positionSummaryText = positionSummaryText == null ? "" : positionSummaryText;
-        this.pendingSummaryText = pendingSummaryText == null ? "" : pendingSummaryText;
+        this(symbol,
+                productRevision,
+                positionCount,
+                pendingCount,
+                totalLots,
+                signedLots,
+                netPnl,
+                displayLabel,
+                compactDisplayLabel,
+                positionSummaryText);
     }
 
     public String getSymbol() {
@@ -99,12 +118,16 @@ public final class ProductRuntimeSnapshot {
         return compactDisplayLabel;
     }
 
+    public String getCrossPageSummaryText() {
+        return crossPageSummaryText;
+    }
+
     public String getPositionSummaryText() {
-        return positionSummaryText;
+        return crossPageSummaryText;
     }
 
     public String getPendingSummaryText() {
-        return pendingSummaryText;
+        return pendingCount <= 0 ? "挂单：--" : "挂单：" + pendingCount + "笔";
     }
 
     private static String resolveCompactDisplayLabel(String symbol) {

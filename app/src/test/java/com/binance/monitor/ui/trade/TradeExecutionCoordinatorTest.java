@@ -50,6 +50,112 @@ public class TradeExecutionCoordinatorTest {
         assertTrue(prepared.requiresConfirmation());
         assertFalse(prepared.isOneClickTradingEnabled());
         assertEquals(TradeCommandStateMachine.Step.CONFIRMING, prepared.getStateMachine().getStep());
+        assertTrue(prepared.getMessage().contains("买入 BTCUSD"));
+        assertTrue(prepared.getMessage().contains("风险摘要"));
+        assertFalse(prepared.getMessage().contains("batchId"));
+    }
+
+    @Test
+    public void prepareExecutionShouldIncludeCurrentTemplateInConfirmationMessage() throws Exception {
+        FakeTradeGateway gateway = new FakeTradeGateway();
+        gateway.checkResult = executableCheck("req-template");
+        TradeExecutionCoordinator coordinator = new TradeExecutionCoordinator(
+                gateway,
+                new FakeAccountRefreshGateway(),
+                new TradeConfirmDialogController(),
+                2
+        );
+        TradeCommand command = TradeCommandFactory.withTemplate(
+                buildCommand("req-template"),
+                new com.binance.monitor.data.model.v2.trade.TradeTemplate(
+                        "default_market",
+                        "默认模板",
+                        0.05d,
+                        0d,
+                        0d,
+                        "both"
+                )
+        );
+
+        TradeExecutionCoordinator.PreparedTrade prepared = coordinator.prepareExecution(command);
+
+        assertTrue(prepared.getMessage().contains("当前模板：默认模板"));
+    }
+
+    @Test
+    public void prepareExecutionShouldRecordRejectedAuditEntry() throws Exception {
+        FakeTradeGateway gateway = new FakeTradeGateway();
+        gateway.checkResult = rejectedCheck("req-audit-reject", "TRADE_INVALID_VOLUME", "手数不合法");
+        TradeAuditStore auditStore = TradeAuditStore.createInMemory(() -> 123L);
+        TradeExecutionCoordinator coordinator = new TradeExecutionCoordinator(
+                gateway,
+                new FakeAccountRefreshGateway(),
+                new TradeConfirmDialogController(),
+                2,
+                auditStore
+        );
+
+        coordinator.prepareExecution(buildCommand("req-audit-reject"));
+
+        List<TradeAuditEntry> entries = auditStore.lookup("req-audit-reject");
+        assertEquals(1, entries.size());
+        assertEquals("check", entries.get(0).getStage());
+        assertEquals("NOT_EXECUTABLE", entries.get(0).getStatus());
+    }
+
+    @Test
+    public void submitAfterConfirmationShouldRecordAcceptedAndSettledAuditEntries() throws Exception {
+        FakeTradeGateway gateway = new FakeTradeGateway();
+        gateway.checkResult = executableCheck("req-audit-accepted");
+        gateway.submitReceipt = acceptedReceipt("req-audit-accepted");
+        FakeAccountRefreshGateway refreshGateway = new FakeAccountRefreshGateway();
+        refreshGateway.enqueue(cache(
+                2000L,
+                metrics("$1,020.00", "$120.00"),
+                positions("BTCUSD", 0.20d, 9002L, 0L),
+                pendingOrders(),
+                trades(1001L, 7002L)
+        ));
+        TradeAuditStore auditStore = TradeAuditStore.createInMemory(() -> 200L);
+        TradeExecutionCoordinator coordinator = new TradeExecutionCoordinator(
+                gateway,
+                refreshGateway,
+                new TradeConfirmDialogController(),
+                1,
+                auditStore
+        );
+        TradeExecutionCoordinator.PreparedTrade prepared =
+                coordinator.prepareExecution(buildCommand("req-audit-accepted"));
+
+        coordinator.submitAfterConfirmation(prepared.markConfirmed(), null);
+
+        List<TradeAuditEntry> entries = auditStore.lookup("req-audit-accepted");
+        assertTrue(entries.size() >= 3);
+        assertEquals("result", entries.get(0).getStage());
+        assertEquals("SETTLED", entries.get(0).getStatus());
+    }
+
+    @Test
+    public void prepareExecutionShouldAllowQuickModeForSmallQuickMarketOrder() throws Exception {
+        FakeTradeGateway gateway = new FakeTradeGateway();
+        gateway.checkResult = executableCheck("req-quick-market");
+        TradeExecutionCoordinator coordinator = new TradeExecutionCoordinator(
+                gateway,
+                new FakeAccountRefreshGateway(),
+                new TradeConfirmDialogController(),
+                2
+        );
+        TradeCommand command = TradeCommandFactory.withEntryMode(
+                TradeCommandFactory.openMarket("acc-1", "BTCUSD", "buy", 0.05d, 65000d, 0d, 0d),
+                "quick"
+        );
+
+        TradeExecutionCoordinator.PreparedTrade prepared = coordinator.prepareExecution(command);
+
+        assertEquals(TradeExecutionCoordinator.UiState.AWAITING_CONFIRMATION, prepared.getUiState());
+        assertFalse(prepared.requiresConfirmation());
+        assertTrue(prepared.isOneClickTradingEnabled());
+        assertTrue(prepared.isConfirmed());
     }
 
     @Test
@@ -455,7 +561,7 @@ public class TradeExecutionCoordinatorTest {
 
         assertEquals(TradeExecutionCoordinator.UiState.REJECTED, result.getUiState());
         assertTrue(result.isSafeState());
-        assertEquals("保证金不足", result.getMessage());
+        assertEquals("保证金不足，请降低手数或释放仓位后重试", result.getMessage());
         assertEquals(TradeCommandStateMachine.Step.REJECTED, result.getStateMachine().getStep());
         assertEquals(0, refreshGateway.fetchCount);
     }
@@ -738,7 +844,7 @@ public class TradeExecutionCoordinatorTest {
 
         assertEquals(TradeExecutionCoordinator.UiState.REJECTED, result.getUiState());
         assertTrue(result.isSafeState());
-        assertEquals("保证金不足", result.getMessage());
+        assertEquals("保证金不足，请降低手数或释放仓位后重试", result.getMessage());
         assertEquals(0, gateway.submitCount);
     }
 
@@ -935,6 +1041,13 @@ public class TradeExecutionCoordinatorTest {
     }
 
     private static TradeCommand buildCommand(String requestId, String action, double sl, double tp) {
+        JSONObject params = new JSONObject();
+        if ("OPEN_MARKET".equals(action)) {
+            try {
+                params.put("side", "buy");
+            } catch (Exception ignored) {
+            }
+        }
         return new TradeCommand(
                 requestId,
                 "acc-001",
@@ -943,7 +1056,8 @@ public class TradeExecutionCoordinatorTest {
                 0.1d,
                 65000.0d,
                 sl,
-                tp
+                tp,
+                params
         );
     }
 
@@ -955,6 +1069,18 @@ public class TradeExecutionCoordinatorTest {
                 "EXECUTABLE",
                 null,
                 new JSONObject().put("retcode", 0),
+                1L
+        );
+    }
+
+    private static TradeCheckResult rejectedCheck(String requestId, String code, String message) throws Exception {
+        return new TradeCheckResult(
+                requestId,
+                "OPEN_MARKET",
+                "netting",
+                "NOT_EXECUTABLE",
+                ExecutionError.of(code, message),
+                new JSONObject().put("retcode", 10014),
                 1L
         );
     }
@@ -1239,7 +1365,7 @@ public class TradeExecutionCoordinatorTest {
         }
 
         @Override
-        public AccountStatsPreloadManager.Cache fetchForUi(AccountTimeRange range) {
+        public AccountStatsPreloadManager.Cache fetchFullForUi(AccountTimeRange range) {
             fetchCount++;
             lastRange = range;
             if (fetchException != null) {

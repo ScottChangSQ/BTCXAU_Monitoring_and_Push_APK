@@ -35,4 +35,14 @@ public class AnalysisPageRedesignSourceTest {
         assertFalse(screen.contains("binding.recyclerStats.setLayoutManager(new LinearLayoutManager(this));"));
         assertFalse(screen.contains("binding.recyclerStats.setAdapter(statsAdapter);"));
     }
+
+    @Test
+    public void analysisPageTopLevelCardsShouldUseSameSurfaceAsAccountTabSections() throws Exception {
+        String screen = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(screen.contains("cardView.setCardBackgroundColor(nestedCard ? palette.surfaceEnd : palette.surfaceEnd);"));
+        assertFalse(screen.contains("cardView.setCardBackgroundColor(nestedCard ? palette.surfaceEnd : palette.card);"));
+    }
 }

@@ -3,10 +3,9 @@
  */
 package com.binance.monitor.ui.floating;
 
+import com.binance.monitor.ui.rules.IndicatorFormatterCenter;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
-
-import java.text.DecimalFormat;
 
 final class FloatingWindowTextFormatter {
 
@@ -32,10 +31,7 @@ final class FloatingWindowTextFormatter {
 
     // 统一格式化悬浮窗产品价格，改为一位小数并保留隐私遮罩行为。
     static String formatPriceText(double price, boolean masked) {
-        String visibleText = FormatUtils.formatPriceOneDecimalWithUnit(price);
-        if (visibleText.startsWith("$")) {
-            visibleText = "$ " + visibleText.substring(1);
-        }
+        String visibleText = IndicatorFormatterCenter.formatPrice(price, 1, masked).replace("$", "$ ");
         return SensitiveDisplayMasker.maskPrice(visibleText, masked);
     }
 
@@ -64,22 +60,18 @@ final class FloatingWindowTextFormatter {
         String volumeText = masked
                 ? SensitiveDisplayMasker.MASK_TEXT
                 : FormatUtils.formatVolumeWithUnit(volume, safeUnit).trim();
-        return "1M量 " + volumeText;
+        return volumeText;
     }
 
     // 统一格式化悬浮窗 1 分钟成交额行。
     static String formatAmountLine(double amount, boolean masked) {
-        String amountText = masked
-                ? SensitiveDisplayMasker.MASK_TEXT
-                : FormatUtils.formatAmountWithChineseUnit(amount);
-        return "1M额 " + amountText;
+        String amountText = IndicatorFormatterCenter.formatCompactAmount(amount, masked);
+        return amountText;
     }
 
     // 统一格式化悬浮窗第一行里的方向手数。
     static String formatLotsText(double totalLots) {
-        String sign = totalLots < 0d ? "-" : "+";
-        String amount = new DecimalFormat("0.00").format(Math.abs(totalLots));
-        return sign + amount + "手";
+        return IndicatorFormatterCenter.formatSignedQuantity(totalLots, 2, "手");
     }
 
     // 统一处理悬浮窗盈亏显示，零值时按产品要求显示为 $-。
@@ -87,7 +79,7 @@ final class FloatingWindowTextFormatter {
         if (shouldUseNeutralPnlStyle(totalPnl)) {
             return "$-";
         }
-        return FormatUtils.formatSignedMoneyOneDecimal(totalPnl);
+        return IndicatorFormatterCenter.formatMoney(totalPnl, 1, false);
     }
 
 }

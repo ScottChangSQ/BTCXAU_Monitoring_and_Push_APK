@@ -20,6 +20,7 @@ public class AccountStatsPreloadManagerSourceTest {
 
         assertTrue(source.contains("applyPublishedAccountRuntime("));
         assertTrue(source.contains("refreshHistoryForRevision("));
+        assertTrue(source.contains("fetchFullForUi("));
         assertTrue(source.contains("gatewayV2Client.fetchAccountFull()"));
         assertTrue(source.contains("gatewayV2Client.fetchAccountHistory("));
         assertFalse(source.contains("Mt5BridgeGatewayClient"));
@@ -79,8 +80,10 @@ public class AccountStatsPreloadManagerSourceTest {
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot storedSnapshot =\n                    buildStoredSnapshotFromPublishedRuntime(accountRuntimeSnapshot, publishedAt);"));
-        assertTrue(source.contains("Cache cache = buildCache(storedSnapshot, resolvedRevision);"));
+        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot runtimeSnapshot =\n                    buildStoredSnapshotFromPublishedRuntime(accountRuntimeSnapshot, publishedAt);"));
+        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot previousSnapshot = loadStoredSnapshotForWorkerThread();"));
+        assertTrue(source.contains("AccountStorageRepository.StoredSnapshot mergedSnapshot =\n                    mergePublishedRuntimeWithStoredHistory(runtimeSnapshot, previousSnapshot);"));
+        assertTrue(source.contains("Cache cache = buildCache(mergedSnapshot, resolvedRevision);"));
     }
 
     @Test
@@ -188,15 +191,99 @@ public class AccountStatsPreloadManagerSourceTest {
     }
 
     @Test
-    public void fetchForUiShouldForceCanonicalSnapshotRefreshInsteadOfOnlyReturningLatestCache() throws Exception {
+    public void startShouldKickOffAsyncStoragePreheatBeforeRegularSchedule() throws Exception {
         String source = new String(
                 Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("public Cache fetchForUi(AccountTimeRange range) {"));
-        assertTrue(source.contains("return fetchFullForUi(range);"));
-        assertFalse(source.contains("public Cache fetchForUi(AccountTimeRange range) {\n        Cache cache = latestCache;\n        if (cache != null) {\n            return cache;\n        }\n        return null;\n    }"));
+        assertTrue(source.contains("registerForegroundListenerIfNeeded();\n        preheatLatestCacheFromStorageIfNeeded();\n        scheduleFetch(0L);"));
+        assertTrue(source.contains("private void preheatLatestCacheFromStorageIfNeeded() {"));
+        assertTrue(source.contains("if (!storageHydrationInFlight.compareAndSet(false, true)) {\n            return;\n        }"));
+    }
+
+    @Test
+    public void storagePreheatShouldPromoteHydratedCacheThroughUnifiedUpdatePath() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private Cache hydrateLatestCacheFromStorageInternal(boolean notifyConsumers) {"));
+        assertTrue(source.contains("if (notifyConsumers) {\n            updateLatestCache(hydratedCache);\n        } else {\n            latestCache = hydratedCache;\n        }"));
+        assertTrue(source.contains("hydrateLatestCacheFromStorageInternal(true);"));
+    }
+
+    @Test
+    public void preloadManagerShouldExposeOnlyThreeFormalAccountEntryPoints() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("public Cache applyPublishedAccountRuntime(JSONObject accountRuntimeSnapshot, long publishedAt) {"));
+        assertTrue(source.contains("public Cache refreshHistoryForRevision(String remoteHistoryRevision) {"));
+        assertTrue(source.contains("public Cache fetchFullForUi(AccountTimeRange range) {"));
+        assertFalse(source.contains("public Cache fetchForUi(AccountTimeRange range) {"));
+        assertFalse(source.contains("public Cache fetchForOverlay() {"));
+    }
+
+    @Test
+    public void preloadManagerShouldOwnPersistedAccountRuntimeResetInsteadOfMonitorService() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("public void clearAccountRuntimeState(String account, String server) {"));
+        assertTrue(source.contains("fullSnapshotActive = false;"));
+        assertTrue(source.contains("clearStoredSnapshotForIdentity(account, server);"));
+        assertTrue(source.contains("private void clearStoredSnapshotForIdentity(String account, String server) {"));
+        assertTrue(source.contains("accountStorageRepository.clearRuntimeSnapshot(account.trim(), server.trim());"));
+        assertTrue(source.contains("accountStorageRepository.clearTradeHistory(account.trim(), server.trim());"));
+    }
+
+    @Test
+    public void preloadManagerShouldOwnStrongRefreshPreparationInsteadOfMonitorService() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("public void prepareFullSnapshotRefresh() {"));
+        assertTrue(source.contains("clearLatestCache();"));
+        assertTrue(source.contains("setFullSnapshotActive(true);"));
+    }
+
+    @Test
+    public void preloadManagerShouldOwnRecoveredCacheIdentityValidationInsteadOfMonitorService() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("public Cache fetchFullForUiForIdentity(AccountTimeRange range, String expectedAccount, String expectedServer) {"));
+        assertTrue(source.contains("return requireExpectedIdentityCache(fetchFullForUi(range), expectedAccount, expectedServer);"));
+        assertTrue(source.contains("private static Cache requireExpectedIdentityCache(Cache cache, String expectedAccount, String expectedServer) {"));
+        assertTrue(source.contains("throw new IllegalStateException(\"v2 account full recovered cache missing connected account\")"));
+        assertTrue(source.contains("throw new IllegalStateException(\"v2 account full recovered cache identity mismatch\")"));
+    }
+
+    @Test
+    public void preloadManagerShouldOwnHistoryRefreshQueueGateInsteadOfMonitorService() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private final AccountHistoryRefreshGate accountHistoryRefreshGate = new AccountHistoryRefreshGate();"));
+        assertTrue(source.contains("public void queueHistoryRefreshForRevision(String remoteHistoryRevision, Runnable afterRefresh) {"));
+        assertTrue(source.contains("AccountHistoryRefreshGate.StartDecision startDecision = accountHistoryRefreshGate.tryStart(safeHistoryRevision);"));
+        assertTrue(source.contains("executor.execute(() -> runQueuedHistoryRefresh(startDecision.getRevision(), afterRefresh));"));
+        assertTrue(source.contains("AccountHistoryRefreshGate.FinishDecision finishDecision = accountHistoryRefreshGate.finish(historyRevision);"));
+        assertTrue(source.contains("if (finishDecision.shouldContinue()) {\n                runQueuedHistoryRefresh(finishDecision.getNextRevision(), afterRefresh);\n            }"));
+        assertTrue(source.contains("private void dispatchAfterHistoryRefresh(Runnable afterRefresh) {"));
+        assertTrue(source.contains("mainHandler.post(afterRefresh);"));
     }
 
     @Test
@@ -234,16 +321,16 @@ public class AccountStatsPreloadManagerSourceTest {
     }
 
     @Test
-    public void explicitSnapshotRefreshShouldReuseRuntimeConnectionTruthInsteadOfHardcodingConnected() throws Exception {
+    public void preloadManagerShouldDeleteLegacySnapshotOnlyHelpersAfterFullPayloadUnification() throws Exception {
         String source = new String(
                 Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java")),
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("buildStoredSnapshotFromV2(AccountSnapshotPayload snapshotPayload,"));
-        assertTrue(source.contains("buildStoredSnapshotFromSnapshotOnly(AccountSnapshotPayload snapshotPayload)"));
-        assertTrue(source.contains("resolveRuntimeConnected(accountMeta)"));
-        assertFalse(source.contains("buildStoredSnapshotFromV2(AccountSnapshotPayload snapshotPayload,\n                                                                              AccountHistoryPayload historyPayload) {\n        JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();\n        JSONArray positions = snapshotPayload == null ? new JSONArray() : snapshotPayload.getPositions();\n        JSONArray orders = snapshotPayload == null ? new JSONArray() : snapshotPayload.getOrders();\n        JSONArray trades = historyPayload == null ? new JSONArray() : historyPayload.getTrades();\n        JSONArray curvePoints = historyPayload == null ? new JSONArray() : historyPayload.getCurvePoints();\n        return new AccountStorageRepository.StoredSnapshot(\n                true,"));
+        assertFalse(source.contains("buildStoredSnapshotFromV2(AccountSnapshotPayload snapshotPayload,"));
+        assertFalse(source.contains("buildStoredSnapshotFromSnapshotOnly(AccountSnapshotPayload snapshotPayload)"));
+        assertFalse(source.contains("resolveRemoteHistoryRevision(AccountSnapshotPayload snapshotPayload)"));
+        assertFalse(source.contains("resolveHistoryRevisionFromPayload(AccountSnapshotPayload snapshotPayload,"));
     }
 
     @Test

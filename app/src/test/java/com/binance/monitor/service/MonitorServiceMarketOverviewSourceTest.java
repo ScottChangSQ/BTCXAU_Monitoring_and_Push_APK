@@ -18,21 +18,23 @@ public class MonitorServiceMarketOverviewSourceTest {
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         );
 
-        assertTrue(source.contains("Map<String, KlineData> overviewKlineDelta = new HashMap<>()"));
+        assertTrue(source.contains("List<SymbolMarketWindow> symbolWindows = new ArrayList<>()"));
         assertTrue(source.contains("JSONObject latestClosed = state.optJSONObject(\"latestClosedCandle\")"));
-        assertTrue(source.contains("overviewKlineDelta.put(symbol, toKlineDataFromJson(symbol, latestClosed, true));"));
-        assertTrue(source.contains("repository.applyMarketDelta(klineDelta, priceDelta, overviewKlineDelta);"));
+        assertTrue(source.contains("symbolWindows.add(new SymbolMarketWindow("));
+        assertTrue(source.contains("repository.applyMarketRuntimeSnapshot("));
     }
 
     @Test
-    public void floatingWindowShouldConsumeClosedMinuteOverviewSnapshot() throws Exception {
+    public void floatingWindowShouldConsumeClosedMinuteOverviewFromUnifiedRuntimeSnapshot() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
                 "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
         );
 
-        assertTrue(source.contains("repository == null ? null : repository.getDisplayOverviewKlineSnapshot()"));
-        assertTrue(!source.contains("repository.getDisplayKlineSnapshot()"));
+        assertTrue(source.contains("repository.selectClosedMinute(symbol)"));
+        assertTrue(source.contains("repository.selectLatestPrice(symbol)"));
+        assertTrue(!source.contains("repository.getDisplayOverviewKlineSnapshot()"));
+        assertTrue(!source.contains("repository.getDisplayPriceSnapshot()"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

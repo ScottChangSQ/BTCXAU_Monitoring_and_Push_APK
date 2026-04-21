@@ -12,7 +12,9 @@ import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.runtime.account.MetricNameTranslator;
-import com.binance.monitor.util.FormatUtils;
+import com.binance.monitor.ui.rules.IndicatorFormatterCenter;
+import com.binance.monitor.ui.rules.IndicatorId;
+import com.binance.monitor.ui.rules.IndicatorRegistry;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -39,7 +41,6 @@ public final class AccountOverviewMetricsHelper {
         if (snapshotOverview == null || snapshotOverview.isEmpty()) {
             return new ArrayList<>();
         }
-        List<PositionItem> safePositions = positions == null ? new ArrayList<>() : new ArrayList<>(positions);
         List<AccountMetric> result = new ArrayList<>(snapshotOverview);
         double totalAsset = metricValue(snapshotOverview, "总资产", "Total Asset", "Total Assets");
         double netAsset = metricValue(snapshotOverview, "净资产", "当前净值", "净值", "Current Equity", "Net Asset");
@@ -48,24 +49,20 @@ public final class AccountOverviewMetricsHelper {
                         totalAsset,
                         netAsset,
                         snapshotOverview,
-                        castPositions(safePositions)
+                        castPositions(positions)
                 );
-        replaceOrAppendOverviewMetric(result, "可用预付款",
-                FormatUtils.formatPriceWithUnit(overviewValues.getFreePrepayment()));
-        replaceOrAppendOverviewMetric(result, "保证金",
-                FormatUtils.formatPriceWithUnit(overviewValues.getPrepayment()));
-        replaceOrAppendOverviewMetric(result, "持仓盈亏", FormatUtils.formatSignedMoney(overviewValues.getPositionPnl()));
-        replaceOrAppendOverviewMetric(result, "持仓收益率", formatPercent(overviewValues.getPositionPnlRate()));
-
-        AccountOverviewDailyMetricsCalculator.OverviewDailyValues dailyValues =
-                AccountOverviewDailyMetricsCalculator.calculate(
-                        castTrades(trades),
-                        castCurves(curvePoints),
-                        nowMs,
-                        timeZone
-                );
-        replaceOrAppendOverviewMetric(result, "当日盈亏", FormatUtils.formatSignedMoney(dailyValues.getTodayPnl()));
-        replaceOrAppendOverviewMetric(result, "当日收益率", formatPercent(dailyValues.getTodayReturnRate()));
+        replaceOrAppendOverviewMetric(result,
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_AVAILABLE_FUNDS).getDisplayName(),
+                IndicatorFormatterCenter.formatMoney(overviewValues.getFreePrepayment(), 2, false));
+        replaceOrAppendOverviewMetric(result,
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_MARGIN).getDisplayName(),
+                IndicatorFormatterCenter.formatMoney(overviewValues.getPrepayment(), 2, false));
+        replaceOrAppendOverviewMetric(result,
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_POSITION_PNL).getDisplayName(),
+                IndicatorFormatterCenter.formatMoney(overviewValues.getPositionPnl(), 2, false));
+        replaceOrAppendOverviewMetric(result,
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_POSITION_PNL_RATE).getDisplayName(),
+                IndicatorFormatterCenter.formatPercent(overviewValues.getPositionPnlRate(), 2, true));
 
         return sortOverviewMetricsForDisplay(result);
     }
@@ -73,16 +70,6 @@ public final class AccountOverviewMetricsHelper {
     @NonNull
     private static List<PositionItem> castPositions(@Nullable List<PositionItem> positions) {
         return positions == null ? new ArrayList<>() : new ArrayList<>(positions);
-    }
-
-    @NonNull
-    private static List<TradeRecordItem> castTrades(@Nullable List<TradeRecordItem> trades) {
-        return trades == null ? new ArrayList<>() : new ArrayList<>(trades);
-    }
-
-    @NonNull
-    private static List<CurvePoint> castCurves(@Nullable List<CurvePoint> curvePoints) {
-        return curvePoints == null ? new ArrayList<>() : new ArrayList<>(curvePoints);
     }
 
     // 用统一展示名覆盖或补齐总览指标。
@@ -130,11 +117,9 @@ public final class AccountOverviewMetricsHelper {
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "净资产");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "可用预付款");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "保证金");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "当日盈亏");
-        appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "当日收益率");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "持仓盈亏");
         appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, "持仓收益率");
-        return ordered;
+        return canonicalizeMetrics(ordered);
     }
 
     // 从同义指标组里挑出最适合当前展示位的那一项。
@@ -178,20 +163,30 @@ public final class AccountOverviewMetricsHelper {
         if (name.isEmpty()) {
             return "";
         }
-        if ("当前净值".equalsIgnoreCase(name) || "净值".equalsIgnoreCase(name)) {
-            return "净资产";
-        }
-        if ("可用资金".equalsIgnoreCase(name) || "可用保证金".equalsIgnoreCase(name)) {
-            return "可用预付款";
-        }
-        if ("预付款".equalsIgnoreCase(name)
-                || "保证金".equalsIgnoreCase(name)
-                || "保证金金额".equalsIgnoreCase(name)
-                || "Margin".equalsIgnoreCase(name)
-                || "Margin Amount".equalsIgnoreCase(name)) {
-            return "保证金";
+        if (IndicatorRegistry.findByDisplayName(name) != null) {
+            return IndicatorRegistry.findByDisplayName(name).getDisplayName();
         }
         return name;
+    }
+
+    // 把迁移期旧指标名统一改成正式显示名。
+    @NonNull
+    private static List<AccountMetric> canonicalizeMetrics(@NonNull List<AccountMetric> metrics) {
+        List<AccountMetric> result = new ArrayList<>(metrics.size());
+        for (AccountMetric metric : metrics) {
+            if (metric == null) {
+                continue;
+            }
+            if (IndicatorRegistry.findByDisplayName(metric.getName()) == null) {
+                result.add(metric);
+                continue;
+            }
+            result.add(new AccountMetric(
+                    IndicatorRegistry.findByDisplayName(metric.getName()).getDisplayName(),
+                    metric.getValue()
+            ));
+        }
+        return result;
     }
 
     private static double metricValue(@Nullable List<AccountMetric> metrics, String... names) {
@@ -240,11 +235,6 @@ public final class AccountOverviewMetricsHelper {
         } catch (Exception ignored) {
             return 0d;
         }
-    }
-
-    @NonNull
-    private static String formatPercent(double ratio) {
-        return String.format(Locale.getDefault(), "%+.2f%%", ratio * 100d);
     }
 
     @NonNull

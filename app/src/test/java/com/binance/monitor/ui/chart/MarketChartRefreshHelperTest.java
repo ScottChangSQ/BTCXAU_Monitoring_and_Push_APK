@@ -28,7 +28,8 @@ public class MarketChartRefreshHelperTest {
                 NOW - 30_000L,
                 MINUTE,
                 false,
-                true
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.SKIP, plan.mode);
@@ -48,7 +49,8 @@ public class MarketChartRefreshHelperTest {
                 NOW - MINUTE * 3L,
                 MINUTE,
                 false,
-                true
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
@@ -67,7 +69,8 @@ public class MarketChartRefreshHelperTest {
                 NOW - 30_000L,
                 MINUTE,
                 false,
-                true
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
@@ -86,7 +89,8 @@ public class MarketChartRefreshHelperTest {
                 NOW - 30_000L,
                 MINUTE * 60L,
                 false,
-                true
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
@@ -105,7 +109,8 @@ public class MarketChartRefreshHelperTest {
                 NOW - MINUTE * 3L,
                 MINUTE,
                 false,
-                true
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
@@ -124,7 +129,8 @@ public class MarketChartRefreshHelperTest {
                 NOW - MINUTE * 5L,
                 365L * 24L * 60L * MINUTE,
                 true,
-                false
+                false,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
@@ -143,7 +149,8 @@ public class MarketChartRefreshHelperTest {
                 NOW - 30_000L,
                 24L * 60L * MINUTE,
                 false,
-                true
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
@@ -162,7 +169,8 @@ public class MarketChartRefreshHelperTest {
                 NOW - 30_000L,
                 MINUTE,
                 false,
-                false
+                false,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
@@ -181,7 +189,28 @@ public class MarketChartRefreshHelperTest {
                 NOW - 30_000L,
                 MINUTE,
                 false,
-                true
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
+        );
+
+        assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
+        assertEquals(-1L, plan.startTimeInclusive);
+    }
+
+    @Test
+    public void resolvePlanShouldFallbackToFullWhenFifteenMinuteSeriesHasInternalGap() {
+        List<CandleEntry> local = createSeriesWithInternalGap(120, NOW - 15L * MINUTE * 40L, 15L * MINUTE, 20);
+
+        MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
+                local,
+                120,
+                120,
+                NOW,
+                NOW - 30_000L,
+                15L * MINUTE,
+                false,
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(MarketChartRefreshHelper.SyncMode.FULL, plan.mode);
@@ -197,6 +226,62 @@ public class MarketChartRefreshHelperTest {
         );
 
         assertEquals(false, shouldSkip);
+    }
+
+    @Test
+    public void shouldForceRequestForSeriesRepairShouldReturnTrueForFifteenMinuteGap() {
+        List<CandleEntry> local = createSeriesWithInternalGap(40, NOW - 15L * MINUTE * 20L, 15L * MINUTE, 10);
+
+        boolean shouldForce = MarketChartRefreshHelper.shouldForceRequestForSeriesRepair(
+                local,
+                15L * MINUTE,
+                false,
+                true
+        );
+
+        assertEquals(true, shouldForce);
+    }
+
+    @Test
+    public void resolvePlanShouldNotSkipOnColdStartEvenWhenMinuteWindowIsFresh() {
+        List<CandleEntry> local = createSeries(1_500, NOW - MINUTE * 30L, MINUTE);
+        long latestOpenTime = local.get(local.size() - 1).getOpenTime();
+
+        MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
+                local,
+                1_500,
+                1_500,
+                NOW,
+                NOW - 30_000L,
+                MINUTE,
+                false,
+                true,
+                MarketChartRefreshHelper.RequestReason.COLD_START
+        );
+
+        assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
+        assertEquals(latestOpenTime, plan.startTimeInclusive);
+    }
+
+    @Test
+    public void resolvePlanShouldNotSkipOnSelectionChangeEvenWhenMinuteWindowIsFresh() {
+        List<CandleEntry> local = createSeries(1_500, NOW - MINUTE * 30L, MINUTE);
+        long latestOpenTime = local.get(local.size() - 1).getOpenTime();
+
+        MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
+                local,
+                1_500,
+                1_500,
+                NOW,
+                NOW - 30_000L,
+                MINUTE,
+                false,
+                true,
+                MarketChartRefreshHelper.RequestReason.SELECTION_CHANGE
+        );
+
+        assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
+        assertEquals(latestOpenTime, plan.startTimeInclusive);
     }
 
     private List<CandleEntry> createSeries(int count, long lastOpenTime, long intervalMs) {

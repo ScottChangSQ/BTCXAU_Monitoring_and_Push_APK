@@ -124,7 +124,7 @@ public class AccountStatsBridgeActivitySessionSourceTest {
                 source.contains("public static final String EXTRA_LOGIN_DIALOG_RESULT_MESSAGE = \"com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_MESSAGE\";")
                         && source.contains("public static final String EXTRA_LOGIN_DIALOG_RESULT_ACCOUNT = \"com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_ACCOUNT\";")
                         && source.contains("public static final String EXTRA_LOGIN_DIALOG_RESULT_SERVER = \"com.binance.monitor.ui.account.extra.LOGIN_DIALOG_RESULT_SERVER\";"));
-        assertTrue("受理成功后应立即把账户会话标记为可刷新，不能在主动 snapshot 前就把 fetchForUi 自己拦掉",
+        assertTrue("受理成功后应立即把账户会话标记为可刷新，不能在主动 snapshot 前就把 fetchFullForUi 自己拦掉",
                 source.contains("ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(true);"));
         assertTrue("登录弹窗专用模式受理成功后应把结果回传给原页，而不是静默 finish",
                 source.contains("setResult(RESULT_OK, buildLoginDialogResultIntent(result.getActiveAccount(), sourceText));"));
@@ -134,28 +134,21 @@ public class AccountStatsBridgeActivitySessionSourceTest {
     }
 
     @Test
-    public void loginDialogShouldVerifyServerSnapshotAndApplySuccessImmediately() throws Exception {
+    public void loginDialogShouldAcceptSessionFirstAndLetForegroundRefreshCloseSync() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("登录和已保存账号切换都应走同一条“服务器校验后立即拉账户数据”的主链",
-                source.contains("verifyRemoteSessionAndApply("));
-        assertTrue("登录成功后应直接拉取账户快照，而不是只发起受理后再依赖别处异步收口",
-                source.contains("AccountStatsPreloadManager.Cache verifiedCache = preloadManager.fetchForUi(AccountTimeRange.ALL);"));
-        assertTrue("登录链应校验快照账号与当前登录账号完全一致",
-                source.contains("ensureVerifiedRemoteCache(verifiedCache, result.getActiveAccount());"));
-        assertTrue("快照校验通过后应直接在当前页应用连接态和账户数据",
-                source.contains("applyVerifiedRemoteSession(")
-                        && source.contains("renderCoordinator.applySnapshot(verifiedCache.getSnapshot(), true);"));
-        assertTrue("校验完成后应直接给出登录成功提示",
-                source.contains("showLoginSuccessBanner();")
-                        && source.contains("buildLoginDialogResultIntent(result.getActiveAccount(), successMessage)"));
-        assertFalse("直接登录主链不应继续只停留在“已受理，正在同步账户”的旧收口方法",
-                source.contains("applyRemoteSessionAccepted(result, \"登录已受理，正在同步账户\")"));
-        assertFalse("已保存账号切换也不应继续走旧的“切换已受理”收口方法",
-                source.contains("applyRemoteSessionAccepted(result, \"切换已受理，正在同步账户\")"));
+        assertTrue("登录和已保存账号切换都应先进入“已受理、等待同步”的正式主链，不能要求第一次快照就切到新账号",
+                source.contains("applyRemoteSessionAccepted(result, \"登录已受理，正在同步账户\")")
+                        && source.contains("applyRemoteSessionAccepted(result, \"切换已受理，正在同步账户\")"));
+        assertTrue("受理后应把会话摘要写成 active=false，等待前台正式快照再收口成功",
+                source.contains("updateSessionProfiles(result.getActiveAccount(), result.getSavedAccounts(), false);"));
+        assertTrue("受理后应主动请求一次前台正式快照，不能只切空页面不拉真值",
+                source.contains("snapshotRefreshCoordinator.requestForegroundEntrySnapshot();"));
+        assertFalse("桥接页提交链不应继续直接调用一次性快照校验主链",
+                source.contains("verifyRemoteSessionAndApply(result, \"登录成功\")"));
     }
 
     @Test
@@ -363,6 +356,30 @@ public class AccountStatsBridgeActivitySessionSourceTest {
         assertTrue("连接详情弹窗应把本地会话摘要错误单独展示，避免继续误判为空缓存",
                 source.contains("if (!sessionStorageError.isEmpty()) {")
                         && source.contains("createConnectionDetailRow(\"本地会话摘要\""));
+    }
+
+    @Test
+    public void sessionDialogsShouldResolveSpacingFromTokenResolver() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java",
+                "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("桥接页弹窗也应显式接入 SpacingTokenResolver，避免继续在兼容入口写死 dp",
+                source.contains("import com.binance.monitor.ui.theme.SpacingTokenResolver;"));
+        assertTrue("连接详情弹窗容器应走 dialog_content_padding",
+                source.contains("SpacingTokenResolver.px(this, R.dimen.dialog_content_padding)"));
+        assertTrue("桥接页弹窗行距应走 row_gap",
+                source.contains("SpacingTokenResolver.rowGapPx(this)"));
+        assertTrue("桥接页弹窗按钮间距应走 inline_gap",
+                source.contains("SpacingTokenResolver.inlineGapPx(this)"));
+        assertTrue("桥接页列表行内边距应走 list_item_padding token",
+                source.contains("SpacingTokenResolver.px(this, R.dimen.list_item_padding_x)")
+                        && source.contains("SpacingTokenResolver.px(this, R.dimen.list_item_padding_y)"));
+        assertFalse("旧 18/14/6dp 容器 padding 不应继续保留",
+                source.contains("content.setPadding(dpToPx(18), dpToPx(14), dpToPx(18), dpToPx(6));"));
+        assertFalse("旧 12/10dp 列表行 padding 不应继续保留",
+                source.contains("row.setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10));"));
     }
 
     @Test

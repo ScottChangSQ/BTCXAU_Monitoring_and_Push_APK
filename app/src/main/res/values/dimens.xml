@@ -12,12 +12,49 @@
     <dimen name="space_20">20dp</dimen>
     <dimen name="space_24">24dp</dimen>
 
-    <dimen name="page_horizontal_padding">5dp</dimen>
-    <dimen name="page_section_gap">5dp</dimen>
-    <dimen name="card_content_padding">2dp</dimen>
-    <dimen name="control_group_gap">2dp</dimen>
-    <dimen name="chart_price_info_text_size">9dp</dimen>
+    <dimen name="screen_edge_padding">8dp</dimen>
+    <dimen name="section_gap">8dp</dimen>
+    <dimen name="container_padding">8dp</dimen>
+    <dimen name="container_padding_compact">4dp</dimen>
+    <dimen name="sheet_content_padding">8dp</dimen>
+    <dimen name="dialog_content_padding">12dp</dimen>
+    <dimen name="row_gap">8dp</dimen>
+    <dimen name="row_gap_compact">4dp</dimen>
+    <dimen name="inline_gap">4dp</dimen>
+    <dimen name="inline_gap_compact">2dp</dimen>
+    <dimen name="field_padding_x">12dp</dimen>
+    <dimen name="field_padding_x_compact">8dp</dimen>
+    <dimen name="field_trailing_reserve">16dp</dimen>
+    <dimen name="field_trailing_reserve_compact">12dp</dimen>
+    <dimen name="icon_text_gap">4dp</dimen>
+    <dimen name="list_item_padding_x">12dp</dimen>
+    <dimen name="list_item_padding_y">8dp</dimen>
+    <dimen name="floating_window_expanded_width">90dp</dimen>
+    <dimen name="floating_window_padding_x">4dp</dimen>
+    <dimen name="floating_window_trailing_inset">0dp</dimen>
+    <dimen name="floating_window_amount_row_gap">0dp</dimen>
+    <dimen name="floating_window_minimize_button_size">14dp</dimen>
+    <dimen name="floating_window_mini_min_width">30dp</dimen>
+    <dimen name="floating_window_mini_padding_x">6dp</dimen>
+    <dimen name="floating_window_mini_end_margin">4dp</dimen>
+    <dimen name="curve_chart_left_inset">34dp</dimen>
+    <dimen name="curve_chart_right_inset">28dp</dimen>
+    <dimen name="curve_axis_stroke">1dp</dimen>
+    <dimen name="curve_equity_stroke">1.6dp</dimen>
+    <dimen name="curve_balance_stroke">1.3dp</dimen>
+    <dimen name="kline_indicator_plot_top_inset">18dp</dimen>
+    <dimen name="kline_indicator_plot_bottom_inset">6dp</dimen>
+    <dimen name="kline_pane_title_baseline_offset">12dp</dimen>
+    <dimen name="kline_axis_top_baseline_offset">12dp</dimen>
+    <dimen name="kline_axis_bottom_inset">6dp</dimen>
+    <dimen name="trade_scrollbar_track_width">4dp</dimen>
+    <dimen name="trade_scrollbar_thumb_width">10dp</dimen>
+    <dimen name="trade_scrollbar_min_thumb_height">40dp</dimen>
+    <dimen name="trade_scrollbar_touch_half_width">18dp</dimen>
+
+    <dimen name="chart_overlay_toggle_gap">6dp</dimen>
     <dimen name="chart_quick_trade_volume_width">88dp</dimen>
+    <dimen name="chart_top_mode_button_min_width">60dp</dimen>
 
     <dimen name="radius_sm">0dp</dimen>
     <dimen name="radius_md">0dp</dimen>
@@ -26,8 +63,9 @@
     <dimen name="control_height_sm">40dp</dimen>
     <dimen name="control_height_md">44dp</dimen>
     <dimen name="control_height_lg">48dp</dimen>
-    <dimen name="position_row_header_padding_horizontal">12dp</dimen>
-    <dimen name="position_row_header_padding_vertical">8dp</dimen>
+    <dimen name="subject_height_md">44dp</dimen>
+    <dimen name="subject_height_compact">40dp</dimen>
+    <dimen name="subject_height_trigger">32dp</dimen>
     <dimen name="position_row_action_height">32dp</dimen>
     <dimen name="position_action_group_width">142dp</dimen>
 

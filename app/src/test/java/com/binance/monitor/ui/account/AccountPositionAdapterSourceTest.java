@@ -34,10 +34,12 @@ public class AccountPositionAdapterSourceTest {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java");
 
         assertTrue(source.contains("double displayPnl = item.getTotalPnL() + item.getStorageFee();"));
-        assertTrue(source.contains("String pnlText = signedMoney(displayPnl);"));
-        assertTrue(source.contains("String totalPnlText = signedMoney(displayPnl);"));
+        assertTrue(source.contains("String pnlText = IndicatorFormatterCenter.formatMoney(displayPnl, 2, false);"));
+        assertTrue(source.contains("String totalPnlText = IndicatorFormatterCenter.formatMoney(displayPnl, 2, false);"));
         assertTrue(source.contains("\"持仓盈亏 %s | 收益率 %s\""));
-        assertTrue(source.contains("resolveAmountColor(palette, displayPnl, palette.textSecondary)"));
+        assertTrue(source.contains("IndicatorPresentationPolicy.applyDirectionalSpanForExactToken("));
+        assertTrue(source.contains("IndicatorId.ACCOUNT_POSITION_PNL"));
+        assertTrue(source.contains("IndicatorId.ACCOUNT_POSITION_PNL_RATE"));
     }
 
     @Test
@@ -147,14 +149,16 @@ public class AccountPositionAdapterSourceTest {
 
         assertTrue(positionAdapter.contains("UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());"));
         assertTrue(positionAdapter.contains("binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground("));
-        assertTrue(positionAdapter.contains("UiPaletteManager.styleSquareTextAction("));
+        assertTrue(positionAdapter.contains("UiPaletteManager.styleActionButton("));
+        assertFalse(positionAdapter.contains("UiPaletteManager.styleSquareTextAction("));
         assertFalse(positionAdapter.contains("binding.layoutHeader.setBackgroundResource(expanded"));
         assertFalse(positionAdapter.contains("R.drawable.bg_position_row_collapsed"));
         assertFalse(positionAdapter.contains("R.drawable.bg_position_row_expanded"));
 
         assertTrue(pendingAdapter.contains("UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());"));
         assertTrue(pendingAdapter.contains("binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground("));
-        assertTrue(pendingAdapter.contains("UiPaletteManager.styleSquareTextAction("));
+        assertTrue(pendingAdapter.contains("UiPaletteManager.styleActionButton("));
+        assertFalse(pendingAdapter.contains("UiPaletteManager.styleSquareTextAction("));
         assertFalse(pendingAdapter.contains("binding.layoutHeader.setBackgroundResource(expanded"));
         assertFalse(pendingAdapter.contains("R.drawable.bg_position_row_collapsed"));
         assertFalse(pendingAdapter.contains("R.drawable.bg_position_row_expanded"));
@@ -162,6 +166,23 @@ public class AccountPositionAdapterSourceTest {
         assertTrue(aggregateAdapter.contains("UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());"));
         assertTrue(aggregateAdapter.contains("binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground("));
         assertFalse(aggregateAdapter.contains("binding.layoutHeader.setBackgroundResource(R.drawable.bg_position_row_collapsed);"));
+    }
+
+    @Test
+    public void aggregateAdapterShouldRenderProductSideLotsAndUsdPnlInSingleLine() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAggregateAdapter.java");
+
+        assertTrue(source.contains("String raw = String.format(Locale.getDefault(),"));
+        assertTrue(source.contains("\"%s | %s | %s | %s\""));
+        assertTrue(source.contains("IndicatorFormatterCenter.formatQuantity"));
+        assertTrue(source.contains("IndicatorFormatterCenter.formatMoney"));
+        assertTrue(source.contains("resolveDirectionText(item.getSignedLots())"));
+        assertTrue(source.contains("return \"买入\";"));
+        assertTrue(source.contains("return \"卖出\";"));
+        assertFalse(source.contains("方向"));
+        assertFalse(source.contains("盈亏："));
+        assertFalse(source.contains("持仓："));
+        assertFalse(source.contains("item.getSummaryText()"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

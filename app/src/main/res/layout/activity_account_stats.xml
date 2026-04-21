@@ -16,7 +16,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
-            android:padding="@dimen/page_horizontal_padding">
+            android:padding="@dimen/screen_edge_padding">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -27,24 +27,24 @@
                 android:id="@+id/cardCurveSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginTop="@dimen/section_gap"
                 android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:paddingTop="@dimen/card_content_padding"
-                    android:paddingBottom="@dimen/card_content_padding"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp">
+                    android:paddingTop="@dimen/container_padding"
+                    android:paddingBottom="@dimen/container_padding"
+                    android:paddingStart="@dimen/container_padding_compact"
+                    android:paddingEnd="@dimen/container_padding_compact">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="净值曲线 / 结余曲线"
                         android:textColor="@color/text_primary"
-                        android:textSize="16sp"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle"
                         android:visibility="gone" />
 
                     <TextView
@@ -58,7 +58,7 @@
                         android:id="@+id/toggleTimeRange"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="@dimen/row_gap"
                         app:singleSelection="true">
 
                         <com.google.android.material.button.MaterialButton
@@ -74,7 +74,7 @@
                             android:paddingHorizontal="0dp"
                             android:text="1D"
                             android:textAllCaps="false"
-                            android:textSize="10sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -91,7 +91,7 @@
                             android:paddingHorizontal="0dp"
                             android:text="7D"
                             android:textAllCaps="false"
-                            android:textSize="10sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -108,7 +108,7 @@
                             android:paddingHorizontal="0dp"
                             android:text="1M"
                             android:textAllCaps="false"
-                            android:textSize="10sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -125,7 +125,7 @@
                             android:paddingHorizontal="0dp"
                             android:text="3M"
                             android:textAllCaps="false"
-                            android:textSize="10sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -142,7 +142,7 @@
                             android:paddingHorizontal="0dp"
                             android:text="1Y"
                             android:textAllCaps="false"
-                            android:textSize="10sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -159,7 +159,7 @@
                             android:paddingHorizontal="0dp"
                             android:text="ALL"
                             android:textAllCaps="false"
-                            android:textSize="10sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
@@ -167,7 +167,7 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="@dimen/row_gap"
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
 
@@ -176,49 +176,37 @@
                             android:layout_width="0dp"
                             android:layout_height="@dimen/control_height_md"
                             android:layout_weight="1"
-                            android:background="@drawable/bg_inline_button"
                             android:focusable="false"
                             android:gravity="center"
                             android:hint="开始日期"
                             android:maxLines="1"
                             android:textColor="@color/text_primary"
                             android:textColorHint="@color/text_secondary"
-                            android:textSize="12sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
 
                         <EditText
                             android:id="@+id/etRangeEnd"
                             android:layout_width="0dp"
                             android:layout_height="@dimen/control_height_md"
-                            android:layout_marginStart="@dimen/control_group_gap"
+                            android:layout_marginStart="@dimen/inline_gap"
                             android:layout_weight="1"
-                            android:background="@drawable/bg_inline_button"
                             android:focusable="false"
                             android:gravity="center"
                             android:hint="结束日期"
                             android:maxLines="1"
                             android:textColor="@color/text_primary"
                             android:textColorHint="@color/text_secondary"
-                            android:textSize="12sp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnApplyManualRange"
-                            style="@style/Widget.BinanceMonitor.Button.PrimaryContentSquare"
-                            android:layout_width="wrap_content"
-                            android:layout_height="@dimen/control_height_md"
-                            android:layout_marginStart="@dimen/control_group_gap"
-                            android:background="@drawable/bg_chip_selected"
-                            android:text="应用"
-                            android:textColor="@color/white" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
                     </LinearLayout>
 
                     <LinearLayout
                         android:id="@+id/layoutManualDatePickerPanel"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
+                        android:layout_marginTop="@dimen/row_gap_compact"
                         android:background="@drawable/bg_chip_unselected"
                         android:orientation="vertical"
-                        android:padding="8dp"
+                        android:padding="@dimen/container_padding"
                         android:visibility="gone">
 
                         <TextView
@@ -227,12 +215,12 @@
                             android:layout_height="wrap_content"
                             android:fontFamily="sans-serif"
                             android:text="选择日期"
-                            android:textSize="12sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/row_gap_compact"
                             android:orientation="horizontal">
 
                             <NumberPicker
@@ -257,24 +245,23 @@
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/row_gap_compact"
                             android:orientation="horizontal">
 
                             <Button
                                 android:id="@+id/btnManualDateCancel"
-                                style="@style/Widget.BinanceMonitor.TextAction.Medium"
+                                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
                                 android:layout_width="0dp"
                                 android:layout_height="@dimen/control_height_md"
                                 android:layout_weight="1"
-                                android:background="@drawable/bg_inline_button"
                                 android:text="取消" />
 
                             <Button
                                 android:id="@+id/btnManualDateConfirm"
-                                style="@style/Widget.BinanceMonitor.TextAction.Medium"
+                                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Primary"
                                 android:layout_width="0dp"
                                 android:layout_height="@dimen/control_height_md"
-                                android:layout_marginStart="@dimen/control_group_gap"
+                                android:layout_marginStart="@dimen/inline_gap"
                                 android:layout_weight="1"
                                 android:background="@drawable/bg_chip_selected"
                                 android:text="确定" />
@@ -285,7 +272,7 @@
                         android:id="@+id/equityCurveView"
                         android:layout_width="match_parent"
                         android:layout_height="204dp"
-                        android:layout_marginTop="6dp" />
+                        android:layout_marginTop="@dimen/row_gap_compact" />
 
                     <TextView
                         android:id="@+id/tvCurveMeta"
@@ -293,7 +280,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="0dp"
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact"
                         android:visibility="gone" />
 
                     <LinearLayout
@@ -335,17 +322,17 @@
                 android:id="@+id/cardReturnStatsSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginTop="@dimen/section_gap"
                 android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:paddingTop="@dimen/card_content_padding"
-                    android:paddingBottom="@dimen/card_content_padding"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp">
+                    android:paddingTop="@dimen/container_padding"
+                    android:paddingBottom="@dimen/container_padding"
+                    android:paddingStart="@dimen/container_padding_compact"
+                    android:paddingEnd="@dimen/container_padding_compact">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -357,7 +344,7 @@
                         android:id="@+id/tvMonthlyReturnsTitle"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="@dimen/row_gap"
                         android:text="区间收益（月)"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel"
                         android:visibility="gone" />
@@ -365,7 +352,7 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
+                        android:layout_marginTop="@dimen/row_gap_compact"
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
 
@@ -373,7 +360,7 @@
                             android:id="@+id/toggleReturnStatsMode"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginEnd="6dp"
+                            android:layout_marginEnd="@dimen/inline_gap"
                             android:layout_weight="1.75"
                             app:singleSelection="true">
 
@@ -388,7 +375,7 @@
                                 android:minWidth="0dp"
                                 android:text="日收益"
                                 android:textAllCaps="false"
-                                android:textSize="10sp"
+                                android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                                 app:cornerRadius="0dp"
                                 app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -403,7 +390,7 @@
                                 android:minWidth="0dp"
                                 android:text="月收益"
                                 android:textAllCaps="false"
-                                android:textSize="10sp"
+                                android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                                 app:cornerRadius="0dp"
                                 app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -418,7 +405,7 @@
                                 android:minWidth="0dp"
                                 android:text="年收益"
                                 android:textAllCaps="false"
-                                android:textSize="10sp"
+                                android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                                 app:cornerRadius="0dp"
                                 app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -433,7 +420,7 @@
                                 android:minWidth="0dp"
                                 android:text="阶段收益"
                                 android:textAllCaps="false"
-                                android:textSize="10sp"
+                                android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                                 app:cornerRadius="0dp"
                                 app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
@@ -453,7 +440,7 @@
                                 android:minWidth="0dp"
                                 android:text="收益率"
                                 android:textAllCaps="false"
-                                android:textSize="10sp"
+                                android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                                 app:cornerRadius="0dp"
                                 app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -465,32 +452,43 @@
                                 android:minWidth="0dp"
                                 android:text="收益额"
                                 android:textAllCaps="false"
-                                android:textSize="10sp"
+                                android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                                 app:cornerRadius="0dp"
                                 app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
                     </LinearLayout>
 
-                    <TextView
-                        android:id="@+id/tvReturnsPeriod"
+                    <LinearLayout
                         android:layout_width="match_parent"
-                        android:layout_height="@dimen/control_height_md"
-                        android:layout_marginTop="6dp"
-                        android:background="@drawable/bg_inline_button"
-                        android:gravity="center_vertical"
-                        android:paddingHorizontal="10dp"
-                        android:text="统计日期"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/row_gap_compact"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tvReturnsPeriod"
+                            style="@style/Widget.BinanceMonitor.Subject.SelectField.Label"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="统计日期" />
+
+                        <Button
+                            android:id="@+id/btnReturnCurrentMonth"
+                            style="@style/Widget.BinanceMonitor.Subject.TextTrigger"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/inline_gap"
+                            android:text="回到本月" />
+                    </LinearLayout>
 
                     <LinearLayout
                         android:id="@+id/layoutReturnPeriodPickerPanel"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
+                        android:layout_marginTop="@dimen/row_gap_compact"
                         android:background="@drawable/bg_chip_unselected"
                         android:orientation="vertical"
-                        android:padding="8dp"
+                        android:padding="@dimen/container_padding"
                         android:visibility="gone">
 
                         <TextView
@@ -499,12 +497,12 @@
                             android:layout_height="wrap_content"
                             android:fontFamily="sans-serif"
                             android:text="选择统计年月"
-                            android:textSize="12sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/row_gap_compact"
                             android:orientation="horizontal">
 
                             <NumberPicker
@@ -523,26 +521,24 @@
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/row_gap_compact"
                             android:orientation="horizontal">
 
                             <Button
                                 android:id="@+id/btnReturnPeriodCancel"
-                                style="@style/Widget.BinanceMonitor.TextAction.Medium"
+                                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
                                 android:layout_width="0dp"
                                 android:layout_height="@dimen/control_height_md"
                                 android:layout_weight="1"
-                                android:background="@drawable/bg_inline_button"
                                 android:text="取消" />
 
                             <Button
                                 android:id="@+id/btnReturnPeriodConfirm"
-                                style="@style/Widget.BinanceMonitor.TextAction.Medium"
+                                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Primary"
                                 android:layout_width="0dp"
                                 android:layout_height="@dimen/control_height_md"
-                                android:layout_marginStart="@dimen/control_group_gap"
+                                android:layout_marginStart="@dimen/inline_gap"
                                 android:layout_weight="1"
-                                android:background="@drawable/bg_chip_selected"
                                 android:text="确定" />
                         </LinearLayout>
                     </LinearLayout>
@@ -550,7 +546,7 @@
                     <HorizontalScrollView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
+                        android:layout_marginTop="@dimen/row_gap_compact"
                         android:fillViewport="true"
                         android:scrollbars="none">
 
@@ -564,9 +560,9 @@
                         android:id="@+id/tvMonthlyReturnsHint"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="@dimen/row_gap_compact"
                         android:textColor="@color/text_secondary"
-                        android:textSize="11sp"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                         android:visibility="gone" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -575,14 +571,14 @@
                 android:id="@+id/cardTradeRecordsSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginTop="@dimen/section_gap"
                 android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/card_content_padding">
+                    android:padding="@dimen/container_padding">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -604,94 +600,76 @@
 
                         <FrameLayout
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/control_height_md"
+                            android:layout_height="@dimen/subject_height_md"
                             android:layout_weight="1">
 
                             <androidx.appcompat.widget.AppCompatSpinner
                                 android:id="@+id/spinnerTradeProduct"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
-                                android:background="@drawable/bg_spinner_filter"
                                 android:minWidth="0dp"
                                 android:popupBackground="@drawable/bg_spinner_popup"
                                 android:spinnerMode="dropdown" />
 
                             <TextView
                                 android:id="@+id/tvTradeProductLabel"
+                                style="@style/Widget.BinanceMonitor.Subject.SelectField.Label"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:clickable="false"
                                 android:ellipsize="end"
                                 android:focusable="false"
-                                android:gravity="center_vertical|start"
-                                android:includeFontPadding="false"
-                                android:maxLines="1"
-                                android:paddingStart="@dimen/space_12"
-                                android:paddingEnd="32dp"
-                                android:textColor="@color/text_primary"
-                                android:textSize="12sp" />
+                                android:maxLines="1" />
                         </FrameLayout>
 
                         <FrameLayout
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/control_height_md"
-                            android:layout_marginStart="@dimen/control_group_gap"
+                            android:layout_height="@dimen/subject_height_md"
+                            android:layout_marginStart="@dimen/inline_gap"
                             android:layout_weight="1">
 
                             <androidx.appcompat.widget.AppCompatSpinner
                                 android:id="@+id/spinnerTradeSide"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
-                                android:background="@drawable/bg_spinner_filter"
                                 android:minWidth="0dp"
                                 android:popupBackground="@drawable/bg_spinner_popup"
                                 android:spinnerMode="dropdown" />
 
                             <TextView
                                 android:id="@+id/tvTradeSideLabel"
+                                style="@style/Widget.BinanceMonitor.Subject.SelectField.Label"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:clickable="false"
                                 android:ellipsize="end"
                                 android:focusable="false"
-                                android:gravity="center_vertical|start"
-                                android:includeFontPadding="false"
-                                android:maxLines="1"
-                                android:paddingStart="@dimen/space_12"
-                                android:paddingEnd="32dp"
-                                android:textColor="@color/text_primary"
-                                android:textSize="12sp" />
+                                android:maxLines="1" />
                         </FrameLayout>
 
                         <FrameLayout
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/control_height_md"
-                            android:layout_marginStart="@dimen/control_group_gap"
+                            android:layout_height="@dimen/subject_height_md"
+                            android:layout_marginStart="@dimen/inline_gap"
                             android:layout_weight="1">
 
                             <androidx.appcompat.widget.AppCompatSpinner
                                 android:id="@+id/spinnerTradeSort"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
-                                android:background="@drawable/bg_spinner_filter"
                                 android:minWidth="0dp"
                                 android:popupBackground="@drawable/bg_spinner_popup"
                                 android:spinnerMode="dropdown" />
 
                             <TextView
                                 android:id="@+id/tvTradeSortLabel"
+                                style="@style/Widget.BinanceMonitor.Subject.SelectField.Label"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:clickable="false"
                                 android:ellipsize="end"
                                 android:focusable="false"
-                                android:gravity="center_vertical|start"
-                                android:includeFontPadding="false"
-                                android:maxLines="1"
-                                android:paddingStart="@dimen/space_12"
-                                android:paddingEnd="32dp"
-                                android:textColor="@color/text_primary"
-                                android:textSize="12sp" />
+                                android:maxLines="1" />
                         </FrameLayout>
                     </LinearLayout>
 
@@ -705,15 +683,15 @@
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
                             android:nestedScrollingEnabled="true"
-                            android:paddingEnd="10dp" />
+                            android:paddingEnd="@dimen/field_padding_x_compact" />
 
                         <com.binance.monitor.ui.widget.TradeScrollBarView
                             android:id="@+id/viewTradeScrollBar"
                             android:layout_width="14dp"
                             android:layout_height="match_parent"
                             android:layout_gravity="end|center_vertical"
-                            android:paddingTop="8dp"
-                            android:paddingBottom="8dp" />
+                            android:paddingTop="@dimen/row_gap"
+                            android:paddingBottom="@dimen/row_gap" />
                     </FrameLayout>
 
                     <LinearLayout
@@ -741,7 +719,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="交易次数："
                                     android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
+                                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense" />
 
                                 <TextView
                                     android:id="@+id/tvTradeSummaryCountValue"
@@ -749,7 +727,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="0次"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="12sp" />
+                                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
                             </LinearLayout>
 
                             <LinearLayout
@@ -764,7 +742,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="库存费："
                                     android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
+                                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense" />
 
                                 <TextView
                                     android:id="@+id/tvTradeSummaryBalanceValue"
@@ -772,14 +750,14 @@
                                     android:layout_height="wrap_content"
                                     android:text="$0.00"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="12sp" />
+                                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
                             </LinearLayout>
                         </LinearLayout>
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/row_gap_compact"
                             android:gravity="center_vertical"
                             android:orientation="horizontal">
 
@@ -795,7 +773,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="盈亏："
                                     android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
+                                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense" />
 
                                 <TextView
                                     android:id="@+id/tvTradeSummaryPnlValue"
@@ -803,7 +781,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="$0.00"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="12sp" />
+                                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
                             </LinearLayout>
 
                             <LinearLayout
@@ -818,7 +796,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="结余："
                                     android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
+                                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense" />
 
                                 <TextView
                                     android:id="@+id/tvTradeSummaryStorageValue"
@@ -826,7 +804,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="$0.00"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="12sp" />
+                                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
                             </LinearLayout>
                         </LinearLayout>
                     </LinearLayout>
@@ -837,15 +815,15 @@
                 android:id="@+id/cardTradeStatsSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
-                android:layout_marginBottom="8dp"
+                android:layout_marginTop="@dimen/section_gap"
+                android:layout_marginBottom="@dimen/section_gap"
                 android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/card_content_padding">
+                    android:padding="@dimen/container_padding">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -857,14 +835,14 @@
                         android:id="@+id/recyclerStats"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
+                        android:layout_marginTop="@dimen/row_gap_compact"
                         android:nestedScrollingEnabled="false" />
 
                     <com.google.android.material.button.MaterialButtonToggleGroup
                         android:id="@+id/toggleTradePnlSide"
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/control_height_md"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="@dimen/row_gap"
                         app:singleSelection="true">
 
                         <com.google.android.material.button.MaterialButton
@@ -875,7 +853,7 @@
                             android:minWidth="0dp"
                             android:text="全部"
                             android:textAllCaps="false"
-                            android:textSize="11sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -887,7 +865,7 @@
                             android:minWidth="0dp"
                             android:text="买入"
                             android:textAllCaps="false"
-                            android:textSize="11sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -899,7 +877,7 @@
                             android:minWidth="0dp"
                             android:text="卖出"
                             android:textAllCaps="false"
-                            android:textSize="11sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
@@ -908,24 +886,24 @@
                         android:id="@+id/tvTradePnlSummary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
+                        android:layout_marginTop="@dimen/row_gap_compact"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
 
                     <TextView
                         android:id="@+id/tvTradePnlLegend"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
+                        android:layout_marginTop="@dimen/inline_gap_compact"
                         android:textColor="@color/text_secondary"
-                        android:textSize="11sp"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                         android:visibility="gone" />
 
                     <com.binance.monitor.ui.account.TradePnlBarChartView
                         android:id="@+id/tradePnlBarChart"
                         android:layout_width="match_parent"
                         android:layout_height="220dp"
-                        android:layout_marginTop="8dp" />
+                        android:layout_marginTop="@dimen/row_gap" />
 
                     <TextView
                         android:layout_width="match_parent"
@@ -933,7 +911,7 @@
                         android:layout_marginTop="@dimen/space_12"
                         android:text="全周期历史交易分布"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
 
                     <com.binance.monitor.ui.account.TradeDistributionScatterView
                         android:id="@+id/tradeDistributionScatterView"
@@ -947,7 +925,7 @@
                         android:layout_marginTop="@dimen/space_12"
                         android:text="全周期持仓时间分布"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
 
                     <com.binance.monitor.ui.account.HoldingDurationDistributionView
                         android:id="@+id/holdingDurationDistributionView"
@@ -961,7 +939,7 @@
                         android:layout_marginTop="@dimen/space_12"
                         android:text="按星期盈亏统计"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
 
                     <com.google.android.material.button.MaterialButtonToggleGroup
                         android:id="@+id/toggleTradeWeekdayBasis"
@@ -978,7 +956,7 @@
                             android:minWidth="0dp"
                             android:text="按平仓时间"
                             android:textAllCaps="false"
-                            android:textSize="11sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
 
@@ -990,7 +968,7 @@
                             android:minWidth="0dp"
                             android:text="按开仓时间"
                             android:textAllCaps="false"
-                            android:textSize="11sp"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartDense"
                             app:cornerRadius="0dp"
                             app:shapeAppearanceOverlay="@style/ShapeAppearanceBinanceMonitorSquare" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
@@ -1014,11 +992,11 @@
             android:clickable="false"
             android:focusable="false"
             android:gravity="center"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="10dp"
+            android:paddingHorizontal="@dimen/space_16"
+            android:paddingVertical="@dimen/container_padding"
             android:text="@string/account_login_success_banner"
-            android:textColor="@color/white"
-            android:textSize="15sp"
+            android:textColor="@color/text_inverse"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Body"
             android:translationY="8dp"
             android:visibility="gone" />
 
@@ -1039,15 +1017,15 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
+            android:drawablePadding="@dimen/inline_gap_compact"
             android:gravity="center"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
+            android:paddingTop="@dimen/row_gap"
+            android:paddingBottom="@dimen/row_gap_compact"
             android:text="@string/nav_market_monitor"
             android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Tiny" />
 
         <TextView
             android:id="@+id/tabMarketChart"
@@ -1055,15 +1033,15 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
+            android:drawablePadding="@dimen/inline_gap_compact"
             android:gravity="center"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
+            android:paddingTop="@dimen/row_gap"
+            android:paddingBottom="@dimen/row_gap_compact"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Tiny" />
 
         <TextView
             android:id="@+id/tabAccountPosition"
@@ -1071,15 +1049,15 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
+            android:drawablePadding="@dimen/inline_gap_compact"
             android:gravity="center"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
+            android:paddingTop="@dimen/row_gap"
+            android:paddingBottom="@dimen/row_gap_compact"
             android:text="@string/nav_account_position"
             android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Tiny" />
 
         <TextView
             android:id="@+id/tabAccountStats"
@@ -1087,15 +1065,15 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
+            android:drawablePadding="@dimen/inline_gap_compact"
             android:gravity="center"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
+            android:paddingTop="@dimen/row_gap"
+            android:paddingBottom="@dimen/row_gap_compact"
             android:text="@string/nav_account_stats"
-            android:textColor="@color/white"
-            android:textSize="10.5sp" />
+            android:textColor="@color/text_inverse"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Tiny" />
 
     </LinearLayout>
 
@@ -1123,8 +1101,8 @@
                 android:layout_height="0dp"
                 android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/tvStatsSummaryExpandHint"
+                <androidx.appcompat.widget.AppCompatImageView
+                    android:id="@+id/ivStatsSummaryExpandToggle"
                     android:layout_width="0dp"
                     android:layout_height="0dp" />
 
@@ -1165,6 +1143,26 @@
 
                 <TextView
                     android:id="@+id/tvStatsSummaryMetricFourValue"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricFiveLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricFiveValue"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricSixLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp" />
+
+                <TextView
+                    android:id="@+id/tvStatsSummaryMetricSixValue"
                     android:layout_width="0dp"
                     android:layout_height="0dp" />
 
@@ -1260,3 +1258,5 @@
         android:inflatedId="@+id/inflatedSharedAccountStatsContent"
         android:layout="@layout/content_account_stats" />
 </LinearLayout>
+
+

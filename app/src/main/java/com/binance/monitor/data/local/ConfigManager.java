@@ -22,6 +22,18 @@ public class ConfigManager {
     private static final String KEY_MONITORING_ENABLED = "monitoring_enabled";
     private static final String KEY_ACCOUNT_SESSION_ACTIVE = "account_session_active";
     private static final String KEY_DATA_MASKED = "data_masked";
+    private static final String KEY_TRADE_DEFAULT_VOLUME = "trade_default_volume";
+    private static final String KEY_TRADE_DEFAULT_SL = "trade_default_sl";
+    private static final String KEY_TRADE_DEFAULT_TP = "trade_default_tp";
+    private static final String KEY_TRADE_DEFAULT_TEMPLATE_ID = "trade_default_template_id";
+    private static final String KEY_TRADE_QUICK_TEMPLATE_ID = "trade_quick_template_id";
+    private static final String KEY_TRADE_TEMPLATES_JSON = "trade_templates_json";
+    private static final String KEY_TRADE_MAX_QUICK_MARKET_VOLUME = "trade_max_quick_market_volume";
+    private static final String KEY_TRADE_MAX_SINGLE_MARKET_VOLUME = "trade_max_single_market_volume";
+    private static final String KEY_TRADE_MAX_BATCH_ITEMS = "trade_max_batch_items";
+    private static final String KEY_TRADE_MAX_BATCH_TOTAL_VOLUME = "trade_max_batch_total_volume";
+    private static final String KEY_TRADE_FORCE_CONFIRM_ADD_POSITION = "trade_force_confirm_add_position";
+    private static final String KEY_TRADE_FORCE_CONFIRM_REVERSE = "trade_force_confirm_reverse";
     private static volatile ConfigManager instance;
 
     private final SharedPreferences preferences;
@@ -197,6 +209,102 @@ public class ConfigManager {
 
     public void setDataMasked(boolean masked) {
         preferences.edit().putBoolean(KEY_DATA_MASKED, masked).apply();
+    }
+
+    public double getTradeDefaultVolume() {
+        return preferences.getFloat(KEY_TRADE_DEFAULT_VOLUME, 0f);
+    }
+
+    public void setTradeDefaultVolume(double volume) {
+        preferences.edit().putFloat(KEY_TRADE_DEFAULT_VOLUME, (float) Math.max(0d, volume)).apply();
+    }
+
+    public double getTradeDefaultSl() {
+        return preferences.getFloat(KEY_TRADE_DEFAULT_SL, 0f);
+    }
+
+    public void setTradeDefaultSl(double sl) {
+        preferences.edit().putFloat(KEY_TRADE_DEFAULT_SL, (float) Math.max(0d, sl)).apply();
+    }
+
+    public double getTradeDefaultTp() {
+        return preferences.getFloat(KEY_TRADE_DEFAULT_TP, 0f);
+    }
+
+    public void setTradeDefaultTp(double tp) {
+        preferences.edit().putFloat(KEY_TRADE_DEFAULT_TP, (float) Math.max(0d, tp)).apply();
+    }
+
+    public String getTradeDefaultTemplateId() {
+        return preferences.getString(KEY_TRADE_DEFAULT_TEMPLATE_ID, "");
+    }
+
+    public void setTradeDefaultTemplateId(String templateId) {
+        preferences.edit().putString(KEY_TRADE_DEFAULT_TEMPLATE_ID, templateId == null ? "" : templateId.trim()).apply();
+    }
+
+    public String getTradeQuickTemplateId() {
+        return preferences.getString(KEY_TRADE_QUICK_TEMPLATE_ID, "");
+    }
+
+    public void setTradeQuickTemplateId(String templateId) {
+        preferences.edit().putString(KEY_TRADE_QUICK_TEMPLATE_ID, templateId == null ? "" : templateId.trim()).apply();
+    }
+
+    public String getTradeTemplatesJson() {
+        return preferences.getString(KEY_TRADE_TEMPLATES_JSON, "");
+    }
+
+    public void setTradeTemplatesJson(String templatesJson) {
+        preferences.edit().putString(KEY_TRADE_TEMPLATES_JSON, templatesJson == null ? "" : templatesJson).apply();
+    }
+
+    public double getTradeMaxQuickMarketVolume() {
+        return preferences.getFloat(KEY_TRADE_MAX_QUICK_MARKET_VOLUME, 0.10f);
+    }
+
+    public void setTradeMaxQuickMarketVolume(double value) {
+        preferences.edit().putFloat(KEY_TRADE_MAX_QUICK_MARKET_VOLUME, (float) Math.max(0d, value)).apply();
+    }
+
+    public double getTradeMaxSingleMarketVolume() {
+        return preferences.getFloat(KEY_TRADE_MAX_SINGLE_MARKET_VOLUME, 1.00f);
+    }
+
+    public void setTradeMaxSingleMarketVolume(double value) {
+        preferences.edit().putFloat(KEY_TRADE_MAX_SINGLE_MARKET_VOLUME, (float) Math.max(0d, value)).apply();
+    }
+
+    public int getTradeMaxBatchItems() {
+        return preferences.getInt(KEY_TRADE_MAX_BATCH_ITEMS, 4);
+    }
+
+    public void setTradeMaxBatchItems(int value) {
+        preferences.edit().putInt(KEY_TRADE_MAX_BATCH_ITEMS, Math.max(1, value)).apply();
+    }
+
+    public double getTradeMaxBatchTotalVolume() {
+        return preferences.getFloat(KEY_TRADE_MAX_BATCH_TOTAL_VOLUME, 2.00f);
+    }
+
+    public void setTradeMaxBatchTotalVolume(double value) {
+        preferences.edit().putFloat(KEY_TRADE_MAX_BATCH_TOTAL_VOLUME, (float) Math.max(0d, value)).apply();
+    }
+
+    public boolean isTradeForceConfirmAddPosition() {
+        return preferences.getBoolean(KEY_TRADE_FORCE_CONFIRM_ADD_POSITION, true);
+    }
+
+    public void setTradeForceConfirmAddPosition(boolean enabled) {
+        preferences.edit().putBoolean(KEY_TRADE_FORCE_CONFIRM_ADD_POSITION, enabled).apply();
+    }
+
+    public boolean isTradeForceConfirmReverse() {
+        return preferences.getBoolean(KEY_TRADE_FORCE_CONFIRM_REVERSE, true);
+    }
+
+    public void setTradeForceConfirmReverse(boolean enabled) {
+        preferences.edit().putBoolean(KEY_TRADE_FORCE_CONFIRM_REVERSE, enabled).apply();
     }
 
     private String getPrefix(String symbol) {

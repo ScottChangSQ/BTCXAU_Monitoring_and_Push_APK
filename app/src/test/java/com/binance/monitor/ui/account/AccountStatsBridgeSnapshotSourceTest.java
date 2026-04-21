@@ -165,7 +165,9 @@ public class AccountStatsBridgeSnapshotSourceTest {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("snapshot = host.buildEmptyAccountSnapshot();"));
+        assertFalse(source.contains("snapshot = host.buildEmptyAccountSnapshot();"));
+        assertFalse(source.contains("AccountSnapshot buildEmptyAccountSnapshot();"));
+        assertTrue(source.contains("snapshot = null;"));
         assertTrue(!source.contains("basePositions = new ArrayList<>(connectedPositionCache);"));
         assertTrue(!source.contains("basePendingOrders = new ArrayList<>(connectedPendingCache);"));
     }

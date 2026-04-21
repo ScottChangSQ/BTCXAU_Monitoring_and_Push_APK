@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.BinanceMonitor" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">@color/accent_blue</item>
-        <item name="colorOnPrimary">@color/white</item>
-        <item name="colorSecondary">@color/accent_gold</item>
+        <item name="colorPrimary">@color/accent_primary</item>
+        <item name="colorOnPrimary">@color/text_inverse</item>
+        <item name="colorSecondary">@color/accent_primary</item>
         <item name="colorOnSecondary">@color/text_primary</item>
-        <item name="colorTertiary">@color/accent_red</item>
-        <item name="colorSurface">@color/bg_card</item>
+        <item name="colorTertiary">@color/trade_sell</item>
+        <item name="colorSurface">@color/bg_card_base</item>
         <item name="colorOnSurface">@color/text_primary</item>
-        <item name="colorControlActivated">@color/accent_blue</item>
-        <item name="android:statusBarColor">@color/bg_surface</item>
-        <item name="android:navigationBarColor">@color/bg_card</item>
+        <item name="colorControlActivated">@color/accent_primary</item>
+        <item name="android:statusBarColor">@color/bg_panel_base</item>
+        <item name="android:navigationBarColor">@color/bg_card_base</item>
         <item name="android:windowBackground">@drawable/bg_app</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:fontFamily">sans-serif</item>
         <item name="materialCardViewStyle">@style/Widget.BinanceMonitor.Card</item>
-        <item name="textInputStyle">@style/Widget.BinanceMonitor.TextInputLayout</item>
-        <item name="materialButtonStyle">@style/Widget.BinanceMonitor.Button.PrimarySquare</item>
-        <item name="materialButtonOutlinedStyle">@style/Widget.BinanceMonitor.Button.SecondarySquare</item>
+        <item name="textInputStyle">@style/Widget.BinanceMonitor.Subject.InputField</item>
+        <item name="materialButtonStyle">@style/Widget.BinanceMonitor.Subject.ActionButton.Primary</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.BinanceMonitor.AlertDialog</item>
         <item name="bottomSheetDialogTheme">@style/ThemeOverlay.BinanceMonitor.BottomSheetDialog</item>
         <item name="android:windowLightStatusBar" tools:targetApi="23">false</item>
@@ -40,21 +40,11 @@
     </style>
 
     <style name="Widget.BinanceMonitor.Card" parent="Widget.Material3.CardView.Filled">
-        <item name="cardBackgroundColor">@color/bg_card</item>
-        <item name="strokeColor">@color/stroke_card</item>
+        <item name="cardBackgroundColor">@color/bg_card_base</item>
+        <item name="strokeColor">@color/border_subtle</item>
         <item name="strokeWidth">1dp</item>
         <item name="cardCornerRadius">@dimen/radius_lg</item>
         <item name="cardElevation">0dp</item>
-    </style>
-
-    <style name="Widget.BinanceMonitor.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox.Dense">
-        <item name="boxBackgroundColor">@color/bg_input</item>
-        <item name="boxCornerRadiusTopStart">@dimen/radius_md</item>
-        <item name="boxCornerRadiusTopEnd">@dimen/radius_md</item>
-        <item name="boxCornerRadiusBottomStart">@dimen/radius_md</item>
-        <item name="boxCornerRadiusBottomEnd">@dimen/radius_md</item>
-        <item name="hintTextColor">@color/text_secondary</item>
-        <item name="boxStrokeColor">@android:color/transparent</item>
     </style>
 
     <style name="TextAppearance.BinanceMonitor.Title" parent="TextAppearance.Material3.TitleMedium">
@@ -63,12 +53,12 @@
     </style>
 
     <style name="ThemeOverlay.BinanceMonitor.AlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
-        <item name="backgroundTint">@color/bg_card</item>
-        <item name="colorSurface">@color/bg_card</item>
+        <item name="backgroundTint">@color/bg_card_base</item>
+        <item name="colorSurface">@color/bg_card_base</item>
         <item name="colorOnSurface">@color/text_primary</item>
         <item name="android:textColor">@color/text_primary</item>
-        <item name="colorPrimary">@color/accent_blue</item>
-        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorPrimary">@color/accent_primary</item>
+        <item name="colorOnPrimary">@color/text_inverse</item>
         <item name="shapeAppearanceOverlay">@style/ShapeAppearanceBinanceMonitorSquare</item>
     </style>
 
@@ -77,7 +67,7 @@
     </style>
 
     <style name="Widget.BinanceMonitor.BottomSheet" parent="Widget.Material3.BottomSheet.Modal">
-        <item name="backgroundTint">@color/bg_card</item>
+        <item name="backgroundTint">@color/bg_card_base</item>
         <item name="shapeAppearanceOverlay">@style/ShapeAppearanceBinanceMonitorSquare</item>
     </style>
 </resources>

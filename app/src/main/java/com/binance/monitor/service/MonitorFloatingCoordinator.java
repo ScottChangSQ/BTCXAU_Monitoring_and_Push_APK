@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.local.ConfigManager;
+import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.runtime.AppForegroundTracker;
@@ -25,6 +26,7 @@ import com.binance.monitor.util.ChainLatencyTracer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 final class MonitorFloatingCoordinator {
@@ -46,6 +48,7 @@ final class MonitorFloatingCoordinator {
     private final MonitorRepository repository;
     private final DataSource dataSource;
     private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore;
+    private final FloatingRevisionRefreshPolicy revisionRefreshPolicy = new FloatingRevisionRefreshPolicy();
     private boolean floatingRefreshScheduled;
     private long lastFloatingRefreshAt;
     private final Runnable floatingRefreshRunnable = new Runnable() {
@@ -98,6 +101,9 @@ final class MonitorFloatingCoordinator {
         if (floatingWindowManager == null) {
             return;
         }
+        if (!immediate && !revisionRefreshPolicy.shouldRefresh(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures())) {
+            return;
+        }
         long now = System.currentTimeMillis();
         long elapsed = now - lastFloatingRefreshAt;
         long throttleMs = resolveFloatingRefreshThrottleMs();
@@ -143,6 +149,7 @@ final class MonitorFloatingCoordinator {
             ChainLatencyTracer.markFloatingUpdate(card.getCode(), card.getUpdatedAt());
         }
         floatingWindowManager.update(snapshot);
+        revisionRefreshPolicy.markApplied(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures());
     }
 
     // 组装一份统一悬浮窗快照，确保所有字段在同一次 UI 刷新中一起变化。
@@ -159,13 +166,9 @@ final class MonitorFloatingCoordinator {
 
     @NonNull
     private List<FloatingSymbolCardData> buildFloatingCards(@Nullable AccountStatsPreloadManager.Cache cache) {
-        boolean showBtc = configManager != null && configManager.isShowBtc();
-        boolean showXau = configManager != null && configManager.isShowXau();
-        List<String> visibleSymbols = FloatingPositionAggregator.filterMarketSymbols(
-                Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
-                showBtc,
-                showXau
-        );
+        List<String> visibleSymbols = resolveVisibleSymbols();
+        java.util.Map<String, KlineData> latestKlines = buildVisibleClosedMinuteSnapshot(visibleSymbols);
+        java.util.Map<String, Double> latestPrices = buildVisiblePriceSnapshot(visibleSymbols);
         if (cache != null && cache.getSnapshot() != null) {
             List<FloatingCardRuntimeModel> runtimeCards = new ArrayList<>();
             for (String symbol : visibleSymbols) {
@@ -174,18 +177,80 @@ final class MonitorFloatingCoordinator {
             return FloatingPositionAggregator.buildSymbolCardsFromRuntime(
                     visibleSymbols,
                     runtimeCards,
-                    repository == null ? null : repository.getDisplayOverviewKlineSnapshot(),
-                    repository == null ? null : repository.getDisplayPriceSnapshot()
+                    latestKlines,
+                    latestPrices
             );
         }
         List<com.binance.monitor.domain.account.model.PositionItem> positions = copyCachePositions(cache);
         return FloatingPositionAggregator.buildSymbolCards(
                 positions,
-                repository == null ? null : repository.getDisplayOverviewKlineSnapshot(),
-                repository == null ? null : repository.getDisplayPriceSnapshot(),
+                latestKlines,
+                latestPrices,
+                configManager != null && configManager.isShowBtc(),
+                configManager != null && configManager.isShowXau()
+        );
+    }
+
+    @NonNull
+    private java.util.Map<String, KlineData> buildVisibleClosedMinuteSnapshot(@NonNull List<String> visibleSymbols) {
+        java.util.Map<String, KlineData> snapshot = new LinkedHashMap<>();
+        if (repository == null || visibleSymbols.isEmpty()) {
+            return snapshot;
+        }
+        for (String symbol : visibleSymbols) {
+            KlineData closedMinute = repository.selectClosedMinute(symbol);
+            if (closedMinute != null) {
+                snapshot.put(symbol, closedMinute);
+            }
+        }
+        return snapshot;
+    }
+
+    @NonNull
+    private java.util.Map<String, Double> buildVisiblePriceSnapshot(@NonNull List<String> visibleSymbols) {
+        java.util.Map<String, Double> snapshot = new LinkedHashMap<>();
+        if (repository == null || visibleSymbols.isEmpty()) {
+            return snapshot;
+        }
+        for (String symbol : visibleSymbols) {
+            if (repository.selectMarketWindowSignature(symbol).isEmpty()) {
+                continue;
+            }
+            snapshot.put(symbol, repository.selectLatestPrice(symbol));
+        }
+        return snapshot;
+    }
+
+    @NonNull
+    private List<String> resolveVisibleSymbols() {
+        boolean showBtc = configManager != null && configManager.isShowBtc();
+        boolean showXau = configManager != null && configManager.isShowXau();
+        return FloatingPositionAggregator.filterMarketSymbols(
+                Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
                 showBtc,
                 showXau
         );
+    }
+
+    @NonNull
+    private List<Long> resolveVisibleProductRevisions() {
+        List<Long> revisions = new ArrayList<>();
+        for (String symbol : resolveVisibleSymbols()) {
+            revisions.add(runtimeSnapshotStore.selectProduct(symbol).getProductRevision());
+        }
+        return revisions;
+    }
+
+    @NonNull
+    private List<String> resolveVisibleMarketSignatures() {
+        List<String> signatures = new ArrayList<>();
+        if (repository == null) {
+            return signatures;
+        }
+        for (String symbol : resolveVisibleSymbols()) {
+            signatures.add(repository.selectMarketWindowSignature(symbol));
+        }
+        return signatures;
     }
 
     // 复制账户正式缓存里的持仓列表，避免悬浮窗直接持有可变对象引用。

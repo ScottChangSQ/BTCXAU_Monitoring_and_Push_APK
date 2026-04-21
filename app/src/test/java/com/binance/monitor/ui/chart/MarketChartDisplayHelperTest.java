@@ -298,6 +298,29 @@ public class MarketChartDisplayHelperTest {
     }
 
     @Test
+    public void isSeriesCompatibleForIntervalShouldRejectInternalGapForFifteenMinuteSeries() {
+        List<CandleEntry> preview = Arrays.asList(
+                candle(0L, 100d),
+                candle(15L * 60_000L, 101d),
+                candle(45L * 60_000L, 103d)
+        );
+
+        assertFalse(MarketChartDisplayHelper.isSeriesCompatibleForInterval("15m", preview));
+    }
+
+    @Test
+    public void isSeriesCompatibleForIntervalShouldRejectDuplicateBucketForOneHourSeries() {
+        List<CandleEntry> preview = Arrays.asList(
+                candle(0L, 100d),
+                candle(60L * 60_000L, 101d),
+                candle(60L * 60_000L, 102d),
+                candle(120L * 60_000L, 103d)
+        );
+
+        assertFalse(MarketChartDisplayHelper.isSeriesCompatibleForInterval("1h", preview));
+    }
+
+    @Test
     public void shouldShowBlockingLoadingShouldOnlyBlockWhenNoVisibleCandles() {
         assertTrue(MarketChartDisplayHelper.shouldShowBlockingLoading(false, Collections.emptyList()));
         assertFalse(MarketChartDisplayHelper.shouldShowBlockingLoading(false, Collections.singletonList(candle(1_000L, 100d))));

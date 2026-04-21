@@ -1,8 +1,8 @@
 /*
  * 账户历史补拉并发 gate，负责把“是否在补拉中”和“最新待续跑 revision”收口到同一个同步原语。
- * MonitorService 通过它避免 lock、标记位和待处理 revision 在多个位置散落。
+ * AccountStatsPreloadManager 通过它避免补拉并发状态散落在服务层。
  */
-package com.binance.monitor.service.account;
+package com.binance.monitor.runtime.account;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;

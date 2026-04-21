@@ -4,13 +4,11 @@
  */
 package com.binance.monitor.ui.chart;
 
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.os.Handler;
-import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -25,25 +23,41 @@ import com.binance.monitor.R;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.CandleEntry;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
+import com.binance.monitor.data.model.v2.trade.BatchTradePlan;
+import com.binance.monitor.data.model.v2.trade.BatchTradeReceipt;
+import com.binance.monitor.data.model.v2.trade.TradeTemplate;
 import com.binance.monitor.databinding.ActivityMarketChartBinding;
 import com.binance.monitor.databinding.DialogTradeCommandBinding;
 import com.binance.monitor.domain.account.AccountTimeRange;
+import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.theme.UiPaletteManager;
+import com.binance.monitor.ui.trade.BatchTradeCoordinator;
+import com.binance.monitor.ui.trade.BatchTradeResultFormatter;
+import com.binance.monitor.ui.trade.TradeAuditActivity;
+import com.binance.monitor.ui.trade.TradeComplexActionPlanner;
 import com.binance.monitor.ui.trade.TradeCommandFactory;
 import com.binance.monitor.ui.trade.TradeCommandStateMachine;
 import com.binance.monitor.ui.trade.TradeExecutionCoordinator;
+import com.binance.monitor.ui.trade.TradeTemplateRepository;
 import com.binance.monitor.util.FormatUtils;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 final class MarketChartTradeDialogCoordinator {
+    private static final String COMPLEX_ACTION_FULL_CLOSE = "全部平仓";
+    private static final String COMPLEX_ACTION_PARTIAL_CLOSE = "部分平仓";
+    private static final String COMPLEX_ACTION_ADD_POSITION = "加仓";
+    private static final String COMPLEX_ACTION_REVERSE = "反手";
+    private static final String COMPLEX_ACTION_CLOSE_BY = "对锁平仓";
 
     interface Host {
         void refreshChartOverlays();
@@ -79,6 +93,9 @@ final class MarketChartTradeDialogCoordinator {
         private final double tp;
         private final long positionTicket;
         private final long orderTicket;
+        private final String complexAction;
+        private final double targetVolume;
+        private final PositionItem targetItem;
 
         // 记录一次交易弹窗采样后的完整输入。
         private TradeDialogInput(ChartTradeAction action,
@@ -89,7 +106,10 @@ final class MarketChartTradeDialogCoordinator {
                                  double sl,
                                  double tp,
                                  long positionTicket,
-                                 long orderTicket) {
+                                 long orderTicket,
+                                 String complexAction,
+                                 double targetVolume,
+                                 @Nullable PositionItem targetItem) {
             this.action = action;
             this.symbol = symbol == null ? "" : symbol;
             this.orderType = orderType == null ? "" : orderType;
@@ -99,6 +119,9 @@ final class MarketChartTradeDialogCoordinator {
             this.tp = tp;
             this.positionTicket = positionTicket;
             this.orderTicket = orderTicket;
+            this.complexAction = complexAction == null ? "" : complexAction;
+            this.targetVolume = targetVolume;
+            this.targetItem = targetItem;
         }
     }
 
@@ -108,6 +131,8 @@ final class MarketChartTradeDialogCoordinator {
     private final ExecutorService ioExecutor;
     private final AccountStatsPreloadManager accountStatsPreloadManager;
     private final TradeExecutionCoordinator tradeExecutionCoordinator;
+    private final BatchTradeCoordinator batchTradeCoordinator;
+    private final TradeTemplateRepository tradeTemplateRepository;
     private final SecureSessionPrefs secureSessionPrefs;
     private final SymbolProvider symbolProvider;
     private final CandleProvider candleProvider;
@@ -123,6 +148,8 @@ final class MarketChartTradeDialogCoordinator {
                                       @Nullable ExecutorService ioExecutor,
                                       @Nullable AccountStatsPreloadManager accountStatsPreloadManager,
                                       @Nullable TradeExecutionCoordinator tradeExecutionCoordinator,
+                                      @Nullable BatchTradeCoordinator batchTradeCoordinator,
+                                      @Nullable TradeTemplateRepository tradeTemplateRepository,
                                       @NonNull SymbolProvider symbolProvider,
                                       @NonNull CandleProvider candleProvider,
                                       @NonNull Host host) {
@@ -132,6 +159,8 @@ final class MarketChartTradeDialogCoordinator {
         this.ioExecutor = ioExecutor;
         this.accountStatsPreloadManager = accountStatsPreloadManager;
         this.tradeExecutionCoordinator = tradeExecutionCoordinator;
+        this.batchTradeCoordinator = batchTradeCoordinator;
+        this.tradeTemplateRepository = tradeTemplateRepository;
         this.secureSessionPrefs = new SecureSessionPrefs(activity.getApplicationContext());
         this.symbolProvider = symbolProvider;
         this.candleProvider = candleProvider;
@@ -188,6 +217,7 @@ final class MarketChartTradeDialogCoordinator {
                                       @Nullable PositionItem targetItem,
                                       @NonNull DialogTradeCommandBinding dialogBinding) {
         boolean showOrderType = action == ChartTradeAction.PENDING_ADD;
+        boolean showComplexAction = action == ChartTradeAction.CLOSE_POSITION && targetItem != null;
         boolean showVolume = action == ChartTradeAction.OPEN_BUY
                 || action == ChartTradeAction.OPEN_SELL
                 || action == ChartTradeAction.PENDING_ADD;
@@ -196,8 +226,10 @@ final class MarketChartTradeDialogCoordinator {
         boolean showRiskFields = action != ChartTradeAction.CLOSE_POSITION
                 && action != ChartTradeAction.PENDING_CANCEL;
         double referencePrice = resolveTradeReferencePrice(targetItem, targetItem);
+        TradeTemplate defaultTemplate = resolveDefaultTradeTemplate(action);
 
         dialogBinding.layoutTradeOrderType.setVisibility(showOrderType ? View.VISIBLE : View.GONE);
+        dialogBinding.layoutTradeComplexAction.setVisibility(showComplexAction ? View.VISIBLE : View.GONE);
         dialogBinding.tvTradeVolumeLabel.setVisibility(showVolume ? View.VISIBLE : View.GONE);
         dialogBinding.etTradeVolume.setVisibility(showVolume ? View.VISIBLE : View.GONE);
         dialogBinding.tvTradePriceLabel.setVisibility(showPrice ? View.VISIBLE : View.GONE);
@@ -213,11 +245,52 @@ final class MarketChartTradeDialogCoordinator {
                     new String[]{"buy_limit", "sell_limit", "buy_stop", "sell_stop"}
             ));
         }
+        if (showComplexAction) {
+            dialogBinding.spinnerTradeComplexAction.setAdapter(createTradeOrderTypeAdapter(
+                    new String[]{
+                            COMPLEX_ACTION_FULL_CLOSE,
+                            COMPLEX_ACTION_PARTIAL_CLOSE,
+                            COMPLEX_ACTION_ADD_POSITION,
+                            COMPLEX_ACTION_REVERSE,
+                            COMPLEX_ACTION_CLOSE_BY
+                    }
+            ));
+            dialogBinding.spinnerTradeComplexAction.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                @Override
+                public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                    updateTradeComplexActionFields(dialogBinding, targetItem);
+                }
+
+                @Override
+                public void onNothingSelected(AdapterView<?> parent) {
+                    updateTradeComplexActionFields(dialogBinding, targetItem);
+                }
+            });
+            dialogBinding.etTradeTargetVolume.setText(String.format(Locale.getDefault(), "%.2f", Math.abs(targetItem.getQuantity())));
+            updateTradeComplexActionFields(dialogBinding, targetItem);
+        } else {
+            dialogBinding.tvTradeTargetVolumeLabel.setVisibility(View.GONE);
+            dialogBinding.etTradeTargetVolume.setVisibility(View.GONE);
+        }
         if (showVolume) {
-            dialogBinding.etTradeVolume.setText("0.10");
+            double defaultVolume = defaultTemplate == null ? 0d : defaultTemplate.getDefaultVolume();
+            if (defaultVolume <= 0d && tradeTemplateRepository != null) {
+                defaultVolume = tradeTemplateRepository.getDefaultVolume();
+            }
+            if (defaultVolume > 0d) {
+                dialogBinding.etTradeVolume.setText(FormatUtils.formatVolume(defaultVolume));
+            }
         }
         if (showPrice && referencePrice > 0d) {
             dialogBinding.etTradePrice.setText(FormatUtils.formatPrice(referencePrice));
+        }
+        if (showRiskFields && defaultTemplate != null) {
+            if (defaultTemplate.getDefaultSl() > 0d) {
+                dialogBinding.etTradeSl.setText(FormatUtils.formatPrice(defaultTemplate.getDefaultSl()));
+            }
+            if (defaultTemplate.getDefaultTp() > 0d) {
+                dialogBinding.etTradeTp.setText(FormatUtils.formatPrice(defaultTemplate.getDefaultTp()));
+            }
         }
         if (action == ChartTradeAction.PENDING_MODIFY && targetItem != null) {
             if (targetItem.getPendingPrice() > 0d) {
@@ -251,7 +324,7 @@ final class MarketChartTradeDialogCoordinator {
             return new TradeDialogInput(action, symbol, "", volume, 0d,
                     parseOptionalTradeValue(dialogBinding.etTradeSl),
                     parseOptionalTradeValue(dialogBinding.etTradeTp),
-                    0L, 0L);
+                    0L, 0L, "", 0d, targetItem);
         }
         if (action == ChartTradeAction.PENDING_ADD) {
             double volume = requirePositiveTradeValue(dialogBinding.etTradeVolume, "手数");
@@ -264,7 +337,7 @@ final class MarketChartTradeDialogCoordinator {
             return new TradeDialogInput(action, symbol, orderType, volume, price,
                     parseOptionalTradeValue(dialogBinding.etTradeSl),
                     parseOptionalTradeValue(dialogBinding.etTradeTp),
-                    0L, 0L);
+                    0L, 0L, "", 0d, targetItem);
         }
         if (action == ChartTradeAction.PENDING_MODIFY) {
             if (targetItem == null) {
@@ -279,7 +352,7 @@ final class MarketChartTradeDialogCoordinator {
             if (price <= 0d && sl <= 0d && tp <= 0d) {
                 throw new IllegalArgumentException("请至少填写价格、止损或止盈中的一项");
             }
-            return new TradeDialogInput(action, symbol, "", 0d, price, sl, tp, 0L, targetItem.getOrderId());
+            return new TradeDialogInput(action, symbol, "", 0d, price, sl, tp, 0L, targetItem.getOrderId(), "", 0d, targetItem);
         }
         if (action == ChartTradeAction.MODIFY_TPSL) {
             if (targetItem == null) {
@@ -295,7 +368,7 @@ final class MarketChartTradeDialogCoordinator {
             }
             return new TradeDialogInput(action, symbol, "", 0d,
                     referencePrice > 0d ? referencePrice : 0d,
-                    sl, tp, targetItem.getPositionTicket(), 0L);
+                    sl, tp, targetItem.getPositionTicket(), 0L, "", 0d, targetItem);
         }
         if (action == ChartTradeAction.CLOSE_POSITION) {
             if (targetItem == null) {
@@ -304,6 +377,7 @@ final class MarketChartTradeDialogCoordinator {
             if (targetItem.getPositionTicket() <= 0L) {
                 throw new IllegalArgumentException("当前持仓缺少 positionTicket，暂时不能平仓");
             }
+            String complexAction = resolveSelectedTradeComplexAction(dialogBinding);
             return new TradeDialogInput(action,
                     symbol,
                     "",
@@ -312,7 +386,10 @@ final class MarketChartTradeDialogCoordinator {
                     0d,
                     0d,
                     targetItem.getPositionTicket(),
-                    0L);
+                    0L,
+                    complexAction,
+                    parseOptionalTradeValue(dialogBinding.etTradeTargetVolume),
+                    targetItem);
         }
         if (action == ChartTradeAction.PENDING_CANCEL) {
             if (targetItem == null) {
@@ -329,7 +406,10 @@ final class MarketChartTradeDialogCoordinator {
                     0d,
                     0d,
                     0L,
-                    targetItem.getOrderId());
+                    targetItem.getOrderId(),
+                    "",
+                    0d,
+                    targetItem);
         }
         throw new IllegalArgumentException("当前动作不支持表单提交");
     }
@@ -344,7 +424,68 @@ final class MarketChartTradeDialogCoordinator {
         if (accountId.isEmpty()) {
             throw new IllegalArgumentException("当前账户未连接，暂时不能交易");
         }
+        BatchTradePlan batchPlan = buildBatchTradePlan(accountId, baselineCache, input);
+        if (batchPlan != null) {
+            requestBatchTradeExecution(batchPlan);
+            return;
+        }
         requestTradeExecution(buildTradeCommand(accountId, input), baselineCache);
+    }
+
+    // 复杂动作统一先展开成批量计划，再交给第三阶段 batch 主链处理。
+    @Nullable
+    private BatchTradePlan buildBatchTradePlan(@NonNull String accountId,
+                                               @Nullable AccountStatsPreloadManager.Cache baselineCache,
+                                               @NonNull TradeDialogInput input) {
+        if (input.action != ChartTradeAction.CLOSE_POSITION || input.targetItem == null) {
+            return null;
+        }
+        if (COMPLEX_ACTION_FULL_CLOSE.equals(input.complexAction) || input.complexAction.trim().isEmpty()) {
+            return null;
+        }
+        if (COMPLEX_ACTION_PARTIAL_CLOSE.equals(input.complexAction)) {
+            if (input.targetVolume <= 0d) {
+                throw new IllegalArgumentException("目标手数必须大于 0");
+            }
+            return TradeComplexActionPlanner.planPartialClose(
+                    accountId,
+                    resolveTradeAccountMode(baselineCache),
+                    input.targetItem,
+                    input.targetVolume
+            );
+        }
+        if (COMPLEX_ACTION_ADD_POSITION.equals(input.complexAction)) {
+            if (input.targetVolume <= 0d) {
+                throw new IllegalArgumentException("目标手数必须大于 0");
+            }
+            return TradeComplexActionPlanner.planAddPosition(
+                    accountId,
+                    resolveTradeAccountMode(baselineCache),
+                    resolveTradeSymbol(input.targetItem),
+                    input.targetItem.getSide(),
+                    input.targetVolume,
+                    resolveTradeReferencePrice(input.targetItem, input.targetItem),
+                    0d,
+                    0d
+            );
+        }
+        if (COMPLEX_ACTION_REVERSE.equals(input.complexAction)) {
+            if (input.targetVolume <= 0d) {
+                throw new IllegalArgumentException("目标手数必须大于 0");
+            }
+            return TradeComplexActionPlanner.planReverse(
+                    accountId,
+                    resolveTradeAccountMode(baselineCache),
+                    input.targetItem,
+                    input.targetVolume,
+                    resolveTradeReferencePrice(input.targetItem, input.targetItem)
+            );
+        }
+        if (COMPLEX_ACTION_CLOSE_BY.equals(input.complexAction)) {
+            PositionItem oppositePosition = resolveCloseByOppositePosition(baselineCache, input.targetItem);
+            return TradeComplexActionPlanner.planCloseBy(accountId, input.targetItem, oppositePosition);
+        }
+        throw new IllegalArgumentException("当前复杂动作暂不支持");
     }
 
     // 直接用已有命令进入执行链，避免页面层复制提交流程。
@@ -385,6 +526,34 @@ final class MarketChartTradeDialogCoordinator {
         });
     }
 
+    // 执行批量交易计划，并在完成后展示总览和单项结果。
+    private void requestBatchTradeExecution(@Nullable BatchTradePlan plan) {
+        if (plan == null) {
+            return;
+        }
+        if (tradeFlowRunning) {
+            showTradeMessage("上一笔交易仍在处理中");
+            return;
+        }
+        if (batchTradeCoordinator == null || ioExecutor == null) {
+            showTradeMessage("批量交易链路未初始化");
+            return;
+        }
+        tradeFlowRunning = true;
+        tradePrepareTask = ioExecutor.submit(() -> {
+            try {
+                BatchTradeCoordinator.ExecutionResult result = batchTradeCoordinator.submit(plan);
+                mainHandler.post(() -> handleBatchTradeExecutionResult(result));
+            } catch (IllegalArgumentException exception) {
+                postTradeError(exception.getMessage());
+            } catch (Exception exception) {
+                postTradeError("批量交易失败：" + safeTradeMessage(exception.getMessage()));
+            } finally {
+                tradePrepareTask = null;
+            }
+        });
+    }
+
     // 处理检查后的待确认态。
     private void handlePreparedTrade(@NonNull TradeCommand command,
                                      @Nullable TradeExecutionCoordinator.PreparedTrade preparedTrade,
@@ -400,7 +569,11 @@ final class MarketChartTradeDialogCoordinator {
         }
         if (preparedTrade.getUiState() != TradeExecutionCoordinator.UiState.AWAITING_CONFIRMATION) {
             tradeFlowRunning = false;
-            showTradeOutcomeDialog(resolveTradeOutcomeTitle(preparedTrade.getUiState()), preparedTrade.getMessage());
+            showTradeOutcomeDialog(
+                    resolveTradeOutcomeTitle(preparedTrade.getUiState()),
+                    preparedTrade.getMessage(),
+                    preparedTrade.getStateMachine() == null ? "" : preparedTrade.getStateMachine().getCommand().getRequestId()
+            );
             return;
         }
         String message = TradeCommandFactory.describe(command) + "\n\n" + preparedTrade.getMessage();
@@ -455,22 +628,45 @@ final class MarketChartTradeDialogCoordinator {
         }
         showTradeOutcomeDialog(
                 resolveTradeOutcomeTitle(executionResult),
-                safeTradeMessage(executionResult.getMessage())
+                safeTradeMessage(executionResult.getMessage()),
+                resolveTradeTraceId(executionResult)
+        );
+    }
+
+    // 根据批量结果给用户展示总览和单项清单。
+    private void handleBatchTradeExecutionResult(@Nullable BatchTradeCoordinator.ExecutionResult executionResult) {
+        if (!canPresentTradeUi()) {
+            tradeFlowRunning = false;
+            return;
+        }
+        tradeFlowRunning = false;
+        if (executionResult == null || executionResult.getReceipt() == null) {
+            showTradeOutcomeDialog("结果未确认", "批量结果缺失，请等待后续刷新");
+            return;
+        }
+        if (executionResult.getLatestCache() != null) {
+            host.refreshChartOverlays();
+        }
+        showTradeOutcomeDialog(
+                resolveBatchTradeOutcomeTitle(executionResult),
+                buildBatchTradeOutcomeMessage(executionResult.getReceipt()),
+                executionResult.getReceipt().getBatchId()
         );
     }
 
     // 把表单输入转换成第一阶段交易命令。
     private TradeCommand buildTradeCommand(@NonNull String accountId, @NonNull TradeDialogInput input) {
+        TradeTemplate template = resolveDefaultTradeTemplate(input.action);
         switch (input.action) {
             case OPEN_BUY:
-                return TradeCommandFactory.openMarket(accountId, input.symbol, "buy",
-                        input.volume, input.price, input.sl, input.tp);
+                return applyTemplate(TradeCommandFactory.openMarket(accountId, input.symbol, "buy",
+                        input.volume, input.price, input.sl, input.tp), template);
             case OPEN_SELL:
-                return TradeCommandFactory.openMarket(accountId, input.symbol, "sell",
-                        input.volume, input.price, input.sl, input.tp);
+                return applyTemplate(TradeCommandFactory.openMarket(accountId, input.symbol, "sell",
+                        input.volume, input.price, input.sl, input.tp), template);
             case PENDING_ADD:
-                return TradeCommandFactory.pendingAdd(accountId, input.symbol, input.orderType,
-                        input.volume, input.price, input.sl, input.tp);
+                return applyTemplate(TradeCommandFactory.pendingAdd(accountId, input.symbol, input.orderType,
+                        input.volume, input.price, input.sl, input.tp), template);
             case PENDING_MODIFY:
                 return TradeCommandFactory.pendingModify(accountId, input.symbol,
                         input.orderTicket, input.price, input.sl, input.tp);
@@ -487,6 +683,50 @@ final class MarketChartTradeDialogCoordinator {
         }
     }
 
+    @Nullable
+    private TradeTemplate resolveDefaultTradeTemplate() {
+        return tradeTemplateRepository == null ? null : tradeTemplateRepository.getDefaultTemplate();
+    }
+
+    @Nullable
+    private TradeTemplate resolveDefaultTradeTemplate(@NonNull ChartTradeAction action) {
+        TradeTemplate defaultTemplate = resolveDefaultTradeTemplate();
+        if (defaultTemplate == null) {
+            return null;
+        }
+        if (action != ChartTradeAction.OPEN_BUY
+                && action != ChartTradeAction.OPEN_SELL
+                && action != ChartTradeAction.PENDING_ADD) {
+            return null;
+        }
+        String requiredScope = action == ChartTradeAction.PENDING_ADD ? "pending" : "market";
+        if (supportsEntryScope(defaultTemplate, requiredScope)) {
+            return defaultTemplate;
+        }
+        for (TradeTemplate template : tradeTemplateRepository.getTemplates()) {
+            if (supportsEntryScope(template, requiredScope)) {
+                return template;
+            }
+        }
+        return defaultTemplate;
+    }
+
+    private boolean supportsEntryScope(@Nullable TradeTemplate template, @NonNull String requiredScope) {
+        if (template == null) {
+            return false;
+        }
+        String scope = template.getEntryScope().trim().toLowerCase(Locale.ROOT);
+        return scope.isEmpty() || "both".equals(scope) || requiredScope.equals(scope);
+    }
+
+    @NonNull
+    private TradeCommand applyTemplate(@NonNull TradeCommand command, @Nullable TradeTemplate template) {
+        if (tradeTemplateRepository == null) {
+            return TradeCommandFactory.withTemplate(command, template);
+        }
+        return tradeTemplateRepository.applyTemplate(command, template);
+    }
+
     // 优先使用最新缓存，缺失时再触发一次前台抓取。
     @Nullable
     private AccountStatsPreloadManager.Cache resolveTradeBaselineCache() {
@@ -497,7 +737,7 @@ final class MarketChartTradeDialogCoordinator {
         if (isTradeBaselineCacheReady(latestCache)) {
             return latestCache;
         }
-        AccountStatsPreloadManager.Cache fetchedCache = accountStatsPreloadManager.fetchForUi(AccountTimeRange.ALL);
+        AccountStatsPreloadManager.Cache fetchedCache = accountStatsPreloadManager.fetchFullForUi(AccountTimeRange.ALL);
         return isTradeBaselineCacheReady(fetchedCache) ? fetchedCache : null;
     }
 
@@ -563,6 +803,104 @@ final class MarketChartTradeDialogCoordinator {
         return MarketChartTradeSupport.parseOptionalDouble(text, 0d);
     }
 
+    // 根据复杂动作切换目标手数字段显隐。
+    private void updateTradeComplexActionFields(@NonNull DialogTradeCommandBinding dialogBinding) {
+        updateTradeComplexActionFields(dialogBinding, null);
+    }
+
+    // 根据复杂动作切换目标手数字段与提示文案。
+    private void updateTradeComplexActionFields(@NonNull DialogTradeCommandBinding dialogBinding,
+                                                @Nullable PositionItem targetItem) {
+        String complexAction = resolveSelectedTradeComplexAction(dialogBinding);
+        boolean showTargetVolume = shouldShowTargetVolumeInput(complexAction);
+        dialogBinding.tvTradeTargetVolumeLabel.setVisibility(showTargetVolume ? View.VISIBLE : View.GONE);
+        dialogBinding.etTradeTargetVolume.setVisibility(showTargetVolume ? View.VISIBLE : View.GONE);
+        if (COMPLEX_ACTION_REVERSE.equals(complexAction)) {
+            dialogBinding.tvTradeTargetVolumeLabel.setText("反手开仓手数");
+        } else if (COMPLEX_ACTION_ADD_POSITION.equals(complexAction)) {
+            dialogBinding.tvTradeTargetVolumeLabel.setText("加仓手数");
+        } else {
+            dialogBinding.tvTradeTargetVolumeLabel.setText("目标手数");
+        }
+        if (targetItem != null) {
+            dialogBinding.tvTradeCommandHint.setText(resolveClosePositionComplexActionHint(targetItem, complexAction));
+        }
+    }
+
+    // 读取当前复杂动作选择。
+    @NonNull
+    private String resolveSelectedTradeComplexAction(@NonNull DialogTradeCommandBinding dialogBinding) {
+        Object selected = dialogBinding.spinnerTradeComplexAction.getSelectedItem();
+        return selected == null ? "" : selected.toString().trim();
+    }
+
+    // 只有部分平仓和反手需要显式输入目标手数。
+    private boolean shouldShowTargetVolumeInput(@Nullable String complexAction) {
+        return COMPLEX_ACTION_PARTIAL_CLOSE.equals(complexAction)
+                || COMPLEX_ACTION_ADD_POSITION.equals(complexAction)
+                || COMPLEX_ACTION_REVERSE.equals(complexAction);
+    }
+
+    // 解析当前账户模式，批量计划必须显式带出 netting/hedging 真值。
+    @NonNull
+    private String resolveTradeAccountMode(@Nullable AccountStatsPreloadManager.Cache baselineCache) {
+        if (baselineCache == null || baselineCache.getAccountMode() == null) {
+            return "";
+        }
+        return baselineCache.getAccountMode().trim();
+    }
+
+    // 解析 Close By 对应的唯一反向持仓；多笔或缺失都直接报明确边界。
+    @NonNull
+    private PositionItem resolveCloseByOppositePosition(@Nullable AccountStatsPreloadManager.Cache baselineCache,
+                                                        @NonNull PositionItem targetItem) {
+        AccountSnapshot snapshot = baselineCache == null ? null : baselineCache.getSnapshot();
+        if (snapshot == null || snapshot.getPositions() == null || snapshot.getPositions().isEmpty()) {
+            throw new IllegalArgumentException("当前没有可用于 Close By 的反向持仓");
+        }
+        List<PositionItem> matches = new ArrayList<>();
+        String targetSymbol = normalizeTradeSymbol(resolveTradeSymbol(targetItem));
+        String targetSide = normalizeTradeSide(targetItem.getSide());
+        for (PositionItem position : snapshot.getPositions()) {
+            if (position == null || position.getPositionTicket() == targetItem.getPositionTicket()) {
+                continue;
+            }
+            if (!targetSymbol.equals(normalizeTradeSymbol(resolveTradeSymbol(position)))) {
+                continue;
+            }
+            if (targetSide.equals(normalizeTradeSide(position.getSide()))) {
+                continue;
+            }
+            matches.add(position);
+        }
+        if (matches.isEmpty()) {
+            throw new IllegalArgumentException("当前没有可用于 Close By 的反向持仓");
+        }
+        if (matches.size() > 1) {
+            throw new IllegalArgumentException("当前存在多笔反向持仓，暂不支持直接 Close By");
+        }
+        return matches.get(0);
+    }
+
+    // 统一规整交易方向。
+    @NonNull
+    private String normalizeTradeSide(@Nullable String side) {
+        String normalized = side == null ? "" : side.trim().toLowerCase(Locale.ROOT);
+        if ("long".equals(normalized)) {
+            return "buy";
+        }
+        if ("short".equals(normalized)) {
+            return "sell";
+        }
+        return normalized;
+    }
+
+    // 统一规整交易品种。
+    @NonNull
+    private String normalizeTradeSymbol(@Nullable String symbol) {
+        return symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
+    }
+
     // 把后台线程错误安全回传到主线程。
     private void postTradeError(@Nullable String message) {
         mainHandler.post(() -> {
@@ -577,14 +915,24 @@ final class MarketChartTradeDialogCoordinator {
 
     // 弹出明确结果提示。
     private void showTradeOutcomeDialog(@NonNull String title, @Nullable String message) {
+        showTradeOutcomeDialog(title, message, "");
+    }
+
+    // 弹出明确结果提示，并在可追踪时提供“查看追踪”入口。
+    private void showTradeOutcomeDialog(@NonNull String title,
+                                        @Nullable String message,
+                                        @Nullable String traceId) {
         if (!canPresentTradeUi()) {
             tradeFlowRunning = false;
             return;
         }
+        String safeTraceId = traceId == null ? "" : traceId.trim();
         AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
                 .setTitle(title)
                 .setMessage(safeTradeMessage(message))
                 .setPositiveButton("知道了", null)
+                .setNeutralButton(safeTraceId.isEmpty() ? null : "查看追踪", safeTraceId.isEmpty() ? null : (dialogInterface, which) ->
+                        TradeAuditActivity.open(activity, safeTraceId))
                 .create();
         dialog.show();
         applyDialogSurface(dialog);
@@ -642,15 +990,17 @@ final class MarketChartTradeDialogCoordinator {
         };
     }
 
-    // 统一交易动作菜单列表项文字样式。
+    // 统一交易动作菜单列表项文字样式，不再手写旧 spinner 文案皮肤。
     private void styleTradeActionMenuItem(@Nullable View view) {
         if (!(view instanceof TextView)) {
             return;
         }
         TextView textView = (TextView) view;
-        textView.setTextColor(Color.WHITE);
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        textView.setTypeface(null, Typeface.NORMAL);
+        UiPaletteManager.styleSelectFieldLabel(
+                textView,
+                UiPaletteManager.resolve(activity),
+                R.style.TextAppearance_BinanceMonitor_ControlCompact
+        );
     }
 
     // 交易弹窗挂单类型使用统一下拉样式。
@@ -665,14 +1015,14 @@ final class MarketChartTradeDialogCoordinator {
             @Override
             public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
                 View view = super.getView(position, convertView, parent);
-                styleTradeOrderTypeSpinnerItem(view);
+                styleTradeOrderTypeSelectFieldItem(view);
                 return view;
             }
 
             @Override
             public View getDropDownView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
                 View view = super.getDropDownView(position, convertView, parent);
-                styleTradeOrderTypeSpinnerItem(view);
+                styleTradeOrderTypeSelectFieldItem(view);
                 return view;
             }
         };
@@ -680,15 +1030,17 @@ final class MarketChartTradeDialogCoordinator {
         return adapter;
     }
 
-    // 统一挂单类型选项文字样式。
-    private void styleTradeOrderTypeSpinnerItem(@Nullable View view) {
+    // 统一挂单类型选择字段文字样式，避免弹窗里再分出独立 spinner 主体。
+    private void styleTradeOrderTypeSelectFieldItem(@Nullable View view) {
         if (!(view instanceof TextView)) {
             return;
         }
         TextView textView = (TextView) view;
-        textView.setTextColor(Color.WHITE);
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        textView.setTypeface(null, Typeface.NORMAL);
+        UiPaletteManager.styleSelectFieldLabel(
+                textView,
+                UiPaletteManager.resolve(activity),
+                R.style.TextAppearance_BinanceMonitor_ControlCompact
+        );
     }
 
     // 统一生成弹窗标题。
@@ -704,7 +1056,7 @@ final class MarketChartTradeDialogCoordinator {
             case PENDING_MODIFY:
                 return "修改挂单";
             case CLOSE_POSITION:
-                return "平仓确认";
+                return "持仓操作";
             case MODIFY_TPSL:
                 return "修改止盈止损";
             case PENDING_CANCEL:
@@ -720,7 +1072,7 @@ final class MarketChartTradeDialogCoordinator {
                                           @Nullable PositionItem targetItem,
                                           double referencePrice) {
         if (action == ChartTradeAction.CLOSE_POSITION) {
-            return "当前品种 " + resolveTradeSymbol(targetItem) + "，将按服务器实时价执行平仓。";
+            return resolveClosePositionComplexActionHint(targetItem, COMPLEX_ACTION_FULL_CLOSE);
         }
         if (action == ChartTradeAction.PENDING_CANCEL) {
             return "当前品种 " + resolveTradeSymbol(targetItem) + "，确认删除这笔挂单。";
@@ -741,6 +1093,26 @@ final class MarketChartTradeDialogCoordinator {
             return "当前品种 " + resolveTradeSymbol(targetItem) + "，请填写挂单手数和触发价格。";
         }
         return "当前品种 " + resolveTradeSymbol(targetItem) + "，将按服务器实时价执行，可选填写止损止盈。";
+    }
+
+    // 按复杂动作生成持仓处理提示，避免复杂动作仍显示固定平仓文案。
+    @NonNull
+    private String resolveClosePositionComplexActionHint(@Nullable PositionItem targetItem,
+                                                         @Nullable String complexAction) {
+        String symbol = resolveTradeSymbol(targetItem);
+        if (COMPLEX_ACTION_PARTIAL_CLOSE.equals(complexAction)) {
+            return "当前品种 " + symbol + "，请输入本次要平掉的手数。";
+        }
+        if (COMPLEX_ACTION_ADD_POSITION.equals(complexAction)) {
+            return "当前品种 " + symbol + "，将沿当前方向按目标手数继续加仓。";
+        }
+        if (COMPLEX_ACTION_REVERSE.equals(complexAction)) {
+            return "当前品种 " + symbol + "，将先平当前持仓，再按目标手数开反向仓位。";
+        }
+        if (COMPLEX_ACTION_CLOSE_BY.equals(complexAction)) {
+            return "当前品种 " + symbol + "，将按成对持仓执行对锁平仓。";
+        }
+        return "当前品种 " + symbol + "，将按服务器实时价执行平仓。";
     }
 
     // 把结果状态翻译成页面标题。
@@ -778,6 +1150,40 @@ final class MarketChartTradeDialogCoordinator {
         return "结果未确认";
     }
 
+    // 把批量执行状态翻译成页面标题。
+    @NonNull
+    private String resolveBatchTradeOutcomeTitle(@Nullable BatchTradeCoordinator.ExecutionResult executionResult) {
+        BatchTradeCoordinator.UiState uiState = executionResult == null ? null : executionResult.getUiState();
+        if (uiState == BatchTradeCoordinator.UiState.ACCEPTED) {
+            return "批量交易已受理";
+        }
+        if (uiState == BatchTradeCoordinator.UiState.PARTIAL) {
+            return "批量交易部分成功";
+        }
+        if (uiState == BatchTradeCoordinator.UiState.FAILED) {
+            return "批量交易失败";
+        }
+        return "结果未确认";
+    }
+
+    // 生成批量结果展示文案：先总览，再列单项结果。
+    @NonNull
+    private String buildBatchTradeOutcomeMessage(@Nullable BatchTradeReceipt receipt) {
+        String summary = BatchTradeResultFormatter.buildSummary(receipt);
+        List<String> itemLines = BatchTradeResultFormatter.buildItemLines(receipt);
+        if (itemLines.isEmpty()) {
+            return summary;
+        }
+        StringBuilder builder = new StringBuilder(summary).append("\n\n");
+        for (int index = 0; index < itemLines.size(); index++) {
+            if (index > 0) {
+                builder.append('\n');
+            }
+            builder.append(itemLines.get(index));
+        }
+        return builder.toString();
+    }
+
     // 统一处理空消息，避免提示框出现空白。
     @NonNull
     private String safeTradeMessage(@Nullable String message) {
@@ -785,5 +1191,13 @@ final class MarketChartTradeDialogCoordinator {
             return "请稍后查看账户刷新结果";
         }
         return message.trim();
+    }
+
+    @NonNull
+    private String resolveTradeTraceId(@Nullable TradeExecutionCoordinator.ExecutionResult executionResult) {
+        if (executionResult == null || executionResult.getStateMachine() == null || executionResult.getStateMachine().getCommand() == null) {
+            return "";
+        }
+        return executionResult.getStateMachine().getCommand().getRequestId();
     }
 }

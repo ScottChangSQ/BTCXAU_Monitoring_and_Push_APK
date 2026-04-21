@@ -59,6 +59,21 @@ public final class AccountSnapshotRefreshHostDelegate implements AccountSnapshot
         owner.setStoredSnapshotRestorePending(pending);
     }
 
+    @Override
+    public void onStoredSnapshotRestoreStarted() {
+        owner.onStoredSnapshotRestoreStarted();
+    }
+
+    @Override
+    public void onStoredSnapshotDataReady(@NonNull AccountStatsPreloadManager.Cache cache) {
+        owner.onStoredSnapshotDataReady(cache);
+    }
+
+    @Override
+    public void onStoredSnapshotRestoreMiss() {
+        owner.onStoredSnapshotRestoreMiss();
+    }
+
     @Nullable
     @Override
     public AccountStatsPreloadManager.Cache hydrateLatestCacheFromStorage() {
@@ -168,12 +183,6 @@ public final class AccountSnapshotRefreshHostDelegate implements AccountSnapshot
 
     @NonNull
     @Override
-    public AccountSnapshot buildEmptyAccountSnapshot() {
-        return owner.buildEmptyAccountSnapshot();
-    }
-
-    @NonNull
-    @Override
     public String normalizeSource(@Nullable String source) {
         return owner.normalizeSource(source);
     }
@@ -252,12 +261,10 @@ public final class AccountSnapshotRefreshHostDelegate implements AccountSnapshot
     @Override
     public boolean shouldApplyFetchedSnapshot(@Nullable AccountSnapshot snapshot,
                                               boolean remoteConnected,
-                                              boolean syntheticDisconnectedSnapshot,
                                               @Nullable String incomingHistoryRevision,
                                               @Nullable String requestStartHistoryRevision) {
         return owner.shouldApplyFetchedSnapshot(snapshot,
                 remoteConnected,
-                syntheticDisconnectedSnapshot,
                 incomingHistoryRevision,
                 requestStartHistoryRevision);
     }
@@ -269,8 +276,20 @@ public final class AccountSnapshotRefreshHostDelegate implements AccountSnapshot
 
     @Nullable
     @Override
-    public AccountStatsPreloadManager.Cache fetchForUi(@NonNull AccountTimeRange range) {
-        return owner.fetchForUi(range);
+    public AccountStatsPreloadManager.Cache fetchSnapshotForUiForIdentity(@NonNull String expectedAccount,
+                                                                          @NonNull String expectedServer) {
+        return owner.fetchSnapshotForUiForIdentity(expectedAccount, expectedServer);
+    }
+
+    @Nullable
+    @Override
+    public AccountStatsPreloadManager.Cache fetchFullForUi(@NonNull AccountTimeRange range) {
+        return owner.fetchFullForUi(range);
+    }
+
+    @Override
+    public void requestFullRefreshInBackground() {
+        owner.requestFullRefreshInBackground();
     }
 
     @Override
@@ -305,6 +324,12 @@ public final class AccountSnapshotRefreshHostDelegate implements AccountSnapshot
         boolean isStoredSnapshotRestorePending();
 
         void setStoredSnapshotRestorePending(boolean pending);
+
+        void onStoredSnapshotRestoreStarted();
+
+        void onStoredSnapshotDataReady(@NonNull AccountStatsPreloadManager.Cache cache);
+
+        void onStoredSnapshotRestoreMiss();
 
         @Nullable
         AccountStatsPreloadManager.Cache hydrateLatestCacheFromStorage();
@@ -354,9 +379,6 @@ public final class AccountSnapshotRefreshHostDelegate implements AccountSnapshot
         boolean isLoginCredentialMatched(@Nullable String remoteAccount, @Nullable String remoteServer);
 
         @NonNull
-        AccountSnapshot buildEmptyAccountSnapshot();
-
-        @NonNull
         String normalizeSource(@Nullable String source);
 
         @NonNull
@@ -396,14 +418,19 @@ public final class AccountSnapshotRefreshHostDelegate implements AccountSnapshot
 
         boolean shouldApplyFetchedSnapshot(@Nullable AccountSnapshot snapshot,
                                            boolean remoteConnected,
-                                           boolean syntheticDisconnectedSnapshot,
                                            @Nullable String incomingHistoryRevision,
                                            @Nullable String requestStartHistoryRevision);
 
         void adjustRefreshCadence(boolean connected, boolean unchanged);
 
         @Nullable
-        AccountStatsPreloadManager.Cache fetchForUi(@NonNull AccountTimeRange range);
+        AccountStatsPreloadManager.Cache fetchSnapshotForUiForIdentity(@NonNull String expectedAccount,
+                                                                       @NonNull String expectedServer);
+
+        @Nullable
+        AccountStatsPreloadManager.Cache fetchFullForUi(@NonNull AccountTimeRange range);
+
+        void requestFullRefreshInBackground();
 
         void executeIo(@NonNull Runnable action);
 

@@ -63,10 +63,10 @@ public class AbnormalRecordsDialogLayoutResourceTest {
     @Test
     public void dialogShouldKeepOuterSpacingDrivenBySharedModuleTokens() {
         org.w3c.dom.Element dialogRoot = document.getDocumentElement();
-        assertEquals("@dimen/page_horizontal_padding", dialogRoot.getAttribute("android:layout_marginHorizontal"));
+        assertEquals("@dimen/screen_edge_padding", dialogRoot.getAttribute("android:layout_marginHorizontal"));
         assertTrue(findElementById("inputLayoutAbnormalSearch")
                 .getAttribute("android:layout_marginTop")
-                .contains("@dimen/page_section_gap"));
+                .contains("@dimen/section_gap"));
     }
 
     private static Document parseXml(String... candidates) throws Exception {

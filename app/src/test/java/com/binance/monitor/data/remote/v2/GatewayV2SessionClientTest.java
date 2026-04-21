@@ -107,6 +107,30 @@ public class GatewayV2SessionClientTest {
     }
 
     @Test
+    public void parseSessionReceiptShouldReadSwitchFlowFields() throws Exception {
+        String body = "{"
+                + "\"ok\":true,"
+                + "\"state\":\"activated\","
+                + "\"requestId\":\"req-login-1\","
+                + "\"message\":\"切换前=11111111 / Old-Server；切换后=12345678 / New-Server；耗时=8000ms\","
+                + "\"stage\":\"switch_succeeded\","
+                + "\"elapsedMs\":8000,"
+                + "\"baselineAccount\":{\"profileId\":\"baseline\",\"login\":\"11111111\",\"server\":\"Old-Server\"},"
+                + "\"finalAccount\":{\"profileId\":\"final\",\"login\":\"12345678\",\"server\":\"New-Server\"},"
+                + "\"loginError\":\"\","
+                + "\"lastObservedAccount\":{\"profileId\":\"last\",\"login\":\"12345678\",\"server\":\"New-Server\"}"
+                + "}";
+
+        SessionReceipt receipt = GatewayV2SessionClient.parseSessionReceipt(body);
+
+        assertEquals("switch_succeeded", receipt.getStage());
+        assertEquals(8000L, receipt.getElapsedMs());
+        assertEquals("11111111", receipt.getBaselineAccount().getLogin());
+        assertEquals("12345678", receipt.getFinalAccount().getLogin());
+        assertEquals("12345678", receipt.getLastObservedAccount().getLogin());
+    }
+
+    @Test
     public void parseSessionReceiptShouldIgnoreLegacyAccountField() throws Exception {
         String body = "{"
                 + "\"ok\":true,"
@@ -135,5 +159,49 @@ public class GatewayV2SessionClientTest {
 
         assertTrue(payload.isOk());
         assertFalse(payload.getActiveAccount().isActive());
+    }
+
+    @Test
+    public void buildHttpFailureMessageShouldPreferStructuredDetailMessage() {
+        String body = "{"
+                + "\"detail\":{"
+                + "\"code\":\"SESSION_LOGIN_FAILED\","
+                + "\"message\":\"MetaTrader5 initialize/login failed: (-6, 'Authorization failed')\""
+                + "}"
+                + "}";
+
+        String message = GatewayV2SessionClient.buildHttpFailureMessage(502, "/v2/session/login", body);
+
+        assertEquals("MetaTrader5 initialize/login failed: (-6, 'Authorization failed')", message);
+    }
+
+    @Test
+    public void buildHttpFailureMessageShouldSupportPlainStringDetail() {
+        String body = "{"
+                + "\"detail\":\"MT5 login probe timed out after 125s\""
+                + "}";
+
+        String message = GatewayV2SessionClient.buildHttpFailureMessage(502, "/v2/session/login", body);
+
+        assertEquals("MT5 login probe timed out after 125s", message);
+    }
+
+    @Test
+    public void buildHttpFailureMessageShouldSummarizeStructuredSwitchFlowFailure() {
+        String body = "{"
+                + "\"detail\":{"
+                + "\"code\":\"SESSION_LOGIN_FAILED\","
+                + "\"message\":\"30s 内未切换到目标账号\","
+                + "\"stage\":\"switch_timeout_account_not_changed\","
+                + "\"loginError\":\"(-6, 'Authorization failed')\","
+                + "\"lastObservedAccount\":{\"login\":\"11111111\",\"server\":\"Old-Server\"}"
+                + "}"
+                + "}";
+
+        String message = GatewayV2SessionClient.buildHttpFailureMessage(502, "/v2/session/login", body);
+
+        assertTrue(message.contains("stage=switch_timeout_account_not_changed"));
+        assertTrue(message.contains("loginError=(-6, 'Authorization failed')"));
+        assertTrue(message.contains("lastObserved=11111111 / Old-Server"));
     }
 }

@@ -11,11 +11,9 @@ import com.binance.monitor.databinding.ContentAccountStatsBinding;
 import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
-import com.binance.monitor.util.FormatUtils;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 final class AccountStatsCurveRenderHelper {
 
@@ -206,33 +204,7 @@ final class AccountStatsCurveRenderHelper {
     @NonNull
     private static String buildCurveMeta(@Nullable List<CurvePoint> points,
                                          @Nullable CurveAnalyticsHelper.DrawdownSegment drawdownSegment) {
-        if (points == null || points.isEmpty()) {
-            return "--";
-        }
-        double start = points.get(0).getEquity();
-        double currentEquity = points.get(points.size() - 1).getEquity();
-        double currentBalance = points.get(points.size() - 1).getBalance();
-        double rangeReturn = safeDivide(currentEquity - start, Math.max(1d, start)) * 100d;
-        String gapText = signedMoney(currentEquity - currentBalance);
-        if (drawdownSegment == null) {
-            return String.format(Locale.getDefault(),
-                    "区间净值 $%s | 当前净值 $%s | 当前结余 $%s | 区间收益 %+.2f%% | 浮盈差额 %s",
-                    FormatUtils.formatPrice(start),
-                    FormatUtils.formatPrice(currentEquity),
-                    FormatUtils.formatPrice(currentBalance),
-                    rangeReturn,
-                    gapText);
-        }
-        return String.format(Locale.getDefault(),
-                "区间净值 $%s | 当前净值 $%s | 当前结余 $%s | 最大回撤区间 %s -> %s | 最大回撤 %.2f%% | 区间收益 %+.2f%% | 浮盈差额 %s",
-                FormatUtils.formatPrice(start),
-                FormatUtils.formatPrice(currentEquity),
-                FormatUtils.formatPrice(currentBalance),
-                FormatUtils.formatTime(drawdownSegment.getPeakTimestamp()),
-                FormatUtils.formatTime(drawdownSegment.getValleyTimestamp()),
-                drawdownSegment.getDrawdownRate() * 100d,
-                rangeReturn,
-                gapText);
+        return "";
     }
 
     // 没有服务端指标时回退到占位指标，保证 UI 结构稳定。
@@ -251,15 +223,4 @@ final class AccountStatsCurveRenderHelper {
         return result;
     }
 
-    private static double safeDivide(double numerator, double denominator) {
-        if (Math.abs(denominator) < 1e-9) {
-            return 0d;
-        }
-        return numerator / denominator;
-    }
-
-    @NonNull
-    private static String signedMoney(double value) {
-        return String.format(Locale.getDefault(), "%s$%s", value >= 0d ? "+" : "-", FormatUtils.formatPrice(Math.abs(value)));
-    }
 }

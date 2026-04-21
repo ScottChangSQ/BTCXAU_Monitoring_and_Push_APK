@@ -50,27 +50,33 @@ final class ChartQuickTradeCoordinator {
 
     // 按当前输入直接生成市价买入命令。
     void executeMarketBuy(@NonNull String volumeText) {
-        executor.execute(TradeCommandFactory.openMarket(
-                requireAccountId(),
-                requireSymbol(),
-                "buy",
-                requireVolume(volumeText),
-                requireCurrentPrice(),
-                0d,
-                0d
+        executor.execute(TradeCommandFactory.withEntryMode(
+                TradeCommandFactory.openMarket(
+                        requireAccountId(),
+                        requireSymbol(),
+                        "buy",
+                        requireVolume(volumeText),
+                        requireCurrentPrice(),
+                        0d,
+                        0d
+                ),
+                "quick"
         ));
     }
 
     // 按当前输入直接生成市价卖出命令。
     void executeMarketSell(@NonNull String volumeText) {
-        executor.execute(TradeCommandFactory.openMarket(
-                requireAccountId(),
-                requireSymbol(),
-                "sell",
-                requireVolume(volumeText),
-                requireCurrentPrice(),
-                0d,
-                0d
+        executor.execute(TradeCommandFactory.withEntryMode(
+                TradeCommandFactory.openMarket(
+                        requireAccountId(),
+                        requireSymbol(),
+                        "sell",
+                        requireVolume(volumeText),
+                        requireCurrentPrice(),
+                        0d,
+                        0d
+                ),
+                "quick"
         ));
     }
 

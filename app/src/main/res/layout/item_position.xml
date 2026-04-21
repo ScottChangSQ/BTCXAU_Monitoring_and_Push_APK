@@ -9,10 +9,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingStart="@dimen/position_row_header_padding_horizontal"
-        android:paddingTop="@dimen/position_row_header_padding_vertical"
-        android:paddingEnd="@dimen/position_row_header_padding_horizontal"
-        android:paddingBottom="@dimen/position_row_header_padding_vertical">
+        android:paddingStart="@dimen/list_item_padding_x"
+        android:paddingTop="@dimen/list_item_padding_y"
+        android:paddingEnd="@dimen/list_item_padding_x"
+        android:paddingBottom="@dimen/list_item_padding_y">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -51,30 +51,36 @@
 
                 <TextView
                     android:id="@+id/btnPositionCloseAction"
-                    style="@style/Widget.BinanceMonitor.TextAction.RowCompact"
+                    style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
                     android:layout_width="wrap_content"
                     android:layout_height="@dimen/position_row_action_height"
-                    android:background="@drawable/bg_position_action_button"
+                    android:minHeight="@dimen/subject_height_compact"
+                    android:paddingStart="@dimen/field_padding_x_compact"
+                    android:paddingEnd="@dimen/field_padding_x_compact"
                     android:text="平仓"
                     android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/btnPositionModifyAction"
-                    style="@style/Widget.BinanceMonitor.TextAction.RowCompact"
+                    style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
                     android:layout_width="wrap_content"
                     android:layout_height="@dimen/position_row_action_height"
-                    android:layout_marginStart="@dimen/control_group_gap"
-                    android:background="@drawable/bg_position_action_button"
+                    android:layout_marginStart="@dimen/inline_gap"
+                    android:minHeight="@dimen/subject_height_compact"
+                    android:paddingStart="@dimen/field_padding_x_compact"
+                    android:paddingEnd="@dimen/field_padding_x_compact"
                     android:text="修改"
                     android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/btnPositionDeleteAction"
-                    style="@style/Widget.BinanceMonitor.TextAction.RowCompact"
+                    style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
                     android:layout_width="wrap_content"
                     android:layout_height="@dimen/position_row_action_height"
-                    android:layout_marginStart="@dimen/control_group_gap"
-                    android:background="@drawable/bg_position_action_button_danger"
+                    android:layout_marginStart="@dimen/inline_gap"
+                    android:minHeight="@dimen/subject_height_compact"
+                    android:paddingStart="@dimen/field_padding_x_compact"
+                    android:paddingEnd="@dimen/field_padding_x_compact"
                     android:text="删除"
                     android:visibility="gone" />
             </LinearLayout>
@@ -113,7 +119,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_4"
-                android:textColor="@color/accent_green"
+                android:textColor="@color/pnl_profit"
                 android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
         </LinearLayout>
     </LinearLayout>
@@ -121,6 +127,6 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginStart="@dimen/page_horizontal_padding"
-        android:background="@color/divider" />
+        android:layout_marginStart="@dimen/screen_edge_padding"
+        android:background="@color/border_subtle" />
 </LinearLayout>

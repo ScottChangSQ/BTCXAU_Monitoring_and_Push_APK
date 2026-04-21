@@ -20,10 +20,13 @@ class WindowsServerBundleTests(unittest.TestCase):
 
             expected_files = [
                 output_dir / "bundle_manifest.json",
+                output_dir / "mt5_gateway" / "mt5_direct_login.py",
+                output_dir / "mt5_gateway" / "v2_mt5_account_switch.py",
                 output_dir / "mt5_gateway" / "v2_session_crypto.py",
                 output_dir / "mt5_gateway" / "v2_session_manager.py",
                 output_dir / "mt5_gateway" / "v2_session_models.py",
                 output_dir / "mt5_gateway" / "v2_session_store.py",
+                output_dir / "mt5_gateway" / "v2_market_runtime.py",
                 output_dir / "deploy_bundle.ps1",
                 output_dir / "deploy_bundle.cmd",
             ]
@@ -83,6 +86,66 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertIn("System.Security.Cryptography.SHA256", bootstrap_script)
         self.assertNotIn("Get-FileHash", bootstrap_script)
 
+    def test_bootstrap_script_should_fail_fast_when_native_dependency_setup_fails(self) -> None:
+        bootstrap_script = (builder.SOURCE_WINDOWS_DIR / "01_bootstrap_gateway.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("function Invoke-NativeCommandSafely", bootstrap_script)
+        self.assertIn("function Resolve-CompatiblePythonCommand", bootstrap_script)
+        self.assertIn('Python 3.8 or newer (64-bit) is required for the MT5 gateway bundle.', bootstrap_script)
+        self.assertIn('$resolvedPythonCommand = Resolve-CompatiblePythonCommand -PreferredPythonExe $PythonExe', bootstrap_script)
+        self.assertIn('$venvArguments = @($resolvedPythonCommand.PrefixArguments + @("-m", "venv"))', bootstrap_script)
+        self.assertIn('$venvArguments += "--upgrade"', bootstrap_script)
+        self.assertIn('Invoke-NativeCommandSafely -FilePath $resolvedPythonCommand.FilePath -Arguments $venvArguments', bootstrap_script)
+        self.assertIn('Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @("-m", "pip", "install", "--upgrade", "pip")', bootstrap_script)
+        self.assertIn('Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt")', bootstrap_script)
+        self.assertIn('PrefixArguments = @("-3")', bootstrap_script)
+        self.assertNotIn('& $PythonExe -m venv .venv', bootstrap_script)
+        self.assertNotIn('& $venvPython -m pip install --upgrade pip', bootstrap_script)
+        self.assertNotIn('& $venvPython -m pip install -r requirements.txt', bootstrap_script)
+
+    def test_bootstrap_script_should_require_64bit_python_for_windows_mt5_dependencies(self) -> None:
+        bootstrap_script = (builder.SOURCE_WINDOWS_DIR / "01_bootstrap_gateway.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("import sys, struct;", bootstrap_script)
+        self.assertIn("struct.calcsize('P') * 8", bootstrap_script)
+        self.assertIn('Python 3.8 or newer (64-bit) is required for the MT5 gateway bundle.', bootstrap_script)
+        self.assertIn("Bits = [int]$parts[2]", bootstrap_script)
+        self.assertIn("($versionInfo.Bits -eq 64)", bootstrap_script)
+        self.assertIn('Write-Host ("Using Python runtime: " + $resolvedPythonCommand.Label + " (" + $resolvedPythonCommand.Version + ", " + $resolvedPythonCommand.Bits + "-bit)")', bootstrap_script)
+
+    def test_bootstrap_script_should_capture_native_stderr_via_cmd_like_previous_working_version(self) -> None:
+        bootstrap_script = (builder.SOURCE_WINDOWS_DIR / "01_bootstrap_gateway.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('$commandLine = ($commandParts -join " ") + " 2>&1"', bootstrap_script)
+        self.assertIn('& cmd.exe /d /s /c $commandLine | ForEach-Object { $_ }', bootstrap_script)
+        self.assertIn('$exitCode = $LASTEXITCODE', bootstrap_script)
+        self.assertNotIn('NativeCommandRunner', bootstrap_script)
+
+    def test_start_gateway_should_validate_dependency_contract_before_reusing_requirements_stamp(self) -> None:
+        start_gateway_script = (builder.SOURCE_GATEWAY_DIR / "start_gateway.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("function Test-PythonVersionAtLeast", start_gateway_script)
+        self.assertIn('Python 3.8 or newer is required for the MT5 gateway runtime.', start_gateway_script)
+        self.assertIn('if (-not (Test-PythonVersionAtLeast -PythonPath $venvPython -MinimumMajor 3 -MinimumMinor 8)) {', start_gateway_script)
+        self.assertIn("function Test-GatewayDependencyContract", start_gateway_script)
+        self.assertIn('$dependencyModules = @("fastapi", "uvicorn", "MetaTrader5", "dotenv", "cryptography", "tzdata")', start_gateway_script)
+        self.assertIn('Test-GatewayDependencyContract -PythonPath $venvPython -ModuleNames $dependencyModules', start_gateway_script)
+        self.assertIn('Write-Host "Python dependency contract invalid, reinstalling dependencies..."', start_gateway_script)
+        self.assertIn('throw "Gateway dependency contract check failed after reinstall."', start_gateway_script)
+        self.assertIn('__import__(sys.argv[1])', start_gateway_script)
+        self.assertIn('$moduleCheckScript = "import sys; __import__(sys.argv[1])"', start_gateway_script)
+        self.assertIn('Write-Host ("Python dependency import failed: " + ($missingModules -join ", "))', start_gateway_script)
+        self.assertNotIn('import importlib', start_gateway_script)
+        self.assertNotIn('missing.append(f"{name}: {exc}")', start_gateway_script)
+
+    def test_start_gateway_should_capture_native_stderr_via_cmd_like_previous_working_version(self) -> None:
+        start_gateway_script = (builder.SOURCE_GATEWAY_DIR / "start_gateway.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('$commandLine = ($commandParts -join " ") + " 2>&1"', start_gateway_script)
+        self.assertIn('& cmd.exe /d /s /c $commandLine | ForEach-Object { $_ }', start_gateway_script)
+        self.assertIn('$exitCode = $LASTEXITCODE', start_gateway_script)
+        self.assertNotIn('NativeCommandRunner', start_gateway_script)
+
     def test_deploy_script_should_use_shared_log_io_between_gui_and_worker(self) -> None:
         deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
 
@@ -104,6 +167,9 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertIn('Start-HealthProbe -Context $Context -Label "8787 /v2/account/snapshot"', deploy_script)
         self.assertIn('Start-HealthProbe -Context $Context -Label "443 tradeapp.ltd/v2/account/snapshot"', deploy_script)
         self.assertIn('Start-HealthProbe -Context $Context -Label "wss://tradeapp.ltd/v2/stream"', deploy_script)
+        self.assertIn('Start-HealthProbe -Context $Context -Label "8787 /v2/account/full (diagnostic)"', deploy_script)
+        self.assertIn('http://127.0.0.1:8787/v2/account/full', deploy_script)
+        self.assertIn('健康检查通过: 8787 /v2/account/full (diagnostic)', deploy_script)
 
     def test_deploy_script_should_retry_websocket_probe_until_timeout(self) -> None:
         deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")

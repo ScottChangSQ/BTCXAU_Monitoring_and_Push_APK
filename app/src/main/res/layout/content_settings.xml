@@ -10,7 +10,7 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:fillViewport="true"
-        android:padding="@dimen/page_horizontal_padding">
+        android:padding="@dimen/screen_edge_padding">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -41,7 +41,7 @@
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/page_horizontal_padding">
+                android:paddingHorizontal="@dimen/screen_edge_padding">
 
                 <TextView
                     android:layout_width="0dp"
@@ -49,7 +49,7 @@
                     android:layout_weight="1"
                     android:text="悬浮窗与显示"
                     android:textColor="@color/text_primary"
-                    android:textSize="15sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
 
                 <ImageView
                     android:layout_width="24dp"
@@ -63,8 +63,8 @@
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginStart="@dimen/page_horizontal_padding"
-                android:background="@color/divider" />
+                android:layout_marginStart="@dimen/screen_edge_padding"
+                android:background="@color/border_subtle" />
 
             <LinearLayout
                 android:id="@+id/itemGateway"
@@ -76,7 +76,7 @@
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/page_horizontal_padding">
+                android:paddingHorizontal="@dimen/screen_edge_padding">
 
                 <TextView
                     android:layout_width="0dp"
@@ -84,7 +84,7 @@
                     android:layout_weight="1"
                     android:text="@string/mt5_gateway_section_title"
                     android:textColor="@color/text_primary"
-                    android:textSize="15sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
 
                 <ImageView
                     android:layout_width="24dp"
@@ -98,8 +98,43 @@
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginStart="@dimen/page_horizontal_padding"
-                android:background="@color/divider" />
+                android:layout_marginStart="@dimen/screen_edge_padding"
+                android:background="@color/border_subtle" />
+
+            <LinearLayout
+                android:id="@+id/itemTrade"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="@dimen/space_2"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/screen_edge_padding">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/settings_trade_section"
+                    android:textColor="@color/text_primary"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="@dimen/space_8"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_chevron_right"
+                    android:tint="@color/text_secondary" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="@dimen/screen_edge_padding"
+                android:background="@color/border_subtle" />
 
             <View
                 android:layout_width="match_parent"
@@ -121,7 +156,7 @@
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/page_horizontal_padding">
+                android:paddingHorizontal="@dimen/screen_edge_padding">
 
                 <TextView
                     android:layout_width="0dp"
@@ -129,7 +164,7 @@
                     android:layout_weight="1"
                     android:text="缓存管理"
                     android:textColor="@color/text_primary"
-                    android:textSize="15sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
 
                 <ImageView
                     android:layout_width="24dp"
@@ -143,8 +178,43 @@
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginStart="@dimen/page_horizontal_padding"
-                android:background="@color/divider" />
+                android:layout_marginStart="@dimen/screen_edge_padding"
+                android:background="@color/border_subtle" />
+
+            <LinearLayout
+                android:id="@+id/itemTradeAudit"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="@dimen/space_2"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/screen_edge_padding">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/settings_trade_audit"
+                    android:textColor="@color/text_primary"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="@dimen/space_8"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_chevron_right"
+                    android:tint="@color/text_secondary" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="@dimen/screen_edge_padding"
+                android:background="@color/border_subtle" />
 
             <LinearLayout
                 android:id="@+id/itemLogs"
@@ -156,7 +226,7 @@
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/page_horizontal_padding">
+                android:paddingHorizontal="@dimen/screen_edge_padding">
 
                 <TextView
                     android:layout_width="0dp"
@@ -164,7 +234,7 @@
                     android:layout_weight="1"
                     android:text="运行日志"
                     android:textColor="@color/text_primary"
-                    android:textSize="15sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
 
                 <ImageView
                     android:layout_width="24dp"

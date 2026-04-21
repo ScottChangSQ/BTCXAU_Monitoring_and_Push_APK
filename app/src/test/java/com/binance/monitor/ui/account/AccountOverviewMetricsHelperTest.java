@@ -6,6 +6,8 @@ package com.binance.monitor.ui.account;
 import static org.junit.Assert.assertEquals;
 
 import com.binance.monitor.domain.account.model.AccountMetric;
+import com.binance.monitor.ui.rules.IndicatorId;
+import com.binance.monitor.ui.rules.IndicatorRegistry;
 
 import org.junit.Test;
 
@@ -26,8 +28,6 @@ public class AccountOverviewMetricsHelperTest {
                 new AccountMetric("可用预付款", "$620.00"),
                 new AccountMetric("累计盈亏", "+$88.00"),
                 new AccountMetric("累计收益率", "+8.80%"),
-                new AccountMetric("当日盈亏", "+$12.00"),
-                new AccountMetric("当日收益率", "+1.20%"),
                 new AccountMetric("持仓盈亏", "+$20.00"),
                 new AccountMetric("持仓收益率", "+2.00%")
         );
@@ -41,13 +41,12 @@ public class AccountOverviewMetricsHelperTest {
                 TimeZone.getDefault()
         );
 
-        assertEquals("总资产", result.get(0).getName());
-        assertEquals("净值", result.get(1).getName());
-        assertEquals("可用预付款", result.get(2).getName());
-        assertEquals("保证金", result.get(3).getName());
-        assertEquals("当日盈亏", result.get(4).getName());
-        assertEquals("当日收益率", result.get(5).getName());
-        assertEquals("持仓盈亏", result.get(6).getName());
-        assertEquals("持仓收益率", result.get(7).getName());
+        assertEquals(IndicatorRegistry.require(IndicatorId.ACCOUNT_TOTAL_ASSET).getDisplayName(), result.get(0).getName());
+        assertEquals(IndicatorRegistry.require(IndicatorId.ACCOUNT_NET_ASSET).getDisplayName(), result.get(1).getName());
+        assertEquals(IndicatorRegistry.require(IndicatorId.ACCOUNT_AVAILABLE_FUNDS).getDisplayName(), result.get(2).getName());
+        assertEquals(IndicatorRegistry.require(IndicatorId.ACCOUNT_MARGIN).getDisplayName(), result.get(3).getName());
+        assertEquals(IndicatorRegistry.require(IndicatorId.ACCOUNT_POSITION_PNL).getDisplayName(), result.get(4).getName());
+        assertEquals(IndicatorRegistry.require(IndicatorId.ACCOUNT_POSITION_PNL_RATE).getDisplayName(), result.get(5).getName());
+        assertEquals(6, result.size());
     }
 }

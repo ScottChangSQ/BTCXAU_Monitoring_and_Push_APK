@@ -2,6 +2,7 @@ package com.binance.monitor.runtime.state;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.fail;
 
 import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.domain.account.model.PositionItem;
@@ -14,6 +15,7 @@ import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -70,13 +72,34 @@ public class UnifiedRuntimeSnapshotStoreTest {
     }
 
     @Test
-    public void productSnapshotShouldExposeSummaryTexts() {
-        store.applyAccountCache(buildCache("BTCUSD", 0.10d, 12.30d));
+    public void productSnapshotShouldExposeCrossPageSummaryAndPendingCount() {
+        store.applyAccountCache(new AccountStatsPreloadManager.Cache(
+                true,
+                new AccountSnapshot(
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        Collections.singletonList(buildPosition("BTCUSD", 0.10d, 12.30d)),
+                        Collections.singletonList(buildPending("BTCUSD", 0.20d)),
+                        Collections.emptyList(),
+                        Collections.emptyList()
+                ),
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "stream",
+                "gateway",
+                1000L,
+                "",
+                1001L,
+                "history-1"
+        ));
 
         ProductRuntimeSnapshot snapshot = store.selectProduct("BTCUSD");
         assertEquals("BTCUSD", snapshot.getSymbol());
         assertEquals(1, snapshot.getPositionCount());
-        assertEquals("挂单：--", snapshot.getPendingSummaryText());
+        assertEquals(1, snapshot.getPendingCount());
+        assertEquals("挂单：1笔", snapshot.getPendingSummaryText());
+        assertEquals("盈亏：+12.30 | 持仓：0.10手", invokeStringGetter(snapshot, "getCrossPageSummaryText"));
     }
 
     @Test
@@ -247,5 +270,42 @@ public class UnifiedRuntimeSnapshotStoreTest {
                 0d,
                 0d
         );
+    }
+
+    private static PositionItem buildPending(String symbol, double pendingLots) {
+        return new PositionItem(
+                symbol,
+                symbol,
+                "Buy",
+                0L,
+                30L,
+                0L,
+                0d,
+                0d,
+                100d,
+                100d,
+                0d,
+                0d,
+                0d,
+                0d,
+                0d,
+                pendingLots,
+                1,
+                100d,
+                0d,
+                0d,
+                0d
+        );
+    }
+
+    private static String invokeStringGetter(ProductRuntimeSnapshot snapshot, String methodName) {
+        try {
+            Method method = ProductRuntimeSnapshot.class.getMethod(methodName);
+            Object value = method.invoke(snapshot);
+            return value == null ? "" : value.toString();
+        } catch (ReflectiveOperationException exception) {
+            fail("缺少统一运行态方法: " + methodName);
+            return "";
+        }
     }
 }

@@ -1,28 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_primary">#06080B</color>
-    <color name="bg_surface">#0A0E12</color>
-    <color name="bg_card">#12181F</color>
-    <color name="bg_input">#161D25</color>
-    <color name="stroke_card">#27313A</color>
+    <!-- canonical color tokens: 第一阶段只允许这 14 个名字持有正式色值。 -->
+    <color name="bg_app_base">#06080B</color>
+    <color name="bg_panel_base">#0A0E12</color>
+    <color name="bg_card_base">#12181F</color>
+    <color name="bg_field_base">#161D25</color>
+    <color name="border_subtle">#27313A</color>
     <color name="text_primary">#F2F5F7</color>
     <color name="text_secondary">#93A0AA</color>
-    <color name="text_control_selected">#FFFFFF</color>
-    <color name="text_control_unselected">#93A0AA</color>
-    <color name="accent_cyan">#4F8CFF</color>
-    <color name="accent_gold">#D1A055</color>
-    <color name="accent_red">#E85C5C</color>
-    <color name="accent_green">#2DB784</color>
-    <color name="accent_blue">#4F8CFF</color>
-    <color name="divider">#1A222B</color>
-    <color name="vintage_orange">#5A3F1F</color>
-    <color name="vintage_mustard">#7E6741</color>
-    <color name="vintage_paper_dark">#19140F</color>
-    <color name="vintage_ink">#C9A46A</color>
-    <color name="grain_overlay">#08FFFFFF</color>
-    <color name="log_level_warn_bg">#18D1A055</color>
-    <color name="log_level_info_bg">#184F8CFF</color>
-    <color name="log_level_error_bg">#18E85C5C</color>
-    <color name="white">#FFFFFF</color>
-    <color name="transparent">#00000000</color>
+    <color name="text_inverse">#FFFFFF</color>
+    <color name="accent_primary">#D1A055</color>
+    <color name="state_warning">#D1A055</color>
+    <color name="trade_buy">#4F8CFF</color>
+    <color name="trade_sell">#E85C5C</color>
+    <color name="pnl_profit">#2DB784</color>
+    <color name="pnl_loss">#E85C5C</color>
+
+    <!-- 旧名字只允许做 alias，不能再保留自己的独立色值。 -->
+    <color name="bg_primary">@color/bg_app_base</color>
+    <color name="bg_surface">@color/bg_panel_base</color>
+    <color name="bg_card">@color/bg_card_base</color>
+    <color name="bg_input">@color/bg_field_base</color>
+    <color name="state_danger">@color/trade_sell</color>
+    <color name="state_success">@color/pnl_profit</color>
 </resources>

@@ -1,29 +1,36 @@
+/*
+ * 统一运行时主题入口，负责把共享控件收口到标准主体语言，并维护悬浮窗、输入框与滚轮的公共视觉真值。
+ */
 package com.binance.monitor.ui.theme;
 
 import android.app.Dialog;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.text.TextPaint;
 import android.text.TextUtils;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.CompoundButton;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.NumberPicker;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
+import androidx.annotation.ColorRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StyleRes;
 import androidx.activity.ComponentActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
@@ -32,10 +39,11 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.widget.CompoundButtonCompat;
-import androidx.core.widget.TextViewCompat;
 
 import com.binance.monitor.R;
 import com.binance.monitor.data.local.ConfigManager;
+import com.binance.monitor.ui.rules.ContainerSurfaceRegistry;
+import com.binance.monitor.ui.rules.ContainerSurfaceRole;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
@@ -43,6 +51,97 @@ import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.textfield.TextInputLayout;
 
 public final class UiPaletteManager {
+
+    private static final class PaletteDefinition {
+        final int id;
+        final String label;
+        final int surfaceStartResId;
+        final int surfaceEndResId;
+        final int cardResId;
+        final int controlResId;
+        final int strokeResId;
+        final int primaryResId;
+        final int primarySoftResId;
+        final int btcResId;
+        final int xauResId;
+        final int textPrimaryResId;
+        final int textSecondaryResId;
+        final int riseResId;
+        final int fallResId;
+        final int controlSelectedTextResId;
+        final int controlUnselectedTextResId;
+        final int radiusSmDp;
+        final int radiusMdDp;
+        final int radiusLgDp;
+
+        PaletteDefinition(int id,
+                          @NonNull String label,
+                          @ColorRes int surfaceStartResId,
+                          @ColorRes int surfaceEndResId,
+                          @ColorRes int cardResId,
+                          @ColorRes int controlResId,
+                          @ColorRes int strokeResId,
+                          @ColorRes int primaryResId,
+                          @ColorRes int primarySoftResId,
+                          @ColorRes int btcResId,
+                          @ColorRes int xauResId,
+                          @ColorRes int textPrimaryResId,
+                          @ColorRes int textSecondaryResId,
+                          @ColorRes int riseResId,
+                          @ColorRes int fallResId,
+                          @ColorRes int controlSelectedTextResId,
+                          @ColorRes int controlUnselectedTextResId,
+                          int radiusSmDp,
+                          int radiusMdDp,
+                          int radiusLgDp) {
+            this.id = id;
+            this.label = label;
+            this.surfaceStartResId = surfaceStartResId;
+            this.surfaceEndResId = surfaceEndResId;
+            this.cardResId = cardResId;
+            this.controlResId = controlResId;
+            this.strokeResId = strokeResId;
+            this.primaryResId = primaryResId;
+            this.primarySoftResId = primarySoftResId;
+            this.btcResId = btcResId;
+            this.xauResId = xauResId;
+            this.textPrimaryResId = textPrimaryResId;
+            this.textSecondaryResId = textSecondaryResId;
+            this.riseResId = riseResId;
+            this.fallResId = fallResId;
+            this.controlSelectedTextResId = controlSelectedTextResId;
+            this.controlUnselectedTextResId = controlUnselectedTextResId;
+            this.radiusSmDp = radiusSmDp;
+            this.radiusMdDp = radiusMdDp;
+            this.radiusLgDp = radiusLgDp;
+        }
+
+        @NonNull
+        Palette resolve(@NonNull Context context) {
+            return new Palette(
+                    id,
+                    label,
+                    color(context, surfaceStartResId),
+                    color(context, surfaceEndResId),
+                    color(context, cardResId),
+                    color(context, controlResId),
+                    color(context, strokeResId),
+                    color(context, primaryResId),
+                    color(context, primarySoftResId),
+                    color(context, btcResId),
+                    color(context, xauResId),
+                    color(context, textPrimaryResId),
+                    color(context, textSecondaryResId),
+                    color(context, riseResId),
+                    color(context, fallResId),
+                    color(context, controlSelectedTextResId),
+                    color(context, controlUnselectedTextResId),
+                    radiusSmDp,
+                    radiusMdDp,
+                    radiusLgDp
+            );
+        }
+    }
 
     public static final class Palette {
         public final int id;
@@ -68,49 +167,70 @@ public final class UiPaletteManager {
 
         private Palette(int id,
                         String label,
-                        String surfaceStartHex,
-                        String surfaceEndHex,
-                        String cardHex,
-                        String controlHex,
-                        String strokeHex,
-                        String primaryHex,
-                        String primarySoftHex,
-                        String btcHex,
-                        String xauHex,
-                        String textPrimaryHex,
-                        String textSecondaryHex,
-                        String riseHex,
-                        String fallHex,
-                        String controlSelectedTextHex,
-                        String controlUnselectedTextHex,
+                        int surfaceStart,
+                        int surfaceEnd,
+                        int card,
+                        int control,
+                        int stroke,
+                        int primary,
+                        int primarySoft,
+                        int btc,
+                        int xau,
+                        int textPrimary,
+                        int textSecondary,
+                        int rise,
+                        int fall,
+                        int controlSelectedText,
+                        int controlUnselectedText,
                         int radiusSmDp,
                         int radiusMdDp,
                         int radiusLgDp) {
             this.id = id;
             this.label = label;
-            this.surfaceStart = Color.parseColor(surfaceStartHex);
-            this.surfaceEnd = Color.parseColor(surfaceEndHex);
-            this.card = Color.parseColor(cardHex);
-            this.control = Color.parseColor(controlHex);
-            this.stroke = Color.parseColor(strokeHex);
-            this.primary = Color.parseColor(primaryHex);
-            this.primarySoft = Color.parseColor(primarySoftHex);
-            this.btc = Color.parseColor(btcHex);
-            this.xau = Color.parseColor(xauHex);
-            this.textPrimary = Color.parseColor(textPrimaryHex);
-            this.textSecondary = Color.parseColor(textSecondaryHex);
-            this.rise = Color.parseColor(riseHex);
-            this.fall = Color.parseColor(fallHex);
-            this.controlSelectedText = Color.parseColor(controlSelectedTextHex);
-            this.controlUnselectedText = Color.parseColor(controlUnselectedTextHex);
+            this.surfaceStart = surfaceStart;
+            this.surfaceEnd = surfaceEnd;
+            this.card = card;
+            this.control = control;
+            this.stroke = stroke;
+            this.primary = primary;
+            this.primarySoft = primarySoft;
+            this.btc = btc;
+            this.xau = xau;
+            this.textPrimary = textPrimary;
+            this.textSecondary = textSecondary;
+            this.rise = rise;
+            this.fall = fall;
+            this.controlSelectedText = controlSelectedText;
+            this.controlUnselectedText = controlUnselectedText;
             this.radiusSmDp = radiusSmDp;
             this.radiusMdDp = radiusMdDp;
             this.radiusLgDp = radiusLgDp;
         }
     }
 
-    private static final Palette[] PALETTES = new Palette[]{
-            new Palette(0, "金融专业风", "#06080B", "#0A0E12", "#12181F", "#161D25", "#27313A", "#D1A055", "#2C2114", "#4F8CFF", "#D8B061", "#F2F5F7", "#93A0AA", "#2DB784", "#E85C5C", "#FFFFFF", "#93A0AA", 0, 0, 0)
+    private static final PaletteDefinition[] PALETTES = new PaletteDefinition[]{
+            new PaletteDefinition(
+                    0,
+                    "金融专业风",
+                    R.color.bg_app_base,
+                    R.color.bg_panel_base,
+                    R.color.bg_card_base,
+                    R.color.bg_field_base,
+                    R.color.border_subtle,
+                    R.color.accent_primary,
+                    R.color.bg_card_base,
+                    R.color.trade_buy,
+                    R.color.state_warning,
+                    R.color.text_primary,
+                    R.color.text_secondary,
+                    R.color.pnl_profit,
+                    R.color.pnl_loss,
+                    R.color.text_inverse,
+                    R.color.text_secondary,
+                    0,
+                    0,
+                    0
+            )
     };
 
     private UiPaletteManager() {
@@ -122,7 +242,7 @@ public final class UiPaletteManager {
             selectedId = ConfigManager.getInstance(context.getApplicationContext()).getColorPalette();
         } catch (Exception ignored) {
         }
-        return findById(normalizePaletteId(selectedId));
+        return findById(context, normalizePaletteId(selectedId));
     }
 
     public static String[] labels() {
@@ -133,34 +253,81 @@ public final class UiPaletteManager {
         return labels;
     }
 
-    public static Palette[] all() {
-        return PALETTES.clone();
+    public static Palette[] all(@NonNull Context context) {
+        Palette[] palettes = new Palette[PALETTES.length];
+        for (int i = 0; i < PALETTES.length; i++) {
+            palettes[i] = PALETTES[i].resolve(context);
+        }
+        return palettes;
     }
 
-    public static Palette findById(int paletteId) {
+    public static Palette findById(@NonNull Context context, int paletteId) {
         int normalizedId = normalizePaletteId(paletteId);
-        for (Palette palette : PALETTES) {
+        for (PaletteDefinition palette : PALETTES) {
             if (palette.id == normalizedId) {
-                return palette;
+                return palette.resolve(context);
             }
         }
-        return PALETTES[0];
+        return PALETTES[0].resolve(context);
+    }
+
+    // 按正式容器角色创建基础背景，后续页面和弹层应优先从这里取外壳。
+    public static GradientDrawable createSurfaceForRole(@NonNull Context context,
+                                                        @NonNull Palette palette,
+                                                        @NonNull ContainerSurfaceRole role) {
+        switch (role) {
+            case PAGE_CANVAS: {
+                GradientDrawable drawable = new GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[]{palette.surfaceStart, palette.surfaceEnd});
+                drawable.setCornerRadius(resolveCornerRadiusPx(context, palette.radiusLgDp));
+                return drawable;
+            }
+            case FLOATING_SURFACE: {
+                GradientDrawable drawable = new GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[]{palette.surfaceStart, palette.surfaceEnd});
+                drawable.setCornerRadius(resolveCornerRadiusPx(context, palette.radiusLgDp));
+                // 悬浮窗展开态继续保持细描边，但略微提高可见度，避免深色背景下边界直接消失。
+                drawable.setStroke(floatingStrokeWidthPx(context), ColorUtils.blendARGB(palette.surfaceEnd, palette.stroke, 0.36f));
+                return drawable;
+            }
+            case ROW_SURFACE:
+                return createRectDrawable(
+                        context,
+                        palette.card,
+                        palette.stroke,
+                        resolveCornerRadiusPx(context, palette.radiusMdDp)
+                );
+            case FIELD_SURFACE:
+                return createRectDrawable(
+                        context,
+                        palette.control,
+                        palette.stroke,
+                        resolveCornerRadiusPx(context, palette.radiusMdDp)
+                );
+            case OVERLAY_SURFACE:
+            case SECTION_SURFACE:
+            default:
+                return createRectDrawable(
+                        context,
+                        palette.card,
+                        palette.stroke,
+                        resolveCornerRadiusPx(context, palette.radiusLgDp)
+                );
+        }
     }
 
     public static GradientDrawable createPageBackground(Context context, Palette palette) {
-        GradientDrawable drawable = new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{palette.surfaceStart, palette.surfaceEnd});
-        drawable.setCornerRadius(resolveCornerRadiusPx(context, palette.radiusLgDp));
-        return drawable;
+        return createSurfaceForRole(context, palette, ContainerSurfaceRole.PAGE_CANVAS);
     }
 
     public static GradientDrawable createFloatingBackground(Context context, Palette palette) {
-        GradientDrawable drawable = new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{palette.surfaceStart, palette.surfaceEnd});
-        drawable.setCornerRadius(resolveCornerRadiusPx(context, palette.radiusLgDp));
-        return drawable;
+        return createSurfaceForRole(
+                context,
+                palette,
+                ContainerSurfaceRegistry.resolveSectionRole("floating_window")
+        );
     }
 
     public static GradientDrawable createFilledDrawable(Context context, int fillColor) {
@@ -176,22 +343,26 @@ public final class UiPaletteManager {
     // 统一模块、弹窗和抽屉的 surface 外观，后续边框类调整只改这里。
     public static GradientDrawable createSurfaceDrawable(Context context, int fillColor, int strokeColor) {
         Palette palette = resolve(context);
-        return createRectDrawable(
+        GradientDrawable drawable = createSurfaceForRole(
                 context,
-                fillColor,
-                strokeColor,
-                resolveCornerRadiusPx(context, palette.radiusLgDp)
+                palette,
+                ContainerSurfaceRegistry.resolveSectionRole("section_surface")
         );
+        drawable.setColor(fillColor);
+        drawable.setStroke(dp(context, 1), strokeColor);
+        return drawable;
     }
 
     public static GradientDrawable createOutlinedDrawable(Context context, int fillColor, int strokeColor) {
         Palette palette = resolve(context);
-        return createRectDrawable(
+        GradientDrawable drawable = createSurfaceForRole(
                 context,
-                fillColor,
-                strokeColor,
-                resolveCornerRadiusPx(context, palette.radiusMdDp)
+                palette,
+                ContainerSurfaceRegistry.resolveSectionRole("field_surface")
         );
+        drawable.setColor(fillColor);
+        drawable.setStroke(dp(context, 1), strokeColor);
+        return drawable;
     }
 
     private static GradientDrawable createRectDrawable(Context context,
@@ -208,14 +379,40 @@ public final class UiPaletteManager {
         return drawable;
     }
 
+    private static int color(@NonNull Context context, @ColorRes int resId) {
+        return ContextCompat.getColor(context, resId);
+    }
+
+    private static int dividerColor(@NonNull Context context) {
+        return color(context, R.color.border_subtle);
+    }
+
+    private static int stateDanger(@NonNull Context context) {
+        return color(context, R.color.trade_sell);
+    }
+
+    private static int stateSuccess(@NonNull Context context) {
+        return color(context, R.color.pnl_profit);
+    }
+
+    private static int tradePending(@NonNull Context context) {
+        return color(context, R.color.state_warning);
+    }
+
+    private static int tradeExit(@NonNull Context context) {
+        return stateDanger(context);
+    }
+
     public static GradientDrawable createListRowBackground(Context context, int fillColor, int strokeColor) {
         Palette palette = resolve(context);
-        return createRectDrawable(
+        GradientDrawable drawable = createSurfaceForRole(
                 context,
-                fillColor,
-                strokeColor,
-                resolveCornerRadiusPx(context, palette.radiusMdDp)
+                palette,
+                ContainerSurfaceRegistry.resolveSectionRole("list_row")
         );
+        drawable.setColor(fillColor);
+        drawable.setStroke(dp(context, 1), strokeColor);
+        return drawable;
     }
 
     public static GradientDrawable createSectionBackground(Context context, int fillColor, int strokeColor) {
@@ -265,6 +462,14 @@ public final class UiPaletteManager {
         if (bottomSheet == null) {
             return;
         }
+        int horizontalMargin = SpacingTokenResolver.screenEdgePx(dialog.getContext());
+        ViewGroup.LayoutParams rawParams = bottomSheet.getLayoutParams();
+        if (rawParams instanceof ViewGroup.MarginLayoutParams) {
+            ViewGroup.MarginLayoutParams bottomSheetParams = (ViewGroup.MarginLayoutParams) rawParams;
+            bottomSheetParams.setMarginStart(horizontalMargin);
+            bottomSheetParams.setMarginEnd(horizontalMargin);
+            bottomSheet.setLayoutParams(bottomSheetParams);
+        }
         bottomSheet.setBackground(createSurfaceDrawable(dialog.getContext(), palette.card, palette.stroke));
     }
 
@@ -299,12 +504,17 @@ public final class UiPaletteManager {
         tab.setBackgroundColor(selected ? palette.primarySoft : palette.surfaceStart);
         tab.setTextColor(tintColor);
         tab.setTypeface(null, android.graphics.Typeface.NORMAL);
-        tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        applyTextAppearance(tab, R.style.TextAppearance_BinanceMonitor_ControlCompact);
         tab.setIncludeFontPadding(false);
         tab.setSingleLine(true);
         tab.setMaxLines(1);
-        tab.setPadding(0, dp(context, 8), 0, dp(context, 6));
-        tab.setCompoundDrawablePadding(dp(context, 2));
+        tab.setPadding(
+                0,
+                SpacingTokenResolver.rowGapPx(context),
+                0,
+                SpacingTokenResolver.rowGapCompactPx(context)
+        );
+        tab.setCompoundDrawablePadding(SpacingTokenResolver.inlineGapCompactPx(context));
         tab.setGravity(android.view.Gravity.CENTER);
         Drawable topIcon = resolveBottomNavIconDrawable(context, tab.getId(), tintColor);
         tab.setCompoundDrawablesRelativeWithIntrinsicBounds(null, topIcon, null, null);
@@ -332,127 +542,69 @@ public final class UiPaletteManager {
         return wrapped;
     }
 
-    // 统一图表页按钮样式，避免周期和指标按钮各自维护颜色逻辑。
-    public static void styleInlineTextButton(Button button,
-                                             boolean selected,
-                                             Palette palette,
-                                             float textSizeSp) {
+    // ActionButton 是所有带实体背景的文本操作入口真值。
+    public static void styleActionButton(@Nullable TextView button,
+                                         @NonNull Palette palette,
+                                         int fillColor,
+                                         int textColor,
+                                         @StyleRes int textAppearanceResId,
+                                         int horizontalPaddingDp,
+                                         int minHeightResId) {
         if (button == null || palette == null) {
-            return;
-        }
-        int fillColor = selected ? palette.primarySoft : palette.surfaceStart;
-        button.setBackground(createFilledDrawable(button.getContext(), fillColor));
-        button.setTextColor(selected
-                ? controlSelectedText(button.getContext())
-                : controlUnselectedText(button.getContext()));
-        button.setTypeface(null, android.graphics.Typeface.NORMAL);
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
-        button.setPaintFlags(button.getPaintFlags() & ~android.graphics.Paint.UNDERLINE_TEXT_FLAG);
-    }
-
-    // 统一方角按钮的文字排版和最小触达尺寸，避免不同页面重复维护一套规则。
-    public static void styleSquareTextAction(@Nullable TextView button,
-                                             @NonNull Palette palette,
-                                             int fillColor,
-                                             int textColor,
-                                             float textSizeSp,
-                                             int horizontalPaddingDp,
-                                             int minHeightResId,
-                                             boolean enableAutoSize) {
-        if (button == null) {
             return;
         }
         Context context = button.getContext();
         int minHeightPx = context.getResources().getDimensionPixelSize(minHeightResId);
-        int horizontalPaddingPx = dp(context, horizontalPaddingDp);
+        int horizontalPaddingPx = resolveRuntimeHorizontalPaddingPx(context, horizontalPaddingDp);
         button.setBackground(createFilledDrawable(context, fillColor));
         ViewCompat.setBackgroundTintList(button, null);
-        button.setTextColor(textColor);
-        button.setGravity(Gravity.CENTER);
-        button.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
-        button.setIncludeFontPadding(false);
-        button.setSingleLine(true);
-        button.setMaxLines(1);
-        button.setEllipsize(TextUtils.TruncateAt.END);
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
+        applySubjectTextLayout(button, textColor, textAppearanceResId);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
         button.setMinHeight(minHeightPx);
         button.setMinimumHeight(minHeightPx);
         button.setPadding(horizontalPaddingPx, 0, horizontalPaddingPx, 0);
-        if (enableAutoSize) {
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                    button,
-                    8,
-                    Math.round(textSizeSp),
-                    1,
-                    TypedValue.COMPLEX_UNIT_SP
-            );
-        } else {
-            TextViewCompat.setAutoSizeTextTypeWithDefaults(button, TextViewCompat.AUTO_SIZE_TEXT_TYPE_NONE);
-        }
     }
 
-    // 统一交易页顶部按钮视觉，保证产品、模式和状态入口属于同一组控件。
-    public static void styleTopControlButton(@Nullable TextView button,
-                                             @NonNull Palette palette,
-                                             boolean selected,
-                                             boolean enableAutoSize) {
-        if (button == null) {
-            return;
-        }
-        int fillColor = selected
-                ? palette.primarySoft
-                : palette.control;
-        int textColor = selected
-                ? controlSelectedText(button.getContext())
-                : controlUnselectedText(button.getContext());
-        styleSquareTextAction(
+    public static void styleActionButton(@Nullable TextView button,
+                                         @NonNull Palette palette,
+                                         int fillColor,
+                                         int textColor,
+                                         @StyleRes int textAppearanceResId) {
+        styleActionButton(
                 button,
                 palette,
                 fillColor,
                 textColor,
-                13f,
-                8,
-                R.dimen.control_height_lg,
-                enableAutoSize
+                textAppearanceResId,
+                12,
+                R.dimen.subject_height_md
         );
     }
 
-    // 统一交易页顶部产品标签视觉，避免和相邻按钮出现不同层级。
-    public static void styleTopControlLabel(@Nullable TextView label,
-                                            @NonNull Palette palette) {
-        if (label == null) {
+    // TextTrigger 是纯文字触发器的运行时入口真值。
+    public static void styleTextTrigger(@Nullable TextView button,
+                                        @NonNull Palette palette,
+                                        int fillColor,
+                                        int textColor,
+                                        @StyleRes int textAppearanceResId) {
+        if (button == null) {
             return;
         }
-        styleSquareTextAction(
-                label,
-                palette,
-                palette.primarySoft,
-                palette.controlSelectedText,
-                13f,
-                8,
-                R.dimen.control_height_lg,
-                false
-        );
+        button.setBackground(createFilledDrawable(button.getContext(), fillColor));
+        applySubjectTextLayout(button, textColor, textAppearanceResId);
     }
 
-    // 统一分段按钮的基础视觉和文字合同，避免桥接页与正式页分别维护同一套实现。
-    public static void styleSegmentedButton(@Nullable MaterialButton button,
+    // SegmentedOption 是分段选择控件的运行时真值。
+    public static void styleSegmentedOption(@Nullable MaterialButton button,
                                             @NonNull Palette palette,
                                             @NonNull String text,
-                                            float textSizeSp) {
+                                            @StyleRes int textAppearanceResId) {
         if (button == null) {
             return;
         }
         button.setText(text);
-        button.setSingleLine(true);
-        button.setMaxLines(1);
-        button.setEllipsize(TextUtils.TruncateAt.END);
-        button.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
-        button.setGravity(Gravity.CENTER);
-        button.setIncludeFontPadding(false);
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
+        applySubjectTextLayout(button, button.getCurrentTextColor(), textAppearanceResId);
         button.setInsetTop(0);
         button.setInsetBottom(0);
         button.setMinHeight(0);
@@ -470,21 +622,19 @@ public final class UiPaletteManager {
                 new int[]{}
         };
         int checkedBg = palette.primary;
-        int uncheckedBg = ContextCompat.getColor(button.getContext(), R.color.bg_input);
+        int uncheckedBg = color(button.getContext(), R.color.bg_field_base);
         int checkedText = controlSelectedText(button.getContext());
         int uncheckedText = controlUnselectedText(button.getContext());
         button.setBackgroundTintList(new ColorStateList(states, new int[]{checkedBg, uncheckedBg}));
         button.setTextColor(new ColorStateList(states, new int[]{checkedText, uncheckedText}));
-        button.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(button.getContext(), R.color.stroke_card)));
+        button.setStrokeColor(ColorStateList.valueOf(dividerColor(button.getContext())));
         button.setStrokeWidth(0);
-        button.setRippleColor(ColorStateList.valueOf(ContextCompat.getColor(button.getContext(), R.color.accent_gold)));
+        button.setRippleColor(ColorStateList.valueOf(color(button.getContext(), R.color.accent_primary)));
     }
 
-    // 依据文案实际宽度给分段按钮分配比例，保证文字可见而不是被平均宽度挤压。
+    // 依据固定字号下的文案实际宽度给分段按钮分配比例，避免再靠微调字号补缝。
     public static void applyContentAwareButtonGroupLayout(@Nullable MaterialButtonToggleGroup group,
                                                           @Nullable MaterialButton[] buttons,
-                                                          float maxTextSizeSp,
-                                                          float minTextSizeSp,
                                                           int horizontalPaddingDp) {
         if (group == null || buttons == null || buttons.length == 0) {
             return;
@@ -495,25 +645,17 @@ public final class UiPaletteManager {
         }
 
         Context context = group.getContext();
-        int controlGapPx = context.getResources().getDimensionPixelSize(R.dimen.control_group_gap);
+        int controlGapPx = SpacingTokenResolver.inlineGapCompactPx(context);
         availableWidth -= controlGapPx * Math.max(0, buttons.length - 1);
         if (availableWidth <= 0) {
             return;
         }
-        int horizontalPaddingPx = dp(context, horizontalPaddingDp);
-        float resolvedSizeSp = maxTextSizeSp;
+        int horizontalPaddingPx = resolveRuntimeHorizontalPaddingPx(context, horizontalPaddingDp);
         float[] measuredWidths = new float[buttons.length];
         float totalRequiredWidth = 0f;
-        while (resolvedSizeSp >= minTextSizeSp) {
-            totalRequiredWidth = 0f;
-            for (int i = 0; i < buttons.length; i++) {
-                measuredWidths[i] = measureButtonWidth(buttons[i], resolvedSizeSp, horizontalPaddingPx);
-                totalRequiredWidth += measuredWidths[i];
-            }
-            if (totalRequiredWidth <= availableWidth || resolvedSizeSp == minTextSizeSp) {
-                break;
-            }
-            resolvedSizeSp = Math.max(minTextSizeSp, resolvedSizeSp - 0.5f);
+        for (int i = 0; i < buttons.length; i++) {
+            measuredWidths[i] = measureButtonWidth(buttons[i], horizontalPaddingPx);
+            totalRequiredWidth += measuredWidths[i];
         }
 
         if (totalRequiredWidth <= 0f) {
@@ -524,7 +666,6 @@ public final class UiPaletteManager {
             if (button == null) {
                 continue;
             }
-            button.setTextSize(TypedValue.COMPLEX_UNIT_SP, resolvedSizeSp);
             button.setPadding(horizontalPaddingPx, 0, horizontalPaddingPx, 0);
             if (button.getLayoutParams() instanceof LinearLayout.LayoutParams) {
                 LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) button.getLayoutParams();
@@ -537,14 +678,156 @@ public final class UiPaletteManager {
         }
     }
 
-    // 统一产品下拉项文字样式，避免主题切换后出现不可读颜色。
-    public static void styleSpinnerItemText(TextView textView, Palette palette, float textSizeSp) {
-        if (textView == null || palette == null) {
+    // SelectField 标签主体负责选择类控件的标签与下拉项文字真值。
+    public static void styleSelectFieldLabel(@Nullable TextView label,
+                                             @NonNull Palette palette,
+                                             int fillColor,
+                                             int textColor,
+                                             @StyleRes int textAppearanceResId,
+                                             int horizontalPaddingDp,
+                                             int minHeightResId) {
+        if (label == null) {
             return;
         }
-        textView.setTextColor(palette.textPrimary);
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
+        styleActionButton(
+                label,
+                palette,
+                fillColor,
+                textColor,
+                textAppearanceResId,
+                horizontalPaddingDp,
+                minHeightResId
+        );
+        label.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        label.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
+    }
+
+    public static void styleSelectFieldLabel(@Nullable TextView label,
+                                             @NonNull Palette palette,
+                                             int fillColor,
+                                             int textColor,
+                                             @StyleRes int textAppearanceResId) {
+        styleSelectFieldLabel(
+                label,
+                palette,
+                fillColor,
+                textColor,
+                textAppearanceResId,
+                12,
+                R.dimen.subject_height_md
+        );
+        label.setPadding(
+                SpacingTokenResolver.fieldPaddingPx(label.getContext()),
+                0,
+                SpacingTokenResolver.fieldTrailingReservePx(label.getContext()),
+                0
+        );
+    }
+
+    public static void styleSelectFieldLabel(@Nullable TextView label,
+                                             @NonNull Palette palette,
+                                             @StyleRes int textAppearanceResId) {
+        if (label == null) {
+            return;
+        }
+        applySubjectTextLayout(label, palette.textPrimary, textAppearanceResId);
+    }
+
+    // InputField 是运行时输入主体的唯一收口入口，容器与纯输入框都走这里。
+    public static void styleInputField(@Nullable TextInputLayout inputLayout,
+                                       @NonNull Palette palette) {
+        if (inputLayout == null) {
+            return;
+        }
+        inputLayout.setBoxBackgroundColor(palette.control);
+        inputLayout.setBoxStrokeColor(Color.TRANSPARENT);
+    }
+
+    // 纯 EditText 也统一走 InputField 主链，避免页面继续手写背景、高度和文字颜色。
+    public static void styleInputField(@Nullable EditText input,
+                                       @NonNull Palette palette,
+                                       @StyleRes int textAppearanceResId) {
+        if (input == null) {
+            return;
+        }
+        Context context = input.getContext();
+        int horizontalPaddingPx = SpacingTokenResolver.fieldPaddingPx(context);
+        int minHeightPx = dimenPx(context, R.dimen.subject_height_md);
+        input.setBackground(createFilledDrawable(context, palette.control));
+        applyTextAppearance(input, textAppearanceResId);
+        input.setTextColor(palette.textPrimary);
+        input.setHintTextColor(palette.textSecondary);
+        input.setMinHeight(minHeightPx);
+        input.setMinimumHeight(minHeightPx);
+        input.setPadding(horizontalPaddingPx, 0, horizontalPaddingPx, 0);
+        input.setGravity((input.getGravity() & ~Gravity.VERTICAL_GRAVITY_MASK) | Gravity.CENTER_VERTICAL);
+    }
+
+    // ToggleChoice 统一复选与切换类选择控件的文字和选中色。
+    public static void styleToggleChoice(@Nullable CompoundButton button,
+                                         @NonNull Palette palette) {
+        if (button == null) {
+            return;
+        }
+        button.setBackground(null);
+        button.setTextColor(palette.textPrimary);
+        CompoundButtonCompat.setButtonTintList(button, createCompoundButtonTintList(palette));
+    }
+
+    // PickerWheel 统一数字滚轮的文字颜色和字号入口。
+    public static void applyPickerWheelTextStyle(@Nullable NumberPicker picker,
+                                                 int textColor,
+                                                 @StyleRes int textAppearanceResId) {
+        if (picker == null) {
+            return;
+        }
+        try {
+            java.lang.reflect.Field selectorWheelPaintField =
+                    NumberPicker.class.getDeclaredField("mSelectorWheelPaint");
+            selectorWheelPaintField.setAccessible(true);
+            Paint paint = (Paint) selectorWheelPaintField.get(picker);
+            if (paint != null) {
+                paint.setColor(textColor);
+                paint.setAlpha(255);
+                if (textAppearanceResId != 0) {
+                    TextAppearanceScaleResolver.applyTextSize(
+                            paint,
+                            picker.getContext(),
+                            textAppearanceResId
+                    );
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        for (int index = 0; index < picker.getChildCount(); index++) {
+            View child = picker.getChildAt(index);
+            if (child instanceof android.widget.EditText) {
+                android.widget.EditText editText = (android.widget.EditText) child;
+                editText.setTextColor(textColor);
+                editText.setHintTextColor(textColor);
+                editText.setAlpha(1f);
+                if (textAppearanceResId != 0) {
+                    TextAppearanceScaleResolver.applyTextAppearance(editText, textAppearanceResId);
+                    editText.setTextColor(textColor);
+                    editText.setHintTextColor(textColor);
+                }
+            }
+        }
+    }
+
+    private static void applySubjectTextLayout(@NonNull TextView textView,
+                                               int textColor,
+                                               @StyleRes int textAppearanceResId) {
+        textView.setTextColor(textColor);
+        applyTextAppearance(textView, textAppearanceResId);
         textView.setTypeface(null, android.graphics.Typeface.NORMAL);
+        textView.setGravity(Gravity.CENTER);
+        textView.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        textView.setIncludeFontPadding(false);
+        textView.setSingleLine(true);
+        textView.setMaxLines(1);
+        textView.setEllipsize(TextUtils.TruncateAt.END);
+        textView.setPaintFlags(textView.getPaintFlags() & ~android.graphics.Paint.UNDERLINE_TEXT_FLAG);
     }
 
     private static void applyRecursively(View view, Palette palette) {
@@ -557,24 +840,18 @@ public final class UiPaletteManager {
             card.setStrokeWidth(dp(context, 1));
             card.setCardBackgroundColor(palette.card);
         } else if (view instanceof TextInputLayout) {
-            TextInputLayout inputLayout = (TextInputLayout) view;
-            inputLayout.setBoxBackgroundColor(palette.control);
-            inputLayout.setBoxStrokeColor(Color.TRANSPARENT);
+            styleInputField((TextInputLayout) view, palette);
         } else if (view instanceof SeekBar) {
             SeekBar seekBar = (SeekBar) view;
             seekBar.setProgressTintList(ColorStateList.valueOf(palette.primary));
             seekBar.setThumbTintList(ColorStateList.valueOf(palette.primary));
             seekBar.setProgressBackgroundTintList(ColorStateList.valueOf(palette.stroke));
         } else if (view instanceof CompoundButton) {
-            CompoundButton button = (CompoundButton) view;
-            button.setBackground(null);
-            button.setTextColor(palette.textPrimary);
-            CompoundButtonCompat.setButtonTintList(button, createCompoundButtonTintList(palette));
+            styleToggleChoice((CompoundButton) view, palette);
         } else if (view instanceof Button && !(view instanceof MaterialButton)) {
             Button button = (Button) view;
-            if (button.getCurrentTextColor() != ContextCompat.getColor(context, R.color.white)) {
-                button.setBackground(createOutlinedDrawable(context, palette.card, palette.stroke));
-                button.setTextColor(palette.textPrimary);
+            if (button.getCurrentTextColor() != color(context, R.color.text_inverse)) {
+                applyLegacyOutlinedButtonSubject(button, palette);
             }
         }
 
@@ -610,6 +887,14 @@ public final class UiPaletteManager {
         return resolve(context).controlUnselectedText;
     }
 
+    // 统一运行时 TextView 的字号入口，避免页面直接 setTextSize 写死数值。
+    public static void applyTextAppearance(@Nullable TextView textView, @StyleRes int textAppearanceResId) {
+        if (textView == null) {
+            return;
+        }
+        TextAppearanceScaleResolver.applyTextAppearance(textView, textAppearanceResId);
+    }
+
     public static float radiusSmPx(Context context, @Nullable Palette palette) {
         Palette activePalette = palette == null ? resolve(context) : palette;
         return resolveCornerRadiusPx(context, activePalette.radiusSmDp);
@@ -629,13 +914,17 @@ public final class UiPaletteManager {
         return dp(context, 1);
     }
 
+    // 悬浮窗展开态边框单独略加粗，保证深色背景下也能看出轻微层次。
+    private static int floatingStrokeWidthPx(Context context) {
+        return dp(context, 1);
+    }
+
     // 主题设置入口已删除，历史 palette id 统一回落到默认主题。
     private static int normalizePaletteId(int paletteId) {
         return 0;
     }
 
     private static float measureButtonWidth(@Nullable MaterialButton button,
-                                            float textSizeSp,
                                             int horizontalPaddingPx) {
         if (button == null) {
             return 0f;
@@ -646,12 +935,31 @@ public final class UiPaletteManager {
             return horizontalPaddingPx * 2f;
         }
         TextPaint probe = new TextPaint(button.getPaint());
-        probe.setTextSize(TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_SP,
-                textSizeSp,
-                button.getResources().getDisplayMetrics()
-        ));
         return probe.measureText(label) + horizontalPaddingPx * 2f;
+    }
+
+    // 将运行时主体入口上的语义内边距映射回正式 spacing token。
+    private static int resolveRuntimeHorizontalPaddingPx(@NonNull Context context, int horizontalPaddingDp) {
+        if (horizontalPaddingDp == 12) {
+            return SpacingTokenResolver.fieldPaddingPx(context);
+        }
+        if (horizontalPaddingDp == 8) {
+            return SpacingTokenResolver.fieldPaddingCompactPx(context);
+        }
+        return dp(context, horizontalPaddingDp);
+    }
+
+    // 普通 Button 兼容分支只保留外框背景差异，文字与排版真值统一回到 TextTrigger 主体入口。
+    private static void applyLegacyOutlinedButtonSubject(@NonNull Button button,
+                                                         @NonNull Palette palette) {
+        styleTextTrigger(
+                button,
+                palette,
+                palette.card,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control
+        );
+        button.setBackground(createOutlinedDrawable(button.getContext(), palette.card, palette.stroke));
     }
 
     private static boolean isLightColor(int color) {
@@ -670,6 +978,10 @@ public final class UiPaletteManager {
 
     private static int dp(Context context, int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
+    }
+
+    private static int dimenPx(@NonNull Context context, int dimenResId) {
+        return context.getResources().getDimensionPixelSize(dimenResId);
     }
 
     private static float resolveCornerRadiusPx(Context context, int radiusDp) {

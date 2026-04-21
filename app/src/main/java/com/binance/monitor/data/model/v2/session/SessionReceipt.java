@@ -13,6 +13,12 @@ public class SessionReceipt {
     private final String errorCode;
     private final boolean retryable;
     private final String rawJson;
+    private final String stage;
+    private final long elapsedMs;
+    private final RemoteAccountProfile baselineAccount;
+    private final RemoteAccountProfile finalAccount;
+    private final String loginError;
+    private final RemoteAccountProfile lastObservedAccount;
 
     // 构造会话动作回执对象。
     public SessionReceipt(boolean ok,
@@ -23,6 +29,25 @@ public class SessionReceipt {
                           String errorCode,
                           boolean retryable,
                           String rawJson) {
+        this(ok, state, requestId, activeAccount, message, errorCode, retryable, rawJson,
+                "", 0L, null, null, "", null);
+    }
+
+    // 构造带切号主链摘要的会话动作回执对象。
+    public SessionReceipt(boolean ok,
+                          String state,
+                          String requestId,
+                          RemoteAccountProfile activeAccount,
+                          String message,
+                          String errorCode,
+                          boolean retryable,
+                          String rawJson,
+                          String stage,
+                          long elapsedMs,
+                          RemoteAccountProfile baselineAccount,
+                          RemoteAccountProfile finalAccount,
+                          String loginError,
+                          RemoteAccountProfile lastObservedAccount) {
         this.ok = ok;
         this.state = state == null ? "" : state;
         this.requestId = requestId == null ? "" : requestId;
@@ -31,6 +56,12 @@ public class SessionReceipt {
         this.errorCode = errorCode == null ? "" : errorCode;
         this.retryable = retryable;
         this.rawJson = rawJson == null ? "" : rawJson;
+        this.stage = stage == null ? "" : stage;
+        this.elapsedMs = Math.max(0L, elapsedMs);
+        this.baselineAccount = baselineAccount;
+        this.finalAccount = finalAccount;
+        this.loginError = loginError == null ? "" : loginError;
+        this.lastObservedAccount = lastObservedAccount;
     }
 
     // 返回是否成功。
@@ -71,6 +102,36 @@ public class SessionReceipt {
     // 返回原始 JSON 字符串。
     public String getRawJson() {
         return rawJson;
+    }
+
+    // 返回切号阶段。
+    public String getStage() {
+        return stage;
+    }
+
+    // 返回切号耗时毫秒。
+    public long getElapsedMs() {
+        return elapsedMs;
+    }
+
+    // 返回切号前基线账号。
+    public RemoteAccountProfile getBaselineAccount() {
+        return baselineAccount;
+    }
+
+    // 返回切号后最终账号。
+    public RemoteAccountProfile getFinalAccount() {
+        return finalAccount;
+    }
+
+    // 返回 mt5.login 的原始错误。
+    public String getLoginError() {
+        return loginError;
+    }
+
+    // 返回切号失败前最后一次观察到的账号。
+    public RemoteAccountProfile getLastObservedAccount() {
+        return lastObservedAccount;
     }
 
     // 返回是否失败态。

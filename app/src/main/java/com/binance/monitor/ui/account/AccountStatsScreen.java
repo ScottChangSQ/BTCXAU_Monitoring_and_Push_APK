@@ -21,7 +21,6 @@ import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
-import android.util.TypedValue;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.Gravity;
@@ -78,6 +77,11 @@ import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionCredentialEncryptor;
 import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
+import com.binance.monitor.runtime.state.model.AccountRuntimeSnapshot;
+import com.binance.monitor.runtime.ui.PageBootstrapSnapshot;
+import com.binance.monitor.runtime.ui.PageBootstrapState;
+import com.binance.monitor.runtime.ui.PageBootstrapStateMachine;
 import com.binance.monitor.service.MonitorServiceController;
 import com.binance.monitor.ui.account.history.AccountHistoryPayload;
 import com.binance.monitor.ui.account.history.AccountHistorySnapshotStore;
@@ -85,12 +89,19 @@ import com.binance.monitor.ui.account.history.AccountStatsRenderSignature;
 import com.binance.monitor.ui.account.history.AccountStatsSectionDiff;
 import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
 import com.binance.monitor.ui.account.session.AccountSessionRestoreHelper;
-import com.binance.monitor.ui.account.adapter.StatsMetricAdapter;
+import com.binance.monitor.ui.account.adapter.StatsSummaryDetailAdapter;
 import com.binance.monitor.ui.account.adapter.TradeRecordAdapterV2;
 import com.binance.monitor.util.ProductSymbolMapper;
 import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.main.MainActivity;
+import com.binance.monitor.ui.rules.IndicatorFormatterCenter;
+import com.binance.monitor.ui.rules.IndicatorId;
+import com.binance.monitor.ui.rules.IndicatorPresentation;
+import com.binance.monitor.ui.rules.IndicatorPresentationPolicy;
+import com.binance.monitor.ui.rules.IndicatorRegistry;
 import com.binance.monitor.ui.settings.SettingsActivity;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
+import com.binance.monitor.ui.theme.TextAppearanceScaleResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.FormatUtils;
@@ -229,7 +240,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         renderCoordinator = new AccountStatsRenderCoordinator(createRenderCoordinatorHost());
         indicatorAdapter = new AccountMetricAdapter();
         tradeAdapter = new TradeRecordAdapterV2();
-        statsSummaryDetailAdapter = new StatsMetricAdapter();
+        statsSummaryDetailAdapter = new StatsSummaryDetailAdapter();
         curveRenderHelper = new AccountStatsCurveRenderHelper(binding, indicatorAdapter);
         returnsTableHelper = createReturnsTableHelper();
         restoreUiState();
@@ -246,6 +257,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
     void attachPageRuntime(@NonNull AccountStatsPageRuntime runtime) {
         this.pageRuntime = runtime;
+    }
+
+    void beginAccountBootstrap() {
+        accountBootstrapStateMachine = new PageBootstrapStateMachine();
+        accountBootstrapSnapshot = PageBootstrapSnapshot.initial();
     }
 
     void setPendingAnalysisTargetSection(@NonNull String targetSection) {
@@ -306,7 +322,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private AccountStatsCurveRenderHelper curveRenderHelper;
     private AccountStatsReturnsTableHelper returnsTableHelper;
     private TradeRecordAdapterV2 tradeAdapter;
-    private StatsMetricAdapter statsSummaryDetailAdapter;
+    private StatsSummaryDetailAdapter statsSummaryDetailAdapter;
     private LogManager logManager;
     private ExecutorService ioExecutor;
     private ExecutorService sessionExecutor;
@@ -318,6 +334,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private AccountSnapshotRefreshCoordinator snapshotRefreshCoordinator;
     private AccountStatsRenderCoordinator renderCoordinator;
     private AccountStatsPageRuntime pageRuntime;
+    private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();
     private final AccountHistorySnapshotStore historySnapshotStore = new AccountHistorySnapshotStore();
 
     private final AccountSnapshotRequestGuard snapshotRequestGuard = new AccountSnapshotRequestGuard();
@@ -355,7 +372,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private List<AccountMetric> latestCurveIndicators = new ArrayList<>();
     private List<AccountMetric> latestStatsMetrics = new ArrayList<>();
     private List<AccountMetric> latestTradeStatsMetrics = new ArrayList<>();
-    private String defaultCurveMeta = "--";
+    private String defaultCurveMeta = "";
     private double curveBaseBalance = ACCOUNT_INITIAL_BALANCE;
     private boolean syncingCurveHighlight;
     private boolean statsSummaryExpanded;
@@ -410,6 +427,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private boolean firstFrameCompleted;
     private boolean firstFrameCompletionPosted;
     private volatile boolean storedSnapshotRestorePending;
+    private PageBootstrapStateMachine accountBootstrapStateMachine = new PageBootstrapStateMachine();
+    private PageBootstrapSnapshot accountBootstrapSnapshot = PageBootstrapSnapshot.initial();
     private final Runnable hideLoginSuccessBannerRunnable = this::hideLoginSuccessBannerNow;
     private final Runnable deferredSecondarySectionAttachRunnable = () -> {
         deferredSecondarySectionAttachPosted = false;
@@ -482,6 +501,21 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             @Override
             public void setStoredSnapshotRestorePending(boolean pending) {
                 storedSnapshotRestorePending = pending;
+            }
+
+            @Override
+            public void onStoredSnapshotRestoreStarted() {
+                AccountStatsScreen.this.onStoredSnapshotRestoreStarted();
+            }
+
+            @Override
+            public void onStoredSnapshotDataReady(@NonNull AccountStatsPreloadManager.Cache cache) {
+                AccountStatsScreen.this.onStoredSnapshotDataReady(cache);
+            }
+
+            @Override
+            public void onStoredSnapshotRestoreMiss() {
+                AccountStatsScreen.this.onStoredSnapshotRestoreMiss();
             }
 
             @Override
@@ -604,12 +638,6 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
             @NonNull
             @Override
-            public AccountSnapshot buildEmptyAccountSnapshot() {
-                return AccountStatsScreen.this.buildEmptyAccountSnapshot();
-            }
-
-            @NonNull
-            @Override
             public String normalizeSource(@Nullable String source) {
                 return AccountStatsScreen.this.normalizeSource(source);
             }
@@ -707,13 +735,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             @Override
             public boolean shouldApplyFetchedSnapshot(@Nullable AccountSnapshot snapshot,
                                                       boolean remoteConnected,
-                                                      boolean syntheticDisconnectedSnapshot,
                                                       @Nullable String incomingHistoryRevision,
                                                       @Nullable String requestStartHistoryRevision) {
                 return AccountStatsScreen.this.shouldApplyFetchedSnapshot(
                         snapshot,
                         remoteConnected,
-                        syntheticDisconnectedSnapshot,
                         incomingHistoryRevision,
                         requestStartHistoryRevision
                 );
@@ -725,8 +751,21 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             }
 
             @Override
-            public AccountStatsPreloadManager.Cache fetchForUi(@NonNull AccountTimeRange range) {
-                return preloadManager == null ? null : preloadManager.fetchForUi(range);
+            public AccountStatsPreloadManager.Cache fetchSnapshotForUiForIdentity(@NonNull String expectedAccount,
+                                                                                   @NonNull String expectedServer) {
+                return preloadManager == null ? null : preloadManager.fetchSnapshotForUiForIdentity(expectedAccount, expectedServer);
+            }
+
+            @Override
+            public AccountStatsPreloadManager.Cache fetchFullForUi(@NonNull AccountTimeRange range) {
+                return preloadManager == null ? null : preloadManager.fetchFullForUi(range);
+            }
+
+            @Override
+            public void requestFullRefreshInBackground() {
+                if (ioExecutor != null && preloadManager != null) {
+                    ioExecutor.execute(() -> preloadManager.fetchFullForUi(AccountTimeRange.ALL));
+                }
             }
 
             @Override
@@ -1379,6 +1418,24 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
     }
 
+    @Nullable
+    AccountRuntimeSnapshot getCurrentAccountRuntimeSnapshot() {
+        return runtimeSnapshotStore.getAccountRuntimeSnapshot();
+    }
+
+    @NonNull
+    String getAppliedAccountHistoryRevision() {
+        return trim(latestHistoryRevision);
+    }
+
+    long getAppliedAccountUpdatedAt() {
+        return connectedUpdateAtMs;
+    }
+
+    long getScheduledSnapshotStaleAfterMs() {
+        return dynamicRefreshDelayMs;
+    }
+
     private void setupOverviewHeader() {
     }
 
@@ -1549,22 +1606,25 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setBackground(UiPaletteManager.createSurfaceDrawable(this, palette.card, palette.stroke));
-        content.setPadding(dpToPx(18), dpToPx(14), dpToPx(18), dpToPx(6));
+        int horizontal = SpacingTokenResolver.px(this, R.dimen.dialog_content_padding);
+        int top = SpacingTokenResolver.rowGapPx(this);
+        int bottom = SpacingTokenResolver.rowGapCompactPx(this);
+        content.setPadding(horizontal, top, horizontal, bottom);
 
         TextView titleView = new TextView(this);
         titleView.setText("账户连接详情");
         titleView.setTextColor(palette.textPrimary);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+        UiPaletteManager.applyTextAppearance(titleView, R.style.TextAppearance_BinanceMonitor_Value);
         content.addView(titleView);
 
         TextView subtitleView = new TextView(this);
         subtitleView.setText("当前账户连接状态");
         subtitleView.setTextColor(palette.textSecondary);
-        subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        UiPaletteManager.applyTextAppearance(subtitleView, R.style.TextAppearance_BinanceMonitor_Meta);
         LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        subtitleParams.topMargin = dpToPx(4);
+        subtitleParams.topMargin = SpacingTokenResolver.rowGapCompactPx(this);
         content.addView(subtitleView, subtitleParams);
 
         content.addView(createConnectionDetailRow("会话状态",
@@ -1621,27 +1681,32 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
         row.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-        row.setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10));
+        row.setPadding(
+                SpacingTokenResolver.px(this, R.dimen.list_item_padding_x),
+                SpacingTokenResolver.px(this, R.dimen.list_item_padding_y),
+                SpacingTokenResolver.px(this, R.dimen.list_item_padding_x),
+                SpacingTokenResolver.px(this, R.dimen.list_item_padding_y)
+        );
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.topMargin = dpToPx(8);
+        params.topMargin = SpacingTokenResolver.rowGapPx(this);
         row.setLayoutParams(params);
 
         TextView labelView = new TextView(this);
         labelView.setText(label);
         labelView.setTextColor(palette.textSecondary);
-        labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        UiPaletteManager.applyTextAppearance(labelView, R.style.TextAppearance_BinanceMonitor_Meta);
         row.addView(labelView);
 
         TextView valueView = new TextView(this);
         valueView.setText(trim(value).isEmpty() ? "--" : value);
         valueView.setTextColor(palette.textPrimary);
-        valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        UiPaletteManager.applyTextAppearance(valueView, R.style.TextAppearance_BinanceMonitor_Body);
         LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        valueParams.topMargin = dpToPx(4);
+        valueParams.topMargin = SpacingTokenResolver.rowGapCompactPx(this);
         row.addView(valueView, valueParams);
         return row;
     }
@@ -1651,9 +1716,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
-        int horizontal = dpToPx(16);
-        int top = dpToPx(8);
-        int bottom = dpToPx(4);
+        int horizontal = SpacingTokenResolver.px(this, R.dimen.dialog_content_padding);
+        int top = SpacingTokenResolver.rowGapPx(this);
+        int bottom = SpacingTokenResolver.rowGapCompactPx(this);
         container.setPadding(horizontal, top, horizontal, bottom);
         container.setBackground(UiPaletteManager.createSurfaceDrawable(this, palette.card, palette.stroke));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1722,7 +1787,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowParams.topMargin = dpToPx(10);
+        rowParams.topMargin = SpacingTokenResolver.rowGapPx(this);
         actionRow.setLayoutParams(rowParams);
 
         MaterialButton cancelButton = new MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
@@ -1739,7 +1804,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         LinearLayout.LayoutParams continueParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        continueParams.leftMargin = dpToPx(10);
+        continueParams.leftMargin = SpacingTokenResolver.inlineGapPx(this);
         continueButton.setLayoutParams(continueParams);
         continueButton.setOnClickListener(v -> {
             String account = trim(accountInput.getText() == null ? "" : accountInput.getText().toString());
@@ -1770,15 +1835,15 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         EditText input = new EditText(this);
         input.setHint(hint);
         input.setSingleLine(true);
-        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        input.setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8));
+        UiPaletteManager.applyTextAppearance(input, R.style.TextAppearance_BinanceMonitor_Body);
+        UiPaletteManager.styleInputField(input, palette, R.style.TextAppearance_BinanceMonitor_Body);
         input.setTextColor(palette.textPrimary);
         input.setHintTextColor(palette.textSecondary);
         input.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dpToPx(8);
+        params.bottomMargin = SpacingTokenResolver.rowGapPx(this);
         input.setLayoutParams(params);
         if (passwordMode) {
             input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -1806,7 +1871,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dpToPx(8);
+        params.bottomMargin = SpacingTokenResolver.rowGapPx(this);
         checkBox.setLayoutParams(params);
         return checkBox;
     }
@@ -1816,12 +1881,12 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         TextView title = new TextView(this);
         title.setText("已保存账号");
         title.setTextColor(palette.textSecondary);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        UiPaletteManager.applyTextAppearance(title, R.style.TextAppearance_BinanceMonitor_Meta);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        titleParams.topMargin = dpToPx(6);
-        titleParams.bottomMargin = dpToPx(6);
+        titleParams.topMargin = SpacingTokenResolver.rowGapCompactPx(this);
+        titleParams.bottomMargin = SpacingTokenResolver.rowGapCompactPx(this);
         container.addView(title, titleParams);
 
         LinearLayout section = new LinearLayout(this);
@@ -1842,7 +1907,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             TextView emptyView = new TextView(this);
             emptyView.setText("暂无已保存账号");
             emptyView.setTextColor(palette.textSecondary);
-            emptyView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            UiPaletteManager.applyTextAppearance(emptyView, R.style.TextAppearance_BinanceMonitor_Meta);
             container.addView(emptyView);
             return;
         }
@@ -1854,17 +1919,22 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-            row.setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10));
+            row.setPadding(
+                    SpacingTokenResolver.px(this, R.dimen.list_item_padding_x),
+                    SpacingTokenResolver.px(this, R.dimen.list_item_padding_y),
+                    SpacingTokenResolver.px(this, R.dimen.list_item_padding_x),
+                    SpacingTokenResolver.px(this, R.dimen.list_item_padding_y)
+            );
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT);
-            rowParams.bottomMargin = dpToPx(8);
+            rowParams.bottomMargin = SpacingTokenResolver.rowGapPx(this);
             row.setLayoutParams(rowParams);
 
             TextView label = new TextView(this);
             label.setText(buildSessionProfileLabel(profile));
             label.setTextColor(palette.textPrimary);
-            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            UiPaletteManager.applyTextAppearance(label, R.style.TextAppearance_BinanceMonitor_Body);
             LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             row.addView(label, labelParams);
 
@@ -2021,8 +2091,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         targetExecutor.execute(this::clearPersistedAccountState);
     }
 
-    // 构造一个空账户快照，复用现有页面渲染链路统一清空界面。
-    private AccountSnapshot buildEmptyAccountSnapshot() {
+    // 显式登出时生成一份空账户快照，统一收口已显示的页面内容。
+    private AccountSnapshot buildLoggedOutSnapshot() {
         return new AccountSnapshot(
                 new ArrayList<>(),
                 new ArrayList<>(),
@@ -2039,7 +2109,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         latestCurveIndicators = new ArrayList<>();
         latestStatsMetrics = new ArrayList<>();
         latestTradeStatsMetrics = new ArrayList<>();
-        AccountSnapshot emptySnapshot = buildEmptyAccountSnapshot();
+        AccountSnapshot emptySnapshot = buildLoggedOutSnapshot();
         if (renderCoordinator != null) {
             renderCoordinator.applySnapshot(emptySnapshot, false);
         }
@@ -2246,8 +2316,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                                 System.currentTimeMillis()
                         )
                 );
-                logRemoteSessionDebug("submitRemoteLogin 后台任务成功，准备直连校验账户快照");
-                verifyRemoteSessionAndApply(result, "登录成功");
+                logRemoteSessionDebug("submitRemoteLogin 后台任务成功，进入已受理同步态");
+                runOnUiThreadIfAlive(() -> applyRemoteSessionAccepted(result, "登录已受理，正在同步账户"));
             } catch (Exception ex) {
                 logRemoteSessionDebug("submitRemoteLogin 后台任务失败: " + ex.getMessage());
                 runOnUiThreadIfAlive(() -> handleRemoteSessionFailed(ex.getMessage()));
@@ -2275,8 +2345,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         sessionExecutor.execute(() -> {
             try {
                 AccountRemoteSessionCoordinator.SessionActionResult result = remoteSessionCoordinator.switchSavedAccount(profile.getProfileId());
-                logRemoteSessionDebug("submitSavedAccountSwitch 后台任务成功，准备直连校验账户快照");
-                verifyRemoteSessionAndApply(result, "登录成功");
+                logRemoteSessionDebug("submitSavedAccountSwitch 后台任务成功，进入已受理同步态");
+                runOnUiThreadIfAlive(() -> applyRemoteSessionAccepted(result, "切换已受理，正在同步账户"));
             } catch (Exception ex) {
                 logRemoteSessionDebug("submitSavedAccountSwitch 后台任务失败: " + ex.getMessage());
                 runOnUiThreadIfAlive(() -> handleRemoteSessionFailed(ex.getMessage()));
@@ -2298,7 +2368,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         ConfigManager.getInstance(getApplicationContext()).setAccountSessionActive(true);
-        AccountStatsPreloadManager.Cache verifiedCache = preloadManager.fetchForUi(AccountTimeRange.ALL);
+        AccountStatsPreloadManager.Cache verifiedCache = preloadManager.fetchFullForUi(AccountTimeRange.ALL);
         ensureVerifiedRemoteCache(verifiedCache, result.getActiveAccount());
         runOnUiThreadIfAlive(() -> applyVerifiedRemoteSession(result, verifiedCache, successMessage));
     }
@@ -2610,26 +2680,6 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         setupAnalysisSummaryActions();
     }
 
-    void placeCurveSectionToBottom() {
-        if (binding.cardCurveSection == null) {
-            return;
-        }
-        android.view.ViewParent parent = binding.cardCurveSection.getParent();
-        if (!(parent instanceof android.widget.LinearLayout)) {
-            return;
-        }
-        android.widget.LinearLayout container = (android.widget.LinearLayout) parent;
-        android.view.View returnStatsSection = binding.cardReturnStatsSection;
-        container.removeView(binding.cardCurveSection);
-        if (returnStatsSection != null && returnStatsSection.getParent() == container) {
-            container.removeView(returnStatsSection);
-        }
-        container.addView(binding.cardCurveSection);
-        if (returnStatsSection != null) {
-            container.addView(returnStatsSection);
-        }
-    }
-
     private void setupRecyclers() {
         binding.recyclerCurveIndicators.setLayoutManager(new GridLayoutManager(this, 3));
         binding.recyclerCurveIndicators.setAdapter(indicatorAdapter);
@@ -2779,14 +2829,14 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         binding.cardCurveSection.setVisibility(View.VISIBLE);
-        binding.tvCurveMeta.setVisibility(View.VISIBLE);
-        binding.tvCurveMeta.setText("暂无历史曲线数据");
+        binding.tvCurveMeta.setVisibility(View.GONE);
+        renderAnalysisBootstrapState();
         binding.layoutCurveSecondarySection.setVisibility(View.GONE);
         binding.cardReturnStatsSection.setVisibility(View.GONE);
         binding.tvReturnsPeriod.setText("--");
         binding.tableMonthlyReturns.removeAllViews();
         binding.tvMonthlyReturnsHint.setVisibility(View.VISIBLE);
-        binding.tvMonthlyReturnsHint.setText("暂无历史收益数据");
+        binding.tvMonthlyReturnsHint.setText(getString(R.string.analysis_returns_empty_placeholder));
         binding.cardTradeRecordsSection.setVisibility(View.GONE);
         binding.cardTradeStatsSection.setVisibility(View.GONE);
         refreshAnalysisSummaryCards();
@@ -2799,21 +2849,34 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         binding.cardCurveSection.setVisibility(View.VISIBLE);
-        binding.tvCurveMeta.setVisibility(View.VISIBLE);
-        if (!displayedCurvePoints.isEmpty() && !defaultCurveMeta.isEmpty()) {
-            binding.tvCurveMeta.setText(defaultCurveMeta);
-            return;
-        }
-        binding.tvCurveMeta.setText(resolveInitialCurvePlaceholderText());
+        binding.tvCurveMeta.setVisibility(View.GONE);
+        renderAnalysisBootstrapState();
     }
 
-    // 占位文案只区分“正在拉取曲线”和“当前没有曲线”两种首屏状态。
+    // 根据 bootstrap 状态刷新分析页首帧占位文案。
+    private void renderAnalysisBootstrapState() {
+        if (binding == null) {
+            return;
+        }
+        binding.tvCurveMeta.setText("");
+    }
+
+    // 占位文案统一由 bootstrap 状态驱动，而不是散落的布尔判断。
     @NonNull
     private String resolveInitialCurvePlaceholderText() {
-        if (isAccountSessionReady() || storedSnapshotRestorePending || resolveCurrentSessionCache() != null) {
-            return getString(R.string.analysis_curve_loading_placeholder);
+        PageBootstrapState state = accountBootstrapSnapshot == null
+                ? PageBootstrapState.TRUE_EMPTY
+                : accountBootstrapSnapshot.getState();
+        if (state == PageBootstrapState.STORAGE_RESTORING) {
+            return getString(R.string.analysis_restore_loading_text);
         }
-        return getString(R.string.analysis_curve_empty_placeholder);
+        if (state == PageBootstrapState.LOCAL_READY_REMOTE_SYNCING) {
+            return getString(R.string.analysis_restore_syncing_text);
+        }
+        if (state == PageBootstrapState.TRUE_EMPTY) {
+            return getString(R.string.analysis_curve_empty_placeholder);
+        }
+        return getString(R.string.analysis_curve_loading_placeholder);
     }
 
     // 绑定分析页首屏交互，当前仅保留核心统计卡的展开能力。
@@ -2822,6 +2885,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         binding.cardStatsSummarySection.setOnClickListener(v -> toggleStatsSummaryExpanded());
+        binding.ivStatsSummaryExpandToggle.setOnClickListener(v -> toggleStatsSummaryExpanded());
         refreshAnalysisSummaryCards();
     }
 
@@ -2835,10 +2899,12 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.cardTradeAnalysisEntrySection.setVisibility(View.GONE);
         binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
 
+        List<AccountMetric> headlineMetrics = resolveStatsSummaryHeadlineMetrics();
         List<AccountMetric> detailMetrics = resolveStatsSummaryDetailMetrics();
         boolean hasDetailMetrics = !detailMetrics.isEmpty();
         statsSummaryDetailAdapter.submitList(detailMetrics);
-        binding.tvStatsSummaryExpandHint.setText(activity.getString(
+        binding.ivStatsSummaryExpandToggle.setRotation(statsSummaryExpanded ? 90f : 0f);
+        binding.ivStatsSummaryExpandToggle.setContentDescription(activity.getString(
                 statsSummaryExpanded
                         ? R.string.analysis_stats_collapse
                         : R.string.analysis_stats_expand
@@ -2851,47 +2917,113 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         );
 
         bindSummaryMetricValue(binding.tvStatsSummaryMetricOneValue,
-                findSummaryMetricValue("累计收益额", "累计盈亏"));
+                getHeadlineMetric(headlineMetrics, 0));
         bindSummaryMetricValue(binding.tvStatsSummaryMetricTwoValue,
-                findSummaryMetricValue("最大回撤"));
+                getHeadlineMetric(headlineMetrics, 1));
         bindSummaryMetricValue(binding.tvStatsSummaryMetricThreeValue,
-                findSummaryMetricValue("胜率"));
-        binding.tvStatsSummaryMetricFourValue.setText(String.format(
-                Locale.getDefault(),
-                "%d笔",
-                baseTrades == null ? 0 : baseTrades.size()
-        ));
+                getHeadlineMetric(headlineMetrics, 2));
+        bindSummaryMetricValue(binding.tvStatsSummaryMetricFourValue,
+                getHeadlineMetric(headlineMetrics, 3));
+        bindSummaryMetricValue(binding.tvStatsSummaryMetricFiveValue,
+                getHeadlineMetric(headlineMetrics, 4));
+        bindSummaryMetricValue(binding.tvStatsSummaryMetricSixValue,
+                getHeadlineMetric(headlineMetrics, 5));
         maybeScrollToAnalysisTarget();
     }
 
-    // 读取核心统计里的优先指标，首屏只展示最关键的几项。
+    // 核心统计首屏固定展示 6 个字段，其余指标统一下沉到展开后的详细区。
     @NonNull
-    private String findSummaryMetricValue(@NonNull String... preferredNames) {
-        List<AccountMetric> metrics = resolveStatsSummaryDetailMetrics();
-        if (metrics.isEmpty()) {
-            return "--";
-        }
+    private List<AccountMetric> resolveStatsSummaryHeadlineMetrics() {
+        List<AccountMetric> detailMetrics = resolveStatsSummaryAllMetrics();
+        List<AccountMetric> summaryMetrics = new ArrayList<>();
+        summaryMetrics.add(findSummaryMetric(detailMetrics,
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_TOTAL_RETURN_AMOUNT).getDisplayName(),
+                "累计盈亏"));
+        summaryMetrics.add(findSummaryMetric(detailMetrics,
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_TOTAL_RETURN_RATE).getDisplayName()));
+        summaryMetrics.add(findSummaryMetric(detailMetrics,
+                IndicatorRegistry.require(IndicatorId.TRADE_TOTAL_COUNT).getDisplayName(),
+                "交易次数"));
+        summaryMetrics.add(findSummaryMetric(detailMetrics,
+                IndicatorRegistry.require(IndicatorId.TRADE_WIN_RATE).getDisplayName()));
+        summaryMetrics.add(findSummaryMetric(detailMetrics,
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_MAX_DRAWDOWN).getDisplayName()));
+        summaryMetrics.add(findSummaryMetric(detailMetrics,
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_SHARPE_RATIO).getDisplayName()));
+        return summaryMetrics;
+    }
+
+    // 摘要字段统一按优先名称命中，缺失时保留原字段名并显示占位值。
+    @NonNull
+    private AccountMetric findSummaryMetric(@NonNull List<AccountMetric> metrics,
+                                            @NonNull String primaryName,
+                                            @NonNull String... aliases) {
+        List<String> preferredNames = new ArrayList<>();
+        preferredNames.add(primaryName);
+        preferredNames.addAll(Arrays.asList(aliases));
         for (String preferredName : preferredNames) {
             for (AccountMetric metric : metrics) {
                 if (metric == null || metric.getName() == null) {
                     continue;
                 }
-                String name = metric.getName();
-                if (preferredName.equals(name) || name.contains(preferredName)) {
-                    return safeMetricValue(metric.getValue());
+                String normalizedName = normalizeMetricName(metric.getName());
+                String normalizedPreferredName = normalizeMetricName(preferredName);
+                if (normalizedPreferredName.equals(normalizedName)
+                        || normalizedName.contains(normalizedPreferredName)) {
+                    String metricValue = safeMetricValue(metric.getValue());
+                    if ("夏普比率".equals(primaryName) && "--".equals(metricValue)) {
+                        continue;
+                    }
+                    return new AccountMetric(primaryName, metricValue);
                 }
             }
         }
-        return safeMetricValue(metrics.get(0).getValue());
+        if ("夏普比率".equals(primaryName)) {
+            AccountMetric curveMetric = findMetricByNames(latestCurveIndicators, primaryName, "Sharpe", "Sharpe Ratio");
+            if (curveMetric != null && !"--".equals(safeMetricValue(curveMetric.getValue()))) {
+                return new AccountMetric(primaryName, safeMetricValue(curveMetric.getValue()));
+            }
+            return new AccountMetric(primaryName, AccountDeferredSnapshotRenderHelper.buildSharpeRatioValue(allCurvePoints));
+        }
+        if ("总交易次数".equals(primaryName)) {
+            return new AccountMetric(primaryName, String.format(
+                    Locale.getDefault(),
+                    "%d笔",
+                    baseTrades == null ? 0 : baseTrades.size()
+            ));
+        }
+        return new AccountMetric(primaryName, "--");
+    }
+
+    // 按固定顺序读取首屏摘要值，避免 UI 层自己理解字段选择规则。
+    @NonNull
+    private AccountMetric getHeadlineMetric(@NonNull List<AccountMetric> metrics, int index) {
+        if (index < 0 || index >= metrics.size()) {
+            return new AccountMetric("--", "--");
+        }
+        AccountMetric metric = metrics.get(index);
+        if (metric == null) {
+            return new AccountMetric("--", "--");
+        }
+        return new AccountMetric(
+                metric.getName() == null ? "--" : metric.getName(),
+                safeMetricValue(metric.getValue())
+        );
     }
 
     // 首屏摘要值统一走这里，便于和隐私打码状态保持一致。
-    private void bindSummaryMetricValue(@NonNull TextView view, @NonNull String value) {
+    private void bindSummaryMetricValue(@NonNull TextView view, @NonNull AccountMetric metric) {
+        String value = safeMetricValue(metric.getValue());
         if (isPrivacyMasked() && !"--".equals(value)) {
             view.setText(SensitiveDisplayMasker.MASK_TEXT);
             return;
         }
-        view.setText(value);
+        view.setText(IndicatorPresentationPolicy.buildValueSpan(
+                view.getContext(),
+                metric.getName(),
+                value,
+                R.color.text_primary
+        ));
     }
 
     // 规整摘要值的空态文本，避免出现空字符串。
@@ -2912,13 +3044,122 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     // 核心统计详细区优先使用当前已计算好的交易统计指标，没有时再回退快照原始指标。
     @NonNull
     private List<AccountMetric> resolveStatsSummaryDetailMetrics() {
+        List<AccountMetric> allMetrics = resolveStatsSummaryAllMetrics();
+        if (allMetrics.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<AccountMetric> headlineMetrics = resolveStatsSummaryHeadlineMetrics();
+        Set<String> headlineNames = new java.util.HashSet<>();
+        for (AccountMetric metric : headlineMetrics) {
+            if (metric == null || metric.getName() == null) {
+                continue;
+            }
+            headlineNames.add(normalizeMetricName(metric.getName()));
+        }
+        List<AccountMetric> detailMetrics = new ArrayList<>();
+        for (AccountMetric metric : allMetrics) {
+            if (metric == null || metric.getName() == null) {
+                continue;
+            }
+            String normalizedName = normalizeMetricName(metric.getName());
+            if (!headlineNames.contains(normalizedName) && !isExcludedStatsSummaryMetric(normalizedName)) {
+                detailMetrics.add(metric);
+            }
+        }
+        return detailMetrics;
+    }
+
+    // 统一获取核心统计全量指标，首屏摘要和展开列表都从同一份数据派生。
+    @NonNull
+    private List<AccountMetric> resolveStatsSummaryAllMetrics() {
         if (latestTradeStatsMetrics != null && !latestTradeStatsMetrics.isEmpty()) {
-            return new ArrayList<>(latestTradeStatsMetrics);
+            List<AccountMetric> allMetrics = new ArrayList<>(latestTradeStatsMetrics);
+            appendCurveMetricIfMissing(allMetrics, "夏普比率", "Sharpe", "Sharpe Ratio");
+            return allMetrics;
         }
         if (latestStatsMetrics != null && !latestStatsMetrics.isEmpty()) {
-            return new ArrayList<>(latestStatsMetrics);
+            List<AccountMetric> allMetrics = new ArrayList<>(latestStatsMetrics);
+            appendCurveMetricIfMissing(allMetrics, "夏普比率", "Sharpe", "Sharpe Ratio");
+            return allMetrics;
         }
         return new ArrayList<>();
+    }
+
+    // 当 statsMetrics 本身没有夏普比率时，核心统计补用收益统计同口径的曲线指标。
+    private void appendCurveMetricIfMissing(@NonNull List<AccountMetric> metrics,
+                                            @NonNull String primaryName,
+                                            @NonNull String... aliases) {
+        AccountMetric existing = findMetricByNames(metrics, primaryName, aliases);
+        if (existing != null && !"--".equals(safeMetricValue(existing.getValue()))) {
+            return;
+        }
+        AccountMetric curveMetric = findMetricByNames(latestCurveIndicators, primaryName, aliases);
+        if (curveMetric != null && !"--".equals(safeMetricValue(curveMetric.getValue()))) {
+            replaceOrAppendMetric(metrics, existing, primaryName, safeMetricValue(curveMetric.getValue()));
+            return;
+        }
+        String fallbackValue = AccountDeferredSnapshotRenderHelper.buildSharpeRatioValue(allCurvePoints);
+        if (!"--".equals(fallbackValue)) {
+            replaceOrAppendMetric(metrics, existing, primaryName, fallbackValue);
+        }
+    }
+
+    private void replaceOrAppendMetric(@NonNull List<AccountMetric> metrics,
+                                       @Nullable AccountMetric existing,
+                                       @NonNull String name,
+                                       @NonNull String value) {
+        AccountMetric replacement = new AccountMetric(name, value);
+        if (existing == null) {
+            metrics.add(replacement);
+            return;
+        }
+        int index = metrics.indexOf(existing);
+        if (index >= 0) {
+            metrics.set(index, replacement);
+            return;
+        }
+        metrics.add(replacement);
+    }
+
+    @Nullable
+    private AccountMetric findMetricByNames(@Nullable List<AccountMetric> metrics,
+                                            @NonNull String primaryName,
+                                            @NonNull String... aliases) {
+        if (metrics == null || metrics.isEmpty()) {
+            return null;
+        }
+        List<String> names = new ArrayList<>();
+        names.add(primaryName);
+        names.addAll(Arrays.asList(aliases));
+        for (AccountMetric metric : metrics) {
+            if (metric == null || metric.getName() == null) {
+                continue;
+            }
+            String normalizedName = normalizeMetricName(metric.getName());
+            for (String name : names) {
+                String normalizedTarget = normalizeMetricName(name);
+                if (normalizedTarget.equals(normalizedName) || normalizedName.contains(normalizedTarget)) {
+                    return metric;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isExcludedStatsSummaryMetric(@NonNull String normalizedName) {
+        return normalizeMetricName("当前持仓金额").equals(normalizedName)
+                || normalizeMetricName("资产分布").equals(normalizedName)
+                || normalizeMetricName("前五大持仓占比").equals(normalizedName)
+                || normalizeMetricName("前五大持仓比例").equals(normalizedName);
+    }
+
+    // 指标名统一去空格，避免“总交易次数/交易次数”这类别名比较受格式差异影响。
+    @NonNull
+    private String normalizeMetricName(@Nullable String name) {
+        if (name == null) {
+            return "";
+        }
+        return name.replace(" ", "").trim();
     }
 
     private boolean isPrivacyMasked() {
@@ -2973,7 +3214,6 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.tvTradeSideLabel.setOnClickListener(v -> binding.spinnerTradeSide.performClick());
         binding.tvTradeSortLabel.setOnClickListener(v -> binding.spinnerTradeSort.performClick());
 
-        binding.btnApplyManualRange.setOnClickListener(v -> applyManualCurveRange());
     }
 
     private ArrayAdapter<String> createTradeFilterAdapter(String[] options) {
@@ -2997,6 +3237,52 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         );
         adapter.setDropDownViewResource(R.layout.item_spinner_filter_dropdown);
         return adapter;
+    }
+
+    // 分析页日期入口、回到本月和交易记录筛选统一走标准主体主链。
+    private void applyAnalysisSubjectStyles(@NonNull UiPaletteManager.Palette palette) {
+        UiPaletteManager.styleInputField(binding.etRangeStart, palette, R.style.TextAppearance_BinanceMonitor_Control);
+        UiPaletteManager.styleInputField(binding.etRangeEnd, palette, R.style.TextAppearance_BinanceMonitor_Control);
+        binding.etRangeStart.setGravity(Gravity.CENTER);
+        binding.etRangeEnd.setGravity(Gravity.CENTER);
+        UiPaletteManager.styleSelectFieldLabel(
+                binding.tvReturnsPeriod,
+                palette,
+                palette.control,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control
+        );
+        UiPaletteManager.styleTextTrigger(
+                binding.btnReturnCurrentMonth,
+                palette,
+                palette.control,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control
+        );
+        UiPaletteManager.styleSelectFieldLabel(
+                binding.tvTradeProductLabel,
+                palette,
+                palette.control,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control
+        );
+        UiPaletteManager.styleSelectFieldLabel(
+                binding.tvTradeSideLabel,
+                palette,
+                palette.control,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control
+        );
+        UiPaletteManager.styleSelectFieldLabel(
+                binding.tvTradeSortLabel,
+                palette,
+                palette.control,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control
+        );
+        binding.spinnerTradeProduct.setBackground(null);
+        binding.spinnerTradeSide.setBackground(null);
+        binding.spinnerTradeSort.setBackground(null);
     }
 
     private void updateTradeFilterDisplayTexts() {
@@ -3135,122 +3421,75 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private void configureToggleButtonsV2() {
         binding.tvCurveTitle.setText("\u51c0\u503c/\u7ed3\u4f59\u66f2\u7ebf");
 
-        styleSegmentButton(binding.btnRange1d, "1D", 10f);
-        styleSegmentButton(binding.btnRange7d, "7D", 10f);
-        styleSegmentButton(binding.btnRange1m, "1M", 10f);
-        styleSegmentButton(binding.btnRange3m, "3M", 10f);
-        styleSegmentButton(binding.btnRange1y, "1Y", 10f);
-        styleSegmentButton(binding.btnRangeAll, "ALL", 10f);
+        styleSegmentButton(binding.btnRange1d, "1D", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnRange7d, "7D", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnRange1m, "1M", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnRange3m, "3M", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnRange1y, "1Y", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnRangeAll, "ALL", R.style.TextAppearance_BinanceMonitor_ChartDense);
 
-        styleSegmentButton(binding.btnReturnDay, "\u65e5\u6536\u76ca", 11f);
-        styleSegmentButton(binding.btnReturnMonth, "\u6708\u6536\u76ca", 11f);
-        styleSegmentButton(binding.btnReturnYear, "\u5e74\u6536\u76ca", 11f);
-        styleSegmentButton(binding.btnReturnStage, "\u9636\u6bb5\u6536\u76ca", 11f);
-        styleSegmentButton(binding.btnReturnsRate, "\u6536\u76ca\u7387", 10f);
-        styleSegmentButton(binding.btnReturnsAmount, "\u6536\u76ca\u989d", 10f);
+        styleSegmentButton(binding.btnReturnDay, "\u65e5\u6536\u76ca", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnReturnMonth, "\u6708\u6536\u76ca", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnReturnYear, "\u5e74\u6536\u76ca", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnReturnStage, "\u9636\u6bb5\u6536\u76ca", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnReturnsRate, "\u6536\u76ca\u7387", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnReturnsAmount, "\u6536\u76ca\u989d", R.style.TextAppearance_BinanceMonitor_ChartDense);
 
-        styleSegmentButton(binding.btnTradePnlAll, "\u5168\u90e8", 11f);
-        styleSegmentButton(binding.btnTradePnlBuy, "\u4e70\u5165", 11f);
-        styleSegmentButton(binding.btnTradePnlSell, "\u5356\u51fa", 11f);
-        styleSegmentButton(binding.btnTradeWeekdayCloseTime, "\u6309\u5e73\u4ed3\u65f6\u95f4", 11f);
-        styleSegmentButton(binding.btnTradeWeekdayOpenTime, "\u6309\u5f00\u4ed3\u65f6\u95f4", 11f);
+        styleSegmentButton(binding.btnTradePnlAll, "\u5168\u90e8", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnTradePnlBuy, "\u4e70\u5165", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnTradePnlSell, "\u5356\u51fa", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnTradeWeekdayCloseTime, "\u6309\u5e73\u4ed3\u65f6\u95f4", R.style.TextAppearance_BinanceMonitor_ChartDense);
+        styleSegmentButton(binding.btnTradeWeekdayOpenTime, "\u6309\u5f00\u4ed3\u65f6\u95f4", R.style.TextAppearance_BinanceMonitor_ChartDense);
 
         binding.toggleTimeRange.post(() -> autoFitSegmentButtons(
                 binding.toggleTimeRange,
                 new MaterialButton[]{
                         binding.btnRange1d, binding.btnRange7d, binding.btnRange1m,
                         binding.btnRange3m, binding.btnRange1y, binding.btnRangeAll
-                },
-                10f,
-                8f));
+                }));
         binding.toggleReturnStatsMode.post(() -> autoFitSegmentButtons(
                 binding.toggleReturnStatsMode,
                 new MaterialButton[]{
                         binding.btnReturnDay, binding.btnReturnMonth, binding.btnReturnYear, binding.btnReturnStage
-                },
-                11f,
-                8f));
+                }, 6));
         binding.toggleReturnsValueMode.post(() -> autoFitSegmentButtons(
                 binding.toggleReturnsValueMode,
                 new MaterialButton[]{
                         binding.btnReturnsRate, binding.btnReturnsAmount
-                },
-                11f,
-                9f));
+                }));
         binding.toggleTradePnlSide.post(() -> autoFitSegmentButtons(
                 binding.toggleTradePnlSide,
                 new MaterialButton[]{
                         binding.btnTradePnlAll, binding.btnTradePnlBuy, binding.btnTradePnlSell
-                },
-                11f,
-                9f));
+                }));
         binding.toggleTradeWeekdayBasis.post(() -> autoFitSegmentButtons(
                 binding.toggleTradeWeekdayBasis,
                 new MaterialButton[]{
                         binding.btnTradeWeekdayCloseTime, binding.btnTradeWeekdayOpenTime
-                },
-                11f,
-                9f));
+                }));
     }
 
     private void configureToggleButtons() {
-        binding.tvCurveTitle.setText("净值/结余曲线");
-        styleSegmentButton(binding.btnRange1d, "1D", 10f);
-        styleSegmentButton(binding.btnRange7d, "7D", 10f);
-        styleSegmentButton(binding.btnRange1m, "1M", 10f);
-        styleSegmentButton(binding.btnRange3m, "3M", 10f);
-        styleSegmentButton(binding.btnRange1y, "1Y", 10f);
-        styleSegmentButton(binding.btnRangeAll, "ALL", 10f);
-
-        styleSegmentButton(binding.btnReturnDay, "日收益", 11f);
-        styleSegmentButton(binding.btnReturnMonth, "月收益", 11f);
-        styleSegmentButton(binding.btnReturnYear, "年收益", 11f);
-        styleSegmentButton(binding.btnReturnStage, "阶段收益", 11f);
-
-        styleSegmentButton(binding.btnTradePnlAll, "全部", 11f);
-        styleSegmentButton(binding.btnTradePnlBuy, "买入", 11f);
-        styleSegmentButton(binding.btnTradePnlSell, "卖出", 11f);
-        binding.tvCurveTitle.setText("净值/结余曲线");
-        styleSegmentButton(binding.btnReturnDay, "日收益", 11f);
-        styleSegmentButton(binding.btnReturnMonth, "月收益", 11f);
-        styleSegmentButton(binding.btnReturnYear, "年收益", 11f);
-        styleSegmentButton(binding.btnReturnStage, "阶段收益", 11f);
-        styleSegmentButton(binding.btnTradePnlAll, "全部", 11f);
-        styleSegmentButton(binding.btnTradePnlBuy, "买入", 11f);
-        styleSegmentButton(binding.btnTradePnlSell, "卖出", 11f);
-
-        binding.toggleTimeRange.post(() -> autoFitSegmentButtons(
-                binding.toggleTimeRange,
-                new MaterialButton[]{
-                        binding.btnRange1d, binding.btnRange7d, binding.btnRange1m,
-                        binding.btnRange3m, binding.btnRange1y, binding.btnRangeAll
-                },
-                10f,
-                8f));
-        binding.toggleReturnStatsMode.post(() -> autoFitSegmentButtons(
-                binding.toggleReturnStatsMode,
-                new MaterialButton[]{
-                        binding.btnReturnDay, binding.btnReturnMonth, binding.btnReturnYear, binding.btnReturnStage
-                },
-                11f,
-                8f));
+        configureToggleButtonsV2();
     }
 
-    private void styleSegmentButton(MaterialButton button, String text, float sizeSp) {
+    private void styleSegmentButton(MaterialButton button, String text, int textAppearanceResId) {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        UiPaletteManager.styleSegmentedButton(button, palette, text, sizeSp);
+        UiPaletteManager.styleSegmentedOption(button, palette, text, textAppearanceResId);
+    }
+
+    private void autoFitSegmentButtons(MaterialButtonToggleGroup group,
+                                       MaterialButton[] buttons) {
+        autoFitSegmentButtons(group, buttons, 8);
     }
 
     private void autoFitSegmentButtons(MaterialButtonToggleGroup group,
                                        MaterialButton[] buttons,
-                                       float maxTextSizeSp,
-                                       float minTextSizeSp) {
+                                       int horizontalPaddingDp) {
         UiPaletteManager.applyContentAwareButtonGroupLayout(
                 group,
                 buttons,
-                maxTextSizeSp,
-                minTextSizeSp,
-                8
+                horizontalPaddingDp
         );
     }
 
@@ -3329,6 +3568,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             EditText target = manualDateTarget == DATE_TARGET_END ? binding.etRangeEnd : binding.etRangeStart;
             target.setText(dateOnlyFormat.format(chosen.getTime()));
             hideManualDatePickerPanel();
+            applyManualCurveRangeIfReady();
         });
         binding.npManualYear.setOnValueChangedListener((picker, oldVal, newVal) -> updateManualPickerDayRange());
         binding.npManualMonth.setOnValueChangedListener((picker, oldVal, newVal) -> updateManualPickerDayRange());
@@ -3396,6 +3636,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
     private void setupReturnPeriodPickerPanel() {
         binding.tvReturnsPeriod.setOnClickListener(v -> showReturnPeriodPickerPanel());
+        binding.btnReturnCurrentMonth.setOnClickListener(v -> resetReturnStatsToCurrentMonth());
         binding.btnReturnPeriodCancel.setOnClickListener(v -> hideReturnPeriodPickerPanel());
         binding.btnReturnPeriodConfirm.setOnClickListener(v -> {
             if (returnPickerYears.isEmpty()) {
@@ -3418,6 +3659,28 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         });
         binding.npReturnYear.setOnValueChangedListener((picker, oldVal, newVal) ->
                 syncReturnPickerMonthForYearIndex(newVal));
+    }
+
+    // 日收益快捷回到当前自然月，并让左侧月份文案与滚轮面板一起回到本月。
+    private void resetReturnStatsToCurrentMonth() {
+        returnStatsAnchorDateMs = resolveCurrentMonthAnchorDateMs();
+        if (binding.layoutReturnPeriodPickerPanel.getVisibility() == View.VISIBLE) {
+            showReturnPeriodPickerPanel();
+        }
+        if (renderCoordinator != null) {
+            renderCoordinator.refreshReturnStats();
+        }
+    }
+
+    // 统一生成当前自然月的月初锚点，避免不同入口各自拼年月。
+    private long resolveCurrentMonthAnchorDateMs() {
+        Calendar currentMonth = Calendar.getInstance(BEIJING_TIME_ZONE);
+        currentMonth.set(Calendar.DAY_OF_MONTH, 1);
+        currentMonth.set(Calendar.HOUR_OF_DAY, 0);
+        currentMonth.set(Calendar.MINUTE, 0);
+        currentMonth.set(Calendar.SECOND, 0);
+        currentMonth.set(Calendar.MILLISECOND, 0);
+        return currentMonth.getTimeInMillis();
     }
 
     private void showReturnPeriodPickerPanel() {
@@ -3520,7 +3783,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 editText.setHintTextColor(textColor);
                 editText.setHighlightColor(dividerColor);
                 editText.setAlpha(1f);
-                editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+                UiPaletteManager.applyTextAppearance(editText, R.style.TextAppearance_BinanceMonitor_Value);
             }
         }
         try {
@@ -3531,7 +3794,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             if (paint != null) {
                 paint.setColor(textColor);
                 paint.setAlpha(255);
-                paint.setTextSize(dpToPx(18));
+                TextAppearanceScaleResolver.applyTextSize(
+                        paint,
+                        this,
+                        R.style.TextAppearance_BinanceMonitor_Value
+                );
             }
         } catch (Exception ignored) {
         }
@@ -3556,11 +3823,21 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         if (primary) {
-            button.setBackground(UiPaletteManager.createFilledDrawable(this, palette.primary));
-            button.setTextColor(UiPaletteManager.controlSelectedText(this));
+            UiPaletteManager.styleActionButton(
+                    button,
+                    palette,
+                    palette.primarySoft,
+                    UiPaletteManager.controlSelectedText(this),
+                    R.style.TextAppearance_BinanceMonitor_Control
+            );
         } else {
-            button.setBackground(UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
-            button.setTextColor(UiPaletteManager.controlUnselectedText(this));
+            UiPaletteManager.styleActionButton(
+                    button,
+                    palette,
+                    palette.control,
+                    palette.textPrimary,
+                    R.style.TextAppearance_BinanceMonitor_Control
+            );
         }
     }
 
@@ -3639,6 +3916,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.toggleReturnStatsMode.check(mapReturnModeButtonId(returnStatsMode));
         binding.tvReturnsPeriod.setEnabled(returnStatsMode == ReturnStatsMode.DAY);
         binding.tvReturnsPeriod.setAlpha(returnStatsMode == ReturnStatsMode.DAY ? 1f : 0.65f);
+        binding.btnReturnCurrentMonth.setEnabled(returnStatsMode == ReturnStatsMode.DAY);
+        binding.btnReturnCurrentMonth.setAlpha(returnStatsMode == ReturnStatsMode.DAY ? 1f : 0.65f);
         binding.toggleReturnStatsMode.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
             if (!isChecked) {
                 return;
@@ -3657,6 +3936,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             }
             binding.tvReturnsPeriod.setEnabled(returnStatsMode == ReturnStatsMode.DAY);
             binding.tvReturnsPeriod.setAlpha(returnStatsMode == ReturnStatsMode.DAY ? 1f : 0.65f);
+            binding.btnReturnCurrentMonth.setEnabled(returnStatsMode == ReturnStatsMode.DAY);
+            binding.btnReturnCurrentMonth.setAlpha(returnStatsMode == ReturnStatsMode.DAY ? 1f : 0.65f);
             if (renderCoordinator != null) {
                 renderCoordinator.refreshReturnStats();
             }
@@ -3768,10 +4049,29 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         AccountStatsPreloadManager.Cache cache = resolveCurrentSessionCache();
         if (cache != null) {
             applyCacheMeta(cache);
-            showInitialCurvePlaceholder();
+            applyBootstrapState(accountBootstrapStateMachine.onMemoryDataReady(buildAccountBootstrapRevision(cache)));
+            if (hasRenderableHistorySections(cache.getSnapshot())) {
+                if (renderCoordinator != null) {
+                    renderCoordinator.applySnapshot(cache.getSnapshot(), cache.isConnected());
+                }
+                lastAppliedSnapshotSignature = buildRefreshSignature(
+                        cache.getSnapshot(),
+                        cache.getHistoryRevision(),
+                        cache.isConnected(),
+                        cache.getAccount(),
+                        cache.getServer()
+                );
+            } else {
+                showInitialCurvePlaceholder();
+            }
             updateEmptyStateVisibility();
             maybeScrollToAnalysisTarget();
             return;
+        }
+        if (isAccountSessionReady()) {
+            applyBootstrapState(accountBootstrapStateMachine.onStorageRestoreStarted());
+        } else {
+            applyBootstrapState(accountBootstrapStateMachine.onStorageMiss());
         }
         if (snapshotRefreshCoordinator != null) {
             snapshotRefreshCoordinator.primeStoredSnapshotRestoreIfNeeded();
@@ -3800,6 +4100,21 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         showInitialCurvePlaceholder();
         updateEmptyStateVisibility();
         maybeScrollToAnalysisTarget();
+    }
+
+    // 存储恢复刚启动时，先把首帧切到“恢复中”。
+    void onStoredSnapshotRestoreStarted() {
+        applyBootstrapState(accountBootstrapStateMachine.onStorageRestoreStarted());
+    }
+
+    // 本地存储命中后，把首帧切到“本地已恢复、远端同步中”。
+    void onStoredSnapshotDataReady(@NonNull AccountStatsPreloadManager.Cache cache) {
+        applyBootstrapState(accountBootstrapStateMachine.onStorageDataReady(buildAccountBootstrapRevision(cache)));
+    }
+
+    // 本地存储 miss 后，才允许页面进入真正空态。
+    void onStoredSnapshotRestoreMiss() {
+        applyBootstrapState(accountBootstrapStateMachine.onStorageMiss());
     }
 
     // 只要当前页已有本账户可渲染快照，就不应把切页/回前台误当成一次新的页面 bootstrap。
@@ -3847,6 +4162,28 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         setConnectionStatus(cache.isConnected());
     }
 
+    // 用历史 revision 优先、更新时间兜底，生成账户页首帧状态的稳定版本号。
+    @NonNull
+    private String buildAccountBootstrapRevision(@NonNull AccountStatsPreloadManager.Cache cache) {
+        String historyRevision = trim(cache.getHistoryRevision());
+        if (!historyRevision.isEmpty()) {
+            return historyRevision;
+        }
+        long updatedAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
+        return String.valueOf(updatedAt);
+    }
+
+    // 写入 bootstrap 状态；如果页面当前还在占位态，顺便刷新占位文案。
+    private void applyBootstrapState(@NonNull PageBootstrapSnapshot snapshot) {
+        accountBootstrapSnapshot = snapshot;
+        if (binding == null) {
+            return;
+        }
+        if (binding.cardCurveSection.getVisibility() == View.VISIBLE && displayedCurvePoints.isEmpty()) {
+            renderAnalysisBootstrapState();
+        }
+    }
+
     // 只消费当前活动远程会话对应的预加载缓存，避免旧账号缓存短暂回灌到页面。
     private boolean isPreloadedCacheForCurrentSession(@Nullable AccountStatsPreloadManager.Cache cache) {
         if (cache == null) {
@@ -3883,10 +4220,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         return userLoggedIn && ConfigManager.getInstance(getApplicationContext()).isAccountSessionActive();
     }
 
-    // 页面自己合成的断线空快照只用于“完全无可渲染状态”的场景，不能覆盖当前已展示的真实持仓。
+    // 只有拿到真实账户快照时才允许覆盖当前页面，断线元信息更新不再合成空快照上屏。
     private boolean shouldApplyFetchedSnapshot(@Nullable AccountSnapshot snapshot,
                                                boolean remoteConnected,
-                                               boolean syntheticDisconnectedSnapshot,
                                                @Nullable String incomingHistoryRevision,
                                                @Nullable String requestStartHistoryRevision) {
         if (snapshot == null) {
@@ -3897,9 +4233,6 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
         if (remoteConnected) {
             return true;
-        }
-        if (syntheticDisconnectedSnapshot && hasRenderableCurrentSessionState()) {
-            return false;
         }
         return true;
     }
@@ -4324,7 +4657,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     logManager.info("Trade changed: " + symbolForLog(item.getCode(), item.getProductName())
                             + " " + sideForLog(item.getSide())
                             + " qty=" + shortQty(item.getQuantity())
-                            + " pnl=" + signedMoney(item.getProfit())
+                            + " pnl=" + IndicatorFormatterCenter.formatMoney(item.getProfit(), 2, false)
                             + " close=" + FormatUtils.formatDateTime(resolveCloseTime(item)));
                     budget--;
                 }
@@ -4345,7 +4678,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     logManager.info("Trade closed: " + symbolForLog(item.getCode(), item.getProductName())
                             + " " + sideForLog(item.getSide())
                             + " qty=" + shortQty(item.getQuantity())
-                            + " pnl=" + signedMoney(item.getProfit())
+                            + " pnl=" + IndicatorFormatterCenter.formatMoney(item.getProfit(), 2, false)
                             + " close=" + FormatUtils.formatDateTime(resolveCloseTime(item)));
                     budget--;
                 }
@@ -4691,7 +5024,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         } else {
             sideLabel = "全部";
         }
-        String pnlText = signedMoney(totalPnl);
+        String pnlText = IndicatorFormatterCenter.formatMoney(totalPnl, 2, false);
         if (masked) {
             binding.tvTradePnlSummary.setText(String.format(
                     Locale.getDefault(),
@@ -4709,14 +5042,13 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 "全周期总计盈亏（%s）: %s",
                 sideLabel,
                 pnlText);
-        SpannableString summarySpan = new SpannableString(summaryText);
-        int pnlStart = summaryText.lastIndexOf(pnlText);
-        if (pnlStart >= 0) {
-            int pnlColor = resolveSignedValueColor(totalPnl);
-            summarySpan.setSpan(new ForegroundColorSpan(pnlColor),
-                    pnlStart, pnlStart + pnlText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        binding.tvTradePnlSummary.setText(summarySpan);
+        binding.tvTradePnlSummary.setText(IndicatorPresentationPolicy.buildDirectionalSpanAfterAnchor(
+                this,
+                summaryText,
+                ": ",
+                IndicatorId.ACCOUNT_TOTAL_RETURN_AMOUNT,
+                R.color.text_primary
+        ));
         binding.tvTradePnlLegend.setVisibility(View.GONE);
         binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
         maybeScrollToAnalysisTarget();
@@ -4833,7 +5165,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         binding.cardCurveSection.setVisibility(View.VISIBLE);
-        binding.tvCurveMeta.setVisibility(View.VISIBLE);
+        binding.tvCurveMeta.setVisibility(View.GONE);
         AccountStatsCurveRenderHelper.RenderResult result = curveRenderHelper.renderImmediate(
                 points,
                 latestCurveIndicators,
@@ -4855,7 +5187,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         binding.cardCurveSection.setVisibility(View.VISIBLE);
-        binding.tvCurveMeta.setVisibility(View.VISIBLE);
+        binding.tvCurveMeta.setVisibility(View.GONE);
         AccountStatsCurveRenderHelper.RenderResult result = curveRenderHelper.applyPreparedProjection(
                 curveProjection,
                 latestCurveIndicators,
@@ -4899,9 +5231,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         extraLines.add("日收益 " + formatPercentValue(dailyReturnPoint == null ? null : dailyReturnPoint.getReturnRate(), true));
         float syncedRatio = AccountCurveHighlightHelper.resolveTimestampRatio(displayedCurvePoints, snapshot.getTargetTimestamp());
         syncingCurveHighlight = true;
-        binding.tvCurveMeta.setText(isPrivacyMasked()
-                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
-                : buildHighlightCurveMeta(snapshot));
+        binding.tvCurveMeta.setText("");
         binding.equityCurveView.setTooltipExtraLines(extraLines);
         binding.equityCurveView.syncHighlightPoint(point, snapshot.getTargetTimestamp(), syncedRatio >= 0f ? syncedRatio : xRatio);
         binding.positionRatioChartView.syncHighlightTimestamp(snapshot.getTargetTimestamp(), syncedRatio >= 0f ? syncedRatio : xRatio);
@@ -4919,9 +5249,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.positionRatioChartView.clearSyncedHighlight();
         binding.drawdownChartView.clearSyncedHighlight();
         binding.dailyReturnChartView.clearSyncedHighlight();
-        binding.tvCurveMeta.setText(isPrivacyMasked()
-                ? AccountStatsPrivacyFormatter.maskValue(defaultCurveMeta, true)
-                : defaultCurveMeta);
+        binding.tvCurveMeta.setText("");
         syncingCurveHighlight = false;
     }
 
@@ -5702,7 +6030,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             TextView headerCell = createReturnsCell(header, 0, true, null, null);
             applyReturnsCellLayout(headerCell, 0, 1f, RETURNS_HEADER_HEIGHT_DP,
                     RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
-            headerCell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+            applyReturnsDenseHeaderTextAppearance(headerCell);
             headerRow.addView(headerCell);
         }
         table.addView(headerRow);
@@ -5820,18 +6148,19 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(LinearLayout.HORIZONTAL);
         block.setGravity(Gravity.TOP);
+        int returnsCellMarginPx = returnsCellMarginPx();
         TableLayout.LayoutParams blockParams = new TableLayout.LayoutParams(
                 TableLayout.LayoutParams.MATCH_PARENT,
                 TableLayout.LayoutParams.WRAP_CONTENT);
-        blockParams.topMargin = dpToPx(RETURNS_CELL_MARGIN_DP);
+        blockParams.topMargin = returnsCellMarginPx;
         block.setLayoutParams(blockParams);
 
         TextView yearCell = createMonthlyYearSummaryCell(rowData);
         LinearLayout.LayoutParams yearParams = new LinearLayout.LayoutParams(
                 0,
-                dpToPx(RETURNS_MONTH_GROUP_HEIGHT_DP * 3 + RETURNS_CELL_MARGIN_DP * 2),
+                dpToPx(RETURNS_MONTH_GROUP_HEIGHT_DP * 3) + returnsCellMarginPx * 2,
                 0.94f);
-        yearParams.rightMargin = dpToPx(RETURNS_CELL_MARGIN_DP);
+        yearParams.rightMargin = returnsCellMarginPx;
         yearCell.setLayoutParams(yearParams);
         block.addView(yearCell);
 
@@ -5881,6 +6210,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                                                   int endMonth) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
+        int returnsCellMarginPx = returnsCellMarginPx();
         row.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -5891,10 +6221,10 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     dpToPx(RETURNS_MONTH_GROUP_HEIGHT_DP),
                     1f);
             if (month < endMonth) {
-                params.rightMargin = dpToPx(RETURNS_CELL_MARGIN_DP);
+                params.rightMargin = returnsCellMarginPx;
             }
             if (endMonth < 12) {
-                params.bottomMargin = dpToPx(RETURNS_CELL_MARGIN_DP);
+                params.bottomMargin = returnsCellMarginPx;
             }
             cell.setLayoutParams(params);
             row.addView(cell);
@@ -5920,8 +6250,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 yearClick);
         cell.setGravity(Gravity.CENTER);
         cell.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
-        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.8f);
-        cell.setPadding(dpToPx(4), dpToPx(3), dpToPx(4), dpToPx(3));
+        applyReturnsDenseBodyTextAppearance(cell);
+        int returnsCellPaddingPx = returnsCellPaddingPx();
+        cell.setPadding(returnsCellPaddingPx, returnsCellPaddingPx, returnsCellPaddingPx, returnsCellPaddingPx);
         return cell;
     }
 
@@ -5935,8 +6266,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 false,
                 null,
                 resolveMonthlyHeatCellClickListener(info));
-        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.2f);
-        cell.setPadding(dpToPx(3), dpToPx(3), dpToPx(3), dpToPx(3));
+        applyReturnsDenseBodyTextAppearance(cell);
+        int returnsCellPaddingPx = returnsCellPaddingPx();
+        cell.setPadding(returnsCellPaddingPx, returnsCellPaddingPx, returnsCellPaddingPx, returnsCellPaddingPx);
         cell.setBackground(buildReturnsCellBackground(resolveMonthlyHeatCellRate(info), false));
         return cell;
     }
@@ -6039,8 +6371,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 0, RETURNS_CELL_MARGIN_DP, 0, RETURNS_CELL_MARGIN_DP);
         cell.setGravity(Gravity.CENTER);
         cell.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
-        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, header ? 8.6f : 7.2f);
-        cell.setPadding(dpToPx(header ? 2 : 1), 0, dpToPx(header ? 2 : 1), 0);
+        applyReturnsDenseTextAppearance(cell, header);
+        int horizontalPadding = returnsCellPaddingCompactPx();
+        cell.setPadding(horizontalPadding, 0, horizontalPadding, 0);
         cell.setSingleLine(true);
         cell.setMaxLines(1);
         cell.setMinLines(1);
@@ -6079,7 +6412,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         TextView cell = new TextView(this);
         applyReturnsCellLayout(cell, 0, weight, header ? RETURNS_HEADER_HEIGHT_DP : RETURNS_STAGE_HEIGHT_DP,
                 0, RETURNS_CELL_MARGIN_DP, 0, RETURNS_CELL_MARGIN_DP);
-        int horizontalPadding = dpToPx(header ? 8 : 10);
+        int horizontalPadding = header
+                ? returnsHeaderHorizontalPaddingPx()
+                : returnsBodyHorizontalPaddingPx();
         cell.setPadding(horizontalPadding, 0, horizontalPadding, 0);
         cell.setGravity((alignEnd ? Gravity.END : Gravity.START) | Gravity.CENTER_VERTICAL);
         cell.setTextAlignment(alignEnd ? View.TEXT_ALIGNMENT_VIEW_END : View.TEXT_ALIGNMENT_VIEW_START);
@@ -6093,7 +6428,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             displayText = SensitiveDisplayMasker.MASK_TEXT;
         }
         cell.setText(makeNonBreakingText(displayText));
-        cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, header ? 10f : 9.6f);
+        applyReturnsDenseTextAppearance(cell, header);
         int neutralColor = ContextCompat.getColor(this, header ? R.color.text_primary : R.color.text_secondary);
         cell.setTextColor(AccountStatsPrivacyFormatter.resolveValueColor(textColor, neutralColor, maskedValue));
         cell.setBackground(buildReturnsCellBackground(heatRate, header));
@@ -6123,7 +6458,45 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     }
 
     private int toMarginPx(int value) {
+        if (value == RETURNS_CELL_MARGIN_DP) {
+            return returnsCellMarginPx();
+        }
         return value < 0 ? value : dpToPx(value);
+    }
+
+    // 收口收益表密集区的 margin 真值。
+    private int returnsCellMarginPx() {
+        return SpacingTokenResolver.inlineGapCompactPx(this);
+    }
+
+    // 收口收益表最小内边距。
+    private int returnsCellPaddingCompactPx() {
+        return SpacingTokenResolver.inlineGapCompactPx(this);
+    }
+
+    // 收口收益表标准内边距。
+    private int returnsCellPaddingPx() {
+        return SpacingTokenResolver.px(this, R.dimen.space_4);
+    }
+
+    // 收口收益表标题列横向内边距。
+    private int returnsHeaderHorizontalPaddingPx() {
+        return SpacingTokenResolver.px(this, R.dimen.space_8);
+    }
+
+    // 收口收益表数值列横向内边距。
+    private int returnsBodyHorizontalPaddingPx() {
+        return SpacingTokenResolver.px(this, R.dimen.space_10);
+    }
+
+    // 收口收益表标题单元格横向内边距。
+    private int returnsHeaderCompactHorizontalPaddingPx() {
+        return SpacingTokenResolver.px(this, R.dimen.space_8);
+    }
+
+    // 收口收益表正文单元格纵向内边距。
+    private int returnsBodyVerticalPaddingPx() {
+        return SpacingTokenResolver.px(this, R.dimen.space_8);
     }
 
     private long startOfYear(long timeMs) {
@@ -6217,23 +6590,27 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         TextView cell = new TextView(this);
         int baseHeightDp = header ? RETURNS_HEADER_HEIGHT_DP : RETURNS_BODY_HEIGHT_DP;
         TableRow.LayoutParams params = new TableRow.LayoutParams(dpToPx(minWidthDp), dpToPx(baseHeightDp));
-        int marginPx = dpToPx(RETURNS_CELL_MARGIN_DP);
+        int marginPx = returnsCellMarginPx();
         params.setMargins(marginPx, marginPx, marginPx, marginPx);
         cell.setLayoutParams(params);
-        int horizontalPadding = dpToPx(header ? 6 : 2);
-        int verticalPadding = dpToPx(header ? 4 : 6);
+        int horizontalPadding = header
+                ? returnsHeaderCompactHorizontalPaddingPx()
+                : returnsCellPaddingCompactPx();
+        int verticalPadding = header
+                ? returnsCellPaddingPx()
+                : returnsBodyVerticalPaddingPx();
         cell.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding);
         cell.setGravity(android.view.Gravity.CENTER);
         cell.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
         cell.setIncludeFontPadding(false);
         cell.setText(text);
-        cell.setTextSize(header ? 11f : 8.6f);
+        applyReturnsDenseTextAppearance(cell, header);
         String plain = text == null ? "" : text.toString();
         cell.setEllipsize(null);
         if (plain.contains("\n")) {
             cell.setLines(2);
             cell.setMaxLines(2);
-            cell.setLineSpacing(0f, 1.02f);
+            cell.setLineSpacing(0f, 1f);
         } else {
             cell.setLines(1);
             cell.setMaxLines(1);
@@ -6257,7 +6634,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         container.setGravity(Gravity.CENTER);
-        container.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
+        int returnsCellPaddingPx = returnsCellPaddingPx();
+        container.setPadding(returnsCellPaddingPx, returnsCellPaddingPx, returnsCellPaddingPx, returnsCellPaddingPx);
         container.setBackground(buildReturnsCellBackground(heatRate, false));
         container.setBaselineAligned(false);
 
@@ -6267,7 +6645,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         labelView.setIncludeFontPadding(false);
         labelView.setText(trim(label));
         labelView.setTextColor(labelColor);
-        labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f);
+        applyReturnsDenseHeaderTextAppearance(labelView);
         container.addView(labelView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -6285,14 +6663,14 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         valueView.setTextColor(masked
                 ? UiPaletteManager.resolve(this).textSecondary
                 : (valueColor != null ? valueColor : UiPaletteManager.resolve(this).textSecondary));
-        valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.0f);
+        applyReturnsDenseBodyTextAppearance(valueView);
         valueView.setSingleLine(true);
         valueView.setMaxLines(1);
         valueView.setMinLines(1);
         LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        valueParams.topMargin = dpToPx(2);
+        valueParams.topMargin = returnsCellPaddingCompactPx();
         container.addView(valueView, valueParams);
 
         if (value == null) {
@@ -6323,6 +6701,24 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
         drawable.setColor(fill);
         return drawable;
+    }
+
+    // 收益表属于超密集信息区，统一固定到 10sp，并用字重区分表头与表体。
+    private void applyReturnsDenseTextAppearance(@NonNull TextView textView, boolean header) {
+        UiPaletteManager.applyTextAppearance(
+                textView,
+                header
+                        ? R.style.TextAppearance_BinanceMonitor_MicroStrong
+                        : R.style.TextAppearance_BinanceMonitor_Micro
+        );
+    }
+
+    private void applyReturnsDenseHeaderTextAppearance(@NonNull TextView textView) {
+        applyReturnsDenseTextAppearance(textView, true);
+    }
+
+    private void applyReturnsDenseBodyTextAppearance(@NonNull TextView textView) {
+        applyReturnsDenseTextAppearance(textView, false);
     }
 
     private int blendColor(int startColor, int endColor, float ratio) {
@@ -6834,10 +7230,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     + ", rawTrades=" + baseTrades.size());
         }
         lastTradePnlMismatchState = mismatch;
-        String pnlText = signedMoney(total);
-        String storageText = signedMoney(storageTotal);
         double balanceTotal = total + storageTotal;
-        String balanceText = signedMoney(balanceTotal);
         if (masked) {
             binding.tvTradeSummaryCountValue.setText(SensitiveDisplayMasker.MASK_TEXT);
             binding.tvTradeSummaryBalanceValue.setText(SensitiveDisplayMasker.MASK_TEXT);
@@ -6852,40 +7245,32 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             return;
         }
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        binding.tvTradeSummaryCountValue.setText(tradeCount + "次");
-        binding.tvTradeSummaryBalanceValue.setText(storageText);
-        binding.tvTradeSummaryPnlValue.setText(pnlText);
-        binding.tvTradeSummaryStorageValue.setText(balanceText);
+        binding.tvTradeSummaryCountValue.setText(IndicatorFormatterCenter.formatCount(tradeCount, "次"));
+        bindTradeSummaryMoneyValue(binding.tvTradeSummaryBalanceValue, storageTotal, false);
+        bindTradeSummaryMoneyValue(binding.tvTradeSummaryPnlValue, total, false);
+        bindTradeSummaryMoneyValue(binding.tvTradeSummaryStorageValue, balanceTotal, false);
         binding.tvTradeSummaryCountValue.setTextColor(palette.textPrimary);
-        binding.tvTradeSummaryBalanceValue.setTextColor(resolveSignedValueColor(storageTotal));
-        binding.tvTradeSummaryPnlValue.setTextColor(resolveSignedValueColor(total));
-        binding.tvTradeSummaryStorageValue.setTextColor(resolveSignedValueColor(balanceTotal));
     }
 
-    // 统一给盈亏数字着色，0 值保持主文字色。
-    private int resolveSignedValueColor(double value) {
-        return resolveSignedValueColor(value, R.color.text_primary);
-    }
-
-    // 允许调用方按场景传入中性色，避免列表明细的 0 值比正文更醒目。
-    private int resolveSignedValueColor(double value, int neutralColorRes) {
-        UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
-        AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
-        if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
-            return palette.rise;
-        }
-        if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
-            return palette.fall;
-        }
-        return neutralColorRes == R.color.text_secondary
-                ? palette.textSecondary
-                : palette.textPrimary;
+    // 交易汇总金额统一通过规则中心输出格式与颜色。
+    private void bindTradeSummaryMoneyValue(@NonNull TextView view, double value, boolean masked) {
+        IndicatorPresentation presentation = IndicatorPresentationPolicy.present(
+                IndicatorId.ACCOUNT_TOTAL_RETURN_AMOUNT,
+                value,
+                masked
+        );
+        view.setText(presentation.getFormattedValue());
+        view.setTextColor(presentation.resolveAndroidColor(this));
     }
 
     // 收益统计根据当前显示模式切换颜色口径，收益率或收益额为 0 时统一回到中性色。
     private int resolveReturnDisplayColor(double rate, double amount, int neutralColorRes) {
+        IndicatorId indicatorId = returnValueMode == ReturnValueMode.AMOUNT
+                ? IndicatorId.ACCOUNT_TOTAL_RETURN_AMOUNT
+                : IndicatorId.ACCOUNT_TOTAL_RETURN_RATE;
         double referenceValue = returnValueMode == ReturnValueMode.AMOUNT ? amount : rate;
-        return resolveSignedValueColor(referenceValue, neutralColorRes);
+        IndicatorPresentation presentation = IndicatorPresentationPolicy.present(indicatorId, referenceValue, false);
+        return presentation.resolveAndroidColor(this, neutralColorRes);
     }
 
     private boolean isDefaultTradeFilters(String productFilter,
@@ -6968,6 +7353,16 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
     }
 
+    // 只有开始和结束日期都已选定时才自动应用，避免用户刚选第一项就打断后续选择。
+    private void applyManualCurveRangeIfReady() {
+        String startText = trim(binding.etRangeStart.getText() == null ? "" : binding.etRangeStart.getText().toString());
+        String endText = trim(binding.etRangeEnd.getText() == null ? "" : binding.etRangeEnd.getText().toString());
+        if (startText.isEmpty() || endText.isEmpty()) {
+            return;
+        }
+        applyManualCurveRange();
+    }
+
     private void clearManualCurveRange(boolean clearInputText) {
         manualCurveRangeEnabled = false;
         manualCurveRangeStartMs = 0L;
@@ -7007,14 +7402,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         return Math.sqrt(sum / values.size());
     }
 
-    private String signedMoney(double value) {
-        return FormatUtils.formatSignedMoney(value);
-    }
-
     private void applyPaletteStyles() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(activity, palette);
+        applyAnalysisSubjectStyles(palette);
         configureToggleButtonsV2();
         flattenCardSections(binding.scrollAccountStats, palette);
         binding.equityCurveView.refreshPalette();
@@ -7025,6 +7417,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         binding.tradeWeekdayBarChart.refreshPalette();
         binding.tradeDistributionScatterView.refreshPalette();
         binding.holdingDurationDistributionView.refreshPalette();
+        binding.ivStatsSummaryExpandToggle.setBackground(
+                UiPaletteManager.createOutlinedDrawable(this, palette.card, palette.stroke));
+        binding.ivStatsSummaryExpandToggle.setImageTintList(ColorStateList.valueOf(palette.textSecondary));
         updateLoginSuccessBannerStyle();
         setConnectionStatus(gatewayConnected);
         applyPrivacyMaskState();
@@ -7113,7 +7508,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                     : UiPaletteManager.radiusLgPx(this, palette));
             cardView.setStrokeWidth(UiPaletteManager.strokeWidthPx(this));
             cardView.setStrokeColor(palette.stroke);
-            cardView.setCardBackgroundColor(nestedCard ? palette.surfaceEnd : palette.card);
+            cardView.setCardBackgroundColor(nestedCard ? palette.surfaceEnd : palette.surfaceEnd);
             currentInsideCard = true;
         }
         if (view instanceof ViewGroup) {

@@ -475,6 +475,7 @@ class V2SessionManagerTests(unittest.TestCase):
             login="87654321",
             password="secret",
             server="ICMarketsSC-MT5-6",
+            request_id="req-switch-1",
         )
         fake_gateway.clear_account_caches.assert_called_once_with()
         fake_gateway.force_account_resync.assert_called_once_with()

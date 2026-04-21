@@ -13,15 +13,20 @@ import java.nio.file.Paths;
 public class FloatingWindowManagerSourceTest {
 
     @Test
-    public void expandedStateShouldUseSmallerSummaryAndCardTextSizes() throws Exception {
+    public void expandedStateShouldUseSharedTextAppearancesInsteadOfLiteralSizes() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
-        assertTrue(source.contains("binding.tvOverlayStatus.setTextSize(hasActivePositions ? 12f : 11f);"));
-        assertTrue(source.contains("titleView.setTextSize(9f);"));
-        assertTrue(source.contains("priceView.setTextSize(11f);"));
+        assertTrue(source.contains("UiPaletteManager.applyTextAppearance(\n                binding.tvOverlayStatus,"));
+        assertTrue(source.contains("UiPaletteManager.applyTextAppearance(titleView, R.style.TextAppearance_BinanceMonitor_OverlayDense);"));
+        assertTrue(source.contains("UiPaletteManager.applyTextAppearance(priceView, R.style.TextAppearance_BinanceMonitor_Control);"));
+        assertTrue(source.contains("UiPaletteManager.applyTextAppearance(volumeView, R.style.TextAppearance_BinanceMonitor_OverlayDense);"));
+        assertTrue(source.contains("UiPaletteManager.applyTextAppearance(amountView, R.style.TextAppearance_BinanceMonitor_OverlayDense);"));
         assertTrue(source.contains("titleView.setTypeface(null, android.graphics.Typeface.BOLD);"));
         assertTrue(source.contains("priceView.setTypeface(null, android.graphics.Typeface.BOLD);"));
+        assertFalse(source.contains("setTextSize(9f);"));
+        assertFalse(source.contains("setTextSize(11f);"));
+        assertFalse(source.contains("setTextSize(8.5f);"));
     }
 
     @Test
@@ -146,5 +151,53 @@ public class FloatingWindowManagerSourceTest {
         assertTrue(source.contains("layoutParams = null;"));
         assertTrue(source.contains("handler.removeCallbacks(forceBlinkRelayoutRunnable);"));
         assertFalse(source.contains("root.post(() -> {"));
+    }
+
+    @Test
+    public void pnlTextsShouldUseSharedDirectionalSpanRule() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("IndicatorPresentationPolicy.applyDirectionalSpanForExactToken("));
+        assertTrue(source.contains("IndicatorId.ACCOUNT_POSITION_PNL"));
+        assertFalse(source.contains("binding.tvOverlayStatus.setTextColor(pnlColor);"));
+        assertFalse(source.contains("binding.viewMiniSquare.setTextColor(pnlColor);"));
+    }
+
+    @Test
+    public void amountRowShouldUseDedicatedTightGapToken() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("amountParams.topMargin = context.getResources().getDimensionPixelSize(\n                FloatingWindowLayoutHelper.resolveAmountRowGapRes());"));
+        assertFalse(source.contains("amountParams.topMargin = context.getResources().getDimensionPixelSize(R.dimen.inline_gap_compact);"));
+    }
+
+    @Test
+    public void statusPrimaryColorShouldBeAppliedAfterTextAppearanceToAvoidStyleOverride() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        int appearanceIndex = source.indexOf("UiPaletteManager.applyTextAppearance(\n                binding.tvOverlayStatus,");
+        int colorIndex = source.indexOf("binding.tvOverlayStatus.setTextColor(offline ? palette.textSecondary : palette.textPrimary);");
+        assertTrue(appearanceIndex >= 0);
+        assertTrue(colorIndex > appearanceIndex);
+    }
+
+    @Test
+    public void bottomMetricRowsShouldDisableFontPaddingForTighterVisualGap() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("volumeView.setIncludeFontPadding(false);"));
+        assertTrue(source.contains("amountView.setIncludeFontPadding(false);"));
     }
 }

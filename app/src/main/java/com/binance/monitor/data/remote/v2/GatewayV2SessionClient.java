@@ -6,6 +6,7 @@ package com.binance.monitor.data.remote.v2;
 
 import android.content.Context;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.constants.AppConstants;
@@ -21,6 +22,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -33,7 +36,8 @@ import okhttp3.Response;
 
 public class GatewayV2SessionClient {
     private static final long CONNECT_TIMEOUT_SECONDS = 8L;
-    private static final long READ_TIMEOUT_SECONDS = 60L;
+    // 服务端 MT5 登录预算允许扩到 120s，客户端读超时必须覆盖探针退出和响应回传余量。
+    private static final long READ_TIMEOUT_SECONDS = 135L;
     private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
 
     private volatile OkHttpClient client;
@@ -110,7 +114,13 @@ public class GatewayV2SessionClient {
                 json.optString("message", ""),
                 json.optString("errorCode", ""),
                 json.optBoolean("retryable", false),
-                safeBody(body)
+                safeBody(body),
+                json.optString("stage", ""),
+                json.optLong("elapsedMs", 0L),
+                parseProfile(json.optJSONObject("baselineAccount")),
+                parseProfile(json.optJSONObject("finalAccount")),
+                json.optString("loginError", ""),
+                parseProfile(json.optJSONObject("lastObservedAccount"))
         );
     }
 
@@ -122,6 +132,16 @@ public class GatewayV2SessionClient {
     // 拉取当前会话状态。
     public SessionStatusPayload fetchStatus() throws Exception {
         return parseSessionStatus(get("/v2/session/status"));
+    }
+
+    // 拉取指定 requestId 或最近一次的会话诊断时间线，供失败提示直接显示服务端证据。
+    public String fetchSessionDiagnosticTimeline(@Nullable String requestId) throws Exception {
+        String safeRequestId = requestId == null ? "" : requestId.trim();
+        String path = safeRequestId.isEmpty()
+                ? "/v2/session/diagnostic/latest"
+                : "/v2/session/diagnostic/latest?requestId="
+                + URLEncoder.encode(safeRequestId, StandardCharsets.UTF_8.name());
+        return buildSessionDiagnosticTimeline(get(path));
     }
 
     // 提交加密登录信封。
@@ -162,7 +182,7 @@ public class GatewayV2SessionClient {
         try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                throw new IOException("HTTP " + response.code() + " for " + path + " " + responseBody);
+                throw new IOException(buildHttpFailureMessage(response.code(), path, responseBody));
             }
             return responseBody;
         }
@@ -176,7 +196,7 @@ public class GatewayV2SessionClient {
         try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                throw new IOException("HTTP " + response.code() + " for " + path + " " + responseBody);
+                throw new IOException(buildHttpFailureMessage(response.code(), path, responseBody));
             }
             return responseBody;
         }
@@ -196,6 +216,131 @@ public class GatewayV2SessionClient {
     // 保护空响应体解析。
     private static String safeBody(String body) {
         return body == null ? "{}" : body;
+    }
+
+    // 会话失败要优先返回人能看懂的原因，不能把整串 HTTP 5xx 原文直接弹给账户页。
+    static String buildHttpFailureMessage(int httpCode, String path, @Nullable String body) {
+        String fallback = "HTTP " + httpCode + " for " + path;
+        String text = body == null ? "" : body.trim();
+        if (text.isEmpty()) {
+            return fallback;
+        }
+        try {
+            JSONObject json = new JSONObject(text);
+            String detailMessage = extractStructuredErrorMessage(json.opt("detail"));
+            if (!detailMessage.isEmpty()) {
+                return detailMessage;
+            }
+            String errorMessage = extractStructuredErrorMessage(json.opt("error"));
+            if (!errorMessage.isEmpty()) {
+                return errorMessage;
+            }
+        } catch (Exception ignored) {
+        }
+        return fallback + " " + text;
+    }
+
+    // 把服务端诊断时间线格式化成人能直接阅读的多行文本。
+    @NonNull
+    static String buildSessionDiagnosticTimeline(@Nullable String body) throws Exception {
+        JSONObject json = new JSONObject(safeBody(body));
+        JSONArray items = json.optJSONArray("items");
+        if (items == null || items.length() == 0) {
+            return "";
+        }
+        String requestId = json.optString("requestId", "").trim();
+        StringBuilder builder = new StringBuilder();
+        if (!requestId.isEmpty()) {
+            builder.append("requestId=").append(requestId);
+        }
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            String stage = item.optString("stage", "").trim();
+            String message = item.optString("message", "").trim();
+            if (stage.isEmpty() && message.isEmpty()) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            long serverTime = item.optLong("serverTime", 0L);
+            if (serverTime > 0L) {
+                builder.append('[').append(serverTime).append("] ");
+            }
+            if (!stage.isEmpty()) {
+                builder.append(stage);
+            }
+            if (!message.isEmpty()) {
+                if (!stage.isEmpty()) {
+                    builder.append(" - ");
+                }
+                builder.append(message);
+            }
+        }
+        return builder.toString().trim();
+    }
+
+    // 统一提取 detail/error 里的 message，兼容字符串和对象两种结构。
+    @NonNull
+    private static String extractStructuredErrorMessage(@Nullable Object payload) {
+        if (payload instanceof JSONObject) {
+            JSONObject object = (JSONObject) payload;
+            String summary = buildSessionFailureSummary(object);
+            if (!summary.isEmpty()) {
+                return summary;
+            }
+            String message = object.optString("message", "").trim();
+            if (!message.isEmpty()) {
+                return message;
+            }
+            String code = object.optString("code", "").trim();
+            if (!code.isEmpty()) {
+                return code;
+            }
+            return "";
+        }
+        if (payload instanceof String) {
+            return ((String) payload).trim();
+        }
+        return "";
+    }
+
+    // 把服务端切号失败 detail 收口成可直接展示的多行摘要。
+    @NonNull
+    private static String buildSessionFailureSummary(@NonNull JSONObject object) {
+        String message = object.optString("message", "").trim();
+        String stage = object.optString("stage", "").trim();
+        String loginError = object.optString("loginError", "").trim();
+        RemoteAccountProfile lastObserved = parseProfile(object.optJSONObject("lastObservedAccount"));
+        if (message.isEmpty() && stage.isEmpty() && loginError.isEmpty() && lastObserved == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        appendLine(builder, message);
+        appendLine(builder, stage.isEmpty() ? "" : "stage=" + stage);
+        appendLine(builder, loginError.isEmpty() ? "" : "loginError=" + loginError);
+        if (lastObserved != null && !lastObserved.getLogin().trim().isEmpty()) {
+            appendLine(
+                    builder,
+                    "lastObserved=" + lastObserved.getLogin().trim() + " / " + lastObserved.getServer().trim()
+            );
+        }
+        return builder.toString().trim();
+    }
+
+    // 统一按行追加字符串，避免手写重复换行判断。
+    private static void appendLine(@NonNull StringBuilder builder, @Nullable String line) {
+        String safeLine = line == null ? "" : line.trim();
+        if (safeLine.isEmpty()) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append('\n');
+        }
+        builder.append(safeLine);
     }
 
     // 解析单个账号摘要对象。

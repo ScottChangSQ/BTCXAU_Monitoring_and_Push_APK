@@ -4,28 +4,42 @@
  */
 package com.binance.monitor.ui.account;
 
+import androidx.annotation.DimenRes;
+
+import com.binance.monitor.R;
+
 final class CurvePaneLayoutHelper {
 
     private CurvePaneLayoutHelper() {
     }
 
     // 统一四张图的左侧绘图区起点。
-    static float resolveChartLeftDp() {
-        return 34f;
+    @DimenRes
+    static int resolveChartLeftInsetRes() {
+        return R.dimen.curve_chart_left_inset;
     }
 
     // 统一四张图的右侧绘图区终点留白。
-    static float resolveChartRightInsetDp() {
-        return 28f;
+    @DimenRes
+    static int resolveChartRightInsetRes() {
+        return R.dimen.curve_chart_right_inset;
+    }
+
+    // 统一四张图横纵坐标轴的线宽。
+    @DimenRes
+    static int resolveAxisStrokeRes() {
+        return R.dimen.curve_axis_stroke;
     }
 
     // 净值实线线宽。
-    static float resolveEquityStrokeDp() {
-        return 1.6f;
+    @DimenRes
+    static int resolveEquityStrokeRes() {
+        return R.dimen.curve_equity_stroke;
     }
 
     // 结余虚线线宽。
-    static float resolveBalanceStrokeDp() {
-        return 1.3f;
+    @DimenRes
+    static int resolveBalanceStrokeRes() {
+        return R.dimen.curve_balance_stroke;
     }
 }

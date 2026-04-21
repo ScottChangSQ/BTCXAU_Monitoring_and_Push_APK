@@ -112,6 +112,18 @@ class AccountSessionManager:
             return {}
         return summary.to_dict()
 
+    def _build_switch_flow_receipt_kwargs(self, account_meta: Any) -> Dict[str, Any]:
+        """把网关切号结果映射成统一回执字段。"""
+        payload = dict(account_meta or {})
+        return {
+            "stage": str(payload.get("stage") or "").strip(),
+            "elapsed_ms": int(payload.get("elapsedMs") or 0),
+            "baseline_account": v2_session_models.SessionAccountSummary.from_mapping(payload.get("baselineAccount")),
+            "final_account": v2_session_models.SessionAccountSummary.from_mapping(payload.get("finalAccount")),
+            "login_error": str(payload.get("loginError") or "").strip(),
+            "last_observed_account": v2_session_models.SessionAccountSummary.from_mapping(payload.get("lastObservedAccount")),
+        }
+
     def _to_active_account_summary(self, profile: Optional[Dict[str, Any]]) -> Optional[v2_session_models.SessionAccountSummary]:
         """把运行态会话收口成完整 activeAccount 摘要。"""
         summary = v2_session_models.SessionAccountSummary.from_mapping(profile)
@@ -390,7 +402,12 @@ class AccountSessionManager:
         """登录新账号并切为当前激活会话。"""
         previous_active_profile = self._load_active_profile_snapshot()
         try:
-            account_meta = self.gateway.login_mt5(login=login, password=password, server=server)
+            account_meta = self.gateway.login_mt5(
+                login=login,
+                password=password,
+                server=server,
+                request_id=str(request_id or ""),
+            )
             active_profile = self._build_active_profile_from_gateway_meta(account_meta)
         except Exception as login_error:
             self._settle_logged_out_after_login_failure(previous_active_profile, request_id, login_error)
@@ -420,7 +437,8 @@ class AccountSessionManager:
             state="activated",
             request_id=str(request_id or ""),
             active_account=v2_session_models.SessionAccountSummary.from_mapping(active_profile),
-            message="登录成功",
+            message=str(account_meta.get("message") or "登录成功"),
+            **self._build_switch_flow_receipt_kwargs(account_meta),
         ).to_dict()
 
     def logout_current_session(self, request_id: str = "") -> Dict[str, Any]:
@@ -484,6 +502,7 @@ class AccountSessionManager:
                 login=str(target_credentials.get("login") or ""),
                 password=str(target_credentials.get("password") or ""),
                 server=str(target_credentials.get("server") or ""),
+                request_id=str(request_id or ""),
             )
         except Exception as switch_error:
             self._rollback_switch_failure(
@@ -515,5 +534,6 @@ class AccountSessionManager:
             state="activated",
             request_id=str(request_id or ""),
             active_account=v2_session_models.SessionAccountSummary.from_mapping(active_profile),
-            message="切换成功",
+            message=str(account_meta.get("message") or "切换成功"),
+            **self._build_switch_flow_receipt_kwargs(account_meta),
         ).to_dict()

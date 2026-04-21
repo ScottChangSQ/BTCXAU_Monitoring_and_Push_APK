@@ -49,6 +49,24 @@ public class SettingsDetailThemeResourceTest {
                 xml.contains("android:text=\"Tab 页管理\""));
     }
 
+    @Test
+    public void settingsDetailLayoutShouldUseStandardSubjectsForLowFrequencyControls() throws Exception {
+        String xml = readUtf8(
+                "app/src/main/res/layout/activity_settings_detail.xml",
+                "src/main/res/layout/activity_settings_detail.xml"
+        );
+        assertTrue("设置详情页的布尔项应使用 ToggleChoice 样式",
+                xml.contains("@style/Widget.BinanceMonitor.Subject.ToggleChoice"));
+        assertTrue("设置详情页的输入项应使用 InputField 样式",
+                xml.contains("@style/Widget.BinanceMonitor.Subject.InputField"));
+        assertTrue("设置详情页的清缓存按钮应使用 Secondary ActionButton",
+                xml.contains("@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"));
+        assertTrue("设置详情页的保存按钮应使用 Primary ActionButton",
+                xml.contains("@style/Widget.BinanceMonitor.Subject.ActionButton.Primary"));
+        assertFalse("设置详情页不应继续使用透明背景伪装按钮",
+                xml.contains("@android:color/transparent"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

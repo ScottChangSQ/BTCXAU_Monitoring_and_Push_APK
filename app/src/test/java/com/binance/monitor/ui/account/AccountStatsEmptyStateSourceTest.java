@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.account;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -25,5 +26,8 @@ public class AccountStatsEmptyStateSourceTest {
         assertTrue(layout.contains("@+id/tvStatsEmptyTradeHint"));
         assertTrue(source.contains("private void updateEmptyStateVisibility() {"));
         assertTrue(source.contains("binding.cardStatsEmptyState.setVisibility("));
+        assertFalse(source.contains("binding.tvCurveMeta.setText(\"暂无历史曲线数据\");"));
+        assertFalse(source.contains("binding.tvMonthlyReturnsHint.setText(\"暂无历史收益数据\");"));
+        assertTrue(source.contains("renderAnalysisBootstrapState();"));
     }
 }

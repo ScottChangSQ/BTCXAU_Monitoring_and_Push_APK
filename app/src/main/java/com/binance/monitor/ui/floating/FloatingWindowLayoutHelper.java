@@ -6,37 +6,28 @@ package com.binance.monitor.ui.floating;
 
 import android.view.Gravity;
 
-final class FloatingWindowLayoutHelper {
+import androidx.annotation.DimenRes;
 
-    private static final int EXPANDED_WIDTH_DP = 90;
-    private static final int HORIZONTAL_PADDING_DP = 4;
-    private static final int TRAILING_INSET_DP = 0;
-    private static final int MINIMIZE_BUTTON_SIZE_DP = 14;
-    private static final int MINI_MIN_WIDTH_DP = 30;
-    private static final int MINI_HORIZONTAL_PADDING_DP = 6;
-    private static final int MINI_END_MARGIN_DP = 4;
+import com.binance.monitor.R;
+
+final class FloatingWindowLayoutHelper {
 
     private FloatingWindowLayoutHelper() {
     }
 
-    static int resolveExpandedWidthDp() {
-        return EXPANDED_WIDTH_DP;
+    @DimenRes
+    static int resolveExpandedWidthRes() {
+        return R.dimen.floating_window_expanded_width;
     }
 
-    static int resolveExpandedContentWidthDp() {
-        return EXPANDED_WIDTH_DP - HORIZONTAL_PADDING_DP * 2;
+    @DimenRes
+    static int resolveHorizontalPaddingRes() {
+        return R.dimen.floating_window_padding_x;
     }
 
-    static int resolveHorizontalPaddingDp() {
-        return HORIZONTAL_PADDING_DP;
-    }
-
-    static int resolveTrailingInsetDp() {
-        return TRAILING_INSET_DP;
-    }
-
-    static int resolveValueRowWidthDp() {
-        return resolveExpandedContentWidthDp() - TRAILING_INSET_DP;
+    @DimenRes
+    static int resolveTrailingInsetRes() {
+        return R.dimen.floating_window_trailing_inset;
     }
 
     static int resolveSymbolHeaderGravity() {
@@ -47,19 +38,28 @@ final class FloatingWindowLayoutHelper {
         return Gravity.START | Gravity.CENTER_VERTICAL;
     }
 
-    static int resolveMinimizeButtonSizeDp() {
-        return MINIMIZE_BUTTON_SIZE_DP;
+    @DimenRes
+    static int resolveMinimizeButtonSizeRes() {
+        return R.dimen.floating_window_minimize_button_size;
     }
 
-    static int resolveMiniMinWidthDp() {
-        return MINI_MIN_WIDTH_DP;
+    @DimenRes
+    static int resolveMiniMinWidthRes() {
+        return R.dimen.floating_window_mini_min_width;
     }
 
-    static int resolveMiniHorizontalPaddingDp() {
-        return MINI_HORIZONTAL_PADDING_DP;
+    @DimenRes
+    static int resolveMiniHorizontalPaddingRes() {
+        return R.dimen.floating_window_mini_padding_x;
     }
 
-    static int resolveMiniEndMarginDp() {
-        return MINI_END_MARGIN_DP;
+    @DimenRes
+    static int resolveMiniEndMarginRes() {
+        return R.dimen.floating_window_mini_end_margin;
+    }
+
+    @DimenRes
+    static int resolveAmountRowGapRes() {
+        return R.dimen.floating_window_amount_row_gap;
     }
 }

@@ -63,6 +63,23 @@ def build_market_candle_payload(symbol: str,
     }
 
 
+def build_market_candle_payload_from_ws_event(event: Mapping[str, Any]) -> Optional[MarketCandle]:
+    """把 Binance WS kline 事件转换成标准 candle payload。"""
+    safe_event = dict(event or {})
+    kline = dict(safe_event.get("k") or {})
+    symbol = str(kline.get("s") or safe_event.get("s") or "").strip()
+    interval = str(kline.get("i") or safe_event.get("i") or "").strip()
+    if not symbol or not interval:
+        return None
+    return build_market_candle_payload(
+        symbol=symbol,
+        interval=interval,
+        row={"k": kline},
+        is_closed=bool(kline.get("x")),
+        source="binance-ws",
+    )
+
+
 def split_market_rows(rows: List[MarketCandle]) -> Tuple[List[MarketCandle], Optional[MarketCandle]]:
     """把混合的 candle 列表拆成闭合 candles 与最新 patch。"""
     closed: List[MarketCandle] = []

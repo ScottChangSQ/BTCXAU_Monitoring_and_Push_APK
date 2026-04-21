@@ -46,7 +46,8 @@ public class MarketChartRefreshHelperAdditionalTest {
                 119_500L,
                 60_000L,
                 false,
-                true
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
         MarketChartRefreshHelper.SyncPlan fullPlan = MarketChartRefreshHelper.resolvePlan(
                 Collections.emptyList(),
@@ -56,7 +57,8 @@ public class MarketChartRefreshHelperAdditionalTest {
                 0L,
                 1_000L,
                 false,
-                false
+                false,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
         );
 
         assertEquals(-1L, MarketChartRefreshHelper.resolveDisplayedLatencyMs(skipPlan, 820L));

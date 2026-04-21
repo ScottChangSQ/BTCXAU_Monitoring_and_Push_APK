@@ -56,6 +56,36 @@ public class MonitorFloatingCoordinatorSourceTest {
         assertTrue(source.contains("return FloatingPositionAggregator.buildSymbolCardsFromRuntime("));
     }
 
+    @Test
+    public void floatingCoordinatorShouldDeriveMarketSnapshotsFromUnifiedRuntimeSnapshot() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private java.util.Map<String, KlineData> buildVisibleClosedMinuteSnapshot("));
+        assertTrue(source.contains("private java.util.Map<String, Double> buildVisiblePriceSnapshot("));
+        assertTrue(source.contains("repository.selectClosedMinute(symbol)"));
+        assertTrue(source.contains("repository.selectLatestPrice(symbol)"));
+        assertTrue(source.contains("repository.selectMarketWindowSignature(symbol)"));
+        assertFalse(source.contains("repository == null ? null : repository.getDisplayOverviewKlineSnapshot()"));
+        assertFalse(source.contains("repository == null ? null : repository.getDisplayPriceSnapshot()"));
+        assertFalse(source.contains("repository.getMarketRuntimeSnapshotLiveData().getValue()"));
+        assertFalse(source.contains("runtimeSnapshot.getSymbolWindow(symbol)"));
+    }
+
+    @Test
+    public void floatingCoordinatorShouldIncludeMarketWindowSignatureInRefreshGate() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("revisionRefreshPolicy.shouldRefresh(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures())"));
+        assertTrue(source.contains("revisionRefreshPolicy.markApplied(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures())"));
+        assertTrue(source.contains("private List<String> resolveVisibleMarketSignatures() {"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

@@ -15,6 +15,9 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.R;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
+import com.binance.monitor.ui.theme.TextAppearanceScaleResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 
 import java.text.SimpleDateFormat;
@@ -49,6 +52,7 @@ public class DailyReturnChartView extends View {
     private long seriesEndTs;
     private int highlightedIndex = -1;
     private float highlightedXRatio = -1f;
+    private long highlightedTimestamp = -1L;
     private boolean longPressing;
     private boolean masked;
     private boolean showBottomTimeLabels;
@@ -68,10 +72,10 @@ public class DailyReturnChartView extends View {
         super(context, attrs, defStyleAttr);
         axisPaint.setStyle(Paint.Style.STROKE);
         gridPaint.setStyle(Paint.Style.STROKE);
-        labelPaint.setTextSize(dp(8.5f));
+        TextAppearanceScaleResolver.applyTextSize(labelPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         labelPaint.setTextAlign(Paint.Align.CENTER);
         emptyPaint.setTextAlign(Paint.Align.CENTER);
-        emptyPaint.setTextSize(dp(10f));
+        TextAppearanceScaleResolver.applyTextSize(emptyPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         crosshairPaint.setStyle(Paint.Style.STROKE);
         crosshairPaint.setStrokeWidth(dp(1f));
         selectionPaint.setStyle(Paint.Style.STROKE);
@@ -105,7 +109,7 @@ public class DailyReturnChartView extends View {
     public void refreshPalette() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(getContext());
         axisPaint.setColor(applyAlpha(palette.textSecondary, 180));
-        axisPaint.setStrokeWidth(dp(1f));
+        axisPaint.setStrokeWidth(SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveAxisStrokeRes()));
         gridPaint.setColor(applyAlpha(palette.stroke, 140));
         gridPaint.setStrokeWidth(dp(0.8f));
         labelPaint.setColor(palette.textSecondary);
@@ -186,6 +190,7 @@ public class DailyReturnChartView extends View {
         }
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(timestamp)));
         highlightedXRatio = clampRatio(xRatio);
+        highlightedTimestamp = timestamp;
         invalidate();
     }
 
@@ -193,6 +198,7 @@ public class DailyReturnChartView extends View {
     public void clearSyncedHighlight() {
         highlightedIndex = -1;
         highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
         invalidate();
     }
 
@@ -229,8 +235,8 @@ public class DailyReturnChartView extends View {
             return;
         }
 
-        chartLeft = dp(CurvePaneLayoutHelper.resolveChartLeftDp());
-        chartRight = width - dp(CurvePaneLayoutHelper.resolveChartRightInsetDp());
+        chartLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
+        chartRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
         chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
         chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,
@@ -303,6 +309,7 @@ public class DailyReturnChartView extends View {
         canvas.drawText(String.format(Locale.getDefault(), "-%.1f%%", maxAbs * 100d),
                 labelAnchorX, bottomBaseline, labelPaint);
         float rightEdge = getWidth() - dp(12f);
+        labelPaint.setTextAlign(Paint.Align.CENTER);
         canvas.save();
         canvas.rotate(-90f, rightEdge, centerY);
         canvas.drawText("当前区间日收益", rightEdge, verticalCenterBaseline, labelPaint);
@@ -346,7 +353,7 @@ public class DailyReturnChartView extends View {
     // 应用透明度。
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
-        return (color & 0x00FFFFFF) | (safeAlpha << 24);
+        return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
     }
 
     // 按当前横坐标更新共享十字光标。
@@ -360,6 +367,7 @@ public class DailyReturnChartView extends View {
         long startTs = viewportStartTs > 0L ? viewportStartTs : seriesStartTs;
         long endTs = viewportEndTs > startTs ? viewportEndTs : Math.max(startTs + 1L, seriesEndTs);
         long targetTs = startTs + Math.round((clamped - chartLeft) / range * (endTs - startTs));
+        highlightedTimestamp = targetTs;
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(targetTs)));
         if (notify && onTimeHighlightListener != null) {
             onTimeHighlightListener.onTimeHighlight(targetTs, highlightedXRatio);
@@ -386,6 +394,7 @@ public class DailyReturnChartView extends View {
         longPressing = false;
         requestParentDisallowIntercept(false);
         highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
         if (highlightedIndex != -1) {
             highlightedIndex = -1;
             if (onTimeHighlightListener != null) {
@@ -403,6 +412,9 @@ public class DailyReturnChartView extends View {
     }
 
     private float resolveHighlightX(long startTs, long endTs) {
+        if (highlightedTimestamp > 0L) {
+            return mapX(highlightedTimestamp, startTs, endTs, chartLeft, chartRight);
+        }
         if (highlightedXRatio >= 0f) {
             return chartLeft + highlightedXRatio * (chartRight - chartLeft);
         }

@@ -18,8 +18,8 @@ public class GatewayV2SessionClientSourceTest {
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue("远程会话登录链需要覆盖服务端 MT5 登录预算，read timeout 不能继续停留在 35 秒",
-                source.contains("private static final long READ_TIMEOUT_SECONDS = 60L;"));
+        assertTrue("远程会话登录链需要覆盖服务端 120s MT5 登录预算，read timeout 不能继续停留在 60 秒",
+                source.contains("private static final long READ_TIMEOUT_SECONDS = 135L;"));
         assertTrue("会话客户端应继续只命中 v2 session 主链接口",
                 source.contains("/v2/session/public-key")
                         && source.contains("/v2/session/status")
@@ -40,5 +40,8 @@ public class GatewayV2SessionClientSourceTest {
         assertTrue(source.contains("private static OkHttpClient buildClient()"));
         assertTrue(source.contains("OkHttpClient previous = client;"));
         assertTrue(source.contains("OkHttpTransportResetHelper.closeClientAsync(previous);"));
+        assertTrue(source.contains("json.optString(\"stage\", \"\")"));
+        assertTrue(source.contains("json.optLong(\"elapsedMs\", 0L)"));
+        assertTrue(source.contains("parseProfile(json.optJSONObject(\"lastObservedAccount\"))"));
     }
 }

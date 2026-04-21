@@ -8,6 +8,8 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 $requirementsStampPath = Join-Path $scriptDir ".requirements.sha256"
+$minimumPythonMajor = 3
+$minimumPythonMinor = 8
 
 # 强制当前脚本使用 UTF-8 输出，减少日志中的乱码前缀。
 function Set-Utf8Console {
@@ -120,7 +122,67 @@ function Get-FileSha256 {
     }
 }
 
-# Runs a native command and preserves exit code.
+# 校验虚拟环境里的 Python 版本是否达到运行网关的最低要求。
+function Test-PythonVersionAtLeast {
+    param(
+        [string]$PythonPath,
+        [int]$MinimumMajor,
+        [int]$MinimumMinor
+    )
+
+    $versionOutput = & $PythonPath -c "import sys; print('{0}.{1}'.format(sys.version_info[0], sys.version_info[1]))" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $false
+    }
+
+    $versionText = ""
+    if ($versionOutput -is [System.Array]) {
+        $versionText = ($versionOutput | Select-Object -First 1).ToString().Trim()
+    }
+    elseif ($null -ne $versionOutput) {
+        $versionText = $versionOutput.ToString().Trim()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($versionText)) {
+        return $false
+    }
+
+    $parts = $versionText.Split(".")
+    if ($parts.Count -lt 2) {
+        return $false
+    }
+
+    $major = [int]$parts[0]
+    $minor = [int]$parts[1]
+    return (($major -gt $MinimumMajor) -or (($major -eq $MinimumMajor) -and ($minor -ge $MinimumMinor)))
+}
+
+# 校验当前虚拟环境是否真的具备网关启动所需依赖，避免残缺环境被旧指纹误判为可用。
+function Test-GatewayDependencyContract {
+    param(
+        [string]$PythonPath,
+        [string[]]$ModuleNames
+    )
+
+    $moduleCheckScript = "import sys; __import__(sys.argv[1])"
+    $missingModules = @()
+
+    foreach ($moduleName in $ModuleNames) {
+        & $PythonPath -c $moduleCheckScript $moduleName *> $null
+        if ($LASTEXITCODE -ne 0) {
+            $missingModules += $moduleName
+        }
+    }
+
+    if ($missingModules.Count -gt 0) {
+        Write-Host ("Python dependency import failed: " + ($missingModules -join ", "))
+        return $false
+    }
+
+    return $true
+}
+
+# 通过旧版已验证可用的 cmd 转发链执行原生命令，确保 Python stderr 会进入网关日志。
 function Invoke-NativeCommandSafely {
     param(
         [string]$FilePath,
@@ -131,61 +193,9 @@ function Invoke-NativeCommandSafely {
     foreach ($argument in $Arguments) {
         $commandParts += '"' + $argument.Replace('"', '""') + '"'
     }
-    $commandLine = ($commandParts -join " ")
-
-    # 用 C# 进程泵送器直接透传 stdout/stderr，避免 PowerShell 回调线程缺少 runspace。
-    if (-not ("NativeCommandRunner" -as [type])) {
-        Add-Type -TypeDefinition @"
-using System;
-using System.Diagnostics;
-
-public static class NativeCommandRunner
-{
-    public static int Run(string filePath, string argumentsLine, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo(filePath, argumentsLine)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            WorkingDirectory = workingDirectory
-        };
-
-        using (var process = new Process())
-        {
-            process.StartInfo = startInfo;
-            process.OutputDataReceived += (sender, eventArgs) =>
-            {
-                if (eventArgs.Data != null)
-                {
-                    Console.WriteLine(eventArgs.Data);
-                }
-            };
-            process.ErrorDataReceived += (sender, eventArgs) =>
-            {
-                if (eventArgs.Data != null)
-                {
-                    Console.WriteLine(eventArgs.Data);
-                }
-            };
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            process.WaitForExit();
-            return process.ExitCode;
-        }
-    }
-}
-"@
-    }
-
-    $escapedArguments = @()
-    foreach ($argument in $Arguments) {
-        $escapedArguments += '"' + $argument.Replace('"', '\"') + '"'
-    }
-    $argumentsLine = ($escapedArguments -join " ")
-    $exitCode = [NativeCommandRunner]::Run($FilePath, $argumentsLine, $scriptDir)
+    $commandLine = ($commandParts -join " ") + " 2>&1"
+    & cmd.exe /d /s /c $commandLine | ForEach-Object { $_ }
+    $exitCode = $LASTEXITCODE
 
     if ($exitCode -ne 0) {
         throw "Native command failed: $commandLine (exit code $exitCode)"
@@ -202,17 +212,33 @@ $venvPython = Join-Path $scriptDir ".venv\Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
     throw "venv python not found: $venvPython"
 }
+if (-not (Test-PythonVersionAtLeast -PythonPath $venvPython -MinimumMajor 3 -MinimumMinor 8)) {
+    throw "Python 3.8 or newer is required for the MT5 gateway runtime."
+}
 
 $requirementsHash = Get-FileSha256 -PathValue (Join-Path $scriptDir "requirements.txt")
 $cachedRequirementsHash = ""
 if (Test-Path $requirementsStampPath) {
     $cachedRequirementsHash = (Get-Content -LiteralPath $requirementsStampPath -ErrorAction SilentlyContinue | Select-Object -First 1).ToString().Trim()
 }
-if ($requirementsHash -ne $cachedRequirementsHash) {
-    Write-Host "Installing Python dependencies..."
+$dependencyModules = @("fastapi", "uvicorn", "MetaTrader5", "dotenv", "cryptography", "tzdata")
+$dependencyContractOk = $false
+if ($requirementsHash -eq $cachedRequirementsHash) {
+    $dependencyContractOk = Test-GatewayDependencyContract -PythonPath $venvPython -ModuleNames $dependencyModules
+}
+if (($requirementsHash -ne $cachedRequirementsHash) -or (-not $dependencyContractOk)) {
+    if (($requirementsHash -eq $cachedRequirementsHash) -and (-not $dependencyContractOk)) {
+        Write-Host "Python dependency contract invalid, reinstalling dependencies..."
+    }
+    else {
+        Write-Host "Installing Python dependencies..."
+    }
     Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @(
         "-m", "pip", "install", "--disable-pip-version-check", "--quiet", "-r", "requirements.txt"
     )
+    if (-not (Test-GatewayDependencyContract -PythonPath $venvPython -ModuleNames $dependencyModules)) {
+        throw "Gateway dependency contract check failed after reinstall."
+    }
     Set-Content -LiteralPath $requirementsStampPath -Value $requirementsHash -Encoding UTF8
 }
 

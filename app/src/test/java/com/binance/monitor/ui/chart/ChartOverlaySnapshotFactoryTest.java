@@ -20,10 +20,12 @@ import java.util.Collections;
 import java.util.List;
 
 public class ChartOverlaySnapshotFactoryTest {
+    private static final ChartOverlaySnapshotFactory.ColorScheme COLOR_SCHEME =
+            new ChartOverlaySnapshotFactory.ColorScheme(1, 2, 3, 4, 5);
 
     @Test
     public void buildShouldReturnEmptySnapshotWhenAccountSnapshotMissing() {
-        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory(COLOR_SCHEME);
 
         ChartOverlaySnapshot snapshot = factory.build("BTC", Collections.emptyList(), null, null);
 
@@ -37,7 +39,7 @@ public class ChartOverlaySnapshotFactoryTest {
 
     @Test
     public void buildShouldCreateLightweightOverlayForSelectedSymbol() {
-        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory(COLOR_SCHEME);
         List<CandleEntry> candles = Arrays.asList(
                 new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
                 new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
@@ -77,8 +79,33 @@ public class ChartOverlaySnapshotFactoryTest {
     }
 
     @Test
+    public void buildShouldCreateTradeLayerSnapshotForLivePositionPendingAndTpSl() {
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory(COLOR_SCHEME);
+        List<CandleEntry> candles = Arrays.asList(
+                new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
+                new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
+        );
+        AccountSnapshot snapshotData = new AccountSnapshot(
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.singletonList(createPosition("BTCUSD", "Buy", 11L, 21L, 1710000000000L, 2d, 100d, 102d, 20d, 0d, 110d, 95d)),
+                Collections.singletonList(createPending("BTCUSD", "Sell", 0L, 31L, 1710000060000L, 1d, 104d, 108d, 96d)),
+                Collections.emptyList(),
+                Collections.emptyList()
+        );
+
+        ChartOverlaySnapshot snapshot = factory.build("BTC", candles, snapshotData, null);
+
+        assertEquals(6, snapshot.getTradeLayerSnapshot().getLiveLines().size());
+        assertEquals(ChartTradeLineState.LIVE_POSITION, snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getState());
+        assertEquals(ChartTradeLineState.LIVE_PENDING, snapshot.getTradeLayerSnapshot().getLiveLines().get(3).getState());
+        assertEquals(ChartTradeLineState.LIVE_SL, snapshot.getTradeLayerSnapshot().getLiveLines().get(5).getState());
+    }
+
+    @Test
     public void buildShouldUseOverviewPnlSummaryInsteadOfAnnotationCounts() {
-        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory(COLOR_SCHEME);
         List<CandleEntry> candles = Arrays.asList(
                 new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
                 new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
@@ -115,7 +142,7 @@ public class ChartOverlaySnapshotFactoryTest {
 
     @Test
     public void buildShouldStillExposePositionSummaryWithoutTotalAssetMetrics() {
-        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory(COLOR_SCHEME);
         List<CandleEntry> candles = Arrays.asList(
                 new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
                 new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
@@ -137,7 +164,7 @@ public class ChartOverlaySnapshotFactoryTest {
 
     @Test
     public void buildShouldPreferUnifiedRuntimeSummaryWhenProvided() {
-        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory(COLOR_SCHEME);
         List<CandleEntry> candles = Arrays.asList(
                 new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
                 new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
@@ -168,7 +195,7 @@ public class ChartOverlaySnapshotFactoryTest {
 
     @Test
     public void buildShouldRespectRuntimeSignedLotsForShortSummary() {
-        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory(COLOR_SCHEME);
         List<CandleEntry> candles = Arrays.asList(
                 new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
                 new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
@@ -199,7 +226,7 @@ public class ChartOverlaySnapshotFactoryTest {
 
     @Test
     public void buildShouldRenderHistoryTradePnlInUsdInsteadOfMillionUnit() {
-        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory();
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory(COLOR_SCHEME);
         List<CandleEntry> candles = Arrays.asList(
                 new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
                 new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
@@ -242,7 +269,7 @@ public class ChartOverlaySnapshotFactoryTest {
                                                double costPrice,
                                                double latestPrice,
                                                double totalPnl) {
-        return createPosition(code, side, positionTicket, orderId, openTime, quantity, costPrice, latestPrice, totalPnl, 0d);
+        return createPosition(code, side, positionTicket, orderId, openTime, quantity, costPrice, latestPrice, totalPnl, 0d, 0d, 0d);
     }
 
     private static PositionItem createPosition(String code,
@@ -255,6 +282,21 @@ public class ChartOverlaySnapshotFactoryTest {
                                                double latestPrice,
                                                double totalPnl,
                                                double storageFee) {
+        return createPosition(code, side, positionTicket, orderId, openTime, quantity, costPrice, latestPrice, totalPnl, storageFee, 0d, 0d);
+    }
+
+    private static PositionItem createPosition(String code,
+                                               String side,
+                                               long positionTicket,
+                                               long orderId,
+                                               long openTime,
+                                               double quantity,
+                                               double costPrice,
+                                               double latestPrice,
+                                               double totalPnl,
+                                               double storageFee,
+                                               double takeProfit,
+                                               double stopLoss) {
         return new PositionItem(
                 code,
                 code,
@@ -274,8 +316,8 @@ public class ChartOverlaySnapshotFactoryTest {
                 0d,
                 0,
                 0d,
-                0d,
-                0d,
+                takeProfit,
+                stopLoss,
                 storageFee
         );
     }
@@ -287,6 +329,18 @@ public class ChartOverlaySnapshotFactoryTest {
                                               long openTime,
                                               double pendingLots,
                                               double pendingPrice) {
+        return createPending(code, side, positionTicket, orderId, openTime, pendingLots, pendingPrice, 0d, 0d);
+    }
+
+    private static PositionItem createPending(String code,
+                                              String side,
+                                              long positionTicket,
+                                              long orderId,
+                                              long openTime,
+                                              double pendingLots,
+                                              double pendingPrice,
+                                              double takeProfit,
+                                              double stopLoss) {
         return new PositionItem(
                 code,
                 code,
@@ -306,8 +360,8 @@ public class ChartOverlaySnapshotFactoryTest {
                 pendingLots,
                 1,
                 pendingPrice,
-                0d,
-                0d,
+                takeProfit,
+                stopLoss,
                 0d
         );
     }

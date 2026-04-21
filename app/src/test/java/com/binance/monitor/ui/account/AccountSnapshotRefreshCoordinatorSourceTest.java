@@ -39,4 +39,14 @@ public class AccountSnapshotRefreshCoordinatorSourceTest {
         assertTrue(source.contains("if (host.hasRenderableCurrentSessionState()) {"));
         assertTrue(source.contains("requestForegroundEntrySnapshot();"));
     }
+
+    @Test
+    public void requestSnapshotShouldUseLightRuntimeConfirmationBeforeFullRefresh() throws Exception {
+        String source = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("host.fetchSnapshotForUiForIdentity("));
+        assertTrue(source.contains("host.requestFullRefreshInBackground();"));
+    }
 }

@@ -1,5 +1,6 @@
 """验证部署包由唯一源码目录生成，避免仓库内再次出现长期漂移副本。"""
 
+import re
 import subprocess
 import sys
 import unittest
@@ -60,8 +61,26 @@ class GatewayBundleParityTests(unittest.TestCase):
 
         self.assertTrue((bundle_dir / "mt5_gateway" / "v2_trade.py").exists())
         self.assertTrue((bundle_dir / "mt5_gateway" / "v2_trade_models.py").exists())
+        self.assertTrue((bundle_dir / "mt5_gateway" / "v2_market_runtime.py").exists())
+        self.assertTrue((bundle_dir / "mt5_gateway" / "v2_mt5_account_switch.py").exists())
+        self.assertTrue((bundle_dir / "mt5_gateway" / "mt5_direct_login.py").exists())
         self.assertTrue((bundle_dir / "mt5_gateway" / "mt5_login_probe.py").exists())
         self.assertTrue((bundle_dir / "bundle_manifest.json").exists())
+
+    def test_build_script_should_include_all_server_runtime_v2_modules(self):
+        bundle_dir = self._build_bundle()
+        server_source = SOURCE_SERVER.read_text(encoding="utf-8")
+        imported_modules = {
+            match.group(1)
+            for match in re.finditer(r"^import (v2_[a-z0-9_]+)\s*$", server_source, flags=re.MULTILINE)
+        }
+
+        for module_name in sorted(imported_modules):
+            with self.subTest(module=module_name):
+                self.assertTrue(
+                    (bundle_dir / "mt5_gateway" / f"{module_name}.py").exists(),
+                    f"bundle missing runtime module: {module_name}.py",
+                )
 
     def test_build_script_should_copy_gateway_env_template_into_bundle(self):
         bundle_dir = self._build_bundle()

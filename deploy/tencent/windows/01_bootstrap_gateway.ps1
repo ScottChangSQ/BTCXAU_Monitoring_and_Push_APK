@@ -6,6 +6,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$minimumPythonMajor = 3
+$minimumPythonMinor = 8
 
 # 解析部署根目录，兼容“完整仓库根目录”和“部署包根目录”两种布局。
 function Resolve-DeploymentLayout {
@@ -86,10 +88,113 @@ function Get-FileSha256 {
     }
 }
 
-$pythonCmd = Get-Command $PythonExe -ErrorAction SilentlyContinue
-if (-not $pythonCmd) {
-    throw "Python executable not found: $PythonExe"
+# 读取某个 Python 命令的版本与位数，失败时返回 null。
+function Get-PythonVersionInfo {
+    param(
+        [string]$FilePath,
+        [string[]]$PrefixArguments = @()
+    )
+
+    $versionOutput = & $FilePath @PrefixArguments -c "import sys, struct; print('{0}.{1}.{2}'.format(sys.version_info[0], sys.version_info[1], struct.calcsize('P') * 8))" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    $versionText = ""
+    if ($versionOutput -is [System.Array]) {
+        $versionText = ($versionOutput | Select-Object -First 1).ToString().Trim()
+    }
+    elseif ($null -ne $versionOutput) {
+        $versionText = $versionOutput.ToString().Trim()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($versionText)) {
+        return $null
+    }
+
+    $parts = $versionText.Split(".")
+    if ($parts.Count -lt 3) {
+        return $null
+    }
+
+    return [PSCustomObject]@{
+        Major = [int]$parts[0]
+        Minor = [int]$parts[1]
+        Bits = [int]$parts[2]
+        Display = ($parts[0] + "." + $parts[1])
+    }
 }
+
+# 选择满足最低版本和位数要求的 Python 命令；优先尊重传入值，不够时回退到 Windows py 启动器。
+function Resolve-CompatiblePythonCommand {
+    param(
+        [string]$PreferredPythonExe
+    )
+
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($PreferredPythonExe)) {
+        $candidates += [PSCustomObject]@{
+            FilePath = $PreferredPythonExe
+            PrefixArguments = @()
+            Label = $PreferredPythonExe
+        }
+    }
+    $candidates += [PSCustomObject]@{
+        FilePath = "py"
+        PrefixArguments = @("-3")
+        Label = "py -3"
+    }
+
+    foreach ($candidate in $candidates) {
+        $command = Get-Command $candidate.FilePath -ErrorAction SilentlyContinue
+        if (-not $command) {
+            continue
+        }
+
+        $versionInfo = Get-PythonVersionInfo -FilePath $candidate.FilePath -PrefixArguments $candidate.PrefixArguments
+        if ($null -eq $versionInfo) {
+            continue
+        }
+
+        if (
+            (($versionInfo.Major -gt $minimumPythonMajor) -or (($versionInfo.Major -eq $minimumPythonMajor) -and ($versionInfo.Minor -ge $minimumPythonMinor))) -and
+            ($versionInfo.Bits -eq 64)
+        ) {
+            return [PSCustomObject]@{
+                FilePath = $candidate.FilePath
+                PrefixArguments = @($candidate.PrefixArguments)
+                Label = $candidate.Label
+                Version = $versionInfo.Display
+                Bits = $versionInfo.Bits
+            }
+        }
+    }
+
+    throw "Python 3.8 or newer (64-bit) is required for the MT5 gateway bundle."
+}
+
+# 通过旧版已验证可用的 cmd 转发链执行原生命令，确保 pip stderr 会进入部署日志。
+function Invoke-NativeCommandSafely {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
+
+    $commandParts = @('"' + $FilePath.Replace('"', '""') + '"')
+    foreach ($argument in $Arguments) {
+        $commandParts += '"' + $argument.Replace('"', '""') + '"'
+    }
+    $commandLine = ($commandParts -join " ") + " 2>&1"
+    & cmd.exe /d /s /c $commandLine | ForEach-Object { $_ }
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -ne 0) {
+        throw "Native command failed: $commandLine (exit code $exitCode)"
+    }
+}
+
+$resolvedPythonCommand = Resolve-CompatiblePythonCommand -PreferredPythonExe $PythonExe
+Write-Host ("Using Python runtime: " + $resolvedPythonCommand.Label + " (" + $resolvedPythonCommand.Version + ", " + $resolvedPythonCommand.Bits + "-bit)")
 
 if ([string]::IsNullOrWhiteSpace($EnvTemplatePath)) {
     $EnvTemplatePath = Join-Path $layout.WindowsDir ".env.example"
@@ -97,17 +202,20 @@ if ([string]::IsNullOrWhiteSpace($EnvTemplatePath)) {
 
 Set-Location $gatewayDir
 
-if (-not (Test-Path ".venv")) {
-    & $PythonExe -m venv .venv
+$venvArguments = @($resolvedPythonCommand.PrefixArguments + @("-m", "venv"))
+if (Test-Path ".venv") {
+    $venvArguments += "--upgrade"
 }
+$venvArguments += ".venv"
+Invoke-NativeCommandSafely -FilePath $resolvedPythonCommand.FilePath -Arguments $venvArguments
 
 $venvPython = Join-Path $gatewayDir ".venv\Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
     throw "venv python not found: $venvPython"
 }
 
-& $venvPython -m pip install --upgrade pip
-& $venvPython -m pip install -r requirements.txt
+Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @("-m", "pip", "install", "--upgrade", "pip")
+Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt")
 
 $requirementsHash = Get-FileSha256 -PathValue (Join-Path $gatewayDir "requirements.txt")
 Set-Content -LiteralPath $requirementsStampPath -Value $requirementsHash -Encoding UTF8

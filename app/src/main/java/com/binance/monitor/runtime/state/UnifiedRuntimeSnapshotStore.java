@@ -103,6 +103,23 @@ public final class UnifiedRuntimeSnapshotStore {
     }
 
     @NonNull
+    public List<ProductRuntimeSnapshot> selectAllProducts() {
+        synchronized (lock) {
+            List<ProductRuntimeSnapshot> snapshots = new ArrayList<>(productSnapshots.values());
+            snapshots.sort((left, right) -> {
+                String leftKey = safe(left == null ? "" : left.getDisplayLabel())
+                        + '|'
+                        + safe(left == null ? "" : left.getSymbol());
+                String rightKey = safe(right == null ? "" : right.getDisplayLabel())
+                        + '|'
+                        + safe(right == null ? "" : right.getSymbol());
+                return leftKey.compareToIgnoreCase(rightKey);
+            });
+            return snapshots;
+        }
+    }
+
+    @NonNull
     private ProductRuntimeSnapshot selectProductForUiSurface(@Nullable String symbol) {
         synchronized (lock) {
             ProductRuntimeSnapshot direct = productSnapshots.get(normalizeSymbol(symbol));
@@ -286,24 +303,20 @@ public final class UnifiedRuntimeSnapshotStore {
         ProductRuntimeSnapshot toSnapshot(@NonNull String symbol, long productRevision) {
             double displayLots = resolveDisplayLots(totalLots, signedLots);
             String resolvedDisplayLabel = displayLabel.isEmpty() ? symbol : displayLabel;
-            String positionSummary = positionCount <= 0
+            String crossPageSummaryText = positionCount <= 0
                     ? "盈亏：-- | 持仓：--"
                     : "盈亏：" + formatSigned(netPnl) + " | 持仓：" + formatSummaryLots(displayLots) + "手";
-            String pendingSummary = pendingCount <= 0
-                    ? "挂单：--"
-                    : "挂单：" + pendingCount + "笔";
             return new ProductRuntimeSnapshot(
                     symbol,
                     productRevision,
                     positionCount,
                     pendingCount,
                     totalLots,
-                    displayLots,
+                    signedLots,
                     netPnl,
                     resolvedDisplayLabel,
                     resolveCompactDisplayLabel(resolvedDisplayLabel, symbol),
-                    positionSummary,
-                    pendingSummary
+                    crossPageSummaryText
             );
         }
 

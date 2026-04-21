@@ -1,25 +1,34 @@
 /*
- * v2 交易命令客户端，只负责 check/submit/result 三个交易接口。
+ * v2 交易命令客户端，负责单笔与批量交易的 check/submit/result 契约访问。
  * 与行情、账户、同步读取客户端完全分离，避免职责混杂。
  */
 package com.binance.monitor.data.remote.v2;
 
 import android.content.Context;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.remote.OkHttpTransportResetHelper;
+import com.binance.monitor.data.model.v2.trade.BatchTradeItem;
+import com.binance.monitor.data.model.v2.trade.BatchTradeItemResult;
+import com.binance.monitor.data.model.v2.trade.BatchTradePlan;
+import com.binance.monitor.data.model.v2.trade.BatchTradeReceipt;
 import com.binance.monitor.data.model.v2.trade.ExecutionError;
 import com.binance.monitor.data.model.v2.trade.TradeCheckResult;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
 import com.binance.monitor.data.model.v2.trade.TradeReceipt;
+import com.binance.monitor.ui.trade.TradeAuditEntry;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
@@ -106,6 +115,69 @@ public class GatewayV2TradeClient {
         );
     }
 
+    // 构建批量交易请求体。
+    public static JSONObject buildBatchTradePlanPayload(BatchTradePlan plan) {
+        validateBatchTradePlan(plan);
+        JSONObject payload = new JSONObject();
+        JSONArray items = new JSONArray();
+        for (BatchTradeItem item : plan.getItems()) {
+            items.put(buildBatchTradeItemPayload(item));
+        }
+        putQuietly(payload, "batchId", plan.getBatchId());
+        putQuietly(payload, "strategy", plan.getStrategy());
+        putQuietly(payload, "accountMode", plan.getAccountMode());
+        putQuietly(payload, "items", items);
+        return payload;
+    }
+
+    // 解析批量交易回执。
+    public static BatchTradeReceipt parseBatchTradeReceipt(String body) throws Exception {
+        JSONObject json = new JSONObject(safeBody(body));
+        JSONArray itemsArray = json.optJSONArray("items");
+        List<BatchTradeItemResult> items = new ArrayList<>();
+        if (itemsArray != null) {
+            for (int index = 0; index < itemsArray.length(); index++) {
+                JSONObject item = itemsArray.optJSONObject(index);
+                if (item == null) {
+                    continue;
+                }
+                items.add(new BatchTradeItemResult(
+                        item.optString("itemId", ""),
+                        item.optString("action", ""),
+                        "",
+                        item.optString("status", ""),
+                        parseExecutionError(item.optJSONObject("error")),
+                        item.optJSONObject("check"),
+                        item.optJSONObject("result"),
+                        item.optString("groupKey", "")
+                ));
+            }
+        }
+        return new BatchTradeReceipt(
+                json.optString("batchId", ""),
+                json.optString("strategy", ""),
+                json.optString("accountMode", ""),
+                json.optString("status", ""),
+                parseExecutionError(json.optJSONObject("error")),
+                items,
+                json.optLong("serverTime", 0L)
+        );
+    }
+
+    // 解析最近交易审计列表。
+    @NonNull
+    public static List<TradeAuditEntry> parseTradeAuditRecent(String body) throws Exception {
+        JSONObject json = new JSONObject(safeBody(body));
+        return parseTradeAuditItems(json.optJSONArray("items"));
+    }
+
+    // 解析单条 trace 的交易审计时间线。
+    @NonNull
+    public static List<TradeAuditEntry> parseTradeAuditLookup(String body) throws Exception {
+        JSONObject json = new JSONObject(safeBody(body));
+        return parseTradeAuditItems(json.optJSONArray("items"));
+    }
+
     // 请求 /v2/trade/check。
     public TradeCheckResult check(TradeCommand command) throws Exception {
         return parseTradeCheck(post("/v2/trade/check", buildTradeCommandPayload(command).toString()));
@@ -123,6 +195,33 @@ public class GatewayV2TradeClient {
         return parseTradeReceipt(get(path));
     }
 
+    // 请求 /v2/trade/batch/submit。
+    public BatchTradeReceipt submitBatch(BatchTradePlan plan) throws Exception {
+        return parseBatchTradeReceipt(post("/v2/trade/batch/submit", buildBatchTradePlanPayload(plan).toString()));
+    }
+
+    // 请求 /v2/trade/batch/result。
+    public BatchTradeReceipt batchResult(String batchId) throws Exception {
+        String safeId = batchId == null ? "" : batchId;
+        String path = "/v2/trade/batch/result?batchId=" + URLEncoder.encode(safeId, StandardCharsets.UTF_8);
+        return parseBatchTradeReceipt(get(path));
+    }
+
+    // 请求最近交易审计。
+    @NonNull
+    public List<TradeAuditEntry> auditRecent(int limit) throws Exception {
+        String path = "/v2/trade/audit/recent?limit=" + Math.max(1, limit);
+        return parseTradeAuditRecent(get(path));
+    }
+
+    // 按 requestId 或 batchId 查询交易审计。
+    @NonNull
+    public List<TradeAuditEntry> auditLookup(@Nullable String id) throws Exception {
+        String safeId = id == null ? "" : id;
+        String path = "/v2/trade/audit/lookup?id=" + URLEncoder.encode(safeId, StandardCharsets.UTF_8);
+        return parseTradeAuditLookup(get(path));
+    }
+
     // 解析统一错误对象。
     @Nullable
     private static ExecutionError parseExecutionError(@Nullable JSONObject object) {
@@ -134,6 +233,18 @@ public class GatewayV2TradeClient {
                 object.optString("message", ""),
                 object.optJSONObject("details")
         );
+    }
+
+    @NonNull
+    private static List<TradeAuditEntry> parseTradeAuditItems(@Nullable JSONArray array) {
+        List<TradeAuditEntry> entries = new ArrayList<>();
+        if (array == null) {
+            return entries;
+        }
+        for (int index = 0; index < array.length(); index++) {
+            entries.add(TradeAuditEntry.fromJson(array.optJSONObject(index)));
+        }
+        return entries;
     }
 
     // 执行 GET 请求。
@@ -310,8 +421,54 @@ public class GatewayV2TradeClient {
             }
             return;
         }
+        if ("CLOSE_BY".equals(action)) {
+            long positionTicket = params.optLong("positionTicket", 0L);
+            long oppositePositionTicket = params.optLong("oppositePositionTicket", 0L);
+            if (positionTicket <= 0L) {
+                throw new IllegalArgumentException("positionTicket 不能为空");
+            }
+            if (oppositePositionTicket <= 0L) {
+                throw new IllegalArgumentException("oppositePositionTicket 不能为空");
+            }
+            return;
+        }
         requirePositive(command.getVolume(), "volume 必须大于 0");
         requirePositive(command.getPrice(), "price 必须大于 0");
+    }
+
+    // 构建单项批量请求体。
+    private static JSONObject buildBatchTradeItemPayload(@Nullable BatchTradeItem item) {
+        if (item == null) {
+            throw new IllegalArgumentException("item 不能为空");
+        }
+        if (isBlank(item.getItemId())) {
+            throw new IllegalArgumentException("itemId 不能为空");
+        }
+        JSONObject itemPayload = new JSONObject();
+        JSONObject commandPayload = buildTradeCommandPayload(item.getCommand());
+        putQuietly(itemPayload, "itemId", item.getItemId());
+        putQuietly(itemPayload, "action", item.getAction());
+        putQuietly(itemPayload, "params", commandPayload.optJSONObject("params"));
+        if (!isBlank(item.getGroupKey())) {
+            putQuietly(itemPayload, "groupKey", item.getGroupKey());
+        }
+        return itemPayload;
+    }
+
+    // 批量提交前执行最小校验。
+    private static void validateBatchTradePlan(@Nullable BatchTradePlan plan) {
+        if (plan == null) {
+            throw new IllegalArgumentException("plan 不能为空");
+        }
+        if (isBlank(plan.getBatchId())) {
+            throw new IllegalArgumentException("batchId 不能为空");
+        }
+        if (isBlank(plan.getStrategy())) {
+            throw new IllegalArgumentException("strategy 不能为空");
+        }
+        if (plan.getItems().isEmpty()) {
+            throw new IllegalArgumentException("items 不能为空");
+        }
     }
 
     // 判断字符串是否为空白。

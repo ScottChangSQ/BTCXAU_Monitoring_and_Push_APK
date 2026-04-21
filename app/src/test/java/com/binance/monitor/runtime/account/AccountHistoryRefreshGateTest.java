@@ -1,7 +1,7 @@
 /*
  * 账户历史补拉 gate 测试，确保并发补拉只允许一条执行，其余 revision 只排队最新值。
  */
-package com.binance.monitor.service.account;
+package com.binance.monitor.runtime.account;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;

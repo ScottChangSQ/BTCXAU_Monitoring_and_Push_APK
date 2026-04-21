@@ -151,10 +151,10 @@ public class FloatingPositionAggregator {
             return result;
         }
         for (String symbol : visibleSymbols) {
-            ProductRuntimeSnapshot runtimeSnapshot = findRuntimeSnapshotForSymbol(symbol, runtimeCards);
-            double totalPnl = runtimeSnapshot == null ? 0d : runtimeSnapshot.getNetPnl();
-            double totalLots = runtimeSnapshot == null ? 0d : runtimeSnapshot.getSignedLots();
-            boolean hasPosition = runtimeSnapshot != null && runtimeSnapshot.getPositionCount() > 0;
+            FloatingCardRuntimeModel runtimeCard = findRuntimeCardForSymbol(symbol, runtimeCards);
+            double totalPnl = runtimeCard == null ? 0d : runtimeCard.getNetPnl();
+            double totalLots = runtimeCard == null ? 0d : runtimeCard.getSignedLots();
+            boolean hasPosition = runtimeCard != null && runtimeCard.getPositionCount() > 0;
             KlineData kline = latestKlines == null ? null : latestKlines.get(symbol);
             double realtimePrice = resolveMarketPrice(symbol, latestPrices);
             boolean hasPrice = !Double.isNaN(realtimePrice) || kline != null;
@@ -166,7 +166,7 @@ public class FloatingPositionAggregator {
             long updatedAt = kline == null ? 0L : Math.max(kline.getCloseTime(), kline.getOpenTime());
             result.add(new FloatingSymbolCardData(
                     symbol,
-                    resolveRuntimeCardLabel(symbol, runtimeSnapshot),
+                    resolveRuntimeCardLabel(symbol, runtimeCard),
                     totalPnl,
                     totalLots,
                     latestPrice,
@@ -338,23 +338,23 @@ public class FloatingPositionAggregator {
     }
 
     private static String resolveRuntimeCardLabel(String symbol,
-                                                  @Nullable ProductRuntimeSnapshot runtimeSnapshot) {
-        if (runtimeSnapshot == null) {
+                                                  @Nullable FloatingCardRuntimeModel runtimeCard) {
+        if (runtimeCard == null) {
             return resolveCardLabel(symbol, (String) null);
         }
-        if (runtimeSnapshot.getCompactDisplayLabel() != null
-                && !runtimeSnapshot.getCompactDisplayLabel().trim().isEmpty()) {
-            return runtimeSnapshot.getCompactDisplayLabel().trim();
+        if (runtimeCard.getCompactDisplayLabel() != null
+                && !runtimeCard.getCompactDisplayLabel().trim().isEmpty()) {
+            return runtimeCard.getCompactDisplayLabel().trim();
         }
-        if (runtimeSnapshot.getDisplayLabel() != null
-                && !runtimeSnapshot.getDisplayLabel().trim().isEmpty()) {
-            return runtimeSnapshot.getDisplayLabel().trim();
+        if (runtimeCard.getDisplayLabel() != null
+                && !runtimeCard.getDisplayLabel().trim().isEmpty()) {
+            return runtimeCard.getDisplayLabel().trim();
         }
         return resolveCardLabel(symbol, (String) null);
     }
 
-    private static ProductRuntimeSnapshot findRuntimeSnapshotForSymbol(String symbol,
-                                                                       List<FloatingCardRuntimeModel> runtimeCards) {
+    private static FloatingCardRuntimeModel findRuntimeCardForSymbol(String symbol,
+                                                                     List<FloatingCardRuntimeModel> runtimeCards) {
         if (runtimeCards == null || runtimeCards.isEmpty()) {
             return null;
         }
@@ -362,9 +362,8 @@ public class FloatingPositionAggregator {
             if (runtimeCard == null || runtimeCard.getProductRuntimeSnapshot() == null) {
                 continue;
             }
-            ProductRuntimeSnapshot snapshot = runtimeCard.getProductRuntimeSnapshot();
-            if (ProductSymbolMapper.isSameProduct(symbol, snapshot.getSymbol())) {
-                return snapshot;
+            if (ProductSymbolMapper.isSameProduct(symbol, runtimeCard.getProductRuntimeSnapshot().getSymbol())) {
+                return runtimeCard;
             }
         }
         return null;

@@ -59,6 +59,12 @@ public class FloatingWindowTextFormatterTest {
     }
 
     @Test
+    public void formatterShouldKeepUsingRuleCenterFormatting() {
+        assertEquals("+0.03手", FloatingWindowTextFormatter.formatLotsText(0.03d));
+        assertEquals("+$12.3", FloatingWindowTextFormatter.formatPnlAmount(12.34d, false));
+    }
+
+    @Test
     public void formatMiniStatusTextShouldShowNoPositionWhenThereIsNoActivePosition() {
         assertEquals("无持仓", FloatingWindowTextFormatter.formatMiniStatusText(false, false, 0d, false));
     }
@@ -77,14 +83,14 @@ public class FloatingWindowTextFormatterTest {
     }
 
     @Test
-    public void formatVolumeLineShouldUseOneMinuteLabelAndUnit() {
-        assertEquals("1M量 12.35 BTC",
+    public void formatVolumeLineShouldKeepDigitsAndUnitWithoutOneMinutePrefix() {
+        assertEquals("12.35 BTC",
                 FloatingWindowTextFormatter.formatVolumeLine(12.345d, "BTC", false));
     }
 
     @Test
-    public void formatAmountLineShouldUseOneMinuteLabel() {
-        assertEquals("1M额 123.46万$",
+    public void formatAmountLineShouldKeepDigitsWithoutOneMinutePrefix() {
+        assertEquals("123.46万$",
                 FloatingWindowTextFormatter.formatAmountLine(1_234_567d, false));
     }
 }

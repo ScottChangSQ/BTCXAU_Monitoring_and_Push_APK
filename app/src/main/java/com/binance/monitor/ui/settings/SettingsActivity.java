@@ -12,10 +12,12 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.binance.monitor.databinding.ContentSettingsBinding;
 import com.binance.monitor.ui.log.LogActivity;
+import com.binance.monitor.ui.trade.TradeAuditActivity;
 
 public class SettingsActivity extends AppCompatActivity {
 
     public static final String SECTION_DISPLAY = "display";
+    public static final String SECTION_TRADE = "trade";
     public static final String SECTION_GATEWAY = "gateway";
     public static final String SECTION_CACHE = "cache";
     private ContentSettingsBinding binding;
@@ -38,6 +40,11 @@ public class SettingsActivity extends AppCompatActivity {
                 intent.putExtra(SettingsSectionActivity.EXTRA_SECTION, section);
                 intent.putExtra(SettingsSectionActivity.EXTRA_TITLE, title);
                 startActivity(intent);
+            }
+
+            @Override
+            public void openTradeAuditPage() {
+                TradeAuditActivity.open(SettingsActivity.this, "");
             }
 
             @Override

@@ -4,9 +4,11 @@
  */
 package com.binance.monitor.ui.trade;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
+import com.binance.monitor.data.model.v2.trade.TradeTemplate;
 import com.binance.monitor.util.FormatUtils;
 
 import org.json.JSONObject;
@@ -165,6 +167,72 @@ public final class TradeCommandFactory {
         );
     }
 
+    // 创建 Close By 命令。
+    public static TradeCommand closeBy(String accountId,
+                                       String symbol,
+                                       long positionTicket,
+                                       long oppositePositionTicket) {
+        if (positionTicket <= 0L) {
+            throw new IllegalArgumentException("positionTicket 不能为空");
+        }
+        if (oppositePositionTicket <= 0L) {
+            throw new IllegalArgumentException("oppositePositionTicket 不能为空");
+        }
+        JSONObject params = createBaseParams(symbol, 0d, 0d, 0d, 0d);
+        putQuietly(params, "positionTicket", positionTicket);
+        putQuietly(params, "oppositePositionTicket", oppositePositionTicket);
+        return new TradeCommand(
+                nextRequestId(),
+                accountId,
+                symbol,
+                "CLOSE_BY",
+                0d,
+                0d,
+                0d,
+                0d,
+                params
+        );
+    }
+
+    // 为既有命令补充入口模式，不改变原始协议字段。
+    public static TradeCommand withEntryMode(@NonNull TradeCommand command, @NonNull String entryMode) {
+        JSONObject params = command.getParams();
+        putQuietly(params, "entryMode", safe(entryMode));
+        return new TradeCommand(
+                command.getRequestId(),
+                command.getAccountId(),
+                command.getSymbol(),
+                command.getAction(),
+                command.getVolume(),
+                command.getPrice(),
+                command.getSl(),
+                command.getTp(),
+                params
+        );
+    }
+
+    // 为既有命令补充模板元信息，不改变原始执行字段。
+    @NonNull
+    public static TradeCommand withTemplate(@NonNull TradeCommand command, @Nullable TradeTemplate template) {
+        if (template == null) {
+            return command;
+        }
+        JSONObject params = command.getParams();
+        putQuietly(params, "templateId", safe(template.getTemplateId()));
+        putQuietly(params, "templateName", safe(template.getDisplayName()));
+        return new TradeCommand(
+                command.getRequestId(),
+                command.getAccountId(),
+                command.getSymbol(),
+                command.getAction(),
+                command.getVolume(),
+                command.getPrice(),
+                command.getSl(),
+                command.getTp(),
+                params
+        );
+    }
+
     // 生成当前命令的简短确认文案。
     public static String describe(@Nullable TradeCommand command) {
         if (command == null) {
@@ -222,6 +290,14 @@ public final class TradeCommandFactory {
                     + formatOptionalPrice(command.getTp())
                     + " SL="
                     + formatOptionalPrice(command.getSl());
+        }
+        if ("CLOSE_BY".equals(action)) {
+            return "对锁平仓 "
+                    + symbol
+                    + " #"
+                    + params.optLong("positionTicket", 0L)
+                    + " <-> #"
+                    + params.optLong("oppositePositionTicket", 0L);
         }
         return action + " " + symbol;
     }

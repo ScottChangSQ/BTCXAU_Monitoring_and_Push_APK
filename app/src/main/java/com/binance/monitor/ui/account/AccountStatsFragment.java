@@ -16,6 +16,7 @@ import androidx.fragment.app.Fragment;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ContentAccountStatsBinding;
+import com.binance.monitor.runtime.state.model.AccountRuntimeSnapshot;
 import com.binance.monitor.ui.host.HostNavigationIntentFactory;
 import com.binance.monitor.ui.host.HostTab;
 import com.binance.monitor.ui.host.HostTabPage;
@@ -58,16 +59,16 @@ public class AccountStatsFragment extends Fragment implements HostTabPage {
                     }
 
                     @Override
-                    public void placeCurveSectionToBottom() {
+                    public void bindLocalMeta() {
                         if (screen != null) {
-                            screen.placeCurveSectionToBottom();
+                            screen.bindLocalMeta();
                         }
                     }
 
                     @Override
-                    public void bindLocalMeta() {
+                    public void beginAccountBootstrap() {
                         if (screen != null) {
-                            screen.bindLocalMeta();
+                            screen.beginAccountBootstrap();
                         }
                     }
 
@@ -153,6 +154,28 @@ public class AccountStatsFragment extends Fragment implements HostTabPage {
                         if (screen != null) {
                             screen.requestScheduledSnapshot();
                         }
+                    }
+
+                    @Nullable
+                    @Override
+                    public AccountRuntimeSnapshot getCurrentAccountRuntimeSnapshot() {
+                        return screen == null ? null : screen.getCurrentAccountRuntimeSnapshot();
+                    }
+
+                    @NonNull
+                    @Override
+                    public String getAppliedAccountHistoryRevision() {
+                        return screen == null ? "" : screen.getAppliedAccountHistoryRevision();
+                    }
+
+                    @Override
+                    public long getAppliedAccountUpdatedAt() {
+                        return screen == null ? 0L : screen.getAppliedAccountUpdatedAt();
+                    }
+
+                    @Override
+                    public long getScheduledSnapshotStaleAfterMs() {
+                        return screen == null ? 0L : screen.getScheduledSnapshotStaleAfterMs();
                     }
 
                     @Override

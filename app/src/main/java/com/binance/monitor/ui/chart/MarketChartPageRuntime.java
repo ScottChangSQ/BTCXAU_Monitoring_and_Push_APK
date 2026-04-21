@@ -8,6 +8,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.binance.monitor.databinding.ActivityMarketChartBinding;
@@ -40,7 +41,14 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
     private final Runnable autoRefreshRunnable = new Runnable() {
         @Override
         public void run() {
-            host.requestAutoRefreshKlines();
+            if (MarketChartRevisionRefreshPolicy.shouldRequestKlines(
+                    host.getCurrentMarketWindowSignature(),
+                    host.getAppliedMarketWindowSignature(),
+                    host.getAppliedMarketWindowUpdatedAt(),
+                    System.currentTimeMillis(),
+                    host.getAutoRefreshStaleAfterMs())) {
+                host.requestAutoRefreshKlines();
+            }
             scheduleNextAutoRefresh();
         }
     };
@@ -85,8 +93,8 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
     }
 
     @Override
-    public void restoreChartOverlayFromLatestCacheOrEmpty() {
-        host.restoreChartOverlayFromLatestCacheOrEmpty();
+    public void restoreChartOverlayFromLatestCache() {
+        host.restoreChartOverlayFromLatestCache();
     }
 
     @Override
@@ -104,6 +112,18 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
         host.requestKlines();
     }
 
+    public void requestColdStartKlines() {
+        host.requestColdStartKlines();
+    }
+
+    public void requestResumeKlines() {
+        host.requestResumeKlines();
+    }
+
+    public void requestSelectionChangeKlines() {
+        host.requestSelectionChangeKlines();
+    }
+
     @Override
     public void refreshChartOverlays() {
         host.refreshChartOverlays();
@@ -112,6 +132,11 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
     @Override
     public void restorePersistedCache() {
         host.restorePersistedCache();
+    }
+
+    @Override
+    public void beginChartBootstrap() {
+        host.beginChartBootstrap();
     }
 
     @Override
@@ -148,6 +173,7 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
     public void onColdStart() {
         host.applyPagePalette();
         host.applyPrivacyMaskState();
+        host.beginChartBootstrap();
         host.restorePersistedCache();
         host.updateStateCount();
         refreshRefreshCountdownDisplay();
@@ -158,7 +184,7 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
         MonitorServiceController.ensureStarted(host.requireActivity());
         host.applyPagePalette();
         host.attachAccountCacheListener();
-        host.restoreChartOverlayFromLatestCacheOrEmpty();
+        host.restoreChartOverlayFromLatestCache();
         host.consumePendingTradeActionIfNeeded();
         host.applyPrivacyMaskState();
         enterChartScreen(!hasEnteredScreen);
@@ -202,9 +228,9 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
     // 统一处理图表页进入前台：冷启动只发起一次初始请求，普通切页返回只恢复消费节奏。
     private void enterChartScreen(boolean coldStart) {
         if (coldStart) {
-            host.requestKlines();
+            host.requestColdStartKlines();
         } else if (host.shouldRequestKlinesOnResume()) {
-            host.requestKlines();
+            host.requestResumeKlines();
         }
         host.refreshChartOverlays();
         startAutoRefresh();
@@ -245,7 +271,7 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
 
     // 切产品、切周期或外部指定 symbol 后，统一走“重拉取 + 重排自动刷新”这一条页面编排。
     public void requestChartSelectionReload() {
-        host.requestKlines();
+        host.requestSelectionChangeKlines();
         scheduleNextAutoRefresh();
     }
 
@@ -334,7 +360,7 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
 
         void attachAccountCacheListener();
 
-        void restoreChartOverlayFromLatestCacheOrEmpty();
+        void restoreChartOverlayFromLatestCache();
 
         void consumePendingTradeActionIfNeeded();
 
@@ -342,7 +368,15 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
 
         void requestKlines();
 
+        void requestColdStartKlines();
+
+        void requestResumeKlines();
+
+        void requestSelectionChangeKlines();
+
         void refreshChartOverlays();
+
+        void beginChartBootstrap();
 
         void restorePersistedCache();
 
@@ -363,6 +397,19 @@ public final class MarketChartPageRuntime implements MarketChartPageHostDelegate
         long getChartOverlayRefreshDebounceMs();
 
         void requestAutoRefreshKlines();
+
+        @NonNull
+        String getCurrentMarketWindowSignature();
+
+        @NonNull
+        String getSelectedChartSymbol();
+
+        @NonNull
+        String getAppliedMarketWindowSignature();
+
+        long getAppliedMarketWindowUpdatedAt();
+
+        long getAutoRefreshStaleAfterMs();
 
         boolean shouldShowRefreshCountdown();
 

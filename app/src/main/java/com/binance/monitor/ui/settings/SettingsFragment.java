@@ -18,6 +18,7 @@ import com.binance.monitor.R;
 import com.binance.monitor.databinding.ContentSettingsBinding;
 import com.binance.monitor.ui.host.HostTabPage;
 import com.binance.monitor.ui.log.LogActivity;
+import com.binance.monitor.ui.trade.TradeAuditActivity;
 
 public class SettingsFragment extends Fragment implements HostTabPage {
 
@@ -48,6 +49,11 @@ public class SettingsFragment extends Fragment implements HostTabPage {
                 intent.putExtra(SettingsSectionActivity.EXTRA_SECTION, section);
                 intent.putExtra(SettingsSectionActivity.EXTRA_TITLE, title);
                 startActivity(intent);
+            }
+
+            @Override
+            public void openTradeAuditPage() {
+                TradeAuditActivity.open(requireContext(), "");
             }
 
             @Override

@@ -19,11 +19,11 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
                 "src/main/java/com/binance/monitor/ui/account/AccountSnapshotRefreshCoordinator.java"
         );
         int applyIndex = source.indexOf("applyPreloadedCacheIfAvailable()");
-        int refreshIndex = source.indexOf("host.fetchForUi(AccountTimeRange.ALL)");
+        int refreshIndex = source.indexOf("host.fetchFullForUi(AccountTimeRange.ALL)");
         int legacyIndex = source.indexOf("gatewayClient.fetch", refreshIndex);
 
         assertTrue("账户页进入时应先尝试应用预加载缓存", applyIndex >= 0);
-        assertTrue("主动刷新应通过协调器里的 host.fetchForUi(AccountTimeRange.ALL) 走统一 v2 优先链路", refreshIndex > applyIndex);
+        assertTrue("主动刷新应通过协调器里的 host.fetchFullForUi(AccountTimeRange.ALL) 走统一 v2 优先链路", refreshIndex > applyIndex);
         assertTrue("账户页不应继续自己直连旧 gatewayClient.fetch", legacyIndex < 0);
     }
 
@@ -143,12 +143,12 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
                 "src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("账户页应显式区分“真实快照”和“页面自己合成的断线空快照”",
+        assertTrue("账户页应继续通过统一入口决定是否应用回包",
                 source.contains("private boolean shouldApplyFetchedSnapshot("));
-        assertTrue("当前页已经有可渲染快照时，临时断线不应再用合成空快照清空持仓",
-                source.contains("if (syntheticDisconnectedSnapshot && hasRenderableCurrentSessionState()) {\n            return false;\n        }"));
-        assertTrue("快照回写前应统一通过 shouldApplyFetchedSnapshot 决定是否重画",
-                source.contains("private boolean shouldApplyFetchedSnapshot("));
+        assertFalse("账户页不应再保留 syntheticDisconnectedSnapshot 这条旧合成空快照分支",
+                source.contains("syntheticDisconnectedSnapshot"));
+        assertTrue("没有真实快照时应直接拒绝应用，而不是再造一份空快照上屏",
+                source.contains("if (snapshot == null) {\n            return false;\n        }"));
     }
 
     @Test

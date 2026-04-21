@@ -9,20 +9,20 @@
         android:layout_height="wrap_content"
         android:background="@drawable/bg_trade_dialog_surface"
         android:orientation="vertical"
-        android:padding="@dimen/card_content_padding">
+        android:padding="@dimen/container_padding_compact">
 
         <TextView
             android:id="@+id/tvTradeCommandHint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/text_primary"
-            android:textSize="12sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
         <LinearLayout
             android:id="@+id/layoutTradeOrderType"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
+            android:layout_marginTop="@dimen/section_gap"
             android:orientation="vertical"
             android:visibility="gone">
 
@@ -31,7 +31,7 @@
                 android:layout_height="wrap_content"
                 android:text="挂单类型"
                 android:textColor="@color/text_primary"
-                android:textSize="12sp" />
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
             <androidx.appcompat.widget.AppCompatSpinner
                 android:id="@+id/spinnerTradeOrderType"
@@ -43,14 +43,65 @@
                 android:spinnerMode="dropdown" />
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/layoutTradeComplexAction"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/section_gap"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvTradeComplexActionLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="复杂动作"
+                android:textColor="@color/text_primary"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
+
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinnerTradeComplexAction"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/control_height_lg"
+                android:layout_marginTop="@dimen/space_2"
+                android:background="@drawable/bg_spinner_filter"
+                android:popupBackground="@drawable/bg_spinner_popup"
+                android:spinnerMode="dropdown" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvTradeTargetVolumeLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/section_gap"
+            android:text="目标手数"
+            android:textColor="@color/text_primary"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
+            android:visibility="gone" />
+
+        <EditText
+            android:id="@+id/etTradeTargetVolume"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/control_height_lg"
+            android:layout_marginTop="@dimen/space_2"
+            android:background="@drawable/bg_trade_field"
+            android:gravity="center_vertical"
+            android:inputType="numberDecimal"
+            android:minHeight="@dimen/control_height_lg"
+            android:paddingHorizontal="@dimen/space_2"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Body"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/tvTradeVolumeLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
+            android:layout_marginTop="@dimen/section_gap"
             android:text="手数"
             android:textColor="@color/text_primary"
-            android:textSize="12sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
         <EditText
             android:id="@+id/etTradeVolume"
@@ -64,16 +115,16 @@
             android:paddingHorizontal="@dimen/space_2"
             android:singleLine="true"
             android:textColor="@color/text_primary"
-            android:textSize="13sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
 
         <TextView
             android:id="@+id/tvTradePriceLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
+            android:layout_marginTop="@dimen/section_gap"
             android:text="价格"
             android:textColor="@color/text_primary"
-            android:textSize="12sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
         <EditText
             android:id="@+id/etTradePrice"
@@ -87,16 +138,16 @@
             android:paddingHorizontal="@dimen/space_2"
             android:singleLine="true"
             android:textColor="@color/text_primary"
-            android:textSize="13sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
 
         <TextView
             android:id="@+id/tvTradeSlLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
+            android:layout_marginTop="@dimen/section_gap"
             android:text="止损"
             android:textColor="@color/text_primary"
-            android:textSize="12sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
         <EditText
             android:id="@+id/etTradeSl"
@@ -110,16 +161,16 @@
             android:paddingHorizontal="@dimen/space_2"
             android:singleLine="true"
             android:textColor="@color/text_primary"
-            android:textSize="13sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
 
         <TextView
             android:id="@+id/tvTradeTpLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
+            android:layout_marginTop="@dimen/section_gap"
             android:text="止盈"
             android:textColor="@color/text_primary"
-            android:textSize="12sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
         <EditText
             android:id="@+id/etTradeTp"
@@ -133,6 +184,6 @@
             android:paddingHorizontal="@dimen/space_2"
             android:singleLine="true"
             android:textColor="@color/text_primary"
-            android:textSize="13sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

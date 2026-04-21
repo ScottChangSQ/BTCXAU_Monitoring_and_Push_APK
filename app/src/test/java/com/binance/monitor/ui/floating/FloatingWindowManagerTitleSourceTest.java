@@ -24,15 +24,28 @@ public class FloatingWindowManagerTitleSourceTest {
     }
 
     @Test
-    public void titleViewShouldOnlyColorLotsInCompactTitle() throws Exception {
+    public void titleViewShouldKeepProductNameAndLotsInPrimaryTextColor() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("String lotsText = hasPosition ? FloatingWindowTextFormatter.formatLotsText(totalLots) : \"\";"));
-        assertTrue(source.contains("int lotsColor = resolvePnlColor(totalLots, true);"));
-        assertTrue(source.contains("styled.setSpan(new ForegroundColorSpan(lotsColor)"));
-        assertFalse(source.contains("styled.setSpan(new ForegroundColorSpan(pnlColor)"));
+        assertTrue(source.contains("return FloatingWindowTextFormatter.formatCardTitle(label, totalLots, 0d, hasPosition, masked);"));
+        assertFalse(source.contains("String lotsText = hasPosition ? FloatingWindowTextFormatter.formatLotsText(totalLots) : \"\";"));
+        assertFalse(source.contains("styled.setSpan(new ForegroundColorSpan(lotsColor)"));
+        assertFalse(source.contains("ForegroundColorSpan"));
+    }
+
+    @Test
+    public void titleViewPrimaryColorShouldBeAppliedAfterTextAppearanceToAvoidDenseStyleOverride() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        int appearanceIndex = source.indexOf("UiPaletteManager.applyTextAppearance(titleView, R.style.TextAppearance_BinanceMonitor_OverlayDense);");
+        int colorIndex = source.indexOf("titleView.setTextColor(palette.textPrimary);");
+        assertTrue(appearanceIndex >= 0);
+        assertTrue(colorIndex > appearanceIndex);
     }
 }

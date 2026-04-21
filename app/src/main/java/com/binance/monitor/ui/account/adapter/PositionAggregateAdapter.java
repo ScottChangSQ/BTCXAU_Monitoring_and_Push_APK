@@ -11,11 +11,12 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.databinding.ItemPositionBinding;
-import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.ui.account.PositionAggregateItem;
+import com.binance.monitor.ui.rules.IndicatorFormatterCenter;
+import com.binance.monitor.ui.rules.IndicatorId;
+import com.binance.monitor.ui.rules.IndicatorPresentationPolicy;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.SensitiveDisplayMasker;
-import com.binance.monitor.util.FormatUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -86,29 +87,38 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
                 binding.layoutDetail.setVisibility(View.GONE);
                 return;
             }
-            int pnlColor = resolveAmountColor(palette, item.getTotalPnl());
-            String pnlText = signedMoney(item.getTotalPnl());
-            String qtyText = String.format(Locale.getDefault(), "%.2f 手", item.getQuantity());
-            String costText = "$" + FormatUtils.formatPrice(item.getAverageCostPrice());
-            String sideText = sideCn(item.getSide());
+            int directionColor = resolveDirectionColor(palette, item.getSignedLots(), item.getTotalLots());
+            String titleText = item.getDisplayLabel().trim().isEmpty()
+                    ? item.getCompactDisplayLabel().trim()
+                    : item.getDisplayLabel().trim();
+            String directionText = resolveDirectionText(item.getSignedLots());
+            String lotsText = IndicatorFormatterCenter.formatQuantity(item.getTotalLots(), 2, "手");
+            String pnlText = IndicatorFormatterCenter.formatMoney(item.getNetPnl(), 2, false);
             String raw = String.format(Locale.getDefault(),
-                    "%s | %s | %s | 成本 %s | %s",
-                    item.getProductName(),
-                    sideText,
-                    qtyText,
-                    costText,
+                    "%s | %s | %s | %s",
+                    titleText,
+                    directionText,
+                    lotsText,
                     pnlText);
             SpannableString span = new SpannableString(raw);
-            int sideStart = raw.indexOf(sideText);
-            if (sideStart >= 0) {
-                span.setSpan(new ForegroundColorSpan(resolveSideColor(palette, sideText)),
-                        sideStart,
-                        sideStart + sideText.length(),
+            int directionStart = raw.indexOf(directionText);
+            if (directionStart >= 0) {
+                span.setSpan(new ForegroundColorSpan(directionColor),
+                        directionStart,
+                        directionStart + directionText.length(),
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             int start = raw.lastIndexOf(pnlText);
             if (start >= 0) {
-                span.setSpan(new ForegroundColorSpan(pnlColor), start, raw.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                IndicatorPresentationPolicy.applyDirectionalSpanForExactToken(
+                        span,
+                        binding.getRoot().getContext(),
+                        raw,
+                        pnlText,
+                        IndicatorId.ACCOUNT_POSITION_PNL,
+                        com.binance.monitor.R.color.text_primary,
+                        true
+                );
             }
             binding.tvSummary.setTextColor(palette.textPrimary);
             binding.tvSummary.setText(span);
@@ -124,27 +134,31 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             binding.layoutDetail.setVisibility(View.GONE);
         }
 
-        private static String sideCn(String side) {
-            return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
-        }
-
-        private int resolveSideColor(@NonNull UiPaletteManager.Palette palette, String sideText) {
-            return "买入".equals(sideText) ? palette.rise : palette.fall;
-        }
-
-        private static String signedMoney(double value) {
-            return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
-        }
-
-        private int resolveAmountColor(@NonNull UiPaletteManager.Palette palette, double value) {
-            AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
-            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
-                return palette.rise;
+        private int resolveDirectionColor(@NonNull UiPaletteManager.Palette palette,
+                                          double signedLots,
+                                          double totalLots) {
+            if (isZero(totalLots)) {
+                return palette.textSecondary;
             }
-            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
-                return palette.fall;
+            if (isZero(signedLots)) {
+                return palette.textSecondary;
             }
-            return palette.textPrimary;
+            return signedLots > 0d ? palette.rise : palette.fall;
+        }
+
+        @NonNull
+        private String resolveDirectionText(double signedLots) {
+            if (isZero(signedLots)) {
+                return "--";
+            }
+            if (signedLots > 0d) {
+                return "买入";
+            }
+            return "卖出";
+        }
+
+        private boolean isZero(double value) {
+            return Math.abs(value) < 1e-9;
         }
     }
 

@@ -127,18 +127,63 @@ public class KlineChartViewSourceTest {
     }
 
     @Test
+    public void klineChartViewShouldExposeDedicatedTradeLayerSnapshotEntry() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private ChartTradeLayerSnapshot tradeLayerSnapshot"));
+        assertTrue(source.contains("public void setTradeLayerSnapshot("));
+        assertTrue(source.contains("drawTradeLayerSnapshot(canvas"));
+        assertTrue(source.contains("ChartTradeLineState.LIVE_POSITION"));
+        assertTrue(source.contains("ChartTradeLineState.LIVE_PENDING"));
+        assertTrue(source.contains("ChartTradeLineState.LIVE_TP"));
+        assertTrue(source.contains("ChartTradeLineState.LIVE_SL"));
+        assertFalse(source.contains("drawOverlayAnnotations(canvas, positionAnnotations);"));
+        assertFalse(source.contains("drawOverlayAnnotations(canvas, pendingAnnotations);"));
+    }
+
+    @Test
     public void klineChartViewShouldExposePriceInfoTextMetricsForOverlayAlignment() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("float chartPriceInfoTextSizePx = getResources().getDimension(R.dimen.chart_price_info_text_size);"));
-        assertTrue(source.contains("textPaint.setTextSize(chartPriceInfoTextSizePx);"));
+        assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(textPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
+        assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(crossLabelTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
+        assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(popupTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
+        assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(popupPositiveTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
+        assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(popupNegativeTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
+        assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(latestPriceTagTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
+        assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(extremeLabelTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
+        assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(overlayLabelTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
+        assertFalse(source.contains("getResources().getDimension(R.dimen.chart_price_info_text_size)"));
         assertFalse(source.contains("textPaint.setTextSize(dp(9f));"));
+        assertFalse(source.contains("setTextSize(dp(8f));"));
+        assertFalse(source.contains("setTextSize(dp(8.5f));"));
         assertTrue(source.contains("float getPriceInfoTextSizePx() {\n        return textPaint.getTextSize();\n    }"));
-        assertTrue(source.contains("int getPricePaneTitleBaselineOffsetPx() {\n        return Math.round(dp(KlinePaneTextLayoutHelper.resolvePaneTitleBaselineOffsetDp()));\n    }"));
+        assertTrue(source.contains("int getPricePaneTitleBaselineOffsetPx() {\n        return Math.round(SpacingTokenResolver.dpFloat(getContext(), KlinePaneTextLayoutHelper.resolvePaneTitleBaselineOffsetRes()));\n    }"));
         assertFalse(source.contains("drawPriceOhlcInfo(canvas, infoIndex);"));
         assertFalse(source.contains("private void drawPriceOhlcInfo(Canvas canvas, int index) {"));
+    }
+
+    @Test
+    public void chartPaletteShouldComeFromUiPaletteManagerInsteadOfLocalColorDefaults() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("activePalette = palette;"));
+        assertTrue(source.contains("macdDifPaint.setColor(palette.xau);"));
+        assertTrue(source.contains("macdDeaPaint.setColor(palette.btc);"));
+        assertTrue(source.contains("stochKPaint.setColor(palette.xau);"));
+        assertTrue(source.contains("stochDPaint.setColor(palette.btc);"));
+        assertTrue(source.contains("private int defaultAnnotationColor() {"));
+        assertTrue(source.contains("private int latestPriceGuideColor() {"));
+        assertTrue(source.contains("private int overlayLabelBackgroundColor(boolean selected) {"));
+        assertTrue(source.contains("private int pointOverlayLabelBackgroundColor(boolean selected) {"));
     }
 }

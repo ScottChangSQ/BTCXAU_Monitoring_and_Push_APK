@@ -12,6 +12,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
@@ -133,22 +134,29 @@ public class LogAdapter extends RecyclerView.Adapter<LogAdapter.LogViewHolder> {
 
         // 根据日志级别绘制不同提示色，方便快速区分严重程度。
         private void styleLevel(String level, View badge) {
-            int background;
+            UiPaletteManager.Palette activePalette = palette != null
+                    ? palette
+                    : UiPaletteManager.resolve(badge.getContext());
+            int badgeColor = resolveLevelColor(activePalette, level);
+            badge.setBackground(UiPaletteManager.createFilledDrawable(
+                    badge.getContext(),
+                    ColorUtils.setAlphaComponent(badgeColor, 24)
+            ));
+            if (badge instanceof TextView) {
+                ((TextView) badge).setTextColor(ContextCompat.getColor(badge.getContext(), R.color.text_inverse));
+            }
+        }
+
+        // 日志级别徽标统一从 canonical token 派生，不再依赖独立 log_level_* 颜色资源。
+        private int resolveLevelColor(@NonNull UiPaletteManager.Palette activePalette, String level) {
             switch (level) {
                 case "WARN":
-                    background = R.drawable.bg_level_warn;
-                    break;
+                    return activePalette.primary;
                 case "ERROR":
-                    background = R.drawable.bg_level_error;
-                    break;
+                    return activePalette.fall;
                 case "INFO":
                 default:
-                    background = R.drawable.bg_level_info;
-                    break;
-            }
-            badge.setBackgroundResource(background);
-            if (badge instanceof TextView) {
-                ((TextView) badge).setTextColor(ContextCompat.getColor(badge.getContext(), R.color.white));
+                    return activePalette.primary;
             }
         }
 

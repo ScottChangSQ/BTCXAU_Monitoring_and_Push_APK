@@ -82,9 +82,9 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
                     }
 
                     @Override
-                    public void restoreChartOverlayFromLatestCacheOrEmpty() {
+                    public void restoreChartOverlayFromLatestCache() {
                         if (screen != null) {
-                            screen.restoreChartOverlayFromLatestCacheOrEmpty();
+                            screen.restoreChartOverlayFromLatestCache();
                         }
                     }
 
@@ -108,9 +108,37 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
                     }
 
                     @Override
+                    public void requestColdStartKlines() {
+                        if (screen != null) {
+                            screen.requestColdStartKlines();
+                        }
+                    }
+
+                    @Override
+                    public void requestResumeKlines() {
+                        if (screen != null) {
+                            screen.requestResumeKlines();
+                        }
+                    }
+
+                    @Override
+                    public void requestSelectionChangeKlines() {
+                        if (screen != null) {
+                            screen.requestSelectionChangeKlines();
+                        }
+                    }
+
+                    @Override
                     public void refreshChartOverlays() {
                         if (screen != null) {
                             screen.refreshChartOverlays();
+                        }
+                    }
+
+                    @Override
+                    public void beginChartBootstrap() {
+                        if (screen != null) {
+                            screen.beginChartBootstrap();
                         }
                     }
 
@@ -180,6 +208,34 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
                         if (screen != null) {
                             screen.requestAutoRefreshKlines();
                         }
+                    }
+
+                    @NonNull
+                    @Override
+                    public String getCurrentMarketWindowSignature() {
+                        return screen == null ? "" : screen.getCurrentMarketWindowSignature();
+                    }
+
+                    @NonNull
+                    @Override
+                    public String getSelectedChartSymbol() {
+                        return screen == null ? "" : screen.getSelectedChartSymbol();
+                    }
+
+                    @NonNull
+                    @Override
+                    public String getAppliedMarketWindowSignature() {
+                        return screen == null ? "" : screen.getAppliedMarketWindowSignature();
+                    }
+
+                    @Override
+                    public long getAppliedMarketWindowUpdatedAt() {
+                        return screen == null ? 0L : screen.getAppliedMarketWindowUpdatedAt();
+                    }
+
+                    @Override
+                    public long getAutoRefreshStaleAfterMs() {
+                        return screen == null ? 0L : screen.getAutoRefreshStaleAfterMs();
                     }
 
                     @Override

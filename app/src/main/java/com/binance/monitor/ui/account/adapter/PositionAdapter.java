@@ -82,7 +82,7 @@ public class PositionAdapter extends RecyclerView.Adapter<PositionAdapter.Holder
                     signedMoney(item.getDayPnL()),
                     signedMoney(item.getTotalPnL()),
                     item.getReturnRate() * 100d));
-            int color = item.getTotalPnL() >= 0d ? R.color.accent_green : R.color.accent_red;
+            int color = item.getTotalPnL() >= 0d ? R.color.pnl_profit : R.color.pnl_loss;
             binding.tvPnL.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), color));
         }
 

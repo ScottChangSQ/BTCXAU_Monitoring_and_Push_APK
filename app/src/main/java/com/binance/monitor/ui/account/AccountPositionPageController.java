@@ -15,7 +15,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
-import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -25,10 +24,12 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 import com.binance.monitor.databinding.ContentAccountPositionBinding;
-import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.ui.PageBootstrapSnapshot;
+import com.binance.monitor.runtime.ui.PageBootstrapState;
+import com.binance.monitor.runtime.ui.PageBootstrapStateMachine;
 import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.service.MonitorServiceController;
@@ -54,7 +55,7 @@ public final class AccountPositionPageController {
     @Nullable
     private final BottomNavBinding bottomNavBinding;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final AccountStatsPreloadManager.CacheListener cacheListener = this::scheduleUiModelBuild;
+    private final AccountStatsPreloadManager.CacheListener cacheListener = this::handleCacheChanged;
 
     private AccountMetricAdapter overviewAdapter;
     private PositionAggregateAdapter positionAggregateAdapter;
@@ -70,6 +71,8 @@ public final class AccountPositionPageController {
     private AccountPositionUiModel lastStableUiModel = AccountPositionUiModel.empty();
     private List<TradeRecordItem> currentTradeHistory = Collections.emptyList();
     private List<TradeRecordItem> lastStableTradeHistory = Collections.emptyList();
+    private PageBootstrapStateMachine accountBootstrapStateMachine = new PageBootstrapStateMachine();
+    private PageBootstrapSnapshot accountBootstrapSnapshot = PageBootstrapSnapshot.initial();
     private String pendingConnectionStatusText = "";
     private boolean bound;
     private boolean destroyed;
@@ -109,13 +112,19 @@ public final class AccountPositionPageController {
                         handleAcceptedLoginResult(successMessage,
                                 profile == null ? null : profile.getLogin(),
                                 profile == null ? null : profile.getServer());
+                        applyBootstrapState(accountBootstrapStateMachine.onMemoryDataReady(buildAccountBootstrapRevision(verifiedCache)));
                         scheduleUiModelBuild(verifiedCache);
                     }
 
                     @Override
                     public void onSessionFailed(@NonNull String message) {
-                        pendingConnectionStatusText = "";
+                        pendingConnectionStatusText = buildFailureConnectionStatusText(message);
                         restoreLastStableUiModel();
+                    }
+
+                    @Override
+                    public void onSessionLoggedOut(@NonNull String message) {
+                        applyLoggedOutSessionState();
                     }
                 }
         );
@@ -127,6 +136,11 @@ public final class AccountPositionPageController {
         applyPaletteStyles();
         applyPrivacyToggleState(isPrivacyMasked());
         AccountStatsPreloadManager.Cache initialCache = resolveCurrentSessionCache();
+        if (initialCache != null) {
+            applyBootstrapState(accountBootstrapStateMachine.onMemoryDataReady(buildAccountBootstrapRevision(initialCache)));
+        } else {
+            applyBootstrapState(accountBootstrapStateMachine.onStorageRestoreStarted());
+        }
         scheduleUiModelBuild(initialCache);
         if (initialCache == null) {
             restoreStoredCurrentSessionCacheAsync();
@@ -156,6 +170,9 @@ public final class AccountPositionPageController {
 
     // 页面离开可见态时取消刷新监听，避免后台页继续参与刷新。
     public void onPageHidden() {
+        if (tradeHistoryBottomSheetController != null) {
+            tradeHistoryBottomSheetController.dismiss();
+        }
         if (preloadManager != null && cacheListenerRegistered) {
             preloadManager.removeCacheListener(cacheListener);
             cacheListenerRegistered = false;
@@ -169,6 +186,9 @@ public final class AccountPositionPageController {
         }
         destroyed = true;
         onPageHidden();
+        if (tradeHistoryBottomSheetController != null) {
+            tradeHistoryBottomSheetController.dismiss();
+        }
         if (accountSessionDialogController != null) {
             accountSessionDialogController.shutdown();
         }
@@ -247,6 +267,7 @@ public final class AccountPositionPageController {
         setupRecyclerViews();
         setupActions();
         setupBottomNav();
+        bindHistorySection(Collections.emptyList());
     }
 
     // 刷新底部导航状态。
@@ -285,10 +306,34 @@ public final class AccountPositionPageController {
             return;
         }
         uiModelExecutor.execute(() -> {
-            AccountPositionUiModel nextModel = uiModelFactory.build(cache);
+            AccountPositionUiModel nextModel = resolveVisibleUiModel(cache);
             List<TradeRecordItem> tradeHistory = resolveTradeHistory(cache);
             mainHandler.post(() -> applyUiModel(nextModel, tradeHistory));
         });
+    }
+
+    // 监听到缓存变化时，先推进 bootstrap 状态，再更新可见模型。
+    private void handleCacheChanged(@Nullable AccountStatsPreloadManager.Cache cache) {
+        if (accountSessionDialogController != null) {
+            accountSessionDialogController.onCacheUpdated(cache);
+        }
+        if (cache != null) {
+            applyBootstrapState(accountBootstrapStateMachine.onMemoryDataReady(buildAccountBootstrapRevision(cache)));
+        }
+        scheduleUiModelBuild(cache);
+    }
+
+    // 根据当前 bootstrap 状态决定首帧应显示恢复态还是真正空态。
+    @NonNull
+    private AccountPositionUiModel resolveVisibleUiModel(@Nullable AccountStatsPreloadManager.Cache cache) {
+        if (cache != null) {
+            return uiModelFactory.build(cache);
+        }
+        if (accountBootstrapSnapshot != null
+                && accountBootstrapSnapshot.getState() == PageBootstrapState.STORAGE_RESTORING) {
+            return AccountPositionUiModel.restoring();
+        }
+        return AccountPositionUiModel.empty();
     }
 
     // 从当前缓存里提取完整历史成交，供账户页底部抽屉直接展示。
@@ -323,10 +368,15 @@ public final class AccountPositionPageController {
         }
         uiModelExecutor.execute(() -> {
             AccountStatsPreloadManager.Cache cache = resolveStoredCurrentSessionCacheOnWorkerThread();
-            if (cache == null) {
-                return;
-            }
-            mainHandler.post(() -> scheduleUiModelBuild(cache));
+            mainHandler.post(() -> {
+                if (cache == null) {
+                    applyBootstrapState(accountBootstrapStateMachine.onStorageMiss());
+                    scheduleUiModelBuild(null);
+                    return;
+                }
+                applyBootstrapState(accountBootstrapStateMachine.onStorageDataReady(buildAccountBootstrapRevision(cache)));
+                scheduleUiModelBuild(cache);
+            });
         });
     }
 
@@ -375,6 +425,18 @@ public final class AccountPositionPageController {
         return value == null ? "" : value.trim();
     }
 
+    // 用更新时间优先、拉取时间兜底，生成账户页首帧状态机使用的稳定版本号。
+    @NonNull
+    private String buildAccountBootstrapRevision(@NonNull AccountStatsPreloadManager.Cache cache) {
+        long updatedAt = cache.getUpdatedAt() > 0L ? cache.getUpdatedAt() : cache.getFetchedAt();
+        return String.valueOf(updatedAt);
+    }
+
+    // 写入新的 bootstrap 状态，账户页可见模型会在下一轮构建时按状态切换。
+    private void applyBootstrapState(@NonNull PageBootstrapSnapshot snapshot) {
+        accountBootstrapSnapshot = snapshot;
+    }
+
     // 按分段差异只刷新发生变化的区块。
     private void applyUiModel(@NonNull AccountPositionUiModel nextModel,
                               @NonNull List<TradeRecordItem> tradeHistory) {
@@ -384,9 +446,9 @@ public final class AccountPositionPageController {
         if (nextModel.getSnapshotVersionMs() < currentUiModel.getSnapshotVersionMs()) {
             return;
         }
-        currentTradeHistory = Collections.unmodifiableList(new ArrayList<>(tradeHistory));
         boolean masked = isPrivacyMasked();
-        AccountPositionSectionDiff.Result diff = AccountPositionSectionDiff.diff(currentUiModel, nextModel);
+        AccountPositionSectionDiff.Result diff = AccountPositionSectionDiff.diff(currentUiModel, nextModel, currentTradeHistory, tradeHistory);
+        currentTradeHistory = Collections.unmodifiableList(new ArrayList<>(tradeHistory));
         if (diff.isOverviewChanged()) {
             bindOverview(nextModel, masked);
         }
@@ -396,6 +458,8 @@ public final class AccountPositionPageController {
         if (diff.isPendingChanged()) {
             bindPendingOrders(nextModel, masked);
         }
+        // 历史入口只有一个按钮，但状态必须始终跟最新历史快照同步，不能只靠 diff 决定是否刷新。
+        bindHistorySection(currentTradeHistory);
         if (diff.hasAnyChange()) {
             currentUiModel = nextModel;
         }
@@ -417,15 +481,16 @@ public final class AccountPositionPageController {
     // 绑定当前持仓分段。
     private void bindPositions(@NonNull AccountPositionUiModel model, boolean masked) {
         List<PositionItem> positions = model.getPositions();
+        List<PositionAggregateItem> aggregates = model.getPositionAggregates();
         positionAggregateAdapter.setMasked(masked);
-        positionAggregateAdapter.submitList(model.getPositionAggregates());
+        positionAggregateAdapter.submitList(aggregates);
         positionAdapter.setMasked(masked);
         positionAdapter.submitList(positions);
         binding.tvPositionSummary.setText(masked
                 ? "当前持仓 " + SensitiveDisplayMasker.MASK_TEXT
                 : model.getPositionSummaryText());
-        binding.tvPositionAggregateTitle.setVisibility(View.GONE);
-        binding.recyclerPositionAggregates.setVisibility(View.GONE);
+        binding.tvPositionAggregateTitle.setVisibility(aggregates.isEmpty() ? View.GONE : View.VISIBLE);
+        binding.recyclerPositionAggregates.setVisibility(aggregates.isEmpty() ? View.GONE : View.VISIBLE);
         binding.recyclerPositions.setVisibility(positions.isEmpty() ? View.GONE : View.VISIBLE);
         binding.tvPositionsEmpty.setVisibility(positions.isEmpty() ? View.VISIBLE : View.GONE);
     }
@@ -440,6 +505,16 @@ public final class AccountPositionPageController {
                 : model.getPendingSummaryText());
         binding.recyclerPendingOrders.setVisibility(pendingOrders.isEmpty() ? View.GONE : View.VISIBLE);
         binding.tvPendingOrdersEmpty.setVisibility(pendingOrders.isEmpty() ? View.VISIBLE : View.GONE);
+    }
+
+    // 绑定历史成交分段，只在历史 revision 变化时更新入口状态。
+    private void bindHistorySection(@NonNull List<TradeRecordItem> tradeHistory) {
+        boolean hasHistory = !tradeHistory.isEmpty();
+        binding.btnOpenAccountHistory.setEnabled(hasHistory);
+        binding.btnOpenAccountHistory.setAlpha(hasHistory ? 1f : 0.6f);
+        binding.btnOpenAccountHistory.setText(hasHistory
+                ? host.requireActivity().getString(R.string.account_history_entry_action_with_count, tradeHistory.size())
+                : host.requireActivity().getString(R.string.account_history_entry_action));
     }
 
     // 应用页面主题。
@@ -460,9 +535,14 @@ public final class AccountPositionPageController {
         binding.tvHistorySectionTitle.setTextColor(palette.textPrimary);
         binding.tvPositionsEmpty.setTextColor(palette.textSecondary);
         binding.tvPendingOrdersEmpty.setTextColor(palette.textSecondary);
-        binding.btnOpenAccountHistory.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));
+        UiPaletteManager.styleTextTrigger(
+                binding.btnOpenAccountHistory,
+                palette,
+                palette.control,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control
+        );
         ViewCompat.setBackgroundTintList(binding.btnOpenAccountHistory, null);
-        binding.btnOpenAccountHistory.setTextColor(palette.textPrimary);
         binding.ivAccountPrivacyToggle.setImageTintList(ColorStateList.valueOf(palette.textSecondary));
         updateConnectionStatusChip(resolveDisplayedConnectionStatusText(currentUiModel));
     }
@@ -501,7 +581,7 @@ public final class AccountPositionPageController {
         binding.ivAccountPrivacyToggle.setAlpha(masked ? 0.9f : 1f);
     }
 
-    // 用统一样式更新连接状态按钮。
+    // 用标准主体更新连接状态入口，避免页面继续手写 chip 壳子。
     private void updateConnectionStatusChip(@Nullable String connectionStatusText) {
         AppCompatActivity activity = host.requireActivity();
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(activity);
@@ -509,15 +589,22 @@ public final class AccountPositionPageController {
         boolean connected = safeText.startsWith("已连接");
         binding.tvAccountConnectionStatus.setText(safeText);
         if (connected) {
-            binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createFilledDrawable(activity, palette.primary));
-            binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(activity, R.color.white));
+            UiPaletteManager.styleTextTrigger(
+                    binding.tvAccountConnectionStatus,
+                    palette,
+                    palette.primarySoft,
+                    UiPaletteManager.controlSelectedText(activity),
+                    R.style.TextAppearance_BinanceMonitor_ControlCompact
+            );
             return;
         }
-        binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createOutlinedDrawable(
-                activity,
-                UiPaletteManager.neutralFill(activity),
-                UiPaletteManager.neutralStroke(activity)));
-        binding.tvAccountConnectionStatus.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary));
+        UiPaletteManager.styleTextTrigger(
+                binding.tvAccountConnectionStatus,
+                palette,
+                palette.control,
+                UiPaletteManager.controlUnselectedText(activity),
+                R.style.TextAppearance_BinanceMonitor_ControlCompact
+        );
     }
 
     // 登录已受理但新快照尚未回到页面时，顶部入口先展示同步中的明确状态。
@@ -558,15 +645,38 @@ public final class AccountPositionPageController {
         bindOverview(currentUiModel, masked);
         bindPositions(currentUiModel, masked);
         bindPendingOrders(currentUiModel, masked);
+        bindHistorySection(Collections.emptyList());
         updateConnectionStatusChip(resolveDisplayedConnectionStatusText(currentUiModel));
     }
 
-    // 账户持仓页回到前台时立即走一次正式账户同步，避免只显示旧缓存等待下一次 stream。
+    // 退出登录后把账户页切回未登录空态，避免旧账号数据继续残留在页面和服务运行态里。
+    private void applyLoggedOutSessionState() {
+        pendingConnectionStatusText = "";
+        currentTradeHistory = Collections.emptyList();
+        lastStableTradeHistory = Collections.emptyList();
+        currentUiModel = AccountPositionUiModel.empty();
+        lastStableUiModel = AccountPositionUiModel.empty();
+        applyBootstrapState(accountBootstrapStateMachine.onStorageMiss());
+        if (preloadManager != null) {
+            preloadManager.setFullSnapshotActive(false);
+            preloadManager.clearLatestCache();
+        }
+        ConfigManager.getInstance(host.getApplicationContext()).setAccountSessionActive(false);
+        requestMonitorServiceAccountRuntimeClear();
+        boolean masked = isPrivacyMasked();
+        bindOverview(currentUiModel, masked);
+        bindPositions(currentUiModel, masked);
+        bindPendingOrders(currentUiModel, masked);
+        bindHistorySection(Collections.emptyList());
+        updateConnectionStatusChip(resolveDisplayedConnectionStatusText(currentUiModel));
+    }
+
+    // 账户持仓页回到前台时先走轻量运行态确认，避免重新把登录收口绑回 full 全量链。
     private void requestForegroundEntrySnapshot() {
         if (preloadManager == null || uiModelExecutor == null || uiModelExecutor.isShutdown()) {
             return;
         }
-        uiModelExecutor.execute(() -> preloadManager.fetchForUi(AccountTimeRange.ALL));
+        uiModelExecutor.execute(() -> preloadManager.fetchSnapshotForUi());
     }
 
     // 会话提交失败后恢复上一份稳定读模型，避免页面长期停在空白态。
@@ -576,6 +686,21 @@ public final class AccountPositionPageController {
             return;
         }
         scheduleUiModelBuild(resolveCurrentSessionCache());
+    }
+
+    // 登录失败后顶部入口只保留短状态，完整细节交给失败弹窗展示。
+    @NonNull
+    private String buildFailureConnectionStatusText(@Nullable String message) {
+        String safeMessage = trimToEmpty(message);
+        if (safeMessage.isEmpty()) {
+            return "登录失败";
+        }
+        int lineBreak = safeMessage.indexOf('\n');
+        String firstLine = lineBreak >= 0 ? safeMessage.substring(0, lineBreak).trim() : safeMessage;
+        if (firstLine.isEmpty()) {
+            return "登录失败";
+        }
+        return firstLine.length() > 20 ? "登录失败" : firstLine;
     }
 
     // 登录成功后给顶部入口一个明确成功态，直到新快照把真实连接状态覆盖回来。
@@ -588,6 +713,11 @@ public final class AccountPositionPageController {
     // 顶部账户入口应直接进入登录弹窗，而不是先落到账户统计页内容。
     private void openAccountLogin() {
         if (accountSessionDialogController == null) {
+            return;
+        }
+        String displayedConnectionStatus = resolveDisplayedConnectionStatusText(currentUiModel);
+        if (displayedConnectionStatus.startsWith("已连接")) {
+            accountSessionDialogController.showAccountConnectionDialog(resolveCurrentSessionCache(), displayedConnectionStatus);
             return;
         }
         accountSessionDialogController.showLoginDialog();
@@ -604,6 +734,11 @@ public final class AccountPositionPageController {
     // 账户持仓页也需要保证监控服务在线，避免只剩本地旧缓存而没有实时主链。
     private void ensureMonitorServiceStarted() {
         MonitorServiceController.ensureStarted(host.requireActivity());
+    }
+
+    // 注销后显式通知服务清掉账户运行态，避免旧仓位短暂回灌到页面。
+    private void requestMonitorServiceAccountRuntimeClear() {
+        MonitorServiceController.dispatch(host.requireActivity(), AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME);
     }
 
     public interface Host {

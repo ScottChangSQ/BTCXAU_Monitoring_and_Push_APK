@@ -13,6 +13,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.lifecycle.Lifecycle;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.binance.monitor.R;
@@ -34,6 +35,14 @@ public final class AccountTradeHistoryBottomSheetController {
     private static final String SORT_TIME_ASC = "时间正序";
 
     private final AppCompatActivity activity;
+    @Nullable
+    private BottomSheetDialog activeDialog;
+    @Nullable
+    private DialogAccountTradeHistorySheetBinding activeBinding;
+    @Nullable
+    private TradeRecordAdapterV2 activeTradeAdapter;
+    @Nullable
+    private List<TradeRecordItem> pendingShowTrades;
     private String selectedProductFilter = FILTER_PRODUCT;
     private String selectedSideFilter = FILTER_SIDE;
     private String selectedSortFilter = SORT_TIME_DESC;
@@ -45,7 +54,54 @@ public final class AccountTradeHistoryBottomSheetController {
 
     // 展示完整历史成交底部抽屉，并按当前筛选条件直接绑定列表。
     public void show(@Nullable List<TradeRecordItem> sourceTrades) {
+        if (!canShowDialogNow()) {
+            return;
+        }
         List<TradeRecordItem> baseTrades = copyTrades(sourceTrades);
+        if (tryUpdateVisibleDialog(baseTrades)) {
+            return;
+        }
+        if (activeDialog != null && !activeDialog.isShowing()) {
+            clearInactiveDialogReference();
+        }
+        if (activeDialog != null) {
+            pendingShowTrades = baseTrades;
+            dismissActiveDialog();
+            return;
+        }
+        showNewDialog(baseTrades);
+    }
+
+    // 页面切换、销毁或重复打开前统一关闭旧抽屉，避免残留窗口状态挡住新的展示请求。
+    public void dismiss() {
+        pendingShowTrades = null;
+        dismissActiveDialog();
+    }
+
+    // 仅在页面窗口已恢复且可安全挂载弹层时才允许展示，避免 show 请求落在无效窗口上。
+    private boolean canShowDialogNow() {
+        if (activity.isFinishing() || activity.isDestroyed()) {
+            return false;
+        }
+        if (!activity.getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+            return false;
+        }
+        return activity.getWindow() != null
+                && activity.getWindow().getDecorView() != null
+                && activity.getWindow().getDecorView().isAttachedToWindow();
+    }
+
+    // 当前抽屉已经可见时直接刷新内容，避免重复 dismiss/show 产生窗口切换竞态。
+    private boolean tryUpdateVisibleDialog(@NonNull List<TradeRecordItem> baseTrades) {
+        if (activeDialog == null || activeBinding == null || activeTradeAdapter == null || !activeDialog.isShowing()) {
+            return false;
+        }
+        updateDisplayedTrades(activeBinding, activeTradeAdapter, baseTrades);
+        return true;
+    }
+
+    // 真正创建并展示新的历史成交抽屉。
+    private void showNewDialog(@NonNull List<TradeRecordItem> baseTrades) {
         DialogAccountTradeHistorySheetBinding binding = DialogAccountTradeHistorySheetBinding.inflate(activity.getLayoutInflater());
         BottomSheetDialog dialog = new BottomSheetDialog(activity);
         dialog.setContentView(binding.getRoot());
@@ -71,6 +127,24 @@ public final class AccountTradeHistoryBottomSheetController {
         binding.recyclerTradeHistory.setAdapter(tradeAdapter);
 
         setupFilters(binding, tradeAdapter, baseTrades);
+        dialog.setOnDismissListener(ignored -> {
+            if (activeDialog == dialog) {
+                activeDialog = null;
+                activeBinding = null;
+                activeTradeAdapter = null;
+            }
+            List<TradeRecordItem> pendingTrades = consumePendingShowTrades();
+            if (pendingTrades != null && canShowDialogNow()) {
+                activity.getWindow().getDecorView().post(() -> {
+                    if (activeDialog == null && canShowDialogNow()) {
+                        showNewDialog(pendingTrades);
+                    }
+                });
+            }
+        });
+        activeDialog = dialog;
+        activeBinding = binding;
+        activeTradeAdapter = tradeAdapter;
         dialog.show();
         UiPaletteManager.applyBottomSheetSurface(dialog, palette);
     }
@@ -79,9 +153,14 @@ public final class AccountTradeHistoryBottomSheetController {
     private void styleFilterField(@NonNull Spinner spinner,
                                   @NonNull TextView labelView,
                                   @NonNull UiPaletteManager.Palette palette) {
-        spinner.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));
-        labelView.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));
-        labelView.setTextColor(palette.textPrimary);
+        spinner.setBackground(null);
+        UiPaletteManager.styleSelectFieldLabel(
+                labelView,
+                palette,
+                palette.control,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control
+        );
     }
 
     // 初始化筛选控件，并把筛选变化统一收口到同一套列表刷新逻辑。
@@ -279,5 +358,34 @@ public final class AccountTradeHistoryBottomSheetController {
     @NonNull
     private List<TradeRecordItem> copyTrades(@Nullable List<TradeRecordItem> sourceTrades) {
         return sourceTrades == null ? new ArrayList<>() : new ArrayList<>(sourceTrades);
+    }
+
+    // 统一关闭当前可见抽屉，并清掉控制器里持有的窗口引用。
+    private void dismissActiveDialog() {
+        if (activeDialog == null) {
+            return;
+        }
+        if (activeDialog.isShowing()) {
+            activeDialog.dismiss();
+            return;
+        }
+        activeDialog = null;
+        activeBinding = null;
+        activeTradeAdapter = null;
+    }
+
+    // 遇到已经不显示却仍残留引用的旧窗口时，先清干净再允许新的点击直接打开。
+    private void clearInactiveDialogReference() {
+        activeDialog = null;
+        activeBinding = null;
+        activeTradeAdapter = null;
+    }
+
+    // 取出并清空等待中的打开请求，确保只消费最新一次点击。
+    @Nullable
+    private List<TradeRecordItem> consumePendingShowTrades() {
+        List<TradeRecordItem> pendingTrades = pendingShowTrades;
+        pendingShowTrades = null;
+        return pendingTrades;
     }
 }

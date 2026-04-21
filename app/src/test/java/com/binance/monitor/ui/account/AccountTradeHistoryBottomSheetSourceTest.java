@@ -41,14 +41,49 @@ public class AccountTradeHistoryBottomSheetSourceTest {
         assertTrue(source.contains("binding.recyclerTradeHistory.setBackground("));
         assertTrue(source.contains("UiPaletteManager.createSectionBackground(activity, palette.surfaceEnd, palette.stroke)"));
         assertTrue(source.contains("styleFilterField(binding.spinnerTradeHistoryProduct, binding.tvTradeHistoryProductLabel, palette);"));
-        assertTrue(source.contains("spinner.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));"));
-        assertTrue(source.contains("labelView.setBackground(UiPaletteManager.createOutlinedDrawable(activity, palette.card, palette.stroke));"));
+        assertTrue(source.contains("spinner.setBackground(null);"));
+        assertTrue(source.contains("UiPaletteManager.styleSelectFieldLabel("));
 
         assertTrue(layout.contains("@+id/spinnerTradeHistoryProduct"));
         assertTrue(layout.contains("@+id/spinnerTradeHistorySide"));
         assertTrue(layout.contains("@+id/spinnerTradeHistorySort"));
         assertTrue(layout.contains("@+id/recyclerTradeHistory"));
         assertTrue(layout.contains("@+id/tvTradeHistoryEmpty"));
+        assertTrue(layout.contains("@style/Widget.BinanceMonitor.Subject.SelectField.Label"));
+        assertFalse(layout.contains("Widget.BinanceMonitor.Spinner.Label"));
+        assertFalse(layout.contains("@drawable/bg_spinner_filter"));
+    }
+
+    @Test
+    public void accountHistoryBottomSheetShouldManageActiveDialogAcrossPageLifecycle() throws Exception {
+        String controllerSource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountTradeHistoryBottomSheetController.java");
+        String pageSource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
+
+        assertTrue(controllerSource.contains("private BottomSheetDialog activeDialog;"));
+        assertTrue(controllerSource.contains("private DialogAccountTradeHistorySheetBinding activeBinding;"));
+        assertTrue(controllerSource.contains("private TradeRecordAdapterV2 activeTradeAdapter;"));
+        assertTrue(controllerSource.contains("private List<TradeRecordItem> pendingShowTrades;"));
+        assertTrue(controllerSource.contains("if (tryUpdateVisibleDialog(baseTrades)) {"));
+        assertTrue(controllerSource.contains("pendingShowTrades = baseTrades;"));
+        assertTrue(controllerSource.contains("List<TradeRecordItem> pendingTrades = consumePendingShowTrades();"));
+        assertTrue(controllerSource.contains("private boolean canShowDialogNow() {"));
+        assertTrue(controllerSource.contains("dismissActiveDialog();"));
+        assertTrue(controllerSource.contains("dialog.setOnDismissListener("));
+        assertTrue(controllerSource.contains("public void dismiss() {"));
+        assertTrue(controllerSource.contains("if (activeDialog != null && !activeDialog.isShowing()) {"));
+        assertTrue(controllerSource.contains("clearInactiveDialogReference();"));
+        assertTrue(controllerSource.contains("private void clearInactiveDialogReference() {"));
+        assertTrue(pageSource.contains("tradeHistoryBottomSheetController.dismiss();"));
+    }
+
+    @Test
+    public void accountHistoryEntryStateShouldRebindFromLatestHistorySnapshot() throws Exception {
+        String pageSource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
+
+        assertTrue(pageSource.contains("currentTradeHistory = Collections.unmodifiableList(new ArrayList<>(tradeHistory));"));
+        assertTrue(pageSource.contains("bindHistorySection(currentTradeHistory);"));
+        assertTrue(pageSource.contains("currentTradeHistory = Collections.emptyList();"));
+        assertTrue(pageSource.contains("bindHistorySection(Collections.emptyList());"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

@@ -24,4 +24,13 @@ public class SettingsActivitySourceTest {
         assertTrue(source.contains("pageController = new SettingsPageController("));
         assertFalse(source.contains("HostNavigationIntentFactory.forTab(this, HostTab.SETTINGS)"));
     }
+
+    @Test
+    public void settingsActivityShouldExposeTradeSectionConstant() throws Exception {
+        String source = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("public static final String SECTION_TRADE = \"trade\";"));
+    }
 }

@@ -78,6 +78,6 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginStart="@dimen/page_horizontal_padding"
-        android:background="@color/divider" />
+        android:layout_marginStart="@dimen/screen_edge_padding"
+        android:background="@color/border_subtle" />
 </LinearLayout>

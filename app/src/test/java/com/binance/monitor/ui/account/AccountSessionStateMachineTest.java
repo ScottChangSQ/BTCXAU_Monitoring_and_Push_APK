@@ -45,4 +45,20 @@ public class AccountSessionStateMachineTest {
         assertEquals("同步失败", failed.getMessage());
         assertFalse(failed.isAwaitingSync());
     }
+
+    @Test
+    public void runtimeConfirmedSessionShouldEnterFullSyncingBeforeActive() {
+        AccountSessionStateMachine machine = new AccountSessionStateMachine();
+
+        machine.markSyncing("acct-4", "正在同步账户");
+        machine.markFullSyncing("acct-4", "账户已登录，正在加载完整数据");
+
+        AccountSessionStateMachine.StateSnapshot fullSyncing = machine.snapshot();
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FULL_SYNCING, fullSyncing.getState());
+        assertEquals("acct-4", fullSyncing.getActiveProfileId());
+        assertFalse(fullSyncing.isAwaitingSync());
+
+        machine.markActive("acct-4", "账户数据已对齐");
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.ACTIVE, machine.snapshot().getState());
+    }
 }

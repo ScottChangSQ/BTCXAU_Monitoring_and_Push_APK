@@ -10,9 +10,10 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemAccountKvBinding;
-import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.runtime.account.MetricNameTranslator;
 import com.binance.monitor.domain.account.model.AccountMetric;
+import com.binance.monitor.ui.rules.IndicatorPresentation;
+import com.binance.monitor.ui.rules.IndicatorPresentationPolicy;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
@@ -68,31 +69,20 @@ public class AccountMetricAdapter extends RecyclerView.Adapter<AccountMetricAdap
             String value = masked
                     ? SensitiveDisplayMasker.maskValue(item.getValue(), true)
                     : item.getValue();
-            binding.tvLabel.setText(nameCn);
-            binding.tvValue.setText(value);
+            IndicatorPresentation presentation = IndicatorPresentationPolicy.presentText(nameCn, item.getValue(), masked);
+            binding.tvLabel.setText(presentation.getLabel());
             if (masked) {
+                binding.tvValue.setText(presentation.getFormattedValue());
                 binding.tvValue.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
                 return;
             }
-            applyProfitColor(binding.tvValue, nameCn, value);
-        }
-
-        private void applyProfitColor(TextView textView, String label, String value) {
-            int defaultColor = ContextCompat.getColor(textView.getContext(), R.color.text_primary);
-            int color = resolveProfitColor(label, value, defaultColor);
-            textView.setTextColor(color);
-        }
-
-        private int resolveProfitColor(String label, String value, int defaultColor) {
-            AccountValueStyleHelper.Direction direction =
-                    AccountValueStyleHelper.resolveMetricDirection(label, value);
-            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
-                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_green);
-            }
-            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
-                return ContextCompat.getColor(binding.getRoot().getContext(), R.color.accent_red);
-            }
-            return defaultColor;
+            binding.tvValue.setText(IndicatorPresentationPolicy.buildValueSpan(
+                    binding.getRoot().getContext(),
+                    presentation.getLabel(),
+                    value,
+                    R.color.text_primary
+            ));
+            binding.tvValue.setTextColor(ContextCompat.getColor(binding.getRoot().getContext(), R.color.text_primary));
         }
     }
 }

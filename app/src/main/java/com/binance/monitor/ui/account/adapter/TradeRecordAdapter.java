@@ -54,7 +54,7 @@ public class TradeRecordAdapter extends RecyclerView.Adapter<TradeRecordAdapter.
         }
 
         void bind(TradeRecordItem item) {
-            int sideColor = "BUY".equalsIgnoreCase(item.getSide()) ? R.color.accent_green : R.color.accent_red;
+            int sideColor = "BUY".equalsIgnoreCase(item.getSide()) ? R.color.trade_buy : R.color.trade_sell;
             binding.tvSummary.setText(String.format(Locale.getDefault(),
                     "%s | %s | %.2f 手 | $%s",
                     item.getProductName(),

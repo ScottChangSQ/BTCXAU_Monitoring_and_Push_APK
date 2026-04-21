@@ -8,9 +8,11 @@ import android.os.Handler;
 import android.os.Looper;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.binance.monitor.databinding.ContentAccountStatsBinding;
+import com.binance.monitor.runtime.state.model.AccountRuntimeSnapshot;
 import com.binance.monitor.service.MonitorServiceController;
 
 public final class AccountStatsPageRuntime implements AccountStatsPageHostDelegate.Owner {
@@ -24,7 +26,18 @@ public final class AccountStatsPageRuntime implements AccountStatsPageHostDelega
         @Override
         public void run() {
             clearScheduledRefresh();
-            host.requestScheduledSnapshot();
+            if (AccountRevisionRefreshPolicy.shouldRequestSnapshot(
+                    host.getCurrentAccountRuntimeSnapshot(),
+                    host.getAppliedAccountHistoryRevision(),
+                    host.getAppliedAccountUpdatedAt(),
+                    System.currentTimeMillis(),
+                    host.getScheduledSnapshotStaleAfterMs())) {
+                host.requestScheduledSnapshot();
+                return;
+            }
+            if (snapshotLoopEnabled) {
+                scheduleNextSnapshot(host.getScheduledSnapshotStaleAfterMs());
+            }
         }
     };
 
@@ -44,18 +57,13 @@ public final class AccountStatsPageRuntime implements AccountStatsPageHostDelega
     }
 
     @Override
-    public void placeCurveSectionToBottom() {
-        host.placeCurveSectionToBottom();
-    }
-
-    @Override
     public void bindLocalMeta() {
         host.bindLocalMeta();
     }
 
     @Override
     public void onColdStart() {
-        host.placeCurveSectionToBottom();
+        host.beginAccountBootstrap();
         host.bindLocalMeta();
         host.applyPagePalette();
         host.applyPrivacyMaskState();
@@ -213,9 +221,9 @@ public final class AccountStatsPageRuntime implements AccountStatsPageHostDelega
 
         void bindPageContent(@NonNull ContentAccountStatsBinding binding);
 
-        void placeCurveSectionToBottom();
-
         void bindLocalMeta();
+
+        void beginAccountBootstrap();
 
         void attachForegroundRefresh();
 
@@ -240,6 +248,16 @@ public final class AccountStatsPageRuntime implements AccountStatsPageHostDelega
         void shutdownExecutors();
 
         void requestScheduledSnapshot();
+
+        @Nullable
+        AccountRuntimeSnapshot getCurrentAccountRuntimeSnapshot();
+
+        @NonNull
+        String getAppliedAccountHistoryRevision();
+
+        long getAppliedAccountUpdatedAt();
+
+        long getScheduledSnapshotStaleAfterMs();
 
         boolean isEmbeddedInHostShell();
 

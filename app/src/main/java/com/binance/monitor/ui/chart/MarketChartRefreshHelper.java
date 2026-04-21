@@ -23,6 +23,15 @@ final class MarketChartRefreshHelper {
         FULL
     }
 
+    enum RequestReason {
+        COLD_START,
+        RESUME,
+        SELECTION_CHANGE,
+        SERIES_REPAIR,
+        MANUAL,
+        AUTO_REFRESH
+    }
+
     static final class SyncPlan {
         final SyncMode mode;
         final long startTimeInclusive;
@@ -44,21 +53,25 @@ final class MarketChartRefreshHelper {
                                 long latestRealtimeClosedTimeMs,
                                 long intervalMs,
                                 boolean yearAggregate,
-                                boolean hasRealtimeTailSource) {
+                                boolean hasRealtimeTailSource,
+                                @Nullable RequestReason requestReason) {
         boolean hasLocalSeries = localSeries != null && !localSeries.isEmpty();
         boolean realtimeFresh = isRealtimeFresh(nowMs, latestRealtimeClosedTimeMs);
+        boolean allowSkipRemoteRequest = shouldAllowSkipRemoteRequest(requestReason);
         // 只有页面确实接入了实时尾部数据时，1m 才允许完全依赖本地跳过 REST。
         boolean supportsMinuteDerivedSkip = hasRealtimeTailSource && !yearAggregate && intervalMs == 60_000L;
-        boolean minuteSeriesBroken = supportsMinuteDerivedSkip
+        boolean visibleSeriesBroken = !yearAggregate
+                && intervalMs > 0L
                 && hasLocalSeries
                 && hasInternalGap(localSeries, intervalMs);
         int requiredWindowSize = Math.max(1, Math.min(targetLimit, fullWindowLimit));
-        if (minuteSeriesBroken) {
+        if (visibleSeriesBroken) {
             return new SyncPlan(SyncMode.FULL, -1L);
         }
         if (hasLocalSeries
                 && realtimeFresh
                 && supportsMinuteDerivedSkip
+                && allowSkipRemoteRequest
                 && localSeries.size() >= requiredWindowSize) {
             return new SyncPlan(SyncMode.SKIP, -1L);
         }
@@ -81,7 +94,10 @@ final class MarketChartRefreshHelper {
         if (nowMs - latestOpenTime > maxCoveredDurationMs) {
             return new SyncPlan(SyncMode.FULL, -1L);
         }
-        if (supportsMinuteDerivedSkip && localSeries.size() >= requiredWindowSize && realtimeFresh) {
+        if (supportsMinuteDerivedSkip
+                && allowSkipRemoteRequest
+                && localSeries.size() >= requiredWindowSize
+                && realtimeFresh) {
             return new SyncPlan(SyncMode.SKIP, -1L);
         }
         return new SyncPlan(SyncMode.INCREMENTAL, latestOpenTime);
@@ -138,8 +154,7 @@ final class MarketChartRefreshHelper {
                                                      long intervalMs,
                                                      boolean yearAggregate,
                                                      boolean hasRealtimeTailSource) {
-        boolean supportsMinuteDerivedSkip = hasRealtimeTailSource && !yearAggregate && intervalMs == 60_000L;
-        return supportsMinuteDerivedSkip && hasInternalGap(visibleSeries, intervalMs);
+        return !yearAggregate && intervalMs > 0L && hasInternalGap(visibleSeries, intervalMs);
     }
 
     // 当前轮直接跳过网络时，不再继续展示上一次 REST 请求耗时，避免 ms 文案误导。
@@ -171,5 +186,10 @@ final class MarketChartRefreshHelper {
             return SOURCE_MINUTE_REFRESH_MS;
         }
         return remainingMs;
+    }
+
+    private static boolean shouldAllowSkipRemoteRequest(@Nullable RequestReason requestReason) {
+        return requestReason == RequestReason.AUTO_REFRESH
+                || requestReason == RequestReason.RESUME;
     }
 }

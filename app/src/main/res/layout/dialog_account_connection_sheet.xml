@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/sheet_content_padding">
+
+        <TextView
+            android:id="@+id/tvAccountConnectionTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/account_connection_sheet_title"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/account_connection_label_status"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvAccountConnectionStatusValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/account_connection_label_account"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvAccountConnectionAccountValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/account_connection_label_server"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvAccountConnectionServerValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/account_connection_label_source"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvAccountConnectionSourceValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/account_connection_label_gateway"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvAccountConnectionGatewayValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/account_connection_label_updated"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvAccountConnectionUpdatedValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/account_connection_label_latency"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+                <TextView
+                    android:id="@+id/tvAccountConnectionLatencyValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layoutAccountConnectionActions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAccountConnectionSwitch"
+                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/control_height_sm"
+                android:layout_weight="1"
+                android:text="@string/account_connection_action_switch" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAccountConnectionLogout"
+                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/control_height_sm"
+                android:layout_marginStart="@dimen/inline_gap"
+                android:layout_weight="1"
+                android:text="@string/account_connection_action_logout" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAccountConnectionClose"
+                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/control_height_sm"
+                android:layout_marginStart="@dimen/inline_gap"
+                android:layout_weight="1"
+                android:text="@string/global_status_action_close" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

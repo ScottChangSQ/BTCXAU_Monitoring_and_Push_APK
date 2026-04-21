@@ -4,6 +4,7 @@
  */
 package com.binance.monitor.ui.trade;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.model.v2.trade.ExecutionError;
@@ -30,16 +31,40 @@ public class TradeExecutionCoordinator {
     private final AccountRefreshGateway accountRefreshGateway;
     private final TradeConfirmDialogController confirmDialogController;
     private final int maxStrongRefreshAttempts;
+    @Nullable
+    private final TradeAuditStore auditStore;
+    @NonNull
+    private final TradeRiskGuard.ConfigProvider riskConfigProvider;
 
     // 创建交易执行协调器。
     public TradeExecutionCoordinator(TradeGateway tradeGateway,
                                      AccountRefreshGateway accountRefreshGateway,
                                      TradeConfirmDialogController confirmDialogController,
                                      int maxStrongRefreshAttempts) {
+        this(tradeGateway, accountRefreshGateway, confirmDialogController, maxStrongRefreshAttempts, TradeRiskGuard.Config::defaultConfig, null);
+    }
+
+    // 创建带本地审计存储的交易执行协调器。
+    public TradeExecutionCoordinator(TradeGateway tradeGateway,
+                                     AccountRefreshGateway accountRefreshGateway,
+                                     TradeConfirmDialogController confirmDialogController,
+                                     int maxStrongRefreshAttempts,
+                                     @Nullable TradeAuditStore auditStore) {
+        this(tradeGateway, accountRefreshGateway, confirmDialogController, maxStrongRefreshAttempts, TradeRiskGuard.Config::defaultConfig, auditStore);
+    }
+
+    public TradeExecutionCoordinator(TradeGateway tradeGateway,
+                                     AccountRefreshGateway accountRefreshGateway,
+                                     TradeConfirmDialogController confirmDialogController,
+                                     int maxStrongRefreshAttempts,
+                                     @NonNull TradeRiskGuard.ConfigProvider riskConfigProvider,
+                                     @Nullable TradeAuditStore auditStore) {
         this.tradeGateway = tradeGateway;
         this.accountRefreshGateway = accountRefreshGateway;
         this.confirmDialogController = confirmDialogController;
         this.maxStrongRefreshAttempts = Math.max(1, maxStrongRefreshAttempts);
+        this.riskConfigProvider = riskConfigProvider;
+        this.auditStore = auditStore;
     }
 
     // 先执行检查并进入统一确认态。
@@ -51,6 +76,7 @@ public class TradeExecutionCoordinator {
             checkResult = tradeGateway.check(command);
         } catch (Exception exception) {
             stateMachine.onCheckTimeout(resolveExceptionMessage(exception, "检查结果未确认"));
+            recordSingleAudit(command, "", "check", "TIMEOUT", stateMachine.getError(), resolveErrorMessage(stateMachine.getError(), "检查结果未确认"), 0L);
             return new PreparedTrade(
                     UiState.RESULT_UNCONFIRMED,
                     stateMachine,
@@ -61,6 +87,27 @@ public class TradeExecutionCoordinator {
             );
         }
         stateMachine.onCheckCompleted(checkResult);
+        if (checkResult == null) {
+            recordSingleAudit(
+                    command,
+                    "",
+                    "check",
+                    "TIMEOUT",
+                    stateMachine.getError(),
+                    resolveCheckFailureMessage(stateMachine),
+                    0L
+            );
+        } else {
+            recordSingleAudit(
+                    command,
+                    checkResult.getAccountMode(),
+                    "check",
+                    checkResult.getStatus(),
+                    checkResult.getError(),
+                    checkResult.getError() == null ? "检查通过" : resolveCheckFailureMessage(stateMachine),
+                    checkResult.getServerTime()
+            );
+        }
         if (stateMachine.getStep() != TradeCommandStateMachine.Step.CONFIRMING) {
             return new PreparedTrade(
                     mapRejectedUiState(stateMachine),
@@ -73,6 +120,16 @@ public class TradeExecutionCoordinator {
         }
         TradeConfirmDialogController.Decision decision =
                 confirmDialogController.buildDecision(command, checkResult);
+        if (!decision.isAllowed()) {
+            return new PreparedTrade(
+                    UiState.REJECTED,
+                    stateMachine,
+                    false,
+                    false,
+                    decision.getMessage(),
+                    false
+            );
+        }
         return new PreparedTrade(
                 UiState.AWAITING_CONFIRMATION,
                 stateMachine,
@@ -113,6 +170,17 @@ public class TradeExecutionCoordinator {
         if (!stateMachine.beginSubmitting()) {
             return buildBlockedExecutionResult(stateMachine);
         }
+        TradeRiskGuard.Decision riskDecision = TradeRiskGuard.evaluateTrade(stateMachine.getCommand(), riskConfigProvider.getConfig());
+        if (!riskDecision.isAllowed()) {
+            return new ExecutionResult(
+                    UiState.REJECTED,
+                    stateMachine,
+                    null,
+                    false,
+                    true,
+                    riskDecision.getMessage()
+            );
+        }
         TradeReceipt receipt;
         try {
             receipt = tradeGateway.submit(stateMachine.getCommand());
@@ -120,6 +188,15 @@ public class TradeExecutionCoordinator {
             receipt = resolveSubmitReceiptByRequestId(stateMachine.getCommand());
             if (receipt == null) {
                 stateMachine.onSubmitTimeout(resolveExceptionMessage(exception, "结果未确认"));
+                recordSingleAudit(
+                        stateMachine.getCommand(),
+                        "",
+                        "submit",
+                        "TIMEOUT",
+                        stateMachine.getError(),
+                        resolveErrorMessage(stateMachine.getError(), "结果未确认"),
+                        0L
+                );
                 return new ExecutionResult(
                         UiState.RESULT_UNCONFIRMED,
                         stateMachine,
@@ -131,6 +208,15 @@ public class TradeExecutionCoordinator {
             }
         }
         stateMachine.onSubmitCompleted(receipt);
+        recordSingleAudit(
+                stateMachine.getCommand(),
+                receipt.getAccountMode(),
+                "submit",
+                receipt.getStatus(),
+                receipt.getError(),
+                resolveMappedErrorMessage(receipt.getError(), "ACCEPTED".equalsIgnoreCase(receipt.getStatus()) ? "交易已受理" : "交易结果已返回"),
+                receipt.getServerTime()
+        );
 
         if (stateMachine.getStep() == TradeCommandStateMachine.Step.REJECTED) {
             return new ExecutionResult(
@@ -139,7 +225,7 @@ public class TradeExecutionCoordinator {
                     null,
                     false,
                     true,
-                    resolveErrorMessage(stateMachine.getError(), "交易被拒绝")
+                    TradeRejectMessageMapper.toUserMessage(stateMachine.getError())
             );
         }
         if (stateMachine.getStep() == TradeCommandStateMachine.Step.TIMEOUT) {
@@ -149,7 +235,7 @@ public class TradeExecutionCoordinator {
                     null,
                     false,
                     false,
-                    resolveErrorMessage(stateMachine.getError(), "结果未确认")
+                    TradeRejectMessageMapper.toUserMessage(stateMachine.getError())
             );
         }
 
@@ -157,7 +243,7 @@ public class TradeExecutionCoordinator {
         long refreshStartedAt = System.currentTimeMillis();
         for (int attempt = 0; attempt < maxStrongRefreshAttempts; attempt++) {
             try {
-                latestCache = accountRefreshGateway.fetchForUi(AccountTimeRange.ALL);
+                latestCache = accountRefreshGateway.fetchFullForUi(AccountTimeRange.ALL);
             } catch (Exception exception) {
                 return buildAcceptedAwaitingSyncResult(
                         stateMachine,
@@ -167,6 +253,15 @@ public class TradeExecutionCoordinator {
             }
             if (hasConverged(stateMachine.getCommand(), stateMachine.getReceipt(), baselineCache, latestCache, refreshStartedAt)) {
                 stateMachine.markSettled();
+                recordSingleAudit(
+                        stateMachine.getCommand(),
+                        safe(receipt == null ? "" : receipt.getAccountMode()),
+                        "result",
+                        "SETTLED",
+                        null,
+                        "交易已受理并完成账户刷新",
+                        receipt == null ? 0L : receipt.getServerTime()
+                );
                 return new ExecutionResult(
                         UiState.SETTLED,
                         stateMachine,
@@ -178,6 +273,15 @@ public class TradeExecutionCoordinator {
             }
         }
 
+        recordSingleAudit(
+                stateMachine.getCommand(),
+                safe(receipt == null ? "" : receipt.getAccountMode()),
+                "result",
+                "ACCEPTED_AWAITING_SYNC",
+                receipt == null ? stateMachine.getError() : receipt.getError(),
+                "交易已受理，等待账户同步",
+                receipt == null ? 0L : receipt.getServerTime()
+        );
         return buildAcceptedAwaitingSyncResult(
                 stateMachine,
                 latestCache,
@@ -240,7 +344,7 @@ public class TradeExecutionCoordinator {
         }
         // 部分网关受理回执不会返回 order/deal，只能退回到账户真值的结构变化来判断是否收敛。
         if (baselineCache == null || baselineCache.getSnapshot() == null) {
-            return false;
+            return latestReceiptMatched;
         }
         AccountSnapshot baselineSnapshot = baselineCache.getSnapshot();
         if (latestCache.getUpdatedAt() <= baselineCache.getUpdatedAt()) {
@@ -397,9 +501,10 @@ public class TradeExecutionCoordinator {
     // 根据检查阶段的最终状态返回一致的提示文案。
     private String resolveCheckFailureMessage(TradeCommandStateMachine stateMachine) {
         if (stateMachine != null && stateMachine.getStep() == TradeCommandStateMachine.Step.TIMEOUT) {
-            return resolveErrorMessage(stateMachine.getError(), "检查结果未确认");
+            return resolveMappedErrorMessage(stateMachine.getError(), "检查结果未确认");
         }
-        return resolveErrorMessage(stateMachine == null ? null : stateMachine.getError(), "交易检查未通过");
+        ExecutionError error = stateMachine == null ? null : stateMachine.getError();
+        return resolveMappedErrorMessage(error, "交易检查未通过");
     }
 
     // 将无法进入提交流程的状态按当前真实语义返回给界面。
@@ -448,7 +553,7 @@ public class TradeExecutionCoordinator {
                     null,
                     false,
                     true,
-                    resolveErrorMessage(stateMachine.getError(), "交易被拒绝")
+                    resolveMappedErrorMessage(stateMachine.getError(), "交易被拒绝")
             );
         }
         if (stateMachine.getStep() == TradeCommandStateMachine.Step.TIMEOUT) {
@@ -458,7 +563,7 @@ public class TradeExecutionCoordinator {
                     null,
                     false,
                     false,
-                    resolveErrorMessage(stateMachine.getError(), "结果未确认")
+                    resolveMappedErrorMessage(stateMachine.getError(), "结果未确认")
             );
         }
         return new ExecutionResult(
@@ -478,6 +583,15 @@ public class TradeExecutionCoordinator {
         }
         String message = safe(exception.getMessage());
         return message.isEmpty() ? fallback : message;
+    }
+
+    // 统一把错误翻译成用户文案；没有错误对象时回退到当前阶段自己的默认提示。
+    private String resolveMappedErrorMessage(@Nullable ExecutionError error, String fallback) {
+        if (error == null) {
+            return fallback;
+        }
+        String message = TradeRejectMessageMapper.toUserMessage(error);
+        return safe(message).isEmpty() ? fallback : message;
     }
 
     // 根据交易动作识别本次收敛允许依赖哪些变化证据。
@@ -569,6 +683,32 @@ public class TradeExecutionCoordinator {
     // 规整空字符串。
     private String safe(@Nullable String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private void recordSingleAudit(@Nullable TradeCommand command,
+                                   @Nullable String accountMode,
+                                   @NonNull String stage,
+                                   @NonNull String status,
+                                   @Nullable ExecutionError error,
+                                   @Nullable String message,
+                                   long serverTime) {
+        if (auditStore == null || command == null) {
+            return;
+        }
+        auditStore.record(new TradeAuditEntry(
+                command.getRequestId(),
+                "single",
+                command.getAction(),
+                command.getSymbol(),
+                safe(accountMode),
+                stage,
+                status,
+                error == null ? "" : safe(error.getCode()),
+                safe(message),
+                TradeCommandFactory.describe(command),
+                serverTime,
+                0L
+        ));
     }
 
     // 只保留当前命令品种的持仓或挂单，避免别的品种变化误判为本次交易收敛。
@@ -801,7 +941,7 @@ public class TradeExecutionCoordinator {
     }
 
     public interface AccountRefreshGateway {
-        AccountStatsPreloadManager.Cache fetchForUi(AccountTimeRange range) throws Exception;
+        AccountStatsPreloadManager.Cache fetchFullForUi(AccountTimeRange range) throws Exception;
     }
 
     public enum UiState {

@@ -3,6 +3,7 @@
  */
 package com.binance.monitor.ui.chart;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -25,8 +26,15 @@ public class MarketChartTopControlStyleSourceTest {
         );
 
         assertTrue(screen.contains("applyTopControlGroupStyles();"));
-        assertTrue(screen.contains("styleTopControlButton("));
-        assertTrue(screen.contains("styleTopControlLabel("));
+        assertTrue(screen.contains("UiPaletteManager.styleSelectFieldLabel("));
+        assertTrue(screen.contains("UiPaletteManager.styleActionButton("));
+        assertTrue(screen.contains("UiPaletteManager.styleSegmentedOption("));
+        assertTrue(screen.contains("binding.tvChartSymbolPickerLabel.setCompoundDrawablePadding("));
+        assertTrue(screen.contains("R.dimen.inline_gap"));
+        assertTrue(screen.contains("R.dimen.field_trailing_reserve_compact"));
+        assertFalse(screen.contains("styleTopControlButton("));
+        assertFalse(screen.contains("styleTopControlLabel("));
+        assertFalse(screen.contains("R.dimen.control_height_lg"));
         assertTrue(activity.contains("HostNavigationIntentFactory.forTab(this, HostTab.MARKET_CHART)"));
     }
 

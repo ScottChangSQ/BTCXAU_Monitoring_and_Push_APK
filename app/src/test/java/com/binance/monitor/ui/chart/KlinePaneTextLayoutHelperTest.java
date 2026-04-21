@@ -3,7 +3,10 @@
  */
 package com.binance.monitor.ui.chart;
 
+import com.binance.monitor.R;
+
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
 
 import org.junit.Test;
 
@@ -11,14 +14,14 @@ public class KlinePaneTextLayoutHelperTest {
 
     @Test
     public void indicatorPlotInsetsShouldReserveEnoughSpaceForPaneTitle() {
-        assertTrue(KlinePaneTextLayoutHelper.resolveIndicatorPlotTopInsetDp() >= 18f);
-        assertTrue(KlinePaneTextLayoutHelper.resolveIndicatorPlotBottomInsetDp() >= 6f);
+        assertEquals(R.dimen.kline_indicator_plot_top_inset, KlinePaneTextLayoutHelper.resolveIndicatorPlotTopInsetRes());
+        assertEquals(R.dimen.kline_indicator_plot_bottom_inset, KlinePaneTextLayoutHelper.resolveIndicatorPlotBottomInsetRes());
     }
 
     @Test
     public void paneTextBaselinesShouldStayAwayFromSharedBoundary() {
-        assertTrue(KlinePaneTextLayoutHelper.resolvePaneTitleBaselineOffsetDp() >= 12f);
-        assertTrue(KlinePaneTextLayoutHelper.resolveAxisTopBaselineOffsetDp() >= 12f);
-        assertTrue(KlinePaneTextLayoutHelper.resolveAxisBottomInsetDp() >= 6f);
+        assertEquals(R.dimen.kline_pane_title_baseline_offset, KlinePaneTextLayoutHelper.resolvePaneTitleBaselineOffsetRes());
+        assertEquals(R.dimen.kline_axis_top_baseline_offset, KlinePaneTextLayoutHelper.resolveAxisTopBaselineOffsetRes());
+        assertEquals(R.dimen.kline_axis_bottom_inset, KlinePaneTextLayoutHelper.resolveAxisBottomInsetRes());
     }
 }

@@ -140,6 +140,38 @@ public class AccountDeferredSnapshotRenderHelperTest {
         assertEquals("累计收益率", prepared.getTradeStatsMetrics().get(1).getName());
         assertEquals("总交易次数", prepared.getTradeStatsMetrics().get(2).getName());
         assertEquals("买入次数", prepared.getTradeStatsMetrics().get(3).getName());
+        assertEquals("13.64", findMetricValue(prepared.getTradeStatsMetrics(), "夏普比率"));
+    }
+
+    @Test
+    public void buildTradeAnalyticsShouldInjectSharpeMetricWhenSnapshotStatsDoNotContainIt() {
+        List<CurvePoint> curvePoints = Arrays.asList(
+                new CurvePoint(1_000L, 100_000d, 100_000d, 0.10d),
+                new CurvePoint(2_000L, 102_000d, 101_500d, 0.20d),
+                new CurvePoint(3_000L, 101_000d, 100_800d, 0.15d),
+                new CurvePoint(4_000L, 103_000d, 102_500d, 0.05d)
+        );
+        TradeRecordItem buyTrade = buildTrade(
+                "BTCUSD", "Buy", 1_000L, 3_000L, 12d, -1.5d, 100d, 112d
+        );
+        TradeRecordItem sellTrade = buildTrade(
+                "BTCUSD", "Sell", 2_000L, 4_000L, -4d, -0.5d, 110d, 100d
+        );
+
+        AccountDeferredSnapshotRenderHelper.TradeAnalytics analytics =
+                AccountDeferredSnapshotRenderHelper.buildTradeAnalytics(
+                        Arrays.asList(
+                                new AccountMetric("累计收益额", "+$6.00"),
+                                new AccountMetric("最大回撤", "1.96%")
+                        ),
+                        Arrays.asList(buyTrade, sellTrade),
+                        AccountDeferredSnapshotRenderHelper.TradePnlSideMode.ALL,
+                        AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.CLOSE_TIME,
+                        curvePoints
+                );
+
+        assertEquals("+$6.00", findMetricValue(analytics.getTradeStatsMetrics(), "累计收益额"));
+        assertEquals("13.64", findMetricValue(analytics.getTradeStatsMetrics(), "夏普比率"));
     }
 
     private static TradeRecordItem buildTrade(String code,
@@ -171,5 +203,20 @@ public class AccountDeferredSnapshotRenderHelperTest {
                 closeTime + 2L,
                 1
         );
+    }
+
+    private static String findMetricValue(List<AccountMetric> metrics, String targetName) {
+        if (metrics == null) {
+            return "";
+        }
+        for (AccountMetric metric : metrics) {
+            if (metric == null || metric.getName() == null) {
+                continue;
+            }
+            if (targetName.equals(metric.getName())) {
+                return metric.getValue();
+            }
+        }
+        return "";
     }
 }

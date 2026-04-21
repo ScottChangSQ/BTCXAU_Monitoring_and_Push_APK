@@ -78,7 +78,7 @@ public class AccountRemoteSessionCoordinatorTest {
 
         assertTrue(activated);
         assertTrue(store.active);
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.ACTIVE, machine.snapshot().getState());
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FULL_SYNCING, machine.snapshot().getState());
     }
 
     @Test
@@ -185,7 +185,7 @@ public class AccountRemoteSessionCoordinatorTest {
         boolean activated = coordinator.onSnapshotApplied("87654321", "IC");
 
         assertTrue(activated);
-        assertEquals(AccountSessionStateMachine.AccountSessionUiState.ACTIVE, machine.snapshot().getState());
+        assertEquals(AccountSessionStateMachine.AccountSessionUiState.FULL_SYNCING, machine.snapshot().getState());
         assertFalse(coordinator.isAwaitingSync());
     }
 

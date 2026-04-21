@@ -3,6 +3,8 @@
  */
 package com.binance.monitor.ui.account;
 
+import com.binance.monitor.R;
+
 import static org.junit.Assert.assertEquals;
 
 import org.junit.Test;
@@ -11,13 +13,13 @@ public class CurvePaneLayoutHelperTest {
 
     @Test
     public void shouldKeepUnifiedHorizontalInsets() {
-        assertEquals(34f, CurvePaneLayoutHelper.resolveChartLeftDp(), 1e-6f);
-        assertEquals(28f, CurvePaneLayoutHelper.resolveChartRightInsetDp(), 1e-6f);
+        assertEquals(R.dimen.curve_chart_left_inset, CurvePaneLayoutHelper.resolveChartLeftInsetRes());
+        assertEquals(R.dimen.curve_chart_right_inset, CurvePaneLayoutHelper.resolveChartRightInsetRes());
     }
 
     @Test
     public void shouldUseSlimmerMainCurveStrokeWidths() {
-        assertEquals(1.6f, CurvePaneLayoutHelper.resolveEquityStrokeDp(), 1e-6f);
-        assertEquals(1.3f, CurvePaneLayoutHelper.resolveBalanceStrokeDp(), 1e-6f);
+        assertEquals(R.dimen.curve_equity_stroke, CurvePaneLayoutHelper.resolveEquityStrokeRes());
+        assertEquals(R.dimen.curve_balance_stroke, CurvePaneLayoutHelper.resolveBalanceStrokeRes());
     }
 }

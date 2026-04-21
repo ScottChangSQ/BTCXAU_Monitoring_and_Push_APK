@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="@dimen/card_content_padding">
+    android:padding="@dimen/sheet_content_padding">
 
     <TextView
         android:id="@+id/tvTradeHistorySheetTitle"
@@ -28,76 +28,70 @@
 
         <FrameLayout
             android:layout_width="0dp"
-            android:layout_height="@dimen/control_height_md"
+            android:layout_height="@dimen/subject_height_md"
             android:layout_weight="1">
 
             <androidx.appcompat.widget.AppCompatSpinner
                 android:id="@+id/spinnerTradeHistoryProduct"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:background="@drawable/bg_spinner_filter"
                 android:minWidth="0dp"
                 android:popupBackground="@drawable/bg_spinner_popup"
                 android:spinnerMode="dropdown" />
 
             <TextView
                 android:id="@+id/tvTradeHistoryProductLabel"
-                style="@style/Widget.BinanceMonitor.Spinner.Label"
+                style="@style/Widget.BinanceMonitor.Subject.SelectField.Label"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clickable="false"
-                android:focusable="false"
-                android:paddingEnd="32dp" />
+                android:focusable="false" />
         </FrameLayout>
 
         <FrameLayout
             android:layout_width="0dp"
-            android:layout_height="@dimen/control_height_md"
-            android:layout_marginStart="@dimen/control_group_gap"
+            android:layout_height="@dimen/subject_height_md"
+            android:layout_marginStart="@dimen/inline_gap"
             android:layout_weight="1">
 
             <androidx.appcompat.widget.AppCompatSpinner
                 android:id="@+id/spinnerTradeHistorySide"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:background="@drawable/bg_spinner_filter"
                 android:minWidth="0dp"
                 android:popupBackground="@drawable/bg_spinner_popup"
                 android:spinnerMode="dropdown" />
 
             <TextView
                 android:id="@+id/tvTradeHistorySideLabel"
-                style="@style/Widget.BinanceMonitor.Spinner.Label"
+                style="@style/Widget.BinanceMonitor.Subject.SelectField.Label"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clickable="false"
-                android:focusable="false"
-                android:paddingEnd="32dp" />
+                android:focusable="false" />
         </FrameLayout>
 
         <FrameLayout
             android:layout_width="0dp"
-            android:layout_height="@dimen/control_height_md"
-            android:layout_marginStart="@dimen/control_group_gap"
+            android:layout_height="@dimen/subject_height_md"
+            android:layout_marginStart="@dimen/inline_gap"
             android:layout_weight="1">
 
             <androidx.appcompat.widget.AppCompatSpinner
                 android:id="@+id/spinnerTradeHistorySort"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:background="@drawable/bg_spinner_filter"
                 android:minWidth="0dp"
                 android:popupBackground="@drawable/bg_spinner_popup"
                 android:spinnerMode="dropdown" />
 
             <TextView
                 android:id="@+id/tvTradeHistorySortLabel"
-                style="@style/Widget.BinanceMonitor.Spinner.Label"
+                style="@style/Widget.BinanceMonitor.Subject.SelectField.Label"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clickable="false"
-                android:focusable="false"
-                android:paddingEnd="32dp" />
+                android:focusable="false" />
         </FrameLayout>
     </LinearLayout>
 

@@ -4,12 +4,20 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import com.binance.monitor.data.model.v2.trade.BatchTradeItem;
+import com.binance.monitor.data.model.v2.trade.BatchTradeReceipt;
+import com.binance.monitor.data.model.v2.trade.BatchTradePlan;
 import com.binance.monitor.data.model.v2.trade.TradeCheckResult;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
 import com.binance.monitor.data.model.v2.trade.TradeReceipt;
+import com.binance.monitor.ui.trade.TradeCommandFactory;
+import com.binance.monitor.ui.trade.TradeAuditEntry;
 
 import org.json.JSONObject;
 import org.junit.Test;
+
+import java.util.Collections;
+import java.util.List;
 
 public class GatewayV2TradeClientTest {
 
@@ -101,6 +109,62 @@ public class GatewayV2TradeClientTest {
         assertEquals("DUPLICATE", receipt.getStatus());
         assertTrue(receipt.isIdempotent());
         assertEquals("TRADE_DUPLICATE_SUBMISSION", receipt.getError().getCode());
+    }
+
+    @Test
+    public void buildBatchTradePlanPayloadShouldContainStrategyAndItemParams() throws Exception {
+        JSONObject extras = new JSONObject();
+        extras.put("groupKey", "pair-1");
+        BatchTradePlan plan = new BatchTradePlan(
+                "batch-1",
+                "GROUPED",
+                "hedging",
+                "Close By",
+                Collections.singletonList(
+                        new BatchTradeItem(
+                                "item-1",
+                                "平仓 BTCUSD #1",
+                                TradeCommandFactory.closePosition("acc-1", "BTCUSD", 11L, 0.10d, 0d),
+                                extras
+                        )
+                )
+        );
+
+        JSONObject payload = GatewayV2TradeClient.buildBatchTradePlanPayload(plan);
+
+        assertEquals("batch-1", payload.optString("batchId", ""));
+        assertEquals("GROUPED", payload.optString("strategy", ""));
+        assertEquals("hedging", payload.optString("accountMode", ""));
+        assertEquals(1, payload.optJSONArray("items").length());
+        JSONObject item = payload.optJSONArray("items").optJSONObject(0);
+        assertEquals("item-1", item.optString("itemId", ""));
+        assertEquals("CLOSE_POSITION", item.optString("action", ""));
+        assertEquals("pair-1", item.optString("groupKey", ""));
+        assertEquals(11L, item.optJSONObject("params").optLong("positionTicket", 0L));
+    }
+
+    @Test
+    public void parseBatchTradeReceiptShouldKeepPerItemStatuses() throws Exception {
+        String body = "{"
+                + "\"batchId\":\"batch-1\","
+                + "\"strategy\":\"BEST_EFFORT\","
+                + "\"accountMode\":\"hedging\","
+                + "\"status\":\"PARTIAL\","
+                + "\"error\":{\"code\":\"TRADE_EXECUTION_FAILED\",\"message\":\"partial\"},"
+                + "\"items\":["
+                + "{\"itemId\":\"item-1\",\"action\":\"CLOSE_POSITION\",\"status\":\"ACCEPTED\",\"error\":null,\"check\":{\"retcode\":0},\"result\":{\"order\":1}},"
+                + "{\"itemId\":\"item-2\",\"action\":\"CLOSE_POSITION\",\"status\":\"REJECTED\",\"error\":{\"code\":\"TRADE_INVALID_POSITION\",\"message\":\"missing\"},\"check\":{\"retcode\":10013},\"result\":null}"
+                + "],"
+                + "\"serverTime\":456"
+                + "}";
+
+        BatchTradeReceipt receipt = GatewayV2TradeClient.parseBatchTradeReceipt(body);
+
+        assertEquals("batch-1", receipt.getBatchId());
+        assertTrue(receipt.isPartial());
+        assertEquals(2, receipt.getItems().size());
+        assertEquals("item-2", receipt.getItems().get(1).getItemId());
+        assertEquals("TRADE_INVALID_POSITION", receipt.getItems().get(1).getError().getCode());
     }
 
     @Test
@@ -216,5 +280,57 @@ public class GatewayV2TradeClientTest {
         assertTrue(message.contains("/v2/trade/check"));
         assertTrue(message.contains("网关"));
         assertTrue(message.contains("升级"));
+    }
+
+    @Test
+    public void buildTradeCommandPayloadShouldKeepCloseByPairTickets() throws Exception {
+        TradeCommand command = TradeCommandFactory.closeBy(
+                "acc-1",
+                "BTCUSD",
+                9001L,
+                9002L
+        );
+
+        JSONObject payload = GatewayV2TradeClient.buildTradeCommandPayload(command);
+
+        assertEquals("CLOSE_BY", payload.optString("action", ""));
+        assertEquals(9001L, payload.optJSONObject("params").optLong("positionTicket", 0L));
+        assertEquals(9002L, payload.optJSONObject("params").optLong("oppositePositionTicket", 0L));
+    }
+
+    @Test
+    public void parseTradeAuditRecentShouldKeepTraceStages() throws Exception {
+        String body = "{"
+                + "\"items\":["
+                + "{\"traceId\":\"req-1\",\"traceType\":\"single\",\"action\":\"OPEN_MARKET\",\"symbol\":\"BTCUSD\",\"accountMode\":\"hedging\",\"stage\":\"check\",\"status\":\"EXECUTABLE\",\"errorCode\":\"\",\"message\":\"检查通过\",\"actionSummary\":\"买入 BTCUSD 0.05 手\",\"serverTime\":101,\"createdAt\":99},"
+                + "{\"traceId\":\"batch-1\",\"traceType\":\"batch\",\"action\":\"BATCH\",\"symbol\":\"BTCUSD\",\"accountMode\":\"hedging\",\"stage\":\"batch_submit\",\"status\":\"PARTIAL\",\"errorCode\":\"TRADE_BATCH_PARTIAL\",\"message\":\"批量部分成功\",\"actionSummary\":\"批量平仓 BTCUSD\",\"serverTime\":102,\"createdAt\":100}"
+                + "],"
+                + "\"serverTime\":103"
+                + "}";
+
+        List<TradeAuditEntry> entries = GatewayV2TradeClient.parseTradeAuditRecent(body);
+
+        assertEquals(2, entries.size());
+        assertEquals("req-1", entries.get(0).getTraceId());
+        assertEquals("check", entries.get(0).getStage());
+        assertEquals("batch", entries.get(1).getTraceType());
+    }
+
+    @Test
+    public void parseTradeAuditLookupShouldKeepSingleTraceTimeline() throws Exception {
+        String body = "{"
+                + "\"id\":\"req-lookup\","
+                + "\"items\":["
+                + "{\"traceId\":\"req-lookup\",\"traceType\":\"single\",\"action\":\"OPEN_MARKET\",\"symbol\":\"BTCUSD\",\"accountMode\":\"hedging\",\"stage\":\"check\",\"status\":\"EXECUTABLE\",\"errorCode\":\"\",\"message\":\"检查通过\",\"actionSummary\":\"买入 BTCUSD 0.05 手\",\"serverTime\":101,\"createdAt\":99},"
+                + "{\"traceId\":\"req-lookup\",\"traceType\":\"single\",\"action\":\"OPEN_MARKET\",\"symbol\":\"BTCUSD\",\"accountMode\":\"hedging\",\"stage\":\"result\",\"status\":\"SETTLED\",\"errorCode\":\"\",\"message\":\"交易已收敛\",\"actionSummary\":\"买入 BTCUSD 0.05 手\",\"serverTime\":102,\"createdAt\":100}"
+                + "],"
+                + "\"serverTime\":103"
+                + "}";
+
+        List<TradeAuditEntry> entries = GatewayV2TradeClient.parseTradeAuditLookup(body);
+
+        assertEquals(2, entries.size());
+        assertEquals("req-lookup", entries.get(1).getTraceId());
+        assertEquals("SETTLED", entries.get(1).getStatus());
     }
 }

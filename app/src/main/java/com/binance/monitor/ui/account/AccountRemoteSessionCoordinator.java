@@ -210,6 +210,48 @@ public final class AccountRemoteSessionCoordinator {
         }
     }
 
+    public static final class SessionActionException extends Exception {
+        private final String action;
+        private final String requestId;
+        @Nullable
+        private final SessionReceipt receipt;
+
+        // 封装会话动作失败时的 requestId，方便上层回查服务端诊断。
+        public SessionActionException(@NonNull String action,
+                                      @Nullable String requestId,
+                                      @Nullable String message,
+                                      @NonNull Throwable cause) {
+            this(action, requestId, message, cause, null);
+        }
+
+        // 封装会话动作失败时的结构化回执，便于上层优先展示服务端真实摘要。
+        public SessionActionException(@NonNull String action,
+                                      @Nullable String requestId,
+                                      @Nullable String message,
+                                      @NonNull Throwable cause,
+                                      @Nullable SessionReceipt receipt) {
+            super(message == null ? "" : message, cause);
+            this.action = action == null ? "" : action.trim();
+            this.requestId = requestId == null ? "" : requestId.trim();
+            this.receipt = receipt;
+        }
+
+        @NonNull
+        public String getAction() {
+            return action;
+        }
+
+        @NonNull
+        public String getRequestId() {
+            return requestId;
+        }
+
+        @Nullable
+        public SessionReceipt getReceipt() {
+            return receipt;
+        }
+    }
+
     // 创建远程会话协调器。
     public AccountRemoteSessionCoordinator(@NonNull AccountSessionStateMachine stateMachine,
                                            @NonNull SessionGateway sessionGateway,
@@ -241,8 +283,19 @@ public final class AccountRemoteSessionCoordinator {
                     request.isRemember(),
                     request.getClientTime()
             );
+            String requestId = envelope.getRequestId();
             stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SUBMITTING, "正在提交登录");
-            SessionReceipt receipt = sessionGateway.login(envelope, request.isRemember());
+            SessionReceipt receipt;
+            try {
+                receipt = sessionGateway.login(envelope, request.isRemember());
+            } catch (Exception submitError) {
+                throw new SessionActionException(
+                        "login",
+                        requestId,
+                        resolveThrowableMessage(submitError, "登录失败"),
+                        submitError
+                );
+            }
             return handleAcceptedReceipt(
                     receipt,
                     "正在同步账户数据",
@@ -263,7 +316,18 @@ public final class AccountRemoteSessionCoordinator {
             throw new IllegalArgumentException("profileId 不能为空");
         }
         stateMachine.moveTo(AccountSessionStateMachine.AccountSessionUiState.SWITCHING, "正在切换账户");
-        SessionReceipt receipt = sessionGateway.switchAccount(safeProfileId, requestIdGenerator.nextRequestId());
+        String requestId = requestIdGenerator.nextRequestId();
+        SessionReceipt receipt;
+        try {
+            receipt = sessionGateway.switchAccount(safeProfileId, requestId);
+        } catch (Exception switchError) {
+            throw new SessionActionException(
+                    "switch",
+                    requestId,
+                    resolveThrowableMessage(switchError, "切换账户失败"),
+                    switchError
+            );
+        }
         return handleAcceptedReceipt(receipt, "正在同步账户数据", safeProfileId, "", "");
     }
 
@@ -307,7 +371,7 @@ public final class AccountRemoteSessionCoordinator {
                 pendingState.getSavedAccounts(),
                 true
         );
-        stateMachine.markActive(pendingState.getProfileId(), "账户数据已对齐");
+        stateMachine.markFullSyncing(pendingState.getProfileId(), "账户已登录，正在加载完整数据");
         return true;
     }
 
@@ -479,6 +543,14 @@ public final class AccountRemoteSessionCoordinator {
             return;
         }
         Arrays.fill(password, '\0');
+    }
+
+    @NonNull
+    private static String resolveThrowableMessage(@Nullable Throwable throwable, @NonNull String fallback) {
+        String message = throwable == null || throwable.getMessage() == null
+                ? ""
+                : throwable.getMessage().trim();
+        return message.isEmpty() ? fallback : message;
     }
 
     private static String resolveFailureMessage(@Nullable SessionReceipt receipt, @NonNull String fallback) {

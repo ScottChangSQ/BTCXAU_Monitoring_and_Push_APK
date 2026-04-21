@@ -90,6 +90,20 @@ public class TradeCommandFactoryTest {
     }
 
     @Test
+    public void closeByShouldKeepPairedTickets() {
+        TradeCommand command = TradeCommandFactory.closeBy(
+                "acc-1",
+                "BTCUSD",
+                9001L,
+                9002L
+        );
+
+        assertEquals("CLOSE_BY", command.getAction());
+        assertEquals(9001L, command.getParams().optLong("positionTicket", 0L));
+        assertEquals(9002L, command.getParams().optLong("oppositePositionTicket", 0L));
+    }
+
+    @Test
     public void describeShouldProduceReadableText() {
         TradeCommand command = TradeCommandFactory.modifyTpSl(
                 "acc-1",
@@ -141,5 +155,52 @@ public class TradeCommandFactoryTest {
         String summary = TradeCommandFactory.describe(command);
 
         assertTrue(summary.contains("按市价"));
+    }
+
+    @Test
+    public void describeShouldProduceReadableTextForCloseBy() {
+        TradeCommand command = TradeCommandFactory.closeBy(
+                "acc-1",
+                "BTCUSD",
+                9001L,
+                9002L
+        );
+
+        String summary = TradeCommandFactory.describe(command);
+
+        assertTrue(summary.contains("对锁平仓"));
+        assertTrue(summary.contains("BTCUSD"));
+        assertTrue(summary.contains("9001"));
+        assertTrue(summary.contains("9002"));
+    }
+
+    @Test
+    public void withTemplateShouldAttachTemplateMetadataWithoutChangingCoreAction() {
+        TradeCommand original = TradeCommandFactory.openMarket(
+                "acc-1",
+                "BTCUSD",
+                "buy",
+                0.05d,
+                65000d,
+                0d,
+                0d
+        );
+
+        TradeCommand command = TradeCommandFactory.withTemplate(
+                original,
+                new com.binance.monitor.data.model.v2.trade.TradeTemplate(
+                        "default_market",
+                        "默认模板",
+                        0.05d,
+                        0d,
+                        0d,
+                        "both"
+                )
+        );
+
+        assertEquals("OPEN_MARKET", command.getAction());
+        assertEquals("default_market", command.getParams().optString("templateId", ""));
+        assertEquals("默认模板", command.getParams().optString("templateName", ""));
+        assertEquals(0.05d, command.getVolume(), 0.0000001d);
     }
 }

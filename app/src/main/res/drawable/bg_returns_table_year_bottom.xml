@@ -5,8 +5,8 @@
         android:topRightRadius="0dp"
         android:bottomLeftRadius="0dp"
         android:bottomRightRadius="0dp" />
-    <solid android:color="@color/bg_input" />
+    <solid android:color="@color/bg_field_base" />
     <stroke
         android:width="0dp"
-        android:color="@color/transparent" />
+        android:color="@android:color/transparent" />
 </shape>

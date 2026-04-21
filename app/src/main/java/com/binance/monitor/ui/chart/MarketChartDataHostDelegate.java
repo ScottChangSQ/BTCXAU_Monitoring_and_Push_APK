@@ -53,7 +53,7 @@ public final class MarketChartDataHostDelegate implements MarketChartDataCoordin
     @Override public void persistClosedCandles(@NonNull String key, @NonNull List<CandleEntry> finalProcessed, @NonNull String symbol, @NonNull MarketChartDataCoordinator.IntervalSelection interval) { owner.persistClosedCandles(key, finalProcessed, symbol, interval); }
     @Override public void startProgressiveGapFill(@NonNull String reqSymbol, @NonNull MarketChartDataCoordinator.IntervalSelection reqInterval, int current, @Nullable List<CandleEntry> visibleWindow, long previousOldestOpenTime, int previousWindowSize) { owner.startProgressiveGapFill(reqSymbol, reqInterval, current, visibleWindow, previousOldestOpenTime, previousWindowSize); }
     @Override public void applyRequestSuccessState(boolean autoRefresh, long requestStartedAtMs) { owner.applyRequestSuccessState(autoRefresh, requestStartedAtMs); }
-    @Override public void applyRequestFailureState(boolean autoRefresh, @NonNull String message) { owner.applyRequestFailureState(autoRefresh, message); }
+    @Override public void applyRequestFailureState(boolean autoRefresh, boolean deferTrueEmptyUntilStorageRestore, @NonNull String message) { owner.applyRequestFailureState(autoRefresh, deferTrueEmptyUntilStorageRestore, message); }
     @Override public boolean beginLoadMore() { return owner.beginLoadMore(); }
     @Override public void notifyLoadMoreFinished() { owner.notifyLoadMoreFinished(); }
     @Override public void cancelLoadMoreTask() { owner.cancelLoadMoreTask(); }

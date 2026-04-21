@@ -5,6 +5,7 @@
 package com.binance.monitor.ui.account;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.AccountMetric;
@@ -168,8 +169,12 @@ public final class AccountDeferredSnapshotRenderHelper {
     private static List<AccountMetric> buildTradeStatsMetrics(List<AccountMetric> snapshotStats,
                                                               List<TradeRecordItem> baseTrades,
                                                               List<CurvePoint> curvePoints) {
-        if (snapshotStats != null && !snapshotStats.isEmpty()) {
-            return new ArrayList<>(snapshotStats);
+        List<AccountMetric> snapshotMetricResult = snapshotStats == null
+                ? new ArrayList<>()
+                : new ArrayList<>(snapshotStats);
+        if (!snapshotMetricResult.isEmpty()) {
+            upsertMetric(snapshotMetricResult, "夏普比率", buildSharpeRatioValue(curvePoints), "Sharpe", "Sharpe Ratio");
+            return snapshotMetricResult;
         }
         List<TradeRecordItem> trades = baseTrades == null ? new ArrayList<>() : new ArrayList<>(baseTrades);
         if (trades.isEmpty()) {
@@ -233,7 +238,101 @@ public final class AccountDeferredSnapshotRenderHelper {
         result.add(new AccountMetric("平均每笔亏损", FormatUtils.formatSignedMoney(averageLoss)));
         result.add(new AccountMetric("盈亏比", String.format(Locale.getDefault(), "%.2f", profitLossRatio)));
         result.add(new AccountMetric("最大回撤", formatRatioPercent(maxDrawdown)));
+        result.add(new AccountMetric("夏普比率", buildSharpeRatioValue(curvePoints)));
         return result;
+    }
+
+    // 夏普比率口径与服务端 curveIndicators 保持一致：逐点收益率均值年化后除以年化波动率。
+    @NonNull
+    static String buildSharpeRatioValue(@Nullable List<CurvePoint> curvePoints) {
+        if (curvePoints == null || curvePoints.isEmpty()) {
+            return "--";
+        }
+        List<Double> returns = new ArrayList<>();
+        Double previousEquity = null;
+        for (CurvePoint point : curvePoints) {
+            if (point == null) {
+                continue;
+            }
+            double equity = point.getEquity();
+            if (previousEquity != null) {
+                returns.add(safeDivide(equity - previousEquity, previousEquity));
+            }
+            previousEquity = equity;
+        }
+        if (returns.isEmpty()) {
+            return String.format(Locale.getDefault(), "%.2f", 0d);
+        }
+        double meanReturn = 0d;
+        for (double item : returns) {
+            meanReturn += item;
+        }
+        meanReturn /= returns.size();
+        double variance = 0d;
+        for (double item : returns) {
+            double diff = item - meanReturn;
+            variance += diff * diff;
+        }
+        variance /= returns.size();
+        double volatility = Math.sqrt(variance) * Math.sqrt(365d);
+        double sharpe = volatility > 1e-9 ? (meanReturn * 365d) / volatility : 0d;
+        return String.format(Locale.getDefault(), "%.2f", sharpe);
+    }
+
+    // 缺失或占位时补入统一指标，避免核心统计固定字段出现空洞。
+    private static void upsertMetric(@NonNull List<AccountMetric> metrics,
+                                     @NonNull String targetName,
+                                     @NonNull String value,
+                                     @NonNull String... aliases) {
+        if (value.trim().isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < metrics.size(); i++) {
+            AccountMetric metric = metrics.get(i);
+            if (metric == null || metric.getName() == null) {
+                continue;
+            }
+            String normalizedName = normalizeMetricName(metric.getName());
+            if (!matchesMetricName(normalizedName, targetName, aliases)) {
+                continue;
+            }
+            String currentValue = metric.getValue() == null ? "" : metric.getValue().trim();
+            if (!currentValue.isEmpty() && !"--".equals(currentValue)) {
+                return;
+            }
+            metrics.set(i, new AccountMetric(targetName, value));
+            return;
+        }
+        metrics.add(new AccountMetric(targetName, value));
+    }
+
+    @NonNull
+    private static String normalizeMetricName(@Nullable String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replace(" ", "").trim();
+    }
+
+    private static boolean matchesMetricName(@NonNull String normalizedName,
+                                             @NonNull String targetName,
+                                             @NonNull String... aliases) {
+        if (normalizedName.equals(normalizeMetricName(targetName))) {
+            return true;
+        }
+        for (String alias : aliases) {
+            if (normalizedName.equals(normalizeMetricName(alias))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static double safeDivide(double numerator, double denominator) {
+        if (Math.abs(denominator) < 1e-9) {
+            return 0d;
+        }
+        return numerator / denominator;
     }
 
     // 计算交易列表当前筛选和排序结果，供页面直接提交给适配器。

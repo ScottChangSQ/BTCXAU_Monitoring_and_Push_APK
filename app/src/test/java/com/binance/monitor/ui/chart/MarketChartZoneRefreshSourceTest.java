@@ -29,5 +29,7 @@ public class MarketChartZoneRefreshSourceTest {
         assertTrue(source.contains("dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);"));
         assertTrue(source.contains("monitorRepository.getConnectionStatus().observe(lifecycleOwner, ignored -> dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null));"));
         assertTrue(source.contains("globalStatusBottomSheetController.updateVisibleSheet(buildGlobalStatusSnapshot());"));
+        assertTrue(source.contains("boolean overlayChanged = ChartOverlayRefreshDiff.hasOverlayVisualChange("));
+        assertTrue(source.contains("ChartRefreshEvent.productRuntimeChanged(overlayChanged)"));
     }
 }

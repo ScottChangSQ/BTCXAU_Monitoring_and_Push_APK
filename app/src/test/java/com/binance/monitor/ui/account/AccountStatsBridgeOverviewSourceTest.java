@@ -21,7 +21,7 @@ public class AccountStatsBridgeOverviewSourceTest {
 
         assertTrue(source.contains("public static List<AccountMetric> buildOverviewMetrics("));
         assertTrue(source.contains("AccountOverviewMetricsCalculator.calculate("));
-        assertTrue(source.contains("AccountOverviewDailyMetricsCalculator.calculate("));
+        assertFalse(source.contains("AccountOverviewDailyMetricsCalculator.calculate("));
         assertFalse(source.contains("AccountOverviewCumulativeMetricsCalculator.calculate("));
     }
 
@@ -36,8 +36,8 @@ public class AccountStatsBridgeOverviewSourceTest {
         assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"保证金\""));
         assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓盈亏\""));
         assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓收益率\""));
-        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"当日盈亏\""));
-        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"当日收益率\""));
+        assertFalse(source.contains("replaceOrAppendOverviewMetric(result, \"当日盈亏\""));
+        assertFalse(source.contains("replaceOrAppendOverviewMetric(result, \"当日收益率\""));
         assertTrue(source.contains("return sortOverviewMetricsForDisplay(result);"));
         assertTrue(source.contains("private static List<AccountMetric> sortOverviewMetricsForDisplay(@Nullable List<AccountMetric> metrics) {"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"总资产\");"));
@@ -46,8 +46,8 @@ public class AccountStatsBridgeOverviewSourceTest {
         assertFalse(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"累计收益率\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"可用预付款\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"保证金\");"));
-        assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"当日盈亏\");"));
-        assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"当日收益率\");"));
+        assertFalse(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"当日盈亏\");"));
+        assertFalse(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"当日收益率\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"持仓盈亏\");"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"持仓收益率\");"));
     }

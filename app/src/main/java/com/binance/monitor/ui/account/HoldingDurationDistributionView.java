@@ -13,6 +13,8 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.R;
+import com.binance.monitor.ui.theme.TextAppearanceScaleResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 
 import java.util.ArrayList;
@@ -43,12 +45,12 @@ public class HoldingDurationDistributionView extends View {
         super(context, attrs, defStyleAttr);
         axisPaint.setStyle(Paint.Style.STROKE);
         gridPaint.setStyle(Paint.Style.STROKE);
-        labelPaint.setTextSize(dp(8f));
+        TextAppearanceScaleResolver.applyTextSize(labelPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         labelPaint.setTextAlign(Paint.Align.CENTER);
-        valuePaint.setTextSize(dp(7.8f));
+        TextAppearanceScaleResolver.applyTextSize(valuePaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         valuePaint.setTextAlign(Paint.Align.CENTER);
         emptyPaint.setTextAlign(Paint.Align.CENTER);
-        emptyPaint.setTextSize(dp(10f));
+        TextAppearanceScaleResolver.applyTextSize(emptyPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         refreshPalette();
     }
 
@@ -175,6 +177,6 @@ public class HoldingDurationDistributionView extends View {
     // 应用透明度。
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
-        return (color & 0x00FFFFFF) | (safeAlpha << 24);
+        return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
     }
 }

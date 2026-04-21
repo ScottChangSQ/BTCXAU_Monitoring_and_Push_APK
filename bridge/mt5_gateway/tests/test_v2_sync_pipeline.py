@@ -93,23 +93,11 @@ class V2SyncPipelineTests(unittest.TestCase):
     """验证 v2 增量和 WS 消息结构。"""
 
     def setUp(self):
+        if hasattr(server_v2, "account_publish_state") and hasattr(server_v2, "_reset_account_publish_state_locked"):
+            with server_v2.snapshot_cache_lock:
+                server_v2._reset_account_publish_state_locked()
         if hasattr(server_v2, "v2_sync_state"):
             server_v2.v2_sync_state.clear()
-        if hasattr(server_v2, "v2_bus_state"):
-            server_v2.v2_bus_state.clear()
-            server_v2.v2_bus_state.update({
-                "busSeq": 0,
-                "publishedAt": 0,
-                "revisions": {
-                    "marketRevision": "",
-                    "accountRuntimeRevision": "",
-                    "accountHistoryRevision": "",
-                    "abnormalRevision": "",
-                },
-                "event": None,
-                "runtimeSnapshot": None,
-                "abnormalSnapshot": None,
-            })
 
     @staticmethod
     def _build_stub_snapshot(position_count: int = 0, order_count: int = 0):
@@ -167,17 +155,8 @@ class V2SyncPipelineTests(unittest.TestCase):
         original_runtime_builder = getattr(server_v2, "_build_v2_sync_runtime_snapshot")
         server_v2._build_v2_sync_runtime_snapshot = fake_runtime_snapshot
         try:
-            server_v2.v2_bus_state = {
-                "busSeq": 3,
-                "publishedAt": 1000,
-                "revisions": {
-                    "marketRevision": "market-3",
-                    "accountRuntimeRevision": "account-7",
-                    "accountHistoryRevision": "history-9",
-                    "abnormalRevision": "abnormal-2",
-                },
-                "event": {
-                    "type": "syncEvent",
+            with server_v2.snapshot_cache_lock:
+                server_v2.account_publish_state.update({
                     "busSeq": 3,
                     "publishedAt": 1000,
                     "revisions": {
@@ -186,11 +165,21 @@ class V2SyncPipelineTests(unittest.TestCase):
                         "accountHistoryRevision": "history-9",
                         "abnormalRevision": "abnormal-2",
                     },
-                    "changes": {
-                        "market": {"snapshot": {"symbolStates": []}},
+                    "event": {
+                        "type": "syncEvent",
+                        "busSeq": 3,
+                        "publishedAt": 1000,
+                        "revisions": {
+                            "marketRevision": "market-3",
+                            "accountRuntimeRevision": "account-7",
+                            "accountHistoryRevision": "history-9",
+                            "abnormalRevision": "abnormal-2",
+                        },
+                        "changes": {
+                            "market": {"snapshot": {"symbolStates": []}},
+                        },
                     },
-                },
-            }
+                })
 
             payload = server_v2._build_v2_stream_event_for_client(last_bus_seq=2)
         finally:
@@ -202,17 +191,8 @@ class V2SyncPipelineTests(unittest.TestCase):
         self.assertEqual(0, calls["runtime"])
 
     def test_stream_event_should_emit_heartbeat_when_bus_seq_unchanged(self):
-        server_v2.v2_bus_state = {
-            "busSeq": 5,
-            "publishedAt": 2000,
-            "revisions": {
-                "marketRevision": "market-5",
-                "accountRuntimeRevision": "account-5",
-                "accountHistoryRevision": "history-5",
-                "abnormalRevision": "abnormal-5",
-            },
-            "event": {
-                "type": "syncEvent",
+        with server_v2.snapshot_cache_lock:
+            server_v2.account_publish_state.update({
                 "busSeq": 5,
                 "publishedAt": 2000,
                 "revisions": {
@@ -221,17 +201,30 @@ class V2SyncPipelineTests(unittest.TestCase):
                     "accountHistoryRevision": "history-5",
                     "abnormalRevision": "abnormal-5",
                 },
-                "changes": {
-                    "accountRuntime": {"snapshot": {"positions": []}},
+                "event": {
+                    "type": "syncEvent",
+                    "busSeq": 5,
+                    "publishedAt": 2000,
+                    "revisions": {
+                        "marketRevision": "market-5",
+                        "accountRuntimeRevision": "account-5",
+                        "accountHistoryRevision": "history-5",
+                        "abnormalRevision": "abnormal-5",
+                    },
+                    "changes": {
+                        "accountRuntime": {"snapshot": {"positions": []}},
+                    },
                 },
-            },
-        }
+            })
 
         payload = server_v2._build_v2_stream_event_for_client(last_bus_seq=5)
 
         self.assertEqual("heartbeat", payload["type"])
         self.assertEqual(5, payload["busSeq"])
         self.assertEqual({}, payload["changes"])
+
+    def test_legacy_v2_bus_state_alias_should_not_exist(self):
+        self.assertFalse(hasattr(server_v2, "v2_bus_state"))
 
     def test_runtime_snapshot_should_not_touch_mt5_when_session_logged_out(self):
         with mock.patch.object(
@@ -368,6 +361,44 @@ class V2SyncPipelineTests(unittest.TestCase):
             asyncio.run(server_v2.v2_stream(_FakeClient()))
 
         self.assertEqual(0, len(to_thread_calls))
+
+    def test_v2_stream_bootstrap_should_keep_account_runtime_identity(self):
+        payload = server_v2._build_v2_stream_bootstrap_message(
+            {
+                "busSeq": 1,
+                "publishedAt": 1000,
+                "runtimeSnapshot": {
+                    "accountRevision": "acct-1",
+                    "historyRevision": "history-9",
+                    "account": {
+                        "accountMeta": {
+                            "login": "7400048",
+                            "server": "ICMarketsSC-MT5-6",
+                            "historyRevision": "history-9",
+                        },
+                        "positions": [],
+                        "orders": [],
+                    },
+                    "market": {},
+                },
+                "abnormalSnapshot": {},
+                "revisions": {
+                    "marketRevision": "",
+                    "accountRuntimeRevision": "acct-1",
+                    "accountHistoryRevision": "history-9",
+                    "abnormalRevision": "",
+                },
+            }
+        )
+
+        self.assertEqual(
+            "7400048",
+            payload["changes"]["accountRuntime"]["snapshot"]["accountMeta"]["login"],
+        )
+        self.assertEqual(
+            "ICMarketsSC-MT5-6",
+            payload["changes"]["accountRuntime"]["snapshot"]["accountMeta"]["server"],
+        )
 
     def test_configure_windows_event_loop_policy_should_switch_to_selector_on_windows(self):
         class _FakeSelectorPolicy:

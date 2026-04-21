@@ -4,33 +4,36 @@
  */
 package com.binance.monitor.ui.chart;
 
-final class KlinePaneTextLayoutHelper {
-    private static final float INDICATOR_PLOT_TOP_INSET_DP = 18f;
-    private static final float INDICATOR_PLOT_BOTTOM_INSET_DP = 6f;
-    private static final float PANE_TITLE_BASELINE_OFFSET_DP = 12f;
-    private static final float AXIS_TOP_BASELINE_OFFSET_DP = 12f;
-    private static final float AXIS_BOTTOM_INSET_DP = 6f;
+import androidx.annotation.DimenRes;
 
+import com.binance.monitor.R;
+
+final class KlinePaneTextLayoutHelper {
     private KlinePaneTextLayoutHelper() {
     }
 
-    static float resolveIndicatorPlotTopInsetDp() {
-        return INDICATOR_PLOT_TOP_INSET_DP;
+    @DimenRes
+    static int resolveIndicatorPlotTopInsetRes() {
+        return R.dimen.kline_indicator_plot_top_inset;
     }
 
-    static float resolveIndicatorPlotBottomInsetDp() {
-        return INDICATOR_PLOT_BOTTOM_INSET_DP;
+    @DimenRes
+    static int resolveIndicatorPlotBottomInsetRes() {
+        return R.dimen.kline_indicator_plot_bottom_inset;
     }
 
-    static float resolvePaneTitleBaselineOffsetDp() {
-        return PANE_TITLE_BASELINE_OFFSET_DP;
+    @DimenRes
+    static int resolvePaneTitleBaselineOffsetRes() {
+        return R.dimen.kline_pane_title_baseline_offset;
     }
 
-    static float resolveAxisTopBaselineOffsetDp() {
-        return AXIS_TOP_BASELINE_OFFSET_DP;
+    @DimenRes
+    static int resolveAxisTopBaselineOffsetRes() {
+        return R.dimen.kline_axis_top_baseline_offset;
     }
 
-    static float resolveAxisBottomInsetDp() {
-        return AXIS_BOTTOM_INSET_DP;
+    @DimenRes
+    static int resolveAxisBottomInsetRes() {
+        return R.dimen.kline_axis_bottom_inset;
     }
 }

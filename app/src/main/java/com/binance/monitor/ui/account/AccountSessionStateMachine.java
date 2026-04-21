@@ -15,6 +15,7 @@ public final class AccountSessionStateMachine {
         SUBMITTING,
         SWITCHING,
         SYNCING,
+        FULL_SYNCING,
         ACTIVE,
         FAILED
     }
@@ -67,6 +68,11 @@ public final class AccountSessionStateMachine {
     // 标记服务器已接受新账号，但页面仍在等待新快照。
     public synchronized void markSyncing(@Nullable String profileId, @Nullable String message) {
         current = new StateSnapshot(AccountSessionUiState.SYNCING, message, profileId, true);
+    }
+
+    // 标记轻量运行态已经确认上线，但完整数据仍在后台补齐。
+    public synchronized void markFullSyncing(@Nullable String profileId, @Nullable String message) {
+        current = new StateSnapshot(AccountSessionUiState.FULL_SYNCING, message, profileId, false);
     }
 
     // 标记页面已经拿到新账号快照并可视为真正切换完成。

@@ -105,8 +105,6 @@ public final class AccountStatsPageController {
 
         void bindPageContent(@NonNull ContentAccountStatsBinding binding);
 
-        void placeCurveSectionToBottom();
-
         void bindLocalMeta();
 
         void onColdStart();

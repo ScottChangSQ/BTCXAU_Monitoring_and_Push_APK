@@ -44,8 +44,8 @@ public final class MarketChartPageHostDelegate implements MarketChartPageControl
     }
 
     @Override
-    public void restoreChartOverlayFromLatestCacheOrEmpty() {
-        owner.restoreChartOverlayFromLatestCacheOrEmpty();
+    public void restoreChartOverlayFromLatestCache() {
+        owner.restoreChartOverlayFromLatestCache();
     }
 
     @Override
@@ -64,8 +64,28 @@ public final class MarketChartPageHostDelegate implements MarketChartPageControl
     }
 
     @Override
+    public void requestColdStartKlines() {
+        owner.requestColdStartKlines();
+    }
+
+    @Override
+    public void requestResumeKlines() {
+        owner.requestResumeKlines();
+    }
+
+    @Override
+    public void requestSelectionChangeKlines() {
+        owner.requestSelectionChangeKlines();
+    }
+
+    @Override
     public void refreshChartOverlays() {
         owner.refreshChartOverlays();
+    }
+
+    @Override
+    public void beginChartBootstrap() {
+        owner.beginChartBootstrap();
     }
 
     @Override
@@ -160,7 +180,7 @@ public final class MarketChartPageHostDelegate implements MarketChartPageControl
 
         void attachAccountCacheListener();
 
-        void restoreChartOverlayFromLatestCacheOrEmpty();
+        void restoreChartOverlayFromLatestCache();
 
         void consumePendingTradeActionIfNeeded();
 
@@ -168,7 +188,15 @@ public final class MarketChartPageHostDelegate implements MarketChartPageControl
 
         void requestKlines();
 
+        void requestColdStartKlines();
+
+        void requestResumeKlines();
+
+        void requestSelectionChangeKlines();
+
         void refreshChartOverlays();
+
+        void beginChartBootstrap();
 
         void restorePersistedCache();
 

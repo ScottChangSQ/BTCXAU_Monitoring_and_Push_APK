@@ -6,6 +6,7 @@ package com.binance.monitor.ui.account;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.AccountSnapshot;
@@ -13,9 +14,12 @@ import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
 
+import org.junit.Before;
 import org.junit.Test;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -23,6 +27,11 @@ import java.util.List;
 import java.util.TimeZone;
 
 public class AccountPositionUiModelFactoryTest {
+
+    @Before
+    public void setUp() {
+        UnifiedRuntimeSnapshotStore.getInstance().clearAccountRuntime();
+    }
 
     // 有持仓有挂单时，输出应稳定排序且签名稳定。
     @Test
@@ -123,9 +132,9 @@ public class AccountPositionUiModelFactoryTest {
         }
     }
 
-    // 当前持仓产品聚合应按“产品 + 方向”拆组，并汇总手数、成本线和盈亏金额。
+    // 账户页产品摘要必须直接复用统一运行态，不能再按“产品 + 方向”在页面侧重算一份。
     @Test
-    public void buildShouldGroupPositionAggregatesByProductAndSide() {
+    public void buildShouldReuseUnifiedRuntimeProductSummariesForAccountAggregates() {
         AccountPositionUiModelFactory factory = new AccountPositionUiModelFactory();
         List<PositionItem> positions = Arrays.asList(
                 createPosition("XAUUSD", "Buy", 1001L, 0L, 1.0, 2300d, 25d, 5d),
@@ -135,22 +144,24 @@ public class AccountPositionUiModelFactoryTest {
         AccountStatsPreloadManager.Cache cache = createCache(
                 Collections.singletonList(new AccountMetric("总资产", "$1000.00")),
                 positions,
-                Collections.emptyList(),
+                Collections.singletonList(createPosition("XAUUSD", "Buy", 0L, 2001L, 0.0, 2360d, 0d, 0d)),
                 1710000000000L,
                 "rev-aggregate"
         );
+        UnifiedRuntimeSnapshotStore.getInstance().applyAccountCache(cache);
 
         AccountPositionUiModel model = factory.build(cache);
 
-        assertEquals(2, model.getPositionAggregates().size());
-        assertEquals("XAUUSD", model.getPositionAggregates().get(0).getProductName());
-        assertEquals("Buy", model.getPositionAggregates().get(0).getSide());
-        assertEquals(3.0d, model.getPositionAggregates().get(0).getQuantity(), 0.0001d);
-        assertEquals((2300d * 1.0d + 2400d * 2.0d) / 3.0d,
-                model.getPositionAggregates().get(0).getAverageCostPrice(),
-                0.0001d);
-        assertEquals(78d, model.getPositionAggregates().get(0).getTotalPnl(), 0.0001d);
-        assertEquals("Sell", model.getPositionAggregates().get(1).getSide());
+        assertEquals(1, model.getPositionAggregates().size());
+        Object aggregate = model.getPositionAggregates().get(0);
+        assertEquals("XAUUSD", invokeStringGetter(aggregate, "getDisplayLabel"));
+        assertEquals("XAU", invokeStringGetter(aggregate, "getCompactDisplayLabel"));
+        assertEquals(3, invokeIntGetter(aggregate, "getPositionCount"));
+        assertEquals(1, invokeIntGetter(aggregate, "getPendingCount"));
+        assertEquals(3.50d, invokeDoubleGetter(aggregate, "getTotalLots"), 0.0001d);
+        assertEquals(2.50d, invokeDoubleGetter(aggregate, "getSignedLots"), 0.0001d);
+        assertEquals(68d, invokeDoubleGetter(aggregate, "getNetPnl"), 0.0001d);
+        assertEquals("盈亏：+68.00 | 持仓：3.50手", invokeStringGetter(aggregate, "getSummaryText"));
     }
 
     // 空快照输入时，应输出空集合与占位更新时间并保持签名可用。
@@ -329,5 +340,38 @@ public class AccountPositionUiModelFactoryTest {
                 0d,
                 storageFee
         );
+    }
+
+    private static String invokeStringGetter(Object target, String methodName) {
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            Object value = method.invoke(target);
+            return value == null ? "" : value.toString();
+        } catch (ReflectiveOperationException exception) {
+            fail("缺少账户页产品摘要方法: " + methodName);
+            return "";
+        }
+    }
+
+    private static int invokeIntGetter(Object target, String methodName) {
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            Object value = method.invoke(target);
+            return value instanceof Number ? ((Number) value).intValue() : 0;
+        } catch (ReflectiveOperationException exception) {
+            fail("缺少账户页产品摘要方法: " + methodName);
+            return 0;
+        }
+    }
+
+    private static double invokeDoubleGetter(Object target, String methodName) {
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            Object value = method.invoke(target);
+            return value instanceof Number ? ((Number) value).doubleValue() : 0d;
+        } catch (ReflectiveOperationException exception) {
+            fail("缺少账户页产品摘要方法: " + methodName);
+            return 0d;
+        }
     }
 }

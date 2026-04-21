@@ -17,14 +17,24 @@ import java.util.Locale;
 import java.util.Map;
 
 final class AbnormalAnnotationOverlayBuilder {
-    private static final int START_COLOR = 0xFFF2C94C;
-    private static final int END_COLOR = 0xFFF6465D;
+
+    static final class ColorRange {
+        final int startColor;
+        final int endColor;
+
+        ColorRange(int startColor, int endColor) {
+            this.startColor = startColor;
+            this.endColor = endColor;
+        }
+    }
 
     private AbnormalAnnotationOverlayBuilder() {
     }
 
     // 把异常记录按图表当前 K 线时间桶聚合，生成可直接映射到绘制层的标注数据。
-    static List<BucketAnnotation> build(List<AbnormalRecord> records, List<CandleEntry> candles) {
+    static List<BucketAnnotation> build(List<AbnormalRecord> records,
+                                        List<CandleEntry> candles,
+                                        ColorRange colorRange) {
         if (records == null || records.isEmpty() || candles == null || candles.isEmpty()) {
             return new ArrayList<>();
         }
@@ -57,7 +67,7 @@ final class AbnormalAnnotationOverlayBuilder {
                     state.anchorTimeMs,
                     state.displayPrice,
                     buildLabel(state),
-                    interpolateColor(START_COLOR, END_COLOR, intensity),
+                    interpolateColor(colorRange.startColor, colorRange.endColor, intensity),
                     "abn|" + state.anchorTimeMs,
                     state.count,
                     intensity
@@ -156,19 +166,22 @@ final class AbnormalAnnotationOverlayBuilder {
     // 在不依赖 Android 运行时的前提下插值颜色，便于本地单测验证。
     private static int interpolateColor(int startColor, int endColor, float ratio) {
         float safeRatio = Math.max(0f, Math.min(1f, ratio));
-        int startA = (startColor >> 24) & 0xFF;
-        int startR = (startColor >> 16) & 0xFF;
-        int startG = (startColor >> 8) & 0xFF;
-        int startB = startColor & 0xFF;
-        int endA = (endColor >> 24) & 0xFF;
-        int endR = (endColor >> 16) & 0xFF;
-        int endG = (endColor >> 8) & 0xFF;
-        int endB = endColor & 0xFF;
+        int startA = (startColor >>> 24) & 255;
+        int startR = (startColor >>> 16) & 255;
+        int startG = (startColor >>> 8) & 255;
+        int startB = startColor & 255;
+        int endA = (endColor >>> 24) & 255;
+        int endR = (endColor >>> 16) & 255;
+        int endG = (endColor >>> 8) & 255;
+        int endB = endColor & 255;
         int a = Math.round(startA + (endA - startA) * safeRatio);
         int r = Math.round(startR + (endR - startR) * safeRatio);
         int g = Math.round(startG + (endG - startG) * safeRatio);
         int b = Math.round(startB + (endB - startB) * safeRatio);
-        return (a << 24) | (r << 16) | (g << 8) | b;
+        return ((a & 255) << 24)
+                | ((r & 255) << 16)
+                | ((g & 255) << 8)
+                | (b & 255);
     }
 
     static final class BucketAnnotation {

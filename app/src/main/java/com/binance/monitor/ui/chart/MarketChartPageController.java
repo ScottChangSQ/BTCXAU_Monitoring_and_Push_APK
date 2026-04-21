@@ -108,7 +108,7 @@ public final class MarketChartPageController {
 
         void attachAccountCacheListener();
 
-        void restoreChartOverlayFromLatestCacheOrEmpty();
+        void restoreChartOverlayFromLatestCache();
 
         void consumePendingTradeActionIfNeeded();
 
@@ -116,7 +116,15 @@ public final class MarketChartPageController {
 
         void requestKlines();
 
+        void requestColdStartKlines();
+
+        void requestResumeKlines();
+
+        void requestSelectionChangeKlines();
+
         void refreshChartOverlays();
+
+        void beginChartBootstrap();
 
         void restorePersistedCache();
 

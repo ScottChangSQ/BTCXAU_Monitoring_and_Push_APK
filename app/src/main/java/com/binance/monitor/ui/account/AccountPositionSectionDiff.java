@@ -1,5 +1,5 @@
 /*
- * 账户持仓页分段差异比较器，负责判定概览、持仓、挂单三段是否变化。
+ * 账户持仓页分段差异比较器，负责判定概览、持仓、挂单、历史四段是否变化。
  * 该比较器供页面局部刷新使用，避免每次都全量重绘。
  */
 package com.binance.monitor.ui.account;
@@ -9,6 +9,7 @@ import androidx.annotation.Nullable;
 
 import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.domain.account.model.TradeRecordItem;
 
 import java.util.List;
 
@@ -17,20 +18,30 @@ public final class AccountPositionSectionDiff {
     private AccountPositionSectionDiff() {
     }
 
-    // 比较新旧模型的三段内容变化。
+    // 兼容旧调用方，只比较概览、持仓、挂单三段变化。
     @NonNull
     public static Result diff(@Nullable AccountPositionUiModel previous,
                               @Nullable AccountPositionUiModel current) {
+        return diff(previous, current, null, null);
+    }
+
+    // 比较新旧模型的四段内容变化。
+    @NonNull
+    public static Result diff(@Nullable AccountPositionUiModel previous,
+                              @Nullable AccountPositionUiModel current,
+                              @Nullable List<TradeRecordItem> previousHistory,
+                              @Nullable List<TradeRecordItem> currentHistory) {
         if (previous == null && current == null) {
-            return new Result(false, false, false);
+            return new Result(false, false, false, !buildHistoryKey(previousHistory).equals(buildHistoryKey(currentHistory)));
         }
         if (previous == null || current == null) {
-            return new Result(true, true, true);
+            return new Result(true, true, true, true);
         }
         boolean overviewChanged = !buildOverviewKey(previous).equals(buildOverviewKey(current));
         boolean positionsChanged = !buildPositionKey(previous).equals(buildPositionKey(current));
         boolean pendingChanged = !buildPendingKey(previous).equals(buildPendingKey(current));
-        return new Result(overviewChanged, positionsChanged, pendingChanged);
+        boolean historyChanged = !buildHistoryKey(previousHistory).equals(buildHistoryKey(currentHistory));
+        return new Result(overviewChanged, positionsChanged, pendingChanged, historyChanged);
     }
 
     // 生成概览段比较键。
@@ -59,6 +70,35 @@ public final class AccountPositionSectionDiff {
         StringBuilder builder = new StringBuilder();
         builder.append("summary=").append(safeText(model.getPendingSummaryText())).append('|');
         appendPositions(builder, model.getPendingOrders());
+        return builder.toString();
+    }
+
+    // 生成历史段比较键。
+    @NonNull
+    private static String buildHistoryKey(@Nullable List<TradeRecordItem> items) {
+        StringBuilder builder = new StringBuilder();
+        if (items == null || items.isEmpty()) {
+            return "history=;";
+        }
+        builder.append("history=");
+        for (TradeRecordItem item : items) {
+            if (item == null) {
+                builder.append("null;");
+                continue;
+            }
+            builder.append(safeText(item.getProductName())).append('|')
+                    .append(safeText(item.getCode())).append('|')
+                    .append(safeText(item.getSide())).append('|')
+                    .append(item.getDealTicket()).append('|')
+                    .append(item.getOrderId()).append('|')
+                    .append(item.getPositionId()).append('|')
+                    .append(item.getOpenTime()).append('|')
+                    .append(item.getCloseTime()).append('|')
+                    .append(item.getQuantity()).append('|')
+                    .append(item.getProfit()).append('|')
+                    .append(item.getStorageFee())
+                    .append(';');
+        }
         return builder.toString();
     }
 
@@ -126,11 +166,14 @@ public final class AccountPositionSectionDiff {
                 builder.append("null;");
                 continue;
             }
-            builder.append(safeText(item.getProductName())).append('|')
-                    .append(safeText(item.getSide())).append('|')
-                    .append(item.getQuantity()).append('|')
-                    .append(item.getAverageCostPrice()).append('|')
-                    .append(item.getTotalPnl())
+            builder.append(safeText(item.getDisplayLabel())).append('|')
+                    .append(safeText(item.getCompactDisplayLabel())).append('|')
+                    .append(item.getPositionCount()).append('|')
+                    .append(item.getPendingCount()).append('|')
+                    .append(item.getTotalLots()).append('|')
+                    .append(item.getSignedLots()).append('|')
+                    .append(item.getNetPnl()).append('|')
+                    .append(safeText(item.getSummaryText()))
                     .append(';');
         }
     }
@@ -145,11 +188,16 @@ public final class AccountPositionSectionDiff {
         private final boolean overviewChanged;
         private final boolean positionsChanged;
         private final boolean pendingChanged;
+        private final boolean historyChanged;
 
-        public Result(boolean overviewChanged, boolean positionsChanged, boolean pendingChanged) {
+        public Result(boolean overviewChanged,
+                      boolean positionsChanged,
+                      boolean pendingChanged,
+                      boolean historyChanged) {
             this.overviewChanged = overviewChanged;
             this.positionsChanged = positionsChanged;
             this.pendingChanged = pendingChanged;
+            this.historyChanged = historyChanged;
         }
 
         // 返回概览段是否变化。
@@ -167,9 +215,14 @@ public final class AccountPositionSectionDiff {
             return pendingChanged;
         }
 
+        // 返回历史段是否变化。
+        public boolean isHistoryChanged() {
+            return historyChanged;
+        }
+
         // 返回是否存在任一段变化。
         public boolean hasAnyChange() {
-            return overviewChanged || positionsChanged || pendingChanged;
+            return overviewChanged || positionsChanged || pendingChanged || historyChanged;
         }
     }
 }

@@ -133,4 +133,15 @@ public class NotificationHelper {
                 .build();
         manager.notify(notificationId, notification);
     }
+
+    // 账号恢复轻量确认发现服务端实际账号已变化时，发出明确通知。
+    public void notifyAccountMismatch(String login, String server) {
+        String safeLogin = login == null ? "" : login.trim();
+        String safeServer = server == null ? "" : server.trim();
+        String content = "服务器端当前实际账号已经不是原来的账号了";
+        if (!safeLogin.isEmpty() || !safeServer.isEmpty()) {
+            content += ": " + safeLogin + " / " + safeServer;
+        }
+        notifyAbnormalAlert("MT5 账号已失效", content, 9101);
+    }
 }

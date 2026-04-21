@@ -98,6 +98,18 @@ class V2TradeContractTests(unittest.TestCase):
     def setUp(self):
         server_v2.trade_request_store.clear()
 
+    def test_normalize_v2_account_meta_should_keep_account_mode(self):
+        payload = server_v2._normalize_v2_account_meta(
+            {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 Python Pull",
+                "accountMode": "hedging",
+            }
+        )
+
+        self.assertEqual("hedging", payload["accountMode"])
+
     def test_trade_check_should_return_contract_shape(self):
         check_result = _fake_mt5_result(retcode=0, comment="ok")
         with mock.patch.object(server_v2, "_trade_check_request", return_value=check_result), mock.patch.object(
@@ -203,6 +215,23 @@ class V2TradeContractTests(unittest.TestCase):
         self.assertEqual(submit_payload["requestId"], result_payload["requestId"])
         self.assertEqual("ACCEPTED", result_payload["status"])
         self.assertEqual(9001, result_payload["result"]["order"])
+
+    def test_trade_batch_result_should_return_recorded_batch_result(self):
+        payload = {
+            "batchId": "batch-result-001",
+            "status": "ACCEPTED",
+            "items": [{"itemId": "item-1", "status": "ACCEPTED"}],
+        }
+        if not hasattr(server_v2, "batch_request_store"):
+            self.fail("server_v2 尚未暴露 batch_request_store")
+        server_v2.batch_request_store.clear()
+        server_v2.batch_request_store["batch-result-001"] = payload
+
+        result_payload = server_v2.v2_trade_batch_result(batchId="batch-result-001")
+
+        self.assertEqual("batch-result-001", result_payload["batchId"])
+        self.assertEqual("ACCEPTED", result_payload["status"])
+        self.assertEqual("item-1", result_payload["items"][0]["itemId"])
 
     def test_pending_modify_should_build_modify_request_with_order_ticket(self):
         fake_mt5 = types.SimpleNamespace(

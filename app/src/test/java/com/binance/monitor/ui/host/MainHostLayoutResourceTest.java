@@ -28,4 +28,18 @@ public class MainHostLayoutResourceTest {
         assertFalse(xml.contains("@+id/tabAccountPosition"));
         assertFalse(xml.contains("@+id/tabAccountStats"));
     }
+
+    @Test
+    public void activityMainHostShouldUseCanonicalBottomNavSpacingTokens() throws Exception {
+        String xml = new String(Files.readAllBytes(
+                Paths.get("src/main/res/layout/activity_main_host.xml")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(xml.contains("@dimen/inline_gap_compact"));
+        assertTrue(xml.contains("@dimen/row_gap"));
+        assertTrue(xml.contains("@dimen/row_gap_compact"));
+        assertFalse(xml.contains("android:drawablePadding=\"2dp\""));
+        assertFalse(xml.contains("android:paddingTop=\"6dp\""));
+        assertFalse(xml.contains("android:paddingBottom=\"4dp\""));
+    }
 }

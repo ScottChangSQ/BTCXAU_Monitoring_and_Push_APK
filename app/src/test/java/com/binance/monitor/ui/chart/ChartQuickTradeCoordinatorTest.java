@@ -7,6 +7,10 @@ import com.binance.monitor.data.model.v2.trade.TradeCommand;
 
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
 public class ChartQuickTradeCoordinatorTest {
 
     @Test
@@ -24,6 +28,7 @@ public class ChartQuickTradeCoordinatorTest {
         TradeCommand command = executor.lastCommand;
         assertEquals("OPEN_MARKET", command.getAction());
         assertEquals("buy", command.getParams().optString("side", ""));
+        assertEquals("quick", command.getParams().optString("entryMode", ""));
         assertEquals(0.05d, command.getVolume(), 0.0000001d);
     }
 
@@ -57,6 +62,19 @@ public class ChartQuickTradeCoordinatorTest {
         } catch (IllegalArgumentException exception) {
             assertTrue(exception.getMessage().contains("挂单线"));
         }
+    }
+
+    @Test
+    public void quickTradeCoordinatorShouldRemainSingleTradeBoundary() throws Exception {
+        String source = new String(
+                Files.readAllBytes(Paths.get("src/main/java/com/binance/monitor/ui/chart/ChartQuickTradeCoordinator.java")),
+                StandardCharsets.UTF_8
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("TradeCommandFactory.openMarket("));
+        assertTrue(source.contains("TradeCommandFactory.pendingAdd("));
+        assertTrue(source.contains("executor.execute("));
+        assertTrue(!source.contains("BatchTradeCoordinator"));
     }
 
     private static final class FakeExecutor implements ChartQuickTradeCoordinator.Executor {

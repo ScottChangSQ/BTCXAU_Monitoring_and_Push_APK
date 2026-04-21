@@ -38,6 +38,53 @@ public class EquityCurveViewSourceTest {
                 source.contains("0xFFFFB300"));
     }
 
+    @Test
+    public void equityCurveTooltipTimeShouldFollowSharedHighlightTimestamp() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java",
+                "src/main/java/com/binance/monitor/ui/account/EquityCurveView.java"
+        );
+
+        assertTrue("主图弹窗时间应优先使用当前共享高亮时间，而不是固定吸附到最近真实点时间",
+                source.contains("tooltipLines.add(formatLabelTime(resolveHighlightLabelTimestamp(point)));"));
+    }
+
+    @Test
+    public void equityCurveShouldDrawZeroPercentReferenceLineFromBaseBalance() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java",
+                "src/main/java/com/binance/monitor/ui/account/EquityCurveView.java"
+        );
+
+        assertTrue("净值曲线应单独绘制基准收益 0% 横线，便于定位基准净值",
+                source.contains("drawZeroPercentReferenceLine(canvas, chartLeft, chartRight, chartTop, chartBottom, chartMin, chartMax, baseBalance);"));
+        assertTrue("0% 横线应按 baseBalance 映射到图内纵坐标",
+                source.contains("float zeroLineY = mapY(baseBalance, min, max, top, bottom);"));
+        assertTrue("0% 横线应带有独立标识，避免和普通网格线混淆",
+                source.contains("canvas.drawText(\"0%\", right - percentWidth, resolveAxisLabelBaseline(zeroLineY, top, bottom), labelPaint);"));
+        assertTrue("0% 横线应改为白色，便于在深色背景中作为基准线观察",
+                source.contains("zeroPercentLinePaint.setColor(0xFFFFFFFF);"));
+        assertTrue("0% 横线应改为实线，不能继续保留虚线路径效果",
+                source.contains("zeroPercentLinePaint.setPathEffect(null);"));
+    }
+
+    @Test
+    public void equityCurveBottomAxisLabelsShouldClampInsideChartBounds() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java",
+                "src/main/java/com/binance/monitor/ui/account/EquityCurveView.java"
+        );
+
+        assertTrue("左右纵轴刻度应统一走基线保护方法，避免最下方数字被下方图遮挡",
+                source.contains("float baseline = resolveAxisLabelBaseline(y, top, bottom);"));
+        assertTrue("左侧金额刻度应使用受保护的基线位置",
+                source.contains("canvas.drawText(amount, dp(4f), baseline, labelPaint);"));
+        assertTrue("右侧收益率刻度应使用受保护的基线位置",
+                source.contains("canvas.drawText(percent, getWidth() - dp(4f) - percentWidth, baseline, labelPaint);"));
+        assertTrue("基线保护方法应把底部刻度往上收，避免压到下方图表区域",
+                source.contains("return Math.max(top + dp(9f), Math.min(bottom - dp(2f), y + dp(3f)));"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

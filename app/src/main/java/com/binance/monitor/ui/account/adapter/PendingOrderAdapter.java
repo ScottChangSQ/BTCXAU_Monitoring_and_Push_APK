@@ -20,8 +20,8 @@ import com.binance.monitor.databinding.ItemPositionBinding;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
 import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
+import com.binance.monitor.ui.rules.IndicatorFormatterCenter;
 import com.binance.monitor.ui.theme.UiPaletteManager;
-import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
@@ -371,7 +371,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                     ? item.getPendingCount()
                     : (useRuntimePendingSummary ? runtimeSnapshot.getPendingCount() : 0);
             String qtyText = displayLots > 1e-9
-                    ? String.format(Locale.getDefault(), "%.2f 手", displayLots)
+                    ? IndicatorFormatterCenter.formatQuantity(displayLots, 2, " 手")
                     : (pendingCount > 0
                     ? (pendingCount + " 单")
                     : "0.00 手");
@@ -401,7 +401,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             binding.tvMetrics.setText(String.format(Locale.getDefault(),
                     "价位 %s | 现价 %s\n止盈 %s | 止损 %s",
                     "$" + pendingPriceText,
-                    "$" + FormatUtils.formatPrice(item.getLatestPrice()),
+                    IndicatorFormatterCenter.formatPrice(item.getLatestPrice(), 2, false),
                     optionalPrice(item.getTakeProfit()),
                     optionalPrice(item.getStopLoss())));
             binding.tvPnL.setVisibility(View.GONE);
@@ -420,7 +420,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             styleActionButton(binding.btnPositionDeleteAction, palette, true);
         }
 
-        // 挂单行操作按钮统一走 palette，避免 Notion 主题下继续出现旧黑块。
+        // 挂单行操作按钮统一走 ActionButton 主体，避免账户页继续保留旧方角动作入口。
         private void styleActionButton(@NonNull android.widget.TextView button,
                                        @NonNull UiPaletteManager.Palette palette,
                                        boolean danger) {
@@ -428,15 +428,14 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                     ? ColorUtils.setAlphaComponent(palette.fall, 24)
                     : palette.primarySoft;
             int textColor = danger ? palette.fall : palette.textPrimary;
-            UiPaletteManager.styleSquareTextAction(
+            UiPaletteManager.styleActionButton(
                     button,
                     palette,
                     fillColor,
                     textColor,
-                    12f,
+                    R.style.TextAppearance_BinanceMonitor_Control,
                     8,
-                    R.dimen.position_row_action_height,
-                    false
+                    R.dimen.position_row_action_height
             );
         }
 
@@ -516,7 +515,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
             if (value <= 0d) {
                 return "--";
             }
-            return "$" + FormatUtils.formatPrice(value);
+            return IndicatorFormatterCenter.formatPrice(value, 2, false);
         }
 
         private static String formatCollapsedPendingPrice(double price) {

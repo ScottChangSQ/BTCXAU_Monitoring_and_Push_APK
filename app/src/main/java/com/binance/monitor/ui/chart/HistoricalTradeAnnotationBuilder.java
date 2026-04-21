@@ -4,6 +4,7 @@
  */
 package com.binance.monitor.ui.chart;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.model.CandleEntry;
@@ -14,6 +15,8 @@ import java.util.List;
 import java.util.Locale;
 
 final class HistoricalTradeAnnotationBuilder {
+    private static final double LIFECYCLE_EPSILON = 1e-9;
+
     private HistoricalTradeAnnotationBuilder() {
     }
 
@@ -77,7 +80,7 @@ final class HistoricalTradeAnnotationBuilder {
         return result;
     }
 
-    // 仅展示服务端已明确标记为平仓/反手的历史成交。
+    // 优先使用服务端 entryType；如果上游已经给出完整开平仓生命周期，也允许按显式生命周期展示。
     private static boolean isClosedTrade(@Nullable TradeRecordItem trade) {
         if (trade == null) {
             return false;
@@ -88,7 +91,29 @@ final class HistoricalTradeAnnotationBuilder {
             return false;
         }
         int entryType = trade.getEntryType();
-        return entryType == 1 || entryType == 2 || entryType == 3;
+        if (entryType == 1 || entryType == 2 || entryType == 3) {
+            return true;
+        }
+        return hasExplicitCloseLifecycle(trade, openTime, closeTime);
+    }
+
+    // EA / 回放链里会保留一部分 entryType=0 但已经具备真实开平仓信息的成交，不能在客户端被提前丢掉。
+    private static boolean hasExplicitCloseLifecycle(@NonNull TradeRecordItem trade,
+                                                     long openTime,
+                                                     long closeTime) {
+        double openPrice = resolveOpenPrice(trade);
+        double closePrice = resolveClosePrice(trade);
+        if (openPrice <= 0d || closePrice <= 0d) {
+            return false;
+        }
+        if (closeTime > openTime) {
+            return true;
+        }
+        if (Math.abs(closePrice - openPrice) > LIFECYCLE_EPSILON) {
+            return true;
+        }
+        return Math.abs(trade.getProfit()) > LIFECYCLE_EPSILON
+                || Math.abs(trade.getStorageFee()) > LIFECYCLE_EPSILON;
     }
 
     // 1 分钟图直接锚到分钟桶开头，保证历史成交点稳定落在可见 K 线槽位里；
@@ -114,7 +139,7 @@ final class HistoricalTradeAnnotationBuilder {
             return clampToWindowStart ? firstOpen : targetTime;
         }
         if (targetTime > lastVisibleTime) {
-            return 0L;
+            return targetTime;
         }
         int index = findBucketIndex(candles, targetTime);
         if (index < 0 || index >= candles.size()) {

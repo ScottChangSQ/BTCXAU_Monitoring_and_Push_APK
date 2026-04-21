@@ -45,6 +45,7 @@ import com.binance.monitor.ui.main.ConnectionDetailNetworkHelper;
 import com.binance.monitor.ui.main.MainMarketRenderHelper;
 import com.binance.monitor.ui.main.MainViewModel;
 import com.binance.monitor.ui.main.RecentAbnormalRecordHelper;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.AppLaunchHelper;
 import com.binance.monitor.util.ChainLatencyTracer;
@@ -59,7 +60,6 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDelegate.Owner {
 
@@ -106,8 +106,6 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
     private String lastMarketRenderSignature = "";
     private ArrayAdapter<String> symbolAdapter;
     private List<AbnormalRecord> recentRecordsSource = Collections.emptyList();
-    private Map<String, Double> latestPricesSnapshot = Collections.emptyMap();
-    private Map<String, KlineData> latestKlinesSnapshot = Collections.emptyMap();
 
     public MarketMonitorPageRuntime(@NonNull Host host,
                                     @NonNull ActivityMainBinding binding,
@@ -155,9 +153,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         applyPaletteStyles();
         applyGlobalPreferences();
         loadSymbolConfig(selectedSymbol);
-        latestPricesSnapshot = safePriceSnapshot(viewModel == null ? null : viewModel.getDisplayPrices().getValue());
-        latestKlinesSnapshot = safeKlineSnapshot(viewModel == null ? null : viewModel.getDisplayOverviewKlines().getValue());
-        renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
+        renderMarketIfNeeded();
         startRecentRecordsAutoRefresh();
         startUpdateTimeTicker();
     }
@@ -323,7 +319,11 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
             return;
         }
         TextView textView = (TextView) view;
-        UiPaletteManager.styleSpinnerItemText(textView, UiPaletteManager.resolve(requireActivity()), 14f);
+        UiPaletteManager.styleSelectFieldLabel(
+                textView,
+                UiPaletteManager.resolve(requireActivity()),
+                R.style.TextAppearance_BinanceMonitor_Body
+        );
     }
 
     private void syncSymbolSelector() {
@@ -390,13 +390,8 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
             lastMarketUpdateMs = time == null ? 0L : time;
             binding.tvLastUpdate.setText(formatMarketUpdateText(lastMarketUpdateMs));
         });
-        viewModel.getDisplayPrices().observe(lifecycleOwner, prices -> {
-            latestPricesSnapshot = safePriceSnapshot(prices);
-            renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
-        });
-        viewModel.getDisplayOverviewKlines().observe(lifecycleOwner, klines -> {
-            latestKlinesSnapshot = safeKlineSnapshot(klines);
-            renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
+        viewModel.getMarketRuntimeSnapshotLiveData().observe(lifecycleOwner, snapshot -> {
+            renderMarketIfNeeded();
         });
         viewModel.getRecords().observe(lifecycleOwner, records -> {
             recentRecordsSource = records == null ? Collections.emptyList() : records;
@@ -503,9 +498,16 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         return result;
     }
 
-    private void renderMarket(Map<String, Double> prices, Map<String, KlineData> klines) {
-        Double price = prices != null ? prices.get(selectedSymbol) : null;
-        KlineData data = klines != null ? klines.get(selectedSymbol) : null;
+    private void renderMarket() {
+        if (viewModel == null) {
+            return;
+        }
+        Double price = null;
+        String marketWindowSignature = viewModel.selectMarketWindowSignature(selectedSymbol);
+        if (!marketWindowSignature.isEmpty()) {
+            price = viewModel.selectLatestPrice(selectedSymbol);
+        }
+        KlineData data = viewModel.selectClosedMinute(selectedSymbol);
         String unit = AppConstants.symbolToAsset(selectedSymbol);
         String priceText = price == null ? "--" : FormatUtils.formatPriceWithUnit(price);
         binding.tvCurrentPrice.setText(priceText);
@@ -526,10 +528,16 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         metricPercentBinding.tvMetricValue.setTextColor(changeColor);
     }
 
-    private void renderMarketIfNeeded(@Nullable Map<String, Double> prices,
-                                      @Nullable Map<String, KlineData> klines) {
-        Double latestPrice = prices == null ? null : prices.get(selectedSymbol);
-        KlineData latestKline = klines == null ? null : klines.get(selectedSymbol);
+    private void renderMarketIfNeeded() {
+        if (viewModel == null) {
+            return;
+        }
+        Double latestPrice = null;
+        String marketWindowSignature = viewModel.selectMarketWindowSignature(selectedSymbol);
+        if (!marketWindowSignature.isEmpty()) {
+            latestPrice = viewModel.selectLatestPrice(selectedSymbol);
+        }
+        KlineData latestKline = viewModel.selectClosedMinute(selectedSymbol);
         String nextSignature = MainMarketRenderHelper.buildRenderSignature(
                 selectedSymbol,
                 latestPrice,
@@ -542,7 +550,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         if (latestKline != null) {
             ChainLatencyTracer.markMainRender(selectedSymbol, latestKline.getCloseTime());
         }
-        renderMarket(prices, klines);
+        renderMarket();
     }
 
     private void setMetric(ItemMetricBinding bindingItem, String value) {
@@ -600,7 +608,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         lastMarketRenderSignature = "";
         syncSymbolSelector();
         loadSymbolConfig(normalized);
-        renderMarketIfNeeded(latestPricesSnapshot, latestKlinesSnapshot);
+        renderMarketIfNeeded();
     }
 
     private void restoreSelectedSymbol(@Nullable Bundle savedInstanceState) {
@@ -611,14 +619,6 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         if (!TextUtils.isEmpty(restored)) {
             selectedSymbol = restored.trim().toUpperCase(java.util.Locale.ROOT);
         }
-    }
-
-    private Map<String, Double> safePriceSnapshot(@Nullable Map<String, Double> prices) {
-        return prices == null ? Collections.emptyMap() : prices;
-    }
-
-    private Map<String, KlineData> safeKlineSnapshot(@Nullable Map<String, KlineData> klines) {
-        return klines == null ? Collections.emptyMap() : klines;
     }
 
     private void loadSymbolConfig(String symbol) {
@@ -649,7 +649,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
     private void applyConnectionChipStyle() {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(requireActivity());
         binding.tvConnectionStatus.setBackground(UiPaletteManager.createFilledDrawable(requireActivity(), palette.primary));
-        binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(requireActivity(), R.color.white));
+        binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(requireActivity(), R.color.text_inverse));
     }
 
     private void applyPaletteStyles() {
@@ -657,8 +657,20 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(requireActivity(), palette);
         binding.spinnerSymbolPicker.setBackground(UiPaletteManager.createOutlinedDrawable(requireActivity(), palette.control, palette.stroke));
-        binding.tvMainSymbolPickerLabel.setTextColor(palette.textPrimary);
-        UiPaletteManager.styleInlineTextButton(binding.btnViewAllRecords, false, palette, 11f);
+        UiPaletteManager.styleSelectFieldLabel(
+                binding.tvMainSymbolPickerLabel,
+                palette,
+                palette.control,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control
+        );
+        UiPaletteManager.styleTextTrigger(
+                binding.btnViewAllRecords,
+                palette,
+                palette.surfaceStart,
+                UiPaletteManager.controlUnselectedText(binding.btnViewAllRecords.getContext()),
+                R.style.TextAppearance_BinanceMonitor_ControlCompact
+        );
         applyMainSymbolPickerIndicator();
         applyLogicModeStyles();
         if (binding.spinnerSymbolPicker.getAdapter() instanceof BaseAdapter) {
@@ -681,24 +693,27 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         android.widget.LinearLayout content = new android.widget.LinearLayout(requireActivity());
         content.setOrientation(android.widget.LinearLayout.VERTICAL);
         content.setBackground(UiPaletteManager.createSurfaceDrawable(requireActivity(), palette.card, palette.stroke));
-        content.setPadding(dp(18), dp(14), dp(18), dp(6));
+        int horizontal = SpacingTokenResolver.px(requireActivity(), R.dimen.dialog_content_padding);
+        int top = SpacingTokenResolver.rowGapPx(requireActivity());
+        int bottom = SpacingTokenResolver.rowGapCompactPx(requireActivity());
+        content.setPadding(horizontal, top, horizontal, bottom);
 
         android.widget.TextView titleView = new android.widget.TextView(requireActivity());
         titleView.setText("网络连接详情");
         titleView.setTextColor(palette.textPrimary);
-        titleView.setTextSize(18f);
+        UiPaletteManager.applyTextAppearance(titleView, R.style.TextAppearance_BinanceMonitor_Value);
         content.addView(titleView);
 
         android.widget.TextView subtitleView = new android.widget.TextView(requireActivity());
         subtitleView.setText("监控工作状态与访问入口");
         subtitleView.setTextColor(palette.textSecondary);
-        subtitleView.setTextSize(12f);
+        UiPaletteManager.applyTextAppearance(subtitleView, R.style.TextAppearance_BinanceMonitor_Meta);
         android.widget.LinearLayout.LayoutParams subtitleParams =
                 new android.widget.LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
                 );
-        subtitleParams.topMargin = dp(4);
+        subtitleParams.topMargin = SpacingTokenResolver.rowGapCompactPx(requireActivity());
         content.addView(subtitleView, subtitleParams);
 
         content.addView(createConnectionDetailRow("连接状态", binding.tvConnectionStatus.getText().toString(), palette));
@@ -734,31 +749,36 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         android.widget.LinearLayout row = new android.widget.LinearLayout(requireActivity());
         row.setOrientation(android.widget.LinearLayout.VERTICAL);
         row.setBackground(UiPaletteManager.createOutlinedDrawable(requireActivity(), palette.card, palette.stroke));
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setPadding(
+                SpacingTokenResolver.px(requireActivity(), R.dimen.list_item_padding_x),
+                SpacingTokenResolver.px(requireActivity(), R.dimen.list_item_padding_y),
+                SpacingTokenResolver.px(requireActivity(), R.dimen.list_item_padding_x),
+                SpacingTokenResolver.px(requireActivity(), R.dimen.list_item_padding_y)
+        );
         android.widget.LinearLayout.LayoutParams params =
                 new android.widget.LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
                 );
-        params.topMargin = dp(10);
+        params.topMargin = SpacingTokenResolver.rowGapPx(requireActivity());
         row.setLayoutParams(params);
 
         android.widget.TextView labelView = new android.widget.TextView(requireActivity());
         labelView.setText(label);
         labelView.setTextColor(palette.textSecondary);
-        labelView.setTextSize(12f);
+        UiPaletteManager.applyTextAppearance(labelView, R.style.TextAppearance_BinanceMonitor_Meta);
         row.addView(labelView);
 
         android.widget.TextView valueView = new android.widget.TextView(requireActivity());
         valueView.setText((value == null || value.trim().isEmpty()) ? "--" : value.trim());
         valueView.setTextColor(palette.textPrimary);
-        valueView.setTextSize(13f);
+        UiPaletteManager.applyTextAppearance(valueView, R.style.TextAppearance_BinanceMonitor_Body);
         android.widget.LinearLayout.LayoutParams valueParams =
                 new android.widget.LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
                 );
-        valueParams.topMargin = dp(4);
+        valueParams.topMargin = SpacingTokenResolver.rowGapCompactPx(requireActivity());
         row.addView(valueView, valueParams);
         return new ConnectionDetailRowHolder(row, valueView);
     }
@@ -810,10 +830,6 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         } catch (Exception ignored) {
             return "--";
         }
-    }
-
-    private int dp(int value) {
-        return Math.round(value * requireActivity().getResources().getDisplayMetrics().density);
     }
 
     private String formatMarketUpdateText(long timestampMs) {

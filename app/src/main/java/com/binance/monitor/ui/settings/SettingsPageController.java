@@ -43,8 +43,10 @@ public final class SettingsPageController {
     // 绑定首页分类入口。
     private void setupEntries() {
         binding.itemDisplay.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_DISPLAY, "悬浮窗与显示"));
+        binding.itemTrade.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_TRADE, "交易设置"));
         binding.itemGateway.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_GATEWAY, "正式入口"));
         binding.itemCache.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_CACHE, "缓存管理"));
+        binding.itemTradeAudit.setOnClickListener(v -> host.openTradeAuditPage());
         binding.itemLogs.setOnClickListener(v -> host.openLogPage());
     }
 
@@ -55,8 +57,10 @@ public final class SettingsPageController {
         UiPaletteManager.applyPageTheme(binding.getRoot(), palette);
         UiPaletteManager.applySystemBars(activity, palette);
         styleEntry(binding.itemDisplay, palette);
+        styleEntry(binding.itemTrade, palette);
         styleEntry(binding.itemGateway, palette);
         styleEntry(binding.itemCache, palette);
+        styleEntry(binding.itemTradeAudit, palette);
         styleEntry(binding.itemLogs, palette);
     }
 
@@ -73,6 +77,8 @@ public final class SettingsPageController {
         AppCompatActivity requireActivity();
 
         void openSettingsSection(@NonNull String section, @NonNull String title);
+
+        void openTradeAuditPage();
 
         void openLogPage();
     }

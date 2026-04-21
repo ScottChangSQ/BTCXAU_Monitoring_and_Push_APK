@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_app"
+    android:orientation="vertical"
+    android:padding="@dimen/screen_edge_padding">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnTradeAuditBack"
+            android:layout_width="88dp"
+            android:layout_height="@dimen/control_height_md"
+            android:background="@drawable/bg_chip_unselected"
+            android:text="@string/back"
+            android:textAllCaps="false"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_12"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvTradeAuditTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/trade_audit_title"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.PageTitle" />
+
+            <TextView
+                android:id="@+id/tvTradeAuditSubtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_4"
+                android:text="@string/trade_audit_subtitle"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_16"
+        android:orientation="horizontal">
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/inputLayoutTradeAuditLookup"
+            style="@style/Widget.BinanceMonitor.Subject.InputField"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etTradeAuditLookup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/trade_audit_lookup_hint"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <Button
+            android:id="@+id/btnTradeAuditLookup"
+            style="@style/Widget.BinanceMonitor.Subject.ActionButton.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/control_height_md"
+            android:layout_marginStart="@dimen/space_8"
+            android:text="@string/trade_audit_lookup" />
+
+        <Button
+            android:id="@+id/btnTradeAuditCopy"
+            style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/control_height_md"
+            android:layout_marginStart="@dimen/space_8"
+            android:text="@string/trade_audit_copy" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/cardTradeAuditRecent"
+        android:layout_width="match_parent"
+        android:layout_height="160dp"
+        android:layout_marginTop="@dimen/space_16"
+        android:orientation="vertical"
+        android:padding="@dimen/space_12">
+
+        <TextView
+            android:id="@+id/tvTradeAuditRecentTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/trade_audit_recent_title"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="@dimen/space_8"
+            android:layout_weight="1">
+
+            <LinearLayout
+                android:id="@+id/layoutTradeAuditRecentList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/cardTradeAuditDetail"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="@dimen/space_16"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:padding="@dimen/space_12">
+
+        <TextView
+            android:id="@+id/tvTradeAuditDetailTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/trade_audit_detail_title"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="@dimen/space_8"
+            android:layout_weight="1">
+
+            <TextView
+                android:id="@+id/tvTradeAuditDetail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
+        </ScrollView>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvTradeAuditEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingVertical="@dimen/space_12"
+        android:text="@string/trade_audit_empty"
+        android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption"
+        android:visibility="gone" />
+</LinearLayout>

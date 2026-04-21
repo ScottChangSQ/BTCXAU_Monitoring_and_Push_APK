@@ -33,5 +33,7 @@ public class TradeRecordAdapterV2SourceTest {
         assertTrue(source.contains("UiPaletteManager.Palette palette = UiPaletteManager.resolve(binding.getRoot().getContext());"));
         assertTrue(source.contains("binding.layoutHeader.setBackground(UiPaletteManager.createListRowBackground("));
         assertTrue(source.contains("binding.tvExpandHint.setTextColor(palette.textSecondary);"));
+        assertTrue(source.contains("IndicatorFormatterCenter.formatMoney"));
+        assertTrue(source.contains("IndicatorPresentationPolicy.applyDirectionalSpanForExactToken("));
     }
 }

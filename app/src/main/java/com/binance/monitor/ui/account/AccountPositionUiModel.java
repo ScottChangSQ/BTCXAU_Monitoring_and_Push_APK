@@ -111,6 +111,22 @@ public class AccountPositionUiModel {
         );
     }
 
+    // 构建恢复中的首帧模型，避免本地恢复期间先把页面画成真空空态。
+    public static AccountPositionUiModel restoring() {
+        return new AccountPositionUiModel(
+                Collections.emptyList(),
+                "恢复本地账户快照中",
+                "正在恢复当前持仓",
+                "正在恢复挂单",
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                "--",
+                "",
+                0L
+        );
+    }
+
     // 统一把输入列表复制为不可变列表，避免渲染阶段被外部改写。
     private static <T> List<T> immutableCopy(List<T> source) {
         if (source == null || source.isEmpty()) {

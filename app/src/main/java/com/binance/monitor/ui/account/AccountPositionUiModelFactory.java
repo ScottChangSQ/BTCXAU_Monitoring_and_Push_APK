@@ -11,6 +11,8 @@ import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
+import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -26,6 +28,8 @@ import java.util.Map;
 import java.util.TimeZone;
 
 public class AccountPositionUiModelFactory {
+    private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();
+
     // 将预加载缓存转换为账户持仓页只读模型。
     @NonNull
     public AccountPositionUiModel build(@Nullable AccountStatsPreloadManager.Cache cache) {
@@ -33,7 +37,7 @@ public class AccountPositionUiModelFactory {
         long updatedAt = cache == null ? 0L : cache.getUpdatedAt();
         List<AccountMetric> overviewMetrics = buildOverviewMetrics(snapshot, updatedAt);
         List<PositionItem> positions = sortPositionItems(snapshot == null ? null : snapshot.getPositions());
-        List<PositionAggregateItem> positionAggregates = buildPositionAggregates(positions);
+        List<PositionAggregateItem> positionAggregates = buildPositionAggregates();
         List<PositionItem> pendingOrders = sortPositionItems(snapshot == null ? null : snapshot.getPendingOrders());
 
         String connectionStatusText = resolveConnectionStatusText(cache);
@@ -80,51 +84,32 @@ public class AccountPositionUiModelFactory {
         return overview.isEmpty() ? Collections.emptyList() : overview;
     }
 
-    // 把当前持仓按“产品 + 方向”聚合，统一预计算手数、成本线与盈亏金额。
+    // 账户页产品摘要直接复用统一运行态，避免页面侧再重算第二份产品聚合。
     @NonNull
-    private List<PositionAggregateItem> buildPositionAggregates(@Nullable List<PositionItem> positions) {
-        if (positions == null || positions.isEmpty()) {
+    private List<PositionAggregateItem> buildPositionAggregates() {
+        List<ProductRuntimeSnapshot> productRuntimes = runtimeSnapshotStore.selectAllProducts();
+        if (productRuntimes.isEmpty()) {
             return Collections.emptyList();
         }
-        Map<String, AggregateAccumulator> grouped = new LinkedHashMap<>();
-        for (PositionItem item : positions) {
-            if (item == null) {
-                continue;
-            }
-            double quantity = Math.abs(item.getQuantity());
-            if (quantity <= 1e-9) {
-                continue;
-            }
-            String productName = safeText(item.getCode()).isEmpty()
-                    ? safeText(item.getProductName())
-                    : safeText(item.getCode());
-            String side = safeText(item.getSide()).isEmpty() ? "Buy" : safeText(item.getSide());
-            String key = productName + "|" + side.toUpperCase(Locale.ROOT);
-            AggregateAccumulator accumulator = grouped.get(key);
-            if (accumulator == null) {
-                accumulator = new AggregateAccumulator(productName, side);
-                grouped.put(key, accumulator);
-            }
-            accumulator.totalQuantity += quantity;
-            accumulator.totalCostValue += quantity * item.getCostPrice();
-            accumulator.totalPnl += item.getTotalPnL() + item.getStorageFee();
-        }
         List<PositionAggregateItem> result = new ArrayList<>();
-        for (AggregateAccumulator accumulator : grouped.values()) {
-            if (accumulator.totalQuantity <= 1e-9) {
+        for (ProductRuntimeSnapshot snapshot : productRuntimes) {
+            if (snapshot == null) {
+                continue;
+            }
+            if (snapshot.getPositionCount() <= 0 && snapshot.getPendingCount() <= 0) {
                 continue;
             }
             result.add(new PositionAggregateItem(
-                    accumulator.productName,
-                    accumulator.side,
-                    accumulator.totalQuantity,
-                    accumulator.totalCostValue / accumulator.totalQuantity,
-                    accumulator.totalPnl
+                    snapshot.getDisplayLabel(),
+                    snapshot.getCompactDisplayLabel(),
+                    snapshot.getPositionCount(),
+                    snapshot.getPendingCount(),
+                    snapshot.getTotalLots(),
+                    snapshot.getSignedLots(),
+                    snapshot.getNetPnl(),
+                    snapshot.getCrossPageSummaryText()
             ));
         }
-        result.sort(Comparator
-                .comparing((PositionAggregateItem item) -> safeText(item.getProductName()))
-                .thenComparing(item -> safeText(item.getSide())));
         return result;
     }
 
@@ -219,11 +204,14 @@ public class AccountPositionUiModelFactory {
     private String serializePositionAggregates(@NonNull List<PositionAggregateItem> items) {
         StringBuilder builder = new StringBuilder();
         for (PositionAggregateItem item : items) {
-            builder.append(safeText(item == null ? null : item.getProductName())).append('|')
-                    .append(safeText(item == null ? null : item.getSide())).append('|')
-                    .append(item == null ? 0d : item.getQuantity()).append('|')
-                    .append(item == null ? 0d : item.getAverageCostPrice()).append('|')
-                    .append(item == null ? 0d : item.getTotalPnl())
+            builder.append(safeText(item == null ? null : item.getDisplayLabel())).append('|')
+                    .append(safeText(item == null ? null : item.getCompactDisplayLabel())).append('|')
+                    .append(item == null ? 0 : item.getPositionCount()).append('|')
+                    .append(item == null ? 0 : item.getPendingCount()).append('|')
+                    .append(item == null ? 0d : item.getTotalLots()).append('|')
+                    .append(item == null ? 0d : item.getSignedLots()).append('|')
+                    .append(item == null ? 0d : item.getNetPnl()).append('|')
+                    .append(safeText(item == null ? null : item.getSummaryText()))
                     .append(';');
         }
         return builder.toString();
@@ -283,19 +271,5 @@ public class AccountPositionUiModelFactory {
     @NonNull
     private String safeText(@Nullable String value) {
         return value == null ? "" : value;
-    }
-
-    // 聚合过程中的临时累加器，避免多次遍历同一组持仓。
-    private static final class AggregateAccumulator {
-        private final String productName;
-        private final String side;
-        private double totalQuantity;
-        private double totalCostValue;
-        private double totalPnl;
-
-        private AggregateAccumulator(@NonNull String productName, @NonNull String side) {
-            this.productName = productName;
-            this.side = side;
-        }
     }
 }

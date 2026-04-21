@@ -15,6 +15,7 @@ public final class ChartOverlaySnapshot {
     private final List<KlineChartView.PriceAnnotation> positionAnnotations;
     private final List<KlineChartView.PriceAnnotation> pendingAnnotations;
     private final List<KlineChartView.PriceAnnotation> historyTradeAnnotations;
+    private final ChartTradeLayerSnapshot tradeLayerSnapshot;
     private final KlineChartView.AggregateCostAnnotation aggregateCostAnnotation;
     private final String positionSummaryText;
     private final String overlayMetaText;
@@ -27,9 +28,28 @@ public final class ChartOverlaySnapshot {
                                 @Nullable String positionSummaryText,
                                 @Nullable String overlayMetaText,
                                 @Nullable String signature) {
+        this(positionAnnotations,
+                pendingAnnotations,
+                historyTradeAnnotations,
+                new ChartTradeLayerSnapshot(null, null),
+                aggregateCostAnnotation,
+                positionSummaryText,
+                overlayMetaText,
+                signature);
+    }
+
+    public ChartOverlaySnapshot(@Nullable List<KlineChartView.PriceAnnotation> positionAnnotations,
+                                @Nullable List<KlineChartView.PriceAnnotation> pendingAnnotations,
+                                @Nullable List<KlineChartView.PriceAnnotation> historyTradeAnnotations,
+                                @Nullable ChartTradeLayerSnapshot tradeLayerSnapshot,
+                                @Nullable KlineChartView.AggregateCostAnnotation aggregateCostAnnotation,
+                                @Nullable String positionSummaryText,
+                                @Nullable String overlayMetaText,
+                                @Nullable String signature) {
         this.positionAnnotations = immutableCopy(positionAnnotations);
         this.pendingAnnotations = immutableCopy(pendingAnnotations);
         this.historyTradeAnnotations = immutableCopy(historyTradeAnnotations);
+        this.tradeLayerSnapshot = tradeLayerSnapshot == null ? new ChartTradeLayerSnapshot(null, null) : tradeLayerSnapshot;
         this.aggregateCostAnnotation = aggregateCostAnnotation;
         this.positionSummaryText = positionSummaryText == null ? "" : positionSummaryText;
         this.overlayMetaText = overlayMetaText == null ? "" : overlayMetaText;
@@ -49,6 +69,11 @@ public final class ChartOverlaySnapshot {
     @NonNull
     public List<KlineChartView.PriceAnnotation> getHistoryTradeAnnotations() {
         return historyTradeAnnotations;
+    }
+
+    @NonNull
+    public ChartTradeLayerSnapshot getTradeLayerSnapshot() {
+        return tradeLayerSnapshot;
     }
 
     @Nullable
@@ -84,6 +109,7 @@ public final class ChartOverlaySnapshot {
                 Collections.emptyList(),
                 Collections.emptyList(),
                 Collections.emptyList(),
+                new ChartTradeLayerSnapshot(null, null),
                 null,
                 summaryText,
                 overlayMetaText,

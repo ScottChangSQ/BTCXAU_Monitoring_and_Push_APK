@@ -147,24 +147,20 @@ final class AccountStatsReturnsTableHelper {
             binding.tvReturnsPeriod.setText(periodText);
             switch (request.returnStatsMode) {
                 case DAY:
-                    binding.tvReturnsPeriod.setVisibility(View.VISIBLE);
-                    binding.tvReturnsPeriod.setClickable(true);
+                    setReturnPeriodControlsVisible(true);
                     renderDailyReturnsTableFromTrades(request, resolvedAnchor);
                     break;
                 case YEAR:
-                    binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                    binding.tvReturnsPeriod.setClickable(false);
+                    setReturnPeriodControlsVisible(false);
                     renderYearlyReturnsTableFromTrades(request);
                     break;
                 case STAGE:
-                    binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                    binding.tvReturnsPeriod.setClickable(false);
+                    setReturnPeriodControlsVisible(false);
                     renderStageReturnsTableFromTrades(request, resolvedAnchor);
                     break;
                 case MONTH:
                 default:
-                    binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                    binding.tvReturnsPeriod.setClickable(false);
+                    setReturnPeriodControlsVisible(false);
                     renderMonthlyReturnsTableFromTrades(request);
                     break;
             }
@@ -173,6 +169,7 @@ final class AccountStatsReturnsTableHelper {
 
         if (request.sourceCurvePoints.size() < 2) {
             binding.tvReturnsPeriod.setText("--");
+            setReturnPeriodControlsVisible(request.returnStatsMode == ReturnStatsMode.DAY);
             return new RenderResult(resolvedAnchor);
         }
         resolvedAnchor = resolveCurveReturnReferenceTime(request.sourceCurvePoints, resolvedAnchor);
@@ -182,28 +179,33 @@ final class AccountStatsReturnsTableHelper {
         binding.tvReturnsPeriod.setText(periodText);
         switch (request.returnStatsMode) {
             case DAY:
-                binding.tvReturnsPeriod.setVisibility(View.VISIBLE);
-                binding.tvReturnsPeriod.setClickable(true);
+                setReturnPeriodControlsVisible(true);
                 renderDailyReturnsTable(request, resolvedAnchor);
                 break;
             case YEAR:
-                binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                binding.tvReturnsPeriod.setClickable(false);
+                setReturnPeriodControlsVisible(false);
                 renderYearlyReturnsTable(request);
                 break;
             case STAGE:
-                binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                binding.tvReturnsPeriod.setClickable(false);
+                setReturnPeriodControlsVisible(false);
                 renderStageReturnsTable(request, resolvedAnchor);
                 break;
             case MONTH:
             default:
-                binding.tvReturnsPeriod.setVisibility(View.INVISIBLE);
-                binding.tvReturnsPeriod.setClickable(false);
+                setReturnPeriodControlsVisible(false);
                 renderMonthlyReturnsTable(request);
                 break;
         }
         return new RenderResult(resolvedAnchor);
+    }
+
+    // 日收益模式下，月份入口与“回到本月”快捷按钮必须同时显示或同时隐藏。
+    private void setReturnPeriodControlsVisible(boolean visible) {
+        ContentAccountStatsBinding binding = host.getBinding();
+        binding.tvReturnsPeriod.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+        binding.tvReturnsPeriod.setClickable(visible);
+        binding.btnReturnCurrentMonth.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+        binding.btnReturnCurrentMonth.setClickable(visible);
     }
 
     private long resolveTradeReturnReferenceTime(@NonNull List<TradeRecordItem> trades, long currentAnchor) {

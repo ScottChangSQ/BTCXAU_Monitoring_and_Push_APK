@@ -13,6 +13,8 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.R;
+import com.binance.monitor.ui.theme.TextAppearanceScaleResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 
@@ -53,13 +55,13 @@ public class TradePnlBarChartView extends View {
 
     public TradePnlBarChartView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        labelPaint.setTextSize(dp(9f));
+        TextAppearanceScaleResolver.applyTextSize(labelPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         labelPaint.setTextAlign(Paint.Align.CENTER);
 
-        valuePaint.setTextSize(dp(9f));
+        TextAppearanceScaleResolver.applyTextSize(valuePaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         valuePaint.setTextAlign(Paint.Align.CENTER);
 
-        emptyPaint.setTextSize(dp(10f));
+        TextAppearanceScaleResolver.applyTextSize(emptyPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         emptyPaint.setTextAlign(Paint.Align.CENTER);
         refreshPalette();
     }
@@ -199,6 +201,6 @@ public class TradePnlBarChartView extends View {
 
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
-        return (color & 0x00FFFFFF) | (safeAlpha << 24);
+        return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
     }
 }

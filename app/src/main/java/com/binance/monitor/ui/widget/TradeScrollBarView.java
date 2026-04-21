@@ -15,6 +15,7 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.binance.monitor.R;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
 
 public class TradeScrollBarView extends View {
 
@@ -54,12 +55,12 @@ public class TradeScrollBarView extends View {
 
     public TradeScrollBarView(@NonNull Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        trackWidthPx = dpToPx(4f);
-        thumbWidthPx = dpToPx(10f);
-        minThumbHeightPx = dpToPx(40f);
+        trackWidthPx = SpacingTokenResolver.dpFloat(context, R.dimen.trade_scrollbar_track_width);
+        thumbWidthPx = SpacingTokenResolver.dpFloat(context, R.dimen.trade_scrollbar_thumb_width);
+        minThumbHeightPx = SpacingTokenResolver.dpFloat(context, R.dimen.trade_scrollbar_min_thumb_height);
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
-        trackPaint.setColor(ContextCompat.getColor(context, R.color.divider));
-        thumbPaint.setColor(ContextCompat.getColor(context, R.color.accent_blue));
+        trackPaint.setColor(ContextCompat.getColor(context, R.color.border_subtle));
+        thumbPaint.setColor(ContextCompat.getColor(context, R.color.accent_primary));
         setClickable(true);
         setFocusable(false);
     }
@@ -188,7 +189,7 @@ public class TradeScrollBarView extends View {
         if (y < 0f || y > getHeight()) {
             return false;
         }
-        float halfTouchWidth = dpToPx(18f);
+        float halfTouchWidth = SpacingTokenResolver.dpFloat(getContext(), R.dimen.trade_scrollbar_touch_half_width);
         float centerX = getWidth() / 2f;
         return x >= centerX - halfTouchWidth && x <= centerX + halfTouchWidth;
     }
@@ -209,9 +210,5 @@ public class TradeScrollBarView extends View {
         if (parent != null) {
             parent.requestDisallowInterceptTouchEvent(disallowIntercept);
         }
-    }
-
-    private float dpToPx(float dp) {
-        return dp * getResources().getDisplayMetrics().density;
     }
 }

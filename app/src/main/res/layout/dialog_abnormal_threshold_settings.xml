@@ -3,13 +3,13 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginHorizontal="@dimen/page_horizontal_padding">
+    android:layout_marginHorizontal="@dimen/screen_edge_padding">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="@dimen/card_content_padding">
+        android:padding="@dimen/container_padding_compact">
 
         <TextView
             android:id="@+id/tvAbnormalThresholdTitle"
@@ -19,64 +19,171 @@
             android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
         <TextView
-            android:id="@+id/tvAbnormalThresholdSymbolLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
+            android:layout_marginTop="@dimen/section_gap"
             android:text="@string/global_status_threshold_symbol"
             android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
-        <androidx.appcompat.widget.AppCompatSpinner
-            android:id="@+id/spinnerAbnormalThresholdSymbol"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_2"
-            android:minHeight="48dp" />
+            android:layout_height="@dimen/subject_height_md"
+            android:layout_marginTop="@dimen/space_8">
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/inputLayoutAbnormalThresholdVolume"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
-            android:hint="@string/volume_threshold_hint">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etAbnormalThresholdVolume"
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinnerAbnormalThresholdSymbol"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:imeOptions="actionNext"
-                android:inputType="numberDecimal" />
-        </com.google.android.material.textfield.TextInputLayout>
+                android:layout_height="match_parent"
+                android:minWidth="0dp" />
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/inputLayoutAbnormalThresholdAmount"
+            <TextView
+                android:id="@+id/tvAbnormalThresholdSymbolLabel"
+                style="@style/Widget.BinanceMonitor.Subject.SelectField.Label"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clickable="false"
+                android:focusable="false"
+                android:maxLines="1" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/tvAbnormalThresholdConditionLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
-            android:hint="@string/amount_threshold_hint">
+            android:layout_marginTop="@dimen/section_gap"
+            android:text="@string/global_status_threshold_condition_title"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etAbnormalThresholdAmount"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:imeOptions="actionNext"
-                android:inputType="numberDecimal" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/inputLayoutAbnormalThresholdPrice"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
-            android:hint="@string/price_threshold_hint">
+            android:layout_marginTop="@dimen/space_8"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etAbnormalThresholdPrice"
-                android:layout_width="match_parent"
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/inputLayoutAbnormalThresholdVolume"
+                style="@style/Widget.BinanceMonitor.Subject.InputField"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:imeOptions="actionDone"
-                android:inputType="numberDecimal" />
-        </com.google.android.material.textfield.TextInputLayout>
+                android:layout_weight="1"
+                android:hint="@string/volume_threshold_hint">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etAbnormalThresholdVolume"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:imeOptions="actionNext"
+                    android:inputType="numberDecimal"
+                    android:maxLines="1" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <androidx.appcompat.widget.AppCompatCheckBox
+                android:id="@+id/switchAbnormalThresholdVolume"
+                style="@style/Widget.BinanceMonitor.Subject.ToggleChoice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/inline_gap"
+                android:text="@string/enable_short" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_8"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/inputLayoutAbnormalThresholdAmount"
+                style="@style/Widget.BinanceMonitor.Subject.InputField"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/amount_threshold_hint">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etAbnormalThresholdAmount"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:imeOptions="actionNext"
+                    android:inputType="numberDecimal"
+                    android:maxLines="1" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <androidx.appcompat.widget.AppCompatCheckBox
+                android:id="@+id/switchAbnormalThresholdAmount"
+                style="@style/Widget.BinanceMonitor.Subject.ToggleChoice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/inline_gap"
+                android:text="@string/enable_short" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_8"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/inputLayoutAbnormalThresholdPrice"
+                style="@style/Widget.BinanceMonitor.Subject.InputField"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/price_threshold_hint">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etAbnormalThresholdPrice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:imeOptions="actionDone"
+                    android:inputType="numberDecimal"
+                    android:maxLines="1" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <androidx.appcompat.widget.AppCompatCheckBox
+                android:id="@+id/switchAbnormalThresholdPrice"
+                style="@style/Widget.BinanceMonitor.Subject.ToggleChoice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/inline_gap"
+                android:text="@string/enable_short" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvAbnormalThresholdLogicLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/section_gap"
+            android:text="@string/global_status_threshold_logic_title"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
+
+        <RadioGroup
+            android:id="@+id/radioAbnormalLogicGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_8"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/radioAbnormalLogicOr"
+                style="@style/Widget.BinanceMonitor.Subject.ToggleChoice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/global_status_logic_or" />
+
+            <RadioButton
+                android:id="@+id/radioAbnormalLogicAnd"
+                style="@style/Widget.BinanceMonitor.Subject.ToggleChoice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/inline_gap"
+                android:text="@string/global_status_logic_and" />
+        </RadioGroup>
 
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

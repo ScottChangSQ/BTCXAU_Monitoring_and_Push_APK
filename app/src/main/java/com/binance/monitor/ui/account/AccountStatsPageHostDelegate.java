@@ -29,11 +29,6 @@ public final class AccountStatsPageHostDelegate implements AccountStatsPageContr
     }
 
     @Override
-    public void placeCurveSectionToBottom() {
-        owner.placeCurveSectionToBottom();
-    }
-
-    @Override
     public void bindLocalMeta() {
         owner.bindLocalMeta();
     }
@@ -148,8 +143,6 @@ public final class AccountStatsPageHostDelegate implements AccountStatsPageContr
         AppCompatActivity requireActivity();
 
         void bindPageContent(@NonNull ContentAccountStatsBinding binding);
-
-        void placeCurveSectionToBottom();
 
         void bindLocalMeta();
 

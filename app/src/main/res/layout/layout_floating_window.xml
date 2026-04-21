@@ -10,7 +10,7 @@
         android:layout_height="wrap_content"
         android:background="@android:color/transparent"
         android:orientation="vertical"
-        android:padding="6dp">
+        android:padding="@dimen/container_padding">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -26,7 +26,7 @@
                 android:maxLines="1"
                 android:text="0.00"
                 android:textColor="@color/text_primary"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.Control"
                 android:textStyle="bold" />
 
             <TextView
@@ -37,34 +37,34 @@
                 android:gravity="center"
                 android:text="@string/overlay_minimize"
                 android:textColor="@color/text_primary"
-                android:textSize="8sp" />
+                android:textAppearance="@style/TextAppearance.BinanceMonitor.OverlayDense" />
         </LinearLayout>
 
         <TextView
             android:id="@+id/tvOverlayConnection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="@dimen/row_gap_compact"
             android:maxLines="1"
             android:text="实时行情连接中"
             android:textColor="@color/text_secondary"
-            android:textSize="8sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.OverlayDense" />
 
         <TextView
             android:id="@+id/tvOverlayEmpty"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="@dimen/space_8"
             android:text="暂无已启用产品数据"
             android:textColor="@color/text_secondary"
-            android:textSize="8sp"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.OverlayDense"
             android:visibility="gone" />
 
         <LinearLayout
             android:id="@+id/layoutSymbolCards"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="@dimen/inline_gap_compact"
             android:orientation="vertical" />
     </LinearLayout>
 
@@ -73,16 +73,17 @@
         android:layout_width="wrap_content"
         android:layout_height="22dp"
         android:layout_gravity="top|end"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="8dp"
+        android:layout_marginTop="@dimen/row_gap"
+        android:layout_marginEnd="@dimen/space_8"
         android:background="@android:color/transparent"
         android:gravity="center"
         android:minWidth="40dp"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
+        android:paddingStart="@dimen/container_padding"
+        android:paddingEnd="@dimen/container_padding"
         android:text="0.00"
         android:textColor="@color/text_primary"
-        android:textSize="10sp"
+        android:textAppearance="@style/TextAppearance.BinanceMonitor.OverlayDense"
         android:textStyle="bold"
         android:visibility="gone" />
 </FrameLayout>
+

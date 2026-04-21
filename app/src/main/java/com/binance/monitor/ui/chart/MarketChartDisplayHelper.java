@@ -45,8 +45,11 @@ final class MarketChartDisplayHelper {
         if (source.size() < 2) {
             return true;
         }
-        long expectedMinGapMs = resolveExpectedMinGapMs(intervalKey);
-        if (expectedMinGapMs <= 0L) {
+        boolean strictFixedGap = shouldRequireStrictGap(intervalKey);
+        long expectedGapMs = strictFixedGap
+                ? resolveStrictExpectedGapMs(intervalKey)
+                : resolveExpectedMinGapMs(intervalKey);
+        if (expectedGapMs <= 0L) {
             return true;
         }
         long minPositiveGapMs = Long.MAX_VALUE;
@@ -54,14 +57,20 @@ final class MarketChartDisplayHelper {
             CandleEntry previous = source.get(i - 1);
             CandleEntry current = source.get(i);
             if (previous == null || current == null) {
-                continue;
+                return false;
             }
-            long gapMs = current.getOpenTime() - previous.getOpenTime();
-            if (gapMs > 0L) {
-                minPositiveGapMs = Math.min(minPositiveGapMs, gapMs);
+            long previousOpenTime = previous.getOpenTime();
+            long currentOpenTime = current.getOpenTime();
+            long gapMs = currentOpenTime - previousOpenTime;
+            if (gapMs <= 0L) {
+                return false;
             }
+            if (strictFixedGap && gapMs != expectedGapMs) {
+                return false;
+            }
+            minPositiveGapMs = Math.min(minPositiveGapMs, gapMs);
         }
-        return minPositiveGapMs == Long.MAX_VALUE || minPositiveGapMs >= expectedMinGapMs;
+        return minPositiveGapMs == Long.MAX_VALUE || minPositiveGapMs >= expectedGapMs;
     }
 
     // 长周期图优先让网络结果覆盖不可信的预显示，避免旧缓存继续污染图表。
@@ -255,6 +264,50 @@ final class MarketChartDisplayHelper {
         }
         String normalized = normalizeIntervalKey(intervalKey);
         return "1w".equals(normalized) || "1M".equals(normalized) || "1y".equals(normalized);
+    }
+
+    private static boolean shouldRequireStrictGap(@Nullable String intervalKey) {
+        String normalized = normalizeIntervalKey(intervalKey);
+        return "1m".equals(normalized)
+                || "5m".equals(normalized)
+                || "15m".equals(normalized)
+                || "30m".equals(normalized)
+                || "1h".equals(normalized)
+                || "4h".equals(normalized)
+                || "1d".equals(normalized)
+                || "1w".equals(normalized);
+    }
+
+    private static long resolveStrictExpectedGapMs(@Nullable String intervalKey) {
+        if (intervalKey == null) {
+            return -1L;
+        }
+        String normalized = normalizeIntervalKey(intervalKey);
+        if ("1m".equals(normalized)) {
+            return 60_000L;
+        }
+        if ("5m".equals(normalized)) {
+            return 5L * 60_000L;
+        }
+        if ("15m".equals(normalized)) {
+            return 15L * 60_000L;
+        }
+        if ("30m".equals(normalized)) {
+            return 30L * 60_000L;
+        }
+        if ("1h".equals(normalized)) {
+            return 60L * 60_000L;
+        }
+        if ("4h".equals(normalized)) {
+            return 4L * 60L * 60_000L;
+        }
+        if ("1d".equals(normalized)) {
+            return 24L * 60L * 60_000L;
+        }
+        if ("1w".equals(normalized)) {
+            return 7L * 24L * 60L * 60_000L;
+        }
+        return -1L;
     }
 
     // 仅在时间、收盘价或成交量发生变化时才视为需要重绘。

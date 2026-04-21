@@ -26,12 +26,32 @@ import java.util.Locale;
 import java.util.TimeZone;
 
 public class ChartOverlaySnapshotFactory {
+    static final class ColorScheme {
+        final int tradeBuy;
+        final int tradeSell;
+        final int pnlProfit;
+        final int pnlLoss;
+        final int historyExit;
 
-    private static final int COLOR_BUY = 0xFF4D8BFF;
-    private static final int COLOR_SELL = 0xFFF6465D;
-    private static final int COLOR_GAIN = 0xFF16C784;
-    private static final int COLOR_HISTORY_EXIT = 0xFFE7EEF7;
+        ColorScheme(int tradeBuy,
+                    int tradeSell,
+                    int pnlProfit,
+                    int pnlLoss,
+                    int historyExit) {
+            this.tradeBuy = tradeBuy;
+            this.tradeSell = tradeSell;
+            this.pnlProfit = pnlProfit;
+            this.pnlLoss = pnlLoss;
+            this.historyExit = historyExit;
+        }
+    }
+
+    private final ColorScheme colorScheme;
     private final DecimalFormat quantityFormat = new DecimalFormat("0.####");
+
+    ChartOverlaySnapshotFactory(@NonNull ColorScheme colorScheme) {
+        this.colorScheme = colorScheme;
+    }
 
     @NonNull
     public ChartOverlaySnapshot build(@NonNull String selectedSymbol,
@@ -60,6 +80,8 @@ public class ChartOverlaySnapshotFactory {
                 buildPositionAnnotations(selectedSymbol, candles, positions, trades);
         List<KlineChartView.PriceAnnotation> pendingAnnotations =
                 buildPendingAnnotations(selectedSymbol, candles, pendingOrders, trades);
+        ChartTradeLayerSnapshot tradeLayerSnapshot =
+                buildTradeLayerSnapshot(selectedSymbol, candles, positions, pendingOrders, trades);
         KlineChartView.AggregateCostAnnotation aggregateCostAnnotation =
                 buildAggregateCostAnnotation(selectedSymbol, positions);
         String summaryText = buildSummaryText(selectedSymbol, snapshot, positions, trades, chartRuntimeModel);
@@ -68,6 +90,7 @@ public class ChartOverlaySnapshotFactory {
                 positionAnnotations,
                 pendingAnnotations,
                 historyTradeAnnotations,
+                tradeLayerSnapshot,
                 aggregateCostAnnotation,
                 summaryText,
                 updatedAtText,
@@ -100,9 +123,9 @@ public class ChartOverlaySnapshotFactory {
         builder.append("account=").append(cache == null ? "" : safeText(cache.getAccount())).append('\n');
         builder.append("server=").append(cache == null ? "" : safeText(cache.getServer())).append('\n');
         builder.append("historyRevision=").append(cache == null ? "" : safeText(cache.getHistoryRevision())).append('\n');
-        if (chartRuntimeModel != null && chartRuntimeModel.getProductRuntimeSnapshot() != null) {
+        if (chartRuntimeModel != null) {
             builder.append("productRevision=")
-                    .append(chartRuntimeModel.getProductRuntimeSnapshot().getProductRevision())
+                    .append(chartRuntimeModel.getProductRevision())
                     .append('\n');
         }
         if (snapshot == null) {
@@ -136,8 +159,8 @@ public class ChartOverlaySnapshotFactory {
                 continue;
             }
             String sideLabel = "SELL".equalsIgnoreCase(item.side) ? "卖出" : "买入";
-            int entryColor = "SELL".equalsIgnoreCase(item.side) ? COLOR_SELL : COLOR_BUY;
-            int connectorColor = item.totalPnl >= 0d ? COLOR_GAIN : COLOR_SELL;
+            int entryColor = "SELL".equalsIgnoreCase(item.side) ? colorScheme.tradeSell : colorScheme.tradeBuy;
+            int connectorColor = item.totalPnl >= 0d ? colorScheme.pnlProfit : colorScheme.pnlLoss;
             String pnlLabel = formatSignedUsd(item.totalPnl);
             String[] detailLines = new String[]{
                     safeTradePopupValue(item.productName, item.code),
@@ -179,7 +202,7 @@ public class ChartOverlaySnapshotFactory {
                     item.exitAnchorTimeMs,
                     item.exitPrice,
                     "平仓",
-                    COLOR_HISTORY_EXIT,
+                    colorScheme.historyExit,
                     item.groupId,
                     1,
                     0f,
@@ -216,7 +239,7 @@ public class ChartOverlaySnapshotFactory {
             String side = normalizeTradeSideLabel(item.getSide());
             String label = side + " " + formatQuantity(Math.abs(item.getQuantity()))
                     + ", " + formatSignedUsd(item.getTotalPnL());
-            int color = item.getTotalPnL() >= 0d ? COLOR_GAIN : COLOR_SELL;
+            int color = item.getTotalPnL() >= 0d ? colorScheme.pnlProfit : colorScheme.pnlLoss;
             String groupId = buildAnnotationGroupId("position", item);
             String[] detailLines = new String[]{
                     safeTradePopupValue(item.getProductName(), item.getCode()),
@@ -278,7 +301,7 @@ public class ChartOverlaySnapshotFactory {
                     ? formatQuantity(lots)
                     : (item.getPendingCount() > 0 ? (item.getPendingCount() + "单") : "--");
             String label = "PENDING " + side + " " + qtyLabel + ", @ $" + FormatUtils.formatPrice(price);
-            int color = isSellSide(item.getSide()) ? COLOR_SELL : COLOR_GAIN;
+            int color = isSellSide(item.getSide()) ? colorScheme.tradeSell : colorScheme.tradeBuy;
             String groupId = buildAnnotationGroupId("pending", item);
             String[] detailLines = new String[]{
                     safeTradePopupValue(item.getProductName(), item.getCode()),
@@ -305,6 +328,113 @@ public class ChartOverlaySnapshotFactory {
         }
         result.sort(Comparator.comparingDouble(annotation -> annotation.price));
         return result;
+    }
+
+    @NonNull
+    private ChartTradeLayerSnapshot buildTradeLayerSnapshot(@NonNull String selectedSymbol,
+                                                            @Nullable List<CandleEntry> candles,
+                                                            @NonNull List<PositionItem> positions,
+                                                            @NonNull List<PositionItem> pendingOrders,
+                                                            @NonNull List<TradeRecordItem> trades) {
+        List<ChartTradeLine> liveLines = new ArrayList<>();
+        appendPositionTradeLines(liveLines, selectedSymbol, candles, positions, trades);
+        appendPendingTradeLines(liveLines, selectedSymbol, candles, pendingOrders, trades);
+        return new ChartTradeLayerSnapshot(liveLines, null);
+    }
+
+    private void appendPositionTradeLines(@NonNull List<ChartTradeLine> output,
+                                          @NonNull String selectedSymbol,
+                                          @Nullable List<CandleEntry> candles,
+                                          @NonNull List<PositionItem> positions,
+                                          @NonNull List<TradeRecordItem> trades) {
+        for (PositionItem item : positions) {
+            if (item == null || Math.abs(item.getQuantity()) <= 1e-9) {
+                continue;
+            }
+            if (!matchesSelectedSymbol(selectedSymbol, item.getCode(), item.getProductName())) {
+                continue;
+            }
+            double price = item.getCostPrice() > 0d ? item.getCostPrice() : item.getLatestPrice();
+            if (price <= 0d) {
+                continue;
+            }
+            long anchorTime = resolvePositionAnchorTime(selectedSymbol, item, trades);
+            if (!isWithinVisibleRange(candles, anchorTime)) {
+                continue;
+            }
+            String side = normalizeTradeSideLabel(item.getSide());
+            String groupId = buildAnnotationGroupId("position", item);
+            output.add(new ChartTradeLine(
+                    groupId,
+                    price,
+                    side + " " + formatQuantity(Math.abs(item.getQuantity())),
+                    ChartTradeLineState.LIVE_POSITION
+            ));
+            appendTradeLayerTpSlLines(output, groupId, item.getTakeProfit(), item.getStopLoss());
+        }
+    }
+
+    private void appendPendingTradeLines(@NonNull List<ChartTradeLine> output,
+                                         @NonNull String selectedSymbol,
+                                         @Nullable List<CandleEntry> candles,
+                                         @NonNull List<PositionItem> pendingOrders,
+                                         @NonNull List<TradeRecordItem> trades) {
+        for (PositionItem item : pendingOrders) {
+            if (item == null) {
+                continue;
+            }
+            if (!matchesSelectedSymbol(selectedSymbol, item.getCode(), item.getProductName())) {
+                continue;
+            }
+            double lots = resolvePendingLots(item);
+            if (lots <= 1e-9 && item.getPendingCount() <= 0) {
+                continue;
+            }
+            double price = item.getPendingPrice() > 0d
+                    ? item.getPendingPrice()
+                    : (item.getCostPrice() > 0d ? item.getCostPrice() : item.getLatestPrice());
+            if (price <= 0d) {
+                continue;
+            }
+            long anchorTime = resolvePendingAnchorTime(selectedSymbol, item, trades);
+            if (!isWithinVisibleRange(candles, anchorTime)) {
+                continue;
+            }
+            String side = normalizeTradeSideLabel(item.getSide());
+            String qtyLabel = lots > 1e-9
+                    ? formatQuantity(lots)
+                    : (item.getPendingCount() > 0 ? (item.getPendingCount() + "单") : "--");
+            String groupId = buildAnnotationGroupId("pending", item);
+            output.add(new ChartTradeLine(
+                    groupId,
+                    price,
+                    "PENDING " + side + " " + qtyLabel,
+                    ChartTradeLineState.LIVE_PENDING
+            ));
+            appendTradeLayerTpSlLines(output, groupId, item.getTakeProfit(), item.getStopLoss());
+        }
+    }
+
+    private void appendTradeLayerTpSlLines(@NonNull List<ChartTradeLine> output,
+                                           @NonNull String groupId,
+                                           double takeProfit,
+                                           double stopLoss) {
+        if (takeProfit > 0d) {
+            output.add(new ChartTradeLine(
+                    groupId,
+                    takeProfit,
+                    "TP $" + FormatUtils.formatPrice(takeProfit),
+                    ChartTradeLineState.LIVE_TP
+            ));
+        }
+        if (stopLoss > 0d) {
+            output.add(new ChartTradeLine(
+                    groupId,
+                    stopLoss,
+                    "SL $" + FormatUtils.formatPrice(stopLoss),
+                    ChartTradeLineState.LIVE_SL
+            ));
+        }
     }
 
     @Nullable
@@ -340,10 +470,8 @@ public class ChartOverlaySnapshotFactory {
                                     @NonNull List<TradeRecordItem> trades,
                                     @Nullable ChartProductRuntimeModel chartRuntimeModel) {
         if (chartRuntimeModel != null
-                && chartRuntimeModel.getProductRuntimeSnapshot() != null
-                && chartRuntimeModel.getProductRuntimeSnapshot().getSymbol() != null
-                && !chartRuntimeModel.getProductRuntimeSnapshot().getPositionSummaryText().trim().isEmpty()) {
-            return chartRuntimeModel.getProductRuntimeSnapshot().getPositionSummaryText();
+                && !chartRuntimeModel.getCrossPageSummaryText().trim().isEmpty()) {
+            return chartRuntimeModel.getCrossPageSummaryText();
         }
         return buildSummaryTextFromPositions(selectedSymbol, positions);
     }
@@ -667,7 +795,7 @@ public class ChartOverlaySnapshotFactory {
                     anchorTime,
                     takeProfit,
                     "TP $" + FormatUtils.formatPrice(takeProfit),
-                    COLOR_GAIN,
+                    colorScheme.pnlProfit,
                     groupId
             ));
         }
@@ -676,7 +804,7 @@ public class ChartOverlaySnapshotFactory {
                     anchorTime,
                     stopLoss,
                     "SL $" + FormatUtils.formatPrice(stopLoss),
-                    COLOR_SELL,
+                    colorScheme.pnlLoss,
                     groupId
             ));
         }

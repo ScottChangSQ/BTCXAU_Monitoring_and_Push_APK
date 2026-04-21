@@ -17,6 +17,8 @@ import static org.junit.Assert.assertTrue;
 
 public class AbnormalAnnotationOverlayBuilderTest {
     private static final long BASE_TIME = 1_000_000L;
+    private static final AbnormalAnnotationOverlayBuilder.ColorRange COLOR_RANGE =
+            new AbnormalAnnotationOverlayBuilder.ColorRange(0xFFEEDD00, 0xFFDD3344);
 
     @Test
     public void shouldGroupRecordsIntoSameCandleBucket() {
@@ -30,7 +32,7 @@ public class AbnormalAnnotationOverlayBuilderTest {
         );
 
         List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> annotations =
-                AbnormalAnnotationOverlayBuilder.build(records, candles);
+                AbnormalAnnotationOverlayBuilder.build(records, candles, COLOR_RANGE);
 
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME, annotations.get(0).anchorTimeMs);
@@ -55,7 +57,7 @@ public class AbnormalAnnotationOverlayBuilderTest {
         );
 
         List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> annotations =
-                AbnormalAnnotationOverlayBuilder.build(records, candles);
+                AbnormalAnnotationOverlayBuilder.build(records, candles, COLOR_RANGE);
 
         assertEquals(2, annotations.size());
         assertEquals(1, annotations.get(0).count);
@@ -82,7 +84,7 @@ public class AbnormalAnnotationOverlayBuilderTest {
         );
 
         List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> annotations =
-                AbnormalAnnotationOverlayBuilder.build(records, candles);
+                AbnormalAnnotationOverlayBuilder.build(records, candles, COLOR_RANGE);
 
         assertEquals(3, annotations.size());
         assertEquals(0f, annotations.get(0).intensity, 1e-6f);
@@ -99,7 +101,7 @@ public class AbnormalAnnotationOverlayBuilderTest {
         );
 
         List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> annotations =
-                AbnormalAnnotationOverlayBuilder.build(records, candles);
+                AbnormalAnnotationOverlayBuilder.build(records, candles, COLOR_RANGE);
 
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME, annotations.get(0).anchorTimeMs);
@@ -116,7 +118,7 @@ public class AbnormalAnnotationOverlayBuilderTest {
         }
 
         List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> annotations =
-                AbnormalAnnotationOverlayBuilder.build(records, candles);
+                AbnormalAnnotationOverlayBuilder.build(records, candles, COLOR_RANGE);
 
         assertEquals(200, annotations.size());
         assertEquals(BASE_TIME, annotations.get(0).anchorTimeMs);
@@ -146,7 +148,7 @@ public class AbnormalAnnotationOverlayBuilderTest {
         );
 
         List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> annotations =
-                AbnormalAnnotationOverlayBuilder.build(records, candles);
+                AbnormalAnnotationOverlayBuilder.build(records, candles, COLOR_RANGE);
 
         assertEquals(1, annotations.size());
         assertEquals(BASE_TIME + 300_000L, annotations.get(0).anchorTimeMs);

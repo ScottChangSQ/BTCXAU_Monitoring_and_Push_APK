@@ -132,6 +132,12 @@ class SessionReceipt:
     error_code: str = ""
     retryable: bool = False
     ok: bool = True
+    stage: str = ""
+    elapsed_ms: int = 0
+    baseline_account: Optional[SessionAccountSummary] = None
+    final_account: Optional[SessionAccountSummary] = None
+    login_error: str = ""
+    last_observed_account: Optional[SessionAccountSummary] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """输出动作回执的统一结构。"""
@@ -143,6 +149,12 @@ class SessionReceipt:
             "message": _safe_text(self.message),
             "errorCode": _safe_text(self.error_code),
             "retryable": bool(self.retryable),
+            "stage": _safe_text(self.stage),
+            "elapsedMs": int(self.elapsed_ms or 0),
+            "baselineAccount": None if self.baseline_account is None else self.baseline_account.to_dict(),
+            "finalAccount": None if self.final_account is None else self.final_account.to_dict(),
+            "loginError": _safe_text(self.login_error),
+            "lastObservedAccount": None if self.last_observed_account is None else self.last_observed_account.to_dict(),
         }
 
 

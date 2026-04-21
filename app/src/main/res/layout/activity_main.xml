@@ -11,7 +11,7 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:clipToPadding="false"
-        android:padding="@dimen/page_horizontal_padding">
+        android:padding="@dimen/screen_edge_padding">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -21,13 +21,13 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap">
+            android:layout_marginTop="@dimen/section_gap">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="@dimen/card_content_padding">
+                android:padding="@dimen/container_padding_compact">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -47,30 +47,30 @@
                         android:layout_height="wrap_content"
                         android:text="@string/status_connection"
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                     <TextView
                         android:id="@+id/tvConnectionStatus"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="@dimen/inline_gap"
                         android:background="@drawable/bg_chip_selected"
                         android:ellipsize="end"
                         android:maxLines="1"
-                        android:paddingLeft="10dp"
-                        android:paddingTop="4dp"
-                        android:paddingRight="10dp"
-                        android:paddingBottom="4dp"
+                        android:paddingLeft="@dimen/space_10"
+                        android:paddingTop="@dimen/row_gap_compact"
+                        android:paddingRight="@dimen/space_10"
+                        android:paddingBottom="@dimen/row_gap_compact"
                         android:text="@string/status_unknown"
-                        android:textColor="@color/white"
-                        android:textSize="12sp" />
+                        android:textColor="@color/text_inverse"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                 </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="@dimen/row_gap"
                     android:orientation="horizontal">
 
                     <TextView
@@ -78,22 +78,22 @@
                         android:layout_height="wrap_content"
                         android:text="@string/status_update"
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                     <TextView
                         android:id="@+id/tvLastUpdate"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="@dimen/inline_gap"
                         android:text="@string/last_update_placeholder"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
                 </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="@dimen/space_12"
                     android:orientation="horizontal">
 
                     <Button
@@ -111,13 +111,13 @@
                         android:text="@string/open_binance"
                         android:textAllCaps="false"
                         android:textColor="@color/bg_primary"
-                        android:textSize="14sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
 
                     <Button
                         android:id="@+id/btnOpenMt5"
                         android:layout_width="0dp"
                         android:layout_height="@dimen/control_height_md"
-                        android:layout_marginStart="@dimen/control_group_gap"
+                        android:layout_marginStart="@dimen/inline_gap"
                         android:layout_weight="1"
                         android:background="@drawable/bg_inline_button"
                         android:gravity="center"
@@ -129,7 +129,7 @@
                         android:text="@string/open_mt5"
                         android:textAllCaps="false"
                         android:textColor="@color/bg_primary"
-                        android:textSize="14sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -137,13 +137,13 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap">
+            android:layout_marginTop="@dimen/section_gap">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="@dimen/card_content_padding">
+                android:padding="@dimen/container_padding_compact">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -154,7 +154,7 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="@dimen/space_12"
                     android:orientation="horizontal">
 
                     <FrameLayout
@@ -181,9 +181,9 @@
                             android:includeFontPadding="false"
                             android:maxLines="1"
                             android:paddingStart="@dimen/space_12"
-                            android:paddingEnd="32dp"
+                            android:paddingEnd="@dimen/field_trailing_reserve"
                             android:textColor="@color/text_primary"
-                            android:textSize="14sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
                     </FrameLayout>
                 </LinearLayout>
 
@@ -191,24 +191,24 @@
                     android:id="@+id/tvCurrentPrice"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
+                    android:layout_marginTop="@dimen/space_14"
                     android:maxLines="1"
                     android:text="--"
                     android:textColor="@color/text_primary"
-                    android:textSize="32sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.PageTitle" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
+                    android:layout_marginTop="@dimen/inline_gap_compact"
                     android:text="@string/latest_closed_kline"
                     android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="@dimen/space_12"
                     android:orientation="vertical">
 
                     <LinearLayout
@@ -228,7 +228,7 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="@dimen/row_gap"
                         android:orientation="horizontal">
 
                         <include
@@ -246,13 +246,13 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap">
+            android:layout_marginTop="@dimen/section_gap">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="@dimen/card_content_padding">
+                android:padding="@dimen/container_padding_compact">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -274,23 +274,23 @@
                         android:minWidth="0dp"
                         android:text="详细记录"
                         android:textAllCaps="false"
-                        android:textSize="11sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Tiny" />
                 </LinearLayout>
 
                 <TextView
                     android:id="@+id/tvRecordsHint"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginTop="@dimen/row_gap_compact"
                     android:text="@string/records_limit_hint"
                     android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/recyclerRecords"
                     android:layout_width="match_parent"
                     android:layout_height="160dp"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="@dimen/row_gap"
                     android:fadeScrollbars="false"
                     android:scrollbarStyle="outsideOverlay"
                     android:scrollbars="vertical" />
@@ -302,7 +302,7 @@
                     android:gravity="center"
                     android:text="@string/no_records"
                     android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Control"
                     android:visibility="gone" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -310,13 +310,13 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap">
+            android:layout_marginTop="@dimen/section_gap">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="@dimen/card_content_padding">
+                android:padding="@dimen/container_padding_compact">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -327,7 +327,7 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="@dimen/space_10"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -345,34 +345,34 @@
                             android:inputType="numberDecimal"
                             android:maxLines="1"
                             android:textColor="@color/text_primary"
-                            android:textSize="13sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.Control" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <TextView
                         android:id="@+id/tvVolumeUnit"
                         android:layout_width="44dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/control_group_gap"
+                        android:layout_marginStart="@dimen/inline_gap"
                         android:gravity="start|center_vertical"
                         android:text="@string/unit_btc"
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                     <androidx.appcompat.widget.AppCompatCheckBox
                         android:id="@+id/switchVolume"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/control_group_gap"
+                        android:layout_marginStart="@dimen/inline_gap"
                         android:minHeight="0dp"
                         android:text="@string/enable_short"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
                 </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="@dimen/row_gap"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -390,34 +390,34 @@
                             android:inputType="numberDecimal"
                             android:maxLines="1"
                             android:textColor="@color/text_primary"
-                            android:textSize="13sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.Control" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <TextView
                         android:id="@+id/tvAmountUnit"
                         android:layout_width="44dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/control_group_gap"
+                        android:layout_marginStart="@dimen/inline_gap"
                         android:gravity="start|center_vertical"
                         android:text="@string/unit_musd"
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                     <androidx.appcompat.widget.AppCompatCheckBox
                         android:id="@+id/switchAmount"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/control_group_gap"
+                        android:layout_marginStart="@dimen/inline_gap"
                         android:minHeight="0dp"
                         android:text="@string/enable_short"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
                 </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="@dimen/row_gap"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -435,34 +435,34 @@
                             android:inputType="numberDecimal"
                             android:maxLines="1"
                             android:textColor="@color/text_primary"
-                            android:textSize="13sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.Control" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <TextView
                         android:id="@+id/tvPriceUnit"
                         android:layout_width="44dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/control_group_gap"
+                        android:layout_marginStart="@dimen/inline_gap"
                         android:gravity="start|center_vertical"
                         android:text="@string/unit_usd"
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                     <androidx.appcompat.widget.AppCompatCheckBox
                         android:id="@+id/switchPriceChange"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/control_group_gap"
+                        android:layout_marginStart="@dimen/inline_gap"
                         android:minHeight="0dp"
                         android:text="@string/enable_short"
                         android:textColor="@color/text_primary"
-                        android:textSize="12sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
                 </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="@dimen/space_10"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -481,23 +481,23 @@
                             android:button="@null"
                             android:checked="true"
                             android:minHeight="0dp"
-                            android:paddingHorizontal="6dp"
+                            android:paddingHorizontal="@dimen/space_8"
                             android:text="@string/logic_or"
                             android:textColor="@color/text_primary"
-                            android:textSize="13sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.Control" />
 
                         <RadioButton
                             android:id="@+id/radioLogicAnd"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="@dimen/control_group_gap"
+                            android:layout_marginStart="@dimen/inline_gap"
                             android:background="@null"
                             android:button="@null"
                             android:minHeight="0dp"
-                            android:paddingHorizontal="6dp"
+                            android:paddingHorizontal="@dimen/space_8"
                             android:text="@string/logic_and"
                             android:textColor="@color/text_primary"
-                            android:textSize="13sp" />
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.Control" />
                     </RadioGroup>
 
                     <Button
@@ -514,7 +514,7 @@
                         android:text="@string/restore_default"
                         android:textAllCaps="false"
                         android:textColor="@color/bg_primary"
-                        android:textSize="14sp" />
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -522,14 +522,14 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
+            android:layout_marginTop="@dimen/section_gap"
             android:visibility="gone">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="@dimen/card_content_padding">
+                android:padding="@dimen/container_padding_compact">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -541,20 +541,20 @@
                     android:id="@+id/switchFloatingEnabled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="@dimen/space_10"
                     android:minHeight="0dp"
                     android:text="@string/floating_window"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Control" />
 
                 <TextView
                     android:id="@+id/tvAlphaValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="@dimen/row_gap"
                     android:text="88%"
                     android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                 <SeekBar
                     android:id="@+id/seekFloatingAlpha"
@@ -570,7 +570,7 @@
                     android:minHeight="0dp"
                     android:text="@string/show_btc"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Control" />
 
                 <androidx.appcompat.widget.AppCompatCheckBox
                     android:id="@+id/switchShowXau"
@@ -579,7 +579,7 @@
                     android:minHeight="0dp"
                     android:text="@string/show_xau"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Control" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -587,8 +587,8 @@
             android:id="@+id/btnViewLogs"
             android:layout_width="match_parent"
             android:layout_height="@dimen/control_height_md"
-            android:layout_marginTop="@dimen/page_section_gap"
-            android:layout_marginBottom="20dp"
+            android:layout_marginTop="@dimen/section_gap"
+            android:layout_marginBottom="@dimen/space_20"
             android:background="@drawable/bg_inline_button"
             android:gravity="center"
             android:includeFontPadding="true"
@@ -599,7 +599,7 @@
             android:text="@string/view_logs"
             android:textAllCaps="false"
             android:textColor="@color/bg_primary"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Body"
             android:visibility="gone" />
     </LinearLayout>
     </androidx.core.widget.NestedScrollView>
@@ -619,15 +619,15 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
+            android:drawablePadding="@dimen/inline_gap_compact"
             android:gravity="center"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
+            android:paddingTop="@dimen/row_gap"
+            android:paddingBottom="@dimen/row_gap_compact"
             android:text="@string/nav_market_monitor"
-            android:textColor="@color/white"
-            android:textSize="10.5sp" />
+            android:textColor="@color/text_inverse"
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Tiny" />
 
         <TextView
             android:id="@+id/tabMarketChart"
@@ -635,15 +635,15 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
+            android:drawablePadding="@dimen/inline_gap_compact"
             android:gravity="center"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
+            android:paddingTop="@dimen/row_gap"
+            android:paddingBottom="@dimen/row_gap_compact"
             android:text="@string/nav_market_chart"
             android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Tiny" />
 
         <TextView
             android:id="@+id/tabAccountPosition"
@@ -651,15 +651,15 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
+            android:drawablePadding="@dimen/inline_gap_compact"
             android:gravity="center"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
+            android:paddingTop="@dimen/row_gap"
+            android:paddingBottom="@dimen/row_gap_compact"
             android:text="@string/nav_account_position"
             android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Tiny" />
 
         <TextView
             android:id="@+id/tabAccountStats"
@@ -667,15 +667,15 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@android:color/transparent"
-            android:drawablePadding="2dp"
+            android:drawablePadding="@dimen/inline_gap_compact"
             android:gravity="center"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
+            android:paddingTop="@dimen/row_gap"
+            android:paddingBottom="@dimen/row_gap_compact"
             android:text="@string/nav_account_stats"
             android:textColor="@color/text_secondary"
-            android:textSize="10.5sp" />
+            android:textAppearance="@style/TextAppearance.BinanceMonitor.Tiny" />
 
     </LinearLayout>
 
@@ -686,3 +686,5 @@
         android:visibility="gone"
         app:menu="@menu/menu_bottom_nav" />
 </LinearLayout>
+
+

@@ -18,12 +18,13 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.binance.monitor.R;
 import com.binance.monitor.databinding.ItemPositionBinding;
-import com.binance.monitor.ui.account.AccountValueStyleHelper;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
 import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
+import com.binance.monitor.ui.rules.IndicatorFormatterCenter;
+import com.binance.monitor.ui.rules.IndicatorId;
+import com.binance.monitor.ui.rules.IndicatorPresentationPolicy;
 import com.binance.monitor.ui.theme.UiPaletteManager;
-import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
@@ -378,12 +379,11 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             if (useRuntimeSummary) {
                 displayPnl = runtimeSnapshot.getNetPnl();
             }
-            int pnlColor = resolveAmountColor(palette, displayPnl, palette.textPrimary);
-            String pnlText = signedMoney(displayPnl);
+            String pnlText = IndicatorFormatterCenter.formatMoney(displayPnl, 2, false);
             double displayQty = useRuntimeSummary
                     ? runtimeSnapshot.getTotalLots()
                     : Math.abs(item.getQuantity());
-            String qtyText = String.format(Locale.getDefault(), "%.2f 手", displayQty);
+            String qtyText = IndicatorFormatterCenter.formatQuantity(displayQty, 2, " 手");
             String raw = String.format(Locale.getDefault(), "%s | %s | %s | %s",
                     resolveDisplayProductName(item, runtimeSnapshot), sideText, qtyText, pnlText);
             SpannableStringBuilder span = new SpannableStringBuilder(raw);
@@ -396,10 +396,15 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             }
             int summaryStart = raw.lastIndexOf(pnlText);
             if (summaryStart >= 0) {
-                span.setSpan(new ForegroundColorSpan(pnlColor),
-                        summaryStart,
-                        summaryStart + pnlText.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                IndicatorPresentationPolicy.applyDirectionalSpanForExactToken(
+                        span,
+                        binding.getRoot().getContext(),
+                        raw,
+                        pnlText,
+                        IndicatorId.ACCOUNT_POSITION_PNL,
+                        R.color.text_primary,
+                        true
+                );
             }
             binding.tvSummary.setTextColor(palette.textPrimary);
             binding.tvSummary.setText(span);
@@ -410,14 +415,14 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             binding.tvProduct.setText(String.format(Locale.getDefault(),
                     "开仓时间 %s",
                     formatOpenTime(item.getOpenTime())));
-            String costText = "$" + FormatUtils.formatPrice(item.getCostPrice());
-            String latestText = "$" + FormatUtils.formatPrice(item.getLatestPrice());
+            String costText = IndicatorFormatterCenter.formatPrice(item.getCostPrice(), 2, false);
+            String latestText = IndicatorFormatterCenter.formatPrice(item.getLatestPrice(), 2, false);
             binding.tvBase.setTextColor(palette.textSecondary);
             binding.tvBase.setText(String.format(Locale.getDefault(),
                     "成本 %s | 最新 %s",
                     costText,
                     latestText));
-            String storageFeeText = signedMoney(item.getStorageFee());
+            String storageFeeText = IndicatorFormatterCenter.formatMoney(item.getStorageFee(), 2, false);
             String metricsRaw = String.format(Locale.getDefault(),
                     "止盈 %s | 止损 %s | 库存费 %s",
                     optionalPrice(item.getTakeProfit()),
@@ -426,16 +431,21 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             SpannableStringBuilder metricsSpan = new SpannableStringBuilder(metricsRaw);
             int storageStart = metricsRaw.lastIndexOf(storageFeeText);
             if (storageStart >= 0) {
-                metricsSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(palette, item.getStorageFee(), palette.textSecondary)),
-                        storageStart,
-                        storageStart + storageFeeText.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                IndicatorPresentationPolicy.applyDirectionalSpanForExactToken(
+                        metricsSpan,
+                        binding.getRoot().getContext(),
+                        metricsRaw,
+                        storageFeeText,
+                        IndicatorId.ACCOUNT_POSITION_PNL,
+                        R.color.text_secondary,
+                        true
+                );
             }
             binding.tvMetrics.setTextColor(palette.textSecondary);
             binding.tvMetrics.setText(metricsSpan);
-            String totalPnlText = signedMoney(displayPnl);
+            String totalPnlText = IndicatorFormatterCenter.formatMoney(displayPnl, 2, false);
             double displayReturnRate = resolveDisplayReturnRate(item);
-            String returnRateText = String.format(Locale.getDefault(), "%+.2f%%", displayReturnRate * 100d);
+            String returnRateText = IndicatorFormatterCenter.formatPercent(displayReturnRate, 2, true);
             String pnlRaw = String.format(Locale.getDefault(),
                     "持仓盈亏 %s | 收益率 %s",
                     totalPnlText,
@@ -443,17 +453,27 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             SpannableStringBuilder pnlSpan = new SpannableStringBuilder(pnlRaw);
             int totalPnlStart = pnlRaw.indexOf(totalPnlText);
             if (totalPnlStart >= 0) {
-                pnlSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(palette, displayPnl, palette.textSecondary)),
-                        totalPnlStart,
-                        totalPnlStart + totalPnlText.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                IndicatorPresentationPolicy.applyDirectionalSpanForExactToken(
+                        pnlSpan,
+                        binding.getRoot().getContext(),
+                        pnlRaw,
+                        totalPnlText,
+                        IndicatorId.ACCOUNT_POSITION_PNL,
+                        R.color.text_secondary,
+                        false
+                );
             }
             int returnRateStart = pnlRaw.lastIndexOf(returnRateText);
             if (returnRateStart >= 0) {
-                pnlSpan.setSpan(new ForegroundColorSpan(resolveAmountColor(palette, displayReturnRate, palette.textSecondary)),
-                        returnRateStart,
-                        returnRateStart + returnRateText.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                IndicatorPresentationPolicy.applyDirectionalSpanForExactToken(
+                        pnlSpan,
+                        binding.getRoot().getContext(),
+                        pnlRaw,
+                        returnRateText,
+                        IndicatorId.ACCOUNT_POSITION_PNL_RATE,
+                        R.color.text_secondary,
+                        true
+                );
             }
             binding.tvPnL.setText(pnlSpan);
             binding.tvPnL.setTextColor(palette.textSecondary);
@@ -473,7 +493,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             styleActionButton(binding.btnPositionDeleteAction, palette, true);
         }
 
-        // 行内动作按钮统一走 palette，Notion 主题下不再落回旧深色按钮。
+        // 行内动作按钮统一走 ActionButton 主体，避免账户页继续保留旧方角动作入口。
         private void styleActionButton(@NonNull android.widget.TextView button,
                                        @NonNull UiPaletteManager.Palette palette,
                                        boolean danger) {
@@ -481,15 +501,14 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                     ? ColorUtils.setAlphaComponent(palette.fall, 24)
                     : palette.primarySoft;
             int textColor = danger ? palette.fall : palette.textPrimary;
-            UiPaletteManager.styleSquareTextAction(
+            UiPaletteManager.styleActionButton(
                     button,
                     palette,
                     fillColor,
                     textColor,
-                    12f,
+                    R.style.TextAppearance_BinanceMonitor_Control,
                     8,
-                    R.dimen.position_row_action_height,
-                    false
+                    R.dimen.position_row_action_height
             );
         }
 
@@ -565,22 +584,18 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             }
         }
 
-        private static String signedMoney(double value) {
-            return (value >= 0d ? "+" : "-") + "$" + FormatUtils.formatPrice(Math.abs(value));
-        }
-
         private static String formatOpenTime(long openTime) {
             if (openTime <= 0L) {
                 return "--";
             }
-            return FormatUtils.formatDateTime(openTime);
+            return com.binance.monitor.util.FormatUtils.formatDateTime(openTime);
         }
 
         private static String optionalPrice(double value) {
             if (value <= 0d) {
                 return "--";
             }
-            return "$" + FormatUtils.formatPrice(value);
+            return IndicatorFormatterCenter.formatPrice(value, 2, false);
         }
 
         private static String sideCn(String side) {
@@ -609,17 +624,5 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             return "buy".equalsIgnoreCase(side) ? palette.rise : palette.fall;
         }
 
-        private static int resolveAmountColor(@NonNull UiPaletteManager.Palette palette,
-                                              double value,
-                                              int neutralColor) {
-            AccountValueStyleHelper.Direction direction = AccountValueStyleHelper.resolveNumericDirection(value);
-            if (direction == AccountValueStyleHelper.Direction.POSITIVE) {
-                return palette.rise;
-            }
-            if (direction == AccountValueStyleHelper.Direction.NEGATIVE) {
-                return palette.fall;
-            }
-            return neutralColor;
-        }
     }
 }

@@ -2,14 +2,13 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginHorizontal="3dp">
+    android:layout_height="wrap_content">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="@dimen/card_content_padding">
+        android:padding="@dimen/sheet_content_padding">
 
         <TextView
             android:id="@+id/tvGlobalStatusTitle"
@@ -21,7 +20,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
+            android:layout_marginTop="@dimen/row_gap"
             android:orientation="vertical">
 
             <LinearLayout
@@ -41,13 +40,13 @@
                     android:id="@+id/tvGlobalStatusConnectionValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
             </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginTop="@dimen/row_gap"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -62,13 +61,13 @@
                     android:id="@+id/tvGlobalStatusAccountValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
             </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginTop="@dimen/row_gap"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -83,13 +82,13 @@
                     android:id="@+id/tvGlobalStatusSyncValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
             </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginTop="@dimen/row_gap"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -104,13 +103,13 @@
                     android:id="@+id/tvGlobalStatusUpdatedValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
             </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginTop="@dimen/row_gap"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -125,40 +124,49 @@
                     android:id="@+id/tvGlobalStatusAbnormalValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+                    android:textAppearance="@style/TextAppearance.BinanceMonitor.ValueCompact" />
             </LinearLayout>
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/page_section_gap"
+            android:layout_marginTop="@dimen/row_gap"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnGlobalStatusSettings"
-                style="@style/Widget.BinanceMonitor.Button.SecondaryCompactContentSquare"
+                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
                 android:layout_width="0dp"
                 android:layout_height="@dimen/control_height_sm"
                 android:layout_weight="1"
                 android:text="@string/global_status_action_settings" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnGlobalStatusLogs"
-                style="@style/Widget.BinanceMonitor.Button.SecondaryCompactContentSquare"
+                android:id="@+id/btnGlobalStatusTradeAudit"
+                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
                 android:layout_width="0dp"
                 android:layout_height="@dimen/control_height_sm"
-                android:layout_marginStart="@dimen/control_group_gap"
+                android:layout_marginStart="@dimen/inline_gap"
+                android:layout_weight="1"
+                android:text="@string/global_status_action_trade_audit" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGlobalStatusLogs"
+                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/control_height_sm"
+                android:layout_marginStart="@dimen/inline_gap"
                 android:layout_weight="1"
                 android:text="@string/global_status_action_logs" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnGlobalStatusAbnormal"
-                style="@style/Widget.BinanceMonitor.Button.SecondaryCompactContentSquare"
+                style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
                 android:layout_width="0dp"
                 android:layout_height="@dimen/control_height_sm"
-                android:layout_marginStart="@dimen/control_group_gap"
+                android:layout_marginStart="@dimen/inline_gap"
                 android:layout_weight="1"
                 android:text="@string/global_status_action_abnormal" />
         </LinearLayout>

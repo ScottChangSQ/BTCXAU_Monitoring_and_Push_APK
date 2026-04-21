@@ -13,7 +13,11 @@ import android.view.View;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
+import com.binance.monitor.R;
 import com.binance.monitor.domain.account.model.CurvePoint;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
+import com.binance.monitor.ui.theme.TextAppearanceScaleResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 
@@ -35,6 +39,7 @@ public class EquityCurveView extends View {
     private final Paint balancePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint crosshairPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint zeroPercentLinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint drawdownFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint drawdownStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint drawdownBoundaryPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -86,19 +91,22 @@ public class EquityCurveView extends View {
 
     public EquityCurveView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        labelPaint.setTextSize(dp(9f));
+        TextAppearanceScaleResolver.applyTextSize(labelPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
 
         equityPaint.setStyle(Paint.Style.STROKE);
-        equityPaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveEquityStrokeDp()));
+        equityPaint.setStrokeWidth(SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveEquityStrokeRes()));
         equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(3f), dp(2f)}, 0f));
 
         balancePaint.setStyle(Paint.Style.STROKE);
-        balancePaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveBalanceStrokeDp()));
+        balancePaint.setStrokeWidth(SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveBalanceStrokeRes()));
         balancePaint.setPathEffect(null);
 
         markerPaint.setStyle(Paint.Style.FILL);
 
         crosshairPaint.setStrokeWidth(dp(1f));
+        zeroPercentLinePaint.setStyle(Paint.Style.STROKE);
+        zeroPercentLinePaint.setStrokeWidth(dp(1f));
+        zeroPercentLinePaint.setPathEffect(null);
 
         drawdownFillPaint.setStyle(Paint.Style.FILL);
         drawdownStrokePaint.setStyle(Paint.Style.STROKE);
@@ -108,10 +116,10 @@ public class EquityCurveView extends View {
         drawdownStrokePaint.setStrokeWidth(dp(1.6f));
         drawdownBoundaryPaint.setStrokeWidth(dp(1f));
         tooltipBgPaint.setStyle(Paint.Style.FILL);
-        tooltipTextPaint.setTextSize(dp(9f));
+        TextAppearanceScaleResolver.applyTextSize(tooltipTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartCompact);
 
         emptyPaint.setTextAlign(Paint.Align.CENTER);
-        emptyPaint.setTextSize(dp(10f));
+        TextAppearanceScaleResolver.applyTextSize(emptyPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         refreshPalette();
 
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
@@ -142,14 +150,16 @@ public class EquityCurveView extends View {
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(getContext());
         labelPaint.setColor(palette.textSecondary);
         axisPaint.setColor(applyAlpha(palette.textSecondary, 210));
+        axisPaint.setStrokeWidth(SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveAxisStrokeRes()));
         gridPaint.setColor(applyAlpha(palette.stroke, 170));
         equityPaint.setColor(palette.primary);
         equityPaint.setPathEffect(new DashPathEffect(new float[]{dp(3f), dp(2f)}, 0f));
         balancePaint.setColor(applyAlpha(palette.textPrimary, 232));
-        balancePaint.setStrokeWidth(dp(CurvePaneLayoutHelper.resolveBalanceStrokeDp()));
+        balancePaint.setStrokeWidth(SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveBalanceStrokeRes()));
         balancePaint.setPathEffect(null);
         applyDrawdownPalette(palette);
         crosshairPaint.setColor(applyAlpha(palette.textSecondary, 220));
+        zeroPercentLinePaint.setColor(androidx.core.content.ContextCompat.getColor(getContext(), R.color.text_inverse));
         tooltipBgPaint.setColor(applyAlpha(palette.card, 240));
         tooltipTextPaint.setColor(palette.textPrimary);
         emptyPaint.setColor(palette.textSecondary);
@@ -300,9 +310,9 @@ public class EquityCurveView extends View {
             return;
         }
 
-        chartLeft = dp(CurvePaneLayoutHelper.resolveChartLeftDp());
+        chartLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
         chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(12f));
-        chartRight = width - dp(CurvePaneLayoutHelper.resolveChartRightInsetDp());
+        chartRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
         chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,
                 showBottomTimeLabels,
@@ -346,6 +356,7 @@ public class EquityCurveView extends View {
             chartEndTs = chartStartTs + 1L;
         }
 
+        drawZeroPercentReferenceLine(canvas, chartLeft, chartRight, chartTop, chartBottom, chartMin, chartMax, baseBalance);
         drawDrawdownHighlight(canvas);
         equityPath.reset();
         balancePath.reset();
@@ -424,7 +435,7 @@ public class EquityCurveView extends View {
         canvas.drawCircle(x, yBalance, dp(3.5f), markerPaint);
 
         List<String> tooltipLines = new ArrayList<>();
-        tooltipLines.add(formatLabelTime(point.getTimestamp()));
+        tooltipLines.add(formatLabelTime(resolveHighlightLabelTimestamp(point)));
         tooltipLines.add("净值 $" + FormatUtils.formatPrice(point.getEquity()));
         tooltipLines.add("结余 $" + FormatUtils.formatPrice(point.getBalance()));
         double pct = (point.getEquity() - baseBalance) / Math.max(1e-9, baseBalance) * 100d;
@@ -436,9 +447,9 @@ public class EquityCurveView extends View {
             maxWidth = Math.max(maxWidth, tooltipTextPaint.measureText(line));
         }
         float padding = dp(6f);
-        float lineHeight = dp(11f);
+        float lineStepPx = dp(11f);
         float boxWidth = maxWidth + padding * 2;
-        float boxHeight = lineHeight * tooltipLines.size() + padding * 2;
+        float boxHeight = lineStepPx * tooltipLines.size() + padding * 2;
 
         float boxLeft = x + dp(8f);
         if (boxLeft + boxWidth > chartRight) {
@@ -452,7 +463,7 @@ public class EquityCurveView extends View {
             canvas.drawText(
                     tooltipLines.get(i),
                     boxLeft + padding,
-                    boxTop + padding + lineHeight * (i + 0.8f),
+                    boxTop + padding + lineStepPx * (i + 0.8f),
                     tooltipTextPaint
             );
         }
@@ -552,19 +563,43 @@ public class EquityCurveView extends View {
         canvas.drawLine(left, bottom, right, bottom, axisPaint);
     }
 
+    // 在主图里额外标出基准收益 0% 所在位置，便于快速判断当前收益相对基线的位置。
+    private void drawZeroPercentReferenceLine(Canvas canvas,
+                                              float left,
+                                              float right,
+                                              float top,
+                                              float bottom,
+                                              double min,
+                                              double max,
+                                              double baseBalance) {
+        if (baseBalance < min || baseBalance > max) {
+            return;
+        }
+        float zeroLineY = mapY(baseBalance, min, max, top, bottom);
+        canvas.drawLine(left, zeroLineY, right, zeroLineY, zeroPercentLinePaint);
+        float percentWidth = labelPaint.measureText("0%") + dp(4f);
+        canvas.drawText("0%", right - percentWidth, resolveAxisLabelBaseline(zeroLineY, top, bottom), labelPaint);
+    }
+
     private void drawYLabels(Canvas canvas, float left, float right, float top, float bottom, double min, double max, double base) {
         int tickCount = 4;
         for (int i = 0; i <= tickCount; i++) {
             double value = min + (max - min) * i / tickCount;
             float y = mapY(value, min, max, top, bottom);
+            float baseline = resolveAxisLabelBaseline(y, top, bottom);
             String amount = formatAxisAmount(value);
-            canvas.drawText(amount, dp(4f), y + dp(3f), labelPaint);
+            canvas.drawText(amount, dp(4f), baseline, labelPaint);
 
             double pct = (value - base) / Math.max(1e-9, base) * 100d;
             String percent = String.format(Locale.getDefault(), "%+.1f%%", pct);
             float percentWidth = labelPaint.measureText(percent);
-            canvas.drawText(percent, getWidth() - dp(4f) - percentWidth, y + dp(3f), labelPaint);
+            canvas.drawText(percent, getWidth() - dp(4f) - percentWidth, baseline, labelPaint);
         }
+    }
+
+    // 统一约束纵轴标签与 0% 标签的基线，避免最下方文字压到下一张图。
+    private float resolveAxisLabelBaseline(float y, float top, float bottom) {
+        return Math.max(top + dp(9f), Math.min(bottom - dp(2f), y + dp(3f)));
     }
 
     private String formatAxisAmount(double value) {
@@ -645,6 +680,10 @@ public class EquityCurveView extends View {
         return mapX(point.getTimestamp(), chartStartTs, chartEndTs, chartLeft, chartRight);
     }
 
+    private long resolveHighlightLabelTimestamp(@NonNull CurvePoint point) {
+        return highlightedTimestamp > 0L ? highlightedTimestamp : point.getTimestamp();
+    }
+
     private float clampRatio(float ratio) {
         return Math.max(0f, Math.min(1f, ratio));
     }
@@ -677,22 +716,11 @@ public class EquityCurveView extends View {
 
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
-        return (color & 0x00FFFFFF) | (safeAlpha << 24);
+        return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
     }
 
     private int blendColor(int startColor, int endColor, float ratio) {
         float safeRatio = Math.max(0f, Math.min(1f, ratio));
-        int startA = (startColor >> 24) & 0xFF;
-        int startR = (startColor >> 16) & 0xFF;
-        int startG = (startColor >> 8) & 0xFF;
-        int startB = startColor & 0xFF;
-        int endA = (endColor >> 24) & 0xFF;
-        int endR = (endColor >> 16) & 0xFF;
-        int endG = (endColor >> 8) & 0xFF;
-        int endB = endColor & 0xFF;
-        return ((Math.round(startA + (endA - startA) * safeRatio) & 0xFF) << 24)
-                | ((Math.round(startR + (endR - startR) * safeRatio) & 0xFF) << 16)
-                | ((Math.round(startG + (endG - startG) * safeRatio) & 0xFF) << 8)
-                | (Math.round(startB + (endB - startB) * safeRatio) & 0xFF);
+        return androidx.core.graphics.ColorUtils.blendARGB(startColor, endColor, safeRatio);
     }
 }

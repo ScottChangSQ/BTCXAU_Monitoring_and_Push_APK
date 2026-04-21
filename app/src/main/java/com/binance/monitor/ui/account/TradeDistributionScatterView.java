@@ -15,6 +15,8 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.R;
+import com.binance.monitor.ui.theme.TextAppearanceScaleResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 
@@ -60,13 +62,13 @@ public class TradeDistributionScatterView extends View {
         super(context, attrs, defStyleAttr);
         axisPaint.setStyle(Paint.Style.STROKE);
         gridPaint.setStyle(Paint.Style.STROKE);
-        labelPaint.setTextSize(dp(8.5f));
+        TextAppearanceScaleResolver.applyTextSize(labelPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         emptyPaint.setTextAlign(Paint.Align.CENTER);
-        emptyPaint.setTextSize(dp(10f));
+        TextAppearanceScaleResolver.applyTextSize(emptyPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         highlightPaint.setStyle(Paint.Style.STROKE);
         highlightPaint.setStrokeWidth(dp(1.4f));
         tooltipBgPaint.setStyle(Paint.Style.FILL);
-        tooltipTextPaint.setTextSize(dp(8.5f));
+        TextAppearanceScaleResolver.applyTextSize(tooltipTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartCompact);
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onDown(MotionEvent e) {
@@ -238,7 +240,7 @@ public class TradeDistributionScatterView extends View {
     // 应用透明度。
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
-        return (color & 0x00FFFFFF) | (safeAlpha << 24);
+        return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
     }
 
     // 选中离点击位置最近的散点，超出热区则清空选择。
@@ -282,9 +284,9 @@ public class TradeDistributionScatterView extends View {
             maxWidth = Math.max(maxWidth, tooltipTextPaint.measureText(line));
         }
         float padding = dp(6f);
-        float lineHeight = dp(10.5f);
+        float lineStepPx = dp(10.5f);
         float boxWidth = Math.min(maxWidth + padding * 2, getWidth() - dp(24f));
-        float boxHeight = lineHeight * lines.size() + padding * 2;
+        float boxHeight = lineStepPx * lines.size() + padding * 2;
         float boxLeft = anchorX + dp(10f);
         if (boxLeft + boxWidth > getWidth() - dp(8f)) {
             boxLeft = anchorX - boxWidth - dp(10f);
@@ -297,7 +299,7 @@ public class TradeDistributionScatterView extends View {
         for (int i = 0; i < lines.size(); i++) {
             canvas.drawText(lines.get(i),
                     boxLeft + padding,
-                    boxTop + padding + lineHeight * (i + 0.82f),
+                    boxTop + padding + lineStepPx * (i + 0.82f),
                     tooltipTextPaint);
         }
     }

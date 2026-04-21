@@ -4,6 +4,7 @@
 package com.binance.monitor.ui.theme;
 
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 import org.junit.Test;
 
@@ -22,10 +23,10 @@ public class TypographyResourceUsageTest {
         String settingsLayout = readUtf8("src/main/res/layout/activity_settings_detail.xml");
 
         assertTrue(hostLayout.contains("textAppearance=\"@style/TextAppearance.BinanceMonitor.Tiny\""));
-        assertTrue(positionLayout.contains("textAppearance=\"@style/TextAppearance.BinanceMonitor.Micro\""));
+        assertTrue(positionLayout.contains("textAppearance=\"@style/TextAppearance.BinanceMonitor.Tiny\""));
         assertTrue(logLayout.contains("textAppearance=\"@style/TextAppearance.BinanceMonitor.BodyCompact\""));
-        assertTrue(settingsLayout.contains("textAppearance=\"@style/TextAppearance.BinanceMonitor.BodyCompact\""));
-        assertTrue(settingsLayout.contains("textAppearance=\"@style/TextAppearance.BinanceMonitor.Micro\""));
+        assertTrue(settingsLayout.contains("textAppearance=\"@style/TextAppearance.BinanceMonitor.Body\""));
+        assertFalse(settingsLayout.contains("android:textSize=\""));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

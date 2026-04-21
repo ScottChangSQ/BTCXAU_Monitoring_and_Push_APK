@@ -14,9 +14,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.text.TextUtils;
-import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -32,6 +30,9 @@ import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.LayoutFloatingWindowBinding;
 import com.binance.monitor.runtime.ConnectionStage;
 import com.binance.monitor.ui.launch.OverlayLaunchBridgeActivity;
+import com.binance.monitor.ui.rules.IndicatorId;
+import com.binance.monitor.ui.rules.IndicatorPresentationPolicy;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.PermissionHelper;
@@ -224,29 +225,31 @@ public class FloatingWindowManager {
             return;
         }
         binding = LayoutFloatingWindowBinding.inflate(LayoutInflater.from(context));
+        int expandedWidthPx = SpacingTokenResolver.px(context, FloatingWindowLayoutHelper.resolveExpandedWidthRes());
+        int horizontalPaddingPx = SpacingTokenResolver.px(context, FloatingWindowLayoutHelper.resolveHorizontalPaddingRes());
         ViewGroup.LayoutParams expandedParams = binding.layoutExpanded.getLayoutParams();
-        expandedParams.width = dp(FloatingWindowLayoutHelper.resolveExpandedWidthDp());
+        expandedParams.width = expandedWidthPx;
         binding.layoutExpanded.setLayoutParams(expandedParams);
         ViewGroup.LayoutParams minimizeParams = binding.btnMinimize.getLayoutParams();
-        minimizeParams.width = dp(FloatingWindowLayoutHelper.resolveMinimizeButtonSizeDp());
-        minimizeParams.height = dp(FloatingWindowLayoutHelper.resolveMinimizeButtonSizeDp());
+        int minimizeButtonSizePx = SpacingTokenResolver.px(context, FloatingWindowLayoutHelper.resolveMinimizeButtonSizeRes());
+        minimizeParams.width = minimizeButtonSizePx;
+        minimizeParams.height = minimizeButtonSizePx;
         binding.btnMinimize.setLayoutParams(minimizeParams);
-        int horizontalPadding = dp(FloatingWindowLayoutHelper.resolveHorizontalPaddingDp());
         binding.layoutExpanded.setPadding(
-                horizontalPadding,
+                horizontalPaddingPx,
                 binding.layoutExpanded.getPaddingTop(),
-                horizontalPadding,
+                horizontalPaddingPx,
                 binding.layoutExpanded.getPaddingBottom()
         );
-        binding.viewMiniSquare.setMinWidth(dp(FloatingWindowLayoutHelper.resolveMiniMinWidthDp()));
-        int miniPadding = dp(FloatingWindowLayoutHelper.resolveMiniHorizontalPaddingDp());
-        binding.viewMiniSquare.setPadding(miniPadding,
+        binding.viewMiniSquare.setMinWidth(SpacingTokenResolver.px(context, FloatingWindowLayoutHelper.resolveMiniMinWidthRes()));
+        int miniPaddingPx = SpacingTokenResolver.px(context, FloatingWindowLayoutHelper.resolveMiniHorizontalPaddingRes());
+        binding.viewMiniSquare.setPadding(miniPaddingPx,
                 binding.viewMiniSquare.getPaddingTop(),
-                miniPadding,
+                miniPaddingPx,
                 binding.viewMiniSquare.getPaddingBottom());
         ViewGroup.MarginLayoutParams miniParams =
                 (ViewGroup.MarginLayoutParams) binding.viewMiniSquare.getLayoutParams();
-        miniParams.rightMargin = dp(FloatingWindowLayoutHelper.resolveMiniEndMarginDp());
+        miniParams.rightMargin = SpacingTokenResolver.px(context, FloatingWindowLayoutHelper.resolveMiniEndMarginRes());
         binding.viewMiniSquare.setLayoutParams(miniParams);
         dragAndClickListener = new DragAndClickListener();
         bindDragSurface(binding.rootFloating);
@@ -350,27 +353,39 @@ public class FloatingWindowManager {
         String text;
         if (offline) {
             text = resolveOfflineHeaderText(connectionStage);
+            binding.tvOverlayStatus.setText(text);
         } else if (!hasActivePositions) {
             text = "无持仓";
+            binding.tvOverlayStatus.setText(text);
         } else {
             text = FloatingWindowTextFormatter.formatPnlAmount(totalPnl, masked);
+            binding.tvOverlayStatus.setText(buildFloatingPnlValueSpan(text));
         }
-        binding.tvOverlayStatus.setText(text);
         int pnlColor = offline
                 ? palette.textSecondary
                 : (masked ? palette.textPrimary : resolvePnlColor(totalPnl, hasActivePositions));
-        binding.tvOverlayStatus.setTextColor(pnlColor);
-        binding.tvOverlayStatus.setTextSize(hasActivePositions ? 12f : 11f);
+        UiPaletteManager.applyTextAppearance(
+                binding.tvOverlayStatus,
+                hasActivePositions
+                        ? R.style.TextAppearance_BinanceMonitor_Control
+                        : R.style.TextAppearance_BinanceMonitor_OverlayDense
+        );
+        binding.tvOverlayStatus.setTextColor(offline ? palette.textSecondary : palette.textPrimary);
         binding.tvOverlayStatus.setTypeface(null, Typeface.BOLD);
         binding.btnMinimize.setTextColor(palette.textPrimary);
         binding.btnMinimize.setBackground(UiPaletteManager.createOutlinedDrawable(context, palette.control, palette.stroke));
-        binding.viewMiniSquare.setText(FloatingWindowTextFormatter.formatMiniStatusText(
+        String miniText = FloatingWindowTextFormatter.formatMiniStatusText(
                 offline,
                 hasActivePositions,
                 totalPnl,
                 masked
-        ));
-        binding.viewMiniSquare.setTextColor(pnlColor);
+        );
+        if (offline || !hasActivePositions) {
+            binding.viewMiniSquare.setText(miniText);
+        } else {
+            binding.viewMiniSquare.setText(buildFloatingPnlValueSpan(miniText));
+        }
+        binding.viewMiniSquare.setTextColor(offline ? palette.textSecondary : palette.textPrimary);
         binding.viewMiniSquare.setTypeface(null, Typeface.BOLD);
         binding.viewMiniSquare.setBackground(UiPaletteManager.createOutlinedDrawable(
                 context,
@@ -440,7 +455,10 @@ public class FloatingWindowManager {
         boolean masked = SensitiveDisplayMasker.isEnabled(context);
         LinearLayout cardView = new LinearLayout(context);
         cardView.setOrientation(LinearLayout.VERTICAL);
-        cardView.setPadding(0, addTopSpacing ? dp(4) : 0, 0, 0);
+        int topSpacingPx = addTopSpacing
+                ? context.getResources().getDimensionPixelSize(R.dimen.space_4)
+                : 0;
+        cardView.setPadding(0, topSpacingPx, 0, 0);
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -451,7 +469,7 @@ public class FloatingWindowManager {
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(FloatingWindowLayoutHelper.resolveSymbolHeaderGravity());
         headerRow.setLayoutParams(new LinearLayout.LayoutParams(
-                dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
+                resolveFloatingValueRowWidthPx(),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
 
@@ -463,8 +481,8 @@ public class FloatingWindowManager {
         ));
         titleView.setText(buildStyledCardTitle(card, masked));
         titleView.setTypeface(null, android.graphics.Typeface.BOLD);
+        UiPaletteManager.applyTextAppearance(titleView, R.style.TextAppearance_BinanceMonitor_OverlayDense);
         titleView.setTextColor(palette.textPrimary);
-        titleView.setTextSize(9f);
         titleView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         titleView.setSingleLine(false);
         titleView.setMaxLines(2);
@@ -474,17 +492,17 @@ public class FloatingWindowManager {
 
         TextView priceView = new TextView(context);
         LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(
-                dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
+                resolveFloatingValueRowWidthPx(),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        priceParams.topMargin = dp(1);
+        priceParams.topMargin = context.getResources().getDimensionPixelSize(R.dimen.inline_gap_compact);
         priceView.setLayoutParams(priceParams);
         priceView.setText(card.hasLatestPrice()
                 ? FloatingWindowTextFormatter.formatPriceText(card.getLatestPrice(), masked)
                 : "--");
         priceView.setTypeface(null, android.graphics.Typeface.BOLD);
         priceView.setTextColor(palette.textPrimary);
-        priceView.setTextSize(11f);
+        UiPaletteManager.applyTextAppearance(priceView, R.style.TextAppearance_BinanceMonitor_Control);
         priceView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         priceView.setSingleLine(true);
         priceView.setMaxLines(1);
@@ -493,10 +511,10 @@ public class FloatingWindowManager {
 
         TextView volumeView = new TextView(context);
         LinearLayout.LayoutParams volumeParams = new LinearLayout.LayoutParams(
-                dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
+                resolveFloatingValueRowWidthPx(),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        volumeParams.topMargin = dp(1);
+        volumeParams.topMargin = context.getResources().getDimensionPixelSize(R.dimen.inline_gap_compact);
         volumeView.setLayoutParams(volumeParams);
         volumeView.setText(FloatingWindowTextFormatter.formatVolumeLine(
                 card.getVolume(),
@@ -504,20 +522,23 @@ public class FloatingWindowManager {
                 masked
         ));
         volumeView.setTextColor(palette.textSecondary);
-        volumeView.setTextSize(8.5f);
+        UiPaletteManager.applyTextAppearance(volumeView, R.style.TextAppearance_BinanceMonitor_OverlayDense);
+        volumeView.setIncludeFontPadding(false);
         volumeView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         cardView.addView(volumeView);
 
         TextView amountView = new TextView(context);
         LinearLayout.LayoutParams amountParams = new LinearLayout.LayoutParams(
-                dp(FloatingWindowLayoutHelper.resolveValueRowWidthDp()),
+                resolveFloatingValueRowWidthPx(),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        amountParams.topMargin = dp(1);
+        amountParams.topMargin = context.getResources().getDimensionPixelSize(
+                FloatingWindowLayoutHelper.resolveAmountRowGapRes());
         amountView.setLayoutParams(amountParams);
         amountView.setText(FloatingWindowTextFormatter.formatAmountLine(card.getAmount(), masked));
         amountView.setTextColor(palette.textSecondary);
-        amountView.setTextSize(8.5f);
+        UiPaletteManager.applyTextAppearance(amountView, R.style.TextAppearance_BinanceMonitor_OverlayDense);
+        amountView.setIncludeFontPadding(false);
         amountView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         cardView.addView(amountView);
 
@@ -553,6 +574,14 @@ public class FloatingWindowManager {
             binding.viewMiniSquare.bringToFront();
         }
         requestImmediateWindowRelayout();
+    }
+
+    // 展开态卡片内容宽度统一由共享 token 推导，避免产品行再次回到裸 dp 真值。
+    private int resolveFloatingValueRowWidthPx() {
+        int expandedWidthPx = SpacingTokenResolver.px(context, FloatingWindowLayoutHelper.resolveExpandedWidthRes());
+        int horizontalPaddingPx = SpacingTokenResolver.px(context, FloatingWindowLayoutHelper.resolveHorizontalPaddingRes());
+        int trailingInsetPx = SpacingTokenResolver.px(context, FloatingWindowLayoutHelper.resolveTrailingInsetRes());
+        return Math.max(0, expandedWidthPx - horizontalPaddingPx * 2 - trailingInsetPx);
     }
 
     // 控制最小化方块闪烁状态，避免状态切换时遗留半透明效果。
@@ -659,19 +688,7 @@ public class FloatingWindowManager {
         String label = card == null || card.getLabel() == null ? "" : card.getLabel().trim();
         double totalLots = card == null ? 0d : card.getTotalLots();
         boolean hasPosition = card != null && card.hasPosition();
-        String lotsText = hasPosition ? FloatingWindowTextFormatter.formatLotsText(totalLots) : "";
-        String title = FloatingWindowTextFormatter.formatCardTitle(label, totalLots, 0d, hasPosition, masked);
-        SpannableStringBuilder styled = new SpannableStringBuilder(title);
-        int lotsStart = hasPosition ? title.lastIndexOf(lotsText) : -1;
-        int lotsEnd = lotsStart < 0 ? -1 : Math.min(title.length(), lotsStart + lotsText.length());
-        if (lotsStart < lotsEnd) {
-            int lotsColor = resolvePnlColor(totalLots, true);
-            styled.setSpan(new ForegroundColorSpan(lotsColor),
-                    lotsStart,
-                    lotsEnd,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        return styled;
+        return FloatingWindowTextFormatter.formatCardTitle(label, totalLots, 0d, hasPosition, masked);
     }
 
     private int resolvePnlColor(double totalPnl, boolean hasPosition) {
@@ -683,6 +700,21 @@ public class FloatingWindowManager {
             return palette.textSecondary;
         }
         return totalPnl >= 0d ? palette.rise : palette.fall;
+    }
+
+    // 悬浮窗总盈亏统一复用正式盈亏红绿规则，不再由浮窗自己猜颜色范围。
+    private CharSequence buildFloatingPnlValueSpan(String valueText) {
+        SpannableStringBuilder builder = new SpannableStringBuilder(valueText == null ? "" : valueText);
+        IndicatorPresentationPolicy.applyDirectionalSpanForExactToken(
+                builder,
+                context,
+                valueText,
+                valueText,
+                IndicatorId.ACCOUNT_POSITION_PNL,
+                R.color.text_primary,
+                false
+        );
+        return builder;
     }
 
     // 统一把产品代码收敛到悬浮窗需要展示的成交量单位。

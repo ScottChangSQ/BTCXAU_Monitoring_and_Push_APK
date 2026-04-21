@@ -46,7 +46,7 @@ public class AccountPositionActivitySourceTest {
     }
 
     @Test
-    public void accountOverviewConnectionChipShouldRequestLoginDialogInsteadOfOpeningStatsTab() throws Exception {
+    public void accountOverviewConnectionChipShouldRouteConnectedStateToInfoDialogAndFallbackToLogin() throws Exception {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
         int methodStart = source.indexOf("private void openAccountLogin() {");
         int methodEnd = source.indexOf("private void ensureMonitorServiceStarted()", methodStart);
@@ -57,6 +57,9 @@ public class AccountPositionActivitySourceTest {
         assertTrue(source.contains("binding.tvAccountConnectionStatus.setOnClickListener(v -> openAccountLogin());"));
         assertTrue(source.contains("private AccountSessionDialogController accountSessionDialogController;"));
         assertTrue(source.contains("accountSessionDialogController = new AccountSessionDialogController("));
+        assertTrue(methodSource.contains("String displayedConnectionStatus = resolveDisplayedConnectionStatusText(currentUiModel);"));
+        assertTrue(methodSource.contains("if (displayedConnectionStatus.startsWith(\"已连接\")) {"));
+        assertTrue(methodSource.contains("accountSessionDialogController.showAccountConnectionDialog(resolveCurrentSessionCache(), displayedConnectionStatus);"));
         assertTrue(methodSource.contains("accountSessionDialogController.showLoginDialog();"));
         assertFalse(source.contains("binding.tvAccountConnectionStatus.setOnClickListener(v -> host.openAccountStats());"));
     }
@@ -72,7 +75,8 @@ public class AccountPositionActivitySourceTest {
                 source.contains("new AccountSessionDialogController.Callback() {")
                         && source.contains("public void onSessionSubmitting(")
                         && source.contains("public void onSessionVerified(")
-                        && source.contains("public void onSessionFailed("));
+                        && source.contains("public void onSessionFailed(")
+                        && source.contains("public void onSessionLoggedOut("));
         assertTrue("等待同步时应优先显示受理中的连接状态，而不是立刻回退成未连接账户",
                 source.contains("updateConnectionStatusChip(resolveDisplayedConnectionStatusText(nextModel));")
                         && source.contains("private String resolveDisplayedConnectionStatusText(@NonNull AccountPositionUiModel nextModel) {"));
@@ -85,13 +89,24 @@ public class AccountPositionActivitySourceTest {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountSessionDialogController.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
+        String pageSource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
 
-        assertTrue("独立登录组件拿到核验快照后，必须把快照回写给远程会话协调器完成 active 收口",
+        assertTrue("独立登录组件应改由账户页缓存监听驱动最终收口，不能继续把切号成败绑在本地 8 秒等待器上",
+                source.contains("public void onCacheUpdated(@Nullable AccountStatsPreloadManager.Cache cache) {")
+                        && source.contains("private AcceptedSession pendingAcceptedSession;")
+                        && source.contains("pendingAcceptedSession = new AcceptedSession(result, successMessage);"));
+        assertTrue("目标账号快照真正到达时，独立登录组件仍必须回写给远程会话协调器完成 active 收口",
                 source.contains("boolean sessionActivated = remoteSessionCoordinator.onSnapshotApplied(")
-                        && source.contains("verifiedCache.getAccount(),")
-                        && source.contains("verifiedCache.getServer()"));
+                        && source.contains("cache == null ? \"\" : cache.getAccount(),")
+                        && source.contains("cache == null ? \"\" : cache.getServer()"));
         assertTrue("若快照已返回但会话仍未收口，当前链路必须显式失败，避免留下半同步状态",
-                source.contains("throw new IllegalStateException(\"账户快照已返回，但会话状态未完成收口\")"));
+                source.contains("notifySessionFailed(\"账户快照已返回，但会话状态未完成收口\", false);"));
+        assertTrue("账户页缓存监听必须把新快照继续转交给独立登录组件，避免 accepted 后无人收口",
+                pageSource.contains("accountSessionDialogController.onCacheUpdated(cache);"));
+        assertFalse("独立登录组件不应继续依赖本地硬超时等待器判定成败",
+                source.contains("AccountSessionSyncWaiter"));
     }
 
     @Test
@@ -155,14 +170,15 @@ public class AccountPositionActivitySourceTest {
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("import com.binance.monitor.domain.account.AccountTimeRange;"));
         assertTrue(source.contains("ensureMonitorServiceStarted();\n        preloadManager.start();"));
         assertTrue(source.contains("public void onPageShown() {\n        if (destroyed || !bound) {\n            return;\n        }\n        ensureMonitorServiceStarted();"));
         assertTrue("账户持仓页回到前台时应显式触发服务 bootstrap，确保服务端掉线后的远程会话恢复链能立即执行",
                 source.contains("MonitorServiceController.dispatch(host.requireActivity(), AppConstants.ACTION_BOOTSTRAP);"));
         assertTrue(source.contains("requestForegroundEntrySnapshot();"));
         assertTrue(source.contains("private void requestForegroundEntrySnapshot() {"));
-        assertTrue(source.contains("uiModelExecutor.execute(() -> preloadManager.fetchForUi(AccountTimeRange.ALL));"));
+        assertTrue("账户持仓页回前台不应再把登录收口重新绑回 full 全量链",
+                source.contains("uiModelExecutor.execute(() -> preloadManager.fetchSnapshotForUi());"));
+        assertFalse(source.contains("fetchFullForUi(AccountTimeRange.ALL)"));
         assertTrue(source.contains("private void ensureMonitorServiceStarted() {"));
         assertTrue(source.contains("MonitorServiceController.ensureStarted(host.requireActivity());"));
     }
@@ -176,6 +192,8 @@ public class AccountPositionActivitySourceTest {
         assertTrue(source.contains("private AccountPositionUiModel lastStableUiModel = AccountPositionUiModel.empty();"));
         assertTrue(source.contains("private void restoreLastStableUiModel() {"));
         assertTrue(source.contains("restoreLastStableUiModel();"));
+        assertTrue(source.contains("pendingConnectionStatusText = buildFailureConnectionStatusText(message);"));
+        assertTrue(source.contains("private String buildFailureConnectionStatusText(@Nullable String message) {"));
         assertTrue(source.contains("if (!nextModel.getSignature().isEmpty()) {"));
         assertTrue(source.contains("lastStableUiModel = nextModel;"));
         assertFalse(source.contains("public void onSessionFailed(@NonNull String message) {\n                        pendingConnectionStatusText = \"\";\n                        updateConnectionStatusChip(resolveDisplayedConnectionStatusText(currentUiModel));\n                    }"));

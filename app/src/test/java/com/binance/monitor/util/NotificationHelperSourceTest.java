@@ -20,6 +20,8 @@ public class NotificationHelperSourceTest {
         assertTrue(helperSource.contains("AppConstants.SERVICE_CHANNEL_ID"));
         assertTrue(helperSource.contains("AppConstants.ALERT_CHANNEL_ID"));
         assertTrue(helperSource.contains("notifyAbnormalAlert("));
+        assertTrue(helperSource.contains("notifyAccountMismatch("));
+        assertTrue(helperSource.contains("服务器端当前实际账号已经不是原来的账号了"));
         assertTrue(helperSource.contains("alertChannel"));
         assertTrue(helperSource.contains("HostNavigationIntentFactory.forTab(context, HostTab.MARKET_MONITOR)"));
     }

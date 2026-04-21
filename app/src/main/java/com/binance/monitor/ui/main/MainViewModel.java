@@ -3,6 +3,7 @@ package com.binance.monitor.ui.main;
 import android.app.Application;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 
@@ -10,9 +11,9 @@ import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.repository.MonitorRepository;
+import com.binance.monitor.runtime.market.model.MarketRuntimeSnapshot;
 
 import java.util.List;
-import java.util.Map;
 
 public class MainViewModel extends AndroidViewModel {
 
@@ -35,16 +36,22 @@ public class MainViewModel extends AndroidViewModel {
         return repository.getLastUpdateTime();
     }
 
-    public LiveData<Map<String, Double>> getDisplayPrices() {
-        return repository.getDisplayPrices();
+    public LiveData<MarketRuntimeSnapshot> getMarketRuntimeSnapshotLiveData() {
+        return repository.getMarketRuntimeSnapshotLiveData();
     }
 
-    public LiveData<Map<String, KlineData>> getDisplayKlines() {
-        return repository.getDisplayKlines();
+    @Nullable
+    public KlineData selectClosedMinute(String symbol) {
+        return repository.selectClosedMinute(symbol);
     }
 
-    public LiveData<Map<String, KlineData>> getDisplayOverviewKlines() {
-        return repository.getDisplayOverviewKlines();
+    public double selectLatestPrice(String symbol) {
+        return repository.selectLatestPrice(symbol);
+    }
+
+    @NonNull
+    public String selectMarketWindowSignature(String symbol) {
+        return repository.selectMarketWindowSignature(symbol);
     }
 
     public LiveData<List<AbnormalRecord>> getRecords() {

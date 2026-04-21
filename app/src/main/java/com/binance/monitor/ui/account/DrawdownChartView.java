@@ -15,6 +15,9 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.R;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
+import com.binance.monitor.ui.theme.TextAppearanceScaleResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 
 import java.util.ArrayList;
@@ -50,6 +53,7 @@ public class DrawdownChartView extends View {
     private long seriesEndTs;
     private int highlightedIndex = -1;
     private float highlightedXRatio = -1f;
+    private long highlightedTimestamp = -1L;
     private boolean longPressing;
     private boolean masked;
     private boolean mergeWithPreviousPane;
@@ -71,9 +75,9 @@ public class DrawdownChartView extends View {
         linePaint.setStyle(Paint.Style.STROKE);
         linePaint.setStrokeWidth(dp(1.8f));
         fillPaint.setStyle(Paint.Style.FILL);
-        labelPaint.setTextSize(dp(8.5f));
+        TextAppearanceScaleResolver.applyTextSize(labelPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         emptyPaint.setTextAlign(Paint.Align.CENTER);
-        emptyPaint.setTextSize(dp(10f));
+        TextAppearanceScaleResolver.applyTextSize(emptyPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         crosshairPaint.setStyle(Paint.Style.STROKE);
         crosshairPaint.setStrokeWidth(dp(1f));
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
@@ -107,7 +111,7 @@ public class DrawdownChartView extends View {
         gridPaint.setColor(applyAlpha(palette.stroke, 150));
         gridPaint.setStrokeWidth(dp(0.8f));
         axisPaint.setColor(applyAlpha(palette.textSecondary, 180));
-        axisPaint.setStrokeWidth(dp(1f));
+        axisPaint.setStrokeWidth(SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveAxisStrokeRes()));
         linePaint.setColor(applyAlpha(palette.fall, 230));
         fillPaint.setColor(applyAlpha(palette.fall, 55));
         labelPaint.setColor(palette.textSecondary);
@@ -177,6 +181,7 @@ public class DrawdownChartView extends View {
         }
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(timestamp)));
         highlightedXRatio = clampRatio(xRatio);
+        highlightedTimestamp = timestamp;
         invalidate();
     }
 
@@ -184,6 +189,7 @@ public class DrawdownChartView extends View {
     public void clearSyncedHighlight() {
         highlightedIndex = -1;
         highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
         invalidate();
     }
 
@@ -220,9 +226,9 @@ public class DrawdownChartView extends View {
             return;
         }
 
-        chartLeft = dp(CurvePaneLayoutHelper.resolveChartLeftDp());
+        chartLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
         chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
-        chartRight = width - dp(CurvePaneLayoutHelper.resolveChartRightInsetDp());
+        chartRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
         chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,
                 false,
@@ -322,6 +328,7 @@ public class DrawdownChartView extends View {
         canvas.drawText(String.format(Locale.getDefault(), "%.1f%%", minDrawdown * 100d),
                 labelAnchorX, bottomBaseline, labelPaint);
         float rightEdge = getWidth() - dp(12f);
+        labelPaint.setTextAlign(Paint.Align.CENTER);
         canvas.save();
         canvas.rotate(-90f, rightEdge, centerY);
         canvas.drawText("当前区间回撤", rightEdge, verticalCenterBaseline, labelPaint);
@@ -340,6 +347,7 @@ public class DrawdownChartView extends View {
         long startTs = viewportStartTs > 0L ? viewportStartTs : seriesStartTs;
         long endTs = viewportEndTs > startTs ? viewportEndTs : Math.max(startTs + 1L, seriesEndTs);
         long targetTs = startTs + Math.round((clamped - chartLeft) / range * (endTs - startTs));
+        highlightedTimestamp = targetTs;
         highlightedIndex = Math.max(0, Math.min(points.size() - 1, findNearestIndexByTimestamp(targetTs)));
         if (notify && onTimeHighlightListener != null) {
             onTimeHighlightListener.onTimeHighlight(targetTs, highlightedXRatio);
@@ -366,6 +374,7 @@ public class DrawdownChartView extends View {
         longPressing = false;
         requestParentDisallowIntercept(false);
         highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
         if (highlightedIndex != -1) {
             highlightedIndex = -1;
             if (onTimeHighlightListener != null) {
@@ -401,6 +410,9 @@ public class DrawdownChartView extends View {
     }
 
     private float resolveHighlightX(long startTs, long endTs) {
+        if (highlightedTimestamp > 0L) {
+            return mapX(highlightedTimestamp, startTs, endTs, chartLeft, chartRight);
+        }
         if (highlightedXRatio >= 0f) {
             return chartLeft + highlightedXRatio * (chartRight - chartLeft);
         }
@@ -417,6 +429,6 @@ public class DrawdownChartView extends View {
     // 应用透明度，避免附图过于厚重。
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
-        return (color & 0x00FFFFFF) | (safeAlpha << 24);
+        return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
     }
 }

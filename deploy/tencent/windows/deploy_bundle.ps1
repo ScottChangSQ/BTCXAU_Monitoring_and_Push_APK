@@ -985,6 +985,9 @@ function Invoke-DeployWorker {
         Start-HealthProbe -Context $Context -Label "8787 /v2/account/history?range=all"
         $directAccountHistory = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/history?range=all" -MaxSeconds 90
         Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /v2/account/history?range=all -> " + $directAccountHistory.StatusCode)
+        Start-HealthProbe -Context $Context -Label "8787 /v2/account/full (diagnostic)"
+        $directAccountFull = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/full" -MaxSeconds 180
+        Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /v2/account/full (diagnostic) -> " + $directAccountFull.StatusCode)
         Start-HealthProbe -Context $Context -Label "443 tradeapp.ltd/v2/account/snapshot"
         $publicAccountSnapshot = Wait-HttpOk -Url "https://tradeapp.ltd/v2/account/snapshot" -MaxSeconds 180
         Write-DeployLog -Context $Context -Message ("健康检查通过: 443 tradeapp.ltd/v2/account/snapshot -> " + $publicAccountSnapshot.StatusCode)
@@ -1027,6 +1030,7 @@ function Invoke-DeployWorker {
                 ("443 tradeapp.ltd/health -> " + $publicHttpsGateway.StatusCode + " | bundleFingerprint=" + $publicHttpsGateway.FieldValue),
                 ("8787 /v2/account/snapshot -> " + $directAccountSnapshot.StatusCode),
                 ("8787 /v2/account/history?range=all -> " + $directAccountHistory.StatusCode),
+                ("8787 /v2/account/full (diagnostic) -> " + $directAccountFull.StatusCode),
                 ("443 tradeapp.ltd/v2/account/snapshot -> " + $publicAccountSnapshot.StatusCode),
                 ("443 tradeapp.ltd/v2/account/history?range=all -> " + $publicAccountHistory.StatusCode),
                 ("wss://tradeapp.ltd/v2/stream -> " + $streamCheck.Preview),

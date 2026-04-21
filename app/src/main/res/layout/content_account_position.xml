@@ -6,7 +6,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
-        android:padding="@dimen/page_horizontal_padding">
+        android:padding="@dimen/screen_edge_padding">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -17,16 +17,13 @@
                 android:id="@+id/cardOverviewSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap">
+                android:layout_marginTop="@dimen/section_gap">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:paddingTop="@dimen/card_content_padding"
-                    android:paddingBottom="@dimen/card_content_padding"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp">
+                    android:padding="@dimen/container_padding">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -42,30 +39,26 @@
                             android:text="@string/account_overview_title"
                             android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
-                        <TextView
-                            android:id="@+id/tvAccountConnectionStatus"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:background="@drawable/bg_chip_unselected"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:paddingHorizontal="8dp"
-                            android:paddingVertical="3dp"
-                            android:text="未连接账户"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
-
                         <androidx.appcompat.widget.AppCompatImageView
                             android:id="@+id/ivAccountPrivacyToggle"
                             android:layout_width="32dp"
                             android:layout_height="32dp"
-                            android:layout_marginStart="@dimen/control_group_gap"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:clickable="true"
                             android:focusable="true"
-                            android:padding="6dp"
+                            android:padding="@dimen/container_padding"
                             android:tint="@color/text_secondary"
                             app:srcCompat="@drawable/ic_privacy_visible" />
+
+                        <TextView
+                            android:id="@+id/tvAccountConnectionStatus"
+                            style="@style/Widget.BinanceMonitor.Subject.TextTrigger.Compact"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/inline_gap"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:text="未连接账户" />
                     </LinearLayout>
 
                     <TextView
@@ -89,13 +82,13 @@
                 android:id="@+id/cardPositionSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap">
+                android:layout_marginTop="@dimen/section_gap">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/card_content_padding">
+                    android:padding="@dimen/container_padding">
 
                     <TextView
                         android:id="@+id/tvPositionSectionTitle"
@@ -149,13 +142,13 @@
                 android:id="@+id/cardPendingSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap">
+                android:layout_marginTop="@dimen/section_gap">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/card_content_padding">
+                    android:padding="@dimen/container_padding">
 
                     <TextView
                         android:id="@+id/tvPendingSectionTitle"
@@ -194,14 +187,14 @@
                 android:id="@+id/cardHistorySection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/page_section_gap"
+                android:layout_marginTop="@dimen/section_gap"
                 android:layout_marginBottom="@dimen/space_20">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/card_content_padding">
+                    android:padding="@dimen/container_padding">
 
                     <TextView
                         android:id="@+id/tvHistorySectionTitle"
@@ -210,10 +203,11 @@
                         android:text="@string/trade_records_title"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
 
-                    <Button
+                    <androidx.appcompat.widget.AppCompatButton
                         android:id="@+id/btnOpenAccountHistory"
+                        style="@style/Widget.BinanceMonitor.Subject.TextTrigger"
                         android:layout_width="match_parent"
-                        android:layout_height="@dimen/control_height_sm"
+                        android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_12"
                         android:text="@string/account_history_entry_action"
                         android:textAllCaps="false" />
@@ -222,3 +216,4 @@
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </merge>
+

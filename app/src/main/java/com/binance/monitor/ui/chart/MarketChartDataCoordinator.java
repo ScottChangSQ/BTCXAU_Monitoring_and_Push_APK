@@ -146,7 +146,9 @@ final class MarketChartDataCoordinator {
 
         void applyRequestSuccessState(boolean autoRefresh, long requestStartedAtMs);
 
-        void applyRequestFailureState(boolean autoRefresh, @NonNull String message);
+        void applyRequestFailureState(boolean autoRefresh,
+                                      boolean deferTrueEmptyUntilStorageRestore,
+                                      @NonNull String message);
 
         boolean beginLoadMore();
 
@@ -219,7 +221,28 @@ final class MarketChartDataCoordinator {
 
     // 图表请求入口统一经由协调器，旧 Activity 只保留底层 helper。
     void requestKlines(boolean allowCancelRunning, boolean autoRefresh) {
-        requestKlinesCore(allowCancelRunning, autoRefresh);
+        requestKlinesCore(
+                allowCancelRunning,
+                autoRefresh,
+                autoRefresh
+                        ? MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
+                        : MarketChartRefreshHelper.RequestReason.MANUAL
+        );
+    }
+
+    // 冷启动请求与常规刷新分开建模，避免本地恢复期被自动刷新规则误处理。
+    void requestColdStartKlines() {
+        requestKlinesCore(true, false, MarketChartRefreshHelper.RequestReason.COLD_START);
+    }
+
+    // 页面恢复前台时复用单独原因，便于和冷启动、切换产品区分。
+    void requestResumeKlines() {
+        requestKlinesCore(true, false, MarketChartRefreshHelper.RequestReason.RESUME);
+    }
+
+    // 切产品或切周期后的请求使用独立原因，不复用自动刷新跳过规则。
+    void requestSelectionChangeKlines() {
+        requestKlinesCore(true, false, MarketChartRefreshHelper.RequestReason.SELECTION_CHANGE);
     }
 
     // 历史补页入口统一经由协调器，保持和主请求同一层调度。
@@ -233,11 +256,12 @@ final class MarketChartDataCoordinator {
         if (repository == null) {
             return;
         }
-        repository.getDisplayKlines().observe(host.getLifecycleOwner(), snapshot -> {
-            if (snapshot == null || snapshot.isEmpty()) {
+        repository.getMarketRuntimeSnapshotLiveData().observe(host.getLifecycleOwner(), ignored -> {
+            KlineData latestKline = repository.selectDisplayKline(host.getSelectedSymbol());
+            if (latestKline == null) {
                 return;
             }
-            host.applyRealtimeChartTail(snapshot.get(host.getSelectedSymbol()));
+            host.applyRealtimeChartTail(latestKline);
         });
     }
 
@@ -249,7 +273,7 @@ final class MarketChartDataCoordinator {
     }
 
     // 图表页恢复时优先直接消费最近账户缓存，必要时再清空叠加层。
-    void restoreChartOverlayFromLatestCacheOrEmpty() {
+    void restoreChartOverlayFromLatestCache() {
         if (!host.isChartViewReady()) {
             return;
         }
@@ -275,7 +299,9 @@ final class MarketChartDataCoordinator {
     }
 
     // 主请求编排从旧 Activity 下沉到协调器。
-    private void requestKlinesCore(boolean allowCancelRunning, boolean autoRefresh) {
+    private void requestKlinesCore(boolean allowCancelRunning,
+                                   boolean autoRefresh,
+                                   @NonNull MarketChartRefreshHelper.RequestReason requestReason) {
         final String traceSymbol = host.getSelectedSymbol();
         final IntervalSelection reqInterval = host.getSelectedInterval();
         final String key = host.buildCacheKey(traceSymbol, reqInterval);
@@ -294,6 +320,8 @@ final class MarketChartDataCoordinator {
         if (memoryCached == null || memoryCached.isEmpty()) {
             host.schedulePersistedCacheRestore(key, shouldWarmDisplay);
         }
+        final boolean deferTrueEmptyUntilStorageRestore =
+                shouldWarmDisplay && (memoryCached == null || memoryCached.isEmpty());
         if (shouldWarmDisplay) {
             List<CandleEntry> cached = memoryCached;
             if (cached == null || cached.isEmpty()) {
@@ -307,8 +335,10 @@ final class MarketChartDataCoordinator {
         List<CandleEntry> localForPlan = key.equals(host.getActiveDataKey())
                 ? host.getLoadedCandles()
                 : memoryCached;
+        MarketChartRefreshHelper.RequestReason effectiveRequestReason = requestReason;
         if (!MarketChartDisplayHelper.isSeriesCompatibleForInterval(reqInterval.getKey(), localForPlan)) {
             localForPlan = null;
+            effectiveRequestReason = MarketChartRefreshHelper.RequestReason.SERIES_REPAIR;
         }
         long latestVisibleTime = host.resolveLatestVisibleCandleTime(localForPlan);
         MarketChartRefreshHelper.SyncPlan refreshPlan = MarketChartRefreshHelper.resolvePlan(
@@ -319,12 +349,14 @@ final class MarketChartDataCoordinator {
                 latestVisibleTime,
                 host.intervalToMs(reqInterval.getKey()),
                 reqInterval.isYearAggregate(),
-                host.hasRealtimeTailSourceForChart()
+                host.hasRealtimeTailSourceForChart(),
+                effectiveRequestReason
         );
         if (refreshPlan.mode == MarketChartRefreshHelper.SyncMode.SKIP) {
             host.applyRequestSkipState(refreshPlan);
             return;
         }
+        final MarketChartRefreshHelper.RequestReason finalRequestReason = effectiveRequestReason;
 
         final int current = host.nextRequestVersion();
         final String traceIntervalKey = reqInterval.getKey();
@@ -391,7 +423,9 @@ final class MarketChartDataCoordinator {
                     );
                     host.setActiveDataKey(key);
                     if (displayUpdate.candlesChanged) {
-                        host.applyDisplayCandles(key, displayUpdate.toDisplay, autoRefresh, displayUpdate.shouldFollowLatest, true);
+                        boolean keepViewportOnApply = autoRefresh
+                                && finalRequestReason != MarketChartRefreshHelper.RequestReason.SERIES_REPAIR;
+                        host.applyDisplayCandles(key, displayUpdate.toDisplay, keepViewportOnApply, displayUpdate.shouldFollowLatest, true);
                         host.persistClosedCandles(key, finalProcessed, traceSymbol, reqInterval);
                     }
                     host.startProgressiveGapFill(
@@ -422,7 +456,7 @@ final class MarketChartDataCoordinator {
                     if (host.shouldIgnoreRequestResult(current)) {
                         return;
                     }
-                    host.applyRequestFailureState(autoRefresh, message);
+                    host.applyRequestFailureState(autoRefresh, deferTrueEmptyUntilStorageRestore, message);
                 });
             }
         });

@@ -118,6 +118,102 @@ public class SettingsSectionActivitySourceTest {
                 settingsActivity.contains("SECTION_THEME"));
     }
 
+    @Test
+    public void settingsDetailShouldUseStandardSubjectsForLowFrequencyControls() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+        String layout = readUtf8(
+                "app/src/main/res/layout/activity_settings_detail.xml",
+                "src/main/res/layout/activity_settings_detail.xml"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("设置详情布局里的布尔项应迁到 ToggleChoice",
+                layout.contains("@style/Widget.BinanceMonitor.Subject.ToggleChoice"));
+        assertTrue("设置详情布局里的输入项应迁到 InputField",
+                layout.contains("@style/Widget.BinanceMonitor.Subject.InputField"));
+        assertTrue("设置详情布局里的清缓存动作应迁到 Secondary ActionButton",
+                layout.contains("@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"));
+        assertTrue("设置详情布局里的保存动作应迁到 Primary ActionButton",
+                layout.contains("@style/Widget.BinanceMonitor.Subject.ActionButton.Primary"));
+        assertFalse("设置详情布局不应继续用透明背景伪装按钮",
+                layout.contains("@android:color/transparent"));
+
+        assertTrue("设置详情源码应显式调用 ToggleChoice 主体入口",
+                source.contains("UiPaletteManager.styleToggleChoice("));
+        assertTrue("设置详情源码应显式调用 InputField 主体入口",
+                source.contains("UiPaletteManager.styleInputField("));
+        assertTrue("设置详情源码应显式调用 ActionButton 主体入口",
+                source.contains("UiPaletteManager.styleActionButton("));
+        assertFalse("设置详情源码不应继续手写清缓存按钮描边背景",
+                source.contains("binding.btnClearCache.setBackground(UiPaletteManager.createOutlinedDrawable("));
+        assertFalse("设置详情源码不应继续手写保存按钮填充背景",
+                source.contains("binding.btnSaveMt5GatewayUrl.setBackground(UiPaletteManager.createFilledDrawable("));
+    }
+
+    @Test
+    public void settingsShouldExposeDedicatedTradeConfigSection() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+        String layout = readUtf8(
+                "app/src/main/res/layout/activity_settings_detail.xml",
+                "src/main/res/layout/activity_settings_detail.xml"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+        String settingsPage = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsPageController.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsPageController.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+        String settingsHomeLayout = readUtf8(
+                "app/src/main/res/layout/content_settings.xml",
+                "src/main/res/layout/content_settings.xml"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+        String settingsActivity = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("设置 Activity 应声明交易设置 section 常量",
+                settingsActivity.contains("public static final String SECTION_TRADE = \"trade\";"));
+        assertTrue("设置首页布局应新增交易设置入口",
+                settingsHomeLayout.contains("android:id=\"@+id/itemTrade\""));
+        assertTrue("设置首页控制器应把交易设置入口接到独立 section",
+                settingsPage.contains("binding.itemTrade.setOnClickListener(v -> host.openSettingsSection(SettingsActivity.SECTION_TRADE, \"交易设置\"));"));
+        assertTrue("设置详情布局应新增交易设置卡片",
+                layout.contains("android:id=\"@+id/cardTradeSection\""));
+        assertTrue("交易设置卡片应提供保存入口",
+                layout.contains("android:id=\"@+id/btnSaveTradeSettings\""));
+        assertTrue("设置详情页应在交易 section 可见时显示交易卡片",
+                source.contains("binding.cardTradeSection.setVisibility(SettingsActivity.SECTION_TRADE.equals(sectionKey) ? View.VISIBLE : View.GONE);"));
+        assertTrue("设置详情页应通过模板仓库管理交易模板真值",
+                source.contains("TradeTemplateRepository"));
+    }
+
+    @Test
+    public void settingsShouldExposeTemplateManagementEntryAndCrudFlow() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
+                "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+        String layout = readUtf8(
+                "app/src/main/res/layout/activity_settings_detail.xml",
+                "src/main/res/layout/activity_settings_detail.xml"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("交易设置卡片应提供模板正式维护入口",
+                layout.contains("android:id=\"@+id/btnManageTradeTemplates\""));
+        assertTrue("设置详情页应绑定模板管理入口点击事件",
+                source.contains("binding.btnManageTradeTemplates.setOnClickListener(v -> showTradeTemplateManagementDialog());"));
+        assertTrue("设置详情页应存在模板管理对话框入口方法",
+                source.contains("private void showTradeTemplateManagementDialog()"));
+        assertTrue("设置详情页应存在模板编辑对话框入口方法",
+                source.contains("private void showTradeTemplateEditorDialog"));
+        assertTrue("设置详情页应存在模板删除方法",
+                source.contains("private void deleteTradeTemplate("));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

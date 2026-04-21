@@ -30,6 +30,12 @@ final class AccountSnapshotRefreshCoordinator {
 
         void setStoredSnapshotRestorePending(boolean pending);
 
+        void onStoredSnapshotRestoreStarted();
+
+        void onStoredSnapshotDataReady(@NonNull AccountStatsPreloadManager.Cache cache);
+
+        void onStoredSnapshotRestoreMiss();
+
         @Nullable
         AccountStatsPreloadManager.Cache hydrateLatestCacheFromStorage();
 
@@ -78,9 +84,6 @@ final class AccountSnapshotRefreshCoordinator {
         boolean isLoginCredentialMatched(@Nullable String remoteAccount, @Nullable String remoteServer);
 
         @NonNull
-        AccountSnapshot buildEmptyAccountSnapshot();
-
-        @NonNull
         String normalizeSource(@Nullable String source);
 
         @NonNull
@@ -120,14 +123,19 @@ final class AccountSnapshotRefreshCoordinator {
 
         boolean shouldApplyFetchedSnapshot(@Nullable AccountSnapshot snapshot,
                                            boolean remoteConnected,
-                                           boolean syntheticDisconnectedSnapshot,
                                            @Nullable String incomingHistoryRevision,
                                            @Nullable String requestStartHistoryRevision);
 
         void adjustRefreshCadence(boolean connected, boolean unchanged);
 
         @Nullable
-        AccountStatsPreloadManager.Cache fetchForUi(@NonNull AccountTimeRange range);
+        AccountStatsPreloadManager.Cache fetchSnapshotForUiForIdentity(@NonNull String expectedAccount,
+                                                                       @NonNull String expectedServer);
+
+        @Nullable
+        AccountStatsPreloadManager.Cache fetchFullForUi(@NonNull AccountTimeRange range);
+
+        void requestFullRefreshInBackground();
 
         void executeIo(@NonNull Runnable action);
 
@@ -229,6 +237,7 @@ final class AccountSnapshotRefreshCoordinator {
         if (host.resolveCurrentSessionCache() != null) {
             return;
         }
+        host.onStoredSnapshotRestoreStarted();
         host.setStoredSnapshotRestorePending(true);
         host.executeIo(() -> {
             AccountStatsPreloadManager.Cache storedCache = null;
@@ -238,13 +247,19 @@ final class AccountSnapshotRefreshCoordinator {
                 AccountStatsPreloadManager.Cache finalStoredCache = storedCache;
                 host.runOnUiThread(() -> {
                     host.setStoredSnapshotRestorePending(false);
-                    if (host.isFinishingOrDestroyed() || finalStoredCache == null) {
+                    if (host.isFinishingOrDestroyed()) {
+                        return;
+                    }
+                    if (finalStoredCache == null) {
+                        host.onStoredSnapshotRestoreMiss();
                         return;
                     }
                     if (!host.isPreloadedCacheForCurrentSession(finalStoredCache)) {
                         host.clearLatestCacheIfCurrent(finalStoredCache);
+                        host.onStoredSnapshotRestoreMiss();
                         return;
                     }
+                    host.onStoredSnapshotDataReady(finalStoredCache);
                     applyPreloadedCacheIfAvailable();
                 });
             }
@@ -285,9 +300,23 @@ final class AccountSnapshotRefreshCoordinator {
 
         host.executeIo(() -> {
             try {
-                AccountStatsPreloadManager.Cache remote = host.fetchForUi(AccountTimeRange.ALL);
+                AccountStatsPreloadManager.Cache remote = null;
+                boolean requestFullRefreshAfterApply = false;
+                if (host.isAwaitingSync()) {
+                    try {
+                        remote = host.fetchSnapshotForUiForIdentity(
+                                host.getLoginAccountInput(),
+                                host.getLoginServerInput()
+                        );
+                        requestFullRefreshAfterApply = remote != null && remote.isConnected();
+                    } catch (Exception ignored) {
+                        remote = null;
+                    }
+                }
+                if (remote == null) {
+                    remote = host.fetchFullForUi(AccountTimeRange.ALL);
+                }
                 AccountSnapshot snapshot;
-                boolean syntheticDisconnectedSnapshot = false;
                 boolean connected;
                 String account;
                 String accountName;
@@ -325,8 +354,7 @@ final class AccountSnapshotRefreshCoordinator {
                         error = "登录账户或服务器与网关返回不一致";
                     }
                 } else {
-                    snapshot = host.buildEmptyAccountSnapshot();
-                    syntheticDisconnectedSnapshot = true;
+                    snapshot = null;
                     connected = false;
                     account = resolveFallbackIdentity(host.getLoginAccountInput(), host.getDefaultAccount());
                     accountName = account;
@@ -352,8 +380,8 @@ final class AccountSnapshotRefreshCoordinator {
                 final String finalGateway = gateway;
                 final long finalUpdatedAt = updatedAt;
                 final String finalError = error;
+                final boolean finalRequestFullRefreshAfterApply = requestFullRefreshAfterApply;
                 final String finalHistoryRevision = remote == null ? "" : trim(remote.getHistoryRevision());
-                final boolean finalSyntheticDisconnectedSnapshot = syntheticDisconnectedSnapshot;
                 final String finalSignature = host.buildRefreshSignature(
                         finalSnapshot,
                         finalHistoryRevision,
@@ -398,13 +426,15 @@ final class AccountSnapshotRefreshCoordinator {
                     }
                     if (sessionActivatedNow) {
                         host.showLoginSuccessBanner();
+                        if (finalRequestFullRefreshAfterApply) {
+                            host.requestFullRefreshInBackground();
+                        }
                     }
                     host.updateOverviewHeader();
                     host.logConnectionEvent(finalConnected);
                     if (host.shouldApplyFetchedSnapshot(
                             finalSnapshot,
                             finalConnected,
-                            finalSyntheticDisconnectedSnapshot,
                             finalHistoryRevision,
                             requestStartHistoryRevision)) {
                         if (finalSnapshot != null) {

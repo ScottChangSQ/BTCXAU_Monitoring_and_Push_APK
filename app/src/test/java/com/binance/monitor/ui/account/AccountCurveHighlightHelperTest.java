@@ -73,10 +73,10 @@ public class AccountCurveHighlightHelperTest {
                         dailyReturnPoints,
                         1_000L,
                         0.5f
-                );
+        );
 
         assertNotNull(snapshot);
-        assertEquals(1_000L, snapshot.getTargetTimestamp());
+        assertEquals(2_000L, snapshot.getTargetTimestamp());
         assertEquals(1_000L, snapshot.getCurvePoint().getTimestamp());
         assertEquals(100d, snapshot.getCurvePoint().getEquity(), 1e-9);
         assertEquals(90d, snapshot.getCurvePoint().getBalance(), 1e-9);
@@ -123,10 +123,10 @@ public class AccountCurveHighlightHelperTest {
                         2_500L,
                         0.1f,
                         true
-                );
+        );
 
         assertNotNull(snapshot);
-        assertEquals(2_000L, snapshot.getTargetTimestamp());
+        assertEquals(2_500L, snapshot.getTargetTimestamp());
         assertEquals(2_000L, snapshot.getCurvePoint().getTimestamp());
         assertEquals(140d, snapshot.getCurvePoint().getEquity(), 1e-9);
         assertEquals(110d, snapshot.getCurvePoint().getBalance(), 1e-9);

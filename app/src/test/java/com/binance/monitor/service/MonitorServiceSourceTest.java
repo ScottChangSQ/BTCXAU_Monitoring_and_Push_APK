@@ -68,14 +68,37 @@ public class MonitorServiceSourceTest {
                 source.contains("private void requestForegroundEntryRefresh() {\n        floatingCoordinator.requestRefresh(true);\n        reconcileRemoteSessionIfNeeded();\n    }"));
         assertTrue("服务层应提供正式的远程会话恢复方法",
                 source.contains("private void reconcileRemoteSessionIfNeeded() {"));
-        assertTrue("恢复链应先读取服务端 session status 真值，而不是只看本地标记",
-                source.contains("SessionStatusPayload status = sessionClient.fetchStatus();"));
-        assertTrue("当服务端 logged_out 但本地仍有活动账号时，应按已保存账号正式切回远程会话",
-                source.contains("SessionReceipt receipt = sessionClient.switchAccount(targetProfile.getProfileId(), UUID.randomUUID().toString());"));
-        assertTrue("切回成功后应主动拉一次正式账户快照，立即恢复当前持仓和悬浮窗数据",
-                source.contains("AccountStatsPreloadManager.Cache recoveredCache = accountStatsPreloadManager.fetchForUi(AccountTimeRange.ALL);"));
-        assertTrue("恢复成功后应把远程 active/saved accounts 真值回写到本地安全会话摘要",
-                source.contains("secureSessionPrefs.saveSession(remoteActiveAccount, recoveredSavedAccounts, true);"));
+        assertTrue("服务层应持有账户域会话恢复 helper，而不是自己堆会话恢复细节",
+                source.contains("private AccountSessionRecoveryHelper accountSessionRecoveryHelper;"));
+        assertTrue("远程会话恢复应统一委托到账户域 helper",
+                source.contains("AccountSessionRecoveryHelper.RecoveryResult recoveryResult =")
+                        && source.contains("accountSessionRecoveryHelper.reconcileRemoteSession();"));
+        assertTrue("账号失配时服务层应发出明确通知",
+                source.contains("notificationHelper.notifyAccountMismatch(\"\", \"\");"));
+        assertFalse("服务层不应再直接调用 clearLatestCache() 预热强一致刷新",
+                source.contains("accountStatsPreloadManager.clearLatestCache();"));
+        assertFalse("服务层不应再直接调用 setFullSnapshotActive(true) 操纵预加载节奏",
+                source.contains("accountStatsPreloadManager.setFullSnapshotActive(true);"));
+        assertFalse("服务层不应再自己保存恢复后的安全会话摘要",
+                source.contains("secureSessionPrefs.saveSession("));
+        assertFalse("服务层不应再自己保存草稿身份",
+                source.contains("secureSessionPrefs.saveDraftIdentity("));
+        assertFalse("服务层不应再自己切登录态开关",
+                source.contains("configManager.setAccountSessionActive("));
+        assertFalse("服务层不应再自己拉恢复后的强一致全量账户快照",
+                source.contains("accountStatsPreloadManager.fetchFullForUiForIdentity("));
+        assertFalse("服务层不应再自己清理 logged_out 后的账户运行态",
+                source.contains("accountStatsPreloadManager.clearAccountRuntimeState(localActiveAccount.getLogin(), localActiveAccount.getServer());"));
+        assertFalse("服务层不应再自己判断恢复后的 cache 是否连通",
+                source.contains("recoveredCache == null || !recoveredCache.isConnected()"));
+        assertFalse("服务层不应再自己比对恢复后的 cache 身份",
+                source.contains("matchesSessionIdentity(remoteActiveAccount, recoveredCache.getAccount(), recoveredCache.getServer())"));
+        assertFalse("服务层不应再保留远程会话恢复实现细节方法",
+                source.contains("private void performRemoteSessionRecoveryIfNeeded() {"));
+        assertFalse("服务层不应再保留 logged_out 本地收口 helper",
+                source.contains("private void settleRemoteLoggedOutLocally("));
+        assertFalse("服务层不应再保留已保存账号匹配 helper",
+                source.contains("private RemoteAccountProfile findRecoverableSavedAccount("));
     }
 
     @Test
@@ -191,8 +214,8 @@ public class MonitorServiceSourceTest {
 
         assertTrue("监控服务应支持显式账户运行态清理动作，避免登出和切号后继续显示旧仓位",
                 source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:"));
-        assertTrue("显式账户运行态清理动作应清空正式账户缓存",
-                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                if (accountStatsPreloadManager != null) {\n                    accountStatsPreloadManager.clearLatestCache();\n                }"));
+        assertTrue("显式账户运行态清理动作应统一委托预加载管理器清掉内存和持久化运行态",
+                source.contains("case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:\n                if (accountStatsPreloadManager != null) {\n                    accountStatsPreloadManager.clearAccountRuntimeState(null, null);\n                }"));
         assertTrue("显式账户运行态清理动作后应立即刷新悬浮窗",
                 source.contains("floatingCoordinator.requestRefresh(true);"));
     }
@@ -230,16 +253,16 @@ public class MonitorServiceSourceTest {
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("历史补拉并发状态应收口到独立 gate，避免 lock + volatile + 字符串散落在服务里",
+        assertFalse("历史补拉并发 gate 不应继续滞留在服务层",
                 source.contains("private final AccountHistoryRefreshGate accountHistoryRefreshGate = new AccountHistoryRefreshGate();"));
-        assertTrue("进入历史补拉前应通过 gate 判定是启动还是排队",
-                source.contains("AccountHistoryRefreshGate.StartDecision startDecision = accountHistoryRefreshGate.tryStart(safeHistoryRevision);"));
-        assertTrue("已有历史补拉进行中时，应通过 gate 统一结束当前分支",
-                source.contains("if (!startDecision.shouldStart()) {\n            return;\n        }"));
-        assertTrue("当前补拉结束后应通过 gate 统一读取待续跑 revision",
-                source.contains("AccountHistoryRefreshGate.FinishDecision finishDecision = accountHistoryRefreshGate.finish(safeHistoryRevision);"));
-        assertTrue("如果期间来了不同 revision，应按 gate 给出的结果续跑",
-                source.contains("if (finishDecision.shouldContinue()) {\n                        requestAccountHistoryRefreshFromV2(finishDecision.getNextRevision());"));
+        assertTrue("服务层只应把 revision 交给预加载管理器排队处理",
+                source.contains("accountStatsPreloadManager.queueHistoryRefreshForRevision("));
+        assertFalse("服务层不应再自己调用 gate.tryStart()",
+                source.contains("accountHistoryRefreshGate.tryStart("));
+        assertFalse("服务层不应再自己调用 gate.finish()",
+                source.contains("accountHistoryRefreshGate.finish("));
+        assertFalse("服务层不应再自己递归续跑历史补拉",
+                source.contains("requestAccountHistoryRefreshFromV2(finishDecision.getNextRevision())"));
     }
 
     @Test
@@ -274,6 +297,26 @@ public class MonitorServiceSourceTest {
                 source.contains("accountStatsPreloadManager.applyPublishedAccountRuntime("));
         assertTrue("stream 账户运行态应用结束后应继续触发悬浮窗刷新",
                 source.contains("mainHandler.post(() -> floatingCoordinator.requestRefresh(false));"));
+    }
+
+    @Test
+    public void monitorServiceShouldDelegatePersistedAccountResetToPreloadManager() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertFalse("服务层不应继续自己持有 AccountStorageRepository，避免再长出账户第二副本职责",
+                source.contains("private AccountStorageRepository accountStorageRepository;"));
+        assertFalse("服务层初始化时不应再自己创建账户存储仓库",
+                source.contains("accountStorageRepository = new AccountStorageRepository(this);"));
+        assertFalse("服务层不应再自己维护 clearPersistedAccountSnapshot 辅助方法",
+                source.contains("private void clearPersistedAccountSnapshot("));
+        assertFalse("远端确认 logged_out 后，服务层不应再自己清理当前账号运行态",
+                source.contains("accountStatsPreloadManager.clearAccountRuntimeState(localActiveAccount.getLogin(), localActiveAccount.getServer());"));
+        assertTrue("服务层应通过账户域 helper 统一触发 logged_out 本地收口",
+                source.contains("private AccountSessionRecoveryHelper accountSessionRecoveryHelper;")
+                        && source.contains("accountSessionRecoveryHelper.reconcileRemoteSession();"));
     }
 
     @Test
@@ -352,8 +395,8 @@ public class MonitorServiceSourceTest {
                 source.contains("executorService.shutdownNow();\n            executorService = null;"));
         assertTrue("stream 消息应通过安全投递入口执行，避免销毁后 RejectedExecutionException",
                 source.contains("executeOnWorker(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
-        assertTrue("历史补拉应通过安全投递入口执行，避免销毁后继续提交",
-                source.contains("executeOnWorker(() -> {\n            try {\n                AccountStatsPreloadManager.Cache cache ="));
+        assertTrue("历史补拉应直接委托预加载管理器自己的排队入口，避免服务层继续维护第二套线程与 gate",
+                source.contains("accountStatsPreloadManager.queueHistoryRefreshForRevision("));
         assertTrue("账户运行态应用应通过安全投递入口执行，避免销毁后继续提交",
                 source.contains("executeOnWorker(() -> {\n            try {\n                JSONObject snapshotCopy = new JSONObject(snapshotBody);"));
         assertTrue("异常配置同步也应通过安全投递入口执行，避免销毁后继续提交",

@@ -4,7 +4,17 @@
  */
 package com.binance.monitor.ui.account;
 
+import android.content.Context;
+import android.text.Spannable;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
+
+import com.binance.monitor.R;
 
 import java.util.Locale;
 
@@ -17,6 +27,24 @@ public final class AccountValueStyleHelper {
         NEGATIVE,
         NEUTRAL,
         NONE
+    }
+
+    public static final class NumericTokenRange {
+        private final int start;
+        private final int end;
+
+        NumericTokenRange(int start, int end) {
+            this.start = start;
+            this.end = end;
+        }
+
+        public int getStart() {
+            return start;
+        }
+
+        public int getEnd() {
+            return end;
+        }
     }
 
     private AccountValueStyleHelper() {
@@ -47,6 +75,93 @@ public final class AccountValueStyleHelper {
         return resolveNumericDirection(parsed);
     }
 
+    // 找出文本里第一个可着色的数值片段，供“字段文字 + 数字”混排场景复用。
+    @Nullable
+    public static NumericTokenRange findFirstNumericTokenRange(@Nullable String raw) {
+        return findFirstNumericTokenRange(raw, 0);
+    }
+
+    // 找出指定锚点后的第一个数值片段，避免把字段文字本身一并染色。
+    @Nullable
+    public static NumericTokenRange findNumericTokenRangeAfterAnchor(@Nullable String raw,
+                                                                     @Nullable String anchor) {
+        if (raw == null || anchor == null || anchor.trim().isEmpty()) {
+            return null;
+        }
+        int anchorIndex = raw.indexOf(anchor);
+        if (anchorIndex < 0) {
+            return null;
+        }
+        return findFirstNumericTokenRange(raw, anchorIndex + anchor.length());
+    }
+
+    // 在同一行里按指定数值文本定位目标片段，便于多处盈亏/收益值分别复用同一套红绿规则。
+    @Nullable
+    public static NumericTokenRange findNumericTokenRangeForExactToken(@Nullable String raw,
+                                                                       @Nullable String token,
+                                                                       boolean preferLastMatch) {
+        if (raw == null || token == null || token.trim().isEmpty()) {
+            return null;
+        }
+        int tokenIndex = preferLastMatch ? raw.lastIndexOf(token) : raw.indexOf(token);
+        if (tokenIndex < 0) {
+            return null;
+        }
+        NumericTokenRange tokenRange = findFirstNumericTokenRange(token, 0);
+        if (tokenRange == null) {
+            return null;
+        }
+        return new NumericTokenRange(
+                tokenIndex + tokenRange.getStart(),
+                tokenIndex + tokenRange.getEnd()
+        );
+    }
+
+    // 指标值单独占一列时，只给数值片段着色，字段标签保持在左列。
+    @NonNull
+    public static CharSequence buildMetricValueSpan(@NonNull Context context,
+                                                    @Nullable String label,
+                                                    @Nullable String value) {
+        return buildMetricValueSpan(context, label, value, R.color.text_primary);
+    }
+
+    // 指标值单独占一列时，只给数值片段着色，字段标签保持在左列。
+    @NonNull
+    public static CharSequence buildMetricValueSpan(@NonNull Context context,
+                                                    @Nullable String label,
+                                                    @Nullable String value,
+                                                    int defaultColorRes) {
+        String safeValue = value == null ? "" : value;
+        Direction direction = resolveMetricDirection(label, safeValue);
+        NumericTokenRange range = findFirstNumericTokenRange(safeValue);
+        return buildDirectionalSpan(context, safeValue, range, direction, defaultColorRes);
+    }
+
+    // 行内摘要同时带字段文字与数值时，只给锚点后的目标数字着色。
+    @NonNull
+    public static CharSequence buildDirectionalSpanAfterAnchor(@NonNull Context context,
+                                                               @Nullable String raw,
+                                                               @Nullable String anchor,
+                                                               @NonNull Direction direction,
+                                                               int defaultColorRes) {
+        String safeRaw = raw == null ? "" : raw;
+        NumericTokenRange range = findNumericTokenRangeAfterAnchor(safeRaw, anchor);
+        return buildDirectionalSpan(context, safeRaw, range, direction, defaultColorRes);
+    }
+
+    // 允许调用方在同一行文本里按具体数值片段继续上色，避免每个页面重复手写 span 范围。
+    public static void applyDirectionalSpanForExactToken(@NonNull Spannable builder,
+                                                         @NonNull Context context,
+                                                         @Nullable String raw,
+                                                         @Nullable String token,
+                                                         @NonNull Direction direction,
+                                                         int defaultColorRes,
+                                                         boolean preferLastMatch) {
+        String safeRaw = raw == null ? "" : raw;
+        NumericTokenRange range = findNumericTokenRangeForExactToken(safeRaw, token, preferLastMatch);
+        applyDirectionalSpan(builder, context, range, direction, defaultColorRes);
+    }
+
     // 识别是否属于盈亏/收益相关指标。
     private static boolean isProfitLikeLabel(@Nullable String label) {
         if (label == null) {
@@ -67,7 +182,9 @@ public final class AccountValueStyleHelper {
                 || normalized.contains("最好交易")
                 || normalized.contains("最差交易")
                 || normalized.contains("最大连续盈利")
-                || normalized.contains("最大连续亏损");
+                || normalized.contains("最大连续亏损")
+                || normalized.contains("每笔盈利")
+                || normalized.contains("每笔亏损");
         if (matched) {
             return true;
         }
@@ -85,39 +202,11 @@ public final class AccountValueStyleHelper {
         if (safe.isEmpty() || "--".equals(safe)) {
             return null;
         }
-        StringBuilder builder = new StringBuilder();
-        boolean started = false;
-        boolean dotUsed = false;
-        boolean digitSeen = false;
-        for (int i = 0; i < safe.length(); i++) {
-            char current = safe.charAt(i);
-            if (!started && (current == '+' || current == '-')) {
-                builder.append(current);
-                started = true;
-                continue;
-            }
-            if (!digitSeen && isIgnoredNumberDecoration(current)) {
-                continue;
-            }
-            if (Character.isDigit(current)) {
-                builder.append(current);
-                started = true;
-                digitSeen = true;
-                continue;
-            }
-            if (started && current == '.' && !dotUsed) {
-                builder.append(current);
-                dotUsed = true;
-                continue;
-            }
-            if (digitSeen && current == ',') {
-                continue;
-            }
-            if (started) {
-                break;
-            }
+        NumericTokenRange range = findFirstNumericTokenRange(safe);
+        if (range == null) {
+            return null;
         }
-        String token = builder.toString();
+        String token = normalizeNumericToken(safe.substring(range.getStart(), range.getEnd()));
         if (token.isEmpty() || "+".equals(token) || "-".equals(token) || ".".equals(token)) {
             return null;
         }
@@ -137,5 +226,127 @@ public final class AccountValueStyleHelper {
                 || current == '€'
                 || current == '£'
                 || current == ',';
+    }
+
+    @Nullable
+    private static NumericTokenRange findFirstNumericTokenRange(@Nullable String raw, int startIndex) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        int safeStartIndex = Math.max(0, Math.min(startIndex, raw.length()));
+        int tokenStart = -1;
+        int tokenEnd = -1;
+        boolean digitSeen = false;
+        boolean dotUsed = false;
+        for (int i = safeStartIndex; i < raw.length(); i++) {
+            char current = raw.charAt(i);
+            if (tokenStart < 0) {
+                if (Character.isWhitespace(current)) {
+                    continue;
+                }
+                if (isNumberTokenStarter(current)) {
+                    tokenStart = i;
+                    if (Character.isDigit(current)) {
+                        digitSeen = true;
+                    } else if (current == '.') {
+                        dotUsed = true;
+                    }
+                    tokenEnd = i + 1;
+                }
+                continue;
+            }
+            if (Character.isDigit(current)) {
+                digitSeen = true;
+                tokenEnd = i + 1;
+                continue;
+            }
+            if (current == '.' && !dotUsed) {
+                dotUsed = true;
+                tokenEnd = i + 1;
+                continue;
+            }
+            if (current == ',' && digitSeen) {
+                tokenEnd = i + 1;
+                continue;
+            }
+            if (!digitSeen && (isIgnoredNumberDecoration(current) || isSign(current))) {
+                tokenEnd = i + 1;
+                continue;
+            }
+            if (current == '%' && digitSeen) {
+                tokenEnd = i + 1;
+                continue;
+            }
+            break;
+        }
+        if (!digitSeen || tokenStart < 0 || tokenEnd <= tokenStart) {
+            return null;
+        }
+        return new NumericTokenRange(tokenStart, tokenEnd);
+    }
+
+    private static boolean isNumberTokenStarter(char current) {
+        return Character.isDigit(current)
+                || current == '.'
+                || isSign(current)
+                || current == '$'
+                || current == '¥'
+                || current == '￥'
+                || current == '€'
+                || current == '£';
+    }
+
+    private static boolean isSign(char current) {
+        return current == '+' || current == '-';
+    }
+
+    @NonNull
+    private static String normalizeNumericToken(@NonNull String token) {
+        StringBuilder builder = new StringBuilder(token.length());
+        for (int i = 0; i < token.length(); i++) {
+            char current = token.charAt(i);
+            if (isIgnoredNumberDecoration(current) || current == '%') {
+                continue;
+            }
+            builder.append(current);
+        }
+        return builder.toString();
+    }
+
+    @NonNull
+    private static CharSequence buildDirectionalSpan(@NonNull Context context,
+                                                     @NonNull String raw,
+                                                     @Nullable NumericTokenRange range,
+                                                     @NonNull Direction direction,
+                                                     int defaultColorRes) {
+        SpannableString span = new SpannableString(raw);
+        applyDirectionalSpan(span, context, range, direction, defaultColorRes);
+        return span;
+    }
+
+    private static void applyDirectionalSpan(@NonNull android.text.Spannable builder,
+                                             @NonNull Context context,
+                                             @Nullable NumericTokenRange range,
+                                             @NonNull Direction direction,
+                                             int defaultColorRes) {
+        if (range == null || direction == Direction.NONE || direction == Direction.NEUTRAL) {
+            return;
+        }
+        builder.setSpan(new ForegroundColorSpan(resolveDirectionColor(context, direction, defaultColorRes)),
+                range.getStart(),
+                range.getEnd(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private static int resolveDirectionColor(@NonNull Context context,
+                                             @NonNull Direction direction,
+                                             int defaultColorRes) {
+        if (direction == Direction.POSITIVE) {
+            return ContextCompat.getColor(context, R.color.pnl_profit);
+        }
+        if (direction == Direction.NEGATIVE) {
+            return ContextCompat.getColor(context, R.color.pnl_loss);
+        }
+        return ContextCompat.getColor(context, defaultColorRes);
     }
 }

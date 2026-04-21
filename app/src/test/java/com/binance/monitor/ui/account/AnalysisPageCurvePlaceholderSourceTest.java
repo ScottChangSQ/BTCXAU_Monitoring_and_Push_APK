@@ -20,6 +20,6 @@ public class AnalysisPageCurvePlaceholderSourceTest {
 
         assertTrue(source.contains("showInitialCurvePlaceholder();"));
         assertTrue(source.contains("binding.cardCurveSection.setVisibility(View.VISIBLE);"));
-        assertTrue(source.contains("binding.tvCurveMeta.setVisibility(View.VISIBLE);"));
+        assertTrue(source.contains("binding.tvCurveMeta.setVisibility(View.GONE);"));
     }
 }

@@ -16,6 +16,7 @@ ACTION_PENDING_ADD = "PENDING_ADD"
 ACTION_PENDING_MODIFY = "PENDING_MODIFY"
 ACTION_PENDING_CANCEL = "PENDING_CANCEL"
 ACTION_MODIFY_TPSL = "MODIFY_TPSL"
+ACTION_CLOSE_BY = "CLOSE_BY"
 
 SUPPORTED_ACTIONS = {
     ACTION_OPEN_MARKET,
@@ -24,6 +25,7 @@ SUPPORTED_ACTIONS = {
     ACTION_PENDING_MODIFY,
     ACTION_PENDING_CANCEL,
     ACTION_MODIFY_TPSL,
+    ACTION_CLOSE_BY,
 }
 
 
@@ -255,6 +257,39 @@ def prepare_trade_request(
                 ),
             }
         symbol = str(resolved_position.get("symbol") or symbol).strip().upper()
+    elif action == ACTION_CLOSE_BY:
+        if account_mode != "hedging":
+            return {
+                "command": command,
+                "request": None,
+                "error": v2_trade_models.build_error(
+                    v2_trade_models.ERROR_UNSAFE_ACCOUNT_MODE,
+                    "Close By 仅支持 hedging 账户",
+                ),
+            }
+        position_ticket = _to_int(params.get("positionTicket") or params.get("positionId"), 0)
+        opposite_position_ticket = _to_int(
+            params.get("oppositePositionTicket") or params.get("oppositePositionId"),
+            0,
+        )
+        if position_ticket <= 0 or opposite_position_ticket <= 0:
+            return {
+                "command": command,
+                "request": None,
+                "error": v2_trade_models.build_error(
+                    v2_trade_models.ERROR_INVALID_POSITION,
+                    "Close By 必须同时指定 positionTicket 和 oppositePositionTicket",
+                ),
+            }
+        if not symbol:
+            return {
+                "command": command,
+                "request": None,
+                "error": v2_trade_models.build_error(
+                    v2_trade_models.ERROR_INVALID_SYMBOL,
+                    "Close By 需要 symbol",
+                ),
+            }
 
     symbol_info = _resolve_symbol_info(symbol, symbol_info_lookup)
 
@@ -294,6 +329,7 @@ def _request_builder(
     trade_action_modify = _to_int(getattr(mt5_module, "TRADE_ACTION_MODIFY", 7), 7)
     trade_action_remove = _to_int(getattr(mt5_module, "TRADE_ACTION_REMOVE", 8), 8)
     trade_action_sltp = _to_int(getattr(mt5_module, "TRADE_ACTION_SLTP", 6), 6)
+    trade_action_close_by = _to_int(getattr(mt5_module, "TRADE_ACTION_CLOSE_BY", 10), 10)
     order_type_buy = _to_int(getattr(mt5_module, "ORDER_TYPE_BUY", 0), 0)
     order_type_sell = _to_int(getattr(mt5_module, "ORDER_TYPE_SELL", 1), 1)
     order_time_gtc = _to_int(getattr(mt5_module, "ORDER_TIME_GTC", 0), 0)
@@ -483,6 +519,31 @@ def _request_builder(
             request["sl"] = sl
         if tp > 0.0:
             request["tp"] = tp
+        return {"request": request, "error": None}
+
+    if action == ACTION_CLOSE_BY:
+        position_ticket = _to_int(params.get("positionTicket") or params.get("positionId"), 0)
+        opposite_position_ticket = _to_int(
+            params.get("oppositePositionTicket") or params.get("oppositePositionId"),
+            0,
+        )
+        if position_ticket <= 0 or opposite_position_ticket <= 0:
+            return {
+                "request": None,
+                "error": v2_trade_models.build_error(
+                    v2_trade_models.ERROR_INVALID_POSITION,
+                    "Close By 需要成对持仓 ticket",
+                ),
+            }
+        request = dict(base)
+        request.update(
+            {
+                "action": trade_action_close_by,
+                "symbol": symbol,
+                "position": position_ticket,
+                "position_by": opposite_position_ticket,
+            }
+        )
         return {"request": request, "error": None}
 
     return {

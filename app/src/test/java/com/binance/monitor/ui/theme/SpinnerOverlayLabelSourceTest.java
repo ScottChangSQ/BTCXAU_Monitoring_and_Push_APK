@@ -1,10 +1,10 @@
 /*
- * 校验带覆盖标签的下拉统一走隐藏折叠文字的公共资源，避免同一位置显示两层文字。
+ * 选择字段主体边界测试，只防止单独长出第 8 类 Spinner 主体。
  */
 package com.binance.monitor.ui.theme;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-
 import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -15,27 +15,19 @@ import java.nio.file.Paths;
 public class SpinnerOverlayLabelSourceTest {
 
     @Test
-    public void overlayLabelSpinnersShouldUseAnchorLayout() throws Exception {
-        String marketRuntime = readUtf8("src/main/java/com/binance/monitor/ui/market/MarketMonitorPageRuntime.java");
-        String chartScreen = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java");
-        String tradeHistory = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountTradeHistoryBottomSheetController.java");
-        String accountStats = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java");
-        String accountStatsBridge = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java");
+    public void selectFieldLabelBoundaryShouldNotSplitIntoSubjectSpinner() throws Exception {
+        String styles = readUtf8("src/main/res/values/styles.xml");
+        String anchor = readUtf8("src/main/res/layout/item_spinner_filter_anchor.xml");
+        String item = readUtf8("src/main/res/layout/item_spinner_filter.xml");
+        String dropdown = readUtf8("src/main/res/layout/item_spinner_filter_dropdown.xml");
 
-        assertTrue(marketRuntime.contains("R.layout.item_spinner_filter_anchor"));
-        assertTrue(chartScreen.contains("R.layout.item_spinner_filter_anchor"));
-        assertTrue(tradeHistory.contains("R.layout.item_spinner_filter_anchor"));
-        assertTrue(accountStats.contains("R.layout.item_spinner_filter_anchor"));
-        assertTrue(accountStatsBridge.contains("R.layout.item_spinner_filter_anchor"));
-    }
-
-    @Test
-    public void regularVisibleSpinnersShouldKeepVisibleLayout() throws Exception {
-        String globalStatus = readUtf8("src/main/java/com/binance/monitor/ui/host/GlobalStatusBottomSheetController.java");
-        String tradeDialog = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartTradeDialogCoordinator.java");
-
-        assertTrue(globalStatus.contains("R.layout.item_spinner_filter,"));
-        assertTrue(tradeDialog.contains("R.layout.item_spinner_filter,"));
+        assertFalse(styles.contains("Widget.BinanceMonitor.Subject.Spinner"));
+        assertTrue(anchor.contains("Widget.BinanceMonitor.Subject.SelectField.Label"));
+        assertTrue(item.contains("Widget.BinanceMonitor.Subject.SelectField.DropdownItem"));
+        assertTrue(dropdown.contains("Widget.BinanceMonitor.Subject.SelectField.DropdownItem"));
+        assertFalse(anchor.contains("Widget.BinanceMonitor.Spinner.AnchorItem"));
+        assertFalse(item.contains("Widget.BinanceMonitor.Spinner.DropdownItem"));
+        assertFalse(dropdown.contains("Widget.BinanceMonitor.Spinner.DropdownItem"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

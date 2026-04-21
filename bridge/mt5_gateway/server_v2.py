@@ -1,10 +1,12 @@
 # MT5 网关主入口，统一承载行情、交易与会话接口。
+import base64
 import hashlib
 import json
 import math
 import os
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 from threading import Condition, Event, Lock, RLock, Thread
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import uvicorn
@@ -24,10 +26,15 @@ from fastapi.middleware.gzip import GZipMiddleware
 import websockets
 import v2_account
 import v2_market
+import v2_market_runtime
 import v2_session_crypto
+import v2_session_diagnostic
 import v2_session_manager
+import v2_mt5_account_switch
 import v2_session_store
 import v2_trade
+import v2_trade_audit
+import v2_trade_batch
 import v2_trade_models
 
 try:
@@ -74,6 +81,9 @@ PASSWORD = os.getenv("MT5_PASSWORD", "").strip()
 SERVER = os.getenv("MT5_SERVER", "").strip()
 PATH = os.getenv("MT5_PATH", "").strip() or None
 SERVER_ALIASES_RAW = os.getenv("MT5_SERVER_ALIASES", "").strip()
+# Android 会话客户端当前读超时为 135s；GUI 切号链总预算必须留出响应回传余量，避免手机先超时。
+SESSION_CLIENT_READ_TIMEOUT_MS = 135000
+MT5_GUI_SWITCH_TOTAL_TIMEOUT_MS = max(1000, SESSION_CLIENT_READ_TIMEOUT_MS - 15000)
 MT5_INIT_TIMEOUT_MS = _read_bounded_env_int(
     "MT5_INIT_TIMEOUT_MS",
     default=50000,
@@ -169,9 +179,7 @@ account_publish_state: Dict[str, Any] = {
     "pendingEventType": "",
     "pendingReasons": [],
 }
-# 兼容旧测试/旧引用：发布态现已统一并入 account_publish_state。
 v2_sync_state: Dict[str, Any] = {}
-v2_bus_state = account_publish_state
 v2_bus_producer_lock = Lock()
 v2_bus_producer_started = False
 v2_bus_producer_thread: Optional[Thread] = None
@@ -188,6 +196,13 @@ abnormal_kline_cache: Dict[str, Dict[str, Any]] = {}
 abnormal_sync_state: Dict[str, Any] = {}
 trade_request_lock = Lock()
 trade_request_store: Dict[str, Dict[str, Any]] = {}
+batch_request_store: Dict[str, Dict[str, Any]] = {}
+trade_audit_store = v2_trade_audit.TradeAuditStore(max_entries=TRADE_REQUEST_STORE_MAX_ENTRIES)
+session_diagnostic_store = v2_session_diagnostic.SessionDiagnosticStore(max_entries=TRADE_REQUEST_STORE_MAX_ENTRIES)
+market_stream_runtime = v2_market_runtime.create_market_stream_runtime(ABNORMAL_SYMBOLS)
+market_stream_runtime_control_lock = Lock()
+market_stream_runtime_thread: Optional[Thread] = None
+market_stream_runtime_stop_event = Event()
 session_store = v2_session_store.FileSessionStore(session_root=Path(SESSION_DATA_DIR))
 session_runtime_credentials: Dict[str, Any] = {
     "mode": "env_default",
@@ -203,11 +218,13 @@ if hasattr(app, "on_event"):
     @app.on_event("startup")
     def _startup_v2_bus_runtime() -> None:
         _bootstrap_v2_bus_producer()
+        _start_market_stream_runtime()
 
 
     @app.on_event("shutdown")
     def _shutdown_v2_bus_runtime() -> None:
         _stop_v2_bus_producer()
+        _stop_market_stream_runtime()
 
 
 def _load_bundle_runtime_info() -> Dict[str, str]:
@@ -289,7 +306,6 @@ def _reset_account_publish_state_locked() -> None:
         "pendingEventType": "",
         "pendingReasons": [],
     })
-    _mirror_legacy_v2_bus_state_locked()
 
 
 def _read_account_publish_state() -> Dict[str, Any]:
@@ -312,48 +328,6 @@ def _read_account_publish_state() -> Dict[str, Any]:
             "pendingEventType": str(state.get("pendingEventType", "") or ""),
             "pendingReasons": [str(item) for item in (state.get("pendingReasons") or [])],
         }
-
-
-def _read_v2_bus_state() -> Dict[str, Any]:
-    """兼容旧调用名，统一读取新的账户发布态。"""
-    legacy_state = v2_bus_state if isinstance(v2_bus_state, dict) else {}
-    if legacy_state is account_publish_state or not legacy_state:
-        state = _read_account_publish_state()
-    else:
-        event = legacy_state.get("event")
-        state = {
-            "busSeq": int(legacy_state.get("busSeq", 0) or 0),
-            "publishedAt": int(legacy_state.get("publishedAt", 0) or 0),
-            "revisions": _clone_json_value(legacy_state.get("revisions") or {}),
-            "event": _clone_json_value(event) if event is not None else None,
-            "runtimeSnapshot": _clone_json_value(legacy_state.get("runtimeSnapshot")) if legacy_state.get("runtimeSnapshot") is not None else None,
-            "abnormalSnapshot": _clone_json_value(legacy_state.get("abnormalSnapshot")) if legacy_state.get("abnormalSnapshot") is not None else None,
-        }
-    return {
-        "busSeq": int(state.get("busSeq", 0) or 0),
-        "publishedAt": int(state.get("publishedAt", 0) or 0),
-        "revisions": _clone_json_value(state.get("revisions") or {}),
-        "event": _clone_json_value(state.get("event")) if state.get("event") is not None else None,
-        "runtimeSnapshot": _clone_json_value(state.get("runtimeSnapshot")) if state.get("runtimeSnapshot") is not None else None,
-        "abnormalSnapshot": _clone_json_value(state.get("abnormalSnapshot")) if state.get("abnormalSnapshot") is not None else None,
-    }
-
-
-def _mirror_legacy_v2_bus_state_locked() -> None:
-    """把新发布态镜像回旧变量，保证过渡期内旧测试仍能读到最新状态。"""
-    global v2_bus_state
-    if not isinstance(v2_bus_state, dict) or v2_bus_state is account_publish_state:
-        v2_bus_state = account_publish_state
-        return
-    v2_bus_state.clear()
-    v2_bus_state.update({
-        "busSeq": int(account_publish_state.get("busSeq", 0) or 0),
-        "publishedAt": int(account_publish_state.get("publishedAt", 0) or 0),
-        "revisions": _clone_json_value(account_publish_state.get("revisions") or {}),
-        "event": _clone_json_value(account_publish_state.get("event")) if account_publish_state.get("event") is not None else None,
-        "runtimeSnapshot": _clone_json_value(account_publish_state.get("runtimeSnapshot")) if account_publish_state.get("runtimeSnapshot") is not None else None,
-        "abnormalSnapshot": _clone_json_value(account_publish_state.get("abnormalSnapshot")) if account_publish_state.get("abnormalSnapshot") is not None else None,
-    })
 
 
 def _publish_v2_bus_event(event_type: str,
@@ -381,7 +355,6 @@ def _publish_v2_bus_event(event_type: str,
             "pendingEventType": "",
             "pendingReasons": [],
         })
-        _mirror_legacy_v2_bus_state_locked()
         return _clone_json_value(event)
 
 
@@ -500,7 +473,7 @@ def _build_v2_stream_bootstrap_message(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _build_v2_stream_event_for_client(last_bus_seq: int) -> Dict[str, Any]:
-    state = _read_v2_bus_state()
+    state = _read_account_publish_state()
     current_bus_seq = int(state.get("busSeq", 0) or 0)
     published_at = int(state.get("publishedAt", 0) or 0)
     revisions = dict(state.get("revisions") or {})
@@ -642,6 +615,486 @@ def _get_trade_request_result(request_id: str) -> Optional[Dict[str, Any]]:
     return dict(response)
 
 
+# 保存批量提交结果，供 batch 查询接口复用。
+def _store_batch_request_result(batch_id: str, result_payload: Dict[str, Any]) -> None:
+    key = str(batch_id or "")
+    if not key:
+        return
+    with trade_request_lock:
+        batch_request_store[key] = _clone_json_value(result_payload)
+        while len(batch_request_store) > TRADE_REQUEST_STORE_MAX_ENTRIES:
+            oldest_key = next(iter(batch_request_store))
+            batch_request_store.pop(oldest_key, None)
+
+
+# 读取历史批量请求结果。
+def _get_batch_request_result(batch_id: str) -> Optional[Dict[str, Any]]:
+    key = str(batch_id or "")
+    if not key:
+        return None
+    with trade_request_lock:
+        payload = batch_request_store.get(key)
+        return None if payload is None else _clone_json_value(payload)
+
+
+def _resolve_trade_error_fields(error: Optional[Dict[str, Any]]) -> tuple[str, str]:
+    if not isinstance(error, dict):
+        return "", ""
+    return str(error.get("code") or ""), str(error.get("message") or "")
+
+
+def _format_trade_volume(value: Any) -> str:
+    try:
+        return f"{float(value):.2f} 手"
+    except Exception:
+        return "0.00 手"
+
+
+def _build_single_trade_action_summary(command: Optional[Dict[str, Any]]) -> str:
+    payload = dict(command or {})
+    params = payload.get("params")
+    params = dict(params) if isinstance(params, dict) else {}
+    action = str(payload.get("action") or "").strip().upper()
+    symbol = str(params.get("symbol") or payload.get("symbol") or "").strip().upper()
+    volume = _format_trade_volume(params.get("volume"))
+    if action == "OPEN_MARKET":
+        side = str(params.get("side") or "").strip().lower()
+        prefix = "买入" if side == "buy" else "卖出" if side == "sell" else "市价开仓"
+        return f"{prefix} {symbol} {volume}".strip()
+    if action == "CLOSE_POSITION":
+        return f"平仓 {symbol} {volume}".strip()
+    if action == "PENDING_ADD":
+        return f"新增挂单 {symbol} {volume}".strip()
+    if action == "PENDING_CANCEL":
+        return f"撤销挂单 {symbol}".strip()
+    if action == "PENDING_MODIFY":
+        return f"修改挂单 {symbol}".strip()
+    if action == "MODIFY_TPSL":
+        return f"修改止盈止损 {symbol}".strip()
+    if action == "CLOSE_BY":
+        return f"对锁平仓 {symbol}".strip()
+    if symbol:
+        return f"{action} {symbol}".strip()
+    return action or "交易命令"
+
+
+def _build_batch_trade_action_summary(payload: Optional[Dict[str, Any]], result_payload: Optional[Dict[str, Any]]) -> str:
+    source = payload if isinstance(payload, dict) else {}
+    result = result_payload if isinstance(result_payload, dict) else {}
+    summary = str(source.get("summary") or source.get("displayName") or "").strip()
+    if summary:
+        return summary
+    batch_id = str(source.get("batchId") or result.get("batchId") or "").strip()
+    items = source.get("items")
+    if isinstance(items, list) and items:
+        first_item = items[0] if isinstance(items[0], dict) else {}
+        first_action = str(first_item.get("action") or "").strip().upper()
+        if first_action:
+            return f"批量{first_action} {batch_id}".strip()
+    return f"批量交易 {batch_id}".strip() if batch_id else "批量交易"
+
+
+def _append_trade_audit_entry(
+    *,
+    trace_id: str,
+    trace_type: str,
+    action: str,
+    symbol: str,
+    account_mode: str,
+    stage: str,
+    status: str,
+    error_code: str,
+    message: str,
+    action_summary: str,
+    server_time: int,
+) -> None:
+    if not str(trace_id or "").strip():
+        return
+    trade_audit_store.append(
+        trace_id=str(trace_id or "").strip(),
+        trace_type=str(trace_type or "").strip(),
+        action=str(action or "").strip(),
+        symbol=str(symbol or "").strip(),
+        account_mode=str(account_mode or "").strip(),
+        stage=str(stage or "").strip(),
+        status=str(status or "").strip(),
+        error_code=str(error_code or "").strip(),
+        message=str(message or "").strip(),
+        action_summary=str(action_summary or "").strip(),
+        server_time=int(server_time or 0),
+    )
+
+
+def _record_single_trade_audit(
+    *,
+    command: Optional[Dict[str, Any]],
+    account_mode: str,
+    stage: str,
+    status: str,
+    error: Optional[Dict[str, Any]],
+    message: str,
+    server_time: int,
+) -> None:
+    normalized = v2_trade.normalize_trade_payload(command or {})
+    params = normalized.get("params")
+    params = dict(params) if isinstance(params, dict) else {}
+    error_code, error_message = _resolve_trade_error_fields(error)
+    _append_trade_audit_entry(
+        trace_id=str(normalized.get("requestId") or ""),
+        trace_type="single",
+        action=str(normalized.get("action") or ""),
+        symbol=str(params.get("symbol") or "").strip().upper(),
+        account_mode=str(account_mode or ""),
+        stage=stage,
+        status=status,
+        error_code=error_code,
+        message=message or error_message,
+        action_summary=_build_single_trade_action_summary(normalized),
+        server_time=server_time,
+    )
+
+
+def _record_batch_trade_audit(
+    *,
+    payload: Optional[Dict[str, Any]],
+    result_payload: Optional[Dict[str, Any]],
+    stage: str,
+    status: str,
+    error: Optional[Dict[str, Any]],
+    message: str,
+    server_time: int,
+) -> None:
+    source = dict(payload or {})
+    result = dict(result_payload or {})
+    items = source.get("items")
+    items = items if isinstance(items, list) else []
+    first_item = items[0] if items and isinstance(items[0], dict) else {}
+    first_params = first_item.get("params")
+    first_params = first_params if isinstance(first_params, dict) else {}
+    error_code, error_message = _resolve_trade_error_fields(error)
+    _append_trade_audit_entry(
+        trace_id=str(result.get("batchId") or source.get("batchId") or "").strip(),
+        trace_type="batch",
+        action=str(first_item.get("action") or "BATCH").strip().upper() or "BATCH",
+        symbol=str(first_params.get("symbol") or source.get("symbol") or "").strip().upper(),
+        account_mode=str(result.get("accountMode") or source.get("accountMode") or "").strip(),
+        stage=stage,
+        status=status,
+        error_code=error_code,
+        message=message or error_message,
+        action_summary=_build_batch_trade_action_summary(source, result),
+        server_time=server_time,
+    )
+
+
+def _append_session_diagnostic_entry(
+    *,
+    request_id: str,
+    action: str,
+    stage: str,
+    status: str,
+    message: str,
+    server_time: int,
+    error_code: str = "",
+    detail: Optional[Dict[str, Any]] = None,
+) -> None:
+    """向会话诊断缓存追加一条事实。"""
+    if not str(request_id or "").strip():
+        return
+    session_diagnostic_store.append(
+        request_id=str(request_id or "").strip(),
+        action=str(action or "").strip(),
+        stage=str(stage or "").strip(),
+        status=str(status or "").strip(),
+        message=str(message or "").strip(),
+        error_code=str(error_code or "").strip(),
+        server_time=int(server_time or 0),
+        detail=dict(detail or {}),
+    )
+
+
+def _record_session_diagnostic_trace(
+    *,
+    request_id: str,
+    action: str,
+    trace_items: Optional[List[Dict[str, Any]]],
+) -> None:
+    """把探针子进程回传的阶段轨迹写回服务端诊断缓存。"""
+    for item in trace_items or []:
+        if not isinstance(item, dict):
+            continue
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage=str(item.get("stage") or "").strip(),
+            status=str(item.get("status") or "").strip(),
+            message=str(item.get("message") or "").strip(),
+            server_time=int(item.get("serverTime") or _now_ms()),
+            error_code=str(item.get("errorCode") or "").strip(),
+            detail=item.get("detail") if isinstance(item.get("detail"), dict) else None,
+        )
+
+
+def _create_probe_trace_file() -> Optional[Path]:
+    """为登录探针创建临时 trace 文件，供超时场景回收内部阶段。"""
+    try:
+        with tempfile.NamedTemporaryFile(prefix="mt5-login-probe-", suffix=".json", delete=False) as handle:
+            return Path(handle.name)
+    except Exception:
+        return None
+
+
+def _read_probe_trace_file(trace_file: Optional[Path]) -> List[Dict[str, Any]]:
+    """读取登录探针落盘的阶段轨迹。"""
+    if trace_file is None or not trace_file.exists():
+        return []
+    try:
+        raw_text = trace_file.read_text(encoding="utf-8").strip()
+    except Exception:
+        return []
+    if not raw_text:
+        return []
+    try:
+        payload = json.loads(raw_text)
+    except Exception:
+        return []
+    if isinstance(payload, dict):
+        trace_items = payload.get("trace")
+        return trace_items if isinstance(trace_items, list) else []
+    return payload if isinstance(payload, list) else []
+
+
+def _cleanup_probe_trace_file(trace_file: Optional[Path]) -> None:
+    """删除登录探针 trace 临时文件。"""
+    if trace_file is None:
+        return
+    try:
+        trace_file.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _try_reuse_runtime_active_session(
+    *,
+    login_value: int,
+    password_value: str,
+    server_value: str,
+    request_id: str = "",
+    action: str = "login",
+) -> Optional[Dict[str, str]]:
+    """当服务器当前已激活同一远程账号时，直接复用现有会话。"""
+    normalized_login = str(int(login_value or 0)).strip() if int(login_value or 0) > 0 else ""
+    normalized_server = str(server_value or "").strip()
+    normalized_server_identity = _normalize_session_server_identity(server_value)
+    if not normalized_login or not normalized_server:
+        return None
+    runtime = _runtime_session_credentials_snapshot()
+    if str(runtime.get("mode") or "") != "remote_active":
+        return None
+    runtime_login = str(_parse_login_value(runtime.get("login")) or "").strip()
+    runtime_server = str(runtime.get("server") or "").strip()
+    runtime_password = str(runtime.get("password") or "")
+    if runtime_login != normalized_login:
+        return None
+    if not runtime_server or _normalize_session_server_identity(runtime_server) != normalized_server_identity:
+        return None
+    if not runtime_password:
+        return None
+    active_session = session_store.load_active_session() if hasattr(session_store, "load_active_session") else None
+    if not isinstance(active_session, dict) or not active_session:
+        return None
+    active_login = str(active_session.get("login") or "").strip()
+    active_server = str(active_session.get("server") or "").strip()
+    if active_login != normalized_login:
+        return None
+    if not active_server or _normalize_session_server_identity(active_server) != normalized_server_identity:
+        return None
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="runtime_session_reused",
+        status="ok",
+        message="服务器当前已是目标账号，直接复用现有远程会话",
+        server_time=_now_ms(),
+        detail={
+            "login": normalized_login,
+            "server": active_server,
+        },
+    )
+    return {
+        "login": normalized_login,
+        "server": active_server,
+        "password": runtime_password,
+    }
+
+
+def _try_reuse_saved_profile_session(
+    *,
+    login_value: int,
+    password_value: str,
+    server_value: str,
+    request_id: str = "",
+    action: str = "login",
+) -> Optional[Dict[str, str]]:
+    """当服务器已保存同一账号档案时，直接复用已保存账号。"""
+    normalized_login = str(int(login_value or 0)).strip() if int(login_value or 0) > 0 else ""
+    normalized_server = str(server_value or "").strip()
+    normalized_server_identity = _normalize_session_server_identity(server_value)
+    if not normalized_login or not normalized_server:
+        return None
+    if not hasattr(session_store, "list_profiles") or not hasattr(session_store, "load_profile"):
+        return None
+    for profile in session_store.list_profiles() or []:
+        if not isinstance(profile, dict):
+            continue
+        profile_id = str(profile.get("profileId") or "").strip()
+        profile_login = str(profile.get("login") or "").strip()
+        profile_server = str(profile.get("server") or "").strip()
+        if not profile_id or profile_login != normalized_login:
+            continue
+        if not profile_server or _normalize_session_server_identity(profile_server) != normalized_server_identity:
+            continue
+        record = session_store.load_profile(profile_id)
+        if not isinstance(record, dict) or not record:
+            continue
+        encrypted_password = str(record.get("encryptedPassword") or "").strip()
+        if not encrypted_password:
+            continue
+        try:
+            cipher = base64.b64decode(encrypted_password, validate=True)
+            saved_password = v2_session_crypto.unprotect_secret_for_machine(cipher).decode("utf-8")
+        except Exception:
+            continue
+        if not saved_password:
+            continue
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage="saved_profile_reused",
+            status="ok",
+            message="已命中服务器保存的同账号档案，直接复用已保存会话",
+            server_time=_now_ms(),
+            detail={
+                "profileId": profile_id,
+                "login": normalized_login,
+                "server": profile_server,
+            },
+        )
+        return {
+            "login": normalized_login,
+            "server": profile_server,
+            "password": saved_password,
+        }
+    return None
+
+
+def _try_reuse_env_configured_session(
+    *,
+    login_value: int,
+    password_value: str,
+    server_value: str,
+    request_id: str = "",
+    action: str = "login",
+) -> Optional[Dict[str, str]]:
+    """当用户输入与服务器 env 配置一致时，直接复用 env 账号。"""
+    normalized_login = str(int(login_value or 0)).strip() if int(login_value or 0) > 0 else ""
+    normalized_server = str(server_value or "").strip()
+    normalized_server_identity = _normalize_session_server_identity(server_value)
+    env_login = str(_parse_login_value(LOGIN) or "").strip()
+    env_server = str(SERVER or "").strip()
+    env_password = str(PASSWORD or "")
+    if not normalized_login or not normalized_server:
+        return None
+    if env_login != normalized_login:
+        return None
+    if not env_server or _normalize_session_server_identity(env_server) != normalized_server_identity:
+        return None
+    if not env_password:
+        return None
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="env_session_reused",
+        status="ok",
+        message="已命中服务器 env 配置账号，直接复用服务器当前账号",
+        server_time=_now_ms(),
+        detail={
+            "login": normalized_login,
+            "server": env_server,
+        },
+    )
+    return {
+        "login": normalized_login,
+        "server": env_server,
+        "password": env_password,
+    }
+
+
+def _try_reuse_current_mt5_terminal_session(
+    *,
+    login_value: int,
+    password_value: str,
+    server_value: str,
+    request_id: str = "",
+    action: str = "login",
+) -> Optional[Dict[str, str]]:
+    """当主进程当前 MT5 终端已经是目标账号时，直接复用当前终端身份。"""
+    normalized_login = str(int(login_value or 0)).strip() if int(login_value or 0) > 0 else ""
+    normalized_server = str(server_value or "").strip()
+    normalized_server_identity = _normalize_session_server_identity(server_value)
+    if not normalized_login or not normalized_server:
+        return None
+    if mt5 is None:
+        return None
+    try:
+        account = mt5.account_info()
+    except Exception:
+        account = None
+    if account is None:
+        return None
+    current_login = str(getattr(account, "login", "") or "").strip()
+    current_server = str(getattr(account, "server", "") or "").strip()
+    if current_login != normalized_login:
+        return None
+    if not current_server or _normalize_session_server_identity(current_server) != normalized_server_identity:
+        return None
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="current_terminal_session_reused",
+        status="ok",
+        message="主进程当前 MT5 终端已是目标账号，直接复用当前终端会话",
+        server_time=_now_ms(),
+        detail={
+            "login": current_login,
+            "server": current_server,
+        },
+    )
+    return {
+        "login": current_login,
+        "server": current_server,
+        "password": str(password_value or ""),
+    }
+
+
+def _build_session_diagnostic_payload(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """统一构造会话诊断接口返回结构。"""
+    request_id = str(items[-1].get("requestId") or "").strip() if items else ""
+    return {
+        "ok": True,
+        "requestId": request_id,
+        "items": [dict(item) for item in items],
+    }
+
+
+def _normalize_session_server_identity(server: Any) -> str:
+    """统一规范化会话服务器名，避免仅分隔符不同就丢失同一账号匹配。"""
+    raw = str(server or "").strip().lower()
+    if not raw:
+        return ""
+    return "".join(ch for ch in raw if ch.isalnum())
+
+
 # 构建 v2 行情总快照返回体，统一保留市场区和账户区。
 def _build_v2_market_snapshot_payload(market: Dict[str, Any],
                                       account: Dict[str, Any],
@@ -704,6 +1157,7 @@ def _normalize_v2_account_meta(account_meta: Dict[str, Any]) -> Dict[str, Any]:
         "login": str(account_meta.get("login", "")),
         "server": str(account_meta.get("server", "")),
         "source": str(account_meta.get("source", "")),
+        "accountMode": str(account_meta.get("accountMode", "")),
         "currency": str(account_meta.get("currency", "")),
         "leverage": int(account_meta.get("leverage", 0) or 0),
         "name": str(account_meta.get("name", "")),
@@ -738,6 +1192,7 @@ def _build_logged_out_account_snapshot() -> Dict[str, Any]:
             "login": "",
             "server": "",
             "source": "remote_logged_out",
+            "accountMode": "",
             "updatedAt": _now_ms(),
             "currency": "",
             "leverage": 0,
@@ -1008,6 +1463,184 @@ def _stop_v2_bus_producer() -> None:
             thread.join(timeout=1.0)
         v2_bus_producer_thread = None
         v2_bus_producer_started = False
+
+
+def _build_market_runtime_symbol_state(symbol: str) -> Dict[str, Any]:
+    """兼容真实 runtime 字典和测试注入桩，统一读取产品级市场真值。"""
+    runtime = market_stream_runtime
+    build_method = getattr(runtime, "build_symbol_state", None)
+    if callable(build_method):
+        return dict(build_method(symbol) or {})
+    return v2_market_runtime.build_symbol_state(runtime, symbol)
+
+
+def _get_market_runtime_patch_row(symbol: str) -> Optional[Dict[str, Any]]:
+    """兼容真实 runtime 字典和测试注入桩，统一读取当前 1m patch 原始行。"""
+    runtime = market_stream_runtime
+    getter = getattr(runtime, "get_latest_patch_row", None)
+    if callable(getter):
+        return getter(symbol)
+    return v2_market_runtime.get_latest_patch_row(runtime, symbol)
+
+
+def _build_market_runtime_interval_patch(symbol: str, interval: str) -> Optional[Dict[str, Any]]:
+    """兼容真实 runtime 字典和测试注入桩，统一读取长周期聚合 patch。"""
+    runtime = market_stream_runtime
+    builder = getattr(runtime, "build_interval_patch", None)
+    if callable(builder):
+        return builder(symbol, interval)
+    return v2_market_runtime.build_interval_patch(runtime, symbol, interval)
+
+
+def _build_market_runtime_source_status() -> Dict[str, Any]:
+    """构建市场运行时状态，供 `/v1/source` 和 `/v2/market` 统一复用。"""
+    runtime = market_stream_runtime
+    builder = getattr(runtime, "build_source_status", None)
+    if callable(builder):
+        return dict(builder() or {})
+    return v2_market_runtime.build_source_status(runtime)
+
+
+def _bootstrap_market_stream_runtime_from_rest() -> None:
+    """在 WS 真值尚未连上前，用极小的 REST 窗口补一层冷启动底稿。"""
+    runtime = market_stream_runtime
+    if getattr(runtime, "bootstrap_from_rest", None):
+        runtime.bootstrap_from_rest()
+        return
+    bootstrap_limit = _market_runtime_bootstrap_minute_limit()
+    for symbol in ABNORMAL_SYMBOLS:
+        try:
+            snapshot = _build_market_runtime_symbol_state(symbol)
+            if snapshot.get("latestPatch") is not None or snapshot.get("latestClosedCandle") is not None:
+                continue
+            rows = _fetch_market_candle_rows_with_cache(
+                symbol,
+                "1m",
+                bootstrap_limit,
+                start_time_ms=0,
+                end_time_ms=0,
+            )
+            v2_market_runtime.bootstrap_symbol_from_rest_rows(runtime, symbol, rows, _now_ms())
+        except Exception:
+            continue
+
+
+def _market_runtime_bootstrap_minute_limit() -> int:
+    """返回市场运行态冷启动需要预热的 1m 数量，确保长周期 WS patch 从首轮就完整。"""
+    supported_intervals = ("1m", "5m", "15m", "30m", "1h", "4h", "1d")
+    max_minutes = 1
+    for interval in supported_intervals:
+        if interval == "1m":
+            interval_minutes = 1
+        elif interval == "5m":
+            interval_minutes = 5
+        elif interval == "15m":
+            interval_minutes = 15
+        elif interval == "30m":
+            interval_minutes = 30
+        elif interval == "1h":
+            interval_minutes = 60
+        elif interval == "4h":
+            interval_minutes = 4 * 60
+        elif interval == "1d":
+            interval_minutes = 24 * 60
+        else:
+            interval_minutes = 1
+        max_minutes = max(max_minutes, interval_minutes)
+    return max_minutes
+
+
+def _build_market_stream_upstream_url() -> str:
+    """构建 Binance combined stream URL，只订阅当前服务需要的 1m K 线。"""
+    streams = "/".join(symbol.lower() + "@kline_1m" for symbol in ABNORMAL_SYMBOLS)
+    return _build_binance_ws_upstream_url("/stream", f"streams={streams}")
+
+
+def _consume_market_stream_runtime_message(raw_message: Any) -> None:
+    """解析 WS 文本并推进市场运行时。只处理 kline 事件，其它消息直接忽略。"""
+    text = raw_message.decode("utf-8") if isinstance(raw_message, (bytes, bytearray)) else str(raw_message or "")
+    if not text:
+        return
+    payload = json.loads(text)
+    event = dict((payload or {}).get("data") or payload or {})
+    if not isinstance(event.get("k"), dict):
+        return
+    v2_market_runtime.apply_ws_kline_event(market_stream_runtime, payload)
+
+
+async def _run_market_stream_runtime_loop() -> None:
+    """保持 Binance 市场 WS 长连接，并把 1m K 线持续写入内存真值。"""
+    upstream_url = _build_market_stream_upstream_url()
+    v2_market_runtime.mark_connection_state(
+        market_stream_runtime,
+        connecting=True,
+        connected=False,
+        updated_at_ms=_now_ms(),
+        last_error="",
+    )
+    async with websockets.connect(
+        upstream_url,
+        ping_interval=20,
+        ping_timeout=20,
+        close_timeout=5,
+    ) as upstream:
+        v2_market_runtime.mark_connection_state(
+            market_stream_runtime,
+            connecting=False,
+            connected=True,
+            updated_at_ms=_now_ms(),
+            last_error="",
+        )
+        while not market_stream_runtime_stop_event.is_set():
+            try:
+                message = await asyncio.wait_for(upstream.recv(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            _consume_market_stream_runtime_message(message)
+
+
+def _market_stream_runtime_worker() -> None:
+    """在线程里托管 asyncio WS 循环，断线后自动短暂退避重连。"""
+    _bootstrap_market_stream_runtime_from_rest()
+    while not market_stream_runtime_stop_event.is_set():
+        try:
+            asyncio.run(_run_market_stream_runtime_loop())
+        except Exception as exc:
+            v2_market_runtime.mark_connection_state(
+                market_stream_runtime,
+                connecting=False,
+                connected=False,
+                updated_at_ms=_now_ms(),
+                last_error=str(exc),
+            )
+            if market_stream_runtime_stop_event.wait(1.0):
+                break
+
+
+def _start_market_stream_runtime() -> None:
+    """启动 Binance 市场运行时后台线程。"""
+    global market_stream_runtime_thread
+    with market_stream_runtime_control_lock:
+        thread = market_stream_runtime_thread
+        if thread is not None and thread.is_alive():
+            return
+        market_stream_runtime_stop_event.clear()
+        thread = Thread(target=_market_stream_runtime_worker, name="market-stream-runtime", daemon=True)
+        thread.start()
+        market_stream_runtime_thread = thread
+
+
+def _stop_market_stream_runtime() -> None:
+    """停止 Binance 市场运行时后台线程。"""
+    global market_stream_runtime_thread
+    with market_stream_runtime_control_lock:
+        thread = market_stream_runtime_thread
+        if thread is None:
+            return
+        market_stream_runtime_stop_event.set()
+        if thread.is_alive():
+            thread.join(timeout=1.0)
+        market_stream_runtime_thread = None
 
 def _apply_mt5_time_offset_ms(value: int) -> int:
     """把 EA 快照里的 MT5 服务器 wall-clock 毫秒时间归一化成 UTC 毫秒时间。"""
@@ -1983,6 +2616,95 @@ def _normalize_path(raw: str) -> str:
         return str(expanded)
 
 
+def _ps_quote(value: str) -> str:
+    """PowerShell 单引号转义，保证路径在远端命令里不被截断。"""
+    return "'" + str(value or "").replace("'", "''") + "'"
+
+
+def _normalize_windows_executable_identity(path_value: str) -> str:
+    """统一成 PowerShell 进程查询使用的路径格式。"""
+    normalized = _normalize_path(path_value)
+    if not normalized:
+        return ""
+    return normalized.replace("\\", "/").lower()
+
+
+def _build_mt5_terminal_stop_command(path_value: str, wait_timeout_ms: int = 15000) -> str:
+    """按精确 exe 路径生成 MT5 终端停止命令，避免误伤其他同名终端。"""
+    normalized_executable_path = _normalize_windows_executable_identity(path_value)
+    if not normalized_executable_path:
+        return "throw 'MT5 terminal path is not configured.'"
+    wait_seconds = max(1, int(math.ceil(max(1, int(wait_timeout_ms or 0)) / 1000.0)))
+    return (
+        "$targetPath = "
+        + _ps_quote(normalized_executable_path)
+        + "; "
+        + "$matchProcess = { "
+        + "Get-CimInstance Win32_Process | Where-Object { "
+        + "$normalizedExecutablePath = (([string]$_.ExecutablePath) -replace '\\\\', '/').ToLowerInvariant(); "
+        + "$normalizedExecutablePath -eq $targetPath "
+        + "} "
+        + "}; "
+        + "$matched = @(& $matchProcess); "
+        + "$matched | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; "
+        + "$remaining = @(); "
+        + "$deadline = [DateTime]::UtcNow.AddSeconds("
+        + str(wait_seconds)
+        + "); "
+        + "do { "
+        + "$remaining = @(& $matchProcess); "
+        + "if ($remaining.Count -eq 0) { break }; "
+        + "Start-Sleep -Milliseconds 200; "
+        + "} while ([DateTime]::UtcNow -lt $deadline); "
+        + "if ($remaining.Count -gt 0) { "
+        + "$remainingIds = [string]::Join(',', @($remaining | ForEach-Object { [string]$_.ProcessId })); "
+        + "throw ('MT5 terminal process still running after wait: ' + $remainingIds) "
+        + "}; "
+        + "@{ matchedCount = $matched.Count; remainingCount = $remaining.Count; terminalPath = $targetPath } | ConvertTo-Json -Compress"
+    )
+
+
+def _build_mt5_terminal_start_command(path_value: str, wait_timeout_ms: int = 15000) -> str:
+    """按精确 exe 路径生成 MT5 终端启动命令，并等待目标进程真正出现。"""
+    normalized_executable_path = _normalize_windows_executable_identity(path_value)
+    resolved_path = _normalize_path(path_value)
+    if not normalized_executable_path or not resolved_path:
+        return "throw 'MT5 terminal path is not configured.'"
+    working_directory = str(Path(resolved_path).parent)
+    wait_seconds = max(1, int(math.ceil(max(1, int(wait_timeout_ms or 0)) / 1000.0)))
+    return (
+        "$targetPath = "
+        + _ps_quote(normalized_executable_path)
+        + "; "
+        + "$targetExecutable = "
+        + _ps_quote(resolved_path)
+        + "; "
+        + "$workingDirectory = "
+        + _ps_quote(working_directory)
+        + "; "
+        + "$matchProcess = { "
+        + "Get-CimInstance Win32_Process | Where-Object { "
+        + "$normalizedExecutablePath = (([string]$_.ExecutablePath) -replace '\\\\', '/').ToLowerInvariant(); "
+        + "$normalizedExecutablePath -eq $targetPath "
+        + "} "
+        + "}; "
+        + "Start-Process -FilePath $targetExecutable -WorkingDirectory $workingDirectory; "
+        + "$matched = @(); "
+        + "$deadline = [DateTime]::UtcNow.AddSeconds("
+        + str(wait_seconds)
+        + "); "
+        + "do { "
+        + "$matched = @(& $matchProcess); "
+        + "if ($matched.Count -gt 0) { break }; "
+        + "Start-Sleep -Milliseconds 200; "
+        + "} while ([DateTime]::UtcNow -lt $deadline); "
+        + "if ($matched.Count -eq 0) { "
+        + "throw ('MT5 terminal process did not appear after start: ' + $targetPath) "
+        + "}; "
+        + "@{ matchedCount = $matched.Count; terminalPath = $targetPath } | ConvertTo-Json -Compress"
+    )
+
+
 def _discover_terminal_candidates() -> List[str]:
     candidates: List[str] = []
     seen = set()
@@ -2037,6 +2759,381 @@ def _discover_terminal_candidates() -> List[str]:
 MT5_TERMINAL_CANDIDATES = _discover_terminal_candidates()
 
 
+def _resolve_direct_login_terminal_path() -> Tuple[Optional[str], str]:
+    """解析直登链应操作的终端路径：优先显式配置，其次使用已发现候选。"""
+    explicit_path = _normalize_path(str(PATH or ""))
+    if explicit_path:
+        return explicit_path, "configured_path"
+    for candidate in MT5_TERMINAL_CANDIDATES:
+        normalized_candidate = _normalize_path(candidate)
+        if normalized_candidate:
+            return normalized_candidate, "discovered_candidate"
+    return None, "missing"
+
+
+def _now_monotonic_ms() -> int:
+    """返回单调时钟毫秒值，供切号耗时统计使用。"""
+    return int(time.monotonic() * 1000)
+
+
+def _build_mt5_gui_window_detection_command(path_value: Optional[str] = None) -> str:
+    """检测当前机器上是否存在可附着的 MT5 终端进程。"""
+    normalized_target_path = _normalize_windows_executable_identity(str(path_value or ""))
+    return (
+        "$targetPath = "
+        + _ps_quote(normalized_target_path)
+        + "; "
+        + "$currentSessionId = [int](Get-Process -Id $PID -ErrorAction SilentlyContinue).SessionId; "
+        + "$normalizePath = { "
+        + "param([string]$value) "
+        + "if ([string]::IsNullOrWhiteSpace($value)) { return '' } "
+        + "return (($value -replace '\\\\', '/').ToLowerInvariant()) "
+        + "}; "
+        + "$items = @(); "
+        + "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { "
+        + "$_.Name -eq 'terminal64.exe' -or $_.Name -eq 'terminal.exe' -or $_.Name -eq 'terminal64' -or $_.Name -eq 'terminal' "
+        + "} | ForEach-Object { "
+        + "$rawExecutablePath = [string]$_.ExecutablePath; "
+        + "$normalizedExecutablePath = & $normalizePath ([string]$_.ExecutablePath); "
+        + "$items += @{ "
+        + "processId = [int]$_.ProcessId; "
+        + "sessionId = [int]$_.SessionId; "
+        + "sameSession = ([int]$_.SessionId -eq $currentSessionId); "
+        + "executablePath = $rawExecutablePath; "
+        + "normalizedExecutablePath = $normalizedExecutablePath; "
+        + "exactPath = (-not [string]::IsNullOrWhiteSpace($targetPath)) -and ($normalizedExecutablePath -eq $targetPath) "
+        + "} "
+        + "}; "
+        + "@{ "
+        + "processCount = $items.Count; "
+        + "sameSessionCount = @($items | Where-Object { $_.sameSession }).Count; "
+        + "exactPathCount = @($items | Where-Object { $_.sameSession -and $_.exactPath }).Count; "
+        + "items = $items "
+        + "} | ConvertTo-Json -Compress"
+    )
+
+
+def _parse_mt5_gui_detection_payload(payload_text: str) -> Dict[str, Any]:
+    """解析 MT5 终端检测结果。"""
+    try:
+        payload = json.loads(str(payload_text or "").strip() or "{}")
+    except Exception:
+        return {
+            "processCount": 0,
+            "sameSessionCount": 0,
+            "exactPathCount": 0,
+            "items": [],
+        }
+    if not isinstance(payload, dict):
+        return {
+            "processCount": 0,
+            "sameSessionCount": 0,
+            "exactPathCount": 0,
+            "items": [],
+        }
+    items = payload.get("items")
+    if not isinstance(items, list):
+        items = []
+    return {
+        "processCount": int(payload.get("processCount") or 0),
+        "sameSessionCount": int(payload.get("sameSessionCount") or 0),
+        "exactPathCount": int(payload.get("exactPathCount") or 0),
+        "items": items,
+    }
+
+
+def _inspect_mt5_gui_terminals(path_value: Optional[str] = None) -> Dict[str, Any]:
+    """读取当前机器上 MT5 终端进程明细。"""
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            _build_mt5_gui_window_detection_command(path_value),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=15,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return {
+            "processCount": 0,
+            "sameSessionCount": 0,
+            "exactPathCount": 0,
+            "items": [],
+        }
+    stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+    return _parse_mt5_gui_detection_payload(stdout_text)
+
+
+def _resolve_attachable_mt5_gui_terminal_path(payload: Optional[Dict[str, Any]], preferred_path: Optional[str] = None) -> Optional[str]:
+    """只把当前网关同会话、且可明确定位的 MT5 终端认作可附着目标。"""
+    normalized_preferred_path = _normalize_path(str(preferred_path or ""))
+    source = dict(payload or {})
+    items = source.get("items")
+    if not isinstance(items, list):
+        items = []
+    same_session_items: List[Dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if not bool(item.get("sameSession")):
+            continue
+        normalized_path = _normalize_path(str(item.get("executablePath") or ""))
+        if not normalized_path:
+            continue
+        normalized_item = dict(item)
+        normalized_item["normalizedExecutablePath"] = normalized_path
+        same_session_items.append(normalized_item)
+    if normalized_preferred_path:
+        for item in same_session_items:
+            if bool(item.get("exactPath")) or str(item.get("normalizedExecutablePath") or "") == normalized_preferred_path:
+                return normalized_preferred_path
+    if len(same_session_items) == 1:
+        return str(same_session_items[0].get("normalizedExecutablePath") or "").strip() or None
+    return None
+
+
+def _detect_mt5_gui_window(path_value: Optional[str] = None) -> bool:
+    """判断当前是否存在可附着的 MT5 终端进程。"""
+    payload = _inspect_mt5_gui_terminals(path_value)
+    return _resolve_attachable_mt5_gui_terminal_path(payload, preferred_path=path_value) is not None
+
+
+def _launch_mt5_terminal_from_mt5_path() -> None:
+    """按 MT5_PATH 拉起 MT5，不在这里等待窗口出现。"""
+    terminal_path = _normalize_path(str(PATH or ""))
+    if not terminal_path:
+        raise RuntimeError("MT5_PATH is not configured")
+    working_directory = str(Path(terminal_path).parent)
+    start_command = (
+        "$targetExecutable = "
+        + _ps_quote(terminal_path)
+        + "; "
+        + "$workingDirectory = "
+        + _ps_quote(working_directory)
+        + "; "
+        + "Start-Process -FilePath $targetExecutable -WorkingDirectory $workingDirectory"
+    )
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            start_command,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=15,
+        check=False,
+    )
+    if completed.returncode != 0:
+        stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace").strip()
+        stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+        raise RuntimeError(stderr_text or stdout_text or "MT5 terminal launch failed")
+
+
+def _wait_for_mt5_gui_window_ready(timeout_ms: int) -> bool:
+    """轮询直到可附着的 MT5 终端进程出现。"""
+    deadline = time.monotonic() + max(0.5, float(timeout_ms or 0) / 1000.0)
+    terminal_path = _normalize_path(str(PATH or ""))
+    while time.monotonic() <= deadline:
+        if _detect_mt5_gui_window(terminal_path):
+            return True
+        time.sleep(0.25)
+    return False
+
+
+def _attach_current_mt5_gui_terminal(timeout_ms: int) -> Dict[str, Any]:
+    """附着当前已存在的 MT5 GUI 终端；必要时接管目标终端后重试一次。"""
+    preferred_path = _normalize_path(str(PATH or ""))
+    payload = _inspect_mt5_gui_terminals(preferred_path)
+    attach_path = _resolve_attachable_mt5_gui_terminal_path(payload, preferred_path=preferred_path)
+    if not attach_path:
+        return {
+            "ok": False,
+            "message": "已检测到 MT5 终端进程，但当前会话没有可附着的目标终端",
+            "detail": {
+                "preferredPath": preferred_path or "",
+                "processCount": int(payload.get("processCount") or 0),
+                "sameSessionCount": int(payload.get("sameSessionCount") or 0),
+                "exactPathCount": int(payload.get("exactPathCount") or 0),
+            },
+        }
+    attempt_budget_ms = max(1000, int(timeout_ms or MT5_INIT_TIMEOUT_MS))
+    initialize_budget_ms = _split_attach_phase_budget(attempt_budget_ms, phase_count=3, phase_index=0)
+    initialized, init_message = _mt5_initialize(attach_path, timeout_ms=initialize_budget_ms)
+    if initialized:
+        return {
+            "ok": True,
+            "message": "已按目标终端路径附着当前 MT5 实例",
+            "detail": {
+                "attachPath": attach_path,
+                "attachMode": "direct_initialize",
+                "timeoutMs": initialize_budget_ms,
+            },
+        }
+    recycle_budget_ms = max(0, attempt_budget_ms - initialize_budget_ms)
+    if recycle_budget_ms < 3000:
+        return {
+            "ok": False,
+            "message": f"按目标终端路径附着失败: {init_message}",
+            "detail": {
+                "attachPath": attach_path,
+                "attachMode": "direct_initialize",
+                "initializeError": str(init_message or "").strip(),
+                "timeoutMs": initialize_budget_ms,
+            },
+        }
+    try:
+        recycled = _recycle_mt5_terminal_for_attach(attach_path, wait_timeout_ms=recycle_budget_ms)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "message": f"按目标终端路径附着失败，且重启终端失败: {exc}",
+            "detail": {
+                "attachPath": attach_path,
+                "attachMode": "recycle_after_initialize_failed",
+                "initializeError": str(init_message or "").strip(),
+                "recycleError": str(exc),
+                "timeoutMs": recycle_budget_ms,
+            },
+        }
+    retry_budget_ms = max(1000, int(recycled.get("remainingBudgetMs") or 0))
+    retried, retry_message = _mt5_initialize(attach_path, timeout_ms=retry_budget_ms)
+    if retried:
+        return {
+            "ok": True,
+            "message": "首次附着失败后，已重启目标终端并附着成功",
+            "detail": {
+                "attachPath": attach_path,
+                "attachMode": "recycled_terminal_then_initialize",
+                "initializeError": str(init_message or "").strip(),
+                "timeoutMs": retry_budget_ms,
+            },
+        }
+    return {
+        "ok": False,
+        "message": f"按目标终端路径附着失败；重启终端后再次附着仍失败: {retry_message}",
+        "detail": {
+            "attachPath": attach_path,
+            "attachMode": "recycled_terminal_then_initialize_failed",
+            "initializeError": str(init_message or "").strip(),
+            "retryInitializeError": str(retry_message or "").strip(),
+            "timeoutMs": retry_budget_ms,
+        },
+    }
+
+
+def _read_current_mt5_gui_account() -> Optional[Dict[str, str]]:
+    """读取当前 MT5 GUI 终端的真实账号。"""
+    if mt5 is None:
+        return None
+    try:
+        account = mt5.account_info()
+    except Exception:
+        return None
+    if account is None:
+        return None
+    login_value = str(getattr(account, "login", "") or "").strip()
+    server_value = str(getattr(account, "server", "") or "").strip()
+    if not login_value:
+        return None
+    return {
+        "login": login_value,
+        "server": server_value,
+    }
+
+
+def _call_mt5_account_switch_api(login: str, password: str, server: str, timeout_ms: int) -> Dict[str, Any]:
+    """调用一次 mt5.login(...)，返回原始错误摘要供后续轮询使用。"""
+    if mt5 is None:
+        raise RuntimeError("MetaTrader5 package is unavailable")
+    login_value = int(str(login or "").strip())
+    server_value = str(server or "").strip()
+    effective_timeout_ms = max(1000, int(timeout_ms or MT5_INIT_TIMEOUT_MS))
+    try:
+        ok = bool(mt5.login(login_value, password=str(password or ""), server=server_value, timeout=effective_timeout_ms))
+    except TypeError:
+        ok = bool(mt5.login(login_value, password=str(password or ""), server=server_value))
+    except Exception as exc:
+        raise RuntimeError(str(exc)) from exc
+    return {
+        "ok": ok,
+        "error": "" if ok else str(mt5.last_error()),
+    }
+
+
+def _build_mt5_account_switch_controller(
+    stage_reporter: Optional[Callable[[str, str, str, Optional[Dict[str, Any]]], None]] = None,
+) -> v2_mt5_account_switch.Mt5GuiController:
+    """构造服务端正式 MT5 GUI 切号控制器。"""
+    return v2_mt5_account_switch.Mt5GuiController(
+        detect_window=_detect_mt5_gui_window,
+        launch_terminal=_launch_mt5_terminal_from_mt5_path,
+        wait_window_ready=_wait_for_mt5_gui_window_ready,
+        attach_terminal=_attach_current_mt5_gui_terminal,
+        read_account=_read_current_mt5_gui_account,
+        perform_switch=_call_mt5_account_switch_api,
+        monotonic_ms=_now_monotonic_ms,
+        total_timeout_ms=MT5_GUI_SWITCH_TOTAL_TIMEOUT_MS,
+        report_stage=stage_reporter,
+    )
+
+
+def _build_switch_flow_detail(result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """裁剪切号结果 detail，供诊断和错误回执复用。"""
+    payload = dict(result or {})
+    return {
+        "elapsedMs": int(payload.get("elapsedMs") or 0),
+        "baselineAccount": payload.get("baselineAccount"),
+        "finalAccount": payload.get("finalAccount"),
+        "loginError": str(payload.get("loginError") or "").strip(),
+        "lastObservedAccount": payload.get("lastObservedAccount"),
+    }
+
+
+def _switch_mt5_account_via_gui_flow(*, login: str, password: str, server: str, request_id: str, action: str) -> Dict[str, Any]:
+    """执行新的 MT5 GUI 切号主链，并把真实阶段写入诊断时间线。"""
+    failure_code = "SESSION_SWITCH_FAILED" if str(action or "").strip() == "switch" else "SESSION_LOGIN_FAILED"
+
+    def _report_stage(stage: str, status: str, message: str, detail: Optional[Dict[str, Any]] = None) -> None:
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage=stage,
+            status=status,
+            message=message,
+            server_time=_now_ms(),
+            error_code=failure_code if str(status or "").strip() == "failed" else "",
+            detail=detail,
+        )
+
+    result = _build_mt5_account_switch_controller(stage_reporter=_report_stage).switch_account(
+        login=str(login or "").strip(),
+        password=str(password or ""),
+        server=str(server or "").strip(),
+    )
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage=str(result.get("stage") or ""),
+        status="ok" if bool(result.get("ok")) else "failed",
+        message=str(result.get("message") or ""),
+        server_time=_now_ms(),
+        error_code="" if bool(result.get("ok")) else failure_code,
+        detail=_build_switch_flow_detail(result),
+    )
+    return result
+
+
 def _server_candidates() -> List[str]:
     credentials = _current_mt5_credentials()
     mode = str(credentials.get("mode") or "env_default")
@@ -2063,8 +3160,10 @@ def _mt5_initialize(
     login: Optional[int] = None,
     password: Optional[str] = None,
     server_name: Optional[str] = None,
+    timeout_ms: Optional[int] = None,
 ) -> Tuple[bool, str]:
-    kwargs = {"timeout": MT5_INIT_TIMEOUT_MS}
+    effective_timeout_ms = max(1000, int(timeout_ms or MT5_INIT_TIMEOUT_MS))
+    kwargs = {"timeout": effective_timeout_ms}
     auth_requested = bool(login and password and server_name)
     if path_value:
         kwargs["path"] = path_value
@@ -2091,6 +3190,18 @@ def _mt5_initialize(
     except Exception as exc:
         return False, str(exc)
     return ok, str(mt5.last_error())
+
+
+def _split_attach_phase_budget(total_timeout_ms: int, phase_count: int, phase_index: int) -> int:
+    """把单次附着预算分配给初始化/重启/重试三个阶段，避免第一步独占全部等待时间。"""
+    phases = max(1, int(phase_count))
+    index = max(0, min(int(phase_index), phases - 1))
+    timeout_ms = max(1000, int(total_timeout_ms or 0))
+    fair_share_ms = max(1000, int(timeout_ms / phases))
+    if index + 1 >= phases:
+        spent_ms = fair_share_ms * index
+        return max(1000, timeout_ms - spent_ms)
+    return fair_share_ms
 
 
 def _mt5_login() -> Tuple[bool, str]:
@@ -2161,6 +3272,99 @@ def _shutdown_mt5() -> None:
         mt5.shutdown()
 
 
+def _restart_mt5_terminal_for_direct_login(path_value: Optional[str], wait_timeout_ms: Optional[int] = None) -> Dict[str, Any]:
+    """真实清理目标 MT5 终端进程，确保下一次直登面对的是干净终端。"""
+    normalized_path = _normalize_path(str(path_value or ""))
+    if not normalized_path:
+        return {
+            "skipped": True,
+            "message": "未找到可用的 MT5 终端路径，无法按路径清理服务器 MT5 终端进程",
+        }
+    effective_timeout_ms = max(1000, int(wait_timeout_ms or MT5_INIT_TIMEOUT_MS))
+    stop_command = _build_mt5_terminal_stop_command(normalized_path, wait_timeout_ms=effective_timeout_ms)
+    timeout_seconds = max(10, int(math.ceil(effective_timeout_ms / 1000.0)) + 10)
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            stop_command,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout_seconds,
+        check=False,
+    )
+    stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+    stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace").strip()
+    if completed.returncode != 0:
+        raise RuntimeError(stderr_text or stdout_text or "MT5 terminal process cleanup failed")
+    try:
+        payload = json.loads(stdout_text or "{}")
+    except Exception as exc:
+        raise RuntimeError(f"MT5 terminal cleanup returned invalid JSON: {stdout_text or stderr_text}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"MT5 terminal cleanup returned invalid payload: {stdout_text or stderr_text}")
+    payload["skipped"] = False
+    return payload
+
+
+def _start_mt5_terminal_for_direct_login(path_value: Optional[str], wait_timeout_ms: Optional[int] = None) -> Dict[str, Any]:
+    """按目标路径显式拉起 MT5 终端，并等待进程真正出现。"""
+    normalized_path = _normalize_path(str(path_value or ""))
+    if not normalized_path:
+        raise RuntimeError("MT5 terminal path is not configured.")
+    effective_timeout_ms = max(1000, int(wait_timeout_ms or MT5_INIT_TIMEOUT_MS))
+    start_command = _build_mt5_terminal_start_command(normalized_path, wait_timeout_ms=effective_timeout_ms)
+    timeout_seconds = max(10, int(math.ceil(effective_timeout_ms / 1000.0)) + 10)
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            start_command,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout_seconds,
+        check=False,
+    )
+    stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+    stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace").strip()
+    if completed.returncode != 0:
+        raise RuntimeError(stderr_text or stdout_text or "MT5 terminal process start failed")
+    try:
+        payload = json.loads(stdout_text or "{}")
+    except Exception as exc:
+        raise RuntimeError(f"MT5 terminal start returned invalid JSON: {stdout_text or stderr_text}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"MT5 terminal start returned invalid payload: {stdout_text or stderr_text}")
+    payload["skipped"] = False
+    return payload
+
+
+def _recycle_mt5_terminal_for_attach(path_value: str, wait_timeout_ms: int) -> Dict[str, Any]:
+    """附着前接管目标 MT5 终端：先清理再拉起，并返回剩余预算。"""
+    effective_timeout_ms = max(1000, int(wait_timeout_ms or 0))
+    stop_budget_ms = _split_attach_phase_budget(effective_timeout_ms, phase_count=2, phase_index=0)
+    start_budget_ms = max(1000, effective_timeout_ms - stop_budget_ms)
+    stop_result = _restart_mt5_terminal_for_direct_login(path_value, wait_timeout_ms=stop_budget_ms)
+    start_result = _start_mt5_terminal_for_direct_login(path_value, wait_timeout_ms=start_budget_ms)
+    return {
+        "terminalPath": str(start_result.get("terminalPath") or stop_result.get("terminalPath") or path_value or "").strip(),
+        "stopMatchedCount": int(stop_result.get("matchedCount") or 0),
+        "stopRemainingCount": int(stop_result.get("remainingCount") or 0),
+        "startMatchedCount": int(start_result.get("matchedCount") or 0),
+        "remainingBudgetMs": max(1000, int(start_budget_ms)),
+    }
+
+
 def _clear_session_related_runtime_state() -> None:
     """清理会话切换后最相关的运行时缓存。"""
     global session_snapshot_epoch
@@ -2212,82 +3416,430 @@ def _on_session_changed(action: str, profile: Optional[Dict[str, Any]]) -> None:
         _clear_runtime_session_credentials()
 
 
+def _read_lightweight_current_mt5_account_identity() -> Optional[Dict[str, str]]:
+    """轻量读取当前 MT5 终端实际账号，只用于 APP 重启后的恢复确认。"""
+    account = _read_current_mt5_gui_account()
+    if account is not None:
+        return account
+    if mt5 is None or not _detect_mt5_gui_window(_normalize_path(str(PATH or ""))):
+        return None
+    initialized, _ = _mt5_initialize(None)
+    if not initialized:
+        return None
+    try:
+        return _read_current_mt5_gui_account()
+    finally:
+        _shutdown_mt5()
+
+
+def _build_verified_session_status_payload() -> Dict[str, Any]:
+    """在返回 session status 前做一次轻量账号确认。"""
+    status = session_manager.build_status_payload()
+    active_account = (status or {}).get("activeAccount") or None
+    if not isinstance(active_account, dict) or not active_account:
+        return status
+    current_account = _read_lightweight_current_mt5_account_identity()
+    if not isinstance(current_account, dict) or not current_account:
+        return status
+    active_login = str(active_account.get("login") or "").strip()
+    current_login = str(current_account.get("login") or "").strip()
+    if active_login and current_login and active_login == current_login:
+        return status
+    session_store.clear_active_session()
+    _on_session_changed("logout", active_account)
+    return session_manager.build_status_payload()
+
+
+def _restore_runtime_session_from_active_session(active_session: Optional[Dict[str, Any]]) -> bool:
+    """服务端重启后尝试从已保存账号恢复远程会话运行时凭据。"""
+    if not isinstance(active_session, dict) or not active_session:
+        return False
+    profile_id = str(active_session.get("profileId") or "").strip()
+    active_login = str(active_session.get("login") or "").strip()
+    active_server = str(active_session.get("server") or "").strip()
+    if not profile_id or not active_login or not active_server:
+        return False
+    if not hasattr(session_store, "load_profile"):
+        return False
+    record = session_store.load_profile(profile_id)
+    if not isinstance(record, dict) or not record:
+        return False
+    raw_profile = record.get("profile")
+    if not isinstance(raw_profile, dict) or not raw_profile:
+        return False
+    saved_login = str(raw_profile.get("login") or "").strip()
+    saved_server = str(raw_profile.get("server") or "").strip()
+    if (
+        saved_login != active_login
+        or _normalize_session_server_identity(saved_server) != _normalize_session_server_identity(active_server)
+    ):
+        return False
+    encrypted_password = str(record.get("encryptedPassword") or "").strip()
+    if not encrypted_password:
+        return False
+    try:
+        cipher = base64.b64decode(encrypted_password, validate=True)
+        password = v2_session_crypto.unprotect_secret_for_machine(cipher).decode("utf-8")
+    except Exception:
+        return False
+    if not password:
+        return False
+    _set_runtime_session_credentials(saved_login, password, saved_server)
+    return True
+
+
 def _probe_mt5_authenticated_session(login_value: int,
                                      password_value: str,
                                      server_value: str,
-                                     path_value: Optional[str]) -> Dict[str, str]:
+                                     path_value: Optional[str],
+                                     request_id: str = "",
+                                     action: str = "login") -> Dict[str, str]:
     """在独立进程里执行 MT5 登录探针，避免主进程被阻塞调用拖死。"""
     probe_script = Path(__file__).resolve().parent / "mt5_login_probe.py"
     if not probe_script.exists():
         raise RuntimeError(f"mt5 login probe script missing: {probe_script}")
+    trace_file = _create_probe_trace_file()
     payload = {
         "login": int(login_value),
         "password": str(password_value or ""),
         "server": str(server_value or ""),
         "path": str(path_value or ""),
         "timeoutMs": int(MT5_INIT_TIMEOUT_MS),
+        "traceFile": str(trace_file or ""),
     }
     # 额外预留 5 秒给独立进程启动、JSON 编解码和退出，不放宽 MT5 自身登录预算。
     process_timeout_seconds = max(5, int(math.ceil(MT5_INIT_TIMEOUT_MS / 1000.0)) + 5)
     try:
-        completed = subprocess.run(
-            [sys.executable, str(probe_script)],
-            input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=process_timeout_seconds,
-            check=False,
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(probe_script)],
+                input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=process_timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            _record_session_diagnostic_trace(
+                request_id=request_id,
+                action=action,
+                trace_items=_read_probe_trace_file(trace_file),
+            )
+            _append_session_diagnostic_entry(
+                request_id=request_id,
+                action=action,
+                stage="probe_timeout",
+                status="failed",
+                message=f"MT5 登录探针在 {process_timeout_seconds}s 后超时",
+                server_time=_now_ms(),
+                error_code="SESSION_PROBE_TIMEOUT",
+            )
+            raise RuntimeError(f"MT5 login probe timed out after {process_timeout_seconds}s") from exc
+        stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace").strip()
+        stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+        try:
+            result = json.loads(stdout_text or "{}")
+        except Exception as exc:
+            _append_session_diagnostic_entry(
+                request_id=request_id,
+                action=action,
+                stage="probe_invalid_json",
+                status="failed",
+                message=stdout_text or stderr_text or "MT5 登录探针返回了无效 JSON",
+                server_time=_now_ms(),
+                error_code="SESSION_PROBE_INVALID_JSON",
+            )
+            raise RuntimeError(f"MT5 login probe returned invalid JSON: {stdout_text or stderr_text}") from exc
+        if not isinstance(result, dict):
+            raise RuntimeError(f"MT5 login probe returned invalid payload: {stdout_text or stderr_text}")
+        _record_session_diagnostic_trace(
+            request_id=request_id,
+            action=action,
+            trace_items=result.get("trace") if isinstance(result.get("trace"), list) else [],
         )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"MT5 login probe timed out after {process_timeout_seconds}s") from exc
-    stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace").strip()
-    stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
-    try:
-        result = json.loads(stdout_text or "{}")
-    except Exception as exc:
-        raise RuntimeError(f"MT5 login probe returned invalid JSON: {stdout_text or stderr_text}") from exc
-    if not isinstance(result, dict):
-        raise RuntimeError(f"MT5 login probe returned invalid payload: {stdout_text or stderr_text}")
-    if not bool(result.get("ok", False)):
-        error_message = str(result.get("error") or stderr_text or "MT5 login probe failed")
-        raise RuntimeError(error_message)
-    canonical_login = str(result.get("login") or "").strip()
-    canonical_server = str(result.get("server") or "").strip()
-    if not canonical_login or not canonical_server:
-        raise RuntimeError("MT5 login probe returned incomplete canonical identity")
-    return {
-        "login": canonical_login,
-        "server": canonical_server,
+        if not bool(result.get("ok", False)):
+            error_message = str(result.get("error") or stderr_text or "MT5 login probe failed")
+            raise RuntimeError(error_message)
+        canonical_login = str(result.get("login") or "").strip()
+        canonical_server = str(result.get("server") or "").strip()
+        if not canonical_login or not canonical_server:
+            raise RuntimeError("MT5 login probe returned incomplete canonical identity")
+        return {
+            "login": canonical_login,
+            "server": canonical_server,
+        }
+    finally:
+        _cleanup_probe_trace_file(trace_file)
+
+
+def _login_mt5_in_isolated_process(login_value: int,
+                                   password_value: str,
+                                   server_value: str,
+                                   path_value: Optional[str],
+                                   request_id: str = "",
+                                   action: str = "login") -> Dict[str, str]:
+    """在隔离进程里执行单路径直登，避免主进程 MT5 IPC 黏连导致初始化卡死。"""
+    helper_script = Path(__file__).resolve().parent / "mt5_direct_login.py"
+    if not helper_script.exists():
+        raise RuntimeError(f"mt5 direct login script missing: {helper_script}")
+    trace_file = _create_probe_trace_file()
+    payload = {
+        "login": int(login_value),
+        "password": str(password_value or ""),
+        "server": str(server_value or ""),
+        "path": str(path_value or ""),
+        "timeoutMs": int(MT5_INIT_TIMEOUT_MS),
+        "traceFile": str(trace_file or ""),
     }
+    # 直登 helper 按官方顺序执行 initialize + login，两段都要共享同一超时预算。
+    process_timeout_seconds = max(10, int(math.ceil((MT5_INIT_TIMEOUT_MS * 2) / 1000.0)) + 10)
+    try:
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(helper_script)],
+                input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=process_timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            _record_session_diagnostic_trace(
+                request_id=request_id,
+                action=action,
+                trace_items=_read_probe_trace_file(trace_file),
+            )
+            raise RuntimeError(f"MT5 direct login timed out after {process_timeout_seconds}s") from exc
+        stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace").strip()
+        stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+        try:
+            result = json.loads(stdout_text or "{}")
+        except Exception as exc:
+            raise RuntimeError(f"MT5 direct login returned invalid JSON: {stdout_text or stderr_text}") from exc
+        if not isinstance(result, dict):
+            raise RuntimeError(f"MT5 direct login returned invalid payload: {stdout_text or stderr_text}")
+        _record_session_diagnostic_trace(
+            request_id=request_id,
+            action=action,
+            trace_items=result.get("trace") if isinstance(result.get("trace"), list) else [],
+        )
+        if not bool(result.get("ok", False)):
+            raise RuntimeError(str(result.get("error") or stderr_text or "MT5 direct login failed"))
+        canonical_login = str(result.get("login") or "").strip()
+        canonical_server = str(result.get("server") or "").strip()
+        if not canonical_login or not canonical_server:
+            raise RuntimeError("MT5 direct login returned incomplete canonical identity")
+        return {
+            "login": canonical_login,
+            "server": canonical_server,
+        }
+    finally:
+        _cleanup_probe_trace_file(trace_file)
+
+
+def _login_mt5_direct_with_input_credentials(*,
+                                             login_value: int,
+                                             password_value: str,
+                                             server_value: str,
+                                             request_id: str = "",
+                                             action: str = "login") -> Dict[str, str]:
+    """先退出当前 MT5，再只按本次输入的账号密码执行一次正式直登。"""
+    if mt5 is None:
+        raise RuntimeError("MetaTrader5 package is unavailable")
+    normalized_login = str(int(login_value or 0)).strip() if int(login_value or 0) > 0 else ""
+    normalized_server = str(server_value or "").strip()
+    if not normalized_login or not normalized_server or not str(password_value or ""):
+        raise RuntimeError("MT5 direct login missing required credentials")
+
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_logout_start",
+        status="pending",
+        message="开始清理网关当前 MT5 API 连接",
+        server_time=_now_ms(),
+    )
+    try:
+        _shutdown_mt5()
+    except Exception as exc:
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage="direct_logout_failed",
+            status="failed",
+            message=f"退出服务器当前 MT5 账号失败: {exc}",
+            server_time=_now_ms(),
+            error_code="SESSION_DIRECT_LOGOUT_FAILED",
+        )
+        raise RuntimeError(f"MT5 logout failed: {exc}") from exc
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_logout_ok",
+        status="ok",
+        message="已完成网关当前 MT5 API 连接清理",
+        server_time=_now_ms(),
+        detail={
+            "note": "该步骤仅清理网关进程中的 MT5 API 连接，不等于终端账号已退出",
+        },
+    )
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_terminal_reset_start",
+        status="pending",
+        message="开始按目标路径清理服务器 MT5 终端进程",
+        server_time=_now_ms(),
+        detail={},
+    )
+    terminal_path, terminal_path_source = _resolve_direct_login_terminal_path()
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_terminal_path_resolved",
+        status="ok",
+        message="已解析本次直登将操作的 MT5 终端路径",
+        server_time=_now_ms(),
+        detail={
+            "terminalPath": str(terminal_path or "").strip(),
+            "pathSource": terminal_path_source,
+        },
+    )
+    try:
+        terminal_reset_result = _restart_mt5_terminal_for_direct_login(terminal_path)
+    except Exception as exc:
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage="direct_terminal_reset_failed",
+            status="failed",
+            message=f"清理服务器 MT5 终端进程失败: {exc}",
+            server_time=_now_ms(),
+            error_code="SESSION_DIRECT_TERMINAL_RESET_FAILED",
+        )
+        raise RuntimeError(f"MT5 terminal reset failed: {exc}") from exc
+    reset_detail = {
+        "terminalPath": str(terminal_reset_result.get("terminalPath") or terminal_path or "").strip(),
+        "pathSource": terminal_path_source,
+        "matchedCount": int(terminal_reset_result.get("matchedCount") or 0),
+        "remainingCount": int(terminal_reset_result.get("remainingCount") or 0),
+    }
+    if bool(terminal_reset_result.get("skipped")):
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage="direct_terminal_reset_skipped",
+            status="ok",
+            message=str(terminal_reset_result.get("message") or "未执行服务器 MT5 终端进程清理"),
+            server_time=_now_ms(),
+            detail=reset_detail,
+        )
+    else:
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage="direct_terminal_reset_ok",
+            status="ok",
+            message="已完成服务器 MT5 终端进程清理",
+            server_time=_now_ms(),
+            detail=reset_detail,
+        )
+
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_terminal_start_start",
+        status="pending",
+        message="开始按目标路径启动服务器 MT5 终端",
+        server_time=_now_ms(),
+        detail={
+            "terminalPath": str(terminal_path or "").strip(),
+            "pathSource": terminal_path_source,
+        },
+    )
+    try:
+        terminal_start_result = _start_mt5_terminal_for_direct_login(terminal_path)
+    except Exception as exc:
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage="direct_terminal_start_failed",
+            status="failed",
+            message=f"启动服务器 MT5 终端失败: {exc}",
+            server_time=_now_ms(),
+            error_code="SESSION_DIRECT_TERMINAL_START_FAILED",
+            detail={
+                "terminalPath": str(terminal_path or "").strip(),
+                "pathSource": terminal_path_source,
+            },
+        )
+        raise RuntimeError(f"MT5 terminal start failed: {exc}") from exc
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_terminal_start_ok",
+        status="ok",
+        message="已显式启动服务器 MT5 终端",
+        server_time=_now_ms(),
+        detail={
+            "terminalPath": str(terminal_start_result.get("terminalPath") or terminal_path or "").strip(),
+            "pathSource": terminal_path_source,
+            "matchedCount": int(terminal_start_result.get("matchedCount") or 0),
+        },
+    )
+
+    return _login_mt5_in_isolated_process(
+        login_value=login_value,
+        password_value=password_value,
+        server_value=normalized_server,
+        path_value=terminal_path,
+        request_id=request_id,
+        action=action,
+    )
 
 
 class _SessionGatewayAdapter:
     """会话管理器使用的最小 MT5 网关适配器。"""
 
-    def login_mt5(self, login: str, password: str, server: str) -> Dict[str, Any]:
+    def login_mt5(self, login: str, password: str, server: str, request_id: str = "") -> Dict[str, Any]:
         """按给定账号参数执行 MT5 登录。"""
-        if mt5 is None:
-            raise RuntimeError("MetaTrader5 package is unavailable")
-        login_value = int(str(login or "").strip())
         password_value = str(password or "")
-        server_value = str(server or "").strip()
-        authenticated = _probe_mt5_authenticated_session(
-            login_value=login_value,
-            password_value=password_value,
-            server_value=server_value,
-            path_value=PATH,
+        switch_result = _switch_mt5_account_via_gui_flow(
+            login=str(login or "").strip(),
+            password=password_value,
+            server=str(server or "").strip(),
+            request_id=request_id,
+            action="login",
         )
-        canonical_login = str(authenticated.get("login") or "").strip()
-        canonical_server = str(authenticated.get("server") or "").strip()
+        if not bool(switch_result.get("ok")):
+            raise Mt5AccountSwitchFlowError(switch_result)
+        canonical_login = str(switch_result.get("login") or "").strip()
+        canonical_server = str(switch_result.get("server") or "").strip()
         _set_runtime_session_credentials(canonical_login, password_value, canonical_server)
-        return {
-            "login": canonical_login,
-            "server": canonical_server,
-        }
+        result = dict(switch_result)
+        result["login"] = canonical_login
+        result["server"] = canonical_server
+        return result
 
-    def switch_mt5_account(self, login: str, password: str, server: str) -> Dict[str, Any]:
+    def switch_mt5_account(self, login: str, password: str, server: str, request_id: str = "") -> Dict[str, Any]:
         """按已保存账号执行 MT5 切换。"""
-        return self.login_mt5(login=login, password=password, server=server)
+        password_value = str(password or "")
+        switch_result = _switch_mt5_account_via_gui_flow(
+            login=str(login or "").strip(),
+            password=password_value,
+            server=str(server or "").strip(),
+            request_id=request_id,
+            action="switch",
+        )
+        if not bool(switch_result.get("ok")):
+            raise Mt5AccountSwitchFlowError(switch_result)
+        canonical_login = str(switch_result.get("login") or "").strip()
+        canonical_server = str(switch_result.get("server") or "").strip()
+        _set_runtime_session_credentials(canonical_login, password_value, canonical_server)
+        result = dict(switch_result)
+        result["login"] = canonical_login
+        result["server"] = canonical_server
+        return result
 
     def clear_account_caches(self) -> None:
         """清理会话切换后的运行时缓存。"""
@@ -2324,14 +3876,24 @@ def _build_session_manager() -> v2_session_manager.AccountSessionManager:
             or not active_login
             or not active_server
             or active_login != runtime_login
-            or active_server.lower() != runtime_server.lower()
+            or _normalize_session_server_identity(active_server) != _normalize_session_server_identity(runtime_server)
         ):
-            session_store.clear_active_session()
+            restored = _restore_runtime_session_from_active_session(active_session)
+            if not restored:
+                session_store.clear_active_session()
     return manager
 
 
 session_manager = _build_session_manager()
 session_envelope_crypto = v2_session_crypto.LoginEnvelopeCrypto(now_ms_provider=_now_ms)
+
+
+class Mt5AccountSwitchFlowError(RuntimeError):
+    """承载结构化 MT5 切号失败结果，供接口层直接透传。"""
+
+    def __init__(self, result: Dict[str, Any]):
+        self.result = dict(result or {})
+        super().__init__(str(self.result.get("message") or "MT5 账户切换失败"))
 
 
 def _deal_profit(deal) -> float:
@@ -3522,6 +5084,7 @@ def _snapshot_from_mt5(range_key: str) -> Dict:
                     "login": str(getattr(account, "login", LOGIN)),
                     "server": str(getattr(account, "server", SERVER)),
                     "source": "MT5 Python Pull",
+                    "accountMode": _detect_account_mode(),
                     "updatedAt": _now_ms(),
                     "currency": str(getattr(account, "currency", "")),
                     "leverage": int(getattr(account, "leverage", 0) or 0),
@@ -3572,6 +5135,7 @@ def _snapshot_from_mt5_light() -> Dict:
                     "login": str(getattr(account, "login", LOGIN)),
                     "server": str(getattr(account, "server", SERVER)),
                     "source": "MT5 Python Pull",
+                    "accountMode": _detect_account_mode(),
                     "updatedAt": _now_ms(),
                     "currency": str(getattr(account, "currency", "")),
                     "leverage": int(getattr(account, "leverage", 0) or 0),
@@ -4837,6 +6401,9 @@ def _build_v2_account_section_from_snapshot(snapshot: Dict[str, Any]) -> Dict[st
 
 # 构建单个产品的行情同步摘要，供 v2 stream 纯消费链直接落地。
 def _build_market_stream_symbol_state(symbol: str, server_time: int) -> Dict[str, Any]:
+    runtime_state = _build_market_runtime_symbol_state(symbol)
+    if runtime_state.get("latestPatch") is not None or runtime_state.get("latestClosedCandle") is not None:
+        return runtime_state
     symbol_descriptor = _resolve_symbol_descriptor(symbol)
     rows = _fetch_market_candle_rows_with_cache(
         symbol_descriptor["marketSymbol"],
@@ -4893,12 +6460,14 @@ def _build_v2_market_section(server_time: int) -> Dict[str, Any]:
     symbol_states: List[Dict[str, Any]] = []
     for symbol in ABNORMAL_SYMBOLS:
         symbol_states.append(_build_market_stream_symbol_state(symbol, server_time))
+    runtime_status = _build_market_runtime_source_status()
     return {
         "source": "binance",
         "symbols": [MARKET_SYMBOL_BTC, MARKET_SYMBOL_XAU],
         "symbolStates": symbol_states,
         "restUpstream": BINANCE_REST_UPSTREAM,
         "wsUpstream": BINANCE_WS_UPSTREAM,
+        **runtime_status,
     }
 
 
@@ -5277,13 +6846,14 @@ def source_status():
         "v2StreamPushIntervalMs": V2_STREAM_PUSH_INTERVAL_MS,
         "healthCacheMs": HEALTH_CACHE_MS,
         "session": _build_session_summary(),
+        **_build_market_runtime_source_status(),
     }
 
 
 @app.get("/v2/session/status")
 def v2_session_status():
     """返回当前会话状态。"""
-    return session_manager.build_status_payload()
+    return _build_verified_session_status_payload()
 
 
 @app.get("/v2/session/public-key")
@@ -5296,23 +6866,112 @@ def v2_session_public_key():
     )
 
 
+def _build_session_error_detail(
+    code: str,
+    message: str,
+    request_id: str = "",
+    result: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """统一构造会话接口错误明细，避免客户端只拿到模糊的 HTTP 500。"""
+    detail = {
+        "code": str(code or "").strip(),
+        "message": str(message or "").strip(),
+    }
+    safe_request_id = str(request_id or "").strip()
+    if safe_request_id:
+        detail["requestId"] = safe_request_id
+    result_payload = dict(result or {})
+    if result_payload:
+        detail["stage"] = str(result_payload.get("stage") or "").strip()
+        detail["elapsedMs"] = int(result_payload.get("elapsedMs") or 0)
+        detail["baselineAccount"] = result_payload.get("baselineAccount")
+        detail["finalAccount"] = result_payload.get("finalAccount")
+        detail["loginError"] = str(result_payload.get("loginError") or "").strip()
+        detail["lastObservedAccount"] = result_payload.get("lastObservedAccount")
+    return detail
+
+
 @app.post("/v2/session/login")
 def v2_session_login(payload: Dict[str, Any]):
     """接收加密登录信封并登录新账号。"""
     safe_payload = dict(payload or {})
+    request_id = str(safe_payload.get("requestId") or "")
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action="login",
+        stage="request_received",
+        status="accepted",
+        message="已收到会话登录请求",
+        server_time=_now_ms(),
+    )
     try:
         plain = session_envelope_crypto.decrypt_login_envelope(safe_payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     request_id = str(plain.get("requestId") or safe_payload.get("requestId") or "")
-    remember = _parse_bool_flag(safe_payload.get("saveAccount"), default=_parse_bool_flag(plain.get("remember")))
-    return session_manager.login_new_account(
-        login=str(plain.get("login") or ""),
-        password=str(plain.get("password") or ""),
-        server=str(plain.get("server") or ""),
-        remember=remember,
+    _append_session_diagnostic_entry(
         request_id=request_id,
+        action="login",
+        stage="envelope_decrypted",
+        status="ok",
+        message="登录信封解密完成",
+        server_time=_now_ms(),
+        detail={
+            "login": str(plain.get("login") or ""),
+            "server": str(plain.get("server") or ""),
+            "remember": bool(plain.get("remember")),
+        },
     )
+    remember = _parse_bool_flag(safe_payload.get("saveAccount"), default=_parse_bool_flag(plain.get("remember")))
+    try:
+        payload = session_manager.login_new_account(
+            login=str(plain.get("login") or ""),
+            password=str(plain.get("password") or ""),
+            server=str(plain.get("server") or ""),
+            remember=remember,
+            request_id=request_id,
+        )
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action="login",
+            stage="login_accepted",
+            status="ok",
+            message=str(payload.get("message") or "登录成功"),
+            server_time=_now_ms(),
+        )
+        return payload
+    except ValueError as exc:
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action="login",
+            stage="login_invalid",
+            status="failed",
+            message=str(exc),
+            server_time=_now_ms(),
+            error_code="SESSION_LOGIN_INVALID",
+        )
+        raise HTTPException(status_code=400, detail=_build_session_error_detail("SESSION_LOGIN_INVALID", str(exc), request_id=request_id))
+    except Mt5AccountSwitchFlowError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=_build_session_error_detail(
+                "SESSION_LOGIN_FAILED",
+                str(exc),
+                request_id=request_id,
+                result=exc.result,
+            ),
+        )
+    except Exception as exc:
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action="login",
+            stage="login_failed",
+            status="failed",
+            message=str(exc),
+            server_time=_now_ms(),
+            error_code="SESSION_LOGIN_FAILED",
+        )
+        raise HTTPException(status_code=502, detail=_build_session_error_detail("SESSION_LOGIN_FAILED", str(exc), request_id=request_id))
 
 
 @app.post("/v2/session/switch")
@@ -5323,10 +6982,58 @@ def v2_session_switch(payload: Dict[str, Any]):
     profile_id = str(safe_payload.get("accountProfileId") or safe_payload.get("profileId") or "").strip()
     if not profile_id:
         raise HTTPException(status_code=400, detail="accountProfileId is required")
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action="switch",
+        stage="request_received",
+        status="accepted",
+        message="已收到会话切换请求",
+        server_time=_now_ms(),
+        detail={"profileId": profile_id},
+    )
     try:
-        return session_manager.switch_saved_account(profile_id, request_id=request_id)
+        switch_payload = session_manager.switch_saved_account(profile_id, request_id=request_id)
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action="switch",
+            stage="switch_accepted",
+            status="ok",
+            message=str(switch_payload.get("message") or "切换成功"),
+            server_time=_now_ms(),
+        )
+        return switch_payload
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action="switch",
+            stage="switch_invalid",
+            status="failed",
+            message=str(exc),
+            server_time=_now_ms(),
+            error_code="SESSION_SWITCH_INVALID",
+        )
+        raise HTTPException(status_code=400, detail=_build_session_error_detail("SESSION_SWITCH_INVALID", str(exc), request_id=request_id))
+    except Mt5AccountSwitchFlowError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=_build_session_error_detail(
+                "SESSION_SWITCH_FAILED",
+                str(exc),
+                request_id=request_id,
+                result=exc.result,
+            ),
+        )
+    except Exception as exc:
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action="switch",
+            stage="switch_failed",
+            status="failed",
+            message=str(exc),
+            server_time=_now_ms(),
+            error_code="SESSION_SWITCH_FAILED",
+        )
+        raise HTTPException(status_code=502, detail=_build_session_error_detail("SESSION_SWITCH_FAILED", str(exc), request_id=request_id))
 
 
 @app.post("/v2/session/logout")
@@ -5334,6 +7041,20 @@ def v2_session_logout(payload: Dict[str, Any]):
     """退出当前激活账号。"""
     request_id = str((payload or {}).get("requestId") or "")
     return session_manager.logout_current_session(request_id=request_id)
+
+
+@app.get("/v2/session/diagnostic/latest")
+def v2_session_diagnostic_latest(requestId: str = Query(default="")):
+    """返回最近一次或指定 requestId 的会话诊断时间线。"""
+    items = session_diagnostic_store.latest_timeline(requestId)
+    return _build_session_diagnostic_payload(items)
+
+
+@app.get("/v2/session/diagnostic/lookup")
+def v2_session_diagnostic_lookup(requestId: str = Query(default="")):
+    """按 requestId 返回完整会话诊断时间线。"""
+    items = session_diagnostic_store.lookup(requestId)
+    return _build_session_diagnostic_payload(items)
 
 
 @app.get("/v2/market/snapshot")
@@ -5371,13 +7092,23 @@ def v2_market_candles(symbol: str,
             end_time_ms=endTime,
         )
         closed_rest_rows, latest_rest_patch = v2_market.separate_closed_rest_rows(rest_rows, now_ms)
+        runtime_patch_row = None
+        patch_source = "binance-rest"
+        if str(interval or "").strip() == "1m":
+            runtime_patch_row = _get_market_runtime_patch_row(symbol)
+            if runtime_patch_row is not None:
+                patch_source = "binance-ws"
+        else:
+            runtime_patch_row = _build_market_runtime_interval_patch(symbol, str(interval or "").strip())
+            if runtime_patch_row is not None:
+                patch_source = "binance-ws"
         return v2_market.build_market_candles_response(
             symbol=symbol,
             interval=interval,
             server_time=now_ms,
             rest_rows=closed_rest_rows,
-            latest_patch=latest_rest_patch,
-            patch_source="binance-rest",
+            latest_patch=runtime_patch_row if runtime_patch_row is not None else latest_rest_patch,
+            patch_source=patch_source,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -5522,7 +7253,7 @@ def v2_trade_check(payload: Dict[str, Any]):
         action = str(command.get("action") or "")
         prepare_error = prepared.get("error")
         if prepare_error is not None:
-            return v2_trade_models.build_trade_check_response(
+            response = v2_trade_models.build_trade_check_response(
                 request_id=request_id,
                 action=action,
                 account_mode=account_mode,
@@ -5531,13 +7262,23 @@ def v2_trade_check(payload: Dict[str, Any]):
                 check=None,
                 server_time=now_ms,
             )
+            _record_single_trade_audit(
+                command=command,
+                account_mode=account_mode,
+                stage="check",
+                status=response.get("status", ""),
+                error=response.get("error"),
+                message=str((response.get("error") or {}).get("message") or "检查未通过"),
+                server_time=now_ms,
+            )
+            return response
 
         check_result = v2_trade_models.mt5_result_to_dict(_trade_check_request(prepared.get("request") or {}))
         check_error = v2_trade_models.error_from_retcode(
             check_result.get("retcode", -1),
             check_result.get("comment", ""),
         )
-        return v2_trade_models.build_trade_check_response(
+        response = v2_trade_models.build_trade_check_response(
             request_id=request_id,
             action=action,
             account_mode=account_mode,
@@ -5546,10 +7287,20 @@ def v2_trade_check(payload: Dict[str, Any]):
             check=check_result,
             server_time=now_ms,
         )
+        _record_single_trade_audit(
+            command=command,
+            account_mode=account_mode,
+            stage="check",
+            status=response.get("status", ""),
+            error=response.get("error"),
+            message="检查通过" if check_error is None else str((check_error or {}).get("message") or "检查未通过"),
+            server_time=now_ms,
+        )
+        return response
     except Exception as exc:
         now_ms = _now_ms()
         command = v2_trade.normalize_trade_payload(payload or {})
-        return v2_trade_models.build_trade_check_response(
+        response = v2_trade_models.build_trade_check_response(
             request_id=str(command.get("requestId") or ""),
             action=str(command.get("action") or ""),
             account_mode=_detect_account_mode(),
@@ -5558,6 +7309,16 @@ def v2_trade_check(payload: Dict[str, Any]):
             check=None,
             server_time=now_ms,
         )
+        _record_single_trade_audit(
+            command=command,
+            account_mode=str(response.get("accountMode") or ""),
+            stage="check",
+            status=response.get("status", ""),
+            error=response.get("error"),
+            message=str(exc),
+            server_time=now_ms,
+        )
+        return response
 
 
 @app.post("/v2/trade/submit")
@@ -5575,7 +7336,7 @@ def v2_trade_submit(payload: Dict[str, Any]):
         existing_digest = str(existing_entry.get("payloadDigest") or "")
         existing_response = existing_entry.get("response") if isinstance(existing_entry.get("response"), dict) else {}
         if existing_digest and existing_digest != command_digest:
-            return v2_trade_models.build_trade_submit_response(
+            response = v2_trade_models.build_trade_submit_response(
                 request_id=request_id,
                 action=action,
                 account_mode=str(existing_response.get("accountMode") or account_mode),
@@ -5589,7 +7350,17 @@ def v2_trade_submit(payload: Dict[str, Any]):
                 server_time=now_ms,
                 idempotent=True,
             )
-        return v2_trade_models.build_trade_submit_response(
+            _record_single_trade_audit(
+                command=command,
+                account_mode=str(response.get("accountMode") or ""),
+                stage="submit",
+                status=str(response.get("status") or ""),
+                error=response.get("error"),
+                message=str((response.get("error") or {}).get("message") or "交易失败"),
+                server_time=now_ms,
+            )
+            return response
+        response = v2_trade_models.build_trade_submit_response(
             request_id=request_id,
             action=action,
             account_mode=str(existing_response.get("accountMode") or account_mode),
@@ -5603,6 +7374,16 @@ def v2_trade_submit(payload: Dict[str, Any]):
             server_time=now_ms,
             idempotent=True,
         )
+        _record_single_trade_audit(
+            command=command,
+            account_mode=str(response.get("accountMode") or ""),
+            stage="submit",
+            status=str(response.get("status") or ""),
+            error=response.get("error"),
+            message=str((response.get("error") or {}).get("message") or "重复 requestId，已按幂等返回"),
+            server_time=now_ms,
+        )
+        return response
 
     prepare_error = prepared.get("error")
     if prepare_error is not None:
@@ -5618,6 +7399,15 @@ def v2_trade_submit(payload: Dict[str, Any]):
             idempotent=False,
         )
         _store_trade_request_result(request_id, command_digest, response)
+        _record_single_trade_audit(
+            command=command,
+            account_mode=account_mode,
+            stage="submit",
+            status=str(response.get("status") or ""),
+            error=response.get("error"),
+            message=str((response.get("error") or {}).get("message") or "交易失败"),
+            server_time=now_ms,
+        )
         return response
 
     try:
@@ -5635,6 +7425,15 @@ def v2_trade_submit(payload: Dict[str, Any]):
             idempotent=False,
         )
         _store_trade_request_result(request_id, command_digest, response)
+        _record_single_trade_audit(
+            command=command,
+            account_mode=account_mode,
+            stage="submit",
+            status=str(response.get("status") or ""),
+            error=response.get("error"),
+            message=str(exc),
+            server_time=now_ms,
+        )
         return response
 
     check_error = v2_trade_models.error_from_retcode(
@@ -5654,6 +7453,15 @@ def v2_trade_submit(payload: Dict[str, Any]):
             idempotent=False,
         )
         _store_trade_request_result(request_id, command_digest, response)
+        _record_single_trade_audit(
+            command=command,
+            account_mode=account_mode,
+            stage="submit",
+            status=str(response.get("status") or ""),
+            error=response.get("error"),
+            message=str((response.get("error") or {}).get("message") or "交易失败"),
+            server_time=now_ms,
+        )
         return response
 
     try:
@@ -5671,6 +7479,15 @@ def v2_trade_submit(payload: Dict[str, Any]):
             idempotent=False,
         )
         _store_trade_request_result(request_id, command_digest, response)
+        _record_single_trade_audit(
+            command=command,
+            account_mode=account_mode,
+            stage="submit",
+            status=str(response.get("status") or ""),
+            error=response.get("error"),
+            message=str((response.get("error") or {}).get("message") or str(exc)),
+            server_time=now_ms,
+        )
         return response
 
     send_error = v2_trade_models.error_from_retcode(
@@ -5689,6 +7506,15 @@ def v2_trade_submit(payload: Dict[str, Any]):
         idempotent=False,
     )
     _store_trade_request_result(request_id, command_digest, response)
+    _record_single_trade_audit(
+        command=command,
+        account_mode=account_mode,
+        stage="submit",
+        status=str(response.get("status") or ""),
+        error=response.get("error"),
+        message="交易已受理" if send_error is None else str((response.get("error") or {}).get("message") or "交易失败"),
+        server_time=now_ms,
+    )
     if send_error is None:
         _invalidate_account_runtime_cache_after_trade_commit()
         _publish_account_trade_commit_sync_state()
@@ -5699,17 +7525,143 @@ def v2_trade_submit(payload: Dict[str, Any]):
 def v2_trade_result(requestId: str = Query(default="")):
     request_id = str(requestId or "").strip()
     if not request_id:
+        _record_single_trade_audit(
+            command={"requestId": request_id, "action": "", "params": {}},
+            account_mode="unknown",
+            stage="result",
+            status="FAILED",
+            error=v2_trade_models.build_error(v2_trade_models.ERROR_INVALID_PARAMS, "requestId 不能为空"),
+            message="requestId 不能为空",
+            server_time=_now_ms(),
+        )
         raise HTTPException(
             status_code=400,
             detail=v2_trade_models.build_error(v2_trade_models.ERROR_INVALID_PARAMS, "requestId 不能为空"),
         )
     payload = _get_trade_request_result(request_id)
     if payload is None:
+        _record_single_trade_audit(
+            command={"requestId": request_id, "action": "", "params": {}},
+            account_mode="unknown",
+            stage="result",
+            status="FAILED",
+            error=v2_trade_models.build_error(v2_trade_models.ERROR_REQUEST_NOT_FOUND, "未找到对应 requestId"),
+            message="未找到对应 requestId",
+            server_time=_now_ms(),
+        )
         raise HTTPException(
             status_code=404,
             detail=v2_trade_models.build_error(v2_trade_models.ERROR_REQUEST_NOT_FOUND, "未找到对应 requestId"),
         )
+    _record_single_trade_audit(
+        command={"requestId": request_id, "action": payload.get("action"), "params": {"symbol": payload.get("symbol", "")}},
+        account_mode=str(payload.get("accountMode") or "unknown"),
+        stage="result",
+        status=str(payload.get("status") or ""),
+        error=payload.get("error"),
+        message=str((payload.get("error") or {}).get("message") or payload.get("status") or "结果已返回"),
+        server_time=int(payload.get("serverTime") or _now_ms()),
+    )
     return payload
+
+
+@app.post("/v2/trade/batch/submit")
+def v2_trade_batch_submit(payload: Dict[str, Any]):
+    now_ms = _now_ms()
+    account_mode = _detect_account_mode()
+    result = v2_trade_batch.submit_trade_batch(
+        payload or {},
+        account_mode=account_mode,
+        mt5_module=mt5,
+        position_lookup=_lookup_trade_position,
+        symbol_info_lookup=(lambda symbol: mt5.symbol_info(symbol)) if mt5 is not None else None,
+        check_request=_trade_check_request,
+        send_request=_trade_send_request,
+        server_time=now_ms,
+    )
+    _store_batch_request_result(str(result.get("batchId") or ""), result)
+    _record_batch_trade_audit(
+        payload=payload,
+        result_payload=result,
+        stage="batch_submit",
+        status=str(result.get("status") or ""),
+        error=result.get("error"),
+        message=str((result.get("error") or {}).get("message") or result.get("status") or "批量提交完成"),
+        server_time=int(result.get("serverTime") or now_ms),
+    )
+    if str(result.get("status") or "") in {v2_trade_models.STATUS_ACCEPTED, v2_trade_models.STATUS_PARTIAL}:
+        _invalidate_account_runtime_cache_after_trade_commit()
+        _publish_account_trade_commit_sync_state()
+    return result
+
+
+@app.get("/v2/trade/batch/result")
+def v2_trade_batch_result(batchId: str = Query(default="")):
+    batch_id = str(batchId or "").strip()
+    if not batch_id:
+        _record_batch_trade_audit(
+            payload={"batchId": batch_id},
+            result_payload={"batchId": batch_id, "accountMode": "unknown"},
+            stage="batch_result",
+            status="FAILED",
+            error=v2_trade_models.build_error(v2_trade_models.ERROR_BATCH_INVALID_ID, "batchId 不能为空"),
+            message="batchId 不能为空",
+            server_time=_now_ms(),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=v2_trade_models.build_error(v2_trade_models.ERROR_BATCH_INVALID_ID, "batchId 不能为空"),
+        )
+    payload = _get_batch_request_result(batch_id)
+    if payload is None:
+        _record_batch_trade_audit(
+            payload={"batchId": batch_id},
+            result_payload={"batchId": batch_id, "accountMode": "unknown"},
+            stage="batch_result",
+            status="FAILED",
+            error=v2_trade_models.build_error(v2_trade_models.ERROR_BATCH_NOT_FOUND, "未找到对应 batchId"),
+            message="未找到对应 batchId",
+            server_time=_now_ms(),
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=v2_trade_models.build_error(v2_trade_models.ERROR_BATCH_NOT_FOUND, "未找到对应 batchId"),
+        )
+    _record_batch_trade_audit(
+        payload={"batchId": batch_id},
+        result_payload=payload,
+        stage="batch_result",
+        status=str(payload.get("status") or ""),
+        error=payload.get("error"),
+        message=str((payload.get("error") or {}).get("message") or payload.get("status") or "批量结果已返回"),
+        server_time=int(payload.get("serverTime") or _now_ms()),
+    )
+    return payload
+
+
+@app.get("/v2/trade/audit/recent")
+def v2_trade_audit_recent(limit: int = Query(default=50, ge=1, le=200)):
+    now_ms = _now_ms()
+    return {
+        "items": trade_audit_store.recent(limit),
+        "serverTime": now_ms,
+    }
+
+
+@app.get("/v2/trade/audit/lookup")
+def v2_trade_audit_lookup(id: str = Query(default="")):
+    now_ms = _now_ms()
+    trace_id = str(id or "").strip()
+    if not trace_id:
+        raise HTTPException(
+            status_code=400,
+            detail=v2_trade_models.build_error(v2_trade_models.ERROR_INVALID_PARAMS, "id 不能为空"),
+        )
+    return {
+        "id": trace_id,
+        "items": trade_audit_store.lookup(trace_id),
+        "serverTime": now_ms,
+    }
 
 
 @app.post("/v1/ea/snapshot")
@@ -5874,6 +7826,9 @@ def admin_cache_clear():
         _reset_account_publish_state_locked()
         abnormal_sync_state.clear()
         trade_request_store.clear()
+        batch_request_store.clear()
+        trade_audit_store.clear()
+        session_diagnostic_store.clear()
     return {"ok": True, "cleared": cleared}
 
 
