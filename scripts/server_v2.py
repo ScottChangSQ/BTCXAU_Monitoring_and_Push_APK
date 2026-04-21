@@ -3830,48 +3830,189 @@ def _login_mt5_direct_with_input_credentials(*,
     )
 
 
+def _build_direct_session_result(*,
+                                 action: str,
+                                 login: str,
+                                 server: str,
+                                 request_id: str = "") -> Dict[str, Any]:
+    """把独立 MT5 实例直登结果映射成统一会话回执结构。"""
+    safe_login = str(login or "").strip()
+    safe_server = str(server or "").strip()
+    message_action = "登录" if str(action or "").strip() == "login" else "切换"
+    account_summary = _build_direct_session_account_summary(login=safe_login, server=safe_server) or {
+        "login": safe_login,
+        "server": safe_server,
+    }
+    return {
+        "ok": True,
+        "state": "activated",
+        "requestId": str(request_id or "").strip(),
+        "stage": "direct_identity_confirmed",
+        "message": f"已通过独立 MT5 实例{message_action}目标账号",
+        "elapsedMs": 0,
+        "baselineAccount": None,
+        "finalAccount": account_summary,
+        "loginError": "",
+        "lastObservedAccount": dict(account_summary),
+        "login": safe_login,
+        "server": safe_server,
+    }
+
+
+def _mask_direct_session_login(login: str) -> str:
+    """把登录账号裁剪成统一掩码格式。"""
+    safe_login = str(login or "").strip()
+    return f"****{safe_login[-4:]}" if safe_login else "****"
+
+
+def _build_direct_session_profile_id(login: str, server: str) -> str:
+    """按账号和服务器构造稳定 profileId，保证直登链回执字段齐全。"""
+    safe_login = str(login or "").strip()
+    safe_server = str(server or "").strip().lower().replace(" ", "_")
+    normalized_server = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in safe_server)
+    if not safe_login or not normalized_server:
+        return ""
+    return f"acct_{safe_login}_{normalized_server}"
+
+
+def _build_direct_session_account_summary(*, login: str, server: str) -> Optional[Dict[str, Any]]:
+    """把账号身份补全成会话摘要结构，避免上层只拿到半截字段。"""
+    safe_login = str(login or "").strip()
+    safe_server = str(server or "").strip()
+    if not safe_login or not safe_server:
+        return None
+    masked_login = _mask_direct_session_login(safe_login)
+    return {
+        "profileId": _build_direct_session_profile_id(safe_login, safe_server),
+        "login": safe_login,
+        "loginMasked": masked_login,
+        "server": safe_server,
+        "displayName": f"{safe_server} {masked_login}",
+        "active": False,
+        "state": "",
+    }
+
+
+def _build_direct_session_account_summary_from_detail(*,
+                                                      detail: Dict[str, Any],
+                                                      login_keys: Tuple[str, ...],
+                                                      server_keys: Tuple[str, ...]) -> Optional[Dict[str, Any]]:
+    """从诊断 detail 里恢复账号摘要，兼容 expected/actual 等不同键名。"""
+    login_value = ""
+    server_value = ""
+    for key in login_keys:
+        text = str(detail.get(key) or "").strip()
+        if text:
+            login_value = text
+            break
+    for key in server_keys:
+        text = str(detail.get(key) or "").strip()
+        if text:
+            server_value = text
+            break
+    return _build_direct_session_account_summary(login=login_value, server=server_value)
+
+
+def _build_failed_direct_session_result(*,
+                                        action: str,
+                                        request_id: str,
+                                        error: Exception) -> Dict[str, Any]:
+    """从最新诊断时间线提取失败阶段，统一包装直登主链异常。"""
+    safe_request_id = str(request_id or "").strip()
+    timeline = session_diagnostic_store.lookup(safe_request_id) if safe_request_id else []
+    latest_item = timeline[-1] if timeline else {}
+    latest_detail = dict(latest_item.get("detail") or {}) if isinstance(latest_item, dict) else {}
+    baseline_account = latest_detail.get("baselineAccount")
+    if not isinstance(baseline_account, dict) or not baseline_account:
+        baseline_account = _build_direct_session_account_summary_from_detail(
+            detail=latest_detail,
+            login_keys=("expectedLogin", "login"),
+            server_keys=("expectedServer", "server"),
+        )
+    final_account = latest_detail.get("finalAccount")
+    if not isinstance(final_account, dict) or not final_account:
+        final_account = _build_direct_session_account_summary_from_detail(
+            detail=latest_detail,
+            login_keys=("actualLogin", "login"),
+            server_keys=("actualServer", "server"),
+        )
+    last_observed_account = latest_detail.get("lastObservedAccount")
+    if not isinstance(last_observed_account, dict) or not last_observed_account:
+        last_observed_account = final_account
+    return {
+        "ok": False,
+        "stage": str(latest_item.get("stage") or "direct_login_failed").strip(),
+        "message": str(error or "").strip() or str(latest_item.get("message") or "").strip() or "独立 MT5 实例直登失败",
+        "elapsedMs": 0,
+        "baselineAccount": baseline_account,
+        "finalAccount": final_account,
+        "loginError": str(latest_detail.get("loginError") or error or "").strip(),
+        "lastObservedAccount": last_observed_account,
+        "requestId": safe_request_id,
+        "action": str(action or "").strip(),
+    }
+
+
 class _SessionGatewayAdapter:
     """会话管理器使用的最小 MT5 网关适配器。"""
 
     def login_mt5(self, login: str, password: str, server: str, request_id: str = "") -> Dict[str, Any]:
-        """按给定账号参数执行 MT5 登录。"""
+        """按给定账号参数执行独立 MT5 实例直登。"""
         password_value = str(password or "")
-        switch_result = _switch_mt5_account_via_gui_flow(
-            login=str(login or "").strip(),
-            password=password_value,
-            server=str(server or "").strip(),
-            request_id=request_id,
-            action="login",
-        )
-        if not bool(switch_result.get("ok")):
-            raise Mt5AccountSwitchFlowError(switch_result)
-        canonical_login = str(switch_result.get("login") or "").strip()
-        canonical_server = str(switch_result.get("server") or "").strip()
+        try:
+            direct_result = _login_mt5_direct_with_input_credentials(
+                login_value=int(str(login or "").strip() or "0"),
+                password_value=password_value,
+                server_value=str(server or "").strip(),
+                request_id=request_id,
+                action="login",
+            )
+        except Exception as exc:
+            raise Mt5AccountSwitchFlowError(
+                _build_failed_direct_session_result(
+                    action="login",
+                    request_id=request_id,
+                    error=exc,
+                )
+            ) from exc
+        canonical_login = str(direct_result.get("login") or "").strip()
+        canonical_server = str(direct_result.get("server") or "").strip()
         _set_runtime_session_credentials(canonical_login, password_value, canonical_server)
-        result = dict(switch_result)
-        result["login"] = canonical_login
-        result["server"] = canonical_server
-        return result
+        return _build_direct_session_result(
+            action="login",
+            login=canonical_login,
+            server=canonical_server,
+            request_id=request_id,
+        )
 
     def switch_mt5_account(self, login: str, password: str, server: str, request_id: str = "") -> Dict[str, Any]:
-        """按已保存账号执行 MT5 切换。"""
+        """按已保存账号执行独立 MT5 实例直登切换。"""
         password_value = str(password or "")
-        switch_result = _switch_mt5_account_via_gui_flow(
-            login=str(login or "").strip(),
-            password=password_value,
-            server=str(server or "").strip(),
-            request_id=request_id,
-            action="switch",
-        )
-        if not bool(switch_result.get("ok")):
-            raise Mt5AccountSwitchFlowError(switch_result)
-        canonical_login = str(switch_result.get("login") or "").strip()
-        canonical_server = str(switch_result.get("server") or "").strip()
+        try:
+            direct_result = _login_mt5_direct_with_input_credentials(
+                login_value=int(str(login or "").strip() or "0"),
+                password_value=password_value,
+                server_value=str(server or "").strip(),
+                request_id=request_id,
+                action="switch",
+            )
+        except Exception as exc:
+            raise Mt5AccountSwitchFlowError(
+                _build_failed_direct_session_result(
+                    action="switch",
+                    request_id=request_id,
+                    error=exc,
+                )
+            ) from exc
+        canonical_login = str(direct_result.get("login") or "").strip()
+        canonical_server = str(direct_result.get("server") or "").strip()
         _set_runtime_session_credentials(canonical_login, password_value, canonical_server)
-        result = dict(switch_result)
-        result["login"] = canonical_login
-        result["server"] = canonical_server
-        return result
+        return _build_direct_session_result(
+            action="switch",
+            login=canonical_login,
+            server=canonical_server,
+            request_id=request_id,
+        )
 
     def clear_account_caches(self) -> None:
         """清理会话切换后的运行时缓存。"""
