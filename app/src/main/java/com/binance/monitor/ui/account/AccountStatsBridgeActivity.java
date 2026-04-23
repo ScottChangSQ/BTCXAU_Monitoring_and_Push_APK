@@ -313,6 +313,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private String lastTradeVisibilitySnapshotSignature = "";
     private String lastTradeFilterVisibilitySignature = "";
     private String lastAppliedSnapshotSignature = "";
+    private String lastAppliedSnapshotAccount = "";
+    private String lastAppliedSnapshotServer = "";
     @Nullable
     private AccountStatsRenderSignature lastHistoryRenderSignature;
     @Nullable
@@ -531,6 +533,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             @Override
             public void setLastAppliedSnapshotSignature(@NonNull String signature) {
                 lastAppliedSnapshotSignature = signature;
+                if (signature.isEmpty()) {
+                    lastAppliedSnapshotAccount = "";
+                    lastAppliedSnapshotServer = "";
+                } else {
+                    lastAppliedSnapshotAccount = trim(connectedAccount);
+                    lastAppliedSnapshotServer = trim(connectedServer);
+                }
             }
 
             @Override
@@ -2258,6 +2267,9 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         latestCumulativePnl = 0d;
         latestHistoryRevision = "";
         dataQualitySummary = "";
+        lastAppliedSnapshotSignature = "";
+        lastAppliedSnapshotAccount = "";
+        lastAppliedSnapshotServer = "";
         lastHistoryRenderSignature = null;
         pendingHistoryRenderSignature = null;
         pendingSectionDiff = null;
@@ -2318,6 +2330,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 connectedAccount,
                 connectedServer
         );
+        lastAppliedSnapshotAccount = "";
+        lastAppliedSnapshotServer = "";
     }
 
     // 组装远程会话协调器，把网络、加密、本地缓存清理串到统一入口。
@@ -2612,6 +2626,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             renderCoordinator.applySnapshot(verifiedCache.getSnapshot(), true);
         }
         lastAppliedSnapshotSignature = verifiedSignature;
+        lastAppliedSnapshotAccount = trim(verifiedCache.getAccount());
+        lastAppliedSnapshotServer = trim(verifiedCache.getServer());
         persistUiState();
         showLoginSuccessBanner();
         Toast.makeText(this, successMessage, Toast.LENGTH_SHORT).show();
@@ -3932,6 +3948,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         dataQualitySummary = "";
         gatewayConnected = false;
         lastAppliedSnapshotSignature = "";
+        lastAppliedSnapshotAccount = "";
+        lastAppliedSnapshotServer = "";
         setConnectionStatus(false);
         updateOverviewHeader();
     }
@@ -3939,7 +3957,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     // 只要当前页已有本账户可渲染快照，就不应把切页/回前台误当成一次新的页面 bootstrap。
     private boolean hasRenderableCurrentSessionState() {
         if (!lastAppliedSnapshotSignature.isEmpty()) {
-            return true;
+            if (isLastAppliedSnapshotForCurrentSession()) {
+                return true;
+            }
+            clearRuntimeAccountState();
+            applyLoggedOutEmptyState();
         }
         AccountStatsPreloadManager.Cache cache = resolveCurrentSessionCache();
         return cache != null && hasRenderableHistorySections(cache.getSnapshot());
@@ -3983,27 +4005,26 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     // 只消费当前活动远程会话对应的预加载缓存，避免旧账号缓存短暂回灌到页面。
     private boolean isPreloadedCacheForCurrentSession(@Nullable AccountStatsPreloadManager.Cache cache) {
-        if (cache == null) {
+        if (cache == null
+                || secureSessionPrefs == null
+                || !ConfigManager.getInstance(getApplicationContext()).isAccountSessionActive()) {
             return false;
         }
-        String expectedAccount = "";
-        String expectedServer = "";
-        if (remoteSessionCoordinator != null && remoteSessionCoordinator.isAwaitingSync()) {
-            expectedAccount = trim(remoteSessionCoordinator.getPendingLogin());
-            expectedServer = trim(remoteSessionCoordinator.getPendingServer());
-        } else if (activeSessionAccount != null) {
-            expectedAccount = trim(activeSessionAccount.getLogin());
-            expectedServer = trim(activeSessionAccount.getServer());
-        } else if (userLoggedIn) {
-            expectedAccount = trim(loginAccountInput);
-            expectedServer = trim(loginServerInput);
+        SessionSummarySnapshot sessionSummary = secureSessionPrefs.loadSessionSummary();
+        if (sessionSummary.hasStorageFailure() || sessionSummary.getActiveAccount() == null) {
+            return false;
+        }
+        String expectedAccount = trim(sessionSummary.getActiveAccount().getLogin());
+        String expectedServer = trim(sessionSummary.getActiveAccount().getServer());
+        if (expectedAccount.isEmpty() || expectedServer.isEmpty()) {
+            return false;
         }
         String cachedAccount = trim(cache.getAccount());
         String cachedServer = trim(cache.getServer());
-        if (!expectedAccount.isEmpty() && !expectedAccount.equalsIgnoreCase(cachedAccount)) {
+        if (!expectedAccount.equalsIgnoreCase(cachedAccount)) {
             return false;
         }
-        if (!expectedServer.isEmpty() && !expectedServer.equalsIgnoreCase(cachedServer)) {
+        if (!expectedServer.equalsIgnoreCase(cachedServer)) {
             return false;
         }
         return true;
@@ -4100,7 +4121,37 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                                          boolean connected,
                                          @Nullable String account,
                                          @Nullable String server) {
-        return buildHistoryRenderSignature(snapshot, historyRevision).asText();
+        StringBuilder builder = new StringBuilder(256);
+        appendStringToken(builder, connected ? "connected" : "disconnected");
+        appendStringToken(builder, trim(account));
+        appendStringToken(builder, trim(server));
+        appendStringToken(builder, buildHistoryRenderSignature(snapshot, historyRevision).asText());
+        return builder.toString();
+    }
+
+    // 只有最后一次真正上屏的快照身份仍匹配当前会话时，旧页面态才允许继续复用。
+    private boolean isLastAppliedSnapshotForCurrentSession() {
+        String expectedAccount = "";
+        String expectedServer = "";
+        if (remoteSessionCoordinator != null && remoteSessionCoordinator.isAwaitingSync()) {
+            expectedAccount = trim(remoteSessionCoordinator.getPendingLogin());
+            expectedServer = trim(remoteSessionCoordinator.getPendingServer());
+        } else if (activeSessionAccount != null) {
+            expectedAccount = trim(activeSessionAccount.getLogin());
+            expectedServer = trim(activeSessionAccount.getServer());
+        } else if (userLoggedIn) {
+            expectedAccount = trim(loginAccountInput);
+            expectedServer = trim(loginServerInput);
+        }
+        String appliedAccount = trim(lastAppliedSnapshotAccount);
+        String appliedServer = trim(lastAppliedSnapshotServer);
+        if (!expectedAccount.isEmpty() && !expectedAccount.equalsIgnoreCase(appliedAccount)) {
+            return false;
+        }
+        if (!expectedServer.isEmpty() && !expectedServer.equalsIgnoreCase(appliedServer)) {
+            return false;
+        }
+        return !appliedAccount.isEmpty() || !appliedServer.isEmpty();
     }
 
     @NonNull

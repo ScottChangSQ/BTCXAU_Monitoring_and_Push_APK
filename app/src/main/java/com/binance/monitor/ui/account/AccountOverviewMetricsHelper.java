@@ -53,7 +53,12 @@ public final class AccountOverviewMetricsHelper {
                 );
         replaceOrAppendOverviewMetric(result,
                 IndicatorRegistry.require(IndicatorId.ACCOUNT_AVAILABLE_FUNDS).getDisplayName(),
-                IndicatorFormatterCenter.formatMoney(overviewValues.getFreePrepayment(), 2, false));
+                IndicatorFormatterCenter.formatMoney(
+                        overviewValues.getFreePrepayment(),
+                        2,
+                        false,
+                        IndicatorFormatterCenter.SignPolicy.NEGATIVE_ONLY
+                ));
         replaceOrAppendOverviewMetric(result,
                 IndicatorRegistry.require(IndicatorId.ACCOUNT_MARGIN).getDisplayName(),
                 IndicatorFormatterCenter.formatMoney(overviewValues.getPrepayment(), 2, false));

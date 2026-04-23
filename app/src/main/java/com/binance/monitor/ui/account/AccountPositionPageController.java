@@ -314,20 +314,22 @@ public final class AccountPositionPageController {
 
     // 监听到缓存变化时，先推进 bootstrap 状态，再更新可见模型。
     private void handleCacheChanged(@Nullable AccountStatsPreloadManager.Cache cache) {
+        AccountStatsPreloadManager.Cache effectiveCache = filterCurrentSessionCache(cache);
         if (accountSessionDialogController != null) {
-            accountSessionDialogController.onCacheUpdated(cache);
+            accountSessionDialogController.onCacheUpdated(effectiveCache);
         }
-        if (cache != null) {
-            applyBootstrapState(accountBootstrapStateMachine.onMemoryDataReady(buildAccountBootstrapRevision(cache)));
+        if (effectiveCache != null) {
+            applyBootstrapState(accountBootstrapStateMachine.onMemoryDataReady(buildAccountBootstrapRevision(effectiveCache)));
         }
-        scheduleUiModelBuild(cache);
+        scheduleUiModelBuild(effectiveCache);
     }
 
     // 根据当前 bootstrap 状态决定首帧应显示恢复态还是真正空态。
     @NonNull
     private AccountPositionUiModel resolveVisibleUiModel(@Nullable AccountStatsPreloadManager.Cache cache) {
-        if (cache != null) {
-            return uiModelFactory.build(cache);
+        AccountStatsPreloadManager.Cache effectiveCache = filterCurrentSessionCache(cache);
+        if (effectiveCache != null) {
+            return uiModelFactory.build(effectiveCache);
         }
         if (accountBootstrapSnapshot != null
                 && accountBootstrapSnapshot.getState() == PageBootstrapState.STORAGE_RESTORING) {
@@ -339,10 +341,22 @@ public final class AccountPositionPageController {
     // 从当前缓存里提取完整历史成交，供账户页底部抽屉直接展示。
     @NonNull
     private List<TradeRecordItem> resolveTradeHistory(@Nullable AccountStatsPreloadManager.Cache cache) {
-        if (cache == null || cache.getSnapshot() == null || cache.getSnapshot().getTrades() == null) {
+        AccountStatsPreloadManager.Cache effectiveCache = filterCurrentSessionCache(cache);
+        if (effectiveCache == null
+                || effectiveCache.getSnapshot() == null
+                || effectiveCache.getSnapshot().getTrades() == null) {
             return Collections.emptyList();
         }
-        return new ArrayList<>(cache.getSnapshot().getTrades());
+        return new ArrayList<>(effectiveCache.getSnapshot().getTrades());
+    }
+
+    // 将任意来源的缓存统一收口到“当前活动会话对应的 cache 或空”。
+    @Nullable
+    private AccountStatsPreloadManager.Cache filterCurrentSessionCache(@Nullable AccountStatsPreloadManager.Cache cache) {
+        if (cache == null) {
+            return null;
+        }
+        return matchesActiveSessionIdentity(cache.getAccount(), cache.getServer()) ? cache : null;
     }
 
     // 只消费当前活动远程会话对应的内存缓存，避免切号后短暂回灌旧账号数据。
@@ -352,13 +366,7 @@ public final class AccountPositionPageController {
             return null;
         }
         AccountStatsPreloadManager.Cache cache = preloadManager.getLatestCache();
-        if (cache == null) {
-            return null;
-        }
-        if (!matchesActiveSessionIdentity(cache.getAccount(), cache.getServer())) {
-            return null;
-        }
-        return cache;
+        return filterCurrentSessionCache(cache);
     }
 
     // 本地缓存恢复必须留在后台线程，避免页面首帧同步读库。
@@ -484,6 +492,7 @@ public final class AccountPositionPageController {
         List<PositionAggregateItem> aggregates = model.getPositionAggregates();
         positionAggregateAdapter.setMasked(masked);
         positionAggregateAdapter.submitList(aggregates);
+        positionAdapter.setRuntimeIdentity(model.getAccount(), model.getServer());
         positionAdapter.setMasked(masked);
         positionAdapter.submitList(positions);
         binding.tvPositionSummary.setText(masked
@@ -498,6 +507,7 @@ public final class AccountPositionPageController {
     // 绑定挂单分段。
     private void bindPendingOrders(@NonNull AccountPositionUiModel model, boolean masked) {
         List<PositionItem> pendingOrders = model.getPendingOrders();
+        pendingOrderAdapter.setRuntimeIdentity(model.getAccount(), model.getServer());
         pendingOrderAdapter.setMasked(masked);
         pendingOrderAdapter.submitList(pendingOrders);
         binding.tvPendingSummary.setText(masked

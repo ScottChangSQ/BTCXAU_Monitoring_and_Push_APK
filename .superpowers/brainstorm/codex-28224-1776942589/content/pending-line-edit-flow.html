@@ -1,0 +1,85 @@
+<h2>挂单线拖拽修改方案</h2>
+<p class="subtitle">先确认交互结构，不涉及视觉细节。重点看“哪些线能拖、拖后保留什么、点哪个按钮提交”。</p>
+
+<div class="section">
+  <div class="options">
+    <div class="option" data-choice="pending" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>已挂单</h3>
+        <p>挂单主线、挂单 TP、挂单 SL 都可直接拖动。拖动后旧线保留灰色，新线高亮，并在左侧浮现“修改”按钮。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="filled" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>已成交持仓</h3>
+        <p>已成交的 TP、SL 线可直接拖动。成交价位线也可拖动，但它只作为新的 TP/SL 锚点，提交时不改成交价本身。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">A. 已挂单线 / TP / SL 拖动后</div>
+    <div class="mockup-body" style="padding:16px 12px 20px;background:linear-gradient(180deg,#10161d,#0b0f14);min-height:340px;position:relative;overflow:hidden">
+      <div style="position:absolute;left:18px;right:18px;top:48px;height:1px;background:#67717e"></div>
+      <div style="position:absolute;left:18px;top:38px;background:#2a323b;color:#aab4c0;padding:4px 8px;border-radius:6px;font-size:12px">原挂单 灰线</div>
+
+      <div style="position:absolute;left:18px;right:18px;top:110px;height:2px;background:#f59e0b"></div>
+      <div style="position:absolute;left:18px;top:96px;display:flex;gap:8px;align-items:center">
+        <div style="background:#0f1720;color:#f59e0b;border:1px solid #f59e0b;padding:4px 8px;border-radius:6px;font-size:12px">修改</div>
+        <div style="background:#1c2630;color:#f59e0b;padding:4px 8px;border-radius:6px;font-size:12px">新挂单线</div>
+      </div>
+
+      <div style="position:absolute;left:18px;right:18px;top:184px;height:1px;border-top:1px dashed #66707c"></div>
+      <div style="position:absolute;left:18px;top:172px;background:#2a323b;color:#aab4c0;padding:4px 8px;border-radius:6px;font-size:12px">原 TP/SL 灰线</div>
+
+      <div style="position:absolute;left:18px;right:18px;top:242px;height:2px;border-top:2px dashed #22c55e"></div>
+      <div style="position:absolute;left:18px;top:228px;background:#1c2630;color:#22c55e;padding:4px 8px;border-radius:6px;font-size:12px">新 TP 草稿</div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">B. 已成交成交线拖动后</div>
+    <div class="mockup-body" style="padding:16px 12px 20px;background:linear-gradient(180deg,#10161d,#0b0f14);min-height:340px;position:relative;overflow:hidden">
+      <div style="position:absolute;left:18px;right:18px;top:52px;height:1px;background:#67717e"></div>
+      <div style="position:absolute;left:18px;top:40px;background:#2a323b;color:#aab4c0;padding:4px 8px;border-radius:6px;font-size:12px">原成交锚点 灰线</div>
+
+      <div style="position:absolute;left:18px;right:18px;top:118px;height:2px;background:#e5e7eb"></div>
+      <div style="position:absolute;left:18px;top:104px;display:flex;gap:8px;align-items:center">
+        <div style="background:#0f1720;color:#e5e7eb;border:1px solid #e5e7eb;padding:4px 8px;border-radius:6px;font-size:12px">修改</div>
+        <div style="background:#1c2630;color:#e5e7eb;padding:4px 8px;border-radius:6px;font-size:12px">新成交锚点草稿</div>
+      </div>
+
+      <div style="position:absolute;left:18px;right:18px;top:198px;height:2px;border-top:2px dashed #22c55e"></div>
+      <div style="position:absolute;left:18px;top:184px;background:#1c2630;color:#22c55e;padding:4px 8px;border-radius:6px;font-size:12px">自动匹配的新 TP</div>
+
+      <div style="position:absolute;left:18px;right:18px;top:262px;height:2px;border-top:2px dashed #ef4444"></div>
+      <div style="position:absolute;left:18px;top:248px;background:#1c2630;color:#ef4444;padding:4px 8px;border-radius:6px;font-size:12px">自动匹配的新 SL</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>当前收口规则</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>保留</h4>
+      <ul>
+        <li>原位置始终保留灰线，用户能看到“从哪改到哪”</li>
+        <li>只有新草稿线左侧出现“修改”按钮</li>
+        <li>成交价位线可拖，但提交时只改 TP/SL</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>仍待确认</h4>
+      <ul>
+        <li>同一时刻是否只允许编辑一组线</li>
+        <li>拖动成交锚点时，TP/SL 自动匹配是保持固定价差，还是保持固定收益/风险比例</li>
+        <li>“修改”按钮是每条草稿线各有一个，还是同组只出现一个</li>
+      </ul>
+    </div>
+  </div>
+</div>

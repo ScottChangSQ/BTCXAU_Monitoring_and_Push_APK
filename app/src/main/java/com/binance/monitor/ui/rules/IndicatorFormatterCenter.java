@@ -14,12 +14,26 @@ import java.util.Locale;
 public final class IndicatorFormatterCenter {
     private static final double ZERO_EPSILON = 1e-9;
 
+    public enum SignPolicy {
+        ALWAYS,
+        NEGATIVE_ONLY
+    }
+
     private IndicatorFormatterCenter() {
     }
 
     // 统一格式化金额，零值保留货币符号但不带正负号。
     @NonNull
     public static String formatMoney(double value, int precision, boolean masked) {
+        return formatMoney(value, precision, masked, SignPolicy.ALWAYS);
+    }
+
+    // 统一格式化金额，并按指标语义控制是否展示正号。
+    @NonNull
+    public static String formatMoney(double value,
+                                     int precision,
+                                     boolean masked,
+                                     @NonNull SignPolicy signPolicy) {
         if (masked) {
             return SensitiveDisplayMasker.MASK_TEXT;
         }
@@ -28,7 +42,10 @@ public final class IndicatorFormatterCenter {
         if (Math.abs(value) < ZERO_EPSILON) {
             return "$" + amount;
         }
-        return (value > 0d ? "+$" : "-$") + amount;
+        if (value < 0d) {
+            return "-$" + amount;
+        }
+        return signPolicy == SignPolicy.ALWAYS ? "+$" + amount : "$" + amount;
     }
 
     // 统一格式化百分比，入参按比值口径处理。

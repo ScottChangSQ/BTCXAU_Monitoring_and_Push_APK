@@ -42,6 +42,10 @@ public class IndicatorRegistryTest {
         assertEquals("累计收益率", IndicatorRegistry.require(IndicatorId.ACCOUNT_TOTAL_RETURN_RATE).getDisplayName());
         assertEquals("最大回撤", IndicatorRegistry.require(IndicatorId.ACCOUNT_MAX_DRAWDOWN).getDisplayName());
         assertEquals("胜率", IndicatorRegistry.require(IndicatorId.TRADE_WIN_RATE).getDisplayName());
+        assertEquals(IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_MAX_DRAWDOWN).getColorRule());
+        assertEquals(IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                IndicatorRegistry.require(IndicatorId.TRADE_AVG_LOSS).getColorRule());
     }
 
     @Test

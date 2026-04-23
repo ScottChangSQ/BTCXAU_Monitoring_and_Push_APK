@@ -48,6 +48,30 @@ public class ChartQuickTradeCoordinatorTest {
     }
 
     @Test
+    public void pendingLineBelowCurrentShouldResolveBuyDirection() {
+        assertEquals(
+                ChartQuickTradeCoordinator.PendingDirection.BUY,
+                ChartQuickTradeCoordinator.resolvePendingDirection(64900d, 65000d)
+        );
+    }
+
+    @Test
+    public void pendingLineAboveCurrentShouldResolveSellDirection() {
+        assertEquals(
+                ChartQuickTradeCoordinator.PendingDirection.SELL,
+                ChartQuickTradeCoordinator.resolvePendingDirection(65100d, 65000d)
+        );
+    }
+
+    @Test
+    public void pendingLineAtCurrentShouldResolveNoneDirection() {
+        assertEquals(
+                ChartQuickTradeCoordinator.PendingDirection.NONE,
+                ChartQuickTradeCoordinator.resolvePendingDirection(65000d, 65000d)
+        );
+    }
+
+    @Test
     public void pendingLineTooCloseShouldReject() {
         FakeExecutor executor = new FakeExecutor();
         ChartQuickTradeCoordinator coordinator = new ChartQuickTradeCoordinator(
@@ -74,6 +98,8 @@ public class ChartQuickTradeCoordinatorTest {
         assertTrue(source.contains("TradeCommandFactory.openMarket("));
         assertTrue(source.contains("TradeCommandFactory.pendingAdd("));
         assertTrue(source.contains("executor.execute("));
+        assertTrue(source.contains("enum PendingDirection"));
+        assertTrue(source.contains("static PendingDirection resolvePendingDirection(double linePrice, double currentPrice)"));
         assertTrue(!source.contains("BatchTradeCoordinator"));
     }
 

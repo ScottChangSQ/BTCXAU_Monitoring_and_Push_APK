@@ -11,6 +11,7 @@ import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
+import com.binance.monitor.ui.rules.IndicatorFormatterCenter;
 import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.ProductSymbolMapper;
 
@@ -171,7 +172,7 @@ public final class AccountDeferredSnapshotRenderHelper {
                                                               List<CurvePoint> curvePoints) {
         List<AccountMetric> snapshotMetricResult = snapshotStats == null
                 ? new ArrayList<>()
-                : new ArrayList<>(snapshotStats);
+                : normalizeTradeStatsMetrics(snapshotStats);
         if (!snapshotMetricResult.isEmpty()) {
             upsertMetric(snapshotMetricResult, "夏普比率", buildSharpeRatioValue(curvePoints), "Sharpe", "Sharpe Ratio");
             return snapshotMetricResult;
@@ -224,20 +225,20 @@ public final class AccountDeferredSnapshotRenderHelper {
         double winRate = settledCount == 0 ? 0d : ((double) winCount) / settledCount;
         CurveAnalyticsHelper.DrawdownSegment drawdownSegment =
                 CurveAnalyticsHelper.resolveMaxDrawdownSegment(curvePoints == null ? new ArrayList<>() : curvePoints);
-        double maxDrawdown = drawdownSegment == null ? 0d : Math.abs(drawdownSegment.getDrawdownRate());
+        double maxDrawdown = drawdownSegment == null ? 0d : drawdownSegment.getDrawdownRate();
 
         List<AccountMetric> result = new ArrayList<>();
         result.add(new AccountMetric("累计收益额", FormatUtils.formatSignedMoney(cumulativePnl)));
-        result.add(new AccountMetric("累计收益率", formatRatioPercent(cumulativeReturnRate)));
+        result.add(new AccountMetric("累计收益率", formatRatioPercent(cumulativeReturnRate, true)));
         result.add(new AccountMetric("总交易次数", String.valueOf(trades.size())));
         result.add(new AccountMetric("买入次数", String.valueOf(buyCount)));
         result.add(new AccountMetric("卖出次数", String.valueOf(sellCount)));
-        result.add(new AccountMetric("胜率", formatRatioPercent(winRate)));
+        result.add(new AccountMetric("胜率", formatRatioPercent(winRate, true)));
         result.add(new AccountMetric("盈利/亏损", winCount + " / " + lossCount));
         result.add(new AccountMetric("平均每笔盈利", FormatUtils.formatSignedMoney(averageWin)));
         result.add(new AccountMetric("平均每笔亏损", FormatUtils.formatSignedMoney(averageLoss)));
         result.add(new AccountMetric("盈亏比", String.format(Locale.getDefault(), "%.2f", profitLossRatio)));
-        result.add(new AccountMetric("最大回撤", formatRatioPercent(maxDrawdown)));
+        result.add(new AccountMetric("最大回撤", formatRatioPercent(maxDrawdown, false)));
         result.add(new AccountMetric("夏普比率", buildSharpeRatioValue(curvePoints)));
         return result;
     }
@@ -598,8 +599,62 @@ public final class AccountDeferredSnapshotRenderHelper {
     }
 
     @NonNull
-    private static String formatRatioPercent(double ratio) {
-        return String.format(Locale.getDefault(), "%+.2f%%", ratio * 100d);
+    private static String formatRatioPercent(double ratio, boolean showPositiveSign) {
+        return IndicatorFormatterCenter.formatPercent(ratio, 2, showPositiveSign);
+    }
+
+    // 统一把统计列表里的最大回撤修正为负值展示，避免服务端或本地旧格式残留正号。
+    @NonNull
+    private static List<AccountMetric> normalizeTradeStatsMetrics(@Nullable List<AccountMetric> metrics) {
+        List<AccountMetric> normalized = new ArrayList<>();
+        if (metrics == null) {
+            return normalized;
+        }
+        for (AccountMetric metric : metrics) {
+            if (metric == null) {
+                continue;
+            }
+            String metricName = trim(metric.getName());
+            String metricValue = metric.getValue();
+            if ("最大回撤".equals(metricName)) {
+                normalized.add(new AccountMetric(metricName, normalizeDrawdownPercent(metricValue)));
+                continue;
+            }
+            normalized.add(metric);
+        }
+        return normalized;
+    }
+
+    // 最大回撤只保留负号或零值，不再展示正号。
+    @NonNull
+    private static String normalizeDrawdownPercent(@Nullable String rawValue) {
+        Double parsedPercent = parseDisplayPercent(rawValue);
+        if (parsedPercent == null) {
+            return rawValue == null ? "" : rawValue;
+        }
+        return IndicatorFormatterCenter.formatPercent(-Math.abs(parsedPercent) / 100d, 2, false);
+    }
+
+    @Nullable
+    private static Double parseDisplayPercent(@Nullable String rawValue) {
+        String safeValue = trim(rawValue);
+        if (safeValue.isEmpty() || "--".equals(safeValue)) {
+            return null;
+        }
+        String normalized = safeValue
+                .replace("%", "")
+                .replace(",", "")
+                .replace("$", "")
+                .replace(" ", "")
+                .trim();
+        if (normalized.isEmpty() || "+".equals(normalized) || "-".equals(normalized)) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(normalized);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public static final class PrepareRequest {

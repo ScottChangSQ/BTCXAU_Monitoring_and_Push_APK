@@ -87,15 +87,16 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
                 binding.layoutDetail.setVisibility(View.GONE);
                 return;
             }
-            int directionColor = resolveDirectionColor(palette, item.getSignedLots(), item.getTotalLots());
+            double displayLots = resolveDisplayLots(item);
+            int directionColor = resolveDirectionColor(palette, displayLots);
             String titleText = item.getDisplayLabel().trim().isEmpty()
                     ? item.getCompactDisplayLabel().trim()
                     : item.getDisplayLabel().trim();
-            String directionText = resolveDirectionText(item.getSignedLots());
-            String lotsText = IndicatorFormatterCenter.formatQuantity(item.getTotalLots(), 2, "手");
-            String pnlText = IndicatorFormatterCenter.formatMoney(item.getNetPnl(), 2, false);
+            String directionText = resolveDirectionText(displayLots);
+            String lotsText = IndicatorFormatterCenter.formatQuantity(displayLots, 2, "手");
+            String pnlText = formatSignedPnlValue(item.getNetPnl());
             String raw = String.format(Locale.getDefault(),
-                    "%s | %s | %s | %s",
+                    "%s|%s|%s|%s",
                     titleText,
                     directionText,
                     lotsText,
@@ -134,31 +135,41 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             binding.layoutDetail.setVisibility(View.GONE);
         }
 
+        // 账户页按产品统计的手数必须展示买卖相抵后的净手数，不能继续显示绝对值简单相加。
+        private double resolveDisplayLots(@NonNull PositionAggregateItem item) {
+            return isZero(item.getSignedLots()) ? 0d : item.getSignedLots();
+        }
+
         private int resolveDirectionColor(@NonNull UiPaletteManager.Palette palette,
-                                          double signedLots,
-                                          double totalLots) {
-            if (isZero(totalLots)) {
+                                          double displayLots) {
+            if (isZero(displayLots)) {
                 return palette.textSecondary;
             }
-            if (isZero(signedLots)) {
-                return palette.textSecondary;
-            }
-            return signedLots > 0d ? palette.rise : palette.fall;
+            return displayLots > 0d ? palette.rise : palette.fall;
         }
 
         @NonNull
-        private String resolveDirectionText(double signedLots) {
-            if (isZero(signedLots)) {
+        private String resolveDirectionText(double displayLots) {
+            if (isZero(displayLots)) {
                 return "--";
             }
-            if (signedLots > 0d) {
-                return "买入";
+            if (displayLots > 0d) {
+                return "买";
             }
-            return "卖出";
+            return "卖";
         }
 
         private boolean isZero(double value) {
             return Math.abs(value) < 1e-9;
+        }
+
+        // 按产品统计里的盈亏只保留数字方向，不再带货币符号，避免摘要过长挤压右侧按钮区。
+        @NonNull
+        private String formatSignedPnlValue(double value) {
+            if (isZero(value)) {
+                return "0.00";
+            }
+            return String.format(Locale.getDefault(), "%+.2f", value);
         }
     }
 

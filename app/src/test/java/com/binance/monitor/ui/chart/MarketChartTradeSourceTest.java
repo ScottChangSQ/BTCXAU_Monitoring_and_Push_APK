@@ -260,11 +260,104 @@ public class MarketChartTradeSourceTest {
         String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
+        String chartViewSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
 
+        assertTrue(screenSource.contains("private ChartQuickTradeCoordinator.PendingDirection pendingDirection = ChartQuickTradeCoordinator.PendingDirection.NONE;"));
         assertTrue(screenSource.contains("binding.klineChartView.setTradeLayerSnapshot(buildTradeLayerSnapshot());"));
+        assertTrue(screenSource.contains("pendingDirection = resolveQuickPendingDirection();"));
+        assertTrue(screenSource.contains("binding.btnQuickTradePrimary.setEnabled(isQuickPendingBuyEnabled());"));
+        assertTrue(screenSource.contains("binding.btnQuickTradeSecondary.setEnabled(isQuickPendingSellEnabled());"));
+        assertTrue(screenSource.contains("return \"挂单 买入草稿\";"));
+        assertTrue(screenSource.contains("return \"挂单 卖出草稿\";"));
+        assertTrue(screenSource.contains("return ChartTradeLineTone.POSITIVE;"));
+        assertTrue(screenSource.contains("return ChartTradeLineTone.NEGATIVE;"));
+        assertTrue(screenSource.contains("if (quickTradeMode == ChartQuickTradeMode.PENDING && !isQuickPendingBuyEnabled()) {"));
+        assertTrue(screenSource.contains("if (quickTradeMode == ChartQuickTradeMode.PENDING && !isQuickPendingSellEnabled()) {"));
+        assertTrue(screenSource.contains("binding.klineChartView.isQuickPendingLineDragging()"));
+        assertTrue(screenSource.contains("dragging ? ChartTradeLineState.DRAGGING : ChartTradeLineState.DRAFT_PENDING"));
+        assertTrue(screenSource.contains("binding.klineChartView.setOnQuickPendingLineChangeListener(price -> {\n            pendingLinePrice = price;\n            pendingDirection = resolveQuickPendingDirection();\n            updateQuickTradeBar();\n        });"));
+        assertTrue(chartViewSource.contains("public boolean isQuickPendingLineDragging() {"));
         assertFalse(screenSource.contains("showQuickPendingLine(pendingLinePrice);"));
-        assertTrue(screenSource.contains("binding.klineChartView.setTradeLayerSnapshot(overlaySnapshot.getTradeLayerSnapshot());"));
+        assertTrue(screenSource.contains("buildTradeLayerSnapshot(),"));
+        assertTrue(screenSource.contains("private ChartOverlaySnapshot lastBaseChartOverlaySnapshot = ChartOverlaySnapshot.empty();"));
         assertTrue(screenSource.contains("binding.klineChartView.setTradeLayerSnapshot(new ChartTradeLayerSnapshot(null, null));"));
+    }
+
+    @Test
+    public void chartScreenShouldPromoteDraggedLiveTradeLinesIntoEditableModifyDrafts() throws Exception {
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(screenSource.contains("private static final class TradeLineEditSession {"));
+        assertTrue(screenSource.contains("private static final class TradeLineEditPreview {"));
+        assertTrue(screenSource.contains("private TradeLineEditSession activeTradeLineEditSession;"));
+        assertTrue(screenSource.contains("private final double accumulatedFee;"));
+        assertTrue(screenSource.contains("private TradeLineEditPreview preview;"));
+        assertTrue(screenSource.contains("binding.klineChartView.setOnTradeLineEditListener(new KlineChartView.OnTradeLineEditListener() {"));
+        assertTrue(screenSource.contains("String groupId = trimToEmpty(line.getGroupId());"));
+        assertTrue(screenSource.contains("private void handleTradeLineDragStart(@Nullable ChartTradeLine line) {"));
+        assertTrue(screenSource.contains("private void handleTradeLineDragUpdate(@Nullable ChartTradeLine line, double price) {"));
+        assertTrue(screenSource.contains("private void handleTradeLineActionClick(@Nullable ChartTradeLine line) {"));
+        assertTrue(screenSource.contains("private void handleTradeLineBlankAreaTap() {"));
+        assertTrue(screenSource.contains("private void focusTradeGroup(@Nullable String groupId) {"));
+        assertTrue(screenSource.contains("private String buildTradeHighlightGroupId(@Nullable PositionItem item, @Nullable String action) {"));
+        assertTrue(screenSource.contains("focusTradeGroup(buildTradeHighlightGroupId(targetItem, action));"));
+        assertTrue(screenSource.contains("TradeLineEditSession session = ensureTradeLineEditSession(line);"));
+        assertTrue(screenSource.contains("focusTradeGroup(session.groupId);"));
+        assertTrue(screenSource.contains("public void onTradeLineBlankAreaTap() {\n                handleTradeLineBlankAreaTap();\n            }"));
+        assertTrue(screenSource.contains("if (quickTradeMode == ChartQuickTradeMode.PENDING) {\n            applyQuickTradeMode(ChartQuickTradeMode.CLOSED);\n            focusTradeGroup(\"\");\n            return;\n        }"));
+        assertTrue(screenSource.contains("if (activeTradeLineEditSession == null) {\n            return;\n        }\n        clearTradeLineEditSession();\n        focusTradeGroup(\"\");"));
+        assertTrue(screenSource.contains("binding.klineChartView.setTradeLayerSnapshot(buildTradeLayerSnapshot());"));
+        assertTrue(screenSource.contains("ChartTradeLayerSnapshot previewSnapshot = resolveTradeLineEditPreviewSnapshot(session);"));
+        assertTrue(screenSource.contains("private ChartTradeLayerSnapshot resolveTradeLineEditPreviewSnapshot(@NonNull TradeLineEditSession session) {"));
+        assertTrue(screenSource.contains("String baseSignature = resolveTradeLineEditPreviewBaseSignature();"));
+        assertTrue(screenSource.contains("preview == null\n                || preview.targetRole != targetRole\n                || !preview.baseSignature.equals(baseSignature)"));
+        assertTrue(screenSource.contains("preview = buildTradeLineEditPreview(session, targetRole, baseSignature);"));
+        assertTrue(screenSource.contains("return buildTradeLineEditPreviewSnapshot(session, preview);"));
+        assertTrue(screenSource.contains("private TradeLineEditPreview buildTradeLineEditPreview(@NonNull TradeLineEditSession session,"));
+        assertTrue(screenSource.contains("removeTradeLayerGroup(draftLines, session.groupId);"));
+        assertTrue(screenSource.contains("private ChartTradeLayerSnapshot buildTradeLineEditPreviewSnapshot(@NonNull TradeLineEditSession session,"));
+        assertTrue(screenSource.contains("removeTradeLayerGroup(liveLines, session.groupId);"));
+        assertTrue(screenSource.contains("appendFrozenTradeLine(liveLines, draftLines, session, role, targetRole);"));
+        assertTrue(screenSource.contains("private void appendFrozenTradeLine(@NonNull List<ChartTradeLine> liveLines,"));
+        assertTrue(screenSource.contains("private double resolveFrozenTradeLinePrice(@NonNull TradeLineEditSession session,"));
+        assertTrue(screenSource.contains("private boolean shouldGhostTradeLineRole(@NonNull TradeLineEditSession session,"));
+        assertTrue(screenSource.contains("double accumulatedFee = resolveTradeLineAccumulatedFee(targetItem);"));
+        assertTrue(screenSource.contains("private double resolveTradeLineAccumulatedFee(@NonNull PositionItem targetItem) {"));
+        assertTrue(screenSource.contains("return ChartTradeLineValueHelper.resolveTradeLineLabel(role, price, targetItem, accumulatedFee);"));
+        assertTrue(screenSource.contains("ChartTradeLineValueHelper.resolveAccumulatedFee(trades, selectedSymbol, targetItem);"));
+        assertTrue(screenSource.contains("session.accumulatedFee"));
+        assertTrue(screenSource.contains("private double resolveTradeLineEditOriginalPrice(@NonNull String groupId,"));
+        assertTrue(screenSource.contains("private double resolveTradeLineRoleOriginalPrice(@NonNull String groupId,"));
+        assertTrue(screenSource.contains("private ChartTradeLine findDraftGhostTradeLine(@NonNull String groupId,"));
+        assertTrue(screenSource.contains("private ChartTradeLine findBaseLiveTradeLine(@NonNull String groupId,"));
+        assertTrue(screenSource.contains("session.groupId + \"|draft|ghost|\" + role.name().toLowerCase(Locale.ROOT)"));
+        assertTrue(screenSource.contains("session.groupId + \"|draft|active|\" + targetRole.name().toLowerCase(Locale.ROOT)"));
+        assertTrue(screenSource.contains("return line != null && trimToEmpty(line.getGroupId()).equalsIgnoreCase(trimToEmpty(groupId));"));
+        assertTrue(screenSource.contains("return groupId + \"|line|\" + role.name().toLowerCase(Locale.ROOT);"));
+        assertTrue(screenSource.contains("\"修改\""));
+        assertTrue(screenSource.contains("TradeCommandFactory.pendingModify("));
+        assertTrue(screenSource.contains("TradeCommandFactory.modifyTpSl("));
+        assertTrue(screenSource.contains("if (session.sourceRole == ChartTradeLineRole.ENTRY) {\n            return role == targetRole && resolveTradeLineTargetOriginalPrice(session, role) > 0d;\n        }"));
+        assertTrue(screenSource.contains("if (isSellSide(session.targetItem.getSide())) {\n            return movingUp ? ChartTradeLineRole.SL : ChartTradeLineRole.TP;\n        }\n        return movingUp ? ChartTradeLineRole.TP : ChartTradeLineRole.SL;"));
+    }
+
+    @Test
+    public void chartScreenShouldNoLongerBuildAbnormalDotOverlayOnKlineChart() throws Exception {
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+        String coordinatorSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartDataCoordinator.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertFalse(screenSource.contains("updateAbnormalAnnotationsOverlay("));
+        assertFalse(screenSource.contains("lastAbnormalOverlaySignature"));
+        assertFalse(screenSource.contains("AbnormalAnnotationOverlayBuilder"));
+        assertFalse(coordinatorSource.contains("updateAbnormalAnnotationsOverlay();"));
     }
 
     @Test
@@ -304,6 +397,20 @@ public class MarketChartTradeSourceTest {
         assertTrue(resolverSource.contains("command.getParams().optString(\"templateName\", \"\")"));
         assertTrue(confirmSource.contains("当前模板："));
         assertTrue(confirmSource.contains("riskPreview.getTemplateName()"));
+    }
+
+    @Test
+    public void chartScreenShouldFilterLatestAccountCacheByCurrentActiveSessionBeforeUsingTradeOverlays() throws Exception {
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(screenSource.contains("private AccountStatsPreloadManager.Cache resolveCurrentSessionAccountCache() {"));
+        assertTrue(screenSource.contains("return matchesActiveSessionIdentity(cache.getAccount(), cache.getServer()) ? cache : null;"));
+        assertTrue(screenSource.contains("public AccountStatsPreloadManager.Cache getLatestAccountCache() {\n                return resolveCurrentSessionAccountCache();\n            }"));
+        assertTrue(screenSource.contains("AccountStatsPreloadManager.Cache cache = resolveCurrentSessionAccountCache();"));
+        assertTrue(screenSource.contains("AccountStatsPreloadManager.Cache latestCache = resolveCurrentSessionAccountCache();"));
+        assertTrue(screenSource.contains("lastAccountOverlaySignature = buildAccountOverlaySignature(\n                resolveCurrentSessionAccountCache(),\n                null\n        );"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

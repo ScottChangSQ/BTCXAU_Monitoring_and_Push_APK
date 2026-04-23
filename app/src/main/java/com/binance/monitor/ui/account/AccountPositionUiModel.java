@@ -13,6 +13,8 @@ import java.util.List;
 
 public class AccountPositionUiModel {
     private final List<AccountMetric> overviewMetrics;
+    private final String account;
+    private final String server;
     private final String connectionStatusText;
     private final String positionSummaryText;
     private final String pendingSummaryText;
@@ -24,6 +26,8 @@ public class AccountPositionUiModel {
     private final long snapshotVersionMs;
 
     public AccountPositionUiModel(List<AccountMetric> overviewMetrics,
+                                  String account,
+                                  String server,
                                   String connectionStatusText,
                                   String positionSummaryText,
                                   String pendingSummaryText,
@@ -34,6 +38,8 @@ public class AccountPositionUiModel {
                                   String signature,
                                   long snapshotVersionMs) {
         this.overviewMetrics = immutableCopy(overviewMetrics);
+        this.account = safeText(account);
+        this.server = safeText(server);
         this.connectionStatusText = safeText(connectionStatusText);
         this.positionSummaryText = safeText(positionSummaryText);
         this.pendingSummaryText = safeText(pendingSummaryText);
@@ -48,6 +54,16 @@ public class AccountPositionUiModel {
     // 返回账户概览指标列表。
     public List<AccountMetric> getOverviewMetrics() {
         return overviewMetrics;
+    }
+
+    // 返回当前页面对应的账户身份。
+    public String getAccount() {
+        return account;
+    }
+
+    // 返回当前页面对应的服务器身份。
+    public String getServer() {
+        return server;
     }
 
     // 返回顶部账户连接状态文案。
@@ -99,6 +115,8 @@ public class AccountPositionUiModel {
     public static AccountPositionUiModel empty() {
         return new AccountPositionUiModel(
                 Collections.emptyList(),
+                "",
+                "",
                 "未连接账户",
                 "当前持仓 0 条",
                 "挂单 0 条",
@@ -115,6 +133,8 @@ public class AccountPositionUiModel {
     public static AccountPositionUiModel restoring() {
         return new AccountPositionUiModel(
                 Collections.emptyList(),
+                "",
+                "",
                 "恢复本地账户快照中",
                 "正在恢复当前持仓",
                 "正在恢复挂单",

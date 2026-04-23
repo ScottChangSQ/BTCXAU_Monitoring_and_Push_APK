@@ -185,6 +185,80 @@ class V2TradeContractTests(unittest.TestCase):
         self.assertEqual("NOT_EXECUTABLE", payload["status"])
         self.assertEqual("TRADE_INSUFFICIENT_MARGIN", payload["error"]["code"])
 
+    def test_trade_check_should_fail_early_when_terminal_autotrading_is_disabled(self):
+        fake_mt5 = types.SimpleNamespace(
+            terminal_info=lambda: types.SimpleNamespace(trade_allowed=False, tradeapi_disabled=True),
+        )
+        with mock.patch.object(server_v2, "mt5", fake_mt5), mock.patch.object(
+            server_v2, "_ensure_mt5"
+        ), mock.patch.object(
+            server_v2, "_detect_account_mode", return_value="hedging"
+        ), mock.patch.object(
+            server_v2, "_resolve_direct_login_terminal_path", return_value=(None, "missing")
+        ), mock.patch.object(
+            server_v2, "_prepare_trade_command",
+            return_value={"command": {"requestId": "req-check-disabled-001", "action": "OPEN_MARKET", "params": {"symbol": "BTCUSD"}}, "request": {"symbol": "BTCUSD"}, "error": None},
+        ):
+            payload = server_v2.v2_trade_check(
+                {
+                    "requestId": "req-check-disabled-001",
+                    "action": "OPEN_MARKET",
+                    "params": {"symbol": "BTCUSD", "side": "buy", "volume": 0.1},
+                }
+            )
+
+        self.assertEqual("NOT_EXECUTABLE", payload["status"])
+        self.assertEqual("TRADE_CLIENT_AUTOTRADING_DISABLED", payload["error"]["code"])
+        self.assertEqual("AutoTrading disabled by client", payload["error"]["message"])
+
+    def test_trade_check_should_adapt_btc_filling_mode_before_order_check(self):
+        fake_mt5 = types.SimpleNamespace(
+            TRADE_ACTION_MODIFY=7,
+            TRADE_ACTION_PENDING=5,
+            TRADE_ACTION_REMOVE=8,
+            TRADE_ACTION_SLTP=6,
+            TRADE_ACTION_DEAL=1,
+            ORDER_TYPE_BUY=0,
+            ORDER_TYPE_SELL=1,
+            ORDER_TIME_GTC=0,
+            ORDER_FILLING_FOK=0,
+            ORDER_FILLING_IOC=1,
+            ORDER_FILLING_RETURN=2,
+            SYMBOL_FILLING_FOK=1,
+            SYMBOL_FILLING_IOC=2,
+            terminal_info=lambda: types.SimpleNamespace(trade_allowed=True, tradeapi_disabled=False),
+            symbol_select=lambda _symbol, _enable: True,
+            symbol_info=lambda _symbol: types.SimpleNamespace(volume_min=0.01, volume_step=0.01, filling_mode=2),
+            symbol_info_tick=lambda _symbol: types.SimpleNamespace(bid=65000.0, ask=65010.0),
+        )
+        captured = {}
+
+        def order_check(request):
+            captured["request"] = dict(request or {})
+            if int((request or {}).get("type_filling", -1)) == 0:
+                return _fake_mt5_result(retcode=10013, comment="Invalid request")
+            return _fake_mt5_result(retcode=0, comment="ok")
+
+        fake_mt5.order_check = order_check
+
+        with mock.patch.object(server_v2, "mt5", fake_mt5), mock.patch.object(
+            server_v2, "_ensure_mt5"
+        ), mock.patch.object(
+            server_v2, "_ensure_mt5_trade_runtime_ready", return_value=True
+        ), mock.patch.object(
+            server_v2, "_detect_account_mode", return_value="hedging"
+        ):
+            payload = server_v2.v2_trade_check(
+                {
+                    "requestId": "req-check-btc-filling-001",
+                    "action": "OPEN_MARKET",
+                    "params": {"symbol": "BTCUSD", "side": "sell", "volume": 0.03, "price": 65000.0},
+                }
+            )
+
+        self.assertEqual("EXECUTABLE", payload["status"])
+        self.assertEqual(1, captured["request"]["type_filling"])
+
     def test_trade_check_should_reject_invalid_volume_step(self):
         with mock.patch.object(server_v2, "_detect_account_mode", return_value="hedging"):
             payload = server_v2.v2_trade_check(
@@ -296,6 +370,183 @@ class V2TradeContractTests(unittest.TestCase):
 
         self.assertIsNotNone(prepared["error"])
         self.assertEqual("TRADE_INVALID_ORDER", prepared["error"]["code"])
+
+    def test_open_market_should_use_symbol_allowed_filling_mode(self):
+        captured = {}
+
+        def symbol_select(symbol, enable):
+            captured["symbol_select"] = (symbol, enable)
+            return True
+
+        fake_mt5 = types.SimpleNamespace(
+            TRADE_ACTION_MODIFY=7,
+            TRADE_ACTION_PENDING=5,
+            TRADE_ACTION_REMOVE=8,
+            TRADE_ACTION_SLTP=6,
+            TRADE_ACTION_DEAL=1,
+            ORDER_TYPE_BUY=0,
+            ORDER_TYPE_SELL=1,
+            ORDER_TIME_GTC=0,
+            ORDER_FILLING_FOK=0,
+            ORDER_FILLING_IOC=1,
+            ORDER_FILLING_RETURN=2,
+            SYMBOL_FILLING_FOK=1,
+            SYMBOL_FILLING_IOC=2,
+            symbol_select=symbol_select,
+            symbol_info=lambda _symbol: types.SimpleNamespace(volume_min=0.01, volume_step=0.01, filling_mode=2),
+            symbol_info_tick=lambda _symbol: types.SimpleNamespace(bid=65000.0, ask=65010.0),
+        )
+
+        prepared = server_v2.v2_trade.prepare_trade_request(
+            {
+                "requestId": "req-open-btc-001",
+                "action": "OPEN_MARKET",
+                "params": {"symbol": "BTCUSD", "side": "sell", "volume": 0.03, "price": 65000.0},
+            },
+            account_mode="netting",
+            mt5_module=fake_mt5,
+            symbol_info_lookup=fake_mt5.symbol_info,
+        )
+
+        self.assertIsNone(prepared["error"])
+        self.assertEqual(("BTCUSD", True), captured["symbol_select"])
+        self.assertEqual(1, prepared["request"]["type_filling"])
+
+    def test_open_market_should_resolve_unique_broker_symbol_alias_before_order_check(self):
+        fake_mt5 = types.SimpleNamespace(
+            TRADE_ACTION_MODIFY=7,
+            TRADE_ACTION_PENDING=5,
+            TRADE_ACTION_REMOVE=8,
+            TRADE_ACTION_SLTP=6,
+            TRADE_ACTION_DEAL=1,
+            ORDER_TYPE_BUY=0,
+            ORDER_TYPE_SELL=1,
+            ORDER_TIME_GTC=0,
+            ORDER_FILLING_FOK=0,
+            ORDER_FILLING_IOC=1,
+            SYMBOL_FILLING_FOK=1,
+            SYMBOL_FILLING_IOC=2,
+            SYMBOL_TRADE_MODE_DISABLED=0,
+            terminal_info=lambda: types.SimpleNamespace(trade_allowed=True, tradeapi_disabled=False),
+            symbol_select=lambda _symbol, _enable: True,
+            symbols_get=lambda: [
+                types.SimpleNamespace(name="BTCUSDm"),
+                types.SimpleNamespace(name="XAUUSD"),
+            ],
+            symbol_info=lambda symbol: (
+                types.SimpleNamespace(
+                    volume_min=0.01,
+                    volume_step=0.01,
+                    filling_mode=2,
+                    trade_mode=4,
+                    visible=True,
+                    select=True,
+                )
+                if symbol == "BTCUSDM"
+                else None
+            ),
+            symbol_info_tick=lambda symbol: (
+                types.SimpleNamespace(bid=78178.2, ask=78179.4)
+                if symbol == "BTCUSDM"
+                else None
+            ),
+        )
+        captured = {}
+
+        def order_check(request):
+            captured["request"] = dict(request or {})
+            if str((request or {}).get("symbol") or "") != "BTCUSDM":
+                return _fake_mt5_result(retcode=10013, comment="Invalid request")
+            return _fake_mt5_result(retcode=0, comment="Done")
+
+        fake_mt5.order_check = order_check
+
+        with mock.patch.object(server_v2, "mt5", fake_mt5), mock.patch.object(
+            server_v2, "_ensure_mt5"
+        ), mock.patch.object(
+            server_v2, "_ensure_mt5_trade_runtime_ready", return_value=True
+        ), mock.patch.object(
+            server_v2, "_detect_account_mode", return_value="hedging"
+        ):
+            payload = server_v2.v2_trade_check(
+                {
+                    "requestId": "req-check-btc-alias-001",
+                    "action": "OPEN_MARKET",
+                    "params": {"symbol": "BTCUSD", "side": "sell", "volume": 0.03, "price": 0.0},
+                }
+            )
+
+        self.assertEqual("EXECUTABLE", payload["status"])
+        self.assertEqual("BTCUSDM", captured["request"]["symbol"])
+        self.assertEqual(1, captured["request"]["type_filling"])
+
+    def test_open_market_should_fail_early_when_current_account_has_no_matching_trade_symbol(self):
+        fake_mt5 = types.SimpleNamespace(
+            TRADE_ACTION_MODIFY=7,
+            TRADE_ACTION_PENDING=5,
+            TRADE_ACTION_REMOVE=8,
+            TRADE_ACTION_SLTP=6,
+            TRADE_ACTION_DEAL=1,
+            ORDER_TYPE_BUY=0,
+            ORDER_TYPE_SELL=1,
+            ORDER_TIME_GTC=0,
+            ORDER_FILLING_FOK=0,
+            SYMBOL_TRADE_MODE_DISABLED=0,
+            symbol_select=lambda _symbol, _enable: True,
+            symbols_get=lambda: [
+                types.SimpleNamespace(name="XAUUSD"),
+                types.SimpleNamespace(name="ETHUSDm"),
+            ],
+            symbol_info=lambda symbol: (
+                types.SimpleNamespace(volume_min=0.01, volume_step=0.01, filling_mode=0, trade_mode=4)
+                if symbol in {"XAUUSD", "ETHUSDm"}
+                else None
+            ),
+        )
+
+        prepared = server_v2.v2_trade.prepare_trade_request(
+            {
+                "requestId": "req-open-btc-missing-001",
+                "action": "OPEN_MARKET",
+                "params": {"symbol": "BTCUSD", "side": "buy", "volume": 0.03, "price": 0.0},
+            },
+            account_mode="netting",
+            mt5_module=fake_mt5,
+            symbol_info_lookup=fake_mt5.symbol_info,
+        )
+
+        self.assertIsNotNone(prepared["error"])
+        self.assertEqual("TRADE_INVALID_SYMBOL", prepared["error"]["code"])
+        self.assertEqual("BTCUSD", prepared["error"]["details"]["requestedSymbol"])
+
+    def test_open_market_should_fill_price_from_symbol_tick_when_missing(self):
+        fake_mt5 = types.SimpleNamespace(
+            TRADE_ACTION_MODIFY=7,
+            TRADE_ACTION_PENDING=5,
+            TRADE_ACTION_REMOVE=8,
+            TRADE_ACTION_SLTP=6,
+            TRADE_ACTION_DEAL=1,
+            ORDER_TYPE_BUY=0,
+            ORDER_TYPE_SELL=1,
+            ORDER_TIME_GTC=0,
+            ORDER_FILLING_FOK=0,
+            symbol_info=lambda _symbol: types.SimpleNamespace(volume_min=0.01, volume_step=0.01, filling_mode=0),
+            symbol_info_tick=lambda _symbol: types.SimpleNamespace(bid=65123.4, ask=65125.6),
+        )
+
+        prepared = server_v2.v2_trade.prepare_trade_request(
+            {
+                "requestId": "req-open-btc-002",
+                "action": "OPEN_MARKET",
+                "params": {"symbol": "BTCUSD", "side": "buy", "volume": 0.03, "price": 0.0},
+            },
+            account_mode="netting",
+            mt5_module=fake_mt5,
+            symbol_info_lookup=fake_mt5.symbol_info,
+        )
+
+        self.assertIsNone(prepared["error"])
+        self.assertEqual(65125.6, prepared["request"]["price"])
 
     def test_close_position_should_reject_when_target_position_not_found(self):
         with mock.patch.object(server_v2, "_detect_account_mode", return_value="netting"), mock.patch.object(

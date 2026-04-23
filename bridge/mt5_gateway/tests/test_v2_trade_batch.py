@@ -233,3 +233,52 @@ class V2TradeBatchTests(unittest.TestCase):
 
         self.assertEqual("ACCEPTED", payload["status"])
         self.assertTrue(all(item["groupKey"] == "pair-1" for item in payload["items"]))
+
+    def test_batch_submit_should_initialize_mt5_before_detecting_account_mode_and_positions(self):
+        state = {"ensure_calls": 0}
+
+        def fake_ensure_mt5():
+            state["ensure_calls"] += 1
+
+        def fake_account_info():
+            if state["ensure_calls"] < 1:
+                return None
+            return types.SimpleNamespace(margin_mode=2)
+
+        def fake_positions_get():
+            if state["ensure_calls"] < 2:
+                return []
+            return [types.SimpleNamespace(ticket=11, identifier=11, symbol="BTCUSD", type=0)]
+
+        fake_mt5 = types.SimpleNamespace(
+            account_info=fake_account_info,
+            positions_get=fake_positions_get,
+        )
+        check_result = _fake_mt5_result(retcode=0, comment="ok")
+        send_result = _fake_mt5_result(retcode=0, comment="sent", order=7711, deal=8811)
+
+        with mock.patch.object(server_v2, "mt5", fake_mt5), mock.patch.object(
+            server_v2, "_ensure_mt5", side_effect=fake_ensure_mt5
+        ), mock.patch.object(server_v2, "_trade_check_request", return_value=check_result), mock.patch.object(
+            server_v2, "_trade_send_request", return_value=send_result
+        ), mock.patch.object(server_v2, "_invalidate_account_runtime_cache_after_trade_commit"), mock.patch.object(
+            server_v2, "_publish_account_trade_commit_sync_state"
+        ):
+            payload = server_v2.v2_trade_batch_submit(
+                {
+                    "batchId": "batch-close-init-001",
+                    "strategy": "BEST_EFFORT",
+                    "items": [
+                        {
+                            "itemId": "close-1",
+                            "action": "CLOSE_POSITION",
+                            "params": {"symbol": "BTCUSD", "positionTicket": 11, "volume": 0.10},
+                        }
+                    ],
+                }
+            )
+
+        self.assertEqual("hedging", payload["accountMode"])
+        self.assertEqual("ACCEPTED", payload["status"])
+        self.assertEqual("ACCEPTED", payload["items"][0]["status"])
+        self.assertGreaterEqual(state["ensure_calls"], 2)

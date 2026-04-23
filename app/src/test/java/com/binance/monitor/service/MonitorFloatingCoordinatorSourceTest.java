@@ -52,7 +52,9 @@ public class MonitorFloatingCoordinatorSourceTest {
         ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue(source.contains("private List<FloatingSymbolCardData> buildFloatingCards(@Nullable AccountStatsPreloadManager.Cache cache) {"));
-        assertTrue(source.contains("runtimeCards.add(runtimeSnapshotStore.selectFloatingCard(symbol));"));
+        assertTrue(source.contains("runtimeSnapshotStore.selectFloatingCard("));
+        assertTrue(source.contains("cache.getAccount(),"));
+        assertTrue(source.contains("cache.getServer(),"));
         assertTrue(source.contains("return FloatingPositionAggregator.buildSymbolCardsFromRuntime("));
     }
 

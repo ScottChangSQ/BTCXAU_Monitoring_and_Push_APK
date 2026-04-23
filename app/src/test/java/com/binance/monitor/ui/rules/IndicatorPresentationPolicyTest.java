@@ -34,4 +34,43 @@ public class IndicatorPresentationPolicyTest {
         assertEquals("累计收益率", presentation.getLabel());
         assertEquals("+12.35%", presentation.getFormattedValue());
     }
+
+    @Test
+    public void presentationPolicyShouldNormalizePositiveDrawdownIntoNegativeDisplay() {
+        IndicatorPresentation presentation = IndicatorPresentationPolicy.present(
+                IndicatorRegistry.require(IndicatorId.ACCOUNT_MAX_DRAWDOWN),
+                0.1234d,
+                false
+        );
+
+        assertEquals("最大回撤", presentation.getLabel());
+        assertEquals("-12.34%", presentation.getFormattedValue());
+        assertEquals(IndicatorPresentation.Direction.NEGATIVE, presentation.getDirection());
+    }
+
+    @Test
+    public void presentationPolicyShouldNormalizeLegacyPositiveDrawdownText() {
+        IndicatorPresentation presentation = IndicatorPresentationPolicy.presentText(
+                "最大回撤",
+                "+12.34%",
+                false
+        );
+
+        assertEquals("最大回撤", presentation.getLabel());
+        assertEquals("-12.34%", presentation.getFormattedValue());
+        assertEquals(IndicatorPresentation.Direction.NEGATIVE, presentation.getDirection());
+    }
+
+    @Test
+    public void presentationPolicyShouldKeepAverageLossAsNegativeDirection() {
+        IndicatorPresentation presentation = IndicatorPresentationPolicy.present(
+                IndicatorRegistry.require(IndicatorId.TRADE_AVG_LOSS),
+                23.5d,
+                false
+        );
+
+        assertEquals("平均每笔亏损", presentation.getLabel());
+        assertEquals("-$23.50", presentation.getFormattedValue());
+        assertEquals(IndicatorPresentation.Direction.NEGATIVE, presentation.getDirection());
+    }
 }

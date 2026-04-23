@@ -1,5 +1,5 @@
 /*
- * 行情图表页，负责展示 K 线、指标、异常交易标注和轻量账户叠加信息。
+ * 行情图表页，负责展示 K 线、指标和轻量账户叠加信息。
  * 与行情接口、账户快照预加载、主题系统和异常记录模块协同工作。
  */
 package com.binance.monitor.ui.chart;
@@ -162,6 +162,58 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             this.apiInterval = apiInterval;
             this.limit = limit;
             this.yearAggregate = yearAggregate;
+        }
+    }
+
+    private static final class TradeLineEditSession {
+        private final String groupId;
+        private final PositionItem targetItem;
+        private final boolean pendingOrder;
+        private final ChartTradeLineRole sourceRole;
+        private final double originalPrice;
+        private final double entryOriginalPrice;
+        private final double tpOriginalPrice;
+        private final double slOriginalPrice;
+        private final double accumulatedFee;
+        private double draftPrice = Double.NaN;
+        @Nullable
+        private TradeLineEditPreview preview;
+
+        private TradeLineEditSession(@NonNull String groupId,
+                                     @NonNull PositionItem targetItem,
+                                     boolean pendingOrder,
+                                     @NonNull ChartTradeLineRole sourceRole,
+                                     double originalPrice,
+                                     double entryOriginalPrice,
+                                     double tpOriginalPrice,
+                                     double slOriginalPrice,
+                                     double accumulatedFee) {
+            this.groupId = groupId;
+            this.targetItem = targetItem;
+            this.pendingOrder = pendingOrder;
+            this.sourceRole = sourceRole;
+            this.originalPrice = originalPrice;
+            this.entryOriginalPrice = entryOriginalPrice;
+            this.tpOriginalPrice = tpOriginalPrice;
+            this.slOriginalPrice = slOriginalPrice;
+            this.accumulatedFee = accumulatedFee;
+        }
+    }
+
+    private static final class TradeLineEditPreview {
+        private final String baseSignature;
+        private final ChartTradeLineRole targetRole;
+        private final List<ChartTradeLine> liveLines;
+        private final List<ChartTradeLine> draftLines;
+
+        private TradeLineEditPreview(@NonNull String baseSignature,
+                                     @NonNull ChartTradeLineRole targetRole,
+                                     @NonNull List<ChartTradeLine> liveLines,
+                                     @NonNull List<ChartTradeLine> draftLines) {
+            this.baseSignature = baseSignature;
+            this.targetRole = targetRole;
+            this.liveLines = liveLines;
+            this.draftLines = draftLines;
         }
     }
 
@@ -514,6 +566,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private boolean chartBlockingLoadingRequested;
     private final ChartRefreshScheduler chartRefreshScheduler = new ChartRefreshScheduler();
     private ChartOverlaySnapshot lastChartOverlaySnapshot = ChartOverlaySnapshot.empty();
+    private ChartOverlaySnapshot lastBaseChartOverlaySnapshot = ChartOverlaySnapshot.empty();
     private Future<?> chartOverlayBuildTask;
     private int chartOverlayBuildVersion;
     private int pricePaneLeftPx;
@@ -531,10 +584,12 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private List<AbnormalRecord> abnormalRecords = new ArrayList<>();
     private boolean statusSourcesObserved;
     private String lastAccountOverlaySignature = "";
-    private String lastAbnormalOverlaySignature = "";
     private ChartQuickTradeMode quickTradeMode = ChartQuickTradeMode.CLOSED;
     private double pendingLinePrice = Double.NaN;
+    private ChartQuickTradeCoordinator.PendingDirection pendingDirection = ChartQuickTradeCoordinator.PendingDirection.NONE;
     private ChartQuickTradeCoordinator chartQuickTradeCoordinator;
+    @Nullable
+    private TradeLineEditSession activeTradeLineEditSession;
     private final AccountStatsPreloadManager.CacheListener accountCacheListener = cache -> {
         if (pageRuntime != null) {
             pageRuntime.scheduleChartOverlayRefresh();
@@ -546,6 +601,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private ViewTreeObserver.OnDrawListener pendingStartupDrawListener;
     private String pendingStartupDrawKey = "";
     private String lastConsumedTradeActionToken = "";
+    private String lastAppliedQuickTradeTemplateSignature = "";
     @Nullable
     private KlineData pendingRealtimeTailKline;
     private boolean realtimeTailDrainScheduled;
@@ -936,11 +992,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             }
 
             @Override
-            public void updateAbnormalAnnotationsOverlay() {
-                MarketChartScreen.this.updateAbnormalAnnotationsOverlay();
-            }
-
-            @Override
             public boolean isChartViewReady() {
                 return binding != null && binding.klineChartView != null;
             }
@@ -953,7 +1004,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             @Nullable
             @Override
             public AccountStatsPreloadManager.Cache getLatestAccountCache() {
-                return accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache();
+                return resolveCurrentSessionAccountCache();
             }
 
             @Nullable
@@ -1074,7 +1125,29 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         });
         binding.klineChartView.setOnQuickPendingLineChangeListener(price -> {
             pendingLinePrice = price;
-            binding.klineChartView.setTradeLayerSnapshot(buildTradeLayerSnapshot());
+            pendingDirection = resolveQuickPendingDirection();
+            updateQuickTradeBar();
+        });
+        binding.klineChartView.setOnTradeLineEditListener(new KlineChartView.OnTradeLineEditListener() {
+            @Override
+            public void onTradeLineDragStart(ChartTradeLine line) {
+                handleTradeLineDragStart(line);
+            }
+
+            @Override
+            public void onTradeLineDragUpdate(ChartTradeLine line, double price) {
+                handleTradeLineDragUpdate(line, price);
+            }
+
+            @Override
+            public void onTradeLineActionClick(ChartTradeLine line) {
+                handleTradeLineActionClick(line);
+            }
+
+            @Override
+            public void onTradeLineBlankAreaTap() {
+                handleTradeLineBlankAreaTap();
+            }
         });
         binding.btnScrollToLatest.setOnClickListener(v -> {
             binding.klineChartView.scrollToLatest();
@@ -1131,7 +1204,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         refreshGlobalStatusButton();
     }
 
-    // 观察连接、刷新时间和异常记录，保证按钮与图表异常标注走同一套真值。
+    // 观察连接、刷新时间和异常记录，保证状态按钮与底部异常弹层走同一套真值。
     private void observeStatusSources() {
         if (statusSourcesObserved) {
             return;
@@ -1146,7 +1219,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             abnormalRecordManager.getRecordsLiveData().observe(lifecycleOwner, records -> {
                 abnormalRecords = records == null ? new ArrayList<>() : new ArrayList<>(records);
                 dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);
-                updateAbnormalAnnotationsOverlay();
             });
         }
         dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);
@@ -1447,8 +1519,33 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             return;
         }
         lastConsumedTradeActionToken = token;
+        focusTradeGroup(buildTradeHighlightGroupId(targetItem, action));
         tradeDialogCoordinator.showTradeCommandDialog(chartAction, targetItem);
         clearPendingTradeActionIntent(intent);
+    }
+
+    private void focusTradeGroup(@Nullable String groupId) {
+        if (binding == null || binding.klineChartView == null) {
+            return;
+        }
+        binding.klineChartView.setHighlightedTradeGroup(groupId);
+    }
+
+    @NonNull
+    private String buildTradeHighlightGroupId(@Nullable PositionItem item, @Nullable String action) {
+        if (item == null) {
+            return "";
+        }
+        boolean pendingGroup = EXTRA_TRADE_ACTION_MODIFY_PENDING.equals(action)
+                || EXTRA_TRADE_ACTION_CANCEL_PENDING.equals(action);
+        String type = pendingGroup ? "pending" : "position";
+        if (item.getPositionTicket() > 0L) {
+            return type + "|position|" + item.getPositionTicket();
+        }
+        if (item.getOrderId() > 0L) {
+            return type + "|order|" + item.getOrderId();
+        }
+        return "";
     }
 
     // 交易动作一旦进入页面消费链，就立刻从宿主 Intent 清掉，避免后续切回 tab 时被重复重放。
@@ -1481,10 +1578,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     @Nullable
     private AccountSnapshot resolveTradeTargetSnapshot() {
-        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
-                ? null
-                : accountStatsPreloadManager.getLatestCache();
-        if (cache != null && matchesActiveSessionIdentity(cache.getAccount(), cache.getServer())) {
+        AccountStatsPreloadManager.Cache cache = resolveCurrentSessionAccountCache();
+        if (cache != null) {
             return cache.getSnapshot();
         }
         if (storedChartOverlaySnapshot != null
@@ -1798,12 +1893,14 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     // 统一应用当前快捷模式，后续挂单线显示也从这里收口。
     private void applyQuickTradeMode(@NonNull ChartQuickTradeMode mode) {
+        clearTradeLineEditSession();
         quickTradeMode = mode;
         if (mode == ChartQuickTradeMode.PENDING) {
             pendingLinePrice = resolveQuickTradeCurrentPrice();
         } else {
             pendingLinePrice = Double.NaN;
         }
+        pendingDirection = resolveQuickPendingDirection();
         binding.klineChartView.setTradeLayerSnapshot(buildTradeLayerSnapshot());
         updateQuickTradeBar();
         dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);
@@ -1811,48 +1908,821 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     // 根据当前快捷交易模式生成图表交易状态层快照。
     private ChartTradeLayerSnapshot buildTradeLayerSnapshot() {
-        List<ChartTradeLine> liveLines = new ArrayList<>();
-        List<ChartTradeLine> draftLines = new ArrayList<>();
+        TradeLineEditSession session = activeTradeLineEditSession;
+        if (session != null) {
+            ChartTradeLayerSnapshot previewSnapshot = resolveTradeLineEditPreviewSnapshot(session);
+            if (previewSnapshot != null) {
+                return previewSnapshot;
+            }
+        }
+        ChartTradeLayerSnapshot baseSnapshot = lastBaseChartOverlaySnapshot == null
+                ? new ChartTradeLayerSnapshot(null, null)
+                : lastBaseChartOverlaySnapshot.getTradeLayerSnapshot();
+        List<ChartTradeLine> liveLines = new ArrayList<>(baseSnapshot.getLiveLines());
+        List<ChartTradeLine> draftLines = new ArrayList<>(baseSnapshot.getDraftLines());
+        appendTradeLineEditDraft(liveLines, draftLines);
+        ChartQuickTradeCoordinator.PendingDirection direction = resolveQuickPendingDirection();
         if (quickTradeMode == ChartQuickTradeMode.PENDING
                 && Double.isFinite(pendingLinePrice)
                 && pendingLinePrice > 0d) {
+            boolean dragging = binding != null
+                    && binding.klineChartView != null
+                    && binding.klineChartView.isQuickPendingLineDragging();
             draftLines.add(new ChartTradeLine(
                     "quick-pending-draft",
+                    "quick-pending-draft",
                     pendingLinePrice,
-                    "草稿挂单",
-                    ChartTradeLineState.DRAFT_PENDING
+                    resolveQuickPendingDraftLabel(direction),
+                    "",
+                    dragging ? ChartTradeLineState.DRAGGING : ChartTradeLineState.DRAFT_PENDING,
+                    resolveQuickPendingDraftTone(direction),
+                    ChartTradeLineRole.ENTRY,
+                    true,
+                    false,
+                    ""
             ));
         }
         return new ChartTradeLayerSnapshot(liveLines, draftLines);
+    }
+
+    @Nullable
+    private ChartTradeLayerSnapshot resolveTradeLineEditPreviewSnapshot(@NonNull TradeLineEditSession session) {
+        if (!Double.isFinite(session.draftPrice) || session.draftPrice <= 0d) {
+            session.preview = null;
+            return null;
+        }
+        ChartTradeLineRole targetRole = resolveTradeLineEditTargetRole(session);
+        if (targetRole == null) {
+            session.preview = null;
+            return null;
+        }
+        String baseSignature = resolveTradeLineEditPreviewBaseSignature();
+        TradeLineEditPreview preview = session.preview;
+        if (preview == null
+                || preview.targetRole != targetRole
+                || !preview.baseSignature.equals(baseSignature)) {
+            preview = buildTradeLineEditPreview(session, targetRole, baseSignature);
+            session.preview = preview;
+        }
+        return buildTradeLineEditPreviewSnapshot(session, preview);
+    }
+
+    @NonNull
+    private String resolveTradeLineEditPreviewBaseSignature() {
+        return lastBaseChartOverlaySnapshot == null ? "" : trimToEmpty(lastBaseChartOverlaySnapshot.getSignature());
+    }
+
+    @NonNull
+    private TradeLineEditPreview buildTradeLineEditPreview(@NonNull TradeLineEditSession session,
+                                                           @NonNull ChartTradeLineRole targetRole,
+                                                           @NonNull String baseSignature) {
+        ChartTradeLayerSnapshot baseSnapshot = lastBaseChartOverlaySnapshot == null
+                ? new ChartTradeLayerSnapshot(null, null)
+                : lastBaseChartOverlaySnapshot.getTradeLayerSnapshot();
+        List<ChartTradeLine> liveLines = new ArrayList<>(baseSnapshot.getLiveLines());
+        List<ChartTradeLine> draftLines = new ArrayList<>(baseSnapshot.getDraftLines());
+        removeTradeLayerGroup(liveLines, session.groupId);
+        removeTradeLayerGroup(draftLines, session.groupId);
+        for (ChartTradeLineRole role : ChartTradeLineRole.values()) {
+            appendFrozenTradeLine(liveLines, draftLines, session, role, targetRole);
+        }
+        return new TradeLineEditPreview(baseSignature, targetRole, liveLines, draftLines);
+    }
+
+    @NonNull
+    private ChartTradeLayerSnapshot buildTradeLineEditPreviewSnapshot(@NonNull TradeLineEditSession session,
+                                                                      @NonNull TradeLineEditPreview preview) {
+        List<ChartTradeLine> draftLines = new ArrayList<>(preview.draftLines);
+        draftLines.add(createDraftTradeLineByRole(
+                session.groupId,
+                session.groupId + "|draft|active|" + preview.targetRole.name().toLowerCase(Locale.ROOT),
+                session.draftPrice,
+                preview.targetRole,
+                true,
+                "修改",
+                session.targetItem,
+                session.accumulatedFee
+        ));
+        return new ChartTradeLayerSnapshot(preview.liveLines, draftLines);
+    }
+
+    private void handleTradeLineDragStart(@Nullable ChartTradeLine line) {
+        if (line == null) {
+            clearTradeLineEditSession();
+            return;
+        }
+        TradeLineEditSession session = createTradeLineEditSession(line);
+        if (session == null) {
+            clearTradeLineEditSession();
+            return;
+        }
+        if (quickTradeMode != ChartQuickTradeMode.CLOSED) {
+            applyQuickTradeMode(ChartQuickTradeMode.CLOSED);
+        }
+        activeTradeLineEditSession = session;
+        focusTradeGroup(session.groupId);
+    }
+
+    private void handleTradeLineDragUpdate(@Nullable ChartTradeLine line, double price) {
+        if (!Double.isFinite(price) || price <= 0d) {
+            return;
+        }
+        TradeLineEditSession session = ensureTradeLineEditSession(line);
+        if (session == null) {
+            return;
+        }
+        session.draftPrice = price;
+        if (binding != null && binding.klineChartView != null) {
+            binding.klineChartView.setTradeLayerSnapshot(buildTradeLayerSnapshot());
+        }
+    }
+
+    private void handleTradeLineActionClick(@Nullable ChartTradeLine line) {
+        if (line == null || tradeDialogCoordinator == null) {
+            return;
+        }
+        TradeLineEditSession session = ensureTradeLineEditSession(line);
+        if (session == null) {
+            return;
+        }
+        if (!sameTradeLineGroup(line, session.groupId)) {
+            return;
+        }
+        try {
+            TradeCommand command = buildTradeLineEditCommand(session);
+            tradeDialogCoordinator.submitDirectTradeCommand(command);
+            clearTradeLineEditSession();
+            if (binding != null && binding.klineChartView != null) {
+                binding.klineChartView.setTradeLayerSnapshot(buildTradeLayerSnapshot());
+            }
+        } catch (IllegalArgumentException exception) {
+            Toast.makeText(this, exception.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void handleTradeLineBlankAreaTap() {
+        if (quickTradeMode == ChartQuickTradeMode.PENDING) {
+            applyQuickTradeMode(ChartQuickTradeMode.CLOSED);
+            focusTradeGroup("");
+            return;
+        }
+        if (activeTradeLineEditSession == null) {
+            return;
+        }
+        clearTradeLineEditSession();
+        focusTradeGroup("");
+        if (binding != null && binding.klineChartView != null) {
+            binding.klineChartView.setTradeLayerSnapshot(buildTradeLayerSnapshot());
+        }
+    }
+
+    private void clearTradeLineEditSession() {
+        activeTradeLineEditSession = null;
+    }
+
+    @Nullable
+    private TradeLineEditSession ensureTradeLineEditSession(@Nullable ChartTradeLine line) {
+        TradeLineEditSession session = activeTradeLineEditSession;
+        if (session != null && (line == null || sameTradeLineGroup(line, session.groupId))) {
+            return session;
+        }
+        session = createTradeLineEditSession(line);
+        if (session != null) {
+            activeTradeLineEditSession = session;
+        }
+        return session;
+    }
+
+    @Nullable
+    private TradeLineEditSession createTradeLineEditSession(@Nullable ChartTradeLine line) {
+        if (line == null) {
+            return null;
+        }
+        String groupId = trimToEmpty(line.getGroupId());
+        if (groupId.isEmpty()) {
+            return null;
+        }
+        AccountSnapshot snapshot = resolveEditableTradeSnapshot();
+        if (snapshot == null) {
+            return null;
+        }
+        boolean pendingOrder = isPendingTradeGroup(groupId);
+        PositionItem targetItem = pendingOrder
+                ? findTradeItemByGroupId(snapshot.getPendingOrders(), groupId)
+                : findTradeItemByGroupId(snapshot.getPositions(), groupId);
+        if (targetItem == null) {
+            return null;
+        }
+        ChartTradeLineRole sourceRole = resolveTradeLineEditSourceRole(groupId, line);
+        double originalPrice = resolveTradeLineEditOriginalPrice(groupId, sourceRole, line);
+        double entryOriginalPrice = resolveTradeLineRoleOriginalPrice(groupId, ChartTradeLineRole.ENTRY, targetItem, line);
+        double tpOriginalPrice = resolveTradeLineRoleOriginalPrice(groupId, ChartTradeLineRole.TP, targetItem, line);
+        double slOriginalPrice = resolveTradeLineRoleOriginalPrice(groupId, ChartTradeLineRole.SL, targetItem, line);
+        double accumulatedFee = resolveTradeLineAccumulatedFee(targetItem);
+        return new TradeLineEditSession(
+                groupId,
+                targetItem,
+                pendingOrder,
+                sourceRole,
+                originalPrice,
+                entryOriginalPrice,
+                tpOriginalPrice,
+                slOriginalPrice,
+                accumulatedFee
+        );
+    }
+
+    @NonNull
+    private ChartTradeLineRole resolveTradeLineEditSourceRole(@NonNull String groupId,
+                                                              @NonNull ChartTradeLine line) {
+        ChartTradeLine referenceEntry = findDraftGhostTradeLine(groupId, ChartTradeLineRole.ENTRY);
+        if (referenceEntry != null) {
+            return ChartTradeLineRole.ENTRY;
+        }
+        ChartTradeLine sameRoleGhost = findDraftGhostTradeLine(groupId, line.getRole());
+        if (sameRoleGhost != null) {
+            return line.getRole();
+        }
+        return line.getRole();
+    }
+
+    private double resolveTradeLineEditOriginalPrice(@NonNull String groupId,
+                                                     @NonNull ChartTradeLineRole sourceRole,
+                                                     @NonNull ChartTradeLine line) {
+        ChartTradeLine referenceLine = findDraftGhostTradeLine(groupId, sourceRole);
+        if (referenceLine != null && referenceLine.getPrice() > 0d) {
+            return referenceLine.getPrice();
+        }
+        return line.getPrice();
+    }
+
+    private double resolveTradeLineRoleOriginalPrice(@NonNull String groupId,
+                                                     @NonNull ChartTradeLineRole role,
+                                                     @NonNull PositionItem targetItem,
+                                                     @NonNull ChartTradeLine line) {
+        ChartTradeLine draftGhostLine = findDraftGhostTradeLine(groupId, role);
+        if (draftGhostLine != null && draftGhostLine.getPrice() > 0d) {
+            return draftGhostLine.getPrice();
+        }
+        ChartTradeLine baseLiveLine = findBaseLiveTradeLine(groupId, role);
+        if (baseLiveLine != null && baseLiveLine.getPrice() > 0d) {
+            return baseLiveLine.getPrice();
+        }
+        if (line.getRole() == role && line.getPrice() > 0d) {
+            return line.getPrice();
+        }
+        if (role == ChartTradeLineRole.TP) {
+            return targetItem.getTakeProfit();
+        }
+        if (role == ChartTradeLineRole.SL) {
+            return targetItem.getStopLoss();
+        }
+        if (targetItem.getPendingPrice() > 0d) {
+            return targetItem.getPendingPrice();
+        }
+        return targetItem.getCostPrice() > 0d ? targetItem.getCostPrice() : 0d;
+    }
+
+    @Nullable
+    private ChartTradeLine findDraftGhostTradeLine(@NonNull String groupId,
+                                                   @NonNull ChartTradeLineRole role) {
+        ChartTradeLayerSnapshot snapshot = lastChartOverlaySnapshot == null
+                ? null
+                : lastChartOverlaySnapshot.getTradeLayerSnapshot();
+        if (snapshot == null) {
+            return null;
+        }
+        for (ChartTradeLine line : snapshot.getDraftLines()) {
+            if (line == null || !line.isGhost()) {
+                continue;
+            }
+            if (!groupId.equalsIgnoreCase(trimToEmpty(line.getGroupId()))) {
+                continue;
+            }
+            if (line.getRole() != role) {
+                continue;
+            }
+            return line;
+        }
+        return null;
+    }
+
+    @Nullable
+    private ChartTradeLine findBaseLiveTradeLine(@NonNull String groupId,
+                                                 @NonNull ChartTradeLineRole role) {
+        ChartTradeLayerSnapshot snapshot = lastBaseChartOverlaySnapshot == null
+                ? null
+                : lastBaseChartOverlaySnapshot.getTradeLayerSnapshot();
+        if (snapshot == null) {
+            return null;
+        }
+        for (ChartTradeLine line : snapshot.getLiveLines()) {
+            if (line == null) {
+                continue;
+            }
+            if (!groupId.equalsIgnoreCase(trimToEmpty(line.getGroupId()))) {
+                continue;
+            }
+            if (line.getRole() != role) {
+                continue;
+            }
+            return line;
+        }
+        return null;
+    }
+
+    @Nullable
+    private AccountSnapshot resolveEditableTradeSnapshot() {
+        AccountStatsPreloadManager.Cache cache = resolveCurrentSessionAccountCache();
+        if (cache != null && cache.getSnapshot() != null) {
+            return cache.getSnapshot();
+        }
+        if (storedChartOverlaySnapshot != null
+                && matchesStoredChartOverlayIdentity(resolveActiveSessionAccount(), resolveActiveSessionServer())) {
+            return storedChartOverlaySnapshot;
+        }
+        return null;
+    }
+
+    @Nullable
+    private PositionItem findTradeItemByGroupId(@Nullable List<PositionItem> items, @Nullable String groupId) {
+        if (items == null || items.isEmpty()) {
+            return null;
+        }
+        long ticket = parseTradeGroupTicket(groupId);
+        if (ticket <= 0L) {
+            return null;
+        }
+        String[] parts = splitTradeGroupId(groupId);
+        if (parts == null || parts.length < 3) {
+            return null;
+        }
+        boolean positionTicket = "position".equalsIgnoreCase(parts[1]);
+        for (PositionItem item : items) {
+            if (item == null) {
+                continue;
+            }
+            if (positionTicket && item.getPositionTicket() == ticket) {
+                return item;
+            }
+            if (!positionTicket && item.getOrderId() == ticket) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private String[] splitTradeGroupId(@Nullable String groupId) {
+        String normalized = trimToEmpty(groupId);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        String[] parts = normalized.split("\\|");
+        return parts.length < 3 ? null : parts;
+    }
+
+    private long parseTradeGroupTicket(@Nullable String groupId) {
+        String[] parts = splitTradeGroupId(groupId);
+        if (parts == null) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(parts[2]);
+        } catch (NumberFormatException ignored) {
+            return 0L;
+        }
+    }
+
+    private boolean isPendingTradeGroup(@Nullable String groupId) {
+        String[] parts = splitTradeGroupId(groupId);
+        return parts != null && "pending".equalsIgnoreCase(parts[0]);
+    }
+
+    private boolean sameTradeLineGroup(@Nullable ChartTradeLine line, @Nullable String groupId) {
+        return line != null && trimToEmpty(line.getGroupId()).equalsIgnoreCase(trimToEmpty(groupId));
+    }
+
+    private void appendTradeLineEditDraft(@NonNull List<ChartTradeLine> liveLines,
+                                          @NonNull List<ChartTradeLine> draftLines) {
+        TradeLineEditSession session = activeTradeLineEditSession;
+        if (session == null || !Double.isFinite(session.draftPrice) || session.draftPrice <= 0d) {
+            return;
+        }
+        ChartTradeLineRole targetRole = resolveTradeLineEditTargetRole(session);
+        if (targetRole == null) {
+            return;
+        }
+        removeTradeLayerGroup(liveLines, session.groupId);
+        for (ChartTradeLineRole role : ChartTradeLineRole.values()) {
+            appendFrozenTradeLine(liveLines, draftLines, session, role, targetRole);
+        }
+        draftLines.add(createDraftTradeLineByRole(
+                session.groupId,
+                session.groupId + "|draft|active|" + targetRole.name().toLowerCase(Locale.ROOT),
+                session.draftPrice,
+                targetRole,
+                true,
+                "修改",
+                session.targetItem
+        ));
+    }
+
+    private void removeTradeLayerGroup(@NonNull List<ChartTradeLine> lines,
+                                       @NonNull String groupId) {
+        for (int index = lines.size() - 1; index >= 0; index--) {
+            ChartTradeLine line = lines.get(index);
+            if (line == null) {
+                continue;
+            }
+            if (!groupId.equalsIgnoreCase(trimToEmpty(line.getGroupId()))) {
+                continue;
+            }
+            lines.remove(index);
+        }
+    }
+
+    private void appendFrozenTradeLine(@NonNull List<ChartTradeLine> liveLines,
+                                       @NonNull List<ChartTradeLine> draftLines,
+                                       @NonNull TradeLineEditSession session,
+                                       @NonNull ChartTradeLineRole role,
+                                       @NonNull ChartTradeLineRole targetRole) {
+        double frozenPrice = resolveFrozenTradeLinePrice(session, role);
+        if (!Double.isFinite(frozenPrice) || frozenPrice <= 0d) {
+            return;
+        }
+        ChartTradeLine frozenLine = createTradeLineByRole(
+                session.groupId,
+                frozenPrice,
+                role,
+                true,
+                "",
+                session.targetItem
+        );
+        if (shouldGhostTradeLineRole(session, role, targetRole)) {
+            draftLines.add(createGhostTradeLine(createDraftTradeLineByRole(
+                    session.groupId,
+                    session.groupId + "|draft|ghost|" + role.name().toLowerCase(Locale.ROOT),
+                    frozenPrice,
+                    role,
+                    false,
+                    "",
+                    session.targetItem
+            ), frozenPrice));
+            return;
+        }
+        liveLines.add(frozenLine);
+    }
+
+    @NonNull
+    private ChartTradeLine createGhostTradeLine(@NonNull ChartTradeLine line, double price) {
+        return new ChartTradeLine(
+                line.getId(),
+                line.getGroupId(),
+                price,
+                line.getLabel(),
+                line.getCenterLabel(),
+                line.getState(),
+                line.getTone(),
+                line.getRole(),
+                false,
+                true,
+                ""
+        );
+    }
+
+    @NonNull
+    private ChartTradeLine createTradeLineByRole(@NonNull String groupId,
+                                                 double price,
+                                                 @NonNull ChartTradeLineRole role,
+                                                 boolean editable,
+                                                 @NonNull String actionText,
+                                                 @NonNull PositionItem targetItem) {
+        return createDraftTradeLineByRole(
+                groupId,
+                buildTradeLineId(groupId, role),
+                price,
+                role,
+                editable,
+                actionText,
+                targetItem
+        );
+    }
+
+    @NonNull
+    private ChartTradeLine createDraftTradeLineByRole(@NonNull String groupId,
+                                                      @NonNull String lineId,
+                                                      double price,
+                                                      @NonNull ChartTradeLineRole role,
+                                                      boolean editable,
+                                                      @NonNull String actionText,
+                                                      @NonNull PositionItem targetItem) {
+        double accumulatedFee = resolveTradeLineAccumulatedFee(targetItem);
+        return createDraftTradeLineByRole(
+                groupId,
+                lineId,
+                price,
+                role,
+                editable,
+                actionText,
+                targetItem,
+                accumulatedFee
+        );
+    }
+
+    @NonNull
+    private ChartTradeLine createDraftTradeLineByRole(@NonNull String groupId,
+                                                      @NonNull String lineId,
+                                                      double price,
+                                                      @NonNull ChartTradeLineRole role,
+                                                      boolean editable,
+                                                      @NonNull String actionText,
+                                                      @NonNull PositionItem targetItem,
+                                                      double accumulatedFee) {
+        return new ChartTradeLine(
+                lineId,
+                groupId,
+                price,
+                resolveTradeLineRoleLabel(role, price, targetItem, accumulatedFee),
+                "",
+                resolveTradeLineStateByRole(role, targetItem),
+                resolveTradeLineToneByRole(role, targetItem),
+                role,
+                editable,
+                false,
+                actionText
+        );
+    }
+
+    @NonNull
+    private String buildTradeLineId(@NonNull String groupId, @NonNull ChartTradeLineRole role) {
+        return groupId + "|line|" + role.name().toLowerCase(Locale.ROOT);
+    }
+
+    private double resolveFrozenTradeLinePrice(@NonNull TradeLineEditSession session,
+                                               @NonNull ChartTradeLineRole role) {
+        if (role == ChartTradeLineRole.TP) {
+            return session.tpOriginalPrice;
+        }
+        if (role == ChartTradeLineRole.SL) {
+            return session.slOriginalPrice;
+        }
+        if (session.entryOriginalPrice > 0d) {
+            return session.entryOriginalPrice;
+        }
+        return session.originalPrice;
+    }
+
+    private boolean shouldGhostTradeLineRole(@NonNull TradeLineEditSession session,
+                                             @NonNull ChartTradeLineRole role,
+                                             @NonNull ChartTradeLineRole targetRole) {
+        if (session.pendingOrder) {
+            return role == session.sourceRole;
+        }
+        if (session.sourceRole == ChartTradeLineRole.ENTRY) {
+            return role == targetRole && resolveTradeLineTargetOriginalPrice(session, role) > 0d;
+        }
+        return role == session.sourceRole;
+    }
+
+    @Nullable
+    private ChartTradeLineRole resolveTradeLineEditTargetRole(@NonNull TradeLineEditSession session) {
+        if (session.pendingOrder) {
+            return session.sourceRole;
+        }
+        if (session.sourceRole != ChartTradeLineRole.ENTRY) {
+            return session.sourceRole;
+        }
+        if (!Double.isFinite(session.draftPrice) || session.draftPrice <= 0d) {
+            return null;
+        }
+        if (Math.abs(session.draftPrice - session.originalPrice) <= 1e-9) {
+            return null;
+        }
+        boolean movingUp = session.draftPrice > session.originalPrice;
+        if (isSellSide(session.targetItem.getSide())) {
+            return movingUp ? ChartTradeLineRole.SL : ChartTradeLineRole.TP;
+        }
+        return movingUp ? ChartTradeLineRole.TP : ChartTradeLineRole.SL;
+    }
+
+    private double resolveTradeLineTargetOriginalPrice(@NonNull TradeLineEditSession session,
+                                                       @NonNull ChartTradeLineRole role) {
+        if (role == ChartTradeLineRole.TP) {
+            return session.tpOriginalPrice;
+        }
+        if (role == ChartTradeLineRole.SL) {
+            return session.slOriginalPrice;
+        }
+        if (session.pendingOrder && session.entryOriginalPrice > 0d) {
+            return session.entryOriginalPrice;
+        }
+        if (session.entryOriginalPrice > 0d) {
+            return session.entryOriginalPrice;
+        }
+        return session.originalPrice;
+    }
+
+    @NonNull
+    private ChartTradeLineState resolveTradeLineStateByRole(@NonNull ChartTradeLineRole role,
+                                                            @NonNull PositionItem targetItem) {
+        if (role == ChartTradeLineRole.TP) {
+            return ChartTradeLineState.LIVE_TP;
+        }
+        if (role == ChartTradeLineRole.SL) {
+            return ChartTradeLineState.LIVE_SL;
+        }
+        return Math.abs(targetItem.getQuantity()) > 1e-9
+                ? ChartTradeLineState.LIVE_POSITION
+                : ChartTradeLineState.LIVE_PENDING;
+    }
+
+    @NonNull
+    private ChartTradeLineTone resolveTradeLineToneByRole(@NonNull ChartTradeLineRole role,
+                                                          @NonNull PositionItem targetItem) {
+        if (role == ChartTradeLineRole.TP) {
+            return ChartTradeLineTone.POSITIVE;
+        }
+        if (role == ChartTradeLineRole.SL) {
+            return ChartTradeLineTone.NEGATIVE;
+        }
+        return isSellSide(targetItem.getSide()) ? ChartTradeLineTone.NEGATIVE : ChartTradeLineTone.POSITIVE;
+    }
+
+    @NonNull
+    private String resolveTradeLineRoleLabel(@NonNull ChartTradeLineRole role,
+                                             double price,
+                                             @NonNull PositionItem targetItem,
+                                             double accumulatedFee) {
+        return ChartTradeLineValueHelper.resolveTradeLineLabel(role, price, targetItem, accumulatedFee);
+    }
+
+    private double resolveTradeLineAccumulatedFee(@NonNull PositionItem targetItem) {
+        AccountSnapshot snapshot = resolveEditableTradeSnapshot();
+        List<TradeRecordItem> trades = snapshot == null ? null : snapshot.getTrades();
+        return ChartTradeLineValueHelper.resolveAccumulatedFee(trades, selectedSymbol, targetItem);
+    }
+
+    @NonNull
+    private TradeCommand buildTradeLineEditCommand(@NonNull TradeLineEditSession session) {
+        if (!Double.isFinite(session.draftPrice) || session.draftPrice <= 0d) {
+            throw new IllegalArgumentException("请先拖动到新的价格再修改");
+        }
+        String accountId = resolveQuickTradeAccountId();
+        if (accountId.isEmpty()) {
+            throw new IllegalArgumentException("当前账户未就绪，暂时不能修改");
+        }
+        String symbol = MarketChartTradeSupport.toTradeSymbol(selectedSymbol);
+        if (symbol.trim().isEmpty()) {
+            throw new IllegalArgumentException("当前产品暂不支持修改");
+        }
+        if (session.pendingOrder) {
+            double price = session.sourceRole == ChartTradeLineRole.ENTRY
+                    ? session.draftPrice
+                    : session.targetItem.getPendingPrice();
+            double tp = session.sourceRole == ChartTradeLineRole.TP
+                    ? session.draftPrice
+                    : session.targetItem.getTakeProfit();
+            double sl = session.sourceRole == ChartTradeLineRole.SL
+                    ? session.draftPrice
+                    : session.targetItem.getStopLoss();
+            return TradeCommandFactory.pendingModify(
+                    accountId,
+                    symbol,
+                    session.targetItem.getOrderId(),
+                    price,
+                    sl,
+                    tp
+            );
+        }
+        ChartTradeLineRole targetRole = resolveTradeLineEditTargetRole(session);
+        if (targetRole == null || targetRole == ChartTradeLineRole.ENTRY) {
+            throw new IllegalArgumentException("成交线需要先拖到止盈或止损方向");
+        }
+        double tp = targetRole == ChartTradeLineRole.TP
+                ? session.draftPrice
+                : session.targetItem.getTakeProfit();
+        double sl = targetRole == ChartTradeLineRole.SL
+                ? session.draftPrice
+                : session.targetItem.getStopLoss();
+        double referencePrice = MarketChartTradeSupport.resolveReferencePrice(
+                loadedCandles,
+                session.targetItem,
+                null
+        );
+        return TradeCommandFactory.modifyTpSl(
+                accountId,
+                symbol,
+                session.targetItem.getPositionTicket(),
+                referencePrice,
+                sl,
+                tp
+        );
     }
 
     // 根据当前模式刷新快捷条可见性和主按钮文案。
     private void updateQuickTradeBar() {
         boolean visible = quickTradeMode != ChartQuickTradeMode.CLOSED;
         binding.layoutChartQuickTradeBar.setVisibility(visible ? View.VISIBLE : View.GONE);
-        if (binding.etQuickTradeVolume.getText() == null
-                || binding.etQuickTradeVolume.getText().toString().trim().isEmpty()) {
-            double defaultVolume = tradeTemplateRepository == null
-                    ? 0d
-                    : tradeTemplateRepository.getDefaultVolume();
-            TradeTemplate quickTemplate = resolveQuickTradeTemplate();
-            if (quickTemplate != null && quickTemplate.getDefaultVolume() > 0d) {
-                defaultVolume = quickTemplate.getDefaultVolume();
-            }
+        TradeTemplate quickTemplate = resolveQuickTradeTemplate();
+        syncQuickTradeTemplateState(quickTemplate, false);
+        if (quickTradeMode == ChartQuickTradeMode.PENDING) {
+            binding.btnQuickTradePrimary.setText(R.string.chart_quick_trade_pending_buy);
+            binding.btnQuickTradeSecondary.setText(R.string.chart_quick_trade_pending_sell);
+            pendingDirection = resolveQuickPendingDirection();
+            binding.btnQuickTradePrimary.setEnabled(isQuickPendingBuyEnabled());
+            binding.btnQuickTradeSecondary.setEnabled(isQuickPendingSellEnabled());
+        } else {
+            binding.btnQuickTradePrimary.setText(R.string.chart_quick_trade_buy);
+            binding.btnQuickTradeSecondary.setText(R.string.chart_quick_trade_sell);
+            pendingDirection = ChartQuickTradeCoordinator.PendingDirection.NONE;
+            binding.btnQuickTradePrimary.setEnabled(visible);
+            binding.btnQuickTradeSecondary.setEnabled(visible);
+        }
+        updateTradeActionButtons();
+        binding.layoutChartQuickTradeBar.post(this::applyQuickTradeBarLayoutContract);
+    }
+
+    // 快捷挂单模式下，横线与当前价的相对位置必须收口成唯一方向。
+    @NonNull
+    private ChartQuickTradeCoordinator.PendingDirection resolveQuickPendingDirection() {
+        if (quickTradeMode != ChartQuickTradeMode.PENDING) {
+            return ChartQuickTradeCoordinator.PendingDirection.NONE;
+        }
+        if (chartQuickTradeCoordinator == null) {
+            double currentPrice = resolveQuickTradeCurrentPrice();
+            return ChartQuickTradeCoordinator.resolvePendingDirection(pendingLinePrice, currentPrice);
+        }
+        return chartQuickTradeCoordinator.resolvePendingDirection(pendingLinePrice);
+    }
+
+    @NonNull
+    private String resolveQuickPendingDraftLabel(@NonNull ChartQuickTradeCoordinator.PendingDirection direction) {
+        if (direction == ChartQuickTradeCoordinator.PendingDirection.BUY) {
+            return "挂单 买入草稿";
+        }
+        if (direction == ChartQuickTradeCoordinator.PendingDirection.SELL) {
+            return "挂单 卖出草稿";
+        }
+        return "草稿挂单";
+    }
+
+    @NonNull
+    private ChartTradeLineTone resolveQuickPendingDraftTone(@NonNull ChartQuickTradeCoordinator.PendingDirection direction) {
+        if (direction == ChartQuickTradeCoordinator.PendingDirection.BUY) {
+            return ChartTradeLineTone.POSITIVE;
+        }
+        if (direction == ChartQuickTradeCoordinator.PendingDirection.SELL) {
+            return ChartTradeLineTone.NEGATIVE;
+        }
+        return ChartTradeLineTone.PRIMARY;
+    }
+
+    // 快捷挂单只有当前允许的一侧可以提交，贴近现价时两边都保持禁用。
+    private boolean isQuickPendingBuyEnabled() {
+        return pendingDirection == ChartQuickTradeCoordinator.PendingDirection.BUY;
+    }
+
+    // 快捷挂单只有当前允许的一侧可以提交，贴近现价时两边都保持禁用。
+    private boolean isQuickPendingSellEnabled() {
+        return pendingDirection == ChartQuickTradeCoordinator.PendingDirection.SELL;
+    }
+
+    // 模板变化或调用方明确要求重置时，同步模板按钮和快捷手数，避免设置页返回后只刷新名称不刷新默认值。
+    private void syncQuickTradeTemplateState(@Nullable TradeTemplate template, boolean forceVolumeReset) {
+        String templateSignature = buildQuickTradeTemplateSignature(template);
+        boolean templateChanged = !templateSignature.equals(lastAppliedQuickTradeTemplateSignature);
+        if (forceVolumeReset || templateChanged || isQuickTradeVolumeBlank()) {
+            double defaultVolume = resolveQuickTradeTemplateVolume(template);
             if (defaultVolume > 0d) {
                 binding.etQuickTradeVolume.setText(FormatUtils.formatVolume(defaultVolume));
             }
         }
-        updateQuickTradeTemplateButton(resolveQuickTradeTemplate());
-        if (quickTradeMode == ChartQuickTradeMode.PENDING) {
-            binding.btnQuickTradePrimary.setText(R.string.chart_quick_trade_pending_buy);
-            binding.btnQuickTradeSecondary.setText(R.string.chart_quick_trade_pending_sell);
-            binding.layoutChartQuickTradeBar.post(this::applyQuickTradeBarLayoutContract);
-            return;
+        lastAppliedQuickTradeTemplateSignature = templateSignature;
+        updateQuickTradeTemplateButton(template);
+    }
+
+    // 统一把当前模板压成轻量签名，既覆盖模板切换，也覆盖同一模板默认手数被设置页改动的情况。
+    @NonNull
+    private String buildQuickTradeTemplateSignature(@Nullable TradeTemplate template) {
+        if (template == null) {
+            return "";
         }
-        binding.btnQuickTradePrimary.setText(R.string.chart_quick_trade_buy);
-        binding.btnQuickTradeSecondary.setText(R.string.chart_quick_trade_sell);
-        binding.layoutChartQuickTradeBar.post(this::applyQuickTradeBarLayoutContract);
+        return template.getTemplateId() + "|" + FormatUtils.formatVolume(template.getDefaultVolume());
+    }
+
+    // 仅在手数输入框真的空着时，才允许沿用当前默认值作为首次填充依据。
+    private boolean isQuickTradeVolumeBlank() {
+        return binding.etQuickTradeVolume.getText() == null
+                || binding.etQuickTradeVolume.getText().toString().trim().isEmpty();
+    }
+
+    // 统一解析快捷条当前应该应用的默认手数，优先取当前生效模板，其次回落到默认模板手数。
+    private double resolveQuickTradeTemplateVolume(@Nullable TradeTemplate template) {
+        if (template != null && template.getDefaultVolume() > 0d) {
+            return template.getDefaultVolume();
+        }
+        return tradeTemplateRepository == null ? 0d : tradeTemplateRepository.getDefaultVolume();
     }
 
     // 运行时再次锁定快捷交易条的宽度合同，避免不同设备上权重布局被测量成内容宽度。
@@ -1921,6 +2791,9 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         if (chartQuickTradeCoordinator == null || quickTradeMode == ChartQuickTradeMode.CLOSED) {
             return;
         }
+        if (quickTradeMode == ChartQuickTradeMode.PENDING && !isQuickPendingBuyEnabled()) {
+            return;
+        }
         try {
             String volumeText = resolveQuickTradeVolumeText();
             if (quickTradeMode == ChartQuickTradeMode.MARKET) {
@@ -1936,6 +2809,9 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     // 快捷条右按钮按当前模式执行卖出或挂单卖出。
     private void executeSecondaryQuickTrade() {
         if (chartQuickTradeCoordinator == null || quickTradeMode == ChartQuickTradeMode.CLOSED) {
+            return;
+        }
+        if (quickTradeMode == ChartQuickTradeMode.PENDING && !isQuickPendingSellEnabled()) {
             return;
         }
         try {
@@ -1960,10 +2836,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     @NonNull
     private String resolveQuickTradeAccountId() {
-        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
-                ? null
-                : accountStatsPreloadManager.getLatestCache();
-        if (cache == null || !matchesActiveSessionIdentity(cache.getAccount(), cache.getServer())) {
+        AccountStatsPreloadManager.Cache cache = resolveCurrentSessionAccountCache();
+        if (cache == null) {
             return "";
         }
         return trimToEmpty(cache.getAccount());
@@ -2087,10 +2961,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             return;
         }
         tradeTemplateRepository.setQuickTradeTemplateId(template.getTemplateId());
-        if (template.getDefaultVolume() > 0d) {
-            binding.etQuickTradeVolume.setText(FormatUtils.formatVolume(template.getDefaultVolume()));
-        }
-        updateQuickTradeTemplateButton(template);
+        syncQuickTradeTemplateState(template, true);
     }
 
     // 当前页已不再保留独立异常摘要区，风险信息统一由图表内异常标记承接。
@@ -2698,6 +3569,11 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         loadedCandles.clear();
         loadedCandles.addAll(candles);
         activeDataKey = key;
+        if (quickTradeMode == ChartQuickTradeMode.PENDING) {
+            pendingDirection = resolveQuickPendingDirection();
+            binding.klineChartView.setTradeLayerSnapshot(buildTradeLayerSnapshot());
+            updateQuickTradeBar();
+        }
         if (updateMemoryCache) {
             klineCache.put(key, new ArrayList<>(candles));
         }
@@ -2787,7 +3663,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         activeDataKey = "";
         lastAppliedMarketWindowSignature = "";
         lastAppliedMarketWindowUpdatedAtMs = 0L;
-        lastAbnormalOverlaySignature = "";
         lastAccountOverlaySignature = "";
         startupGate.resetForDataKey(buildCacheKey(selectedSymbol, selectedInterval));
         clearStartupPrimaryDrawObserver();
@@ -2801,12 +3676,15 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         loadedCandles.clear();
         lastAppliedMarketWindowSignature = "";
         lastAppliedMarketWindowUpdatedAtMs = 0L;
-        lastAbnormalOverlaySignature = "";
         lastAccountOverlaySignature = "";
         startupGate.resetForDataKey(buildCacheKey(selectedSymbol, selectedInterval));
         clearStartupPrimaryDrawObserver();
         if (binding == null || binding.klineChartView == null) {
             return;
+        }
+        if (quickTradeMode == ChartQuickTradeMode.PENDING) {
+            pendingDirection = ChartQuickTradeCoordinator.PendingDirection.NONE;
+            updateQuickTradeBar();
         }
         binding.klineChartView.setCandles(new ArrayList<>());
         binding.klineChartView.setPositionAnnotations(new ArrayList<>());
@@ -2814,6 +3692,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         binding.klineChartView.setHistoryTradeAnnotations(new ArrayList<>());
         binding.klineChartView.setAggregateCostAnnotation(null);
         lastChartOverlaySnapshot = ChartOverlaySnapshot.empty();
+        lastBaseChartOverlaySnapshot = ChartOverlaySnapshot.empty();
+        clearTradeLineEditSession();
         bindChartOverlayStatus(lastChartOverlaySnapshot, SensitiveDisplayMasker.isEnabled(this));
         updateStateCount();
         renderChartLoadingState();
@@ -3533,100 +4413,12 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         binding.klineChartView.setVolumeThreshold(threshold, visible);
     }
 
-    private void updateAbnormalAnnotationsOverlay() {
-        if (binding == null || binding.klineChartView == null) {
-            return;
-        }
-        List<AbnormalRecord> filteredRecords = filterAbnormalRecordsForSelectedSymbol();
-        String abnormalOverlaySignature = buildAbnormalOverlaySignature(filteredRecords);
-        if (abnormalOverlaySignature.equals(lastAbnormalOverlaySignature)) {
-            return;
-        }
-        List<KlineChartView.PriceAnnotation> abnormalAnnotations = new ArrayList<>();
-        List<AbnormalAnnotationOverlayBuilder.BucketAnnotation> groupedAnnotations =
-                AbnormalAnnotationOverlayBuilder.build(filteredRecords, loadedCandles, createAbnormalAnnotationColorRange());
-        for (AbnormalAnnotationOverlayBuilder.BucketAnnotation item : groupedAnnotations) {
-            abnormalAnnotations.add(new KlineChartView.PriceAnnotation(
-                    item.anchorTimeMs,
-                    item.price,
-                    item.label,
-                    item.color,
-                    item.groupId,
-                    item.count,
-                    item.intensity
-            ));
-        }
-        lastAbnormalOverlaySignature = abnormalOverlaySignature;
-        binding.klineChartView.setAbnormalAnnotations(abnormalAnnotations);
-    }
-
-    // 先按当前选中标的筛掉无关异常记录，避免聚合器承担页面状态判断。
-    private List<AbnormalRecord> filterAbnormalRecordsForSelectedSymbol() {
-        List<AbnormalRecord> filtered = new ArrayList<>();
-        if (abnormalRecords == null || abnormalRecords.isEmpty()) {
-            return filtered;
-        }
-        for (AbnormalRecord record : abnormalRecords) {
-            if (record == null || !matchesSelectedSymbol(record.getSymbol(), record.getSymbol())) {
-                continue;
-            }
-            filtered.add(record);
-        }
-        return filtered;
-    }
-
-    // 用输入真值签名识别异常标注是否真的变化，避免切 tab 时重复重建同一层标注。
-    private String buildAbnormalOverlaySignature(List<AbnormalRecord> filteredRecords) {
-        long firstOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(0).getOpenTime();
-        long lastOpenTime = loadedCandles.isEmpty() ? 0L : loadedCandles.get(loadedCandles.size() - 1).getOpenTime();
-        StringBuilder builder = new StringBuilder();
-        builder.append(selectedSymbol == null ? "" : selectedSymbol.trim())
-                .append('|')
-                .append(loadedCandles.size())
-                .append('|')
-                .append(firstOpenTime)
-                .append('|')
-                .append(lastOpenTime);
-        if (filteredRecords == null || filteredRecords.isEmpty()) {
-            return builder.toString();
-        }
-        for (AbnormalRecord record : filteredRecords) {
-            if (record == null) {
-                builder.append("|null");
-                continue;
-            }
-            builder.append('|')
-                    .append(record.getId() == null ? "" : record.getId().trim())
-                    .append('|')
-                    .append(record.getTimestamp())
-                    .append('|')
-                    .append(record.getCloseTime())
-                    .append('|')
-                    .append(record.getOpenPrice())
-                    .append('|')
-                    .append(record.getClosePrice())
-                    .append('|')
-                    .append(record.getVolume())
-                    .append('|')
-                    .append(record.getAmount())
-                    .append('|')
-                    .append(record.getPriceChange())
-                    .append('|')
-                    .append(record.getPercentChange())
-                    .append('|')
-                    .append(record.getTriggerSummary() == null ? "" : record.getTriggerSummary().trim());
-        }
-        return builder.toString();
-    }
-
     void updateAccountAnnotationsOverlay() {
         if (binding == null || binding.klineChartView == null) {
             return;
         }
         boolean sessionActive = ConfigManager.getInstance(this).isAccountSessionActive();
-        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager == null
-                ? null
-                : accountStatsPreloadManager.getLatestCache();
+        AccountStatsPreloadManager.Cache cache = resolveCurrentSessionAccountCache();
         AccountSnapshot snapshot = (!sessionActive || cache == null) ? null : cache.getSnapshot();
         if (!sessionActive) {
             clearStoredChartOverlaySnapshot();
@@ -3725,9 +4517,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         if (!ConfigManager.getInstance(this).isAccountSessionActive()) {
             return;
         }
-        AccountStatsPreloadManager.Cache latestCache = accountStatsPreloadManager == null
-                ? null
-                : accountStatsPreloadManager.getLatestCache();
+        AccountStatsPreloadManager.Cache latestCache = resolveCurrentSessionAccountCache();
         if (latestCache != null && latestCache.getSnapshot() != null) {
             return;
         }
@@ -3768,7 +4558,11 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                     new ArrayList<>(loadedCandles),
                     snapshot,
                     cache,
-                    cache == null ? null : runtimeSnapshotStore.selectChartProductRuntime(selectedSymbol)
+                    cache == null ? null : runtimeSnapshotStore.selectChartProductRuntime(
+                            cache.getAccount(),
+                            cache.getServer(),
+                            selectedSymbol
+                    )
             );
             applyBuiltChartOverlaySnapshot(buildVersion,
                     overlaySnapshot,
@@ -3782,7 +4576,11 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         String overlayServer = resolveOverlayServer(cache);
         List<CandleEntry> candleSnapshot = new ArrayList<>(loadedCandles);
         final com.binance.monitor.runtime.state.model.ChartProductRuntimeModel chartRuntimeModel =
-                cache == null ? null : runtimeSnapshotStore.selectChartProductRuntime(selectedSymbol);
+                cache == null ? null : runtimeSnapshotStore.selectChartProductRuntime(
+                        cache.getAccount(),
+                        cache.getServer(),
+                        selectedSymbol
+                );
         chartOverlayBuildTask = ioExecutor.submit(() -> {
             ChartOverlaySnapshot overlaySnapshot = overlaySnapshotFactory().build(
                     selectedSymbol,
@@ -3813,19 +4611,30 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         if (buildVersion != chartOverlayBuildVersion) {
             return;
         }
+        lastBaseChartOverlaySnapshot = overlaySnapshot;
+        ChartOverlaySnapshot visibleSnapshot = new ChartOverlaySnapshot(
+                overlaySnapshot.getPositionAnnotations(),
+                overlaySnapshot.getPendingAnnotations(),
+                overlaySnapshot.getHistoryTradeAnnotations(),
+                buildTradeLayerSnapshot(),
+                overlaySnapshot.getAggregateCostAnnotation(),
+                overlaySnapshot.getPositionSummaryText(),
+                overlaySnapshot.getOverlayMetaText(),
+                overlaySnapshot.getSignature()
+        );
         boolean overlayChanged = ChartOverlayRefreshDiff.hasOverlayVisualChange(
                 lastChartOverlaySnapshot,
-                overlaySnapshot
+                visibleSnapshot
         );
-        lastChartOverlaySnapshot = overlaySnapshot;
+        lastChartOverlaySnapshot = visibleSnapshot;
         dispatchChartRefresh(
                 ChartRefreshEvent.productRuntimeChanged(overlayChanged),
                 () -> {
-                    binding.klineChartView.setPositionAnnotations(overlaySnapshot.getPositionAnnotations());
-                    binding.klineChartView.setPendingAnnotations(overlaySnapshot.getPendingAnnotations());
-                    binding.klineChartView.setHistoryTradeAnnotations(overlaySnapshot.getHistoryTradeAnnotations());
-                    binding.klineChartView.setTradeLayerSnapshot(overlaySnapshot.getTradeLayerSnapshot());
-                    binding.klineChartView.setAggregateCostAnnotation(overlaySnapshot.getAggregateCostAnnotation());
+                    binding.klineChartView.setPositionAnnotations(visibleSnapshot.getPositionAnnotations());
+                    binding.klineChartView.setPendingAnnotations(visibleSnapshot.getPendingAnnotations());
+                    binding.klineChartView.setHistoryTradeAnnotations(visibleSnapshot.getHistoryTradeAnnotations());
+                    binding.klineChartView.setTradeLayerSnapshot(visibleSnapshot.getTradeLayerSnapshot());
+                    binding.klineChartView.setAggregateCostAnnotation(visibleSnapshot.getAggregateCostAnnotation());
                 },
                 null
         );
@@ -3942,9 +4751,11 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     // 当没有任何可用账户快照时，统一清空图表上的持仓与挂单标注。
     private void clearAccountAnnotationsOverlay() {
         clearStoredChartOverlaySnapshot();
+        clearTradeLineEditSession();
         lastChartOverlaySnapshot = ChartOverlaySnapshot.empty();
+        lastBaseChartOverlaySnapshot = ChartOverlaySnapshot.empty();
         lastAccountOverlaySignature = buildAccountOverlaySignature(
-                accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache(),
+                resolveCurrentSessionAccountCache(),
                 null
         );
         syncLastAppliedOverlayIdentity("", "");
@@ -4031,6 +4842,18 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     @NonNull
     private String resolveOverlayServer(@Nullable AccountStatsPreloadManager.Cache cache) {
         return cache == null ? resolveActiveSessionServer() : trimToEmpty(cache.getServer());
+    }
+
+    @Nullable
+    private AccountStatsPreloadManager.Cache resolveCurrentSessionAccountCache() {
+        if (accountStatsPreloadManager == null) {
+            return null;
+        }
+        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager.getLatestCache();
+        if (cache == null) {
+            return null;
+        }
+        return matchesActiveSessionIdentity(cache.getAccount(), cache.getServer()) ? cache : null;
     }
 
     private boolean matchesActiveSessionIdentity(@Nullable String account, @Nullable String server) {
@@ -4157,14 +4980,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
                 colorToken(R.color.pnl_profit),
                 colorToken(R.color.pnl_loss),
                 colorToken(R.color.text_primary)
-        );
-    }
-
-    @NonNull
-    private AbnormalAnnotationOverlayBuilder.ColorRange createAbnormalAnnotationColorRange() {
-        return new AbnormalAnnotationOverlayBuilder.ColorRange(
-                colorToken(R.color.state_warning),
-                colorToken(R.color.trade_sell)
         );
     }
 
@@ -4341,7 +5156,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
             return null;
         }
         double avgCost = weightedCost / qty;
-        return new KlineChartView.AggregateCostAnnotation(avgCost, FormatUtils.formatPrice(avgCost), selectedSymbol);
+        return new KlineChartView.AggregateCostAnnotation(avgCost, "$" + FormatUtils.formatPrice(avgCost), selectedSymbol);
     }
 
     private long resolvePositionAnchorTime(PositionItem position, List<TradeRecordItem> trades) {
@@ -4474,12 +5289,20 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         return "BUY";
     }
 
+    private String resolveTradeSideCn(String side) {
+        return isSellSide(side) ? "卖出" : "买入";
+    }
+
     private boolean isSellSide(String side) {
         return "SELL".equals(normalizeTradeSideLabel(side));
     }
 
     private String formatQuantity(double quantity) {
         return qtyFormat.format(Math.max(0d, quantity));
+    }
+
+    private String formatLotsLabel(double quantity) {
+        return formatQuantity(quantity) + "手";
     }
 
     private String formatSignedUsd(double value) {
@@ -4953,8 +5776,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         styleQuickTradeModeSegmentedOption(binding.btnChartModeMarket, quickTradeMode == ChartQuickTradeMode.MARKET);
         styleQuickTradeModeSegmentedOption(binding.btnChartModePending, quickTradeMode == ChartQuickTradeMode.PENDING);
         styleQuickTradeTemplateButton(binding.btnQuickTradeTemplate);
-        styleQuickTradeActionButton(binding.btnQuickTradePrimary, true);
-        styleQuickTradeActionButton(binding.btnQuickTradeSecondary, false);
+        styleQuickTradeActionButton(binding.btnQuickTradePrimary, true, binding.btnQuickTradePrimary.isEnabled());
+        styleQuickTradeActionButton(binding.btnQuickTradeSecondary, false, binding.btnQuickTradeSecondary.isEnabled());
     }
 
     // 模板入口保持低频中性按钮样式，不与买卖动作语义混色。
@@ -5046,21 +5869,29 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     }
 
     // 快捷交易按钮保留买卖语义色，但统一到 ActionButton 主体。
-    private void styleQuickTradeActionButton(@Nullable Button button, boolean primaryAction) {
+    private void styleQuickTradeActionButton(@Nullable Button button, boolean primaryAction, boolean enabled) {
         if (button == null) {
             return;
         }
         UiPaletteManager.Palette palette = UiPaletteManager.resolve(this);
         int accentColor = primaryAction ? palette.rise : palette.fall;
+        int fillColor = enabled
+                ? ColorUtils.setAlphaComponent(accentColor, 26)
+                : palette.control;
+        int textColor = enabled
+                ? accentColor
+                : ColorUtils.setAlphaComponent(palette.textSecondary, 190);
         UiPaletteManager.styleActionButton(
                 button,
                 palette,
-                ColorUtils.setAlphaComponent(accentColor, 26),
-                accentColor,
+                fillColor,
+                textColor,
                 R.style.TextAppearance_BinanceMonitor_ControlCompact,
                 8,
                 R.dimen.subject_height_md
         );
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1f : 0.72f);
     }
 
     // 快捷交易数量输入保持输入框主体，不再让页面自己拼一套伪字段外壳。

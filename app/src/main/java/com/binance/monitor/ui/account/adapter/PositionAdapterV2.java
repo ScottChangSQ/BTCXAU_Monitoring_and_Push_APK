@@ -44,6 +44,8 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
     private final List<String> rowKeys = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
     private final Map<String, Integer> productCounts = new HashMap<>();
+    private String runtimeAccount = "";
+    private String runtimeServer = "";
     private boolean masked;
     private ActionListener actionListener;
 
@@ -56,6 +58,18 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
     // 注册持仓操作回调，供图表页接入平仓和改单入口。
     public void setActionListener(ActionListener actionListener) {
         this.actionListener = actionListener;
+    }
+
+    // 设置当前页面对应的运行态身份，确保只读取同一账号/服务器下的产品快照。
+    public void setRuntimeIdentity(@Nullable String account, @Nullable String server) {
+        String nextAccount = safe(account);
+        String nextServer = safe(server);
+        boolean changed = !runtimeAccount.equals(nextAccount) || !runtimeServer.equals(nextServer);
+        runtimeAccount = nextAccount;
+        runtimeServer = nextServer;
+        if (changed && !items.isEmpty()) {
+            notifyDataSetChanged();
+        }
     }
 
     public void submitList(List<PositionItem> data) {
@@ -141,7 +155,11 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(
+                runtimeAccount,
+                runtimeServer,
+                buildProductSymbolKey(item)
+        );
         int productCount = resolveProductCount(productCounts, item);
         holder.bind(item, expanded, false, masked, actionListener != null, productCount, runtimeSnapshot);
         holder.binding.layoutHeader.setOnClickListener(v -> {
@@ -190,7 +208,11 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(
+                runtimeAccount,
+                runtimeServer,
+                buildProductSymbolKey(item)
+        );
         int productCount = resolveProductCount(productCounts, item);
         holder.bind(item,
                 expanded,
@@ -242,7 +264,11 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         long takeProfit = Math.round(item.getTakeProfit() * 100d);
         long stopLoss = Math.round(item.getStopLoss() * 100d);
         long storage = Math.round(item.getStorageFee() * 100d);
-        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(
+                runtimeAccount,
+                runtimeServer,
+                buildProductSymbolKey(item)
+        );
         int productCount = resolveProductCount(counts, item);
         String runtimePositionSignature = productCount == 1 && runtimeSnapshot.getPositionCount() == 1
                 ? runtimeSnapshot.getSymbol() + "|" + runtimeSnapshot.getProductRevision()
@@ -372,20 +398,20 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                 binding.tvPnL.setTextColor(palette.textSecondary);
                 return;
             }
-            String sideText = sideCn(item.getSide());
+            String sideText = summarySideCn(item.getSide());
             int sideColor = resolveSideColor(palette, item.getSide());
             boolean useRuntimeSummary = shouldUseRuntimePositionSummary(productCount, runtimeSnapshot);
             double displayPnl = item.getTotalPnL() + item.getStorageFee();
             if (useRuntimeSummary) {
                 displayPnl = runtimeSnapshot.getNetPnl();
             }
-            String pnlText = IndicatorFormatterCenter.formatMoney(displayPnl, 2, false);
+            String pnlText = formatSignedSummaryPnl(displayPnl);
             double displayQty = useRuntimeSummary
                     ? runtimeSnapshot.getTotalLots()
                     : Math.abs(item.getQuantity());
-            String qtyText = IndicatorFormatterCenter.formatQuantity(displayQty, 2, " 手");
-            String raw = String.format(Locale.getDefault(), "%s | %s | %s | %s",
-                    resolveDisplayProductName(item, runtimeSnapshot), sideText, qtyText, pnlText);
+            String qtyText = IndicatorFormatterCenter.formatQuantity(displayQty, 2, "手");
+            String raw = String.format(Locale.getDefault(), "%s|%s|%s|%s",
+                    resolveSummaryProductCode(item, runtimeSnapshot), sideText, qtyText, pnlText);
             SpannableStringBuilder span = new SpannableStringBuilder(raw);
             int sideStart = raw.indexOf(sideText);
             if (sideStart >= 0) {
@@ -518,19 +544,16 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
         }
 
         @NonNull
-        private static String resolveDisplayProductName(@NonNull PositionItem item,
+        private static String resolveSummaryProductCode(@NonNull PositionItem item,
                                                         @NonNull ProductRuntimeSnapshot runtimeSnapshot) {
-            String productName = safe(item.getProductName()).trim();
-            if (!productName.isEmpty()) {
-                return productName;
-            }
-            if (!runtimeSnapshot.getDisplayLabel().isEmpty()) {
-                return runtimeSnapshot.getDisplayLabel();
+            String symbol = safe(item.getCode()).trim();
+            if (!symbol.isEmpty()) {
+                return symbol.toUpperCase(Locale.US);
             }
             if (!runtimeSnapshot.getSymbol().isEmpty()) {
-                return runtimeSnapshot.getSymbol();
+                return runtimeSnapshot.getSymbol().trim().toUpperCase(Locale.US);
             }
-            return safe(item.getCode()).trim();
+            return safe(item.getProductName()).trim();
         }
 
         // 每次绑定时重新锁定摘要文本单行约束，避免 RecyclerView 复用后出现错误换行或多行高度。
@@ -598,8 +621,16 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
             return IndicatorFormatterCenter.formatPrice(value, 2, false);
         }
 
-        private static String sideCn(String side) {
-            return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
+        private static String summarySideCn(String side) {
+            return "buy".equalsIgnoreCase(side) ? "买" : ("sell".equalsIgnoreCase(side) ? "卖" : side);
+        }
+
+        @NonNull
+        private static String formatSignedSummaryPnl(double value) {
+            if (Math.abs(value) < 1e-9) {
+                return "0.00";
+            }
+            return String.format(Locale.getDefault(), "%+.2f", value);
         }
 
         // 收益率优先按持仓成本重算，避免网关侧方向口径差异导致盈亏正负号颠倒。

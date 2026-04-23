@@ -13,6 +13,12 @@ public class IndicatorFormatterCenterTest {
     public void formatterCenterShouldFormatPercentAndMoneyConsistently() {
         assertEquals("+12.35%", IndicatorFormatterCenter.formatPercent(0.12345, 2, true));
         assertEquals("-$56.70", IndicatorFormatterCenter.formatMoney(-56.7, 2, false));
+        assertEquals("$56.70", IndicatorFormatterCenter.formatMoney(
+                56.7,
+                2,
+                false,
+                IndicatorFormatterCenter.SignPolicy.NEGATIVE_ONLY
+        ));
     }
 
     @Test

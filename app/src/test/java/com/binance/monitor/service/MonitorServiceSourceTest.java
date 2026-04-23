@@ -347,6 +347,34 @@ public class MonitorServiceSourceTest {
 
         assertTrue("悬浮窗快照应带上统一连接阶段，避免 UI 再按字符串猜状态",
                 source.contains("return new FloatingWindowSnapshot(\n                dataSource.getCurrentConnectionStage(),"));
+        assertTrue("悬浮窗快照应带上全部产品总持仓数量，避免顶栏被当前可见产品过滤",
+                source.contains("resolveTotalFloatingPositionCount(cache),"));
+        assertTrue("悬浮窗快照应带上全部产品总持仓盈亏，避免顶栏只跟随当前可见卡片",
+                source.contains("resolveTotalFloatingPositionPnl(cache),"));
+        assertTrue("悬浮窗总持仓盈亏应优先复用统一运行态产品快照",
+                source.contains("runtimeSnapshotStore.selectAllProducts("));
+    }
+
+    @Test
+    public void monitorServiceShouldFilterFloatingCacheByCurrentSessionIdentity() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("MonitorService 应持有 SecureSessionPrefs 复用当前活动会话身份",
+                source.contains("private SecureSessionPrefs secureSessionPrefs;"));
+        assertTrue("悬浮窗数据源不应直接暴露 preload 原始 latestCache",
+                source.contains("return resolveCurrentSessionFloatingCache();"));
+        assertTrue("MonitorService 应提供当前会话过滤后的悬浮窗 cache 入口",
+                source.contains("private AccountStatsPreloadManager.Cache resolveCurrentSessionFloatingCache() {"));
+        assertTrue("悬浮窗 cache 过滤应校验当前会话开关和活动账号",
+                source.contains("!configManager.isAccountSessionActive()")
+                        && source.contains("SessionSummarySnapshot sessionSummary = secureSessionPrefs.loadSessionSummary();")
+                        && source.contains("RemoteAccountProfile activeAccount = sessionSummary.getActiveAccount();"));
+        assertTrue("悬浮窗 cache 过滤应严格比较账号和服务器身份",
+                source.contains("if (!expectedAccount.equalsIgnoreCase(trimToEmpty(cache.getAccount()))")
+                        && source.contains("|| !expectedServer.equalsIgnoreCase(trimToEmpty(cache.getServer()))) {"));
     }
 
     @Test

@@ -68,7 +68,6 @@ public final class MarketChartDataHostDelegate implements MarketChartDataCoordin
     @Override public void applyRealtimeChartTail(@Nullable KlineData latestKline) { owner.applyRealtimeChartTail(latestKline); }
     @Override public void updateVolumeThresholdOverlay() { owner.updateVolumeThresholdOverlay(); }
     @Override public void updateAccountAnnotationsOverlay() { owner.updateAccountAnnotationsOverlay(); }
-    @Override public void updateAbnormalAnnotationsOverlay() { owner.updateAbnormalAnnotationsOverlay(); }
     @Override public boolean isChartViewReady() { return owner.isChartViewReady(); }
     @Override public boolean isAccountSessionActive() { return owner.isAccountSessionActive(); }
     @Nullable @Override public AccountStatsPreloadManager.Cache getLatestAccountCache() { return owner.getLatestAccountCache(); }

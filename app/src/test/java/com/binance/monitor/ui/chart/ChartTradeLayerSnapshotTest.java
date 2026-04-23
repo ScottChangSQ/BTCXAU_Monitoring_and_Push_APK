@@ -22,4 +22,21 @@ public class ChartTradeLayerSnapshotTest {
         assertEquals(1, snapshot.getDraftLines().size());
         assertEquals(ChartTradeLineState.DRAFT_PENDING, snapshot.getDraftLines().get(0).getState());
     }
+
+    @Test
+    public void tradeLineShouldExposeCenterLabelAndTone() {
+        ChartTradeLine line = new ChartTradeLine(
+                "pos-2",
+                "pos-2",
+                65123d,
+                "买 0.10手 +$12.30",
+                "$65123.00",
+                ChartTradeLineState.LIVE_POSITION,
+                ChartTradeLineTone.POSITIVE
+        );
+
+        assertEquals("买 0.10手 +$12.30", line.getLabel());
+        assertEquals("$65123.00", line.getCenterLabel());
+        assertEquals(ChartTradeLineTone.POSITIVE, line.getTone());
+    }
 }

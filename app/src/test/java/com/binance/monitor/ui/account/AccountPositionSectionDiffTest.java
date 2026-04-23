@@ -231,6 +231,8 @@ public class AccountPositionSectionDiffTest {
                                                       String signature) {
         return new AccountPositionUiModel(
                 metrics,
+                "",
+                "",
                 "已连接",
                 positionSummary,
                 pendingSummary,

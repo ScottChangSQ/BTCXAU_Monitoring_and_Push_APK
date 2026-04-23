@@ -41,6 +41,8 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
     private final List<String> rowKeys = new ArrayList<>();
     private final Set<String> expandedKeys = new HashSet<>();
     private final Map<String, Integer> productCounts = new HashMap<>();
+    private String runtimeAccount = "";
+    private String runtimeServer = "";
     private boolean masked;
     private ActionListener actionListener;
 
@@ -52,6 +54,18 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
     // 注册挂单操作回调，供图表页接入改单和撤单入口。
     public void setActionListener(ActionListener actionListener) {
         this.actionListener = actionListener;
+    }
+
+    // 设置当前页面对应的运行态身份，确保只读取同一账号/服务器下的产品快照。
+    public void setRuntimeIdentity(@Nullable String account, @Nullable String server) {
+        String nextAccount = safe(account);
+        String nextServer = safe(server);
+        boolean changed = !runtimeAccount.equals(nextAccount) || !runtimeServer.equals(nextServer);
+        runtimeAccount = nextAccount;
+        runtimeServer = nextServer;
+        if (changed && !items.isEmpty()) {
+            notifyDataSetChanged();
+        }
     }
 
     public void submitList(List<PositionItem> data) {
@@ -137,7 +151,11 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(
+                runtimeAccount,
+                runtimeServer,
+                buildProductSymbolKey(item)
+        );
         int productCount = resolveProductCount(productCounts, item);
         holder.bind(item, expanded, false, masked, actionListener != null, productCount, runtimeSnapshot);
         holder.binding.layoutHeader.setOnClickListener(v -> {
@@ -186,7 +204,11 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         PositionItem item = items.get(position);
         String rowKey = rowKeys.get(position);
         boolean expanded = expandedKeys.contains(rowKey);
-        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(
+                runtimeAccount,
+                runtimeServer,
+                buildProductSymbolKey(item)
+        );
         int productCount = resolveProductCount(productCounts, item);
         holder.bind(item,
                 expanded,
@@ -234,7 +256,11 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         long pendingPrice = Math.round(item.getPendingPrice() * 100d);
         long takeProfit = Math.round(item.getTakeProfit() * 100d);
         long stopLoss = Math.round(item.getStopLoss() * 100d);
-        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));
+        ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(
+                runtimeAccount,
+                runtimeServer,
+                buildProductSymbolKey(item)
+        );
         int productCount = resolveProductCount(counts, item);
         String runtimePendingSignature = productCount == 1 && runtimeSnapshot.getPendingCount() == 1
                 ? runtimeSnapshot.getSymbol() + "|" + runtimeSnapshot.getProductRevision()

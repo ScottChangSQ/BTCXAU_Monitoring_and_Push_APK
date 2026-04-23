@@ -13,6 +13,12 @@ import java.util.Locale;
 
 final class ChartQuickTradeCoordinator {
 
+    enum PendingDirection {
+        BUY,
+        SELL,
+        NONE
+    }
+
     interface AccountProvider {
         @NonNull
         String getAccountId();
@@ -88,6 +94,27 @@ final class ChartQuickTradeCoordinator {
     // 根据挂单线价格直接生成挂单卖出命令。
     void executePendingSell(@NonNull String volumeText, double linePrice) {
         executePending(volumeText, linePrice, false);
+    }
+
+    // 把挂单线相对当前价的位置收口成唯一方向，供页面按钮状态与提交动作共用。
+    @NonNull
+    PendingDirection resolvePendingDirection(double linePrice) {
+        return resolvePendingDirection(linePrice, priceProvider.getCurrentPrice());
+    }
+
+    // 当挂单线贴着当前价或任一价格未就绪时，统一返回 NONE，避免页面和提交链口径分叉。
+    @NonNull
+    static PendingDirection resolvePendingDirection(double linePrice, double currentPrice) {
+        if (!Double.isFinite(linePrice) || linePrice <= 0d) {
+            return PendingDirection.NONE;
+        }
+        if (!Double.isFinite(currentPrice) || currentPrice <= 0d) {
+            return PendingDirection.NONE;
+        }
+        if (Math.abs(linePrice - currentPrice) <= MIN_PENDING_DISTANCE) {
+            return PendingDirection.NONE;
+        }
+        return linePrice < currentPrice ? PendingDirection.BUY : PendingDirection.SELL;
     }
 
     @NonNull

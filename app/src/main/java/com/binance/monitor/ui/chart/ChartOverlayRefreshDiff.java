@@ -105,6 +105,8 @@ public final class ChartOverlayRefreshDiff {
             builder.append(line.getId()).append('|')
                     .append(line.getPrice()).append('|')
                     .append(line.getLabel()).append('|')
+                    .append(line.getCenterLabel()).append('|')
+                    .append(line.getTone()).append('|')
                     .append(line.getState()).append(';');
         }
     }

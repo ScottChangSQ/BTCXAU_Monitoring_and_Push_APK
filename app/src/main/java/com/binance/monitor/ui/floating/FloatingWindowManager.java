@@ -76,6 +76,8 @@ public class FloatingWindowManager {
             ConnectionStage.CONNECTING,
             "",
             0L,
+            0,
+            0d,
             new ArrayList<>()
     );
     private boolean showBtc = true;
@@ -120,11 +122,13 @@ public class FloatingWindowManager {
     public void update(FloatingWindowSnapshot snapshot) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             FloatingWindowSnapshot copy = snapshot == null
-                    ? new FloatingWindowSnapshot(ConnectionStage.CONNECTING, "", 0L, new ArrayList<>())
+                    ? new FloatingWindowSnapshot(ConnectionStage.CONNECTING, "", 0L, 0, 0d, new ArrayList<>())
                     : new FloatingWindowSnapshot(
                     snapshot.getConnectionStage(),
                     snapshot.getConnectionStatus(),
                     snapshot.getUpdatedAt(),
+                    snapshot.getTotalPositionCount(),
+                    snapshot.getTotalPositionPnl(),
                     snapshot.getCards());
             handler.post(() -> update(copy));
             return;
@@ -133,7 +137,7 @@ public class FloatingWindowManager {
             return;
         }
         FloatingWindowSnapshot normalized = snapshot == null
-                ? new FloatingWindowSnapshot(ConnectionStage.CONNECTING, "", 0L, new ArrayList<>())
+                ? new FloatingWindowSnapshot(ConnectionStage.CONNECTING, "", 0L, 0, 0d, new ArrayList<>())
                 : snapshot;
         if (normalized.hasSameVisualContent(this.snapshot)) {
             return;
@@ -304,8 +308,15 @@ public class FloatingWindowManager {
                 : snapshot.getConnectionStatus());
         binding.tvOverlayConnection.setTextColor(palette.textSecondary);
         visibleCards = offline ? new ArrayList<>() : visibleCards;
-        boolean hasActivePositions = hasActivePositions(visibleCards);
-        renderSummaryHeader(palette, visibleCards, snapshot.getConnectionStage(), offline, hasActivePositions);
+        boolean hasActivePositions = snapshot.getTotalPositionCount() > 0;
+        renderSummaryHeader(
+                palette,
+                visibleCards,
+                snapshot.getConnectionStage(),
+                offline,
+                hasActivePositions,
+                snapshot.getTotalPositionPnl()
+        );
         applyWindowAlpha();
         int renderedCount = renderSymbolCards(visibleCards, palette);
         for (FloatingSymbolCardData card : visibleCards) {
@@ -342,14 +353,9 @@ public class FloatingWindowManager {
                                      List<FloatingSymbolCardData> visibleCards,
                                      ConnectionStage connectionStage,
                                      boolean offline,
-                                     boolean hasActivePositions) {
+                                     boolean hasActivePositions,
+                                     double totalPnl) {
         boolean masked = SensitiveDisplayMasker.isEnabled(context);
-        double totalPnl = 0d;
-        for (FloatingSymbolCardData card : visibleCards) {
-            if (card != null) {
-                totalPnl += card.getTotalPnl();
-            }
-        }
         String text;
         if (offline) {
             text = resolveOfflineHeaderText(connectionStage);

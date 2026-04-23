@@ -140,6 +140,7 @@ public class AccountDeferredSnapshotRenderHelperTest {
         assertEquals("累计收益率", prepared.getTradeStatsMetrics().get(1).getName());
         assertEquals("总交易次数", prepared.getTradeStatsMetrics().get(2).getName());
         assertEquals("买入次数", prepared.getTradeStatsMetrics().get(3).getName());
+        assertEquals("-0.98%", findMetricValue(prepared.getTradeStatsMetrics(), "最大回撤"));
         assertEquals("13.64", findMetricValue(prepared.getTradeStatsMetrics(), "夏普比率"));
     }
 
@@ -172,6 +173,23 @@ public class AccountDeferredSnapshotRenderHelperTest {
 
         assertEquals("+$6.00", findMetricValue(analytics.getTradeStatsMetrics(), "累计收益额"));
         assertEquals("13.64", findMetricValue(analytics.getTradeStatsMetrics(), "夏普比率"));
+    }
+
+    @Test
+    public void buildTradeAnalyticsShouldNormalizePositiveDrawdownIntoNegativeDisplay() {
+        AccountDeferredSnapshotRenderHelper.TradeAnalytics analytics =
+                AccountDeferredSnapshotRenderHelper.buildTradeAnalytics(
+                        Arrays.asList(
+                                new AccountMetric("最大回撤", "+1.96%"),
+                                new AccountMetric("累计收益额", "+$6.00")
+                        ),
+                        Arrays.asList(),
+                        AccountDeferredSnapshotRenderHelper.TradePnlSideMode.ALL,
+                        AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.CLOSE_TIME,
+                        Arrays.asList()
+                );
+
+        assertEquals("-1.96%", findMetricValue(analytics.getTradeStatsMetrics(), "最大回撤"));
     }
 
     private static TradeRecordItem buildTrade(String code,

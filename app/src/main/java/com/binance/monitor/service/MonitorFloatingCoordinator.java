@@ -18,6 +18,7 @@ import com.binance.monitor.runtime.ConnectionStage;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
 import com.binance.monitor.runtime.state.model.FloatingCardRuntimeModel;
+import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 import com.binance.monitor.ui.floating.FloatingPositionAggregator;
 import com.binance.monitor.ui.floating.FloatingSymbolCardData;
 import com.binance.monitor.ui.floating.FloatingWindowManager;
@@ -160,6 +161,8 @@ final class MonitorFloatingCoordinator {
                 dataSource.getCurrentConnectionStage(),
                 dataSource.getCurrentConnectionStatus(),
                 resolveFloatingUpdatedAt(cards),
+                resolveTotalFloatingPositionCount(cache),
+                resolveTotalFloatingPositionPnl(cache),
                 cards
         );
     }
@@ -172,7 +175,11 @@ final class MonitorFloatingCoordinator {
         if (cache != null && cache.getSnapshot() != null) {
             List<FloatingCardRuntimeModel> runtimeCards = new ArrayList<>();
             for (String symbol : visibleSymbols) {
-                runtimeCards.add(runtimeSnapshotStore.selectFloatingCard(symbol));
+                runtimeCards.add(runtimeSnapshotStore.selectFloatingCard(
+                        cache.getAccount(),
+                        cache.getServer(),
+                        symbol
+                ));
             }
             return FloatingPositionAggregator.buildSymbolCardsFromRuntime(
                     visibleSymbols,
@@ -235,8 +242,13 @@ final class MonitorFloatingCoordinator {
     @NonNull
     private List<Long> resolveVisibleProductRevisions() {
         List<Long> revisions = new ArrayList<>();
+        AccountStatsPreloadManager.Cache cache = dataSource.getLatestAccountCache();
         for (String symbol : resolveVisibleSymbols()) {
-            revisions.add(runtimeSnapshotStore.selectProduct(symbol).getProductRevision());
+            revisions.add(runtimeSnapshotStore.selectProduct(
+                    cache == null ? null : cache.getAccount(),
+                    cache == null ? null : cache.getServer(),
+                    symbol
+            ).getProductRevision());
         }
         return revisions;
     }
@@ -273,6 +285,51 @@ final class MonitorFloatingCoordinator {
             }
         }
         return updatedAt;
+    }
+
+    private int resolveTotalFloatingPositionCount(@Nullable AccountStatsPreloadManager.Cache cache) {
+        if (cache != null) {
+            List<ProductRuntimeSnapshot> snapshots = runtimeSnapshotStore.selectAllProducts(
+                    cache.getAccount(),
+                    cache.getServer()
+            );
+            if (!snapshots.isEmpty()) {
+                int total = 0;
+                for (ProductRuntimeSnapshot snapshot : snapshots) {
+                    if (snapshot != null) {
+                        total += snapshot.getPositionCount();
+                    }
+                }
+                return total;
+            }
+        }
+        List<com.binance.monitor.domain.account.model.PositionItem> positions = copyCachePositions(cache);
+        return positions.size();
+    }
+
+    private double resolveTotalFloatingPositionPnl(@Nullable AccountStatsPreloadManager.Cache cache) {
+        if (cache != null) {
+            List<ProductRuntimeSnapshot> snapshots = runtimeSnapshotStore.selectAllProducts(
+                    cache.getAccount(),
+                    cache.getServer()
+            );
+            if (!snapshots.isEmpty()) {
+                double total = 0d;
+                for (ProductRuntimeSnapshot snapshot : snapshots) {
+                    if (snapshot != null) {
+                        total += snapshot.getNetPnl();
+                    }
+                }
+                return total;
+            }
+        }
+        double total = 0d;
+        for (com.binance.monitor.domain.account.model.PositionItem item : copyCachePositions(cache)) {
+            if (item != null) {
+                total += item.getTotalPnL() + item.getStorageFee();
+            }
+        }
+        return total;
     }
 
     // 后台时放慢悬浮窗刷新，减少不必要的主线程绘制。

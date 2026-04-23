@@ -37,7 +37,7 @@ public class AccountPositionUiModelFactory {
         long updatedAt = cache == null ? 0L : cache.getUpdatedAt();
         List<AccountMetric> overviewMetrics = buildOverviewMetrics(snapshot, updatedAt);
         List<PositionItem> positions = sortPositionItems(snapshot == null ? null : snapshot.getPositions());
-        List<PositionAggregateItem> positionAggregates = buildPositionAggregates();
+        List<PositionAggregateItem> positionAggregates = buildPositionAggregates(cache);
         List<PositionItem> pendingOrders = sortPositionItems(snapshot == null ? null : snapshot.getPendingOrders());
 
         String connectionStatusText = resolveConnectionStatusText(cache);
@@ -55,6 +55,8 @@ public class AccountPositionUiModelFactory {
                 updatedAtText);
         return new AccountPositionUiModel(
                 overviewMetrics,
+                cache == null ? "" : safeText(cache.getAccount()),
+                cache == null ? "" : safeText(cache.getServer()),
                 connectionStatusText,
                 positionSummary,
                 pendingSummary,
@@ -86,8 +88,11 @@ public class AccountPositionUiModelFactory {
 
     // 账户页产品摘要直接复用统一运行态，避免页面侧再重算第二份产品聚合。
     @NonNull
-    private List<PositionAggregateItem> buildPositionAggregates() {
-        List<ProductRuntimeSnapshot> productRuntimes = runtimeSnapshotStore.selectAllProducts();
+    private List<PositionAggregateItem> buildPositionAggregates(@Nullable AccountStatsPreloadManager.Cache cache) {
+        List<ProductRuntimeSnapshot> productRuntimes = runtimeSnapshotStore.selectAllProducts(
+                cache == null ? null : cache.getAccount(),
+                cache == null ? null : cache.getServer()
+        );
         if (productRuntimes.isEmpty()) {
             return Collections.emptyList();
         }

@@ -85,26 +85,35 @@ public final class UnifiedRuntimeSnapshotStore {
     }
 
     @NonNull
-    public ProductRuntimeSnapshot selectProduct(@Nullable String symbol) {
+    public ProductRuntimeSnapshot selectProduct(@Nullable String account,
+                                                @Nullable String server,
+                                                @Nullable String symbol) {
         synchronized (lock) {
-            ProductRuntimeSnapshot snapshot = productSnapshots.get(normalizeSymbol(symbol));
-            return snapshot == null ? EMPTY_PRODUCT : snapshot;
+            return selectProductLocked(account, server, symbol);
         }
     }
 
     @NonNull
-    public ChartProductRuntimeModel selectChartProductRuntime(@Nullable String symbol) {
-        return new ChartProductRuntimeModel(selectProductForUiSurface(symbol));
+    public ChartProductRuntimeModel selectChartProductRuntime(@Nullable String account,
+                                                              @Nullable String server,
+                                                              @Nullable String symbol) {
+        return new ChartProductRuntimeModel(selectProductForUiSurface(account, server, symbol));
     }
 
     @NonNull
-    public FloatingCardRuntimeModel selectFloatingCard(@Nullable String symbol) {
-        return new FloatingCardRuntimeModel(selectProductForUiSurface(symbol));
+    public FloatingCardRuntimeModel selectFloatingCard(@Nullable String account,
+                                                       @Nullable String server,
+                                                       @Nullable String symbol) {
+        return new FloatingCardRuntimeModel(selectProductForUiSurface(account, server, symbol));
     }
 
     @NonNull
-    public List<ProductRuntimeSnapshot> selectAllProducts() {
+    public List<ProductRuntimeSnapshot> selectAllProducts(@Nullable String account,
+                                                          @Nullable String server) {
         synchronized (lock) {
+            if (!matchesRequestedIdentityLocked(account, server)) {
+                return Collections.emptyList();
+            }
             List<ProductRuntimeSnapshot> snapshots = new ArrayList<>(productSnapshots.values());
             snapshots.sort((left, right) -> {
                 String leftKey = safe(left == null ? "" : left.getDisplayLabel())
@@ -120,8 +129,13 @@ public final class UnifiedRuntimeSnapshotStore {
     }
 
     @NonNull
-    private ProductRuntimeSnapshot selectProductForUiSurface(@Nullable String symbol) {
+    private ProductRuntimeSnapshot selectProductForUiSurface(@Nullable String account,
+                                                             @Nullable String server,
+                                                             @Nullable String symbol) {
         synchronized (lock) {
+            if (!matchesRequestedIdentityLocked(account, server)) {
+                return EMPTY_PRODUCT;
+            }
             ProductRuntimeSnapshot direct = productSnapshots.get(normalizeSymbol(symbol));
             if (direct != null) {
                 return direct;
@@ -133,6 +147,31 @@ public final class UnifiedRuntimeSnapshotStore {
             }
             return EMPTY_PRODUCT;
         }
+    }
+
+    @NonNull
+    private ProductRuntimeSnapshot selectProductLocked(@Nullable String account,
+                                                       @Nullable String server,
+                                                       @Nullable String symbol) {
+        if (!matchesRequestedIdentityLocked(account, server)) {
+            return EMPTY_PRODUCT;
+        }
+        ProductRuntimeSnapshot snapshot = productSnapshots.get(normalizeSymbol(symbol));
+        return snapshot == null ? EMPTY_PRODUCT : snapshot;
+    }
+
+    // 统一要求调用方显式带出账号与服务器身份，避免旧运行态被新页面误读。
+    private boolean matchesRequestedIdentityLocked(@Nullable String account, @Nullable String server) {
+        if (accountRuntimeSnapshot == null) {
+            return false;
+        }
+        String requestedAccount = normalizeIdentityToken(account);
+        String requestedServer = normalizeIdentityToken(server);
+        if (requestedAccount.isEmpty() || requestedServer.isEmpty()) {
+            return false;
+        }
+        return requestedAccount.equals(normalizeIdentityToken(accountRuntimeSnapshot.getAccount()))
+                && requestedServer.equals(normalizeIdentityToken(accountRuntimeSnapshot.getServer()));
     }
 
     private void clearAccountRuntimeLocked() {
@@ -261,6 +300,11 @@ public final class UnifiedRuntimeSnapshotStore {
     @NonNull
     private static String safe(@Nullable String value) {
         return value == null ? "" : value;
+    }
+
+    @NonNull
+    private static String normalizeIdentityToken(@Nullable String value) {
+        return safe(value).trim().toUpperCase(Locale.US);
     }
 
     private static final class ProductAggregate {

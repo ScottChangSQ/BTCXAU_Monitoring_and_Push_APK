@@ -66,7 +66,7 @@ public class AccountStatsRepository {
                 new AccountMetric("近1日收益", percent(analysis.return1d)),
                 new AccountMetric("近7日收益", percent(analysis.return7d)),
                 new AccountMetric("近30日收益", percent(analysis.return30d)),
-                new AccountMetric("最大回撤", percent(analysis.maxDrawdown)),
+                new AccountMetric("最大回撤", drawdownPercent(analysis.maxDrawdown)),
                 new AccountMetric("波动率", percent(analysis.volatility)),
                 new AccountMetric("Sharpe", decimal(analysis.sharpe, 2))
         );
@@ -85,7 +85,7 @@ public class AccountStatsRepository {
                 new AccountMetric("平均每笔盈利", money(421.8)),
                 new AccountMetric("平均每笔亏损", money(-286.4)),
                 new AccountMetric("盈亏比", decimal(1.47d, 2)),
-                new AccountMetric("最大回撤", percent(analysis.maxDrawdown)),
+                new AccountMetric("最大回撤", drawdownPercent(analysis.maxDrawdown)),
                 new AccountMetric("波动率", percent(analysis.volatility)),
                 new AccountMetric("仓位利用率", percent(positionUsage)),
                 new AccountMetric("单一最大持仓占比", percent(maxPositionRatio(positions))),
@@ -306,6 +306,10 @@ public class AccountStatsRepository {
 
     private String percent(double value) {
         return String.format(Locale.getDefault(), "%+.2f%%", value * 100d);
+    }
+
+    private String drawdownPercent(double value) {
+        return String.format(Locale.getDefault(), "%.2f%%", -Math.abs(value) * 100d);
     }
 
     private String decimal(double value, int scale) {

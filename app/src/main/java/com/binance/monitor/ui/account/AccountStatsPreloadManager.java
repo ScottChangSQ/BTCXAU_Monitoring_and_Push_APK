@@ -10,17 +10,19 @@ import android.os.Looper;
 
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
-import com.binance.monitor.data.local.V2SnapshotStore;
 import com.binance.monitor.data.local.db.repository.AccountStorageRepository;
 import com.binance.monitor.data.model.v2.AccountHistoryPayload;
+import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
+import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.domain.account.model.AccountMetric;
 import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
-import com.binance.monitor.data.model.v2.AccountSnapshotPayload;
 import com.binance.monitor.runtime.AppForegroundTracker;
+import com.binance.monitor.runtime.account.AccountHistoryRefreshPolicyHelper;
+import com.binance.monitor.runtime.account.AccountPreloadPolicyHelper;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -42,7 +44,6 @@ public class AccountStatsPreloadManager {
     private final Mt5BridgeGatewayClient gatewayClient;
     private final GatewayV2Client gatewayV2Client;
     private final AccountStorageRepository accountStorageRepository;
-    private final V2SnapshotStore v2SnapshotStore;
     private final ConfigManager configManager;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -67,7 +68,6 @@ public class AccountStatsPreloadManager {
         gatewayClient = new Mt5BridgeGatewayClient(context.getApplicationContext());
         gatewayV2Client = new GatewayV2Client(context.getApplicationContext());
         accountStorageRepository = new AccountStorageRepository(context.getApplicationContext());
-        v2SnapshotStore = new V2SnapshotStore(context.getApplicationContext());
         configManager = ConfigManager.getInstance(context.getApplicationContext());
     }
 
@@ -311,14 +311,14 @@ public class AccountStatsPreloadManager {
         }
         try {
             AccountSnapshotPayload snapshotPayload = gatewayV2Client.fetchAccountSnapshot();
-            v2SnapshotStore.writeAccountSnapshot(snapshotPayload.getRawJson());
-            int remoteTradeCount = resolveRemoteTradeCount(snapshotPayload);
-            Cache previous = latestCache;
-            int cachedTradeCount = previous == null ? -1 : previous.getHistoryTradeCount();
-            boolean hasStoredTradeHistory = !accountStorageRepository.loadTrades().isEmpty();
+            String remoteHistoryRevision = resolveRemoteHistoryRevision(snapshotPayload);
+            AccountStorageRepository.StoredSnapshot cachedStoredSnapshot =
+                    accountStorageRepository.loadStoredSnapshot();
+            String cachedHistoryRevision = cachedStoredSnapshot.getHistoryRevision();
+            boolean hasStoredTradeHistory = !cachedStoredSnapshot.getTrades().isEmpty();
             boolean shouldRefreshAllHistory = AccountHistoryRefreshPolicyHelper.shouldRefreshAllHistory(
-                    remoteTradeCount,
-                    cachedTradeCount,
+                    remoteHistoryRevision,
+                    cachedHistoryRevision,
                     hasStoredTradeHistory
             );
             if (shouldRefreshAllHistory) {
@@ -342,7 +342,7 @@ public class AccountStatsPreloadManager {
             // 避免 latestCache 在“轻量快照”和“全量快照”之间来回切换导致页面闪烁。
             AccountStorageRepository.StoredSnapshot latestStoredSnapshot =
                     accountStorageRepository.loadStoredSnapshot();
-            Cache cache = buildCache(latestStoredSnapshot, remoteTradeCount);
+            Cache cache = buildCache(latestStoredSnapshot, latestStoredSnapshot.getTrades().size());
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
             return cache;
@@ -429,7 +429,6 @@ public class AccountStatsPreloadManager {
                     toDomainRange(safeRange),
                     ""
             );
-            v2SnapshotStore.writeAccountSnapshot(v2Payload.getRawJson());
             AccountStorageRepository.StoredSnapshot storedSnapshot =
                     buildStoredSnapshotFromV2(v2Payload, historyPayload);
             accountStorageRepository.persistV2Snapshot(storedSnapshot);
@@ -600,6 +599,7 @@ public class AccountStatsPreloadManager {
                 resolveUpdatedAt(snapshotPayload, historyPayload),
                 "",
                 System.currentTimeMillis(),
+                resolveRemoteHistoryRevision(snapshotPayload),
                 buildOverviewMetrics(account, accountMeta),
                 parseCurvePoints(curvePoints),
                 new ArrayList<>(),
@@ -625,6 +625,7 @@ public class AccountStatsPreloadManager {
                 resolveUpdatedAt(snapshotPayload, null),
                 "",
                 System.currentTimeMillis(),
+                resolveRemoteHistoryRevision(snapshotPayload),
                 buildOverviewMetrics(account, accountMeta),
                 new ArrayList<>(),
                 new ArrayList<>(),
@@ -676,10 +677,10 @@ public class AccountStatsPreloadManager {
         );
     }
 
-    // 读取服务端当前历史成交总数，用它判断是否需要补拉全量历史。
-    private int resolveRemoteTradeCount(AccountSnapshotPayload snapshotPayload) {
+    // 读取服务端当前历史版本号，用它判断是否需要补拉全量历史。
+    private String resolveRemoteHistoryRevision(AccountSnapshotPayload snapshotPayload) {
         JSONObject accountMeta = snapshotPayload == null ? new JSONObject() : snapshotPayload.getAccountMeta();
-        return (int) optLongAny(accountMeta, 0L, "tradeCount", "trade_count");
+        return optString(accountMeta, "historyRevision", "");
     }
 
     // 生成账户页概要指标，保证 v2 成功时页面也有可展示的基础数字。

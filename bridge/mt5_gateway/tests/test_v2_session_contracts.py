@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import threading
 import types
@@ -102,6 +103,15 @@ from bridge.mt5_gateway import mt5_login_probe  # noqa: E402
 class V2SessionContractsTests(unittest.TestCase):
     """验证会话接口响应结构。"""
 
+    def setUp(self):
+        self._original_runtime_status = dict(getattr(server_v2, "gateway_runtime_status", {}))
+
+    def tearDown(self):
+        runtime_status = getattr(server_v2, "gateway_runtime_status", None)
+        if isinstance(runtime_status, dict):
+            runtime_status.clear()
+            runtime_status.update(self._original_runtime_status)
+
     def _build_login_envelope(self, key_payload: dict, *, key_id: str, client_time: int, nonce: str = "") -> dict:
         """按网关公钥构造最小可解密登录信封。"""
         from cryptography.hazmat.primitives import hashes, serialization
@@ -148,6 +158,125 @@ class V2SessionContractsTests(unittest.TestCase):
         self.assertIn("savedAccounts", payload)
         self.assertIn("savedAccountCount", payload)
         self.assertIsInstance(payload["savedAccounts"], list)
+
+    def test_internal_runtime_status_should_return_stable_shape(self):
+        """运行时状态接口应始终返回固定结构字段。"""
+        payload = server_v2.internal_runtime_status()
+
+        self.assertIn("streamClientsActive", payload)
+        self.assertIn("streamLastConnectedAt", payload)
+        self.assertIn("streamLastDisconnectedAt", payload)
+        self.assertIn("httpLastRequestAt", payload)
+        self.assertIn("httpLastRequestPath", payload)
+        self.assertIn("sessionLastAction", payload)
+        self.assertIn("sessionLastRequestAt", payload)
+        self.assertIn("sessionLastResult", payload)
+        self.assertIn("tradeLastAction", payload)
+        self.assertIn("tradeLastRequestAt", payload)
+        self.assertIn("tradeLastResult", payload)
+        self.assertIn("lastClientAddress", payload)
+
+    def test_internal_runtime_panel_should_return_aggregated_shape(self):
+        """状态面板聚合接口应返回固定的五段结构。"""
+        payload = server_v2.internal_runtime_panel()
+
+        self.assertIn("health", payload)
+        self.assertIn("source", payload)
+        self.assertIn("session", payload)
+        self.assertIn("runtime", payload)
+        self.assertIn("latestDiagnostic", payload)
+
+    def test_internal_runtime_panel_should_not_overwrite_recent_app_request(self):
+        """状态面板聚合接口不应把最近 APP 请求覆盖成面板自己的内部读取。"""
+        with mock.patch.object(server_v2, "_now_ms", return_value=2000):
+            server_v2._record_runtime_http_request("/v2/account/full", ("10.0.0.9", 41234))
+
+        payload = server_v2.internal_runtime_panel()
+
+        self.assertEqual("/v2/account/full", payload["runtime"]["httpLastRequestPath"])
+        self.assertEqual("10.0.0.9:41234", payload["runtime"]["lastClientAddress"])
+
+    def test_internal_runtime_panel_should_not_trigger_lightweight_mt5_identity_verification(self):
+        """状态面板聚合接口不应每次刷新都触发 MT5 轻量身份校验。"""
+        session_status = {
+            "state": "activated",
+            "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
+            "savedAccounts": [],
+            "savedAccountCount": 0,
+        }
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value=session_status,
+        ), mock.patch.object(
+            server_v2,
+            "_read_lightweight_current_mt5_account_identity",
+            side_effect=AssertionError("runtime panel should not verify MT5 identity"),
+        ) as verify_mock:
+            payload = server_v2.internal_runtime_panel()
+
+        verify_mock.assert_not_called()
+        self.assertEqual("activated", payload["session"]["state"])
+        self.assertEqual("7400048", payload["session"]["activeAccount"]["login"])
+
+    def test_internal_runtime_status_should_track_recent_app_interactions(self):
+        """运行时状态应收口 stream、session、trade 的最近交互事实。"""
+        with mock.patch.object(server_v2, "_now_ms", side_effect=[1000, 1100, 1200, 1300, 1400]):
+            server_v2._record_runtime_stream_connected("app://device-a")
+            server_v2._record_runtime_http_request("/v2/account/snapshot")
+            server_v2._record_runtime_session_action("login", "ok")
+            server_v2._record_runtime_trade_action("submit", "ACCEPTED")
+            server_v2._record_runtime_stream_disconnected("app://device-a")
+
+        payload = server_v2.internal_runtime_status()
+
+        self.assertEqual(0, payload["streamClientsActive"])
+        self.assertEqual(1000, payload["streamLastConnectedAt"])
+        self.assertEqual(1100, payload["httpLastRequestAt"])
+        self.assertEqual("/v2/account/snapshot", payload["httpLastRequestPath"])
+        self.assertEqual("login", payload["sessionLastAction"])
+        self.assertEqual(1200, payload["sessionLastRequestAt"])
+        self.assertEqual("ok", payload["sessionLastResult"])
+        self.assertEqual("submit", payload["tradeLastAction"])
+        self.assertEqual(1300, payload["tradeLastRequestAt"])
+        self.assertEqual("ACCEPTED", payload["tradeLastResult"])
+        self.assertEqual("app://device-a", payload["lastClientAddress"])
+        self.assertEqual(1400, payload["streamLastDisconnectedAt"])
+
+    def test_account_snapshot_should_update_runtime_http_request_path(self):
+        """常用账户接口也应更新最近一次客户端普通请求路径。"""
+        light_snapshot = {
+            "accountMeta": {
+                "login": "7400048",
+                "server": "ICMarketsSC-MT5-6",
+                "source": "MT5 Python Pull",
+                "historyRevision": "history-1",
+            },
+            "positions": [],
+            "pendingOrders": [],
+            "overviewMetrics": [],
+            "curveIndicators": [],
+            "statsMetrics": [],
+        }
+        with mock.patch.object(
+            server_v2.session_manager,
+            "build_status_payload",
+            return_value={
+                "state": "activated",
+                "activeAccount": {"login": "7400048", "server": "ICMarketsSC-MT5-6"},
+                "savedAccounts": [],
+                "savedAccountCount": 0,
+            },
+        ), mock.patch.object(
+            server_v2, "_build_account_light_snapshot_with_cache", return_value=light_snapshot
+        ):
+            fake_request = types.SimpleNamespace(client=("10.8.0.5", 50123))
+            server_v2.v2_account_snapshot(request=fake_request)
+
+        payload = server_v2.internal_runtime_status()
+        self.assertEqual("/v2/account/snapshot", payload["httpLastRequestPath"])
+        self.assertGreaterEqual(int(payload["httpLastRequestAt"] or 0), 0)
+        self.assertEqual("10.8.0.5:50123", payload["lastClientAddress"])
 
     def test_session_logout_should_forward_request_id(self):
         """logout 接口应把 requestId 传给会话管理器。"""
@@ -1372,6 +1501,51 @@ class V2SessionContractsTests(unittest.TestCase):
         self.assertEqual(1, success_count)
         self.assertEqual(1, len(errors))
         self.assertIn("nonce", errors[0])
+
+    def test_resolve_mt5_terminal_common_ini_path_should_match_origin_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            install_dir = root / "MetaTrader 5"
+            install_dir.mkdir(parents=True, exist_ok=True)
+            terminal_path = install_dir / "terminal64.exe"
+            terminal_path.write_text("", encoding="utf-8")
+
+            appdata_dir = root / "Roaming"
+            common_ini = appdata_dir / "MetaQuotes" / "Terminal" / "ABC123" / "config" / "common.ini"
+            common_ini.parent.mkdir(parents=True, exist_ok=True)
+            common_ini.write_text("[Experts]\nEnabled=0\nApi=0\n", encoding="utf-8")
+            origin_path = common_ini.parent.parent / "origin.txt"
+            origin_path.write_text(str(install_dir), encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"APPDATA": str(appdata_dir)}, clear=False):
+                resolved = server_v2._resolve_mt5_terminal_common_ini_path(str(terminal_path))
+
+            self.assertEqual(common_ini, resolved)
+
+    def test_ensure_mt5_terminal_auto_trading_config_should_enable_experts_and_api(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            install_dir = root / "MetaTrader 5"
+            install_dir.mkdir(parents=True, exist_ok=True)
+            terminal_path = install_dir / "terminal64.exe"
+            terminal_path.write_text("", encoding="utf-8")
+
+            appdata_dir = root / "Roaming"
+            common_ini = appdata_dir / "MetaQuotes" / "Terminal" / "ABC123" / "config" / "common.ini"
+            common_ini.parent.mkdir(parents=True, exist_ok=True)
+            common_ini.write_text("[Experts]\nEnabled=0\nApi=0\nChart=0\n", encoding="utf-8")
+            origin_path = common_ini.parent.parent / "origin.txt"
+            origin_path.write_text(str(install_dir), encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"APPDATA": str(appdata_dir)}, clear=False):
+                result = server_v2._ensure_mt5_terminal_auto_trading_config(str(terminal_path))
+
+            content = common_ini.read_text(encoding="utf-8")
+
+            self.assertTrue(result["changed"])
+            self.assertIn("Enabled=1", content)
+            self.assertIn("Api=1", content)
+            self.assertIn("Chart=0", content)
 
 
 if __name__ == "__main__":

@@ -35,4 +35,19 @@ public class MarketChartQuickTradeSourceTest {
         assertFalse(layout.contains("@+id/btnChartTradeSell"));
         assertFalse(layout.contains("@+id/btnChartTradePending"));
     }
+
+    @Test
+    public void quickTradeTemplateChangeShouldSyncVolumeInsteadOfOnlyRefreshingTemplateLabel() throws Exception {
+        String screen = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(screen.contains("private String lastAppliedQuickTradeTemplateSignature = \"\";"));
+        assertTrue(screen.contains("syncQuickTradeTemplateState(quickTemplate, false);"));
+        assertTrue(screen.contains("boolean templateChanged = !templateSignature.equals(lastAppliedQuickTradeTemplateSignature);"));
+        assertTrue(screen.contains("if (forceVolumeReset || templateChanged || isQuickTradeVolumeBlank()) {"));
+        assertTrue(screen.contains("lastAppliedQuickTradeTemplateSignature = templateSignature;"));
+        assertTrue(screen.contains("syncQuickTradeTemplateState(template, true);"));
+        assertFalse(screen.contains("updateQuickTradeTemplateButton(resolveQuickTradeTemplate());"));
+    }
 }

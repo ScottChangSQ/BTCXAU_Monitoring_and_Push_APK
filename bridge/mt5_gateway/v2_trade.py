@@ -69,6 +69,12 @@ def _normalize_pending_order_type(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def _normalize_symbol_key(value: Any) -> str:
+    """把品种名压平成只含字母数字的大写键，便于匹配 broker 后缀/前缀。"""
+    text = str(value or "").strip().upper()
+    return "".join(char for char in text if char.isalnum())
+
+
 def _volume_step_error(volume: float, step: float) -> bool:
     """判断手数是否符合步进。"""
     if step <= 0:
@@ -77,14 +83,183 @@ def _volume_step_error(volume: float, step: float) -> bool:
     return abs(volume - ratio * step) > 1e-9
 
 
-def _resolve_symbol_info(symbol: str, symbol_info_lookup: Optional[Callable[[str], Any]]) -> Any:
-    """读取 symbol_info，失败时返回 None。"""
+def _read_symbol_info(symbol: str,
+                      symbol_info_lookup: Optional[Callable[[str], Any]],
+                      mt5_module: Any = None) -> Any:
+    """读取单个品种的 symbol_info，失败时返回 None。"""
     if not symbol or symbol_info_lookup is None:
         return None
     try:
+        symbol_select = getattr(mt5_module, "symbol_select", None)
+        if callable(symbol_select):
+            try:
+                symbol_select(symbol, True)
+            except Exception:
+                pass
         return symbol_info_lookup(symbol)
     except Exception:
         return None
+
+
+def _extract_symbol_name(symbol_item: Any) -> str:
+    """从 symbols_get 返回项里取出 broker 真实品种名。"""
+    for field_name in ("name", "symbol"):
+        value = str(getattr(symbol_item, field_name, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _is_symbol_trade_enabled(symbol_info: Any, mt5_module: Any) -> bool:
+    """过滤掉明确不可交易的品种。"""
+    if symbol_info is None:
+        return False
+    trade_mode = _to_int(getattr(symbol_info, "trade_mode", None), -1)
+    disabled_mode = _to_int(getattr(mt5_module, "SYMBOL_TRADE_MODE_DISABLED", 0), 0)
+    if trade_mode >= 0 and trade_mode == disabled_mode:
+        return False
+    return True
+
+
+def _resolve_symbol_binding(symbol: str,
+                            symbol_info_lookup: Optional[Callable[[str], Any]],
+                            mt5_module: Any = None) -> Dict[str, Any]:
+    """优先用 exact symbol；若不存在，再解析当前账户下唯一可交易的 broker 别名。"""
+    requested_symbol = str(symbol or "").strip().upper()
+    exact_info = _read_symbol_info(requested_symbol, symbol_info_lookup, mt5_module)
+    if exact_info is not None:
+        return {
+            "requestedSymbol": requested_symbol,
+            "resolvedSymbol": requested_symbol,
+            "symbolInfo": exact_info,
+            "aliasApplied": False,
+            "candidateNames": [],
+        }
+
+    requested_key = _normalize_symbol_key(requested_symbol)
+    symbols_get = getattr(mt5_module, "symbols_get", None)
+    if not requested_key or not callable(symbols_get):
+        return {
+            "requestedSymbol": requested_symbol,
+            "resolvedSymbol": requested_symbol,
+            "symbolInfo": None,
+            "aliasApplied": False,
+            "candidateNames": [],
+        }
+
+    try:
+        symbol_items = list(symbols_get() or [])
+    except Exception:
+        symbol_items = []
+
+    ranked_candidates = []
+    for symbol_item in symbol_items:
+        candidate_name = _extract_symbol_name(symbol_item).upper()
+        if not candidate_name or candidate_name == requested_symbol:
+            continue
+        candidate_key = _normalize_symbol_key(candidate_name)
+        if not candidate_key:
+            continue
+        if not (candidate_key.startswith(requested_key) or candidate_key.endswith(requested_key)):
+            continue
+        candidate_info = _read_symbol_info(candidate_name, symbol_info_lookup, mt5_module)
+        if not _is_symbol_trade_enabled(candidate_info, mt5_module):
+            continue
+        position_rank = 0 if candidate_key.startswith(requested_key) else 1
+        extra_rank = abs(len(candidate_key) - len(requested_key))
+        visibility_rank = 0 if bool(getattr(candidate_info, "visible", False) or getattr(candidate_info, "select", False)) else 1
+        ranked_candidates.append(
+            (
+                (position_rank, extra_rank, visibility_rank, len(candidate_name)),
+                candidate_name,
+                candidate_info,
+            )
+        )
+
+    if not ranked_candidates:
+        return {
+            "requestedSymbol": requested_symbol,
+            "resolvedSymbol": requested_symbol,
+            "symbolInfo": None,
+            "aliasApplied": False,
+            "candidateNames": [],
+        }
+
+    ranked_candidates.sort(key=lambda item: item[0])
+    best_rank = ranked_candidates[0][0]
+    best_candidates = [item for item in ranked_candidates if item[0] == best_rank]
+    candidate_names = [item[1] for item in ranked_candidates]
+    if len(best_candidates) != 1:
+        return {
+            "requestedSymbol": requested_symbol,
+            "resolvedSymbol": requested_symbol,
+            "symbolInfo": None,
+            "aliasApplied": False,
+            "candidateNames": candidate_names,
+        }
+
+    _, resolved_symbol, resolved_info = best_candidates[0]
+    return {
+        "requestedSymbol": requested_symbol,
+        "resolvedSymbol": resolved_symbol,
+        "symbolInfo": resolved_info,
+        "aliasApplied": True,
+        "candidateNames": candidate_names,
+    }
+
+
+def _resolve_type_filling(params: Mapping[str, Any], symbol_info: Any, mt5_module: Any) -> int:
+    """按 symbol 真实允许的成交策略选择 type_filling，避免不同品种共用固定 FOK。"""
+    explicit_value = params.get("typeFilling")
+    if explicit_value is not None and str(explicit_value).strip() != "":
+        return _to_int(explicit_value, 0)
+
+    order_filling_fok = _to_int(getattr(mt5_module, "ORDER_FILLING_FOK", 0), 0)
+    order_filling_ioc = _to_int(getattr(mt5_module, "ORDER_FILLING_IOC", 1), 1)
+    order_filling_return = _to_int(getattr(mt5_module, "ORDER_FILLING_RETURN", 2), 2)
+    order_filling_boc = _to_int(getattr(mt5_module, "ORDER_FILLING_BOC", 3), 3)
+
+    filling_mode = _to_int(getattr(symbol_info, "filling_mode", None), -1)
+    symbol_filling_fok = _to_int(getattr(mt5_module, "SYMBOL_FILLING_FOK", 1), 1)
+    symbol_filling_ioc = _to_int(getattr(mt5_module, "SYMBOL_FILLING_IOC", 2), 2)
+    symbol_filling_boc = _to_int(getattr(mt5_module, "SYMBOL_FILLING_BOC", 4), 4)
+    if filling_mode >= 0:
+        if filling_mode & symbol_filling_ioc:
+            return order_filling_ioc
+        if filling_mode & symbol_filling_fok:
+            return order_filling_fok
+        if filling_mode & symbol_filling_boc:
+            return order_filling_boc
+    if filling_mode in {order_filling_fok, order_filling_ioc, order_filling_return, order_filling_boc}:
+        return filling_mode
+    return order_filling_fok
+
+
+def _resolve_market_price(params: Mapping[str, Any], symbol: str, side: str, mt5_module: Any) -> float:
+    """优先使用调用方价格，缺失时再回填终端当前 bid/ask。"""
+    price = _to_float(params.get("price"), 0.0)
+    if price > 0.0:
+        return price
+    tick_lookup = getattr(mt5_module, "symbol_info_tick", None)
+    if not callable(tick_lookup) or not symbol:
+        return 0.0
+    try:
+        tick = tick_lookup(symbol)
+    except Exception:
+        tick = None
+    if tick is None:
+        return 0.0
+    bid = _to_float(getattr(tick, "bid", None), 0.0)
+    ask = _to_float(getattr(tick, "ask", None), 0.0)
+    if side == "buy" and ask > 0.0:
+        return ask
+    if side == "sell" and bid > 0.0:
+        return bid
+    if ask > 0.0:
+        return ask
+    if bid > 0.0:
+        return bid
+    return 0.0
 
 
 def _validate_volume(params: Mapping[str, Any], symbol_info: Any) -> Optional[Dict[str, Any]]:
@@ -291,7 +466,27 @@ def prepare_trade_request(
                 ),
             }
 
-    symbol_info = _resolve_symbol_info(symbol, symbol_info_lookup)
+    symbol_binding = _resolve_symbol_binding(symbol, symbol_info_lookup, mt5_module)
+    symbol = str(symbol_binding.get("resolvedSymbol") or symbol).strip().upper()
+    symbol_info = symbol_binding.get("symbolInfo")
+
+    if action in {ACTION_OPEN_MARKET, ACTION_PENDING_ADD} and mt5_module is not None and symbol_info is None:
+        error_details = {
+            "requestedSymbol": str(symbol_binding.get("requestedSymbol") or ""),
+            "resolvedSymbol": str(symbol_binding.get("resolvedSymbol") or ""),
+        }
+        candidate_names = list(symbol_binding.get("candidateNames") or [])
+        if candidate_names:
+            error_details["candidateSymbols"] = candidate_names
+        return {
+            "command": command,
+            "request": None,
+            "error": v2_trade_models.build_error(
+                v2_trade_models.ERROR_INVALID_SYMBOL,
+                "当前账户下未找到可交易的目标品种",
+                error_details,
+            ),
+        }
 
     if action in {ACTION_OPEN_MARKET, ACTION_CLOSE_POSITION, ACTION_PENDING_ADD}:
         volume_error = _validate_volume(params, symbol_info)
@@ -308,6 +503,7 @@ def prepare_trade_request(
         params=params,
         action=action,
         symbol=symbol,
+        symbol_info=symbol_info,
         resolved_position=resolved_position,
     )
     if request_builder["error"] is not None:
@@ -321,6 +517,7 @@ def _request_builder(
     params: Mapping[str, Any],
     action: str,
     symbol: str,
+    symbol_info: Any,
     resolved_position: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """按 action 构建 MT5 请求。"""
@@ -333,14 +530,14 @@ def _request_builder(
     order_type_buy = _to_int(getattr(mt5_module, "ORDER_TYPE_BUY", 0), 0)
     order_type_sell = _to_int(getattr(mt5_module, "ORDER_TYPE_SELL", 1), 1)
     order_time_gtc = _to_int(getattr(mt5_module, "ORDER_TIME_GTC", 0), 0)
-    order_filling_fok = _to_int(getattr(mt5_module, "ORDER_FILLING_FOK", 0), 0)
+    type_filling = _resolve_type_filling(params, symbol_info, mt5_module)
 
     base = {
         "comment": str(params.get("comment") or "mt5-gateway-v2"),
         "deviation": _to_int(params.get("deviation"), 20),
         "magic": _to_int(params.get("magic"), 20260406),
         "type_time": _to_int(params.get("typeTime"), order_time_gtc),
-        "type_filling": _to_int(params.get("typeFilling"), order_filling_fok),
+        "type_filling": type_filling,
     }
 
     if action == ACTION_OPEN_MARKET:
@@ -357,7 +554,7 @@ def _request_builder(
                 "symbol": symbol,
                 "type": order_type_buy if side == "buy" else order_type_sell,
                 "volume": _to_float(params.get("volume"), 0.0),
-                "price": _to_float(params.get("price"), 0.0),
+                "price": _resolve_market_price(params, symbol, side, mt5_module),
             }
         )
         sl = _to_float(params.get("sl"), 0.0)
@@ -395,7 +592,12 @@ def _request_builder(
                 "symbol": symbol,
                 "type": order_type_sell if side == "buy" else order_type_buy,
                 "volume": _to_float(params.get("volume"), 0.0),
-                "price": _to_float(params.get("price"), 0.0),
+                "price": _resolve_market_price(
+                    params,
+                    symbol,
+                    "sell" if side == "buy" else "buy",
+                    mt5_module,
+                ),
                 "position": position_ticket,
             }
         )

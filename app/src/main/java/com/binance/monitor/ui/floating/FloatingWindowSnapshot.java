@@ -14,18 +14,30 @@ public class FloatingWindowSnapshot {
     private final ConnectionStage connectionStage;
     private final String connectionStatus;
     private final long updatedAt;
+    private final int totalPositionCount;
+    private final double totalPositionPnl;
     private final List<FloatingSymbolCardData> cards;
     private final String visualSignature;
 
     public FloatingWindowSnapshot(ConnectionStage connectionStage,
                                   String connectionStatus,
                                   long updatedAt,
+                                  int totalPositionCount,
+                                  double totalPositionPnl,
                                   List<FloatingSymbolCardData> cards) {
         this.connectionStage = connectionStage == null ? ConnectionStage.CONNECTING : connectionStage;
         this.connectionStatus = connectionStatus == null ? "" : connectionStatus;
         this.updatedAt = updatedAt;
+        this.totalPositionCount = Math.max(0, totalPositionCount);
+        this.totalPositionPnl = totalPositionPnl;
         this.cards = cards == null ? new ArrayList<>() : new ArrayList<>(cards);
-        this.visualSignature = buildVisualSignature(this.connectionStage, this.connectionStatus, this.cards);
+        this.visualSignature = buildVisualSignature(
+                this.connectionStage,
+                this.connectionStatus,
+                this.totalPositionCount,
+                this.totalPositionPnl,
+                this.cards
+        );
     }
 
     // 返回当前连接阶段真值。
@@ -41,6 +53,16 @@ public class FloatingWindowSnapshot {
     // 返回本次悬浮窗统一刷新时间。
     public long getUpdatedAt() {
         return updatedAt;
+    }
+
+    // 返回当前所有产品持仓总数，不受悬浮窗显示产品过滤影响。
+    public int getTotalPositionCount() {
+        return totalPositionCount;
+    }
+
+    // 返回当前所有产品持仓总盈亏，不受悬浮窗显示产品过滤影响。
+    public double getTotalPositionPnl() {
+        return totalPositionPnl;
     }
 
     // 返回本次悬浮窗的全部产品卡片。
@@ -64,11 +86,15 @@ public class FloatingWindowSnapshot {
     // 只把真正影响展示的字段纳入签名，不让纯时间戳变化触发重绘。
     private String buildVisualSignature(ConnectionStage connectionStage,
                                         String connectionStatus,
+                                        int totalPositionCount,
+                                        double totalPositionPnl,
                                         List<FloatingSymbolCardData> cards) {
         StringBuilder builder = new StringBuilder();
         builder.append(connectionStage == null ? "" : connectionStage.name());
         builder.append('|');
         builder.append(connectionStatus == null ? "" : connectionStatus.trim());
+        builder.append("|positions=").append(totalPositionCount);
+        builder.append("|pnl=").append(Double.doubleToLongBits(totalPositionPnl));
         builder.append("|cards=");
         if (cards == null || cards.isEmpty()) {
             return builder.toString();

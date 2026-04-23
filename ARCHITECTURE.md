@@ -73,7 +73,7 @@
 - [app/src/main/java/com/binance/monitor/ui/chart/ChartOverlaySnapshotFactory.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/chart/ChartOverlaySnapshotFactory.java)
   图表叠加层快照工厂，负责把当前产品相关的持仓、挂单、历史成交整理成一次可绘制快照；当前签名已改成只看“当前产品 + 当前可见窗口 + 当前产品相关运行态内容”，不再被 `cache.updatedAt` 这类无意义变化反复触发整套重算；图表摘要文本也已开始直接读取统一产品运行态。
 - [app/src/main/java/com/binance/monitor/runtime/state/UnifiedRuntimeSnapshotStore.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/state/UnifiedRuntimeSnapshotStore.java)
-  统一运行态中心，负责把账户快照派生成产品级运行态，并按 `accountRevision / productRevision` 维护内存真值；当前除数量/盈亏外，也直接产出产品展示名称、紧凑名称和方向手数，供图表摘要、悬浮窗卡片和账户条目共用。
+  统一运行态中心，负责把账户快照派生成产品级运行态，并按 `accountRevision / productRevision` 维护内存真值；当前除数量/盈亏外，也直接产出产品展示名称、紧凑名称和方向手数，供图表摘要、悬浮窗卡片和账户条目共用。产品级 selector 现已正式要求调用方显式带出 `account/server` 身份，只有请求身份与当前内存账户运行态完全匹配时才返回产品快照，避免切账户后旧运行态被新页面误读。
 - [app/src/main/java/com/binance/monitor/runtime/revision/RuntimeRevisionCenter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/revision/RuntimeRevisionCenter.java)
   统一 revision 中心，负责把 `marketBase / marketWindow / accountRuntime / accountHistory / productRuntime` 五类版本号收口到同一入口，并提供按签名去重后的单调递增 revision。
 - [app/src/main/java/com/binance/monitor/runtime/ui/PageBootstrapState.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/ui/PageBootstrapState.java)
@@ -101,9 +101,9 @@
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java)
   账户统计页共享屏幕对象，负责把原先只留在旧 Activity 里的页面状态、历史刷新协调、收益表渲染和登录会话交互收口成可供 `AccountStatsFragment` 和桥接深页共同复用的真实宿主主链；当前也承接“结构分析 / 历史成交”深页目标区块自动滚动，并已接入 `PageBootstrapStateMachine` 处理“本地恢复中 / 本地已就绪远端同步 / 真正空态”的首帧状态。
 - [app/src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java)
-  当前持仓单项 adapter，负责持仓列表的折叠/展开显示、操作按钮和单行摘要；现已开始读取 `UnifiedRuntimeSnapshotStore`，并仅在“同产品只有 1 条当前持仓”时复用统一运行态的产品手数/盈亏口径。
+  当前持仓单项 adapter，负责持仓列表的折叠/展开显示、操作按钮和单行摘要；现已开始读取 `UnifiedRuntimeSnapshotStore`，并仅在“同产品只有 1 条当前持仓”时复用统一运行态的产品手数/盈亏口径。读取前会先接收页面传入的当前 `account/server` 身份，只消费同一会话下的产品运行态。
 - [app/src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java)
-  挂单单项 adapter，负责挂单列表的折叠/展开显示、改单/撤单入口和整数折叠价展示；现已开始读取 `UnifiedRuntimeSnapshotStore` 做产品级统一识别，但继续保留单笔挂单价格和手数语义，不把产品聚合摘要误覆盖到单项上。
+  挂单单项 adapter，负责挂单列表的折叠/展开显示、改单/撤单入口和整数折叠价展示；现已开始读取 `UnifiedRuntimeSnapshotStore` 做产品级统一识别，但继续保留单笔挂单价格和手数语义，不把产品聚合摘要误覆盖到单项上。读取前同样要先接收页面传入的当前 `account/server` 身份，只消费同一会话下的产品运行态。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsRenderCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsRenderCoordinator.java)
   账户统计页渲染协调器，负责统一编排 `applySnapshot`、次级区块 deferred render、交易统计和交易记录筛选，把账户统计页的大块渲染主链从旧 Activity 抽离成可复用宿主接口。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsPageHostDelegate.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsPageHostDelegate.java)
@@ -223,7 +223,7 @@
 - [app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/local/db/repository/ChartHistoryRepository.java)
   图表历史仓库，负责把上层已经整理好的 K 线窗口直接写入 Room，不再重复回读整段旧历史再合并。
 - [bridge/mt5_gateway/server_v2.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/server_v2.py)
-  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、stream 输出，以及远程账号会话接口与运行时缓存清理。轻快照主链现在只读取账户概览、持仓、挂单和 `accountMeta.historyRevision`（成交历史 canonical digest），不再展开完整历史对象，并增加 single-flight + 会话代次保护（`session_snapshot_epoch`），避免高频消费链并发放大或旧会话结果回写；`/v2/account/full` 现已提供“运行态 + 历史真值”原子强刷，`/v2/account/snapshot` 与 `/v2/market/snapshot` 也都会先看远程会话状态，只有存在激活账号时才读取 MT5 轻快照，`logged_out` 时统一返回标准空账户快照；`/v2/account/history` 的曲线和交易列表继续复用同一份 MT5 成交历史；账户发布链已从 `v2_sync_state + v2_bus_state` 收口到单一 `account_publish_state`，发布线程改成“事件唤醒 + 定时 heartbeat 检查”，请求路径只读已发布状态。远程账号新登录主链现在固定为独立 `v2_mt5_account_switch.py`：检测 MT5 GUI 主窗口、必要时按 `MT5_PATH` 拉起、附着重试、读取基线账号、强制 `mt5.login(...)` 切号，再在 30 秒内轮询真实账号 `login` 是否切到目标账号；`active_session / saved profile / .env / current terminal / probe / reset terminal` 不再作为 `/v2/session/login` 的切号前置决策。第四阶段起单笔/batch 的 check、submit、result 也会把审计阶段写入 `v2_trade_audit.py`，并开放 recent / lookup 查询。
+  MT5 网关服务，负责 MT5 数据整理和 Binance REST / WebSocket 转发；当前也承载 `v2` 行情、账户、stream 输出，以及远程账号会话接口与运行时缓存清理。轻快照主链现在只读取账户概览、持仓、挂单和 `accountMeta.historyRevision`（成交历史 canonical digest），不再展开完整历史对象，并增加 single-flight + 会话代次保护（`session_snapshot_epoch`），避免高频消费链并发放大或旧会话结果回写；`/v2/account/full` 现已提供“运行态 + 历史真值”原子强刷，`/v2/account/snapshot` 与 `/v2/market/snapshot` 也都会先看远程会话状态，只有存在激活账号时才读取 MT5 轻快照，`logged_out` 时统一返回标准空账户快照；`/v2/account/history` 的曲线和交易列表继续复用同一份 MT5 成交历史；账户发布链已从 `v2_sync_state + v2_bus_state` 收口到单一 `account_publish_state`，发布线程改成“事件唤醒 + 定时 heartbeat 检查”，请求路径只读已发布状态。远程账号新登录主链现在固定为独立 `v2_mt5_account_switch.py`：检测 MT5 GUI 主窗口、必要时按 `MT5_PATH` 拉起、附着重试、读取基线账号、强制 `mt5.login(...)` 切号，再在 30 秒内轮询真实账号 `login` 是否切到目标账号；`active_session / saved profile / .env / current terminal / probe / reset terminal` 不再作为 `/v2/session/login` 的切号前置决策。第四阶段起单笔/batch 的 check、submit、result 也会把审计阶段写入 `v2_trade_audit.py`，并开放 recent / lookup 查询。现在还额外维护 `gateway_runtime_status`，把 `v2/stream` 客户端连接、最近会话动作、最近交易动作和最近客户端来源收口到 `/internal/runtime/status`，供 Windows 长期状态面板直接消费，不再靠日志猜测手机 APP 是否还在交互。
 - [bridge/mt5_gateway/v2_trade_audit.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_trade_audit.py)
   服务端交易审计缓存，负责把单笔与 batch 的 check、submit、result 时间线收口成最近记录与按 id 查询入口，作为客户端排障页的服务端事实来源。
 - [bridge/mt5_gateway/v2_session_crypto.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/bridge/mt5_gateway/v2_session_crypto.py)
@@ -257,7 +257,7 @@
 - [deploy/tencent/windows/](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows)
   Windows 部署脚本源码目录，负责启动、自启注册、健康检查和 Caddy 配置；现在同一套脚本同时兼容“仓库根目录”和“部署包根目录”两种布局，首次引导脚本也已改成脚本内置 .NET `SHA256` 指纹计算。
 - [deploy/tencent/windows/deploy_bundle.ps1](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows/deploy_bundle.ps1)
-  Windows 一键重部署入口，负责按“停旧服务与占口 -> 校验脚本 -> 初始化环境 -> 注册任务 -> 启动后台服务 -> 健康检查”的顺序执行，并把状态同步到唯一的 GUI 窗口；健康检查现在还会校验 `bundleFingerprint`、`wss://tradeapp.ltd/v2/stream` 首条消息，以及本机 `8787 /v2/account/full (diagnostic)` 诊断项，用来把“轻链路正常”和“full 全量链异常”明确区分开。
+  Windows 一键重部署入口，负责按“停旧服务与占口 -> 校验脚本 -> 初始化环境 -> 注册任务 -> 启动后台服务 -> 健康检查”的顺序执行，并把状态同步到唯一的 GUI 窗口；这个窗口现在正式命名为 `MT5 部署与连接状态`，部署完成后不会退出，而是继续长期显示本地部署、行情、账户和手机 APP 交互状态。健康检查现在还会校验 `bundleFingerprint`、`wss://tradeapp.ltd/v2/stream` 首条消息，以及本机 `8787 /v2/account/full (diagnostic)` 诊断项，用来把“轻链路正常”和“full 全量链异常”明确区分开。
 - [deploy/tencent/windows/deploy_bundle.cmd](/E:/Github/BTCXAU_Monitoring_and_Push_APK/deploy/tencent/windows/deploy_bundle.cmd)
   Windows 双击部署入口，负责以隐藏方式拉起 `deploy_bundle.ps1` 的 GUI 模式，避免额外弹出命令行窗口。
 - [scripts/build_windows_server_bundle.py](/E:/Github/BTCXAU_Monitoring_and_Push_APK/scripts/build_windows_server_bundle.py)
@@ -419,6 +419,7 @@
 - 图表叠加层签名当前收口成“只看当前产品、当前窗口和当前产品相关运行态内容”；原因是 `cache.updatedAt` 这类每秒变化但不改变展示内容的字段，会无意义触发整套叠加层重建。
 - 历史成交锚点当前收口成“窗口内二分定位 + 1 分钟图分钟桶对齐”；原因是线性扫描会随着 K 线条数增长直接拖慢 1 分钟图上的历史交易加载。
 - 账户运行态应用链当前收口成“持久化后直接基于本次快照建缓存”，不再写库再读回；原因是这类高频链路必须避免把轻量刷新放大成磁盘 I/O 回环。
+- 产品运行态读取当前收口成“统一运行态中心保存 1 份当前账户真值，但所有产品级 selector 在读取时必须显式带 `account/server` 身份”；原因是问题根因不在内存里是否短暂残留旧快照，而在新页面过去可以无身份直接读取全局产品运行态，导致切账户后旧账号摘要、图层和悬浮卡片被误当成当前会话真值。
 - 调试时序日志当前默认关闭：原因是 `ChainLatencyTracer` 和远程会话 debug 已完成阶段性定位，继续常态输出只会增加主链噪音和性能负担。
 - `/v2/market/candles` 缓存寿命当前要求略长于 `v2/stream` 推送节拍；原因是主界面图表、悬浮窗和持仓摘要会在同一秒窗口内并发读同一批市场数据，缓存过短会把同一轮读取重复放大到上游。
 - 账户历史与曲线主链当前只接受服务端标准时间和价格字段；原因是客户端再做秒转毫秒、`timestamp -> open/close time`、`price -> open/close price` 这类补位，会把纯消费链重新拉回本地拼装。

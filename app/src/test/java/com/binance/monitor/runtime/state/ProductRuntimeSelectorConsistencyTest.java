@@ -1,7 +1,6 @@
 package com.binance.monitor.runtime.state;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
 import com.binance.monitor.domain.account.model.AccountSnapshot;
@@ -14,7 +13,6 @@ import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 
@@ -29,7 +27,6 @@ public class ProductRuntimeSelectorConsistencyTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     public void chartFloatingAndAccountSelectorsShouldShareSameRuntimeFields() {
         store.applyAccountCache(new AccountStatsPreloadManager.Cache(
                 true,
@@ -96,20 +93,12 @@ public class ProductRuntimeSelectorConsistencyTest {
                 "history-1"
         ));
 
-        Method selectorMethod = findMethod(UnifiedRuntimeSnapshotStore.class, "selectAllProducts");
-        assertNotNull("缺少账户页产品级 selector", selectorMethod);
-
-        List<ProductRuntimeSnapshot> accountProducts;
-        try {
-            accountProducts = (List<ProductRuntimeSnapshot>) selectorMethod.invoke(store);
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError("账户页产品级 selector 调用失败", exception);
-        }
+        List<ProductRuntimeSnapshot> accountProducts = store.selectAllProducts("7400048", "ICMarketsSC-MT5-6");
         assertEquals(1, accountProducts.size());
 
         ProductRuntimeSnapshot accountRuntime = accountProducts.get(0);
-        ChartProductRuntimeModel chartRuntime = store.selectChartProductRuntime("BTC");
-        FloatingCardRuntimeModel floatingRuntime = store.selectFloatingCard("BTCUSDT");
+        ChartProductRuntimeModel chartRuntime = store.selectChartProductRuntime("7400048", "ICMarketsSC-MT5-6", "BTC");
+        FloatingCardRuntimeModel floatingRuntime = store.selectFloatingCard("7400048", "ICMarketsSC-MT5-6", "BTCUSDT");
 
         assertEquals(accountRuntime.getSymbol(), chartRuntime.getProductRuntimeSnapshot().getSymbol());
         assertEquals(accountRuntime.getSymbol(), floatingRuntime.getProductRuntimeSnapshot().getSymbol());
@@ -131,18 +120,9 @@ public class ProductRuntimeSelectorConsistencyTest {
                 invokeString(floatingRuntime, "getCrossPageSummaryText"));
     }
 
-    private static Method findMethod(Class<?> type, String methodName) {
-        for (Method method : type.getMethods()) {
-            if (methodName.equals(method.getName()) && method.getParameterCount() == 0) {
-                return method;
-            }
-        }
-        return null;
-    }
-
     private static String invokeString(Object target, String methodName) {
         try {
-            Method method = target.getClass().getMethod(methodName);
+            java.lang.reflect.Method method = target.getClass().getMethod(methodName);
             Object value = method.invoke(target);
             return value == null ? "" : value.toString();
         } catch (ReflectiveOperationException exception) {
@@ -153,7 +133,7 @@ public class ProductRuntimeSelectorConsistencyTest {
 
     private static int invokeInt(Object target, String methodName) {
         try {
-            Method method = target.getClass().getMethod(methodName);
+            java.lang.reflect.Method method = target.getClass().getMethod(methodName);
             Object value = method.invoke(target);
             return value instanceof Number ? ((Number) value).intValue() : 0;
         } catch (ReflectiveOperationException exception) {
@@ -164,7 +144,7 @@ public class ProductRuntimeSelectorConsistencyTest {
 
     private static double invokeDouble(Object target, String methodName) {
         try {
-            Method method = target.getClass().getMethod(methodName);
+            java.lang.reflect.Method method = target.getClass().getMethod(methodName);
             Object value = method.invoke(target);
             return value instanceof Number ? ((Number) value).doubleValue() : 0d;
         } catch (ReflectiveOperationException exception) {

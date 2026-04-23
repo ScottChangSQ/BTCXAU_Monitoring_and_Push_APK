@@ -364,13 +364,23 @@ public class ChartOverlaySnapshotFactory {
             }
             String side = normalizeTradeSideLabel(item.getSide());
             String groupId = buildAnnotationGroupId("position", item);
+            double displayPnl = resolvePositionLinePnl(item);
+            double accumulatedFee = ChartTradeLineValueHelper.resolveAccumulatedFee(trades, selectedSymbol, item);
             output.add(new ChartTradeLine(
+                    buildTradeLineId(groupId, ChartTradeLineRole.ENTRY),
                     groupId,
                     price,
-                    side + " " + formatQuantity(Math.abs(item.getQuantity())),
-                    ChartTradeLineState.LIVE_POSITION
+                    normalizeTradeSideCn(item.getSide()) + " " + formatLotsLabel(Math.abs(item.getQuantity()))
+                            + " " + formatSignedUsd(displayPnl),
+                    "",
+                    ChartTradeLineState.LIVE_POSITION,
+                    resolveTradeLineToneByPnl(displayPnl),
+                    ChartTradeLineRole.ENTRY,
+                    true,
+                    false,
+                    ""
             ));
-            appendTradeLayerTpSlLines(output, groupId, item.getTakeProfit(), item.getStopLoss());
+            appendTradeLayerTpSlLines(output, groupId, item, accumulatedFee);
         }
     }
 
@@ -402,39 +412,78 @@ public class ChartOverlaySnapshotFactory {
             }
             String side = normalizeTradeSideLabel(item.getSide());
             String qtyLabel = lots > 1e-9
-                    ? formatQuantity(lots)
+                    ? formatLotsLabel(lots)
                     : (item.getPendingCount() > 0 ? (item.getPendingCount() + "单") : "--");
             String groupId = buildAnnotationGroupId("pending", item);
+            double accumulatedFee = ChartTradeLineValueHelper.resolveAccumulatedFee(trades, selectedSymbol, item);
             output.add(new ChartTradeLine(
+                    buildTradeLineId(groupId, ChartTradeLineRole.ENTRY),
                     groupId,
                     price,
-                    "PENDING " + side + " " + qtyLabel,
-                    ChartTradeLineState.LIVE_PENDING
+                    "挂单 " + normalizeTradeSideCn(item.getSide()) + " " + qtyLabel,
+                    "",
+                    ChartTradeLineState.LIVE_PENDING,
+                    resolveTradeLineToneBySide(item.getSide()),
+                    ChartTradeLineRole.ENTRY,
+                    true,
+                    false,
+                    ""
             ));
-            appendTradeLayerTpSlLines(output, groupId, item.getTakeProfit(), item.getStopLoss());
+            appendTradeLayerTpSlLines(output, groupId, item, accumulatedFee);
         }
     }
 
     private void appendTradeLayerTpSlLines(@NonNull List<ChartTradeLine> output,
                                            @NonNull String groupId,
-                                           double takeProfit,
-                                           double stopLoss) {
+                                           @NonNull PositionItem item,
+                                           double accumulatedFee) {
+        double takeProfit = item.getTakeProfit();
+        double stopLoss = item.getStopLoss();
         if (takeProfit > 0d) {
             output.add(new ChartTradeLine(
+                    buildTradeLineId(groupId, ChartTradeLineRole.TP),
                     groupId,
                     takeProfit,
-                    "TP $" + FormatUtils.formatPrice(takeProfit),
-                    ChartTradeLineState.LIVE_TP
+                    ChartTradeLineValueHelper.resolveTradeLineLabel(
+                            ChartTradeLineRole.TP,
+                            takeProfit,
+                            item,
+                            accumulatedFee
+                    ),
+                    "",
+                    ChartTradeLineState.LIVE_TP,
+                    ChartTradeLineTone.POSITIVE,
+                    ChartTradeLineRole.TP,
+                    true,
+                    false,
+                    ""
             ));
         }
         if (stopLoss > 0d) {
             output.add(new ChartTradeLine(
+                    buildTradeLineId(groupId, ChartTradeLineRole.SL),
                     groupId,
                     stopLoss,
-                    "SL $" + FormatUtils.formatPrice(stopLoss),
-                    ChartTradeLineState.LIVE_SL
+                    ChartTradeLineValueHelper.resolveTradeLineLabel(
+                            ChartTradeLineRole.SL,
+                            stopLoss,
+                            item,
+                            accumulatedFee
+                    ),
+                    "",
+                    ChartTradeLineState.LIVE_SL,
+                    ChartTradeLineTone.NEGATIVE,
+                    ChartTradeLineRole.SL,
+                    true,
+                    false,
+                    ""
             ));
         }
+    }
+
+    @NonNull
+    private String buildTradeLineId(@NonNull String groupId, @NonNull ChartTradeLineRole role) {
+        return groupId + "|line|" + role.name().toLowerCase(Locale.ROOT);
     }
 
     @Nullable
@@ -460,7 +509,7 @@ public class ChartOverlaySnapshotFactory {
             return null;
         }
         double avgCost = weightedCost / qty;
-        return new KlineChartView.AggregateCostAnnotation(avgCost, FormatUtils.formatPrice(avgCost), selectedSymbol);
+        return new KlineChartView.AggregateCostAnnotation(avgCost, "$" + FormatUtils.formatPrice(avgCost), selectedSymbol);
     }
 
     @NonNull
@@ -741,6 +790,11 @@ public class ChartOverlaySnapshotFactory {
         return isSellSide(side) ? "SELL" : "BUY";
     }
 
+    @NonNull
+    private String normalizeTradeSideCn(@Nullable String side) {
+        return isSellSide(side) ? "卖" : "买";
+    }
+
     private boolean isSellSide(@Nullable String side) {
         String normalized = side == null ? "" : side.trim().toLowerCase(Locale.ROOT);
         return normalized.contains("sell") || normalized.contains("卖");
@@ -752,8 +806,36 @@ public class ChartOverlaySnapshotFactory {
     }
 
     @NonNull
+    private String formatLotsLabel(double quantity) {
+        return formatQuantity(quantity) + "手";
+    }
+
+    @NonNull
     private String formatSignedUsd(double value) {
         return FormatUtils.formatSignedMoney(value);
+    }
+
+    private double resolvePositionLinePnl(@Nullable PositionItem item) {
+        if (item == null) {
+            return 0d;
+        }
+        return item.getTotalPnL() + item.getStorageFee();
+    }
+
+    @NonNull
+    private ChartTradeLineTone resolveTradeLineToneByPnl(double pnl) {
+        if (pnl > 1e-9d) {
+            return ChartTradeLineTone.POSITIVE;
+        }
+        if (pnl < -1e-9d) {
+            return ChartTradeLineTone.NEGATIVE;
+        }
+        return ChartTradeLineTone.NEUTRAL;
+    }
+
+    @NonNull
+    private ChartTradeLineTone resolveTradeLineToneBySide(@Nullable String side) {
+        return isSellSide(side) ? ChartTradeLineTone.NEGATIVE : ChartTradeLineTone.POSITIVE;
     }
 
     @NonNull

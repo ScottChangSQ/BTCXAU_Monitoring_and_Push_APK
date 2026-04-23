@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional
 
 STATUS_EXECUTABLE = "EXECUTABLE"
@@ -42,6 +43,7 @@ ERROR_DUPLICATE_PAYLOAD_MISMATCH = "TRADE_DUPLICATE_PAYLOAD_MISMATCH"
 ERROR_UNSAFE_ACCOUNT_MODE = "TRADE_UNSAFE_ACCOUNT_MODE"
 ERROR_RESULT_UNKNOWN = "TRADE_RESULT_UNKNOWN"
 ERROR_EXECUTION_FAILED = "TRADE_EXECUTION_FAILED"
+ERROR_CLIENT_AUTOTRADING_DISABLED = "TRADE_CLIENT_AUTOTRADING_DISABLED"
 ERROR_REQUEST_NOT_FOUND = "TRADE_REQUEST_NOT_FOUND"
 ERROR_BATCH_INVALID_ID = "TRADE_BATCH_INVALID_ID"
 ERROR_BATCH_INVALID_STRATEGY = "TRADE_BATCH_INVALID_STRATEGY"
@@ -127,6 +129,9 @@ def error_from_retcode(retcode: int, comment: str = "") -> Optional[Dict[str, An
         return None
     mapped = RETCODE_ERROR_MAP.get(normalized_code, ERROR_EXECUTION_FAILED)
     message = comment or f"MT5 retcode={normalized_code}"
+    normalized_message = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if "autotrading disabled by client" in normalized_message or "auto trading disabled by client" in normalized_message:
+        return build_error(ERROR_CLIENT_AUTOTRADING_DISABLED, message, {"retcode": normalized_code})
     return build_error(mapped, message, {"retcode": normalized_code})
 
 

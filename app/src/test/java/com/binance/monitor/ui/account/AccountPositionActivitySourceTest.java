@@ -32,6 +32,7 @@ public class AccountPositionActivitySourceTest {
 
         assertTrue(source.contains("private SecureSessionPrefs secureSessionPrefs;"));
         assertTrue(source.contains("secureSessionPrefs = new SecureSessionPrefs(appContext);"));
+        assertTrue(source.contains("private AccountStatsPreloadManager.Cache filterCurrentSessionCache(@Nullable AccountStatsPreloadManager.Cache cache) {"));
         assertTrue(source.contains("private AccountStatsPreloadManager.Cache resolveCurrentSessionCache() {"));
         assertTrue(source.contains("private AccountStatsPreloadManager.Cache resolveStoredCurrentSessionCacheOnWorkerThread() {"));
         assertTrue(source.contains("private void restoreStoredCurrentSessionCacheAsync() {"));
@@ -43,6 +44,11 @@ public class AccountPositionActivitySourceTest {
         assertTrue(source.contains("SessionSummarySnapshot sessionSummary = secureSessionPrefs.loadSessionSummary();"));
         assertTrue(source.contains("return expectedAccount.equalsIgnoreCase(trimToEmpty(account))"));
         assertTrue(source.contains("&& expectedServer.equalsIgnoreCase(trimToEmpty(server));"));
+        assertTrue(source.contains("AccountStatsPreloadManager.Cache effectiveCache = filterCurrentSessionCache(cache);"));
+        assertTrue(source.contains("accountSessionDialogController.onCacheUpdated(effectiveCache);"));
+        assertTrue(source.contains("scheduleUiModelBuild(effectiveCache);"));
+        assertTrue(source.contains("return matchesActiveSessionIdentity(cache.getAccount(), cache.getServer()) ? cache : null;"));
+        assertTrue(source.contains("return filterCurrentSessionCache(cache);"));
     }
 
     @Test

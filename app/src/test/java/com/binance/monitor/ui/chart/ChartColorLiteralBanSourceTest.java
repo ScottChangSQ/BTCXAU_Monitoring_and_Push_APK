@@ -31,18 +31,16 @@ public class ChartColorLiteralBanSourceTest {
     @Test
     public void chartOverlayAndScreenShouldNotKeepTradeColorHexes() throws Exception {
         String overlayFactory = readUtf8("src/main/java/com/binance/monitor/ui/chart/ChartOverlaySnapshotFactory.java");
-        String abnormalBuilder = readUtf8("src/main/java/com/binance/monitor/ui/chart/AbnormalAnnotationOverlayBuilder.java");
         String screen = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java");
 
         assertFalse(overlayFactory.contains("0x"));
-        assertFalse(abnormalBuilder.contains("0x"));
         assertFalse(screen.contains("Color.parseColor("));
         assertTrue(overlayFactory.contains("new ChartOverlaySnapshotFactory.ColorScheme(") || screen.contains("new ChartOverlaySnapshotFactory.ColorScheme("));
         assertTrue(screen.contains("colorToken(R.color.trade_buy)"));
         assertTrue(screen.contains("colorToken(R.color.trade_sell)"));
         assertTrue(screen.contains("colorToken(R.color.pnl_profit)"));
         assertTrue(screen.contains("colorToken(R.color.pnl_loss)"));
-        assertTrue(screen.contains("createAbnormalAnnotationColorRange()"));
+        assertFalse(screen.contains("createAbnormalAnnotationColorRange()"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

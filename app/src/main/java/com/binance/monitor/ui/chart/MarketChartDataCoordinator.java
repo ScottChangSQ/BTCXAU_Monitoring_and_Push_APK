@@ -185,8 +185,6 @@ final class MarketChartDataCoordinator {
 
         void updateAccountAnnotationsOverlay();
 
-        void updateAbnormalAnnotationsOverlay();
-
         boolean isChartViewReady();
 
         boolean isAccountSessionActive();
@@ -269,7 +267,6 @@ final class MarketChartDataCoordinator {
     void refreshChartOverlays() {
         host.updateVolumeThresholdOverlay();
         host.updateAccountAnnotationsOverlay();
-        host.updateAbnormalAnnotationsOverlay();
     }
 
     // 图表页恢复时优先直接消费最近账户缓存，必要时再清空叠加层。

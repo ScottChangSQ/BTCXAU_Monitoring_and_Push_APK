@@ -101,6 +101,45 @@ public class ChartOverlaySnapshotFactoryTest {
         assertEquals(ChartTradeLineState.LIVE_POSITION, snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getState());
         assertEquals(ChartTradeLineState.LIVE_PENDING, snapshot.getTradeLayerSnapshot().getLiveLines().get(3).getState());
         assertEquals(ChartTradeLineState.LIVE_SL, snapshot.getTradeLayerSnapshot().getLiveLines().get(5).getState());
+        assertEquals("买 2手 +$20.00", snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getLabel());
+        assertEquals(ChartTradeLineTone.POSITIVE, snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getTone());
+        assertEquals("挂单 卖 1手", snapshot.getTradeLayerSnapshot().getLiveLines().get(3).getLabel());
+        assertEquals(ChartTradeLineTone.NEGATIVE, snapshot.getTradeLayerSnapshot().getLiveLines().get(3).getTone());
+        assertEquals("TP +$20.00", snapshot.getTradeLayerSnapshot().getLiveLines().get(1).getLabel());
+        assertEquals("SL -$10.00", snapshot.getTradeLayerSnapshot().getLiveLines().get(2).getLabel());
+        assertEquals(ChartTradeLineRole.ENTRY, snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getRole());
+        assertEquals(ChartTradeLineRole.TP, snapshot.getTradeLayerSnapshot().getLiveLines().get(1).getRole());
+        assertEquals(ChartTradeLineRole.SL, snapshot.getTradeLayerSnapshot().getLiveLines().get(2).getRole());
+        assertEquals("position|position|11", snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getGroupId());
+        assertEquals("position|position|11|line|entry", snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getId());
+        assertEquals("position|position|11|line|tp", snapshot.getTradeLayerSnapshot().getLiveLines().get(1).getId());
+        assertEquals("position|position|11|line|sl", snapshot.getTradeLayerSnapshot().getLiveLines().get(2).getId());
+        assertTrue(snapshot.getTradeLayerSnapshot().getLiveLines().get(0).isEditable());
+        assertFalse(snapshot.getTradeLayerSnapshot().getLiveLines().get(0).isGhost());
+        assertEquals("", snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getActionText());
+    }
+
+    @Test
+    public void buildShouldIncludeFeeAndStorageInTpSlExpectedPnlLabel() {
+        ChartOverlaySnapshotFactory factory = new ChartOverlaySnapshotFactory(COLOR_SCHEME);
+        List<CandleEntry> candles = Arrays.asList(
+                new CandleEntry("BTCUSDT", 1710000000000L, 1710000059999L, 100d, 105d, 99d, 102d, 12d, 1200d),
+                new CandleEntry("BTCUSDT", 1710000060000L, 1710000119999L, 102d, 106d, 101d, 103d, 10d, 1030d)
+        );
+        AccountSnapshot snapshotData = new AccountSnapshot(
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.singletonList(createPosition("BTCUSD", "Buy", 11L, 21L, 1710000000000L, 2d, 100d, 102d, 20d, -1d, 110d, 95d)),
+                Collections.emptyList(),
+                Collections.singletonList(createOpenFeeTrade("BTCUSD", "buy", 1710000000000L, 100d, -0.5d, 21L, 11L)),
+                Collections.emptyList()
+        );
+
+        ChartOverlaySnapshot snapshot = factory.build("BTC", candles, snapshotData, null);
+
+        assertEquals("TP +$18.50", snapshot.getTradeLayerSnapshot().getLiveLines().get(1).getLabel());
+        assertEquals("SL -$11.50", snapshot.getTradeLayerSnapshot().getLiveLines().get(2).getLabel());
     }
 
     @Test
@@ -395,6 +434,36 @@ public class ChartOverlaySnapshotFactoryTest {
                 dealTicket,
                 dealTicket,
                 1
+        );
+    }
+
+    private static com.binance.monitor.domain.account.model.TradeRecordItem createOpenFeeTrade(String code,
+                                                                                                String side,
+                                                                                                long openTime,
+                                                                                                double openPrice,
+                                                                                                double fee,
+                                                                                                long orderId,
+                                                                                                long positionId) {
+        return new com.binance.monitor.domain.account.model.TradeRecordItem(
+                openTime,
+                code,
+                code,
+                side,
+                openPrice,
+                1d,
+                100d,
+                fee,
+                "",
+                0d,
+                openTime,
+                openTime,
+                0d,
+                openPrice,
+                openPrice,
+                orderId,
+                orderId,
+                positionId,
+                0
         );
     }
 }

@@ -15,7 +15,9 @@ public class FloatingWindowManagerSourceTest {
     @Test
     public void expandedStateShouldUseSharedTextAppearancesInsteadOfLiteralSizes() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
-        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
 
         assertTrue(source.contains("UiPaletteManager.applyTextAppearance(\n                binding.tvOverlayStatus,"));
         assertTrue(source.contains("UiPaletteManager.applyTextAppearance(titleView, R.style.TextAppearance_BinanceMonitor_OverlayDense);"));
@@ -160,10 +162,13 @@ public class FloatingWindowManagerSourceTest {
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
+        assertTrue(source.contains("snapshot.getTotalPositionCount() > 0"));
+        assertTrue(source.contains("snapshot.getTotalPositionPnl()"));
         assertTrue(source.contains("IndicatorPresentationPolicy.applyDirectionalSpanForExactToken("));
         assertTrue(source.contains("IndicatorId.ACCOUNT_POSITION_PNL"));
         assertFalse(source.contains("binding.tvOverlayStatus.setTextColor(pnlColor);"));
         assertFalse(source.contains("binding.viewMiniSquare.setTextColor(pnlColor);"));
+        assertFalse(source.contains("for (FloatingSymbolCardData card : visibleCards) {\n            if (card != null) {\n                totalPnl += card.getTotalPnl();\n            }\n        }"));
     }
 
     @Test

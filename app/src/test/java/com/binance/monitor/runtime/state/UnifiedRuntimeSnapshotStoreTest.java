@@ -32,7 +32,7 @@ public class UnifiedRuntimeSnapshotStoreTest {
     @Test
     public void productRevisionShouldNotAdvanceWhenOtherSymbolChanges() {
         store.applyAccountCache(buildCache("BTCUSD", 0.10d, 12.30d));
-        long btcRevision = store.selectProduct("BTCUSD").getProductRevision();
+        long btcRevision = store.selectProduct("7400048", "ICMarketsSC-MT5-6", "BTCUSD").getProductRevision();
 
         store.applyAccountCache(new AccountStatsPreloadManager.Cache(
                 true,
@@ -58,7 +58,7 @@ public class UnifiedRuntimeSnapshotStoreTest {
                 "history-1"
         ));
 
-        assertEquals(btcRevision, store.selectProduct("BTCUSD").getProductRevision());
+        assertEquals(btcRevision, store.selectProduct("7400048", "ICMarketsSC-MT5-6", "BTCUSD").getProductRevision());
     }
 
     @Test
@@ -94,7 +94,7 @@ public class UnifiedRuntimeSnapshotStoreTest {
                 "history-1"
         ));
 
-        ProductRuntimeSnapshot snapshot = store.selectProduct("BTCUSD");
+        ProductRuntimeSnapshot snapshot = store.selectProduct("7400048", "ICMarketsSC-MT5-6", "BTCUSD");
         assertEquals("BTCUSD", snapshot.getSymbol());
         assertEquals(1, snapshot.getPositionCount());
         assertEquals(1, snapshot.getPendingCount());
@@ -106,7 +106,7 @@ public class UnifiedRuntimeSnapshotStoreTest {
     public void productSnapshotShouldExposeSignedLotsAndCompactDisplayLabel() {
         store.applyAccountCache(buildSellCache("BTCUSD", 0.10d, -12.30d));
 
-        ProductRuntimeSnapshot snapshot = store.selectProduct("BTCUSD");
+        ProductRuntimeSnapshot snapshot = store.selectProduct("7400048", "ICMarketsSC-MT5-6", "BTCUSD");
         assertEquals(0.10d, snapshot.getTotalLots(), 0.0001d);
         assertEquals(-0.10d, snapshot.getSignedLots(), 0.0001d);
         assertEquals("BTCUSD", snapshot.getDisplayLabel());
@@ -158,7 +158,7 @@ public class UnifiedRuntimeSnapshotStoreTest {
                 "history-1"
         ));
 
-        ProductRuntimeSnapshot snapshot = store.selectProduct("BTCUSD");
+        ProductRuntimeSnapshot snapshot = store.selectProduct("7400048", "ICMarketsSC-MT5-6", "BTCUSD");
         assertEquals("比特币", snapshot.getDisplayLabel());
         assertEquals("BTC", snapshot.getCompactDisplayLabel());
     }
@@ -167,11 +167,26 @@ public class UnifiedRuntimeSnapshotStoreTest {
     public void uiSelectorsShouldMatchMarketSymbolToTradeRuntime() {
         store.applyAccountCache(buildCache("BTCUSD", 0.10d, 12.30d));
 
-        ChartProductRuntimeModel chartRuntime = store.selectChartProductRuntime("BTC");
-        FloatingCardRuntimeModel floatingRuntime = store.selectFloatingCard("BTCUSDT");
+        ChartProductRuntimeModel chartRuntime = store.selectChartProductRuntime("7400048", "ICMarketsSC-MT5-6", "BTC");
+        FloatingCardRuntimeModel floatingRuntime = store.selectFloatingCard("7400048", "ICMarketsSC-MT5-6", "BTCUSDT");
 
         assertEquals("BTCUSD", chartRuntime.getProductRuntimeSnapshot().getSymbol());
         assertEquals("BTCUSD", floatingRuntime.getProductRuntimeSnapshot().getSymbol());
+    }
+
+    @Test
+    public void selectorsShouldReturnEmptyRuntimeWhenIdentityDoesNotMatch() {
+        store.applyAccountCache(buildCache("BTCUSD", 0.10d, 12.30d));
+
+        ProductRuntimeSnapshot mismatchedProduct = store.selectProduct("8400001", "Other-Server", "BTCUSD");
+        ChartProductRuntimeModel mismatchedChart = store.selectChartProductRuntime("8400001", "Other-Server", "BTC");
+        FloatingCardRuntimeModel mismatchedFloating = store.selectFloatingCard("8400001", "Other-Server", "BTCUSDT");
+
+        assertEquals("", mismatchedProduct.getSymbol());
+        assertEquals(0, mismatchedProduct.getPositionCount());
+        assertEquals("", mismatchedChart.getProductRuntimeSnapshot().getSymbol());
+        assertEquals("", mismatchedFloating.getProductRuntimeSnapshot().getSymbol());
+        assertEquals(0, store.selectAllProducts("8400001", "Other-Server").size());
     }
 
     private static AccountStatsPreloadManager.Cache buildCache(String symbol, double quantity, double pnl) {

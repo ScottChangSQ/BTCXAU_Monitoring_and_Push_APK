@@ -68,7 +68,9 @@ public class AccountPositionEnhancementSourceTest {
         String adapterSource = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAggregateAdapter.java");
 
         assertTrue(factorySource.contains("private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore = UnifiedRuntimeSnapshotStore.getInstance();"));
-        assertTrue(factorySource.contains("runtimeSnapshotStore.selectAllProducts()"));
+        assertTrue(factorySource.contains("runtimeSnapshotStore.selectAllProducts("));
+        assertTrue(factorySource.contains("cache == null ? null : cache.getAccount()"));
+        assertTrue(factorySource.contains("cache == null ? null : cache.getServer()"));
         assertFalse(factorySource.contains("AggregateAccumulator"));
         assertFalse(factorySource.contains("averageCostPrice"));
         assertFalse(factorySource.contains("productName + \"|\" + side.toUpperCase(Locale.ROOT)"));

@@ -130,7 +130,7 @@ public final class IndicatorRegistry {
                 IndicatorValueType.PERCENT,
                 "%",
                 2,
-                IndicatorColorRule.LOSS_UP_PROFIT_DOWN,
+                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
                 "Max Drawdown"
         ));
         register(new IndicatorDefinition(
@@ -187,7 +187,7 @@ public final class IndicatorRegistry {
                 IndicatorValueType.MONEY,
                 "$",
                 2,
-                IndicatorColorRule.LOSS_UP_PROFIT_DOWN,
+                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
                 "Avg Loss/Trade"
         ));
         register(new IndicatorDefinition(

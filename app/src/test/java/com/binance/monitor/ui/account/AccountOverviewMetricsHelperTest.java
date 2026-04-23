@@ -47,6 +47,7 @@ public class AccountOverviewMetricsHelperTest {
         assertEquals(IndicatorRegistry.require(IndicatorId.ACCOUNT_MARGIN).getDisplayName(), result.get(3).getName());
         assertEquals(IndicatorRegistry.require(IndicatorId.ACCOUNT_POSITION_PNL).getDisplayName(), result.get(4).getName());
         assertEquals(IndicatorRegistry.require(IndicatorId.ACCOUNT_POSITION_PNL_RATE).getDisplayName(), result.get(5).getName());
+        assertEquals("$620.00", result.get(2).getValue());
         assertEquals(6, result.size());
     }
 }

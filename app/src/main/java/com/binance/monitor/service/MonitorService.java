@@ -34,11 +34,14 @@ import com.binance.monitor.runtime.account.AccountSessionRecoveryHelper;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.runtime.market.model.MarketRuntimeSnapshot;
 import com.binance.monitor.runtime.market.model.SymbolMarketWindow;
+import com.binance.monitor.security.SecureSessionPrefs;
+import com.binance.monitor.security.SessionSummarySnapshot;
 import com.binance.monitor.service.stream.V2StreamSequenceGuard;
 import com.binance.monitor.ui.floating.FloatingWindowManager;
 import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.GatewayUrlResolver;
 import com.binance.monitor.util.NotificationHelper;
+import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -79,6 +82,7 @@ public class MonitorService extends Service {
     private AbnormalGatewayClient abnormalGatewayClient;
     private GatewayV2Client gatewayV2Client;
     private GatewayV2StreamClient v2StreamClient;
+    private SecureSessionPrefs secureSessionPrefs;
     private AccountSessionRecoveryHelper accountSessionRecoveryHelper;
     private AccountStatsPreloadManager accountStatsPreloadManager;
     private ExecutorService executorService;
@@ -107,10 +111,11 @@ public class MonitorService extends Service {
         abnormalGatewayClient = new AbnormalGatewayClient(this);
         gatewayV2Client = new GatewayV2Client(this);
         v2StreamClient = new GatewayV2StreamClient(this);
+        secureSessionPrefs = new SecureSessionPrefs(this);
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(this);
         accountSessionRecoveryHelper = new AccountSessionRecoveryHelper(
                 new GatewayV2SessionClient(this),
-                new com.binance.monitor.security.SecureSessionPrefs(this),
+                secureSessionPrefs,
                 configManager,
                 accountStatsPreloadManager,
                 logManager
@@ -125,7 +130,7 @@ public class MonitorService extends Service {
                 new MonitorFloatingCoordinator.DataSource() {
                     @Override
                     public AccountStatsPreloadManager.Cache getLatestAccountCache() {
-                        return accountStatsPreloadManager == null ? null : accountStatsPreloadManager.getLatestCache();
+                        return resolveCurrentSessionFloatingCache();
                     }
 
                     @Override
@@ -551,6 +556,44 @@ public class MonitorService extends Service {
     private void requestForegroundEntryRefresh() {
         floatingCoordinator.requestRefresh(true);
         reconcileRemoteSessionIfNeeded();
+    }
+
+    // 悬浮窗只允许看到当前活动会话对应的账户缓存，旧账号 cache 不能继续透传下去。
+    @Nullable
+    private AccountStatsPreloadManager.Cache resolveCurrentSessionFloatingCache() {
+        if (accountStatsPreloadManager == null
+                || configManager == null
+                || secureSessionPrefs == null
+                || !configManager.isAccountSessionActive()) {
+            return null;
+        }
+        AccountStatsPreloadManager.Cache cache = accountStatsPreloadManager.getLatestCache();
+        if (cache == null) {
+            return null;
+        }
+        SessionSummarySnapshot sessionSummary = secureSessionPrefs.loadSessionSummary();
+        if (sessionSummary.hasStorageFailure()) {
+            return null;
+        }
+        RemoteAccountProfile activeAccount = sessionSummary.getActiveAccount();
+        if (activeAccount == null) {
+            return null;
+        }
+        String expectedAccount = trimToEmpty(activeAccount.getLogin());
+        String expectedServer = trimToEmpty(activeAccount.getServer());
+        if (expectedAccount.isEmpty() || expectedServer.isEmpty()) {
+            return null;
+        }
+        if (!expectedAccount.equalsIgnoreCase(trimToEmpty(cache.getAccount()))
+                || !expectedServer.equalsIgnoreCase(trimToEmpty(cache.getServer()))) {
+            return null;
+        }
+        return cache;
+    }
+
+    @NonNull
+    private static String trimToEmpty(@Nullable String value) {
+        return value == null ? "" : value.trim();
     }
 
     // 当前台仍保留本地活动会话时，只做一次轻量远程确认；发现账号失配就落未登录并通知用户。

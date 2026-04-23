@@ -32,12 +32,13 @@ public class AccountStatsBridgeOverviewSourceTest {
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"可用预付款\""));
-        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"保证金\""));
-        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓盈亏\""));
-        assertTrue(source.contains("replaceOrAppendOverviewMetric(result, \"持仓收益率\""));
-        assertFalse(source.contains("replaceOrAppendOverviewMetric(result, \"当日盈亏\""));
-        assertFalse(source.contains("replaceOrAppendOverviewMetric(result, \"当日收益率\""));
+        assertTrue(source.contains("IndicatorId.ACCOUNT_AVAILABLE_FUNDS"));
+        assertTrue(source.contains("IndicatorFormatterCenter.SignPolicy.NEGATIVE_ONLY"));
+        assertTrue(source.contains("IndicatorId.ACCOUNT_MARGIN"));
+        assertTrue(source.contains("IndicatorId.ACCOUNT_POSITION_PNL"));
+        assertTrue(source.contains("IndicatorId.ACCOUNT_POSITION_PNL_RATE"));
+        assertFalse(source.contains("当日盈亏"));
+        assertFalse(source.contains("当日收益率"));
         assertTrue(source.contains("return sortOverviewMetricsForDisplay(result);"));
         assertTrue(source.contains("private static List<AccountMetric> sortOverviewMetricsForDisplay(@Nullable List<AccountMetric> metrics) {"));
         assertTrue(source.contains("appendOverviewMetricInDisplayOrder(ordered, metricsByKey, appended, \"总资产\");"));

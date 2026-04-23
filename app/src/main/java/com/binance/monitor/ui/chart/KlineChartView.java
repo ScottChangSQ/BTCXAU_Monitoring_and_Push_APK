@@ -1,6 +1,6 @@
 /*
  * K 线图自定义绘制控件，负责行情主图、指标、副图和各类价格标注的渲染与交互。
- * 与行情图页、主题系统和异常交易标注模块协同工作。
+ * 与行情图页、主题系统和账户交易标注模块协同工作。
  */
 package com.binance.monitor.ui.chart;
 
@@ -32,8 +32,10 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class KlineChartView extends View {
     public static final int ANNOTATION_KIND_DEFAULT = 0;
@@ -157,6 +159,29 @@ public class KlineChartView extends View {
 
     public interface OnQuickPendingLineChangeListener {
         void onPriceChanged(double price);
+    }
+
+    private static final class FocusedTradeAxisLabel {
+        private final String text;
+        private final int color;
+        private final float desiredCenterY;
+        private float top = Float.NaN;
+
+        private FocusedTradeAxisLabel(@NonNull String text, int color, float desiredCenterY) {
+            this.text = text;
+            this.color = color;
+            this.desiredCenterY = desiredCenterY;
+        }
+    }
+
+    public interface OnTradeLineEditListener {
+        void onTradeLineDragStart(@NonNull ChartTradeLine line);
+
+        void onTradeLineDragUpdate(@NonNull ChartTradeLine line, double price);
+
+        void onTradeLineActionClick(@NonNull ChartTradeLine line);
+
+        void onTradeLineBlankAreaTap();
     }
 
     private final List<CandleEntry> candles = new ArrayList<>();
@@ -298,7 +323,6 @@ public class KlineChartView extends View {
     private final List<PriceAnnotation> positionAnnotations = new ArrayList<>();
     private final List<PriceAnnotation> pendingAnnotations = new ArrayList<>();
     private final List<PriceAnnotation> historyTradeAnnotations = new ArrayList<>();
-    private final List<PriceAnnotation> abnormalAnnotations = new ArrayList<>();
     @Nullable
     private AggregateCostAnnotation aggregateCostAnnotation;
     private ChartTradeLayerSnapshot tradeLayerSnapshot = new ChartTradeLayerSnapshot(null, null);
@@ -311,6 +335,17 @@ public class KlineChartView extends View {
     private boolean quickPendingLineVisible;
     private boolean quickPendingLineDragging;
     private double quickPendingLinePrice = Double.NaN;
+    private int quickPendingLinePointerId = -1;
+    private float quickPendingLineLastTouchY = Float.NaN;
+    private boolean quickPendingLineTouchExclusive;
+    private boolean tradeLineEditDragging;
+    private int tradeLineEditPointerId = -1;
+    private float tradeLineEditLastTouchY = Float.NaN;
+    private double tradeLineEditCurrentPrice = Double.NaN;
+    @Nullable
+    private ChartTradeLine activeTradeLineEdit;
+    @Nullable
+    private ChartTradeLine pressedTradeLineAction;
 
     private boolean requestingMore;
     private long lastRequestedBefore = Long.MIN_VALUE;
@@ -323,6 +358,7 @@ public class KlineChartView extends View {
     private OnPricePaneLayoutListener onPricePaneLayoutListener;
     private OnVolumePaneLayoutListener onVolumePaneLayoutListener;
     private OnQuickPendingLineChangeListener onQuickPendingLineChangeListener;
+    private OnTradeLineEditListener onTradeLineEditListener;
     private int lastPricePaneLeft = Integer.MIN_VALUE;
     private int lastPricePaneTop = Integer.MIN_VALUE;
     private int lastPricePaneRight = Integer.MIN_VALUE;
@@ -370,8 +406,28 @@ public class KlineChartView extends View {
                     clearCrosshair();
                     return true;
                 }
+                if (!highlightedAnnotationGroupId.isEmpty()) {
+                    if (isTouchInsideHighlightedGroup(e.getX(), e.getY())) {
+                        return true;
+                    }
+                    clearHighlightedAnnotationGroup();
+                    if (onTradeLineEditListener != null) {
+                        onTradeLineEditListener.onTradeLineBlankAreaTap();
+                    }
+                    return true;
+                }
+                if (shouldExitQuickPendingModeByTap(e.getX(), e.getY())) {
+                    clearHighlightedAnnotationGroup();
+                    if (onTradeLineEditListener != null) {
+                        onTradeLineEditListener.onTradeLineBlankAreaTap();
+                    }
+                    return true;
+                }
                 if (!selectAnnotationGroupByTouch(e.getX(), e.getY())) {
                     clearHighlightedAnnotationGroup();
+                    if (onTradeLineEditListener != null) {
+                        onTradeLineEditListener.onTradeLineBlankAreaTap();
+                    }
                 }
                 return true;
             }
@@ -422,19 +478,19 @@ public class KlineChartView extends View {
         overlayLabelTextPaint.setFakeBoldText(false);
 
         aggregateCostLinePaint.setStyle(Paint.Style.STROKE);
-        aggregateCostLinePaint.setStrokeWidth(dp(0.55f));
+        aggregateCostLinePaint.setStrokeWidth(dp(0.9f));
         TextAppearanceScaleResolver.applyTextSize(aggregateCostTagTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         aggregateCostTagTextPaint.setFakeBoldText(false);
         TextAppearanceScaleResolver.applyTextSize(aggregateCostHintTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         aggregateCostHintTextPaint.setFakeBoldText(false);
-        aggregateCostHintTextPaint.setTextAlign(Paint.Align.RIGHT);
+        aggregateCostHintTextPaint.setTextAlign(Paint.Align.CENTER);
 
         volumeThresholdPaint.setStyle(Paint.Style.STROKE);
         volumeThresholdPaint.setStrokeWidth(dp(1f));
         volumeThresholdPaint.setPathEffect(new DashPathEffect(new float[]{dp(4f), dp(3f)}, 0f));
         quickPendingLinePaint.setStyle(Paint.Style.STROKE);
-        quickPendingLinePaint.setStrokeWidth(dp(1f));
-        quickPendingLinePaint.setPathEffect(new DashPathEffect(new float[]{dp(5f), dp(3f)}, 0f));
+        quickPendingLinePaint.setStrokeWidth(dp(0.95f));
+        quickPendingLinePaint.setPathEffect(new DashPathEffect(new float[]{dp(6f), dp(4f)}, 0f));
         TextAppearanceScaleResolver.applyTextSize(quickPendingTagTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);
         quickPendingTagTextPaint.setFakeBoldText(false);
         applyPalette(UiPaletteManager.resolve(getContext()));
@@ -470,10 +526,10 @@ public class KlineChartView extends View {
         extremeLabelTextPaint.setColor(palette.textPrimary);
         overlayLabelBgPaint.setColor(applyAlpha(palette.card, 225));
         overlayLabelTextPaint.setColor(palette.textPrimary);
-        aggregateCostLinePaint.setColor(applyAlpha(palette.textPrimary, 225));
-        aggregateCostTagPaint.setColor(applyAlpha(palette.textPrimary, 225));
+        aggregateCostLinePaint.setColor(palette.textPrimary);
+        aggregateCostTagPaint.setColor(palette.textPrimary);
         aggregateCostTagTextPaint.setColor(palette.surfaceStart);
-        aggregateCostHintTextPaint.setColor(applyAlpha(palette.textPrimary, 205));
+        aggregateCostHintTextPaint.setColor(palette.textPrimary);
         volumeThresholdPaint.setColor(applyAlpha(palette.textPrimary, 210));
         quickPendingLinePaint.setColor(applyAlpha(palette.primary, 230));
         quickPendingTagPaint.setColor(applyAlpha(palette.primary, 235));
@@ -542,6 +598,15 @@ public class KlineChartView extends View {
         onQuickPendingLineChangeListener = listener;
     }
 
+    public void setOnTradeLineEditListener(@Nullable OnTradeLineEditListener listener) {
+        onTradeLineEditListener = listener;
+    }
+
+    // 外层页面重建草稿线快照时需要知道当前是否仍处于真实拖拽态，避免把拖拽中途打断。
+    public boolean isQuickPendingLineDragging() {
+        return quickPendingLineDragging;
+    }
+
     // 显示图表内快捷挂单线，并以当前价格作为初始位置。
     public void showQuickPendingLine(double price) {
         if (!Double.isFinite(price) || price <= 0d) {
@@ -568,7 +633,18 @@ public class KlineChartView extends View {
     public void setTradeLayerSnapshot(@Nullable ChartTradeLayerSnapshot snapshot) {
         tradeLayerSnapshot = snapshot == null ? new ChartTradeLayerSnapshot(null, null) : snapshot;
         syncQuickPendingLineFromTradeLayerSnapshot();
+        sanitizeHighlightedAnnotationGroup();
         invalidate();
+    }
+
+    // 让外层页面按整组交易线/标注统一设置当前聚焦对象。
+    public void setHighlightedTradeGroup(@Nullable String groupId) {
+        setHighlightedAnnotationGroup(groupId);
+    }
+
+    // 让外层页面在需要时主动回到普通显示态。
+    public void clearHighlightedTradeGroup() {
+        clearHighlightedAnnotationGroup();
     }
 
     public void setVolumeThreshold(double threshold, boolean visible) {
@@ -582,7 +658,6 @@ public class KlineChartView extends View {
         if (items != null && !items.isEmpty()) {
             positionAnnotations.addAll(items);
         }
-        sanitizeHighlightedAnnotationGroup();
         invalidate();
     }
 
@@ -591,7 +666,6 @@ public class KlineChartView extends View {
         if (items != null && !items.isEmpty()) {
             pendingAnnotations.addAll(items);
         }
-        sanitizeHighlightedAnnotationGroup();
         invalidate();
     }
 
@@ -600,16 +674,6 @@ public class KlineChartView extends View {
         if (items != null && !items.isEmpty()) {
             historyTradeAnnotations.addAll(items);
         }
-        sanitizeHighlightedAnnotationGroup();
-        invalidate();
-    }
-
-    public void setAbnormalAnnotations(@Nullable List<PriceAnnotation> items) {
-        abnormalAnnotations.clear();
-        if (items != null && !items.isEmpty()) {
-            abnormalAnnotations.addAll(items);
-        }
-        sanitizeHighlightedAnnotationGroup();
         invalidate();
     }
 
@@ -817,15 +881,20 @@ public class KlineChartView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (handleQuickPendingLineTouch(event)) {
-            return true;
-        }
-        scaleGestureDetector.onTouchEvent(event);
-        gestureDetector.onTouchEvent(event);
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
             downX = event.getX();
             downY = event.getY();
+        }
+        if (handleQuickPendingLineTouch(event)) {
+            return true;
+        }
+        if (handleTradeLineEditTouch(event)) {
+            return true;
+        }
+        scaleGestureDetector.onTouchEvent(event);
+        gestureDetector.onTouchEvent(event);
+        if (action == MotionEvent.ACTION_DOWN) {
             lastX = event.getX();
             horizontalDragging = false;
             return true;
@@ -970,10 +1039,10 @@ public class KlineChartView extends View {
         drawVisibleExtremes(canvas, start, end, visiblePriceMin, visiblePriceMax);
         drawLatestPriceGuide(canvas);
         drawTradeLayerSnapshot(canvas, visiblePriceMin, visiblePriceMax);
+        drawHighlightedTradeAxisLabels(canvas, visiblePriceMin, visiblePriceMax);
         if (showHistoryTradeAnnotations) {
             drawOverlayAnnotations(canvas, historyTradeAnnotations);
         }
-        drawOverlayAnnotations(canvas, abnormalAnnotations);
         if (showAggregateCostAnnotation) {
             drawAggregateCostAnnotation(canvas);
         }
@@ -1395,6 +1464,105 @@ public class KlineChartView extends View {
         }
     }
 
+    private void drawHighlightedTradeAxisLabels(@NonNull Canvas canvas, double min, double max) {
+        if (highlightedAnnotationGroupId.isEmpty()) {
+            return;
+        }
+        List<FocusedTradeAxisLabel> labels = collectHighlightedTradeAxisLabels(min, max);
+        if (labels.isEmpty()) {
+            return;
+        }
+        layoutHighlightedTradeAxisLabels(labels);
+        for (FocusedTradeAxisLabel label : labels) {
+            drawHighlightedTradeAxisLabel(canvas, label);
+        }
+    }
+
+    @NonNull
+    private List<FocusedTradeAxisLabel> collectHighlightedTradeAxisLabels(double min, double max) {
+        List<FocusedTradeAxisLabel> labels = new ArrayList<>();
+        Set<String> seenKeys = new HashSet<>();
+        appendHighlightedTradeAxisLabelsFromLines(labels, seenKeys, tradeLayerSnapshot.getLiveLines(), min, max);
+        appendHighlightedTradeAxisLabelsFromLines(labels, seenKeys, tradeLayerSnapshot.getDraftLines(), min, max);
+        labels.sort((left, right) -> Float.compare(left.desiredCenterY, right.desiredCenterY));
+        return labels;
+    }
+
+    private void appendHighlightedTradeAxisLabelsFromLines(@NonNull List<FocusedTradeAxisLabel> output,
+                                                           @NonNull Set<String> seenKeys,
+                                                           @Nullable List<ChartTradeLine> source,
+                                                           double min,
+                                                           double max) {
+        if (source == null || source.isEmpty()) {
+            return;
+        }
+        for (ChartTradeLine line : source) {
+            if (line == null
+                    || !shouldDrawTradeLayerLine(line)
+                    || !highlightedAnnotationGroupId.equals(resolveTradeLayerGroupKey(line))
+                    || !Double.isFinite(line.getPrice())
+                    || line.getPrice() <= 0d) {
+                continue;
+            }
+            float centerY = yFor(line.getPrice(), min, max, priceRect);
+            if (Float.isNaN(centerY) || centerY < priceRect.top || centerY > priceRect.bottom) {
+                continue;
+            }
+            String dedupeKey = line.getId() + "|" + Math.round(line.getPrice() * 100_000d);
+            if (!seenKeys.add(dedupeKey)) {
+                continue;
+            }
+            output.add(new FocusedTradeAxisLabel(
+                    FormatUtils.formatPrice(line.getPrice()),
+                    resolveTradeLayerLineColor(line),
+                    centerY
+            ));
+        }
+    }
+
+    private void layoutHighlightedTradeAxisLabels(@NonNull List<FocusedTradeAxisLabel> labels) {
+        float boxHeight = dp(14f);
+        float gap = dp(2f);
+        float minTop = priceRect.top;
+        float maxTop = priceRect.bottom - boxHeight;
+        for (FocusedTradeAxisLabel label : labels) {
+            label.top = clamp(label.desiredCenterY - boxHeight / 2f, minTop, maxTop);
+        }
+        for (int index = 1; index < labels.size(); index++) {
+            FocusedTradeAxisLabel previous = labels.get(index - 1);
+            FocusedTradeAxisLabel current = labels.get(index);
+            current.top = Math.max(current.top, previous.top + boxHeight + gap);
+        }
+        float nextMaxTop = maxTop;
+        for (int index = labels.size() - 1; index >= 0; index--) {
+            FocusedTradeAxisLabel label = labels.get(index);
+            label.top = Math.min(label.top, nextMaxTop);
+            nextMaxTop = label.top - boxHeight - gap;
+        }
+        for (int index = 1; index < labels.size(); index++) {
+            FocusedTradeAxisLabel previous = labels.get(index - 1);
+            FocusedTradeAxisLabel current = labels.get(index);
+            current.top = Math.max(current.top, previous.top + boxHeight + gap);
+        }
+    }
+
+    private void drawHighlightedTradeAxisLabel(@NonNull Canvas canvas,
+                                               @NonNull FocusedTradeAxisLabel label) {
+        if (Float.isNaN(label.top)) {
+            return;
+        }
+        float padX = dp(5f);
+        float padY = dp(3f);
+        float boxHeight = dp(14f);
+        float boxWidth = latestPriceTagTextPaint.measureText(label.text) + padX * 2f;
+        float left = priceRect.right + dp(3f);
+        RectF box = new RectF(left, label.top, left + boxWidth, label.top + boxHeight);
+        latestPriceTagPaint.setColor(label.color);
+        latestPriceTagTextPaint.setColor(resolveHighlightedTradeAxisTextColor(label.color));
+        canvas.drawRoundRect(box, dp(3f), dp(3f), latestPriceTagPaint);
+        canvas.drawText(label.text, box.left + padX, box.bottom - padY, latestPriceTagTextPaint);
+    }
+
     // 按状态绘制单条交易线；当前先把草稿挂单线接入正式状态层。
     private void drawTradeLayerLine(Canvas canvas,
                                     @Nullable ChartTradeLine line,
@@ -1410,27 +1578,27 @@ public class KlineChartView extends View {
         if (Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
             return;
         }
+        boolean hasGroupHighlight = !highlightedAnnotationGroupId.isEmpty();
+        boolean selected = !hasGroupHighlight
+                || highlightedAnnotationGroupId.equals(resolveTradeLayerGroupKey(line));
         int lineColor = resolveTradeLayerLineColor(line);
+        if (hasGroupHighlight && !selected) {
+            lineColor = applyAlpha(lineColor, 0.34f);
+        }
         quickPendingLinePaint.setColor(lineColor);
-        quickPendingLinePaint.setPathEffect(shouldUseDashedTradeLayerLine(line)
-                ? new DashPathEffect(new float[]{dp(5f), dp(3f)}, 0f)
-                : null);
+        quickPendingLinePaint.setStrokeWidth(resolveTradeLayerLineStrokeWidth(line));
+        quickPendingLinePaint.setPathEffect(resolveTradeLayerLinePathEffect(line));
         canvas.drawLine(priceRect.left, y, priceRect.right, y, quickPendingLinePaint);
 
-        String labelText = line.getLabel() == null || line.getLabel().trim().isEmpty()
-                ? FormatUtils.formatPrice(line.getPrice())
-                : line.getLabel().trim();
-        float padX = dp(5f);
-        float padY = dp(3f);
-        float boxH = dp(14f);
-        float boxW = quickPendingTagTextPaint.measureText(labelText) + padX * 2f;
-        float left = priceRect.right + dp(3f);
-        float top = clamp(y - boxH / 2f, priceRect.top, priceRect.bottom - boxH);
-        RectF box = new RectF(left, top, left + boxW, top + boxH);
-        quickPendingTagPaint.setColor(resolveTradeLayerTagColor(lineColor));
-        quickPendingTagTextPaint.setColor(resolveTradeLayerTextColor());
-        canvas.drawRoundRect(box, dp(3f), dp(3f), quickPendingTagPaint);
-        canvas.drawText(labelText, box.left + padX, box.bottom - padY, quickPendingTagTextPaint);
+        String leftLabel = line.getLabel() == null ? "" : line.getLabel().trim();
+        String actionText = line.getActionText() == null ? "" : line.getActionText().trim();
+        if (!leftLabel.isEmpty() || !actionText.isEmpty()) {
+            drawTradeLayerLeftAffordances(canvas, actionText, leftLabel, y, lineColor, selected);
+        }
+        String centerLabel = line.getCenterLabel() == null ? "" : line.getCenterLabel().trim();
+        if (!centerLabel.isEmpty()) {
+            drawTradeLayerCenterLabel(canvas, centerLabel, y, lineColor, selected);
+        }
     }
 
     private boolean shouldDrawTradeLayerLine(@NonNull ChartTradeLine line) {
@@ -1446,7 +1614,10 @@ public class KlineChartView extends View {
     }
 
     private boolean shouldUseDashedTradeLayerLine(@NonNull ChartTradeLine line) {
-        return line.getState() == ChartTradeLineState.LIVE_PENDING
+        return line.getState() == ChartTradeLineState.LIVE_POSITION
+                || line.getState() == ChartTradeLineState.LIVE_PENDING
+                || line.getState() == ChartTradeLineState.LIVE_TP
+                || line.getState() == ChartTradeLineState.LIVE_SL
                 || line.getState() == ChartTradeLineState.DRAFT_PENDING
                 || line.getState() == ChartTradeLineState.DRAGGING
                 || line.getState() == ChartTradeLineState.SUBMITTING
@@ -1455,35 +1626,200 @@ public class KlineChartView extends View {
 
     private int resolveTradeLayerLineColor(@NonNull ChartTradeLine line) {
         UiPaletteManager.Palette palette = activePalette;
-        if (line.getState() == ChartTradeLineState.LIVE_POSITION) {
-            return line.getLabel() != null && line.getLabel().contains("SELL")
-                    ? (palette == null ? secondaryTextColor : palette.fall)
-                    : (palette == null ? secondaryTextColor : palette.rise);
+        if (line.isGhost()) {
+            return palette == null ? secondaryTextColor : palette.textSecondary;
         }
         if (line.getState() == ChartTradeLineState.LIVE_PENDING) {
-            return line.getLabel() != null && line.getLabel().contains("SELL")
-                    ? (palette == null ? secondaryTextColor : palette.fall)
-                    : (palette == null ? secondaryTextColor : palette.rise);
+            return palette == null ? secondaryTextColor : palette.primary;
         }
-        if (line.getState() == ChartTradeLineState.LIVE_TP) {
+        ChartTradeLineTone tone = line.getTone();
+        if (tone == ChartTradeLineTone.POSITIVE) {
             return palette == null ? secondaryTextColor : palette.rise;
         }
-        if (line.getState() == ChartTradeLineState.LIVE_SL) {
+        if (tone == ChartTradeLineTone.NEGATIVE) {
             return palette == null ? secondaryTextColor : palette.fall;
         }
-        if (line.getState() == ChartTradeLineState.REJECTED_ROLLBACK) {
-            return palette == null ? secondaryTextColor : palette.fall;
+        if (tone == ChartTradeLineTone.PRIMARY) {
+            return palette == null ? secondaryTextColor : palette.primary;
         }
-        return palette == null ? secondaryTextColor : palette.primary;
+        return palette == null ? secondaryTextColor : palette.textSecondary;
     }
 
-    private int resolveTradeLayerTagColor(int lineColor) {
-        return ColorUtils.setAlphaComponent(lineColor, 40);
+    private float resolveTradeLayerLineStrokeWidth(@NonNull ChartTradeLine line) {
+        if (line.getState() == ChartTradeLineState.LIVE_TP
+                || line.getState() == ChartTradeLineState.LIVE_SL) {
+            return dp(0.72f);
+        }
+        return dp(0.95f);
     }
 
-    private int resolveTradeLayerTextColor() {
+    @Nullable
+    private DashPathEffect resolveTradeLayerLinePathEffect(@NonNull ChartTradeLine line) {
+        if (!shouldUseDashedTradeLayerLine(line)) {
+            return null;
+        }
+        if (line.getState() == ChartTradeLineState.LIVE_TP
+                || line.getState() == ChartTradeLineState.LIVE_SL) {
+            return new DashPathEffect(new float[]{dp(4f), dp(3f)}, 0f);
+        }
+        return new DashPathEffect(new float[]{dp(6f), dp(4f)}, 0f);
+    }
+
+    private void drawTradeLayerLeftAffordances(@NonNull Canvas canvas,
+                                               @NonNull String actionText,
+                                               @NonNull String labelText,
+                                               float centerY,
+                                               int lineColor,
+                                               boolean selected) {
+        float cursorLeft = priceRect.left + dp(3f);
+        if (!actionText.isEmpty()) {
+            RectF actionRect = resolveTradeLayerChipRect(actionText, centerY, cursorLeft);
+            if (actionRect != null) {
+                quickPendingTagPaint.setColor(resolveTradeLayerActionButtonColor(selected));
+                quickPendingTagTextPaint.setColor(resolveTradeLayerActionTextColor(selected));
+                canvas.drawRoundRect(actionRect, dp(3f), dp(3f), quickPendingTagPaint);
+                canvas.drawText(actionText, actionRect.left + dp(5f), actionRect.bottom - dp(3f), quickPendingTagTextPaint);
+                cursorLeft = actionRect.right + dp(4f);
+            }
+        }
+        if (!labelText.isEmpty()) {
+            RectF box = resolveTradeLayerChipRect(labelText, centerY, cursorLeft);
+            if (box == null) {
+                return;
+            }
+            quickPendingTagPaint.setColor(resolveTradeLayerTagColor(selected));
+            quickPendingTagTextPaint.setColor(resolveTradeLayerTextColor(lineColor, labelText, selected));
+            canvas.drawRoundRect(box, dp(3f), dp(3f), quickPendingTagPaint);
+            canvas.drawText(labelText, box.left + dp(5f), box.bottom - dp(3f), quickPendingTagTextPaint);
+        }
+    }
+
+    private void drawTradeLayerCenterLabel(@NonNull Canvas canvas,
+                                           @NonNull String labelText,
+                                           float centerY,
+                                           int lineColor,
+                                           boolean selected) {
+        float padX = dp(5f);
+        float padY = dp(3f);
+        float boxH = dp(14f);
+        float boxW = quickPendingTagTextPaint.measureText(labelText) + padX * 2f;
+        float left = clamp(priceRect.centerX() - boxW / 2f, priceRect.left, priceRect.right - boxW);
+        float top = clamp(centerY - boxH - dp(2f), priceRect.top, priceRect.bottom - boxH);
+        RectF box = new RectF(left, top, left + boxW, top + boxH);
+        quickPendingTagPaint.setColor(resolveTradeLayerTagColor(selected));
+        quickPendingTagTextPaint.setColor(resolveTradeLayerTextColor(lineColor, labelText, selected));
+        canvas.drawRoundRect(box, dp(3f), dp(3f), quickPendingTagPaint);
+        canvas.drawText(labelText, box.left + padX, box.bottom - padY, quickPendingTagTextPaint);
+    }
+
+    private int resolveTradeLayerTagColor(boolean selected) {
         UiPaletteManager.Palette palette = activePalette;
-        return palette == null ? secondaryTextColor : palette.textPrimary;
+        int color = palette == null
+                ? ColorUtils.setAlphaComponent(secondaryTextColor, 210)
+                : ColorUtils.setAlphaComponent(palette.surfaceStart, 210);
+        return selected ? color : applyAlpha(color, 0.42f);
+    }
+
+    private int resolveTradeLayerActionButtonColor(boolean selected) {
+        UiPaletteManager.Palette palette = activePalette;
+        int color = palette == null
+                ? ColorUtils.setAlphaComponent(secondaryTextColor, 230)
+                : ColorUtils.setAlphaComponent(palette.card, 236);
+        return selected ? color : applyAlpha(color, 0.62f);
+    }
+
+    private int resolveTradeLayerActionTextColor(boolean selected) {
+        UiPaletteManager.Palette palette = activePalette;
+        int color = palette == null ? defaultAnnotationColor() : palette.textPrimary;
+        return selected ? color : applyAlpha(color, 0.62f);
+    }
+
+    private int resolveHighlightedTradeAxisTextColor(int backgroundColor) {
+        return ColorUtils.calculateLuminance(backgroundColor) >= 0.5d
+                ? 0xFF101418
+                : 0xFFF5F7FA;
+    }
+
+    private int resolveTradeLayerTextColor(int lineColor, @NonNull String labelText, boolean selected) {
+        UiPaletteManager.Palette palette = activePalette;
+        int textColor = lineColor;
+        if (labelText.startsWith("挂单 买")) {
+            textColor = palette == null ? lineColor : palette.rise;
+        } else if (labelText.startsWith("挂单 卖")) {
+            textColor = palette == null ? lineColor : palette.fall;
+        }
+        if (!selected) {
+            return applyAlpha(textColor, 0.42f);
+        }
+        return textColor;
+    }
+
+    @Nullable
+    private RectF resolveTradeLayerActionButtonRect(@Nullable ChartTradeLine line) {
+        if (line == null || line.getActionText() == null || line.getActionText().trim().isEmpty()) {
+            return null;
+        }
+        if (!Double.isFinite(line.getPrice()) || line.getPrice() <= 0d) {
+            return null;
+        }
+        float y = yFor(line.getPrice(), visiblePriceMin, visiblePriceMax, priceRect);
+        if (Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
+            return null;
+        }
+        return resolveTradeLayerChipRect(line.getActionText().trim(), y, priceRect.left + dp(3f));
+    }
+
+    @Nullable
+    private RectF resolveTradeLayerLeftLabelRect(@Nullable ChartTradeLine line) {
+        if (line == null || line.getLabel() == null || line.getLabel().trim().isEmpty()) {
+            return null;
+        }
+        if (!Double.isFinite(line.getPrice()) || line.getPrice() <= 0d) {
+            return null;
+        }
+        float y = yFor(line.getPrice(), visiblePriceMin, visiblePriceMax, priceRect);
+        if (Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
+            return null;
+        }
+        float left = priceRect.left + dp(3f);
+        RectF actionRect = resolveTradeLayerActionButtonRect(line);
+        if (actionRect != null) {
+            left = actionRect.right + dp(4f);
+        }
+        return resolveTradeLayerChipRect(line.getLabel().trim(), y, left);
+    }
+
+    @Nullable
+    private RectF resolveTradeLayerCenterLabelRect(@Nullable ChartTradeLine line) {
+        if (line == null || line.getCenterLabel() == null || line.getCenterLabel().trim().isEmpty()) {
+            return null;
+        }
+        if (!Double.isFinite(line.getPrice()) || line.getPrice() <= 0d) {
+            return null;
+        }
+        float centerY = yFor(line.getPrice(), visiblePriceMin, visiblePriceMax, priceRect);
+        if (Float.isNaN(centerY) || centerY < priceRect.top || centerY > priceRect.bottom) {
+            return null;
+        }
+        String labelText = line.getCenterLabel().trim();
+        float padX = dp(5f);
+        float boxH = dp(14f);
+        float boxW = quickPendingTagTextPaint.measureText(labelText) + padX * 2f;
+        float left = clamp(priceRect.centerX() - boxW / 2f, priceRect.left, priceRect.right - boxW);
+        float top = clamp(centerY - boxH - dp(2f), priceRect.top, priceRect.bottom - boxH);
+        return new RectF(left, top, left + boxW, top + boxH);
+    }
+
+    @Nullable
+    private RectF resolveTradeLayerChipRect(@NonNull String text, float centerY, float left) {
+        float padX = dp(5f);
+        float boxH = dp(14f);
+        float boxW = quickPendingTagTextPaint.measureText(text) + padX * 2f;
+        float top = clamp(centerY - boxH / 2f, priceRect.top, priceRect.bottom - boxH);
+        if (boxW <= 0f) {
+            return null;
+        }
+        return new RectF(left, top, left + boxW, top + boxH);
     }
 
     private void drawOverlayAnnotations(Canvas canvas, List<PriceAnnotation> annotations) {
@@ -1497,10 +1833,9 @@ public class KlineChartView extends View {
             if (annotation == null || annotation.price <= 0d) {
                 continue;
             }
-            boolean abnormalPointOnly = isAbnormalAnnotation(annotation);
             boolean historyTradePointOnly = isTradePointAnnotation(annotation);
             boolean tradeConnector = isTradeConnectorAnnotation(annotation);
-            boolean pointOnly = abnormalPointOnly || historyTradePointOnly;
+            boolean pointOnly = historyTradePointOnly;
             float y = resolveAnnotationY(annotation);
             if (Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
                 continue;
@@ -1543,8 +1878,6 @@ public class KlineChartView extends View {
             float x;
             if (historyTradePointOnly) {
                 x = resolveHistoricalAnnotationX(annotation.anchorTimeMs);
-            } else if (abnormalPointOnly) {
-                x = resolveAnnotationXForFloorTime(annotation.anchorTimeMs);
             } else {
                 x = resolveAnnotationX(annotation.anchorTimeMs);
             }
@@ -1556,17 +1889,7 @@ public class KlineChartView extends View {
                 continue;
             }
             overlayPointPaint.setColor(lineColor);
-            if (abnormalPointOnly) {
-                float capsuleHalfWidth = selected ? dp(2.6f) : dp(2.2f);
-                float capsuleHalfHeight = dp(selected ? 4.2f : 3.4f) + dp(7.2f) * annotation.intensity;
-                RectF capsule = new RectF(
-                        x - capsuleHalfWidth,
-                        y - capsuleHalfHeight,
-                        x + capsuleHalfWidth,
-                        y + capsuleHalfHeight
-                );
-                canvas.drawRoundRect(capsule, capsuleHalfWidth, capsuleHalfWidth, overlayPointPaint);
-            } else if (historyTradePointOnly) {
+            if (historyTradePointOnly) {
                 float radius = selected ? dp(3.3f) : dp(2.9f);
                 canvas.drawCircle(x, y, radius, overlayPointPaint);
             } else {
@@ -1577,16 +1900,11 @@ public class KlineChartView extends View {
                     && !annotation.label.isEmpty()
                     && HistoricalTradeViewportHelper.isPointVisible(x, priceRect.left, priceRect.right)) {
                 drawPointOverlayLabel(canvas, annotation.label, x, y, lineColor, selected);
-            } else if (!abnormalPointOnly && !annotation.label.isEmpty()) {
+            } else if (!annotation.label.isEmpty()) {
                 drawOverlayLabel(canvas, annotation.label, y, lineColor, selected);
             }
         }
         canvas.restoreToCount(saveCount);
-    }
-
-    // 异常点仅绘制红点，不绘制横线和标签。
-    private boolean isAbnormalAnnotation(@Nullable PriceAnnotation annotation) {
-        return annotation != null && annotation.groupId.startsWith("abn|");
     }
 
     // 历史成交点只绘制收盘点标记和短标签，不绘制整条横线。
@@ -1612,9 +1930,6 @@ public class KlineChartView extends View {
     private float resolveAnnotationY(@Nullable PriceAnnotation annotation) {
         if (annotation == null) {
             return Float.NaN;
-        }
-        if (isAbnormalAnnotation(annotation)) {
-            return priceRect.bottom - dp(8f);
         }
         return yFor(annotation.price, visiblePriceMin, visiblePriceMax, priceRect);
     }
@@ -1689,8 +2004,6 @@ public class KlineChartView extends View {
         } else {
             if (isTradePointAnnotation(selected)) {
                 anchorX = resolveHistoricalAnnotationX(selected.anchorTimeMs);
-            } else if (isAbnormalAnnotation(selected)) {
-                anchorX = resolveAnnotationXForFloorTime(selected.anchorTimeMs);
             } else {
                 anchorX = resolveAnnotationX(selected.anchorTimeMs);
             }
@@ -1750,7 +2063,7 @@ public class KlineChartView extends View {
                 return selected;
             }
         }
-        return findHighlightedAnnotationWithDetails(abnormalAnnotations);
+        return null;
     }
 
     @Nullable
@@ -1778,12 +2091,18 @@ public class KlineChartView extends View {
         }
         canvas.drawLine(priceRect.left, y, priceRect.right, y, aggregateCostLinePaint);
         String text = aggregateCostAnnotation.priceLabel.isEmpty()
-                ? FormatUtils.formatPrice(aggregateCostAnnotation.price)
+                ? "$" + FormatUtils.formatPrice(aggregateCostAnnotation.price)
                 : aggregateCostAnnotation.priceLabel;
-        String hint = "成本线：" + text;
-        aggregateCostHintTextPaint.setTextAlign(Paint.Align.CENTER);
-        float hintBaseline = clamp(y - dp(5f), priceRect.top + dp(8f), priceRect.bottom - dp(2f));
-        canvas.drawText(hint, priceRect.centerX(), hintBaseline, aggregateCostHintTextPaint);
+        float padX = dp(5f);
+        float padY = dp(3f);
+        float boxH = dp(14f);
+        float boxW = aggregateCostHintTextPaint.measureText(text) + padX * 2f;
+        float left = clamp(priceRect.centerX() - boxW / 2f, priceRect.left, priceRect.right - boxW);
+        float top = clamp(y - boxH - dp(2f), priceRect.top, priceRect.bottom - boxH);
+        RectF box = new RectF(left, top, left + boxW, top + boxH);
+        aggregateCostTagPaint.setColor(ColorUtils.setAlphaComponent(requirePalette().surfaceStart, 210));
+        canvas.drawRoundRect(box, dp(3f), dp(3f), aggregateCostTagPaint);
+        canvas.drawText(text, box.left + padX, box.bottom - padY, aggregateCostHintTextPaint);
     }
 
     private void drawVolumeThreshold(Canvas canvas, double maxVolume) {
@@ -2165,37 +2484,206 @@ public class KlineChartView extends View {
         }
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
-            float y = yFor(quickPendingLinePrice, visiblePriceMin, visiblePriceMax, priceRect);
-            boolean touchingLine = event.getX() >= priceRect.left
-                    && event.getX() <= priceRect.right
-                    && !Float.isNaN(y)
-                    && Math.abs(event.getY() - y) <= dp(16f);
-            if (!touchingLine) {
+            if (shouldSuppressTradeLayerTouchForExistingHighlight(event.getX(), event.getY())) {
+                quickPendingLineTouchExclusive = false;
                 return false;
             }
+            ChartTradeLine matchedDraftLine = findQuickPendingDraftLineAtTouch(event.getX(), event.getY());
+            if (!isQuickPendingDraftLine(matchedDraftLine)) {
+                quickPendingLineTouchExclusive = false;
+                return false;
+            }
+            quickPendingLineTouchExclusive = true;
             quickPendingLineDragging = true;
+            quickPendingLinePointerId = event.getPointerId(event.getActionIndex());
+            quickPendingLineLastTouchY = event.getY(event.getActionIndex());
+            setHighlightedAnnotationGroup(resolveTradeLayerGroupKey(matchedDraftLine));
             clearCrosshair();
             requestDisallow(true);
-            updateQuickPendingLinePrice(event.getY());
             return true;
         }
         if (!quickPendingLineDragging) {
             return false;
         }
-        if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
-            updateQuickPendingLinePrice(event.getY());
-            if (action == MotionEvent.ACTION_UP) {
-                quickPendingLineDragging = false;
-                requestDisallow(false);
+        if (action == MotionEvent.ACTION_MOVE) {
+            int activePointerIndex = event.findPointerIndex(quickPendingLinePointerId);
+            if (activePointerIndex < 0) {
+                resetQuickPendingLineDragging();
+                return true;
+            }
+            updateQuickPendingLinePriceByDelta(event.getY(activePointerIndex));
+            return true;
+        }
+        if (action == MotionEvent.ACTION_POINTER_DOWN) {
+            requestDisallow(true);
+            return true;
+        }
+        if (action == MotionEvent.ACTION_POINTER_UP) {
+            if (event.getPointerId(event.getActionIndex()) == quickPendingLinePointerId) {
+                resetQuickPendingLineDragging();
             }
             return true;
         }
-        if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_DOWN) {
-            quickPendingLineDragging = false;
-            requestDisallow(false);
+        if (action == MotionEvent.ACTION_UP) {
+            resetQuickPendingLineDragging();
+            return true;
+        }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            resetQuickPendingLineDragging();
             return true;
         }
         return true;
+    }
+
+    private boolean handleTradeLineEditTouch(@Nullable MotionEvent event) {
+        if (event == null || tradeLayerSnapshot == null) {
+            return false;
+        }
+        if (shouldBlockTradeLayerInteractionForQuickPending(event)) {
+            return false;
+        }
+        if (!ensureLayoutForMath() || priceRect.isEmpty()) {
+            return false;
+        }
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            if (shouldSuppressTradeLayerTouchForExistingHighlight(event.getX(), event.getY())) {
+                return false;
+            }
+            ChartTradeLine actionLine = findTradeLineActionAtTouch(event.getX(), event.getY());
+            if (actionLine != null) {
+                pressedTradeLineAction = actionLine;
+                setHighlightedAnnotationGroup(resolveTradeLayerGroupKey(actionLine));
+                clearCrosshair();
+                requestDisallow(true);
+                return true;
+            }
+            ChartTradeLine matchedLine = findEditableTradeLine(event.getX(), event.getY(), resolveTradeLineEditTouchThresholdPx());
+            if (matchedLine == null) {
+                return false;
+            }
+            tradeLineEditDragging = true;
+            tradeLineEditPointerId = event.getPointerId(event.getActionIndex());
+            tradeLineEditLastTouchY = event.getY(event.getActionIndex());
+            tradeLineEditCurrentPrice = matchedLine.getPrice();
+            activeTradeLineEdit = matchedLine;
+            setHighlightedAnnotationGroup(resolveTradeLayerGroupKey(matchedLine));
+            clearCrosshair();
+            requestDisallow(true);
+            if (onTradeLineEditListener != null) {
+                onTradeLineEditListener.onTradeLineDragStart(matchedLine);
+            }
+            return true;
+        }
+        if (pressedTradeLineAction != null) {
+            if (action == MotionEvent.ACTION_UP) {
+                ChartTradeLine actionLine = pressedTradeLineAction;
+                pressedTradeLineAction = null;
+                requestDisallow(false);
+                if (onTradeLineEditListener != null) {
+                    onTradeLineEditListener.onTradeLineActionClick(actionLine);
+                }
+                return true;
+            }
+            if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_MOVE) {
+                if (action == MotionEvent.ACTION_MOVE
+                        && (Math.abs(event.getX() - downX) <= touchSlop)
+                        && (Math.abs(event.getY() - downY) <= touchSlop)) {
+                    return true;
+                }
+                pressedTradeLineAction = null;
+                requestDisallow(false);
+                return true;
+            }
+        }
+        if (!tradeLineEditDragging || activeTradeLineEdit == null) {
+            return false;
+        }
+        if (action == MotionEvent.ACTION_MOVE) {
+            int activePointerIndex = event.findPointerIndex(tradeLineEditPointerId);
+            if (activePointerIndex < 0) {
+                resetTradeLineEditingTouch();
+                return true;
+            }
+            double updatedPrice = updateTradeLineEditPriceByDelta(event.getY(activePointerIndex));
+            if (updatedPrice > 0d && onTradeLineEditListener != null) {
+                onTradeLineEditListener.onTradeLineDragUpdate(activeTradeLineEdit, updatedPrice);
+            }
+            return true;
+        }
+        if (action == MotionEvent.ACTION_POINTER_DOWN) {
+            requestDisallow(true);
+            return true;
+        }
+        if (action == MotionEvent.ACTION_POINTER_UP) {
+            if (event.getPointerId(event.getActionIndex()) == tradeLineEditPointerId) {
+                resetTradeLineEditingTouch();
+            }
+            return true;
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            resetTradeLineEditingTouch();
+            return true;
+        }
+        return true;
+    }
+
+    // 快捷挂单拖拽需要比普通点击更宽的命中热区，避免和图表平移/缩放手势竞争。
+    private float resolveQuickPendingLineTouchThresholdPx() {
+        return Math.max(dp(56f), touchSlop * 4f);
+    }
+
+    @Nullable
+    private ChartTradeLine findQuickPendingDraftLineAtTouch(float x, float y) {
+        return findNearestTradeLayerLineInList(
+                tradeLayerSnapshot.getDraftLines(),
+                x,
+                y,
+                resolveQuickPendingLineTouchThresholdPx(),
+                Float.MAX_VALUE
+        );
+    }
+
+    private boolean shouldExitQuickPendingModeByTap(float x, float y) {
+        return quickPendingLineVisible && !isQuickPendingDraftLine(findQuickPendingDraftLineAtTouch(x, y));
+    }
+
+    private boolean shouldBlockTradeLayerInteractionForQuickPending(@Nullable MotionEvent event) {
+        if (event == null || !quickPendingLineVisible) {
+            return false;
+        }
+        if (quickPendingLineDragging || quickPendingLineTouchExclusive) {
+            return false;
+        }
+        return !isQuickPendingDraftLine(findQuickPendingDraftLineAtTouch(event.getX(), event.getY()));
+    }
+
+    // 只有挂单草稿线才允许进入拖拽态，正式持仓线与历史挂单线继续保持只读交互。
+    private boolean isQuickPendingDraftLine(@Nullable ChartTradeLine line) {
+        if (line == null) {
+            return false;
+        }
+        return line.getState() == ChartTradeLineState.DRAFT_PENDING
+                || line.getState() == ChartTradeLineState.DRAGGING;
+    }
+
+    // 快捷挂单草稿线进入专用拖拽态后，统一在这里释放手势状态。
+    private void resetQuickPendingLineDragging() {
+        quickPendingLineDragging = false;
+        quickPendingLinePointerId = -1;
+        quickPendingLineLastTouchY = Float.NaN;
+        quickPendingLineTouchExclusive = false;
+        requestDisallow(false);
+    }
+
+    private void resetTradeLineEditingTouch() {
+        tradeLineEditDragging = false;
+        tradeLineEditPointerId = -1;
+        tradeLineEditLastTouchY = Float.NaN;
+        tradeLineEditCurrentPrice = Double.NaN;
+        activeTradeLineEdit = null;
+        pressedTradeLineAction = null;
+        requestDisallow(false);
     }
 
     private void notifyCrosshair() {
@@ -2449,24 +2937,6 @@ public class KlineChartView extends View {
         }
         float rawIndex = rawIndexByOpenTime(anchorTimeMs);
         return clamp(xFor(rawIndex, visibleEndFloat), priceRect.left, priceRect.right);
-    }
-
-    // 按时间向下取整到对应K线，保证标注点落在具体K线上。
-    private float resolveAnnotationXForFloorTime(long anchorTimeMs) {
-        if (anchorTimeMs <= 0L || candles.isEmpty()) {
-            return Float.NaN;
-        }
-        long firstOpenTime = candles.get(0).getOpenTime();
-        long lastOpenTime = candles.get(candles.size() - 1).getOpenTime();
-        long intervalMs = estimateCandleIntervalMs();
-        if (anchorTimeMs < firstOpenTime || anchorTimeMs > lastOpenTime + intervalMs) {
-            return Float.NaN;
-        }
-        int floorIndex = floorIndexByOpenTime(anchorTimeMs);
-        if (floorIndex < 0) {
-            return Float.NaN;
-        }
-        return clamp(xFor(floorIndex, visibleEndFloat), priceRect.left, priceRect.right);
     }
 
     // 历史成交点允许把窗口外时间继续外推到视图外侧，避免被压到左右边界。
@@ -2725,22 +3195,107 @@ public class KlineChartView extends View {
         return String.format(Locale.getDefault(), "%+.2f", value);
     }
 
+    private boolean isTouchInsideHighlightedGroup(float x, float y) {
+        return isTouchInsideHighlightedTradeGroup(x, y)
+                || isTouchInsideHighlightedAnnotationGroup(x, y);
+    }
+
+    private boolean shouldSuppressTradeLayerTouchForExistingHighlight(float x, float y) {
+        return !highlightedAnnotationGroupId.isEmpty() && !isTouchInsideHighlightedGroup(x, y);
+    }
+
+    private boolean isTouchInsideHighlightedTradeGroup(float x, float y) {
+        if (highlightedAnnotationGroupId.isEmpty()) {
+            return false;
+        }
+        return isTouchInsideHighlightedTradeGroupInList(tradeLayerSnapshot.getLiveLines(), x, y)
+                || isTouchInsideHighlightedTradeGroupInList(tradeLayerSnapshot.getDraftLines(), x, y);
+    }
+
+    private boolean isTouchInsideHighlightedTradeGroupInList(@Nullable List<ChartTradeLine> source,
+                                                             float x,
+                                                             float y) {
+        if (source == null || source.isEmpty()) {
+            return false;
+        }
+        for (ChartTradeLine line : source) {
+            if (line == null
+                    || !highlightedAnnotationGroupId.equals(resolveTradeLayerGroupKey(line))
+                    || !shouldDrawTradeLayerLine(line)) {
+                continue;
+            }
+            RectF actionRect = resolveTradeLayerActionButtonRect(line);
+            if (actionRect != null && actionRect.contains(x, y)) {
+                return true;
+            }
+            RectF labelRect = resolveTradeLayerLeftLabelRect(line);
+            if (labelRect != null && labelRect.contains(x, y)) {
+                return true;
+            }
+            RectF centerRect = resolveTradeLayerCenterLabelRect(line);
+            if (centerRect != null && centerRect.contains(x, y)) {
+                return true;
+            }
+            float distance = resolveTradeLayerTouchDistance(line, x, y);
+            if (!Float.isNaN(distance) && distance <= dp(14f)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTouchInsideHighlightedAnnotationGroup(float x, float y) {
+        if (highlightedAnnotationGroupId.isEmpty()) {
+            return false;
+        }
+        return isTouchInsideHighlightedAnnotationGroupInList(positionAnnotations, x, y)
+                || isTouchInsideHighlightedAnnotationGroupInList(pendingAnnotations, x, y)
+                || isTouchInsideHighlightedAnnotationGroupInList(historyTradeAnnotations, x, y);
+    }
+
+    private boolean isTouchInsideHighlightedAnnotationGroupInList(@Nullable List<PriceAnnotation> source,
+                                                                  float x,
+                                                                  float y) {
+        if (source == null || source.isEmpty()) {
+            return false;
+        }
+        for (PriceAnnotation annotation : source) {
+            if (annotation == null
+                    || !highlightedAnnotationGroupId.equals(resolveAnnotationGroupKey(annotation))) {
+                continue;
+            }
+            float distance = resolveAnnotationTouchDistance(annotation, x, y);
+            if (!Float.isNaN(distance) && distance <= dp(14f)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean selectAnnotationGroupByTouch(float x, float y) {
         if (priceRect.isEmpty() || x < priceRect.left || x > priceRect.right || y < priceRect.top || y > priceRect.bottom) {
             return false;
+        }
+        ChartTradeLine matchedTradeLine = findNearestTradeLayerLine(x, y, dp(14f));
+        if (matchedTradeLine != null) {
+            return setHighlightedAnnotationGroup(resolveTradeLayerGroupKey(matchedTradeLine));
         }
         PriceAnnotation matched = findNearestAnnotation(x, y, dp(14f));
         if (matched == null) {
             return false;
         }
-        String groupKey = resolveAnnotationGroupKey(matched);
-        if (groupKey.isEmpty()) {
+        return setHighlightedAnnotationGroup(resolveAnnotationGroupKey(matched));
+    }
+
+    private boolean setHighlightedAnnotationGroup(@Nullable String groupKey) {
+        String safeGroupKey = groupKey == null ? "" : groupKey.trim();
+        if (safeGroupKey.isEmpty()) {
             return false;
         }
-        if (groupKey.equals(highlightedAnnotationGroupId)) {
+        if (safeGroupKey.equals(highlightedAnnotationGroupId)) {
             return true;
         }
-        highlightedAnnotationGroupId = groupKey;
+        highlightedAnnotationGroupId = safeGroupKey;
         invalidate();
         return true;
     }
@@ -2755,6 +3310,9 @@ public class KlineChartView extends View {
 
     private void sanitizeHighlightedAnnotationGroup() {
         if (highlightedAnnotationGroupId.isEmpty()) {
+            return;
+        }
+        if (containsTradeLayerGroup(highlightedAnnotationGroupId)) {
             return;
         }
         if (showPositionAnnotations) {
@@ -2778,12 +3336,156 @@ public class KlineChartView extends View {
                 }
             }
         }
-        for (PriceAnnotation item : abnormalAnnotations) {
-            if (highlightedAnnotationGroupId.equals(resolveAnnotationGroupKey(item))) {
-                return;
+        highlightedAnnotationGroupId = "";
+    }
+
+    private boolean containsTradeLayerGroup(@NonNull String groupKey) {
+        for (ChartTradeLine line : tradeLayerSnapshot.getLiveLines()) {
+            if (shouldDrawTradeLayerLine(line)
+                    && groupKey.equals(resolveTradeLayerGroupKey(line))) {
+                return true;
             }
         }
-        highlightedAnnotationGroupId = "";
+        for (ChartTradeLine line : tradeLayerSnapshot.getDraftLines()) {
+            if (shouldDrawTradeLayerLine(line)
+                    && groupKey.equals(resolveTradeLayerGroupKey(line))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private float resolveTradeLineEditTouchThresholdPx() {
+        return Math.max(dp(44f), touchSlop * 3f);
+    }
+
+    @Nullable
+    private ChartTradeLine findEditableTradeLine(float touchX, float touchY, float thresholdPx) {
+        ChartTradeLine nearest = null;
+        float nearestDistance = Float.MAX_VALUE;
+        nearest = findNearestEditableTradeLineInList(tradeLayerSnapshot.getDraftLines(), touchX, touchY, thresholdPx, nearestDistance);
+        if (nearest != null) {
+            nearestDistance = resolveTradeLayerTouchDistance(nearest, touchX, touchY);
+        }
+        ChartTradeLine liveNearest = findNearestEditableTradeLineInList(tradeLayerSnapshot.getLiveLines(), touchX, touchY, thresholdPx, nearestDistance);
+        return liveNearest != null ? liveNearest : nearest;
+    }
+
+    @Nullable
+    private ChartTradeLine findNearestEditableTradeLineInList(@Nullable List<ChartTradeLine> source,
+                                                              float touchX,
+                                                              float touchY,
+                                                              float thresholdPx,
+                                                              float currentBestDistance) {
+        if (source == null || source.isEmpty()) {
+            return null;
+        }
+        ChartTradeLine nearest = null;
+        float best = currentBestDistance;
+        for (ChartTradeLine line : source) {
+            if (!isTradeLineEditable(line)) {
+                continue;
+            }
+            float distance = resolveTradeLayerTouchDistance(line, touchX, touchY);
+            if (Float.isNaN(distance) || distance > thresholdPx || distance >= best) {
+                continue;
+            }
+            nearest = line;
+            best = distance;
+        }
+        return nearest;
+    }
+
+    private boolean isTradeLineEditable(@Nullable ChartTradeLine line) {
+        return line != null
+                && line.isEditable()
+                && !line.isGhost()
+                && !isQuickPendingDraftLine(line)
+                && shouldDrawTradeLayerLine(line);
+    }
+
+    @Nullable
+    private ChartTradeLine findTradeLineActionAtTouch(float touchX, float touchY) {
+        return findTradeLineActionAtTouchInList(tradeLayerSnapshot.getDraftLines(), touchX, touchY);
+    }
+
+    @Nullable
+    private ChartTradeLine findTradeLineActionAtTouchInList(@Nullable List<ChartTradeLine> source, float touchX, float touchY) {
+        if (source == null || source.isEmpty()) {
+            return null;
+        }
+        for (ChartTradeLine line : source) {
+            RectF actionRect = resolveTradeLayerActionButtonRect(line);
+            if (actionRect == null) {
+                continue;
+            }
+            if (actionRect.contains(touchX, touchY)) {
+                return line;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private ChartTradeLine findNearestTradeLayerLine(float touchX, float touchY, float thresholdPx) {
+        ChartTradeLine nearest = null;
+        float nearestDistance = Float.MAX_VALUE;
+        nearest = findNearestTradeLayerLineInList(tradeLayerSnapshot.getLiveLines(), touchX, touchY, thresholdPx, nearestDistance);
+        if (nearest != null) {
+            nearestDistance = resolveTradeLayerTouchDistance(nearest, touchX, touchY);
+        }
+        ChartTradeLine draftNearest = findNearestTradeLayerLineInList(
+                tradeLayerSnapshot.getDraftLines(),
+                touchX,
+                touchY,
+                thresholdPx,
+                nearestDistance
+        );
+        return draftNearest != null ? draftNearest : nearest;
+    }
+
+    @Nullable
+    private ChartTradeLine findNearestTradeLayerLineInList(@Nullable List<ChartTradeLine> source,
+                                                           float touchX,
+                                                           float touchY,
+                                                           float thresholdPx,
+                                                           float currentBestDistance) {
+        if (source == null || source.isEmpty()) {
+            return null;
+        }
+        ChartTradeLine nearest = null;
+        float best = currentBestDistance;
+        for (ChartTradeLine line : source) {
+            if (line == null || !shouldDrawTradeLayerLine(line)) {
+                continue;
+            }
+            float distance = resolveTradeLayerTouchDistance(line, touchX, touchY);
+            if (Float.isNaN(distance) || distance > thresholdPx || distance >= best) {
+                continue;
+            }
+            nearest = line;
+            best = distance;
+        }
+        return nearest;
+    }
+
+    private float resolveTradeLayerTouchDistance(@Nullable ChartTradeLine line, float touchX, float touchY) {
+        if (line == null || !Double.isFinite(line.getPrice()) || line.getPrice() <= 0d) {
+            return Float.NaN;
+        }
+        float y = yFor(line.getPrice(), visiblePriceMin, visiblePriceMax, priceRect);
+        if (Float.isNaN(y) || y < priceRect.top || y > priceRect.bottom) {
+            return Float.NaN;
+        }
+        if (touchX < priceRect.left || touchX > priceRect.right) {
+            return Float.NaN;
+        }
+        return Math.abs(y - touchY);
+    }
+
+    @NonNull
+    private String resolveTradeLayerGroupKey(@Nullable ChartTradeLine line) {
+        return line == null || line.getGroupId() == null ? "" : line.getGroupId().trim();
     }
 
     @Nullable
@@ -2809,10 +3511,6 @@ public class KlineChartView extends View {
                 nearest = historyNearest;
                 nearestDistance = resolveAnnotationTouchDistance(nearest, touchX, touchY);
             }
-        }
-        PriceAnnotation abnormalNearest = findNearestAnnotationInList(abnormalAnnotations, touchX, touchY, thresholdPx, nearestDistance);
-        if (abnormalNearest != null) {
-            nearest = abnormalNearest;
         }
         return nearest;
     }
@@ -2863,8 +3561,6 @@ public class KlineChartView extends View {
         float x;
         if (isTradePointAnnotation(annotation)) {
             x = resolveHistoricalAnnotationX(annotation.anchorTimeMs);
-        } else if (isAbnormalAnnotation(annotation)) {
-            x = resolveAnnotationXForFloorTime(annotation.anchorTimeMs);
         } else {
             x = resolveAnnotationX(annotation.anchorTimeMs);
         }
@@ -2876,7 +3572,7 @@ public class KlineChartView extends View {
                 && !HistoricalTradeViewportHelper.isPointVisible(x, priceRect.left, priceRect.right)) {
             return Float.NaN;
         }
-        if (isAbnormalAnnotation(annotation) || isTradePointAnnotation(annotation)) {
+        if (isTradePointAnnotation(annotation)) {
             return distance(touchX, touchY, x, y);
         }
         return Math.abs(y - touchY);
@@ -2990,6 +3686,50 @@ public class KlineChartView extends View {
         invalidate();
     }
 
+    // 草稿线拖拽按手指位移增量更新，避免命中热区放宽后重新出现“吸到触点”的跳线感。
+    private void updateQuickPendingLinePriceByDelta(float touchY) {
+        if (Float.isNaN(quickPendingLineLastTouchY)) {
+            quickPendingLineLastTouchY = touchY;
+            return;
+        }
+        float deltaY = touchY - quickPendingLineLastTouchY;
+        quickPendingLineLastTouchY = touchY;
+        if (Math.abs(deltaY) < 0.5f) {
+            return;
+        }
+        float currentLineY = yFor(quickPendingLinePrice, visiblePriceMin, visiblePriceMax, priceRect);
+        if (Float.isNaN(currentLineY)) {
+            return;
+        }
+        updateQuickPendingLinePrice(currentLineY + deltaY);
+    }
+
+    private double updateTradeLineEditPriceByDelta(float touchY) {
+        if (Float.isNaN(tradeLineEditLastTouchY) || activeTradeLineEdit == null) {
+            tradeLineEditLastTouchY = touchY;
+            return Double.NaN;
+        }
+        float deltaY = touchY - tradeLineEditLastTouchY;
+        tradeLineEditLastTouchY = touchY;
+        if (Math.abs(deltaY) < 0.5f) {
+            return Double.NaN;
+        }
+        double currentPrice = Double.isFinite(tradeLineEditCurrentPrice) && tradeLineEditCurrentPrice > 0d
+                ? tradeLineEditCurrentPrice
+                : activeTradeLineEdit.getPrice();
+        float currentLineY = yFor(currentPrice, visiblePriceMin, visiblePriceMax, priceRect);
+        if (Float.isNaN(currentLineY)) {
+            return Double.NaN;
+        }
+        float safeY = clamp(currentLineY + deltaY, priceRect.top, priceRect.bottom);
+        double price = valueForY(safeY, visiblePriceMin, visiblePriceMax, priceRect);
+        if (!Double.isFinite(price) || price <= 0d) {
+            return Double.NaN;
+        }
+        tradeLineEditCurrentPrice = price;
+        return price;
+    }
+
     // 把外层输入的草稿线同步回现有快捷挂单拖拽状态。
     private void syncQuickPendingLineFromTradeLayerSnapshot() {
         ChartTradeLine draftLine = findDraftPendingLine();
@@ -2997,11 +3737,18 @@ public class KlineChartView extends View {
             quickPendingLineVisible = false;
             quickPendingLineDragging = false;
             quickPendingLinePrice = Double.NaN;
+            quickPendingLinePointerId = -1;
+            quickPendingLineTouchExclusive = false;
             return;
         }
         quickPendingLineVisible = true;
         quickPendingLinePrice = draftLine.getPrice();
         quickPendingLineDragging = draftLine.getState() == ChartTradeLineState.DRAGGING;
+        if (!quickPendingLineDragging) {
+            quickPendingLinePointerId = -1;
+            quickPendingLineLastTouchY = Float.NaN;
+            quickPendingLineTouchExclusive = false;
+        }
     }
 
     // 把内部拖拽后的最新价格回写到正式状态层草稿线。
@@ -3019,9 +3766,12 @@ public class KlineChartView extends View {
                 if (quickPendingLineVisible && Double.isFinite(quickPendingLinePrice) && quickPendingLinePrice > 0d) {
                     draftLines.add(new ChartTradeLine(
                             line.getId().isEmpty() ? "quick-pending-draft" : line.getId(),
+                            line.getGroupId().isEmpty() ? "quick-pending-draft" : line.getGroupId(),
                             quickPendingLinePrice,
                             line.getLabel(),
-                            quickPendingLineDragging ? ChartTradeLineState.DRAGGING : ChartTradeLineState.DRAFT_PENDING
+                            line.getCenterLabel(),
+                            quickPendingLineDragging ? ChartTradeLineState.DRAGGING : ChartTradeLineState.DRAFT_PENDING,
+                            line.getTone()
                     ));
                 }
             } else {
@@ -3031,9 +3781,12 @@ public class KlineChartView extends View {
         if (!replaced && quickPendingLineVisible && Double.isFinite(quickPendingLinePrice) && quickPendingLinePrice > 0d) {
             draftLines.add(new ChartTradeLine(
                     "quick-pending-draft",
+                    "quick-pending-draft",
                     quickPendingLinePrice,
                     "草稿挂单",
-                    quickPendingLineDragging ? ChartTradeLineState.DRAGGING : ChartTradeLineState.DRAFT_PENDING
+                    "",
+                    quickPendingLineDragging ? ChartTradeLineState.DRAGGING : ChartTradeLineState.DRAFT_PENDING,
+                    ChartTradeLineTone.PRIMARY
             ));
         }
         tradeLayerSnapshot = new ChartTradeLayerSnapshot(liveLines, draftLines);

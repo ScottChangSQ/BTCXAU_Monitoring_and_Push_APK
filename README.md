@@ -17,6 +17,7 @@
 - 手机端账户登录失败时，APP 现在会主动回拉 `/v2/session/diagnostic/*` 的服务端时间线，并用可停留的失败对话框展示，不再只剩短暂 toast；服务端会按 `requestId` 记录 MT5 GUI 切号主链的真实阶段，客户端也会优先展示 `stage / loginError / lastObservedAccount` 摘要
 - 服务端 `/v2/session/login` 当前已改为独立的 MT5 GUI 切号主链：先检测主窗口、必要时按 `MT5_PATH` 拉起、附着重试、读取基线账号、强制 `mt5.login(...)` 切号，再在 30 秒内轮询真实账号 `login` 是否切到目标账号；`active_session`、已保存账号、`.env`、probe 和 reset terminal 不再参与切号成功判断
 - 服务器当前通过 Windows 计划任务以 `SYSTEM` 上下文运行网关时，`MainWindowHandle` 不能作为 MT5 是否“已启动”的可靠依据；服务端现已改成按 `Win32_Process` 的真实 `terminal64/terminal` 进程检测 MT5，再由后续附着重试证明该实例是否可用，避免手动启动 MT5 后仍被误判成“未发现窗口”
+- Windows 服务器部署完成后，桌面现在只保留一个长期前台窗口 `MT5 部署与连接状态`；它会持续显示本地部署、行情、账户和手机 APP 交互状态，网关与管理面板的 PowerShell 常驻链则统一转为后台隐藏运行
 - APP 重启后的远程会话恢复链现在只做轻量确认：若服务器端当前真实账号仍与本地一致，就恢复为已登录；若已不是原账号，就直接落未登录并发出“服务器端当前实际账号已经不是原来的账号了”的通知
 - 账户页主动刷新和交易提交后的强一致确认，现已统一通过 `AccountStatsPreloadManager` 走一次原子 `/v2/account/full` 刷新，不再继续用 `/v2/account/snapshot + /v2/account/history` 双接口拼装
 - 账户统计页“账户概览”里的 `当日盈亏`、`当日收益率` 已收口为 APP 本地口径：用当天已平仓成交和今日起点结余直接计算，不再直接透传服务端日指标
@@ -226,6 +227,7 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 - 网关 `.env` 现在必须显式配置 `MT5_SERVER_TIMEZONE`，而且这个值必须是“MT5 / 券商服务器时区”，不是部署机器所在时区；对 `ICMarketsSC-MT5-6` 这类 `GMT+2 / GMT+3（夏令时）` 服务器，当前部署模板示例改为 `Europe/Athens`。缺失时 `start_gateway.ps1` 会直接拒绝启动，`/health` 也会明确报错，不再允许坏部署假通过
 - Windows 网关依赖现在显式包含 `tzdata`；原因是 `MT5_SERVER_TIMEZONE=Europe/Athens` 这类 IANA 时区在部分 Windows Python 环境里不能靠系统自带时区库稳定解析，缺它时 `/v2/account/snapshot` 会直接失败，APP 登录会卡在“正在同步账户”
 - 这套一键部署会先停掉旧计划任务、旧网关、旧管理面板、旧 Caddy/Nginx，并强制释放 `80 / 443 / 2019 / 8787 / 8788` 端口，再重新注册任务、启动后台服务并做健康检查
+- 部署成功后，原来的部署窗口不会关闭，而是继续作为唯一长期状态面板存在；后续服务器桌面不应再出现额外的网关或管理面板 PowerShell 黑窗
 - 健康检查现在除了 `/health`、`/admin/` 和 `wss://tradeapp.ltd/v2/stream`，还会强制校验 `/v2/account/snapshot` 与 `/v2/account/history?range=all`，避免只看通道在线却漏掉账户主链 500
 - 健康检查现在还会额外记录本机 `8787 /v2/account/full (diagnostic)` 诊断结果，用来区分“轻链路已正常”还是“full 全量链路仍有问题”；这条检查只做排障，不再作为手机端登录成功前提
 - 部署包里的 `.ps1` / `.cmd` 会在构建时统一转换成 Windows 兼容编码和换行；如果直接对比源码与部署包的原始文件哈希，PowerShell 脚本可能不同，但归一化后的逻辑内容应保持一致

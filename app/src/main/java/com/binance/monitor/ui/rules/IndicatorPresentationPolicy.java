@@ -30,13 +30,14 @@ public final class IndicatorPresentationPolicy {
     public static IndicatorPresentation present(@NonNull IndicatorDefinition definition,
                                                 double rawValue,
                                                 boolean masked) {
-        String value = formatValue(definition, rawValue, masked);
+        double normalizedValue = normalizeSignedMetricValue(definition, rawValue);
+        String value = formatValue(definition, normalizedValue, masked);
         return new IndicatorPresentation(
                 definition,
                 definition.getDisplayName(),
                 value,
                 definition.getColorRule(),
-                resolveDirection(definition.getColorRule(), rawValue),
+                resolveDirection(definition.getColorRule(), normalizedValue),
                 masked
         );
     }
@@ -64,17 +65,19 @@ public final class IndicatorPresentationPolicy {
                     SensitiveDisplayMasker.maskValue(safeValue, true),
                     definition == null ? IndicatorColorRule.NEUTRAL : definition.getColorRule(),
                     IndicatorPresentation.Direction.NONE,
-                    true
+                true
             );
         }
         Double parsedValue = parseSignedNumber(safeValue);
+        Double normalizedValue = normalizeSignedTextValue(definition, parsedValue);
+        String normalizedText = normalizeLegacySignedText(definition, safeValue, normalizedValue);
         return new IndicatorPresentation(
                 definition,
                 label,
-                safeValue,
+                normalizedText,
                 definition == null ? IndicatorColorRule.NEUTRAL : definition.getColorRule(),
                 resolveDirection(definition == null ? IndicatorColorRule.NEUTRAL : definition.getColorRule(),
-                        parsedValue),
+                        normalizedValue),
                 false
         );
     }
@@ -105,9 +108,10 @@ public final class IndicatorPresentationPolicy {
                                                                int defaultColorRes) {
         String safeRaw = sanitizeValue(raw);
         NumericTokenRange range = findNumericTokenRangeAfterAnchor(safeRaw, anchor);
+        IndicatorDefinition definition = IndicatorRegistry.require(id);
         IndicatorPresentation.Direction direction = resolveDirection(
-                IndicatorRegistry.require(id).getColorRule(),
-                parseTokenValue(safeRaw, range)
+                definition.getColorRule(),
+                normalizeSignedTextValue(definition, parseTokenValue(safeRaw, range))
         );
         return buildDirectionalSpan(context, safeRaw, range, direction, defaultColorRes);
     }
@@ -122,9 +126,10 @@ public final class IndicatorPresentationPolicy {
                                                          boolean preferLastMatch) {
         String safeRaw = sanitizeValue(raw);
         NumericTokenRange range = findNumericTokenRangeForExactToken(safeRaw, token, preferLastMatch);
+        IndicatorDefinition definition = IndicatorRegistry.require(id);
         IndicatorPresentation.Direction direction = resolveDirection(
-                IndicatorRegistry.require(id).getColorRule(),
-                parseTokenValue(safeRaw, range)
+                definition.getColorRule(),
+                normalizeSignedTextValue(definition, parseTokenValue(safeRaw, range))
         );
         applyDirectionalSpan(builder, context, range, direction, defaultColorRes);
     }
@@ -142,9 +147,10 @@ public final class IndicatorPresentationPolicy {
         if (safeEnd <= safeStart) {
             return;
         }
+        IndicatorDefinition definition = IndicatorRegistry.require(id);
         IndicatorPresentation.Direction direction = resolveDirection(
-                IndicatorRegistry.require(id).getColorRule(),
-                parseSignedNumber(rawValue)
+                definition.getColorRule(),
+                normalizeSignedTextValue(definition, parseSignedNumber(rawValue))
         );
         applyDirectionalSpan(
                 builder,
@@ -183,6 +189,52 @@ public final class IndicatorPresentationPolicy {
             default:
                 return masked ? SensitiveDisplayMasker.MASK_TEXT : String.valueOf(rawValue);
         }
+    }
+
+    // 对语义上必须显示为负值的指标做展示归一化，避免旧数据把回撤或亏损显示成正数。
+    private static double normalizeSignedMetricValue(@NonNull IndicatorDefinition definition,
+                                                     double rawValue) {
+        if (!shouldForceNegativePresentation(definition)) {
+            return rawValue;
+        }
+        return rawValue > 0d ? -rawValue : rawValue;
+    }
+
+    // 对旧页面字符串解析出的数值做同口径归一化，保证颜色判断与正式展示一致。
+    @Nullable
+    private static Double normalizeSignedTextValue(@Nullable IndicatorDefinition definition,
+                                                   @Nullable Double parsedValue) {
+        if (definition == null || parsedValue == null) {
+            return parsedValue;
+        }
+        if (!shouldForceNegativePresentation(definition) || parsedValue <= 0d) {
+            return parsedValue;
+        }
+        return -parsedValue;
+    }
+
+    // 对迁移期旧文本做符号归一化，仅在命中特定指标且旧文本方向错误时才重写展示值。
+    @NonNull
+    private static String normalizeLegacySignedText(@Nullable IndicatorDefinition definition,
+                                                    @NonNull String rawValue,
+                                                    @Nullable Double normalizedValue) {
+        if (definition == null || normalizedValue == null) {
+            return rawValue;
+        }
+        Double parsedValue = parseSignedNumber(rawValue);
+        if (parsedValue == null || Double.compare(parsedValue, normalizedValue) == 0) {
+            return rawValue;
+        }
+        double formatterValue = definition.getValueType() == IndicatorValueType.PERCENT
+                ? normalizedValue / 100d
+                : normalizedValue;
+        return formatValue(definition, formatterValue, false);
+    }
+
+    // 标记那些业务语义上天然只能是负方向的指标。
+    private static boolean shouldForceNegativePresentation(@NonNull IndicatorDefinition definition) {
+        return definition.getId() == IndicatorId.ACCOUNT_MAX_DRAWDOWN
+                || definition.getId() == IndicatorId.TRADE_AVG_LOSS;
     }
 
     // 统一把颜色规则和数值映射成展示方向。

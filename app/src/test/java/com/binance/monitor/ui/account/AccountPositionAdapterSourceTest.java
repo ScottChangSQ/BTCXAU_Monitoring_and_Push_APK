@@ -34,7 +34,7 @@ public class AccountPositionAdapterSourceTest {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java");
 
         assertTrue(source.contains("double displayPnl = item.getTotalPnL() + item.getStorageFee();"));
-        assertTrue(source.contains("String pnlText = IndicatorFormatterCenter.formatMoney(displayPnl, 2, false);"));
+        assertTrue(source.contains("String pnlText = formatSignedSummaryPnl(displayPnl);"));
         assertTrue(source.contains("String totalPnlText = IndicatorFormatterCenter.formatMoney(displayPnl, 2, false);"));
         assertTrue(source.contains("\"持仓盈亏 %s | 收益率 %s\""));
         assertTrue(source.contains("IndicatorPresentationPolicy.applyDirectionalSpanForExactToken("));
@@ -48,7 +48,12 @@ public class AccountPositionAdapterSourceTest {
 
         assertFalse(source.contains("String openPriceText ="));
         assertFalse(source.contains("开仓 %s"));
-        assertTrue(source.contains("String raw = String.format(Locale.getDefault(), \"%s | %s | %s | %s\","));
+        assertTrue(source.contains("String raw = String.format(Locale.getDefault(), \"%s|%s|%s|%s\","));
+        assertTrue(source.contains("resolveSummaryProductCode(item, runtimeSnapshot), sideText, qtyText, pnlText"));
+        assertTrue(source.contains("summarySideCn(item.getSide())"));
+        assertTrue(source.contains("String qtyText = IndicatorFormatterCenter.formatQuantity(displayQty, 2, \"手\");"));
+        assertTrue(source.contains("private static String summarySideCn(String side)"));
+        assertTrue(source.contains("private static String formatSignedSummaryPnl(double value)"));
     }
 
     @Test
@@ -72,9 +77,13 @@ public class AccountPositionAdapterSourceTest {
         assertTrue(source.contains("private final Map<String, Integer> productCounts = new HashMap<>();"));
         assertTrue(source.contains("productCounts.clear();"));
         assertTrue(source.contains("productCounts.putAll(buildProductCounts(nextItems));"));
-        assertTrue(source.contains("ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));"));
+        assertTrue(source.contains("public void setRuntimeIdentity(@Nullable String account, @Nullable String server) {"));
+        assertTrue(source.contains("ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct("));
+        assertTrue(source.contains("runtimeAccount,"));
+        assertTrue(source.contains("runtimeServer,"));
         assertTrue(source.contains("productCount == 1 && runtimeSnapshot.getPositionCount() == 1"));
-        assertTrue(source.contains("runtimeSnapshot.getDisplayLabel()"));
+        assertTrue(source.contains("resolveSummaryProductCode(@NonNull PositionItem item,"));
+        assertTrue(source.contains("runtimeSnapshot.getSymbol()"));
     }
 
     @Test
@@ -136,7 +145,10 @@ public class AccountPositionAdapterSourceTest {
         assertTrue(source.contains("private final Map<String, Integer> productCounts = new HashMap<>();"));
         assertTrue(source.contains("productCounts.clear();"));
         assertTrue(source.contains("productCounts.putAll(buildProductCounts(nextItems));"));
-        assertTrue(source.contains("ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct(buildProductSymbolKey(item));"));
+        assertTrue(source.contains("public void setRuntimeIdentity(@Nullable String account, @Nullable String server) {"));
+        assertTrue(source.contains("ProductRuntimeSnapshot runtimeSnapshot = runtimeSnapshotStore.selectProduct("));
+        assertTrue(source.contains("runtimeAccount,"));
+        assertTrue(source.contains("runtimeServer,"));
         assertTrue(source.contains("productCount == 1 && runtimeSnapshot.getPendingCount() == 1"));
         assertTrue(source.contains("runtimeSnapshot.getDisplayLabel()"));
     }
@@ -172,14 +184,16 @@ public class AccountPositionAdapterSourceTest {
     public void aggregateAdapterShouldRenderProductSideLotsAndUsdPnlInSingleLine() throws Exception {
         String source = readUtf8("src/main/java/com/binance/monitor/ui/account/adapter/PositionAggregateAdapter.java");
 
+        assertTrue(source.contains("double displayLots = resolveDisplayLots(item);"));
         assertTrue(source.contains("String raw = String.format(Locale.getDefault(),"));
-        assertTrue(source.contains("\"%s | %s | %s | %s\""));
+        assertTrue(source.contains("\"%s|%s|%s|%s\""));
         assertTrue(source.contains("IndicatorFormatterCenter.formatQuantity"));
-        assertTrue(source.contains("IndicatorFormatterCenter.formatMoney"));
-        assertTrue(source.contains("resolveDirectionText(item.getSignedLots())"));
-        assertTrue(source.contains("return \"买入\";"));
-        assertTrue(source.contains("return \"卖出\";"));
-        assertFalse(source.contains("方向"));
+        assertTrue(source.contains("formatSignedPnlValue(item.getNetPnl())"));
+        assertTrue(source.contains("resolveDirectionText(displayLots)"));
+        assertTrue(source.contains("return isZero(item.getSignedLots()) ? 0d : item.getSignedLots();"));
+        assertTrue(source.contains("return \"买\";"));
+        assertTrue(source.contains("return \"卖\";"));
+        assertFalse(source.contains("方向："));
         assertFalse(source.contains("盈亏："));
         assertFalse(source.contains("持仓："));
         assertFalse(source.contains("item.getSummaryText()"));
