@@ -73,6 +73,7 @@ public final class AccountStatsRenderHostDelegate implements AccountStatsRenderC
     @Override public boolean isManualCurveRangeEnabled() { return owner.isManualCurveRangeEnabled(); }
     @Override public long getManualCurveRangeStartMs() { return owner.getManualCurveRangeStartMs(); }
     @Override public long getManualCurveRangeEndMs() { return owner.getManualCurveRangeEndMs(); }
+    @Override public long getAppliedAccountUpdatedAt() { return owner.getAppliedAccountUpdatedAt(); }
     @NonNull @Override public AccountDeferredSnapshotRenderHelper.TradePnlSideMode getTradePnlSideMode() { return owner.getTradePnlSideMode(); }
     @NonNull @Override public AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis getTradeWeekdayBasis() { return owner.getTradeWeekdayBasis(); }
     @Override public void bindTradeAnalytics(@Nullable List<AccountMetric> tradeStatsMetrics, @Nullable List<TradePnlBarChartView.Entry> entries, @Nullable List<CurveAnalyticsHelper.TradeScatterPoint> tradeScatterPoints, @Nullable List<CurveAnalyticsHelper.DurationBucket> holdingDurationBuckets, @Nullable List<TradeWeekdayBarChartHelper.Entry> weekdayEntries, double totalPnl) { owner.bindTradeAnalytics(tradeStatsMetrics, entries, tradeScatterPoints, holdingDurationBuckets, weekdayEntries, totalPnl); }

@@ -11,8 +11,8 @@ import com.binance.monitor.data.model.CandleEntry;
 import java.util.List;
 
 final class MarketChartRefreshHelper {
-    private static final long REALTIME_FRESHNESS_MS = 95_000L;
-    private static final long HEALTHY_REALTIME_REFRESH_MS = 15_000L;
+    private static final long REALTIME_FRESHNESS_MS = 5_000L;
+    private static final long HEALTHY_REALTIME_REFRESH_MS = 3_000L;
     private static final long SOURCE_MINUTE_REFRESH_MS = 60_000L;
     private static final int LATENCY_SMOOTHING_WEIGHT_PREVIOUS = 3;
     private static final int LATENCY_SMOOTHING_WEIGHT_CURRENT = 1;

@@ -31,11 +31,11 @@ public final class AppConstants {
     public static final int MAX_RECONNECT_ATTEMPTS = 30;
     public static final long WS_PING_INTERVAL_SECONDS = 45L;
     public static final long PRICE_UPDATE_THROTTLE_MS = 1_000L;
-    public static final long FLOATING_UPDATE_THROTTLE_MS = 1_000L;
-    public static final long FLOATING_UPDATE_BACKGROUND_THROTTLE_MS = 1_000L;
+    public static final long FLOATING_UPDATE_THROTTLE_MS = 500L;
+    public static final long FLOATING_UPDATE_BACKGROUND_THROTTLE_MS = 500L;
     public static final long CONNECTION_HEARTBEAT_INTERVAL_MS = 30_000L;
     public static final long CONNECTION_HEARTBEAT_BACKGROUND_INTERVAL_MS = 60_000L;
-    public static final long SOCKET_STALE_TIMEOUT_MS = 70_000L;
+    public static final long SOCKET_STALE_TIMEOUT_MS = 8_000L;
     public static final long STALE_RECONNECT_COOLDOWN_MS = 60_000L;
     public static final long NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000L;
     public static final long MERGE_WINDOW_MS = 4000L;

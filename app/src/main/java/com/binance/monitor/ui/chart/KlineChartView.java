@@ -1111,14 +1111,8 @@ public class KlineChartView extends View {
     }
 
     private void drawVolume(Canvas canvas, int start, int end, int infoIndex, int step) {
-        double maxVolume = 1d;
-        for (int i = start; i <= end; i++) {
-            maxVolume = Math.max(maxVolume, candles.get(i).getVolume());
-            if (showAvl && i < avlLine.length && !Double.isNaN(avlLine[i])) {
-                maxVolume = Math.max(maxVolume, avlLine[i]);
-            }
-        }
         RectF plotRect = resolveIndicatorPlotRect(volRect);
+        double maxVolume = resolveVolumeScaleMax(start, end);
         float halfBody = Math.max(dp(0.18f), candleWidth / 2f);
         int stride = Math.max(1, step);
         int saveCount = canvas.save();
@@ -1134,17 +1128,32 @@ public class KlineChartView extends View {
             drawSeries(canvas, avlLine, start, end, 0d, maxVolume, plotRect, avlPaint, stride);
         }
         canvas.restoreToCount(saveCount);
-        canvas.drawLine(volRect.left, volRect.top, volRect.right, volRect.top, axisPaint);
+        canvas.drawLine(plotRect.left, plotRect.top, plotRect.right, plotRect.top, axisPaint);
         textPaint.setColor(secondaryTextColor);
         String volText = "VOL: " + formatVolumeNumber(candles.get(infoIndex).getVolume(), false);
         if (showAvl && infoIndex >= 0 && infoIndex < avlLine.length && !Double.isNaN(avlLine[infoIndex])) {
             volText += " AVL(" + avlPeriod + "):" + formatVolumeNumber(avlLine[infoIndex], false);
         }
         canvas.drawText(volText, volRect.left + dp(2f), resolvePaneTitleBaseline(volRect), textPaint);
-        canvas.drawLine(volRect.right, volRect.top, volRect.right, volRect.bottom, axisPaint);
-        canvas.drawText(formatVolumeNumber(maxVolume, true), volRect.right + dp(4f), resolveAxisTopBaseline(volRect), textPaint);
-        canvas.drawText("0", volRect.right + dp(4f), resolveAxisBottomBaseline(volRect), textPaint);
-        drawVolumeThreshold(canvas, maxVolume);
+        canvas.drawLine(plotRect.right, plotRect.top, plotRect.right, plotRect.bottom, axisPaint);
+        canvas.drawText(formatVolumeNumber(maxVolume, true), volRect.right + dp(4f), resolveAxisTopBaseline(plotRect), textPaint);
+        canvas.drawText("0", volRect.right + dp(4f), resolveAxisBottomBaseline(plotRect), textPaint);
+        drawVolumeThreshold(canvas, maxVolume, plotRect);
+    }
+
+    // VOL 柱体、均量线、阈值线和右侧纵轴必须共用同一量纲上限，避免视觉上各用各的刻度。
+    private double resolveVolumeScaleMax(int start, int end) {
+        double maxVolume = 1d;
+        for (int i = start; i <= end; i++) {
+            maxVolume = Math.max(maxVolume, candles.get(i).getVolume());
+            if (showAvl && i < avlLine.length && !Double.isNaN(avlLine[i])) {
+                maxVolume = Math.max(maxVolume, avlLine[i]);
+            }
+        }
+        if (volumeThresholdVisible && Double.isFinite(volumeThresholdValue) && volumeThresholdValue > 0d) {
+            maxVolume = Math.max(maxVolume, volumeThresholdValue);
+        }
+        return maxVolume;
     }
 
     private void drawMacd(Canvas canvas, int start, int end, int infoIndex, int step) {
@@ -1411,7 +1420,7 @@ public class KlineChartView extends View {
         latestPriceTagPaint.setColor(trendColor);
         canvas.drawLine(startX, y, priceRect.right, y, latestPriceGuidePaint);
 
-        String priceText = FormatUtils.formatPrice(latest.getClose());
+        String priceText = FormatUtils.formatPriceNoDecimal(latest.getClose());
         float padX = dp(5f);
         float padY = dp(3f);
         float boxH = dp(14f);
@@ -1592,6 +1601,13 @@ public class KlineChartView extends View {
 
         String leftLabel = line.getLabel() == null ? "" : line.getLabel().trim();
         String actionText = line.getActionText() == null ? "" : line.getActionText().trim();
+        if (!selected
+                && (line.getState() == ChartTradeLineState.LIVE_POSITION
+                || line.getState() == ChartTradeLineState.LIVE_PENDING
+                || line.getState() == ChartTradeLineState.LIVE_TP
+                || line.getState() == ChartTradeLineState.LIVE_SL)) {
+            actionText = "";
+        }
         if (!leftLabel.isEmpty() || !actionText.isEmpty()) {
             drawTradeLayerLeftAffordances(canvas, actionText, leftLabel, y, lineColor, selected);
         }
@@ -2105,14 +2121,16 @@ public class KlineChartView extends View {
         canvas.drawText(text, box.left + padX, box.bottom - padY, aggregateCostHintTextPaint);
     }
 
-    private void drawVolumeThreshold(Canvas canvas, double maxVolume) {
+    private void drawVolumeThreshold(Canvas canvas, double maxVolume, @NonNull RectF plotRect) {
         if (!volumeThresholdVisible || Double.isNaN(volumeThresholdValue) || volumeThresholdValue <= 0d || volRect.isEmpty()) {
             return;
         }
         double denominator = Math.max(maxVolume, 1d);
-        float y = (float) (volRect.bottom - (volumeThresholdValue / denominator) * volRect.height());
-        y = clamp(y, volRect.top, volRect.bottom);
-        canvas.drawLine(volRect.left, y, volRect.right, y, volumeThresholdPaint);
+        float y = (float) (plotRect.bottom - (volumeThresholdValue / denominator) * plotRect.height());
+        y = clamp(y, plotRect.top, plotRect.bottom);
+        canvas.drawLine(plotRect.left, y, plotRect.right, y, volumeThresholdPaint);
+        String thresholdText = formatVolumeNumber(volumeThresholdValue, true);
+        canvas.drawText(thresholdText, volRect.right + dp(4f), clampAxisBaseline(plotRect, y), textPaint);
     }
 
     private int resolveDrawStep() {
@@ -2224,8 +2242,8 @@ public class KlineChartView extends View {
     }
 
     private void layoutAreas(float width, float height) {
-        float left = dp(8f);
-        float right = width - dp(44f);
+        float left = getResources().getDimension(R.dimen.kline_plot_left_inset);
+        float right = width - getResources().getDimension(R.dimen.kline_price_axis_reserved_width);
         float top = dp(8f);
         float bottom = height - dp(18f);
         KlinePaneLayoutHelper.PaneLayout layout = KlinePaneLayoutHelper.compute(
@@ -3406,7 +3424,11 @@ public class KlineChartView extends View {
 
     @Nullable
     private ChartTradeLine findTradeLineActionAtTouch(float touchX, float touchY) {
-        return findTradeLineActionAtTouchInList(tradeLayerSnapshot.getDraftLines(), touchX, touchY);
+        ChartTradeLine draftLine = findTradeLineActionAtTouchInList(tradeLayerSnapshot.getDraftLines(), touchX, touchY);
+        if (draftLine != null) {
+            return draftLine;
+        }
+        return findTradeLineActionAtTouchInList(tradeLayerSnapshot.getLiveLines(), touchX, touchY);
     }
 
     @Nullable

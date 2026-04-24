@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import v2_market
 
 MINUTE_HISTORY_LIMIT = 2048
+ONE_MINUTE_MS = 60_000
 
 
 def create_market_stream_runtime(symbols: Sequence[str]) -> Dict[str, Any]:
@@ -28,7 +29,10 @@ def create_market_stream_runtime(symbols: Sequence[str]) -> Dict[str, Any]:
         "mode": "binance-ws",
         "connected": False,
         "connecting": False,
+        "connectedAt": 0,
+        "connectionUpdatedAt": 0,
         "updatedAt": 0,
+        "lastEventTime": 0,
         "lastError": "",
         "symbols": runtime_symbols,
     }
@@ -42,9 +46,15 @@ def mark_connection_state(runtime: Dict[str, Any],
                           last_error: str = "") -> None:
     """更新运行时连接状态，供 source/health 接口直接暴露。"""
     with runtime["lock"]:
+        previous_connected = bool(runtime.get("connected"))
         runtime["connecting"] = bool(connecting)
         runtime["connected"] = bool(connected)
-        runtime["updatedAt"] = max(0, int(updated_at_ms or 0))
+        safe_updated_at_ms = max(0, int(updated_at_ms or 0))
+        runtime["connectionUpdatedAt"] = safe_updated_at_ms
+        if connected and not previous_connected:
+            runtime["connectedAt"] = safe_updated_at_ms
+        if not connected:
+            runtime["connectedAt"] = 0
         runtime["lastError"] = str(last_error or "")
 
 
@@ -106,10 +116,8 @@ def apply_ws_kline_event(runtime: Dict[str, Any], payload: Dict[str, Any]) -> Op
     candle = v2_market.build_market_candle_payload_from_ws_event(event)
     if candle is None:
         return None
-    event_time_ms = max(
-        int(event.get("E", 0) or 0),
-        int(candle.get("closeTime", 0) or 0),
-    )
+    # 市场运行时的新鲜度只认 Binance 真实事件时间，不能再用未来的 closeTime 冒充实时推进。
+    event_time_ms = max(0, int(event.get("E", 0) or 0))
     if candle.get("isClosed"):
         _update_symbol_state(
             runtime,
@@ -130,6 +138,96 @@ def apply_ws_kline_event(runtime: Dict[str, Any], payload: Dict[str, Any]) -> Op
             last_event_time_ms=event_time_ms,
         )
     return candle
+
+
+def apply_ws_trade_event(runtime: Dict[str, Any], payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """消费一条 Binance trade 事件，并在服务端本地聚合出当前 1m patch。"""
+    event = dict((payload or {}).get("data") or payload or {})
+    symbol = str(event.get("s") or "").strip().upper()
+    event_time_ms = max(0, int(event.get("E", 0) or 0))
+    price = float(event.get("p", 0.0) or 0.0)
+    quantity = float(event.get("q", 0.0) or 0.0)
+    if not symbol or event_time_ms <= 0 or price <= 0.0 or quantity <= 0.0:
+        return None
+    descriptor = v2_market._symbol_descriptor(symbol)
+    bucket_open_time = (event_time_ms // ONE_MINUTE_MS) * ONE_MINUTE_MS
+    bucket_close_time = bucket_open_time + ONE_MINUTE_MS - 1
+    with runtime["lock"]:
+        bucket = runtime["symbols"].setdefault(
+            descriptor["marketSymbol"],
+            {
+                "productId": descriptor["productId"],
+                "marketSymbol": descriptor["marketSymbol"],
+                "tradeSymbol": descriptor["tradeSymbol"],
+                "latestClosedCandle": None,
+                "latestPatch": None,
+                "recentClosedMinutes": [],
+                "updatedAt": 0,
+                "lastEventTime": 0,
+            },
+        )
+        latest_closed = _clone_candle(bucket.get("latestClosedCandle"))
+        current_patch = _clone_candle(bucket.get("latestPatch"))
+        current_patch_open_time = int((current_patch or {}).get("openTime", 0) or 0)
+        latest_closed_open_time = int((latest_closed or {}).get("openTime", 0) or 0)
+        # 只接受不回退时间线的 trade，避免旧帧把当前分钟真值倒回去。
+        if current_patch_open_time > bucket_open_time or latest_closed_open_time > bucket_open_time:
+            return _clone_candle(current_patch)
+        if current_patch is not None and current_patch_open_time < bucket_open_time:
+            closed_candle = dict(current_patch)
+            closed_candle["isClosed"] = True
+            bucket["latestClosedCandle"] = closed_candle
+            _remember_closed_minute(bucket.setdefault("recentClosedMinutes", []), closed_candle)
+            current_patch = None
+        quote_volume_delta = price * quantity
+        if current_patch is None:
+            next_patch = v2_market.build_market_candle_payload(
+                descriptor["marketSymbol"],
+                "1m",
+                row={
+                    "symbol": descriptor["marketSymbol"],
+                    "interval": "1m",
+                    "openTime": bucket_open_time,
+                    "closeTime": bucket_close_time,
+                    "open": price,
+                    "high": price,
+                    "low": price,
+                    "close": price,
+                    "volume": quantity,
+                    "quoteVolume": quote_volume_delta,
+                    "tradeCount": 1,
+                },
+                is_closed=False,
+                source="binance-ws",
+                version=bucket_open_time,
+            )
+        else:
+            next_patch = v2_market.build_market_candle_payload(
+                descriptor["marketSymbol"],
+                "1m",
+                row={
+                    "symbol": descriptor["marketSymbol"],
+                    "interval": "1m",
+                    "openTime": bucket_open_time,
+                    "closeTime": bucket_close_time,
+                    "open": float(current_patch.get("open", 0.0) or 0.0),
+                    "high": max(float(current_patch.get("high", 0.0) or 0.0), price),
+                    "low": min(float(current_patch.get("low", 0.0) or 0.0), price),
+                    "close": price,
+                    "volume": float(current_patch.get("volume", 0.0) or 0.0) + quantity,
+                    "quoteVolume": float(current_patch.get("quoteVolume", 0.0) or 0.0) + quote_volume_delta,
+                    "tradeCount": int(current_patch.get("tradeCount", 0) or 0) + 1,
+                },
+                is_closed=False,
+                source="binance-ws",
+                version=bucket_open_time,
+            )
+        bucket["latestPatch"] = next_patch
+        bucket["updatedAt"] = event_time_ms
+        bucket["lastEventTime"] = event_time_ms
+        runtime["updatedAt"] = max(int(runtime.get("updatedAt", 0) or 0), event_time_ms)
+        runtime["lastEventTime"] = max(int(runtime.get("lastEventTime", 0) or 0), event_time_ms)
+        return _clone_candle(next_patch)
 
 
 def build_symbol_state(runtime: Dict[str, Any], symbol: str) -> Dict[str, Any]:
@@ -174,6 +272,7 @@ def build_symbol_state(runtime: Dict[str, Any], symbol: str) -> Dict[str, Any]:
         "latestClosedCandle": latest_closed,
         "latestPatch": latest_patch,
         "updatedAt": updated_at_ms,
+        "lastEventTime": max(0, int(bucket.get("lastEventTime", 0) or 0)),
     }
 
 
@@ -251,6 +350,15 @@ def get_latest_patch_row(runtime: Dict[str, Any], symbol: str) -> Optional[Dict[
     }
 
 
+def clear_all_patches(runtime: Dict[str, Any]) -> None:
+    """清空所有产品当前未闭合 patch，用于 WS 真值失活时立即撤销旧分钟草稿。"""
+    with runtime["lock"]:
+        for bucket in (runtime.get("symbols") or {}).values():
+            if not isinstance(bucket, dict):
+                continue
+            bucket["latestPatch"] = None
+
+
 def build_source_status(runtime: Dict[str, Any]) -> Dict[str, Any]:
     """输出可直接拼进 `/v1/source` 的市场运行时状态。"""
     with runtime["lock"]:
@@ -259,6 +367,9 @@ def build_source_status(runtime: Dict[str, Any]) -> Dict[str, Any]:
             "marketRuntimeConnected": bool(runtime.get("connected")),
             "marketRuntimeConnecting": bool(runtime.get("connecting")),
             "marketRuntimeUpdatedAt": max(0, int(runtime.get("updatedAt", 0) or 0)),
+            "marketRuntimeLastEventTime": max(0, int(runtime.get("lastEventTime", 0) or 0)),
+            "marketRuntimeConnectedAt": max(0, int(runtime.get("connectedAt", 0) or 0)),
+            "marketRuntimeConnectionUpdatedAt": max(0, int(runtime.get("connectionUpdatedAt", 0) or 0)),
             "marketRuntimeLastError": str(runtime.get("lastError") or ""),
         }
 
@@ -311,6 +422,10 @@ def _update_symbol_state(runtime: Dict[str, Any],
         runtime["updatedAt"] = max(
             int(runtime.get("updatedAt", 0) or 0),
             bucket["updatedAt"],
+        )
+        runtime["lastEventTime"] = max(
+            int(runtime.get("lastEventTime", 0) or 0),
+            bucket["lastEventTime"],
         )
 
 

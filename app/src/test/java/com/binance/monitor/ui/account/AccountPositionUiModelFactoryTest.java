@@ -185,8 +185,48 @@ public class AccountPositionUiModelFactoryTest {
         assertEquals(0, model.getOverviewMetrics().size());
         assertEquals(0, model.getPositions().size());
         assertEquals(0, model.getPendingOrders().size());
+        assertEquals("未连接账户 | 未登录", model.getConnectionStatusText());
         assertEquals("--", model.getUpdatedAtText());
         assertFalse(model.getSignature().isEmpty());
+    }
+
+    // 已连接账户时，右上角摘要应直接显示账户名和同步状态，不再重复“已连接账户”前缀。
+    @Test
+    public void buildShouldAppendSyncStateToConnectedAccountSummary() {
+        AccountPositionUiModelFactory factory = new AccountPositionUiModelFactory();
+        AccountStatsPreloadManager.Cache cache = createCache(
+                Collections.singletonList(new AccountMetric("总资产", "$1000.00")),
+                Collections.singletonList(createPosition("BTCUSD", "Buy", 1L, 11L, 1.0)),
+                Collections.emptyList(),
+                1710000000000L,
+                "rev-connected"
+        );
+
+        AccountPositionUiModel model = factory.build(cache);
+
+        assertEquals("7400048 | 实时同步中", model.getConnectionStatusText());
+    }
+
+    // 已有账号但连接未恢复时，右上角摘要应明确显示“待同步”而不是只剩账号标签。
+    @Test
+    public void buildShouldExposePendingSyncStateForLoggedInButDisconnectedAccount() {
+        AccountPositionUiModelFactory factory = new AccountPositionUiModelFactory();
+        AccountStatsPreloadManager.Cache cache = new AccountStatsPreloadManager.Cache(
+                false,
+                null,
+                "7400048",
+                "ICMarketsSC-MT5-6",
+                "",
+                "",
+                0L,
+                "",
+                0L,
+                ""
+        );
+
+        AccountPositionUiModel model = factory.build(cache);
+
+        assertEquals("已登录账户 | 待同步", model.getConnectionStatusText());
     }
 
     // 当缓存还没有业务更新时间时，读模型版本应回退到拉取时间，避免旧恢复结果覆盖新界面。

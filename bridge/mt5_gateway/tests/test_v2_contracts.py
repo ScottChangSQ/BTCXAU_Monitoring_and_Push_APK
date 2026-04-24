@@ -112,8 +112,22 @@ class V2ContractTests(unittest.TestCase):
             server_v2.snapshot_build_cache.clear()
         if hasattr(server_v2, "snapshot_sync_cache"):
             server_v2.snapshot_sync_cache.clear()
+        if hasattr(server_v2, "market_candles_cache"):
+            server_v2.market_candles_cache.clear()
         if hasattr(server_v2, "v2_sync_state"):
             server_v2.v2_sync_state.clear()
+        if hasattr(server_v2, "_reset_account_publish_state_locked") and hasattr(server_v2, "snapshot_cache_lock"):
+            with server_v2.snapshot_cache_lock:
+                server_v2._reset_account_publish_state_locked()
+                if hasattr(server_v2, "_reset_market_realtime_publish_state_locked"):
+                    server_v2._reset_market_realtime_publish_state_locked()
+
+    def test_account_light_snapshot_cache_should_not_be_slower_than_v2_stream_push_interval(self):
+        self.assertLessEqual(
+            server_v2.SNAPSHOT_BUILD_CACHE_MS,
+            server_v2.V2_STREAM_PUSH_INTERVAL_MS,
+            "账户轻快照缓存寿命不能长于 v2 stream 推送间隔，否则客户端看不到 0.5s 运行态更新",
+        )
 
     def test_market_snapshot_has_sync_token_and_market_section(self):
         payload = server_v2._build_v2_market_snapshot_payload({}, {}, 101)
@@ -169,7 +183,7 @@ class V2ContractTests(unittest.TestCase):
         self.assertEqual("BTCUSDT", payload["symbol"])
         self.assertEqual("1m", payload["interval"])
 
-    def test_market_candles_should_separate_latest_rest_row_as_patch_when_not_closed(self):
+    def test_market_candles_should_not_expose_rest_current_minute_as_live_patch(self):
         rest_rows = [
             [1000, "1.0", "2.0", "0.5", "1.5", "10.0", 1999, "20.0", 3],
             [2000, "2.0", "2.5", "1.8", "2.1", "5.0", 4999, "12.0", 2],
@@ -186,9 +200,34 @@ class V2ContractTests(unittest.TestCase):
             )
 
         self.assertEqual([1000], [item["openTime"] for item in payload["candles"]])
-        self.assertEqual(2000, payload["latestPatch"]["openTime"])
-        self.assertEqual("binance-rest", payload["latestPatch"]["source"])
-        self.assertFalse(payload["latestPatch"]["isClosed"])
+        self.assertIsNone(payload["latestPatch"])
+
+    def test_market_stream_symbol_state_should_not_build_rest_realtime_patch_when_runtime_missing(self):
+        with mock.patch.object(
+            server_v2,
+            "_build_market_runtime_symbol_state",
+            return_value={
+                "productId": "BTC",
+                "marketSymbol": "BTCUSDT",
+                "tradeSymbol": "BTCUSD",
+                "interval": "1m",
+                "latestPrice": 0.0,
+                "latestOpenTime": 0,
+                "latestCloseTime": 0,
+                "latestClosedCandle": None,
+                "latestPatch": None,
+                "updatedAt": 0,
+                "lastEventTime": 0,
+            },
+        ), mock.patch.object(
+            server_v2,
+            "_fetch_market_candle_rows_with_cache",
+            side_effect=AssertionError("hot path should not hit rest"),
+        ):
+            payload = server_v2._build_market_stream_symbol_state("BTCUSDT", 3000)
+
+        self.assertIsNone(payload["latestPatch"])
+        self.assertEqual(0.0, payload["latestPrice"])
 
     def test_market_candles_should_fetch_large_window_in_multiple_chunks(self):
         first_chunk = [
@@ -223,7 +262,7 @@ class V2ContractTests(unittest.TestCase):
         rows = [
             [1000, "1.0", "2.0", "0.5", "1.5", "10.0", 1999, "20.0", 3],
         ]
-        with mock.patch.object(server_v2, "_now_ms", side_effect=[5_000, 5_000, 5_000, 5_100, 5_100, 5_100]), mock.patch.object(
+        with mock.patch.object(server_v2, "_now_ms", side_effect=[5_000] * 8 + [5_100] * 8), mock.patch.object(
             server_v2,
             "_fetch_binance_kline_rows",
             return_value=rows,
@@ -432,10 +471,68 @@ class V2ContractTests(unittest.TestCase):
             "_fetch_market_candle_rows_with_cache",
             side_effect=AssertionError("市场热路径不应再主动拉 REST K 线"),
         ):
-            payload = server_v2._build_market_stream_symbol_state("BTCUSDT", 1_710_000_060_000)
+            payload = server_v2._build_market_stream_symbol_state("BTCUSDT", 1_710_000_030_000)
 
         runtime_stub.build_symbol_state.assert_called_once()
         self.assertEqual(runtime_state, payload)
+
+    def test_build_market_tick_message_should_carry_full_market_snapshot(self):
+        payload = server_v2._build_market_tick_message(
+            snapshot={
+                "source": "binance",
+                "symbolStates": [{"marketSymbol": "BTCUSDT", "latestPrice": 102.5}],
+                "marketRuntimeConnected": True,
+            },
+            seq=7,
+            published_at=1_710_000_060_000,
+        )
+
+        self.assertEqual("marketTick", payload["type"])
+        self.assertEqual(7, payload["marketSeq"])
+        self.assertEqual(1_710_000_060_000, payload["publishedAt"])
+        self.assertEqual("binance", payload["market"]["source"])
+        self.assertEqual("BTCUSDT", payload["market"]["symbolStates"][0]["marketSymbol"])
+
+    def test_stream_event_should_prioritize_market_tick_when_new_market_seq_pending(self):
+        with server_v2.snapshot_cache_lock:
+            server_v2.market_realtime_publish_state.update({
+                "seq": 5,
+                "publishedAt": 2222,
+                "latestSnapshot": {
+                    "source": "binance",
+                    "symbolStates": [{"marketSymbol": "BTCUSDT"}],
+                },
+            })
+            server_v2.account_publish_state.update({
+                "busSeq": 9,
+                "publishedAt": 3333,
+                "revisions": {
+                    "marketRevision": "market-9",
+                    "accountRuntimeRevision": "account-9",
+                    "accountHistoryRevision": "history-9",
+                    "abnormalRevision": "abnormal-9",
+                },
+                "event": {
+                    "type": "syncEvent",
+                    "busSeq": 9,
+                    "publishedAt": 3333,
+                    "revisions": {
+                        "marketRevision": "market-9",
+                        "accountRuntimeRevision": "account-9",
+                        "accountHistoryRevision": "history-9",
+                        "abnormalRevision": "abnormal-9",
+                    },
+                    "changes": {
+                        "accountRuntime": {"snapshot": {"positions": []}},
+                    },
+                },
+            })
+
+        payload = server_v2._build_v2_stream_event_for_client(last_bus_seq=0, last_market_seq=0)
+
+        self.assertEqual("marketTick", payload["type"])
+        self.assertEqual(5, payload["marketSeq"])
+        self.assertEqual("BTCUSDT", payload["market"]["symbolStates"][0]["marketSymbol"])
 
     def test_source_status_should_expose_market_runtime_fields(self):
         with mock.patch.object(
@@ -480,7 +577,31 @@ class V2ContractTests(unittest.TestCase):
             server_v2,
             "_fetch_market_candle_rows_with_cache",
             return_value=[closed_row, stale_patch_row],
-        ), mock.patch.object(server_v2, "market_stream_runtime", runtime_stub, create=True):
+        ), mock.patch.object(server_v2, "market_stream_runtime", runtime_stub, create=True), mock.patch.object(
+            server_v2,
+            "_now_ms",
+            return_value=1_710_000_030_000,
+        ), mock.patch.object(
+            server_v2,
+            "_build_market_runtime_symbol_state",
+            return_value={
+                "latestPatch": {
+                    "symbol": "BTCUSDT",
+                    "interval": "1m",
+                    "openTime": 1_710_000_000_000,
+                    "closeTime": 1_710_000_059_999,
+                    "open": 100.5,
+                    "high": 102.0,
+                    "low": 100.0,
+                    "close": 101.8,
+                    "volume": 8.0,
+                    "quoteVolume": 800.0,
+                    "tradeCount": 4,
+                    "source": "binance-ws",
+                    "isClosed": False,
+                }
+            },
+        ):
             payload = server_v2.v2_market_candles("BTCUSDT", "1m", 2, 0, 0)
 
         self.assertEqual("binance-ws", payload["latestPatch"]["source"])
@@ -511,13 +632,218 @@ class V2ContractTests(unittest.TestCase):
             server_v2,
             "_fetch_market_candle_rows_with_cache",
             return_value=[closed_row],
-        ), mock.patch.object(server_v2, "market_stream_runtime", runtime_stub, create=True):
+        ), mock.patch.object(server_v2, "market_stream_runtime", runtime_stub, create=True), mock.patch.object(
+            server_v2,
+            "_now_ms",
+            return_value=1_710_000_150_000,
+        ), mock.patch.object(
+            server_v2,
+            "_build_market_runtime_symbol_state",
+            return_value={
+                "latestPatch": {
+                    "symbol": "BTCUSDT",
+                    "interval": "1m",
+                    "openTime": 1_710_000_120_000,
+                    "closeTime": 1_710_000_179_999,
+                    "open": 101.5,
+                    "high": 103.0,
+                    "low": 101.0,
+                    "close": 102.5,
+                    "volume": 4.0,
+                    "quoteVolume": 400.0,
+                    "tradeCount": 4,
+                    "source": "binance-ws",
+                    "isClosed": False,
+                }
+            },
+        ):
             payload = server_v2.v2_market_candles("BTCUSDT", "15m", 2, 0, 0)
 
         runtime_stub.build_interval_patch.assert_called_once_with("BTCUSDT", "15m")
         self.assertEqual("binance-ws", payload["latestPatch"]["source"])
         self.assertEqual("15m", payload["latestPatch"]["interval"])
         self.assertEqual(102.5, payload["latestPatch"]["close"])
+
+    def test_v2_market_candles_should_fallback_to_rest_patch_for_weekly_interval(self):
+        closed_row = [1_709_395_200_000, "95.0", "98.0", "94.0", "97.0", "10.0", 1_709_999_999_999, "970.0", 5]
+        rest_patch_row = [1_710_000_000_000, "100.0", "106.0", "99.0", "104.5", "12.0", 1_710_604_799_999, "1200.0", 8]
+        runtime_stub = mock.Mock()
+        runtime_stub.get_latest_patch_row.return_value = None
+        runtime_stub.build_interval_patch.return_value = None
+
+        with mock.patch.object(
+            server_v2,
+            "_fetch_market_candle_rows_with_cache",
+            return_value=[closed_row, rest_patch_row],
+        ), mock.patch.object(server_v2, "market_stream_runtime", runtime_stub, create=True), mock.patch.object(
+            server_v2,
+            "_now_ms",
+            return_value=1_710_200_000_000,
+        ), mock.patch.object(
+            server_v2,
+            "_build_market_runtime_symbol_state",
+            return_value={"latestPatch": None},
+        ):
+            payload = server_v2.v2_market_candles("BTCUSDT", "1w", 2, 0, 0)
+
+        self.assertEqual("binance-rest", payload["latestPatch"]["source"])
+        self.assertEqual("1w", payload["latestPatch"]["interval"])
+        self.assertEqual(1_710_000_000_000, payload["latestPatch"]["openTime"])
+        self.assertEqual(104.5, payload["latestPatch"]["close"])
+
+    def test_v2_market_candles_should_fallback_to_rest_patch_for_monthly_interval(self):
+        closed_row = [1_706_745_600_000, "95.0", "98.0", "94.0", "97.0", "10.0", 1_709_222_399_999, "970.0", 5]
+        rest_patch_row = [1_709_222_400_000, "100.0", "108.0", "99.0", "105.5", "18.0", 1_711_900_799_999, "1800.0", 11]
+        runtime_stub = mock.Mock()
+        runtime_stub.get_latest_patch_row.return_value = None
+        runtime_stub.build_interval_patch.return_value = None
+
+        with mock.patch.object(
+            server_v2,
+            "_fetch_market_candle_rows_with_cache",
+            return_value=[closed_row, rest_patch_row],
+        ), mock.patch.object(server_v2, "market_stream_runtime", runtime_stub, create=True), mock.patch.object(
+            server_v2,
+            "_now_ms",
+            return_value=1_710_000_000_000,
+        ), mock.patch.object(
+            server_v2,
+            "_build_market_runtime_symbol_state",
+            return_value={"latestPatch": None},
+        ):
+            payload = server_v2.v2_market_candles("BTCUSDT", "1M", 2, 0, 0)
+
+        self.assertEqual("binance-rest", payload["latestPatch"]["source"])
+        self.assertEqual("1M", payload["latestPatch"]["interval"])
+        self.assertEqual(1_709_222_400_000, payload["latestPatch"]["openTime"])
+        self.assertEqual(105.5, payload["latestPatch"]["close"])
+
+    def test_v2_market_candles_should_probe_current_week_bucket_when_incremental_rows_are_empty(self):
+        current_week_patch_row = [1_776_643_200_000, "84000.0", "87000.0", "83500.0", "86123.5", "25.0", 1_777_247_999_999, "2150000.0", 18]
+        runtime_stub = mock.Mock()
+        runtime_stub.get_latest_patch_row.return_value = None
+        runtime_stub.build_interval_patch.return_value = None
+
+        with mock.patch.object(
+            server_v2,
+            "_fetch_market_candle_rows_with_cache",
+            return_value=[],
+        ), mock.patch.object(
+            server_v2,
+            "_fetch_binance_kline_rows_resilient",
+            return_value=[current_week_patch_row],
+        ) as probe_mock, mock.patch.object(server_v2, "market_stream_runtime", runtime_stub, create=True), mock.patch.object(
+            server_v2,
+            "_now_ms",
+            return_value=1_777_107_200_000,
+        ), mock.patch.object(
+            server_v2,
+            "_build_market_runtime_symbol_state",
+            return_value={"latestPatch": None},
+        ):
+            payload = server_v2.v2_market_candles("BTCUSDT", "1w", 3, 1_776_643_200_000, 0)
+
+        probe_mock.assert_called_once_with(
+            "BTCUSDT",
+            "1w",
+            1,
+            start_time_ms=1_776_643_200_000,
+            end_time_ms=0,
+        )
+        self.assertEqual("binance-rest", payload["latestPatch"]["source"])
+        self.assertEqual("1w", payload["latestPatch"]["interval"])
+        self.assertEqual(1_776_643_200_000, payload["latestPatch"]["openTime"])
+        self.assertEqual(86123.5, payload["latestPatch"]["close"])
+
+    def test_v2_market_candles_should_probe_current_month_bucket_when_incremental_rows_are_empty(self):
+        current_month_patch_row = [1_775_001_600_000, "82000.0", "88000.0", "81000.0", "85321.0", "42.0", 1_777_593_599_999, "3560000.0", 27]
+        runtime_stub = mock.Mock()
+        runtime_stub.get_latest_patch_row.return_value = None
+        runtime_stub.build_interval_patch.return_value = None
+
+        with mock.patch.object(
+            server_v2,
+            "_fetch_market_candle_rows_with_cache",
+            return_value=[],
+        ), mock.patch.object(
+            server_v2,
+            "_fetch_binance_kline_rows_resilient",
+            return_value=[current_month_patch_row],
+        ) as probe_mock, mock.patch.object(server_v2, "market_stream_runtime", runtime_stub, create=True), mock.patch.object(
+            server_v2,
+            "_now_ms",
+            return_value=1_777_107_200_000,
+        ), mock.patch.object(
+            server_v2,
+            "_build_market_runtime_symbol_state",
+            return_value={"latestPatch": None},
+        ):
+            payload = server_v2.v2_market_candles("BTCUSDT", "1M", 3, 1_775_001_600_000, 0)
+
+        probe_mock.assert_called_once_with(
+            "BTCUSDT",
+            "1M",
+            1,
+            start_time_ms=1_775_001_600_000,
+            end_time_ms=0,
+        )
+        self.assertEqual("binance-rest", payload["latestPatch"]["source"])
+        self.assertEqual("1M", payload["latestPatch"]["interval"])
+        self.assertEqual(1_775_001_600_000, payload["latestPatch"]["openTime"])
+        self.assertEqual(85321.0, payload["latestPatch"]["close"])
+
+    def test_v2_market_candles_should_drop_stale_runtime_patch_for_one_minute(self):
+        closed_row = [1_710_000_120_000, "102.0", "103.0", "101.0", "102.5", "9.0", 1_710_000_179_999, "900.0", 6]
+        runtime_stub = mock.Mock()
+        runtime_stub.get_latest_patch_row.return_value = {
+            "k": {
+                "t": 1_710_000_000_000,
+                "T": 1_710_000_059_999,
+                "s": "BTCUSDT",
+                "i": "1m",
+                "o": "100.5",
+                "h": "102.0",
+                "l": "100.0",
+                "c": "101.8",
+                "v": "8.0",
+                "q": "800.0",
+                "n": 4,
+                "x": False,
+            }
+        }
+
+        with mock.patch.object(
+            server_v2,
+            "_fetch_market_candle_rows_with_cache",
+            return_value=[closed_row],
+        ), mock.patch.object(server_v2, "market_stream_runtime", runtime_stub, create=True), mock.patch.object(
+            server_v2,
+            "_now_ms",
+            return_value=1_710_000_240_000,
+        ), mock.patch.object(
+            server_v2,
+            "_build_market_runtime_symbol_state",
+            return_value={
+                "latestPatch": {
+                    "symbol": "BTCUSDT",
+                    "interval": "1m",
+                    "openTime": 1_710_000_000_000,
+                    "closeTime": 1_710_000_059_999,
+                    "open": 100.5,
+                    "high": 102.0,
+                    "low": 100.0,
+                    "close": 101.8,
+                    "volume": 8.0,
+                    "quoteVolume": 800.0,
+                    "tradeCount": 4,
+                    "source": "binance-ws",
+                    "isClosed": False,
+                }
+            },
+        ):
+            payload = server_v2.v2_market_candles("BTCUSDT", "1m", 2, 0, 0)
+
+        self.assertIsNone(payload["latestPatch"])
 
     def test_bootstrap_market_stream_runtime_should_seed_enough_minutes_for_daily_patch(self):
         runtime_stub = mock.Mock()

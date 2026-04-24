@@ -91,13 +91,17 @@ body {
 .card-top {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px 12px;
     margin-bottom: 10px;
 }
 
 .card-title {
     font-size: 18px;
     font-weight: 700;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .badge {
@@ -122,6 +126,9 @@ body {
     color: var(--muted);
     line-height: 1.5;
     font-size: 14px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .card-actions,

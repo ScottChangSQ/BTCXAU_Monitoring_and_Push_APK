@@ -18,7 +18,17 @@ public class MarketChartRefreshPlanSourceTest {
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
 
         assertTrue(source.contains("long latestVisibleTime = host.resolveLatestVisibleCandleTime(localForPlan);"));
+        assertTrue(source.contains("repository.selectTruthProgressAt(traceSymbol)"));
         assertFalse(source.contains("resolveLatestVisibleCandleTime(selectedSymbol)"));
+    }
+
+    @Test
+    public void chartScreenShouldUseTruthProgressInsteadOfFutureDraftCloseTimeForFreshness() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8).replace("\r\n", "\n");
+
+        assertTrue(source.contains("return monitorRepository.selectTruthProgressAt(selectedSymbol);"));
+        assertFalse(source.contains("long boundedCloseTime = Math.min(latest.getCloseTime(), now);"));
     }
 
     @Test

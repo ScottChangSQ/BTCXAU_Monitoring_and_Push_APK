@@ -63,12 +63,11 @@
                     android:id="@+id/layoutChartModeToggleGroup"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="@dimen/inline_gap"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
                     app:layout_constraintBottom_toBottomOf="parent"
-                    app:layout_constraintEnd_toStartOf="@+id/btnGlobalStatus"
-                    app:layout_constraintStart_toEndOf="@+id/layoutChartSymbolPickerContainer"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintTop_toTopOf="parent">
 
                     <com.google.android.material.button.MaterialButton
@@ -89,16 +88,24 @@
                         android:text="@string/chart_mode_pending" />
                 </LinearLayout>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnGlobalStatus"
-                    style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="@dimen/subject_height_compact"
+                <FrameLayout
+                    android:id="@+id/layoutChartStatusContainer"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/inline_gap"
                     app:layout_constraintBottom_toBottomOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"
                     app:layout_constraintStart_toEndOf="@+id/layoutChartModeToggleGroup"
-                    app:layout_constraintTop_toTopOf="parent"
-                    android:text="@string/global_status_button_offline" />
+                    app:layout_constraintTop_toTopOf="parent">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnGlobalStatus"
+                        style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/subject_height_compact"
+                        android:layout_gravity="end|center_vertical"
+                        android:text="@string/global_status_button_offline" />
+                </FrameLayout>
             </androidx.constraintlayout.widget.ConstraintLayout>
 
             <LinearLayout
@@ -122,13 +129,6 @@
                     android:paddingStart="@dimen/container_padding_compact"
                     android:paddingEnd="@dimen/container_padding_compact"
                     android:visibility="gone">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnQuickTradeTemplate"
-                        style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
-                        android:layout_width="wrap_content"
-                        android:layout_height="@dimen/subject_height_md"
-                        android:text="@string/chart_quick_trade_template" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnQuickTradePrimary"
@@ -332,11 +332,12 @@
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.ChartCompact" />
 
                     <LinearLayout
+                        android:id="@+id/layoutChartTopRightActions"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="end|top"
                         android:layout_marginTop="@dimen/inline_gap"
-                        android:layout_marginEnd="@dimen/inline_gap"
+                        android:layout_marginEnd="@dimen/kline_price_axis_reserved_width"
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
 
@@ -355,6 +356,16 @@
                             android:text="@string/chart_loading_overlay_text"
                             android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta"
                             android:visibility="gone" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnBatchTradeActions"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/chart_overlay_toggle_gap"
+                            android:background="@android:color/transparent"
+                            android:minWidth="0dp"
+                            android:text="批量操作"
+                            android:textAllCaps="false" />
                     </LinearLayout>
 
                     <ImageButton

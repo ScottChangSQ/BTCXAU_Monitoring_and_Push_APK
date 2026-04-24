@@ -13,6 +13,7 @@ public class IndicatorRegistryTest {
     @Test
     public void indicatorRegistryShouldExposeCanonicalIds() {
         assertNotNull(IndicatorId.ACCOUNT_TOTAL_ASSET);
+        assertNotNull(IndicatorId.ACCOUNT_PERIOD_RETURN);
         assertNotNull(IndicatorId.ACCOUNT_TOTAL_RETURN_RATE);
         assertNotNull(IndicatorId.ACCOUNT_MAX_DRAWDOWN);
         assertNotNull(IndicatorId.TRADE_WIN_RATE);
@@ -39,6 +40,7 @@ public class IndicatorRegistryTest {
     @Test
     public void registryShouldExposeCoreAccountAndTradeIndicators() {
         assertEquals("总资产", IndicatorRegistry.require(IndicatorId.ACCOUNT_TOTAL_ASSET).getDisplayName());
+        assertEquals("期间收益", IndicatorRegistry.require(IndicatorId.ACCOUNT_PERIOD_RETURN).getDisplayName());
         assertEquals("累计收益率", IndicatorRegistry.require(IndicatorId.ACCOUNT_TOTAL_RETURN_RATE).getDisplayName());
         assertEquals("最大回撤", IndicatorRegistry.require(IndicatorId.ACCOUNT_MAX_DRAWDOWN).getDisplayName());
         assertEquals("胜率", IndicatorRegistry.require(IndicatorId.TRADE_WIN_RATE).getDisplayName());
@@ -46,11 +48,16 @@ public class IndicatorRegistryTest {
                 IndicatorRegistry.require(IndicatorId.ACCOUNT_MAX_DRAWDOWN).getColorRule());
         assertEquals(IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
                 IndicatorRegistry.require(IndicatorId.TRADE_AVG_LOSS).getColorRule());
+        assertEquals(IndicatorColorRule.NEUTRAL,
+                IndicatorRegistry.require(IndicatorId.TRADE_WIN_RATE).getColorRule());
     }
 
     @Test
     public void registryShouldResolveLegacyAliasToCanonicalDisplayName() {
         assertEquals("净资产", IndicatorRegistry.findByDisplayName("Net Asset").getDisplayName());
         assertEquals("累计收益额", IndicatorRegistry.findByDisplayName("累计盈亏").getDisplayName());
+        assertEquals("本月收益", IndicatorRegistry.findByDisplayName("Month Profit").getDisplayName());
+        assertEquals("近1日收益", IndicatorRegistry.findByDisplayName("1D Return").getDisplayName());
+        assertEquals("期间收益", IndicatorRegistry.findByDisplayName("Period Return").getDisplayName());
     }
 }

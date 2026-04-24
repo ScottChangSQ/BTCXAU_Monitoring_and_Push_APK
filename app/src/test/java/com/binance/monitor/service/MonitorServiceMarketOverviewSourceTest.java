@@ -25,16 +25,17 @@ public class MonitorServiceMarketOverviewSourceTest {
     }
 
     @Test
-    public void floatingWindowShouldConsumeClosedMinuteOverviewFromUnifiedRuntimeSnapshot() throws Exception {
+    public void floatingWindowShouldConsumeCurrentMinuteTruthSnapshot() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
                 "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
         );
 
-        assertTrue(source.contains("repository.selectClosedMinute(symbol)"));
-        assertTrue(source.contains("repository.selectLatestPrice(symbol)"));
+        assertTrue(source.contains("repository.selectCurrentMinuteSnapshot(symbol)"));
         assertTrue(!source.contains("repository.getDisplayOverviewKlineSnapshot()"));
         assertTrue(!source.contains("repository.getDisplayPriceSnapshot()"));
+        assertTrue(!source.contains("repository.selectClosedMinute(symbol)"));
+        assertTrue(!source.contains("repository.selectLatestPrice(symbol)"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

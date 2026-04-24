@@ -25,7 +25,7 @@ public class MarketChartRefreshHelperTest {
                 1_500,
                 1_500,
                 NOW,
-                NOW - 30_000L,
+                NOW - 3_000L,
                 MINUTE,
                 false,
                 true,
@@ -58,6 +58,27 @@ public class MarketChartRefreshHelperTest {
     }
 
     @Test
+    public void resolvePlanShouldNotSkipWhenTruthProgressIsStaleEvenIfVisibleWindowLooksFresh() {
+        List<CandleEntry> local = createSeries(1_500, NOW - MINUTE, MINUTE);
+        long latestOpenTime = local.get(local.size() - 1).getOpenTime();
+
+        MarketChartRefreshHelper.SyncPlan plan = MarketChartRefreshHelper.resolvePlan(
+                local,
+                1_500,
+                1_500,
+                NOW,
+                NOW - MINUTE * 3L,
+                MINUTE,
+                false,
+                true,
+                MarketChartRefreshHelper.RequestReason.AUTO_REFRESH
+        );
+
+        assertEquals(MarketChartRefreshHelper.SyncMode.INCREMENTAL, plan.mode);
+        assertEquals(latestOpenTime, plan.startTimeInclusive);
+    }
+
+    @Test
     public void resolvePlanShouldFallbackToFullWhenMinutePreviewIsStillShortEvenIfRealtimeIsFresh() {
         List<CandleEntry> local = createSeries(300, NOW - MINUTE * 30L, MINUTE);
 
@@ -66,7 +87,7 @@ public class MarketChartRefreshHelperTest {
                 1_500,
                 1_500,
                 NOW,
-                NOW - 30_000L,
+                NOW - 3_000L,
                 MINUTE,
                 false,
                 true,
@@ -86,7 +107,7 @@ public class MarketChartRefreshHelperTest {
                 1_500,
                 1_500,
                 NOW,
-                NOW - 30_000L,
+                NOW - 3_000L,
                 MINUTE * 60L,
                 false,
                 true,
@@ -146,7 +167,7 @@ public class MarketChartRefreshHelperTest {
                 1_500,
                 1_500,
                 NOW,
-                NOW - 30_000L,
+                NOW - 3_000L,
                 24L * 60L * MINUTE,
                 false,
                 true,
@@ -166,7 +187,7 @@ public class MarketChartRefreshHelperTest {
                 1_500,
                 1_500,
                 NOW,
-                NOW - 30_000L,
+                NOW - 3_000L,
                 MINUTE,
                 false,
                 false,
@@ -186,7 +207,7 @@ public class MarketChartRefreshHelperTest {
                 1_500,
                 1_500,
                 NOW,
-                NOW - 30_000L,
+                NOW - 3_000L,
                 MINUTE,
                 false,
                 true,
@@ -206,7 +227,7 @@ public class MarketChartRefreshHelperTest {
                 120,
                 120,
                 NOW,
-                NOW - 30_000L,
+                NOW - 3_000L,
                 15L * MINUTE,
                 false,
                 true,
@@ -252,7 +273,7 @@ public class MarketChartRefreshHelperTest {
                 1_500,
                 1_500,
                 NOW,
-                NOW - 30_000L,
+                NOW - 3_000L,
                 MINUTE,
                 false,
                 true,
@@ -273,7 +294,7 @@ public class MarketChartRefreshHelperTest {
                 1_500,
                 1_500,
                 NOW,
-                NOW - 30_000L,
+                NOW - 3_000L,
                 MINUTE,
                 false,
                 true,

@@ -145,6 +145,8 @@ final class AccountStatsRenderCoordinator {
 
         long getManualCurveRangeEndMs();
 
+        long getAppliedAccountUpdatedAt();
+
         @NonNull
         AccountDeferredSnapshotRenderHelper.TradePnlSideMode getTradePnlSideMode();
 
@@ -393,7 +395,8 @@ final class AccountStatsRenderCoordinator {
                         host.getSelectedRange(),
                         host.isManualCurveRangeEnabled(),
                         host.getManualCurveRangeStartMs(),
-                        host.getManualCurveRangeEndMs()
+                        host.getManualCurveRangeEndMs(),
+                        host.getAppliedAccountUpdatedAt()
                 );
         host.setManualCurveRangeEnabled(curveProjection.isManualRangeApplied());
         host.syncRangeInputsWithDisplayedCurve(curveProjection.getDisplayedCurvePoints());
@@ -462,6 +465,7 @@ final class AccountStatsRenderCoordinator {
                 host.isManualCurveRangeEnabled(),
                 host.getManualCurveRangeStartMs(),
                 host.getManualCurveRangeEndMs(),
+                host.getAppliedAccountUpdatedAt(),
                 host.getTradePnlSideMode(),
                 host.getTradeWeekdayBasis(),
                 product,
@@ -554,6 +558,7 @@ final class AccountStatsRenderCoordinator {
         private final boolean manualCurveRangeEnabled;
         private final long manualCurveRangeStartMs;
         private final long manualCurveRangeEndMs;
+        private final long appliedAccountUpdatedAt;
         private final AccountDeferredSnapshotRenderHelper.TradePnlSideMode tradePnlSideMode;
         private final AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis tradeWeekdayBasis;
         private final String tradeProductFilter;
@@ -571,6 +576,7 @@ final class AccountStatsRenderCoordinator {
                                                boolean manualCurveRangeEnabled,
                                                long manualCurveRangeStartMs,
                                                long manualCurveRangeEndMs,
+                                               long appliedAccountUpdatedAt,
                                                AccountDeferredSnapshotRenderHelper.TradePnlSideMode tradePnlSideMode,
                                                AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis tradeWeekdayBasis,
                                                String tradeProductFilter,
@@ -587,6 +593,7 @@ final class AccountStatsRenderCoordinator {
             this.manualCurveRangeEnabled = manualCurveRangeEnabled;
             this.manualCurveRangeStartMs = manualCurveRangeStartMs;
             this.manualCurveRangeEndMs = manualCurveRangeEndMs;
+            this.appliedAccountUpdatedAt = appliedAccountUpdatedAt;
             this.tradePnlSideMode = tradePnlSideMode;
             this.tradeWeekdayBasis = tradeWeekdayBasis;
             this.tradeProductFilter = tradeProductFilter;
@@ -607,6 +614,7 @@ final class AccountStatsRenderCoordinator {
                     manualCurveRangeEnabled,
                     manualCurveRangeStartMs,
                     manualCurveRangeEndMs,
+                    appliedAccountUpdatedAt,
                     tradePnlSideMode,
                     tradeWeekdayBasis,
                     new AccountDeferredSnapshotRenderHelper.TradeFilterRequest(

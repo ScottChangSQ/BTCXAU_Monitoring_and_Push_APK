@@ -65,6 +65,8 @@ public class EquityCurveView extends View {
     private double chartMax;
     private long chartStartTs;
     private long chartEndTs;
+    private long viewportStartTs;
+    private long viewportEndTs;
     private double baseBalance = 1d;
     private long drawdownStartTs;
     private long drawdownEndTs;
@@ -187,6 +189,13 @@ public class EquityCurveView extends View {
 
     public void setBaseBalance(double value) {
         baseBalance = Math.max(1e-9, value);
+        invalidate();
+    }
+
+    // 主图和附图共用同一段时间窗口，避免长按时横轴范围不一致。
+    public void setViewport(long startTs, long endTs) {
+        viewportStartTs = Math.max(0L, startTs);
+        viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
         invalidate();
     }
 
@@ -350,8 +359,8 @@ public class EquityCurveView extends View {
             chartMin -= 1d;
         }
 
-        chartStartTs = points.get(0).getTimestamp();
-        chartEndTs = points.get(points.size() - 1).getTimestamp();
+        chartStartTs = viewportStartTs > 0L ? viewportStartTs : points.get(0).getTimestamp();
+        chartEndTs = viewportEndTs > chartStartTs ? viewportEndTs : points.get(points.size() - 1).getTimestamp();
         if (chartEndTs <= chartStartTs) {
             chartEndTs = chartStartTs + 1L;
         }

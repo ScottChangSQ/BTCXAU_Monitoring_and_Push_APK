@@ -110,7 +110,7 @@ public class AccountPositionActivitySourceTest {
         assertTrue("若快照已返回但会话仍未收口，当前链路必须显式失败，避免留下半同步状态",
                 source.contains("notifySessionFailed(\"账户快照已返回，但会话状态未完成收口\", false);"));
         assertTrue("账户页缓存监听必须把新快照继续转交给独立登录组件，避免 accepted 后无人收口",
-                pageSource.contains("accountSessionDialogController.onCacheUpdated(cache);"));
+                pageSource.contains("accountSessionDialogController.onCacheUpdated(effectiveCache);"));
         assertFalse("独立登录组件不应继续依赖本地硬超时等待器判定成败",
                 source.contains("AccountSessionSyncWaiter"));
     }

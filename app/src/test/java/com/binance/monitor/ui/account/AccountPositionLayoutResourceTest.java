@@ -143,6 +143,8 @@ public class AccountPositionLayoutResourceTest {
 
         assertElementAttribute(contentDocument, "tvAccountConnectionStatus", "style",
                 "@style/Widget.BinanceMonitor.Subject.TextTrigger.Compact");
+        assertElementAttribute(contentDocument, "btnAccountBatchActions", "style",
+                "@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary");
         assertElementAttribute(contentDocument, "btnOpenAccountHistory", "style",
                 "@style/Widget.BinanceMonitor.Subject.TextTrigger");
         assertElementAttribute(historyDocument, "tvTradeHistoryProductLabel", "style",
@@ -156,6 +158,23 @@ public class AccountPositionLayoutResourceTest {
         assertFalse("历史筛选不应继续引用旧 Spinner.Label 包装样式", historyXml.contains("Widget.BinanceMonitor.Spinner.Label"));
         assertFalse("历史筛选不应继续沿用旧 control_height_md 高度", historyXml.contains("@dimen/control_height_md"));
         assertTrue("历史筛选应切到 subject_height_md", historyXml.contains("@dimen/subject_height_md"));
+    }
+
+    @Test
+    public void accountPositionBatchActionShouldLiveInCurrentPositionHeaderInsteadOfOverviewCard() throws Exception {
+        Document contentDocument = parseXml(resolveProjectFile(
+                "app/src/main/res/layout/content_account_position.xml",
+                "src/main/res/layout/content_account_position.xml"
+        ));
+
+        int overviewMetricsIndex = findElementOrder(contentDocument, "recyclerOverviewMetrics");
+        int positionTitleIndex = findElementOrder(contentDocument, "tvPositionSectionTitle");
+        int batchButtonIndex = findElementOrder(contentDocument, "btnAccountBatchActions");
+        int positionSummaryIndex = findElementOrder(contentDocument, "tvPositionSummary");
+
+        assertTrue("批量操作按钮不应再留在账户概览卡里", overviewMetricsIndex >= 0 && overviewMetricsIndex < batchButtonIndex);
+        assertTrue("批量操作按钮应跟在当前持仓标题之后", positionTitleIndex >= 0 && positionTitleIndex < batchButtonIndex);
+        assertTrue("批量操作按钮应位于当前持仓摘要之前", batchButtonIndex >= 0 && batchButtonIndex < positionSummaryIndex);
     }
 
     @Test

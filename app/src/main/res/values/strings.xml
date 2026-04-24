@@ -186,7 +186,7 @@
     <string name="chart_position_overlays_off">当前仓位 关</string>
     <string name="chart_history_trades_on">历史成交 开</string>
     <string name="chart_history_trades_off">历史成交 关</string>
-    <string name="global_status_button_offline">未连接 | 账户离线</string>
+    <string name="global_status_button_offline">未连接</string>
     <string name="global_status_button_compact">%1$s | %2$s</string>
     <string name="global_status_sheet_title">全局状态</string>
     <string name="global_status_label_connection">连接状态</string>

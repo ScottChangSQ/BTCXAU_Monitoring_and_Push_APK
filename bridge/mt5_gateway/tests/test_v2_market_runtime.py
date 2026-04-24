@@ -19,31 +19,33 @@ class V2MarketRuntimeTests(unittest.TestCase):
         except ModuleNotFoundError as exc:
             self.fail(f"缺少市场运行时模块: {exc}")
 
-    def test_apply_ws_kline_event_should_store_open_patch(self):
+    def test_apply_ws_trade_event_should_update_same_minute_patch(self):
         runtime_module = self._import_runtime_module()
         runtime = runtime_module.create_market_stream_runtime(["BTCUSDT"])
 
-        runtime_module.apply_ws_kline_event(
+        runtime_module.apply_ws_trade_event(
             runtime,
             {
-                "stream": "btcusdt@kline_1m",
+                "stream": "btcusdt@trade",
                 "data": {
+                    "e": "trade",
                     "s": "BTCUSDT",
-                    "E": 1_710_000_000_111,
-                    "k": {
-                        "t": 1_710_000_000_000,
-                        "T": 1_710_000_059_999,
-                        "s": "BTCUSDT",
-                        "i": "1m",
-                        "o": "100.0",
-                        "h": "105.0",
-                        "l": "99.0",
-                        "c": "104.0",
-                        "v": "12.0",
-                        "q": "1200.0",
-                        "n": 6,
-                        "x": False,
-                    },
+                    "E": 1_710_000_000_100,
+                    "p": "100.0",
+                    "q": "1.2",
+                },
+            },
+        )
+        runtime_module.apply_ws_trade_event(
+            runtime,
+            {
+                "stream": "btcusdt@trade",
+                "data": {
+                    "e": "trade",
+                    "s": "BTCUSDT",
+                    "E": 1_710_000_000_400,
+                    "p": "104.0",
+                    "q": "0.8",
                 },
             },
         )
@@ -55,112 +57,130 @@ class V2MarketRuntimeTests(unittest.TestCase):
         self.assertIsNotNone(snapshot["latestPatch"])
         self.assertFalse(snapshot["latestPatch"]["isClosed"])
         self.assertEqual(1_710_000_000_000, snapshot["latestPatch"]["openTime"])
+        self.assertEqual(100.0, snapshot["latestPatch"]["open"])
+        self.assertEqual(104.0, snapshot["latestPatch"]["high"])
+        self.assertEqual(100.0, snapshot["latestPatch"]["low"])
+        self.assertEqual(104.0, snapshot["latestPatch"]["close"])
+        self.assertEqual(2.0, snapshot["latestPatch"]["volume"])
+        self.assertEqual(203.2, snapshot["latestPatch"]["quoteVolume"])
+        self.assertEqual(2, snapshot["latestPatch"]["tradeCount"])
+        self.assertEqual(1_710_000_000_400, snapshot["updatedAt"])
+        self.assertEqual(1_710_000_000_400, snapshot["lastEventTime"])
 
-    def test_apply_ws_kline_event_should_promote_closed_candle(self):
+    def test_apply_ws_trade_event_should_close_previous_minute_when_bucket_advances(self):
         runtime_module = self._import_runtime_module()
         runtime = runtime_module.create_market_stream_runtime(["BTCUSDT"])
 
-        runtime_module.apply_ws_kline_event(
+        runtime_module.apply_ws_trade_event(
             runtime,
             {
                 "data": {
+                    "e": "trade",
                     "s": "BTCUSDT",
-                    "E": 1_710_000_060_100,
-                    "k": {
-                        "t": 1_710_000_000_000,
-                        "T": 1_710_000_059_999,
-                        "s": "BTCUSDT",
-                        "i": "1m",
-                        "o": "100.0",
-                        "h": "106.0",
-                        "l": "99.0",
-                        "c": "105.0",
-                        "v": "18.0",
-                        "q": "1800.0",
-                        "n": 9,
-                        "x": True,
-                    },
+                    "E": 1_710_000_059_000,
+                    "p": "105.0",
+                    "q": "1.5",
+                },
+            },
+        )
+        runtime_module.apply_ws_trade_event(
+            runtime,
+            {
+                "data": {
+                    "e": "trade",
+                    "s": "BTCUSDT",
+                    "E": 1_710_000_061_000,
+                    "p": "106.0",
+                    "q": "0.5",
                 },
             },
         )
 
         snapshot = runtime_module.build_symbol_state(runtime, "BTCUSDT")
-        self.assertEqual(105.0, snapshot["latestPrice"])
+        self.assertEqual(106.0, snapshot["latestPrice"])
         self.assertIsNotNone(snapshot["latestClosedCandle"])
         self.assertTrue(snapshot["latestClosedCandle"]["isClosed"])
         self.assertEqual(1_710_000_000_000, snapshot["latestClosedCandle"]["openTime"])
-        self.assertIsNone(snapshot["latestPatch"])
+        self.assertEqual(105.0, snapshot["latestClosedCandle"]["open"])
+        self.assertEqual(105.0, snapshot["latestClosedCandle"]["close"])
+        self.assertEqual(1.5, snapshot["latestClosedCandle"]["volume"])
+        self.assertIsNotNone(snapshot["latestPatch"])
+        self.assertEqual(1_710_000_060_000, snapshot["latestPatch"]["openTime"])
+        self.assertEqual(106.0, snapshot["latestPatch"]["close"])
 
     def test_build_interval_patch_should_aggregate_recent_minutes(self):
         runtime_module = self._import_runtime_module()
         runtime = runtime_module.create_market_stream_runtime(["BTCUSDT"])
 
-        runtime_module.apply_ws_kline_event(
+        runtime_module.apply_ws_trade_event(
             runtime,
             {
                 "data": {
+                    "e": "trade",
                     "s": "BTCUSDT",
                     "E": 1_710_000_000_100,
-                    "k": {
-                        "t": 1_710_000_000_000,
-                        "T": 1_710_000_059_999,
-                        "s": "BTCUSDT",
-                        "i": "1m",
-                        "o": "100.0",
-                        "h": "101.0",
-                        "l": "99.0",
-                        "c": "100.5",
-                        "v": "2.0",
-                        "q": "200.0",
-                        "n": 2,
-                        "x": True,
-                    },
+                    "p": "100.0",
+                    "q": "1.0",
                 },
             },
         )
-        runtime_module.apply_ws_kline_event(
+        runtime_module.apply_ws_trade_event(
             runtime,
             {
                 "data": {
+                    "e": "trade",
+                    "s": "BTCUSDT",
+                    "E": 1_710_000_059_900,
+                    "p": "100.5",
+                    "q": "1.0",
+                },
+            },
+        )
+        runtime_module.apply_ws_trade_event(
+            runtime,
+            {
+                "data": {
+                    "e": "trade",
                     "s": "BTCUSDT",
                     "E": 1_710_000_060_100,
-                    "k": {
-                        "t": 1_710_000_060_000,
-                        "T": 1_710_000_119_999,
-                        "s": "BTCUSDT",
-                        "i": "1m",
-                        "o": "100.5",
-                        "h": "102.0",
-                        "l": "100.0",
-                        "c": "101.5",
-                        "v": "3.0",
-                        "q": "300.0",
-                        "n": 3,
-                        "x": True,
-                    },
+                    "p": "100.5",
+                    "q": "1.0",
                 },
             },
         )
-        runtime_module.apply_ws_kline_event(
+        runtime_module.apply_ws_trade_event(
             runtime,
             {
                 "data": {
+                    "e": "trade",
+                    "s": "BTCUSDT",
+                    "E": 1_710_000_119_900,
+                    "p": "101.5",
+                    "q": "2.0",
+                },
+            },
+        )
+        runtime_module.apply_ws_trade_event(
+            runtime,
+            {
+                "data": {
+                    "e": "trade",
                     "s": "BTCUSDT",
                     "E": 1_710_000_120_100,
-                    "k": {
-                        "t": 1_710_000_120_000,
-                        "T": 1_710_000_179_999,
-                        "s": "BTCUSDT",
-                        "i": "1m",
-                        "o": "101.5",
-                        "h": "103.0",
-                        "l": "101.0",
-                        "c": "102.5",
-                        "v": "4.0",
-                        "q": "400.0",
-                        "n": 4,
-                        "x": False,
-                    },
+                    "p": "101.5",
+                    "q": "1.0",
+                },
+            },
+        )
+        runtime_module.apply_ws_trade_event(
+            runtime,
+            {
+                "data": {
+                    "e": "trade",
+                    "s": "BTCUSDT",
+                    "E": 1_710_000_179_900,
+                    "p": "102.5",
+                    "q": "3.0",
                 },
             },
         )
@@ -172,8 +192,8 @@ class V2MarketRuntimeTests(unittest.TestCase):
         self.assertFalse(patch["isClosed"])
         self.assertEqual(1_710_000_000_000, patch["openTime"])
         self.assertEqual(100.0, patch["open"])
-        self.assertEqual(103.0, patch["high"])
-        self.assertEqual(99.0, patch["low"])
+        self.assertEqual(102.5, patch["high"])
+        self.assertEqual(100.0, patch["low"])
         self.assertEqual(102.5, patch["close"])
         self.assertEqual(9.0, patch["volume"])
 

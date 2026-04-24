@@ -112,7 +112,11 @@ public class AccountStatsBridgeActivityV2RefreshSourceTest {
         assertTrue("账户页应保留统一的预加载缓存监听器",
                 source.contains("private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {"));
         assertTrue("显式快照请求进行中时，预加载监听器不应再回灌缓存覆盖当前请求链路",
-                source.contains("if (cache == null || isFinishing() || isDestroyed() || loading) {\n            return;\n        }\n        if (snapshotRefreshCoordinator != null) {\n            snapshotRefreshCoordinator.applyPreloadedCacheIfAvailable();\n        }"));
+                source.contains("if (cache == null || isFinishing() || isDestroyed() || loading) {\n            return;\n        }"));
+        assertTrue("分析页已有可渲染内容且 history revision 未推进时，不应因为高频持仓运行态继续整页重放",
+                source.contains("boolean shouldApplyPreloadedCache = !hasRenderableCurrentSessionState()\n")
+                        && source.contains("|| !trim(cache.getHistoryRevision()).equals(trim(latestHistoryRevision));")
+                        && source.contains("if (!shouldApplyPreloadedCache) {\n            return;\n        }\n        if (snapshotRefreshCoordinator != null) {\n            snapshotRefreshCoordinator.applyPreloadedCacheIfAvailable();\n        }"));
     }
 
     @Test

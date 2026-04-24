@@ -32,6 +32,7 @@ public final class MetricNameTranslator {
         NAME_MAP.put("1D Return", "近1日收益");
         NAME_MAP.put("7D Return", "近7日收益");
         NAME_MAP.put("30D Return", "近30日收益");
+        NAME_MAP.put("Period Return", "期间收益");
         NAME_MAP.put("Max Drawdown", "最大回撤");
         NAME_MAP.put("Volatility", "波动率");
         NAME_MAP.put("Sharpe", "夏普比率");

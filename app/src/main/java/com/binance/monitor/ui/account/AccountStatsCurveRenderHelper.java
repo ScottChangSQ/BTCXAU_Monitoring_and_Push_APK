@@ -17,6 +17,8 @@ import java.util.List;
 
 final class AccountStatsCurveRenderHelper {
 
+    private List<CurvePoint> latestDisplayedPoints = new ArrayList<>();
+
     // 记录一次曲线绑定后的显示状态，供页面更新自身字段缓存。
     static final class RenderResult {
         private final List<CurvePoint> displayedCurvePoints;
@@ -24,17 +26,23 @@ final class AccountStatsCurveRenderHelper {
         private final List<CurveAnalyticsHelper.DailyReturnPoint> displayedDailyReturnPoints;
         private final String defaultCurveMeta;
         private final double curveBaseBalance;
+        private final long viewportStartTs;
+        private final long viewportEndTs;
 
         private RenderResult(@NonNull List<CurvePoint> displayedCurvePoints,
                              @NonNull List<CurveAnalyticsHelper.DrawdownPoint> displayedDrawdownPoints,
                              @NonNull List<CurveAnalyticsHelper.DailyReturnPoint> displayedDailyReturnPoints,
                              @NonNull String defaultCurveMeta,
-                             double curveBaseBalance) {
+                             double curveBaseBalance,
+                             long viewportStartTs,
+                             long viewportEndTs) {
             this.displayedCurvePoints = displayedCurvePoints;
             this.displayedDrawdownPoints = displayedDrawdownPoints;
             this.displayedDailyReturnPoints = displayedDailyReturnPoints;
             this.defaultCurveMeta = defaultCurveMeta;
             this.curveBaseBalance = curveBaseBalance;
+            this.viewportStartTs = viewportStartTs;
+            this.viewportEndTs = viewportEndTs;
         }
 
         @NonNull
@@ -59,6 +67,14 @@ final class AccountStatsCurveRenderHelper {
 
         double getCurveBaseBalance() {
             return curveBaseBalance;
+        }
+
+        long getViewportStartTs() {
+            return viewportStartTs;
+        }
+
+        long getViewportEndTs() {
+            return viewportEndTs;
         }
     }
 
@@ -90,7 +106,9 @@ final class AccountStatsCurveRenderHelper {
                 ? effectivePoints.get(effectivePoints.size() - 1).getTimestamp()
                 : viewportStartTs + 1L;
         applyDrawdownHighlight(drawdownSegment);
+        binding.equityCurveView.setViewport(viewportStartTs, viewportEndTs);
         binding.equityCurveView.setPoints(effectivePoints);
+        latestDisplayedPoints = new ArrayList<>(effectivePoints);
 
         String defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
         binding.tvCurveMeta.setText(privacyMasked
@@ -115,7 +133,9 @@ final class AccountStatsCurveRenderHelper {
                 drawdownPoints,
                 dailyReturnPoints,
                 defaultCurveMeta,
-                curveBaseBalance
+                curveBaseBalance,
+                viewportStartTs,
+                viewportEndTs
         );
     }
 
@@ -135,7 +155,12 @@ final class AccountStatsCurveRenderHelper {
         double curveBaseBalance = curveProjection.getCurveBaseBalance();
         binding.equityCurveView.setBaseBalance(curveBaseBalance);
         applyDrawdownHighlight(drawdownSegment);
+        binding.equityCurveView.setViewport(
+                curveProjection.getViewportStartTs(),
+                curveProjection.getViewportEndTs()
+        );
         binding.equityCurveView.setPoints(effectivePoints);
+        latestDisplayedPoints = new ArrayList<>(effectivePoints);
 
         String defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
         binding.tvCurveMeta.setText(privacyMasked
@@ -171,7 +196,9 @@ final class AccountStatsCurveRenderHelper {
                 drawdownPoints,
                 dailyReturnPoints,
                 defaultCurveMeta,
-                curveBaseBalance
+                curveBaseBalance,
+                curveProjection.getViewportStartTs(),
+                curveProjection.getViewportEndTs()
         );
     }
 
@@ -209,18 +236,84 @@ final class AccountStatsCurveRenderHelper {
 
     // 没有服务端指标时回退到占位指标，保证 UI 结构稳定。
     @NonNull
-    private static List<AccountMetric> buildCurveIndicators(@Nullable List<AccountMetric> snapshotIndicators) {
+    private List<AccountMetric> buildCurveIndicators(@Nullable List<AccountMetric> snapshotIndicators) {
+        return buildCurveIndicators(snapshotIndicators, latestDisplayedPoints);
+    }
+
+    @NonNull
+    private static List<AccountMetric> buildCurveIndicators(@Nullable List<AccountMetric> snapshotIndicators,
+                                                            @Nullable List<CurvePoint> displayedPoints) {
+        List<AccountMetric> result;
         if (snapshotIndicators != null && !snapshotIndicators.isEmpty()) {
-            return new ArrayList<>(snapshotIndicators);
+            result = new ArrayList<>(snapshotIndicators);
+        } else {
+            result = new ArrayList<>();
+            result.add(new AccountMetric("近1日收益", "--"));
+            result.add(new AccountMetric("近7日收益", "--"));
+            result.add(new AccountMetric("近30日收益", "--"));
+            result.add(new AccountMetric("期间收益", "--"));
+            result.add(new AccountMetric("最大回撤", "--"));
+            result.add(new AccountMetric("夏普比率", "--"));
         }
-        List<AccountMetric> result = new ArrayList<>();
-        result.add(new AccountMetric("近1日收益", "--"));
-        result.add(new AccountMetric("近7日收益", "--"));
-        result.add(new AccountMetric("近30日收益", "--"));
-        result.add(new AccountMetric("累计收益", "--"));
-        result.add(new AccountMetric("最大回撤", "--"));
-        result.add(new AccountMetric("夏普比率", "--"));
+        replaceCurveMetric(result, "期间收益",
+                AccountDeferredSnapshotRenderHelper.buildPeriodReturnValue(displayedPoints),
+                "期间收益", "区间收益", "Period Return", "波动率", "Volatility", "累计收益");
         return result;
+    }
+
+    // 曲线底部指标只保留一处“期间收益”真值，优先替换旧的波动率或累计收益占位位。
+    private static void replaceCurveMetric(@NonNull List<AccountMetric> metrics,
+                                           @NonNull String targetName,
+                                           @NonNull String targetValue,
+                                           @NonNull String... aliases) {
+        int matchedIndex = -1;
+        int sharpeIndex = -1;
+        for (int i = 0; i < metrics.size(); i++) {
+            AccountMetric metric = metrics.get(i);
+            if (metric == null || metric.getName() == null) {
+                continue;
+            }
+            String normalizedName = normalizeMetricName(metric.getName());
+            if ("夏普比率".equals(metric.getName())) {
+                sharpeIndex = i;
+            }
+            if (matchesMetricName(normalizedName, targetName, aliases)) {
+                matchedIndex = i;
+                break;
+            }
+        }
+        AccountMetric periodMetric = new AccountMetric(targetName, targetValue);
+        if (matchedIndex >= 0) {
+            metrics.set(matchedIndex, periodMetric);
+            return;
+        }
+        if (sharpeIndex >= 0) {
+            metrics.add(sharpeIndex, periodMetric);
+            return;
+        }
+        metrics.add(periodMetric);
+    }
+
+    @NonNull
+    private static String normalizeMetricName(@Nullable String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replace(" ", "").trim();
+    }
+
+    private static boolean matchesMetricName(@NonNull String normalizedName,
+                                             @NonNull String targetName,
+                                             @NonNull String... aliases) {
+        if (normalizedName.equals(normalizeMetricName(targetName))) {
+            return true;
+        }
+        for (String alias : aliases) {
+            if (normalizedName.equals(normalizeMetricName(alias))) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

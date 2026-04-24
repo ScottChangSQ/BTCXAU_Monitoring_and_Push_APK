@@ -15,27 +15,13 @@ import java.util.Arrays;
 public class TradeRiskGuardTest {
 
     @Test
-    public void smallMarketOrderShouldAllowQuickMode() {
+    public void marketOrderShouldStayAllowedButRequireConfirmationByDefault() {
         TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateTrade(
                 TradeCommandFactory.withEntryMode(
                         TradeCommandFactory.openMarket("acc-1", "BTCUSD", "buy", 0.05d, 65000d, 0d, 0d),
                         "quick"
                 ),
-                config(0.10d, 1.00d, 4, 2.00d)
-        );
-
-        assertTrue(decision.isAllowed());
-        assertFalse(decision.isConfirmationRequired());
-    }
-
-    @Test
-    public void largeMarketOrderShouldRequireConfirmation() {
-        TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateTrade(
-                TradeCommandFactory.withEntryMode(
-                        TradeCommandFactory.openMarket("acc-1", "BTCUSD", "buy", 0.50d, 65000d, 0d, 0d),
-                        "quick"
-                ),
-                config(0.10d, 1.00d, 4, 2.00d)
+                config()
         );
 
         assertTrue(decision.isAllowed());
@@ -43,38 +29,50 @@ public class TradeRiskGuardTest {
     }
 
     @Test
-    public void overSizedMarketOrderShouldBeRejected() {
+    public void quickPendingOrderShouldStayAllowed() {
         TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateTrade(
-                TradeCommandFactory.openMarket("acc-1", "BTCUSD", "buy", 1.50d, 65000d, 0d, 0d),
-                config(0.10d, 1.00d, 4, 2.00d)
+                TradeCommandFactory.withEntryMode(
+                        TradeCommandFactory.pendingAdd("acc-1", "BTCUSD", "buy_limit", 0.50d, 64000d, 0d, 0d),
+                        "quick"
+                ),
+                config()
         );
 
-        assertFalse(decision.isAllowed());
-        assertTrue(decision.getMessage().contains("单笔市价"));
+        assertTrue(decision.isAllowed());
+        assertTrue(decision.isConfirmationRequired());
     }
 
     @Test
-    public void batchShouldRejectWhenItemCountExceedsLimit() throws Exception {
+    public void zeroVolumeOrderShouldBeRejected() {
+        TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateTrade(
+                TradeCommandFactory.openMarket("acc-1", "BTCUSD", "buy", 0d, 65000d, 0d, 0d),
+                config()
+        );
+
+        assertFalse(decision.isAllowed());
+        assertTrue(decision.getMessage().contains("手数"));
+    }
+
+    @Test
+    public void batchShouldRejectWhenItemContainsInvalidCommand() {
         BatchTradePlan plan = new BatchTradePlan(
                 "batch-risk-001",
                 "BEST_EFFORT",
                 "hedging",
                 "批量平仓 BTCUSD",
                 Arrays.asList(
-                        buildBatchItem("item-1", 0.20d),
-                        buildBatchItem("item-2", 0.20d),
-                        buildBatchItem("item-3", 0.20d)
+                        new BatchTradeItem("item-1", "坏命令", null, new JSONObject())
                 )
         );
 
-        TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateBatch(plan, config(0.10d, 1.00d, 2, 2.00d));
+        TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateBatch(plan, config());
 
         assertFalse(decision.isAllowed());
-        assertTrue(decision.getMessage().contains("批量项数"));
+        assertTrue(decision.getMessage().contains("无效命令"));
     }
 
     @Test
-    public void reverseBatchShouldForceConfirmation() throws Exception {
+    public void validBatchShouldRemainAllowed() throws Exception {
         BatchTradePlan plan = new BatchTradePlan(
                 "batch-risk-002",
                 "BEST_EFFORT",
@@ -83,21 +81,19 @@ public class TradeRiskGuardTest {
                 Arrays.asList(buildBatchItem("item-1", 0.20d))
         );
 
-        TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateBatch(plan, config(0.10d, 1.00d, 4, 2.00d));
+        TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateBatch(plan, config());
 
         assertTrue(decision.isAllowed());
-        assertTrue(decision.isConfirmationRequired());
+        assertFalse(decision.isConfirmationRequired());
     }
 
-    private static TradeRiskGuard.Config config(double maxQuickVolume,
-                                                double maxSingleVolume,
-                                                int maxBatchItems,
-                                                double maxBatchVolume) {
+    private static TradeRiskGuard.Config config() {
         return new TradeRiskGuard.Config(
-                maxQuickVolume,
-                maxSingleVolume,
-                maxBatchItems,
-                maxBatchVolume,
+                0.10d,
+                999d,
+                999,
+                999d,
+                true,
                 true,
                 true
         );

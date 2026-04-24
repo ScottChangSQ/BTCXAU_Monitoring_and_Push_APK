@@ -20,6 +20,7 @@ public class MainViewModelDisplaySnapshotSourceTest {
         );
 
         assertTrue(source.contains("getMarketRuntimeSnapshotLiveData()"));
+        assertTrue(source.contains("getMarketTruthSnapshotLiveData()"));
         assertTrue(source.contains("selectLatestPrice(String symbol)"));
         assertTrue(source.contains("selectClosedMinute(String symbol)"));
         assertFalse(source.contains("getDisplayPrices()"));

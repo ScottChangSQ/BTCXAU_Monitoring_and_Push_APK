@@ -6,13 +6,19 @@ package com.binance.monitor.ui.account;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.text.InputType;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
 import androidx.core.view.ViewCompat;
@@ -23,9 +29,13 @@ import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
+import com.binance.monitor.data.model.v2.trade.TradeCommand;
+import com.binance.monitor.data.remote.v2.GatewayV2TradeClient;
 import com.binance.monitor.databinding.ContentAccountPositionBinding;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
+import com.binance.monitor.domain.account.AccountTimeRange;
+import com.binance.monitor.domain.account.model.AccountSnapshot;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.runtime.ui.PageBootstrapSnapshot;
 import com.binance.monitor.runtime.ui.PageBootstrapState;
@@ -37,10 +47,21 @@ import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
-import com.binance.monitor.ui.chart.MarketChartActivity;
+import com.binance.monitor.ui.chart.MarketChartTradeSupport;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.theme.UiPaletteManager;
+import com.binance.monitor.ui.trade.BatchTradeCoordinator;
+import com.binance.monitor.ui.trade.TradeAuditStore;
+import com.binance.monitor.ui.trade.TradeBatchActionDialogCoordinator;
+import com.binance.monitor.ui.trade.TradeCommandFactory;
+import com.binance.monitor.ui.trade.TradeConfirmDialogController;
+import com.binance.monitor.ui.trade.TradeExecutionCoordinator;
+import com.binance.monitor.ui.trade.TradeRiskGuard;
+import com.binance.monitor.util.FormatUtils;
 import com.binance.monitor.util.SensitiveDisplayMasker;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -62,11 +83,16 @@ public final class AccountPositionPageController {
     private PositionAdapterV2 positionAdapter;
     private PendingOrderAdapter pendingOrderAdapter;
     private ExecutorService uiModelExecutor;
+    private ExecutorService tradeExecutor;
     private AccountStatsPreloadManager preloadManager;
     private SecureSessionPrefs secureSessionPrefs;
     private AccountPositionUiModelFactory uiModelFactory;
     private AccountSessionDialogController accountSessionDialogController;
     private AccountTradeHistoryBottomSheetController tradeHistoryBottomSheetController;
+    private GatewayV2TradeClient gatewayV2TradeClient;
+    private TradeExecutionCoordinator tradeExecutionCoordinator;
+    private BatchTradeCoordinator batchTradeCoordinator;
+    private TradeBatchActionDialogCoordinator batchActionDialogCoordinator;
     private AccountPositionUiModel currentUiModel = AccountPositionUiModel.empty();
     private AccountPositionUiModel lastStableUiModel = AccountPositionUiModel.empty();
     private List<TradeRecordItem> currentTradeHistory = Collections.emptyList();
@@ -95,6 +121,7 @@ public final class AccountPositionPageController {
         preloadManager = AccountStatsPreloadManager.getInstance(appContext);
         secureSessionPrefs = new SecureSessionPrefs(appContext);
         uiModelFactory = new AccountPositionUiModelFactory();
+        gatewayV2TradeClient = new GatewayV2TradeClient(appContext);
         accountSessionDialogController = new AccountSessionDialogController(
                 host.requireActivity(),
                 new AccountSessionDialogController.Callback() {
@@ -130,6 +157,15 @@ public final class AccountPositionPageController {
         );
         tradeHistoryBottomSheetController = new AccountTradeHistoryBottomSheetController(host.requireActivity());
         uiModelExecutor = Executors.newSingleThreadExecutor();
+        tradeExecutor = Executors.newSingleThreadExecutor();
+        tradeExecutionCoordinator = createTradeExecutionCoordinator();
+        batchTradeCoordinator = createBatchTradeCoordinator();
+        batchActionDialogCoordinator = new TradeBatchActionDialogCoordinator(
+                host.requireActivity(),
+                tradeExecutor,
+                batchTradeCoordinator,
+                this::refreshAccountTradeSnapshot
+        );
         ensureMonitorServiceStarted();
         preloadManager.start();
         initializePageContent();
@@ -195,6 +231,12 @@ public final class AccountPositionPageController {
         if (uiModelExecutor != null) {
             uiModelExecutor.shutdownNow();
         }
+        if (tradeExecutor != null) {
+            tradeExecutor.shutdownNow();
+        }
+        if (batchActionDialogCoordinator != null) {
+            batchActionDialogCoordinator.cancelRunningTask();
+        }
     }
 
     // 初始化三段列表，只负责显示，不在页面层重复排序。
@@ -214,12 +256,12 @@ public final class AccountPositionPageController {
         positionAdapter.setActionListener(new PositionAdapterV2.ActionListener() {
             @Override
             public void onCloseRequested(PositionItem item) {
-                host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_CLOSE_POSITION);
+                requestClosePosition(item);
             }
 
             @Override
             public void onModifyRequested(PositionItem item) {
-                host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_MODIFY_POSITION);
+                showModifyPositionDialog(item);
             }
         });
         binding.recyclerPendingOrders.setLayoutManager(new LinearLayoutManager(host.requireActivity()));
@@ -228,12 +270,12 @@ public final class AccountPositionPageController {
         pendingOrderAdapter.setActionListener(new PendingOrderAdapter.ActionListener() {
             @Override
             public void onModifyRequested(PositionItem item) {
-                host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_MODIFY_PENDING);
+                showModifyPendingDialog(item);
             }
 
             @Override
             public void onDeleteRequested(PositionItem item) {
-                host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_CANCEL_PENDING);
+                requestCancelPendingOrder(item);
             }
         });
     }
@@ -243,6 +285,7 @@ public final class AccountPositionPageController {
         binding.ivAccountPrivacyToggle.setOnClickListener(v -> togglePrivacyMaskState());
         binding.tvAccountConnectionStatus.setOnClickListener(v -> openAccountLogin());
         binding.btnOpenAccountHistory.setOnClickListener(v -> openTradeHistorySheet());
+        binding.btnAccountBatchActions.setOnClickListener(v -> openBatchTradeActions());
     }
 
     // 绑定底部导航；主壳承载时隐藏页内 Tab，避免双层导航。
@@ -552,6 +595,15 @@ public final class AccountPositionPageController {
                 palette.textPrimary,
                 R.style.TextAppearance_BinanceMonitor_Control
         );
+        UiPaletteManager.styleActionButton(
+                binding.btnAccountBatchActions,
+                palette,
+                palette.primarySoft,
+                palette.textPrimary,
+                R.style.TextAppearance_BinanceMonitor_Control,
+                8,
+                R.dimen.position_row_action_height
+        );
         ViewCompat.setBackgroundTintList(binding.btnOpenAccountHistory, null);
         binding.ivAccountPrivacyToggle.setImageTintList(ColorStateList.valueOf(palette.textSecondary));
         updateConnectionStatusChip(resolveDisplayedConnectionStatusText(currentUiModel));
@@ -739,6 +791,368 @@ public final class AccountPositionPageController {
             return;
         }
         tradeHistoryBottomSheetController.show(currentTradeHistory);
+    }
+
+    // 账户页批量入口与图表页共用同一条正式批量链。
+    private void openBatchTradeActions() {
+        if (batchActionDialogCoordinator == null) {
+            return;
+        }
+        batchActionDialogCoordinator.showEntry(new TradeBatchActionDialogCoordinator.BatchActionContext(
+                currentUiModel.getAccount(),
+                resolveCurrentAccountMode(),
+                "",
+                currentUiModel.getPositions(),
+                currentUiModel.getPendingOrders()
+        ));
+    }
+
+    // 账户页平仓按钮直接走正式交易主链。
+    private void requestClosePosition(@Nullable PositionItem item) {
+        if (item == null) {
+            return;
+        }
+        long positionTicket = item.getPositionTicket();
+        if (positionTicket <= 0L) {
+            Toast.makeText(host.requireActivity(), "当前持仓缺少有效票号，暂时不能平仓", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        double volume = Math.abs(item.getQuantity());
+        if (volume <= 0d) {
+            Toast.makeText(host.requireActivity(), "当前持仓手数无效，暂时不能平仓", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        executeTradeCommand(TradeCommandFactory.closePosition(
+                currentUiModel.getAccount(),
+                resolveTradeSymbol(item),
+                positionTicket,
+                volume,
+                0d
+        ));
+    }
+
+    // 账户页撤单按钮直接走正式交易主链。
+    private void requestCancelPendingOrder(@Nullable PositionItem item) {
+        if (item == null) {
+            return;
+        }
+        long orderTicket = item.getOrderId();
+        if (orderTicket <= 0L) {
+            Toast.makeText(host.requireActivity(), "当前挂单缺少有效票号，暂时不能撤销", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        executeTradeCommand(TradeCommandFactory.pendingCancel(
+                currentUiModel.getAccount(),
+                resolveTradeSymbol(item),
+                orderTicket
+        ));
+    }
+
+    // 账户页改单对话框。
+    private void showModifyPendingDialog(@Nullable PositionItem item) {
+        if (item == null) {
+            return;
+        }
+        LinearLayout container = createTradeFormContainer();
+        TextInputLayout priceLayout = createTradeInputLayout("挂单价格");
+        TextInputEditText priceInput = createTradeInput();
+        if (item.getPendingPrice() > 0d) {
+            priceInput.setText(FormatUtils.formatPrice(item.getPendingPrice()));
+        }
+        priceLayout.addView(priceInput);
+        container.addView(priceLayout);
+
+        TextInputLayout slLayout = createTradeInputLayout("止损");
+        TextInputEditText slInput = createTradeInput();
+        if (item.getStopLoss() > 0d) {
+            slInput.setText(FormatUtils.formatPrice(item.getStopLoss()));
+        }
+        slLayout.addView(slInput);
+        container.addView(slLayout);
+
+        TextInputLayout tpLayout = createTradeInputLayout("止盈");
+        TextInputEditText tpInput = createTradeInput();
+        if (item.getTakeProfit() > 0d) {
+            tpInput.setText(FormatUtils.formatPrice(item.getTakeProfit()));
+        }
+        tpLayout.addView(tpInput);
+        container.addView(tpLayout);
+
+        AlertDialog dialog = new MaterialAlertDialogBuilder(host.requireActivity())
+                .setTitle("修改挂单")
+                .setView(container)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("继续", null)
+                .create();
+        dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, UiPaletteManager.resolve(host.requireActivity()));
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            double price = parseTradeValue(priceInput, item.getPendingPrice());
+            double sl = parseTradeValue(slInput, item.getStopLoss());
+            double tp = parseTradeValue(tpInput, item.getTakeProfit());
+            executeTradeCommand(TradeCommandFactory.pendingModify(
+                    currentUiModel.getAccount(),
+                    resolveTradeSymbol(item),
+                    item.getOrderId(),
+                    price,
+                    sl,
+                    tp
+            ));
+            dialog.dismiss();
+        });
+    }
+
+    // 账户页修改 TP/SL 对话框。
+    private void showModifyPositionDialog(@Nullable PositionItem item) {
+        if (item == null) {
+            return;
+        }
+        LinearLayout container = createTradeFormContainer();
+        TextInputLayout slLayout = createTradeInputLayout("止损");
+        TextInputEditText slInput = createTradeInput();
+        if (item.getStopLoss() > 0d) {
+            slInput.setText(FormatUtils.formatPrice(item.getStopLoss()));
+        }
+        slLayout.addView(slInput);
+        container.addView(slLayout);
+
+        TextInputLayout tpLayout = createTradeInputLayout("止盈");
+        TextInputEditText tpInput = createTradeInput();
+        if (item.getTakeProfit() > 0d) {
+            tpInput.setText(FormatUtils.formatPrice(item.getTakeProfit()));
+        }
+        tpLayout.addView(tpInput);
+        container.addView(tpLayout);
+
+        AlertDialog dialog = new MaterialAlertDialogBuilder(host.requireActivity())
+                .setTitle("修改止盈止损")
+                .setView(container)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("继续", null)
+                .create();
+        dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, UiPaletteManager.resolve(host.requireActivity()));
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            double sl = parseTradeValue(slInput, item.getStopLoss());
+            double tp = parseTradeValue(tpInput, item.getTakeProfit());
+            if (sl <= 0d && tp <= 0d) {
+                Toast.makeText(host.requireActivity(), "请至少填写一个新的止盈或止损", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            executeTradeCommand(TradeCommandFactory.modifyTpSl(
+                    currentUiModel.getAccount(),
+                    resolveTradeSymbol(item),
+                    item.getPositionTicket(),
+                    item.getCostPrice() > 0d ? item.getCostPrice() : item.getLatestPrice(),
+                    sl,
+                    tp
+            ));
+            dialog.dismiss();
+        });
+    }
+
+    // 账户页单笔交易统一复用检查、确认和提交流程。
+    private void executeTradeCommand(@Nullable TradeCommand command) {
+        if (command == null || tradeExecutionCoordinator == null || tradeExecutor == null) {
+            return;
+        }
+        AccountStatsPreloadManager.Cache baselineCache = resolveCurrentSessionCache();
+        tradeExecutor.execute(() -> {
+            try {
+                TradeExecutionCoordinator.PreparedTrade preparedTrade = tradeExecutionCoordinator.prepareExecution(command);
+                mainHandler.post(() -> handlePreparedTrade(command, preparedTrade, baselineCache));
+            } catch (Exception exception) {
+                String message = exception.getMessage() == null ? "交易准备失败" : exception.getMessage().trim();
+                mainHandler.post(() -> Toast.makeText(host.requireActivity(), message, Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    // 检查通过后再决定是否弹确认框。
+    private void handlePreparedTrade(@NonNull TradeCommand command,
+                                     @Nullable TradeExecutionCoordinator.PreparedTrade preparedTrade,
+                                     @Nullable AccountStatsPreloadManager.Cache baselineCache) {
+        if (preparedTrade == null) {
+            Toast.makeText(host.requireActivity(), "交易准备失败，请稍后重试", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (preparedTrade.getUiState() != TradeExecutionCoordinator.UiState.AWAITING_CONFIRMATION) {
+            showTradeOutcome(preparedTrade.getMessage());
+            return;
+        }
+        if (!preparedTrade.requiresConfirmation()) {
+            submitTradeAfterConfirmation(preparedTrade.markConfirmed(), baselineCache);
+            return;
+        }
+        AlertDialog dialog = new MaterialAlertDialogBuilder(host.requireActivity())
+                .setTitle("确认交易")
+                .setMessage(TradeCommandFactory.describe(command) + "\n\n" + preparedTrade.getMessage())
+                .setNegativeButton("取消", null)
+                .setPositiveButton("确认", (dialogInterface, which) -> submitTradeAfterConfirmation(preparedTrade.markConfirmed(), baselineCache))
+                .create();
+        dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, UiPaletteManager.resolve(host.requireActivity()));
+    }
+
+    // 确认后的正式提交。
+    private void submitTradeAfterConfirmation(@NonNull TradeExecutionCoordinator.PreparedTrade preparedTrade,
+                                              @Nullable AccountStatsPreloadManager.Cache baselineCache) {
+        if (tradeExecutionCoordinator == null || tradeExecutor == null) {
+            return;
+        }
+        tradeExecutor.execute(() -> {
+            TradeExecutionCoordinator.ExecutionResult executionResult =
+                    tradeExecutionCoordinator.submitAfterConfirmation(preparedTrade, baselineCache);
+            mainHandler.post(() -> handleTradeExecutionResult(executionResult));
+        });
+    }
+
+    // 单笔交易结果统一提示并刷新账户页。
+    private void handleTradeExecutionResult(@Nullable TradeExecutionCoordinator.ExecutionResult executionResult) {
+        if (executionResult == null) {
+            showTradeOutcome("结果未确认，请稍后刷新");
+            return;
+        }
+        if (executionResult.getLatestCache() != null) {
+            scheduleUiModelBuild(executionResult.getLatestCache());
+        } else {
+            refreshAccountTradeSnapshot();
+        }
+        showTradeOutcome(executionResult.getMessage());
+    }
+
+    private void showTradeOutcome(@Nullable String message) {
+        String safeMessage = trimToEmpty(message);
+        if (safeMessage.isEmpty()) {
+            safeMessage = "交易结果未返回";
+        }
+        AlertDialog dialog = new MaterialAlertDialogBuilder(host.requireActivity())
+                .setTitle("交易结果")
+                .setMessage(safeMessage)
+                .setPositiveButton("知道了", null)
+                .create();
+        dialog.show();
+        UiPaletteManager.applyAlertDialogSurface(dialog, UiPaletteManager.resolve(host.requireActivity()));
+    }
+
+    private void refreshAccountTradeSnapshot() {
+        scheduleUiModelBuild(resolveCurrentSessionCache());
+        requestForegroundEntrySnapshot();
+    }
+
+    private TradeExecutionCoordinator createTradeExecutionCoordinator() {
+        TradeAuditStore auditStore = new TradeAuditStore(host.requireActivity());
+        return new TradeExecutionCoordinator(
+                new TradeExecutionCoordinator.TradeGateway() {
+                    @Override
+                    public com.binance.monitor.data.model.v2.trade.TradeCheckResult check(TradeCommand command) throws Exception {
+                        return gatewayV2TradeClient.check(command);
+                    }
+
+                    @Override
+                    public com.binance.monitor.data.model.v2.trade.TradeReceipt submit(TradeCommand command) throws Exception {
+                        return gatewayV2TradeClient.submit(command);
+                    }
+
+                    @Override
+                    public com.binance.monitor.data.model.v2.trade.TradeReceipt result(String requestId) throws Exception {
+                        return gatewayV2TradeClient.result(requestId);
+                    }
+                },
+                range -> preloadManager == null ? null : preloadManager.fetchFullForUi(range),
+                new TradeConfirmDialogController(this::buildTradeRiskConfig),
+                3,
+                this::buildTradeRiskConfig,
+                auditStore
+        );
+    }
+
+    private BatchTradeCoordinator createBatchTradeCoordinator() {
+        TradeAuditStore auditStore = new TradeAuditStore(host.requireActivity());
+        return new BatchTradeCoordinator(
+                new BatchTradeCoordinator.BatchTradeGateway() {
+                    @Override
+                    public com.binance.monitor.data.model.v2.trade.BatchTradeReceipt submit(com.binance.monitor.data.model.v2.trade.BatchTradePlan plan) throws Exception {
+                        return gatewayV2TradeClient.submitBatch(plan);
+                    }
+
+                    @Override
+                    public com.binance.monitor.data.model.v2.trade.BatchTradeReceipt result(String batchId) throws Exception {
+                        return gatewayV2TradeClient.batchResult(batchId);
+                    }
+                },
+                range -> preloadManager == null ? null : preloadManager.fetchFullForUi(range),
+                2,
+                this::buildTradeRiskConfig,
+                auditStore
+        );
+    }
+
+    @NonNull
+    private TradeRiskGuard.Config buildTradeRiskConfig() {
+        ConfigManager manager = ConfigManager.getInstance(host.getApplicationContext());
+        return new TradeRiskGuard.Config(0.10d, 999d, 999, 999d, true, true, manager.isTradeOneClickModeEnabled());
+    }
+
+    @NonNull
+    private String resolveCurrentAccountMode() {
+        AccountStatsPreloadManager.Cache cache = resolveCurrentSessionCache();
+        return cache == null ? "" : trimToEmpty(cache.getAccountMode());
+    }
+
+    @NonNull
+    private String resolveTradeSymbol(@Nullable PositionItem item) {
+        if (item == null) {
+            return "";
+        }
+        String code = trimToEmpty(item.getCode());
+        if (!code.isEmpty()) {
+            return MarketChartTradeSupport.toTradeSymbol(code);
+        }
+        return MarketChartTradeSupport.toTradeSymbol(item.getProductName());
+    }
+
+    @NonNull
+    private LinearLayout createTradeFormContainer() {
+        LinearLayout container = new LinearLayout(host.requireActivity());
+        container.setOrientation(LinearLayout.VERTICAL);
+        int padding = dp(8);
+        container.setPadding(padding, padding, padding, padding);
+        return container;
+    }
+
+    @NonNull
+    private TextInputLayout createTradeInputLayout(@NonNull String hint) {
+        TextInputLayout layout = new TextInputLayout(host.requireActivity());
+        layout.setHint(hint);
+        UiPaletteManager.styleInputField(layout, UiPaletteManager.resolve(host.requireActivity()));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.topMargin = dp(8);
+        layout.setLayoutParams(params);
+        return layout;
+    }
+
+    @NonNull
+    private TextInputEditText createTradeInput() {
+        TextInputEditText input = new TextInputEditText(host.requireActivity());
+        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setSingleLine(true);
+        return input;
+    }
+
+    private double parseTradeValue(@Nullable EditText input, double fallback) {
+        double value = MarketChartTradeSupport.parseOptionalDouble(
+                input == null || input.getText() == null ? "" : input.getText().toString(),
+                fallback
+        );
+        return value <= 0d ? fallback : value;
+    }
+
+    private int dp(int value) {
+        return Math.round(host.requireActivity().getResources().getDisplayMetrics().density * value);
     }
 
     // 账户持仓页也需要保证监控服务在线，避免只剩本地旧缓存而没有实时主链。

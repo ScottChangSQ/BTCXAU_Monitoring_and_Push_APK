@@ -117,7 +117,7 @@ public class AccountPositionUiModel {
                 Collections.emptyList(),
                 "",
                 "",
-                "未连接账户",
+                "未连接账户 | 未登录",
                 "当前持仓 0 条",
                 "挂单 0 条",
                 Collections.emptyList(),

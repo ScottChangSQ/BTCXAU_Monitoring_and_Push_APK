@@ -76,6 +76,10 @@ public class ChartOverlaySnapshotFactoryTest {
         assertTrue(snapshot.getOverlayMetaText().startsWith("更新时间 "));
         assertNotEquals("", snapshot.getSignature());
         assertEquals(100d, snapshot.getAggregateCostAnnotation().price, 0.0001d);
+        assertEquals("时间 2024-03-10 00:00:00", snapshot.getPositionAnnotations().get(0).detailLines[2]);
+        assertEquals("开仓 $100.00", snapshot.getPositionAnnotations().get(0).detailLines[3]);
+        assertEquals("时间 2024-03-10 00:01:00", snapshot.getPendingAnnotations().get(0).detailLines[2]);
+        assertEquals("挂单 $104.00", snapshot.getPendingAnnotations().get(0).detailLines[3]);
     }
 
     @Test
@@ -116,7 +120,7 @@ public class ChartOverlaySnapshotFactoryTest {
         assertEquals("position|position|11|line|sl", snapshot.getTradeLayerSnapshot().getLiveLines().get(2).getId());
         assertTrue(snapshot.getTradeLayerSnapshot().getLiveLines().get(0).isEditable());
         assertFalse(snapshot.getTradeLayerSnapshot().getLiveLines().get(0).isGhost());
-        assertEquals("", snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getActionText());
+        assertEquals("平仓", snapshot.getTradeLayerSnapshot().getLiveLines().get(0).getActionText());
     }
 
     @Test

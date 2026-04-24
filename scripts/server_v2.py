@@ -1,5 +1,6 @@
 # MT5 网关主入口，统一承载行情、交易与会话接口。
 import base64
+import configparser
 import hashlib
 import json
 import math
@@ -102,7 +103,18 @@ PORT = int(os.getenv("GATEWAY_PORT", "8787"))
 GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull | ea
 EA_SNAPSHOT_TTL_SEC = int(os.getenv("EA_SNAPSHOT_TTL_SEC", "35"))
 EA_INGEST_TOKEN = os.getenv("EA_INGEST_TOKEN", "").strip()
-SNAPSHOT_BUILD_CACHE_MS = int(os.getenv("SNAPSHOT_BUILD_CACHE_MS", "1000"))
+V2_STREAM_PUSH_INTERVAL_MS = _read_bounded_env_int(
+    "V2_STREAM_PUSH_INTERVAL_MS",
+    default=500,
+    minimum=200,
+    maximum=10000,
+)
+SNAPSHOT_BUILD_CACHE_MS = _read_bounded_env_int(
+    "SNAPSHOT_BUILD_CACHE_MS",
+    default=V2_STREAM_PUSH_INTERVAL_MS,
+    minimum=200,
+    maximum=V2_STREAM_PUSH_INTERVAL_MS,
+)
 SNAPSHOT_BUILD_MAX_STALE_MS = max(
     SNAPSHOT_BUILD_CACHE_MS,
     int(os.getenv("SNAPSHOT_BUILD_MAX_STALE_MS", "30000"))
@@ -118,16 +130,16 @@ TRADE_REQUEST_STORE_MAX_ENTRIES = max(100, int(os.getenv("TRADE_REQUEST_STORE_MA
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
 HEALTH_CACHE_MS = max(1000, int(os.getenv("HEALTH_CACHE_MS", "5000")))
-# 行情 stream 默认每秒推送一次；缓存寿命必须略长于推送节奏，否则每轮都会重新打上游。
+# 行情 stream 当前采用事件驱动 + 0.5s 合批发布；缓存寿命只服务闭合历史读取，不参与当前分钟 patch 真值。
 MARKET_CANDLES_CACHE_MS = max(1500, int(os.getenv("MARKET_CANDLES_CACHE_MS", "2000")))
 MARKET_CANDLES_CACHE_MAX_ENTRIES = max(8, int(os.getenv("MARKET_CANDLES_CACHE_MAX_ENTRIES", "120")))
 MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT = max(100, min(1000, int(os.getenv("MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT", "500"))))
 MARKET_CANDLES_UPSTREAM_RETRY = max(0, int(os.getenv("MARKET_CANDLES_UPSTREAM_RETRY", "1")))
-V2_STREAM_PUSH_INTERVAL_MS = _read_bounded_env_int(
-    "V2_STREAM_PUSH_INTERVAL_MS",
-    default=1000,
-    minimum=200,
-    maximum=10000,
+MARKET_STREAM_EVENT_TIMEOUT_MS = _read_bounded_env_int(
+    "MARKET_STREAM_EVENT_TIMEOUT_MS",
+    default=5000,
+    minimum=1000,
+    maximum=60000,
 )
 ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "5000")))
 ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
@@ -179,12 +191,29 @@ account_publish_state: Dict[str, Any] = {
     "pendingEventType": "",
     "pendingReasons": [],
 }
+market_realtime_publish_state: Dict[str, Any] = {
+    "seq": 0,
+    "publishedAt": 0,
+    "latestEventAt": 0,
+    "dirty": False,
+    "dirtyVersion": 0,
+    "publishedVersion": 0,
+    "latestSnapshot": None,
+    "pendingReasons": [],
+}
 v2_sync_state: Dict[str, Any] = {}
 v2_bus_producer_lock = Lock()
 v2_bus_producer_started = False
 v2_bus_producer_thread: Optional[Thread] = None
 v2_bus_stop_event = Event()
 v2_bus_wake_event = Event()
+market_realtime_publisher_lock = Lock()
+market_realtime_publisher_started = False
+market_realtime_publisher_thread: Optional[Thread] = None
+market_realtime_stop_event = Event()
+v2_stream_subscribers_lock = Lock()
+v2_stream_subscribers: Dict[int, Dict[str, Any]] = {}
+v2_stream_subscriber_seq = 0
 market_candles_cache: Dict[str, Dict[str, Any]] = {}
 health_status_cache: Dict[str, Any] = {}
 abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
@@ -210,6 +239,21 @@ session_runtime_credentials: Dict[str, Any] = {
     "password": "",
     "server": "",
 }
+# 服务器运行时交互状态：只记录最近发生的客户端事实，供状态面板直接读取。
+gateway_runtime_status: Dict[str, Any] = {
+    "streamClientsActive": 0,
+    "streamLastConnectedAt": 0,
+    "streamLastDisconnectedAt": 0,
+    "httpLastRequestAt": 0,
+    "httpLastRequestPath": "",
+    "sessionLastAction": "",
+    "sessionLastRequestAt": 0,
+    "sessionLastResult": "",
+    "tradeLastAction": "",
+    "tradeLastRequestAt": 0,
+    "tradeLastResult": "",
+    "lastClientAddress": "",
+}
 light_snapshot_build_condition = Condition(snapshot_cache_lock)
 light_snapshot_building = False
 session_snapshot_epoch = 0
@@ -218,12 +262,14 @@ if hasattr(app, "on_event"):
     @app.on_event("startup")
     def _startup_v2_bus_runtime() -> None:
         _bootstrap_v2_bus_producer()
+        _bootstrap_market_realtime_publisher()
         _start_market_stream_runtime()
 
 
     @app.on_event("shutdown")
     def _shutdown_v2_bus_runtime() -> None:
         _stop_v2_bus_producer()
+        _stop_market_realtime_publisher()
         _stop_market_stream_runtime()
 
 
@@ -272,6 +318,126 @@ def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
+def _normalize_runtime_client_address(client_address: Any) -> str:
+    """把客户端来源压成可显示的单一字符串。"""
+    if client_address is None:
+        return ""
+    if isinstance(client_address, (tuple, list)) and client_address:
+        host = str(client_address[0] or "").strip()
+        port = ""
+        if len(client_address) > 1 and str(client_address[1] or "").strip():
+            port = str(client_address[1]).strip()
+        if host and port:
+            return f"{host}:{port}"
+        return host
+    host = str(getattr(client_address, "host", "") or "").strip()
+    port = str(getattr(client_address, "port", "") or "").strip()
+    if host and port:
+        return f"{host}:{port}"
+    if host:
+        return host
+    return str(client_address or "").strip()
+
+
+def _update_gateway_runtime_status(**fields: Any) -> None:
+    """在锁内原地更新运行时状态，避免并发下状态撕裂。"""
+    with state_lock:
+        for key, value in fields.items():
+            gateway_runtime_status[key] = value
+
+
+def _record_runtime_client_address(client_address: Any) -> None:
+    """记录最近一次可识别的客户端来源。"""
+    normalized = _normalize_runtime_client_address(client_address)
+    if normalized:
+        _update_gateway_runtime_status(lastClientAddress=normalized)
+
+
+def _record_runtime_http_request(path: str, client_address: Any = None) -> None:
+    """记录最近一次客户端 HTTP 请求事实。"""
+    _record_runtime_client_address(client_address)
+    _update_gateway_runtime_status(
+        httpLastRequestAt=_now_ms(),
+        httpLastRequestPath=str(path or "").strip(),
+    )
+
+
+def _record_runtime_session_action(action: str, result: str, client_address: Any = None) -> None:
+    """记录最近一次会话动作事实。"""
+    _record_runtime_client_address(client_address)
+    _update_gateway_runtime_status(
+        sessionLastAction=str(action or "").strip(),
+        sessionLastRequestAt=_now_ms(),
+        sessionLastResult=str(result or "").strip(),
+    )
+
+
+def _record_runtime_trade_action(action: str, result: str, client_address: Any = None) -> None:
+    """记录最近一次交易动作事实。"""
+    _record_runtime_client_address(client_address)
+    _update_gateway_runtime_status(
+        tradeLastAction=str(action or "").strip(),
+        tradeLastRequestAt=_now_ms(),
+        tradeLastResult=str(result or "").strip(),
+    )
+
+
+def _record_runtime_stream_connected(client_address: Any = None) -> None:
+    """记录 v2/stream 客户端已连接。"""
+    _record_runtime_client_address(client_address)
+    with state_lock:
+        current_active = max(0, int(gateway_runtime_status.get("streamClientsActive", 0) or 0))
+        gateway_runtime_status["streamClientsActive"] = current_active + 1
+        gateway_runtime_status["streamLastConnectedAt"] = _now_ms()
+
+
+def _record_runtime_stream_disconnected(client_address: Any = None) -> None:
+    """记录 v2/stream 客户端已断开。"""
+    _record_runtime_client_address(client_address)
+    with state_lock:
+        current_active = max(0, int(gateway_runtime_status.get("streamClientsActive", 0) or 0))
+        gateway_runtime_status["streamClientsActive"] = max(0, current_active - 1)
+        gateway_runtime_status["streamLastDisconnectedAt"] = _now_ms()
+
+
+def _build_gateway_runtime_status_payload() -> Dict[str, Any]:
+    """构建可直接返回给状态面板的运行时状态。"""
+    with state_lock:
+        return {
+            "streamClientsActive": max(0, int(gateway_runtime_status.get("streamClientsActive", 0) or 0)),
+            "streamLastConnectedAt": max(0, int(gateway_runtime_status.get("streamLastConnectedAt", 0) or 0)),
+            "streamLastDisconnectedAt": max(0, int(gateway_runtime_status.get("streamLastDisconnectedAt", 0) or 0)),
+            "httpLastRequestAt": max(0, int(gateway_runtime_status.get("httpLastRequestAt", 0) or 0)),
+            "httpLastRequestPath": str(gateway_runtime_status.get("httpLastRequestPath") or ""),
+            "sessionLastAction": str(gateway_runtime_status.get("sessionLastAction") or ""),
+            "sessionLastRequestAt": max(0, int(gateway_runtime_status.get("sessionLastRequestAt", 0) or 0)),
+            "sessionLastResult": str(gateway_runtime_status.get("sessionLastResult") or ""),
+            "tradeLastAction": str(gateway_runtime_status.get("tradeLastAction") or ""),
+            "tradeLastRequestAt": max(0, int(gateway_runtime_status.get("tradeLastRequestAt", 0) or 0)),
+            "tradeLastResult": str(gateway_runtime_status.get("tradeLastResult") or ""),
+            "lastClientAddress": str(gateway_runtime_status.get("lastClientAddress") or ""),
+        }
+
+
+def _build_runtime_panel_payload() -> Dict[str, Any]:
+    """构建给 Windows 状态面板使用的单次聚合快照。"""
+    diagnostic_items = session_diagnostic_store.latest_timeline("")
+    latest_diagnostic = diagnostic_items[-1] if diagnostic_items else {}
+    return {
+        "health": health(),
+        "source": source_status(),
+        "session": _build_verified_session_status_payload(verify_live_identity=False),
+        "runtime": _build_gateway_runtime_status_payload(),
+        "latestDiagnostic": {
+            "requestId": str(latest_diagnostic.get("requestId") or ""),
+            "stage": str(latest_diagnostic.get("stage") or ""),
+            "status": str(latest_diagnostic.get("status") or ""),
+            "message": str(latest_diagnostic.get("message") or ""),
+            "serverTime": int(latest_diagnostic.get("serverTime") or 0),
+        },
+    }
+
+
 # 统一生成 v2 同步 token，供快照、增量和 WS 消息复用。
 def _build_sync_token(server_time_ms: int, revision: str) -> str:
     payload = f"{int(server_time_ms)}:{revision}".encode("utf-8")
@@ -308,6 +474,21 @@ def _reset_account_publish_state_locked() -> None:
     })
 
 
+def _reset_market_realtime_publish_state_locked() -> None:
+    """重置市场实时发布态，保证独立 marketTick 序号与快照一起清零。"""
+    market_realtime_publish_state.clear()
+    market_realtime_publish_state.update({
+        "seq": 0,
+        "publishedAt": 0,
+        "latestEventAt": 0,
+        "dirty": False,
+        "dirtyVersion": 0,
+        "publishedVersion": 0,
+        "latestSnapshot": None,
+        "pendingReasons": [],
+    })
+
+
 def _read_account_publish_state() -> Dict[str, Any]:
     with snapshot_cache_lock:
         state = account_publish_state or {}
@@ -326,6 +507,21 @@ def _read_account_publish_state() -> Dict[str, Any]:
             "event": _clone_json_value(event) if event is not None else None,
             "abnormalSnapshot": _clone_json_value(state.get("abnormalSnapshot")) if state.get("abnormalSnapshot") is not None else None,
             "pendingEventType": str(state.get("pendingEventType", "") or ""),
+            "pendingReasons": [str(item) for item in (state.get("pendingReasons") or [])],
+        }
+
+
+def _read_market_realtime_publish_state() -> Dict[str, Any]:
+    with snapshot_cache_lock:
+        state = market_realtime_publish_state or {}
+        return {
+            "seq": int(state.get("seq", 0) or 0),
+            "publishedAt": int(state.get("publishedAt", 0) or 0),
+            "latestEventAt": int(state.get("latestEventAt", 0) or 0),
+            "dirty": bool(state.get("dirty", False)),
+            "dirtyVersion": int(state.get("dirtyVersion", 0) or 0),
+            "publishedVersion": int(state.get("publishedVersion", 0) or 0),
+            "latestSnapshot": _clone_json_value(state.get("latestSnapshot")) if state.get("latestSnapshot") is not None else None,
             "pendingReasons": [str(item) for item in (state.get("pendingReasons") or [])],
         }
 
@@ -355,7 +551,43 @@ def _publish_v2_bus_event(event_type: str,
             "pendingEventType": "",
             "pendingReasons": [],
         })
-        return _clone_json_value(event)
+        published_event = _clone_json_value(event)
+    _notify_v2_stream_subscribers({
+        "kind": "syncEvent",
+        "seq": int(published_event.get("busSeq", 0) or 0),
+    })
+    return published_event
+
+
+def _build_market_tick_message(snapshot: Dict[str, Any], seq: int, published_at: int) -> Dict[str, Any]:
+    return {
+        "type": "marketTick",
+        "marketSeq": max(0, int(seq or 0)),
+        "publishedAt": int(published_at or 0),
+        "market": _clone_json_value(snapshot or {}),
+    }
+
+
+def _publish_market_tick(snapshot: Dict[str, Any], published_at: int, published_version: int) -> Dict[str, Any]:
+    with snapshot_cache_lock:
+        seq = int(market_realtime_publish_state.get("seq", 0) or 0) + 1
+        current_dirty_version = int(market_realtime_publish_state.get("dirtyVersion", 0) or 0)
+        has_newer_dirty = current_dirty_version > max(0, int(published_version or 0))
+        pending_reasons = [str(item) for item in (market_realtime_publish_state.get("pendingReasons") or [])]
+        market_realtime_publish_state.update({
+            "seq": seq,
+            "publishedAt": int(published_at or 0),
+            "publishedVersion": max(0, int(published_version or 0)),
+            "dirty": has_newer_dirty,
+            "latestSnapshot": _clone_json_value(snapshot or {}),
+            "pendingReasons": pending_reasons if has_newer_dirty else [],
+        })
+        message = _build_market_tick_message(snapshot, seq, published_at)
+    _notify_v2_stream_subscribers({
+        "kind": "marketTick",
+        "seq": int(message.get("marketSeq", 0) or 0),
+    })
+    return message
 
 
 def _request_v2_publish(reason: str, event_type: str = "syncEvent") -> None:
@@ -371,6 +603,20 @@ def _request_v2_publish(reason: str, event_type: str = "syncEvent") -> None:
         if event_type_text == "syncBootstrap" or not current_event_type:
             account_publish_state["pendingEventType"] = event_type_text
     v2_bus_wake_event.set()
+
+
+def _request_v2_market_publish(reason: str = "market_stream") -> None:
+    """市场链只负责标记独立 marketTick 发布器，不再混入账户 bus 状态。"""
+    reason_text = str(reason or "market_stream").strip() or "market_stream"
+    now_ms = _now_ms()
+    with snapshot_cache_lock:
+        pending_reasons = [str(item) for item in (market_realtime_publish_state.get("pendingReasons") or [])]
+        if reason_text not in pending_reasons:
+            pending_reasons.append(reason_text)
+        market_realtime_publish_state["pendingReasons"] = pending_reasons
+        market_realtime_publish_state["dirty"] = True
+        market_realtime_publish_state["latestEventAt"] = now_ms
+        market_realtime_publish_state["dirtyVersion"] = int(market_realtime_publish_state.get("dirtyVersion", 0) or 0) + 1
 
 
 def _read_abnormal_sync_state_for_bus() -> Dict[str, Any]:
@@ -472,7 +718,32 @@ def _build_v2_stream_bootstrap_message(state: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
-def _build_v2_stream_event_for_client(last_bus_seq: int) -> Dict[str, Any]:
+def _build_v2_stream_heartbeat_message(last_bus_seq: int) -> Dict[str, Any]:
+    state = _read_account_publish_state()
+    current_bus_seq = int(state.get("busSeq", 0) or 0)
+    published_at = int(state.get("publishedAt", 0) or 0)
+    revisions = dict(state.get("revisions") or {})
+    heartbeat_bus_seq = current_bus_seq if current_bus_seq > 0 else int(last_bus_seq or 0)
+    return _normalize_v2_stream_message("heartbeat", heartbeat_bus_seq, published_at, revisions, {})
+
+
+def _build_market_tick_message_for_client(last_market_seq: int) -> Optional[Dict[str, Any]]:
+    state = _read_market_realtime_publish_state()
+    current_market_seq = int(state.get("seq", 0) or 0)
+    if current_market_seq <= 0 or current_market_seq <= int(last_market_seq or 0):
+        return None
+    snapshot = state.get("latestSnapshot") or {}
+    return _build_market_tick_message(
+        snapshot=snapshot,
+        seq=current_market_seq,
+        published_at=int(state.get("publishedAt", 0) or 0),
+    )
+
+
+def _build_v2_stream_event_for_client(last_bus_seq: int, last_market_seq: int = 0) -> Dict[str, Any]:
+    market_tick = _build_market_tick_message_for_client(last_market_seq)
+    if market_tick is not None:
+        return market_tick
     state = _read_account_publish_state()
     current_bus_seq = int(state.get("busSeq", 0) or 0)
     published_at = int(state.get("publishedAt", 0) or 0)
@@ -497,6 +768,64 @@ def _build_v2_stream_event_for_client(last_bus_seq: int) -> Dict[str, Any]:
     return _build_v2_stream_bootstrap_message(state)
 
 
+def _register_v2_stream_subscriber(loop: asyncio.AbstractEventLoop,
+                                   queue: "asyncio.Queue[Dict[str, Any]]") -> int:
+    """注册一个 stream 客户端，供 marketTick/syncEvent 发布后事件驱动唤醒发送循环。"""
+    global v2_stream_subscriber_seq
+    with v2_stream_subscribers_lock:
+        v2_stream_subscriber_seq += 1
+        subscriber_id = v2_stream_subscriber_seq
+        v2_stream_subscribers[subscriber_id] = {
+            "loop": loop,
+            "queue": queue,
+        }
+        return subscriber_id
+
+
+def _unregister_v2_stream_subscriber(subscriber_id: int) -> None:
+    """移除已经断开的 stream 客户端订阅。"""
+    with v2_stream_subscribers_lock:
+        v2_stream_subscribers.pop(int(subscriber_id or 0), None)
+
+
+def _push_v2_stream_event(queue: "asyncio.Queue[Dict[str, Any]]", event: Dict[str, Any]) -> None:
+    """每个客户端只保留最近一次唤醒事件，避免持续行情把 websocket 队列堆满。"""
+    try:
+        while True:
+            queue.get_nowait()
+    except Exception:
+        pass
+    try:
+        queue.put_nowait({
+            "kind": str((event or {}).get("kind", "") or ""),
+            "seq": max(0, int((event or {}).get("seq", 0) or 0)),
+        })
+    except Exception:
+        return
+
+
+def _notify_v2_stream_subscribers(event: Dict[str, Any]) -> None:
+    """发布完成后立即唤醒 websocket 客户端，由客户端循环自行决定发送哪类消息。"""
+    event_kind = str((event or {}).get("kind", "") or "")
+    event_seq = int((event or {}).get("seq", 0) or 0)
+    if not event_kind or event_seq <= 0:
+        return
+    with v2_stream_subscribers_lock:
+        subscribers = list(v2_stream_subscribers.values())
+    for subscriber in subscribers:
+        loop = subscriber.get("loop")
+        queue = subscriber.get("queue")
+        if loop is None or queue is None:
+            continue
+        try:
+            loop.call_soon_threadsafe(_push_v2_stream_event, queue, {
+                "kind": event_kind,
+                "seq": event_seq,
+            })
+        except Exception:
+            continue
+
+
 # 生成交易命令摘要，用于 requestId 幂等的内容一致性校验。
 def _trade_command_digest(command: Dict[str, Any]) -> str:
     payload = json.dumps(command or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -507,11 +836,14 @@ def _trade_command_digest(command: Dict[str, Any]) -> str:
 def _detect_account_mode() -> str:
     if mt5 is None:
         return "unknown"
-    try:
-        account = mt5.account_info()
-    except Exception:
-        account = None
-    return v2_trade.detect_account_mode(mt5, account)
+    with state_lock:
+        try:
+            # 交易链必须先复用正式 MT5 会话，再读取账户模式，避免和快照链出现真值分叉。
+            _ensure_mt5()
+            account = mt5.account_info()
+        except Exception:
+            account = None
+        return v2_trade.detect_account_mode(mt5, account)
 
 
 # 统一读取交易请求里对应的持仓，便于平仓和改单动作复用。
@@ -520,10 +852,13 @@ def _lookup_trade_position(params: Dict[str, Any], account_mode: str) -> Optiona
         return None
     if mt5 is None:
         return None
-    try:
-        positions = mt5.positions_get() or []
-    except Exception:
-        return None
+    with state_lock:
+        try:
+            # 平仓/改单和账户模式必须基于同一条已初始化的 MT5 会话读取持仓。
+            _ensure_mt5()
+            positions = mt5.positions_get() or []
+        except Exception:
+            return None
     target_ticket = int(float(params.get("positionTicket") or params.get("positionId") or 0))
     target_symbol = str(params.get("symbol") or "").strip().upper()
     if target_ticket > 0:
@@ -568,6 +903,8 @@ def _trade_check_request(mt5_request: Dict[str, Any]) -> Any:
     if mt5 is None:
         raise RuntimeError("MetaTrader5 package is unavailable")
     _ensure_mt5()
+    if not _ensure_mt5_trade_runtime_ready():
+        return _build_mt5_client_disabled_result()
     return mt5.order_check(mt5_request)
 
 
@@ -576,6 +913,8 @@ def _trade_send_request(mt5_request: Dict[str, Any]) -> Any:
     if mt5 is None:
         raise RuntimeError("MetaTrader5 package is unavailable")
     _ensure_mt5()
+    if not _ensure_mt5_trade_runtime_ready():
+        return _build_mt5_client_disabled_result()
     return mt5.order_send(mt5_request)
 
 
@@ -1421,11 +1760,31 @@ def _v2_bus_publish_current_state() -> None:
 
 def _v2_bus_producer_loop() -> None:
     interval_sec = max(0.2, float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0)
+    publish_due_at = 0.0
+    has_pending_publish = False
     while not v2_bus_stop_event.is_set():
-        v2_bus_wake_event.wait(interval_sec)
-        v2_bus_wake_event.clear()
+        if has_pending_publish and publish_due_at > 0.0 and time.monotonic() >= publish_due_at:
+            publish_due_at = 0.0
+            has_pending_publish = False
+            try:
+                _v2_bus_publish_current_state()
+            except Exception:
+                pass
+            continue
+        wait_timeout = interval_sec if publish_due_at <= 0.0 else max(0.0, publish_due_at - time.monotonic())
+        wake_triggered = v2_bus_wake_event.wait(wait_timeout)
         if v2_bus_stop_event.is_set():
             break
+        if wake_triggered:
+            v2_bus_wake_event.clear()
+            has_pending_publish = True
+            if publish_due_at <= 0.0:
+                publish_due_at = time.monotonic() + interval_sec
+            continue
+        if not has_pending_publish:
+            continue
+        publish_due_at = 0.0
+        has_pending_publish = False
         try:
             _v2_bus_publish_current_state()
         except Exception:
@@ -1440,6 +1799,61 @@ def _start_v2_bus_producer_locked() -> None:
     thread.start()
     v2_bus_producer_thread = thread
     v2_bus_producer_started = True
+
+
+def _publish_market_realtime_current_state() -> None:
+    with snapshot_cache_lock:
+        dirty = bool(market_realtime_publish_state.get("dirty", False))
+        dirty_version = int(market_realtime_publish_state.get("dirtyVersion", 0) or 0)
+        published_version = int(market_realtime_publish_state.get("publishedVersion", 0) or 0)
+    if not dirty or dirty_version <= published_version:
+        return
+    now_ms = _now_ms()
+    snapshot = _build_v2_market_section(now_ms)
+    _publish_market_tick(
+        snapshot=snapshot,
+        published_at=now_ms,
+        published_version=dirty_version,
+    )
+
+
+def _market_realtime_publisher_loop() -> None:
+    interval_sec = max(0.2, float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0)
+    while not market_realtime_stop_event.wait(interval_sec):
+        try:
+            _publish_market_realtime_current_state()
+        except Exception:
+            continue
+
+
+def _start_market_realtime_publisher_locked() -> None:
+    global market_realtime_publisher_started, market_realtime_publisher_thread
+    market_realtime_stop_event.clear()
+    thread = Thread(target=_market_realtime_publisher_loop, name="market-realtime-publisher", daemon=True)
+    thread.start()
+    market_realtime_publisher_thread = thread
+    market_realtime_publisher_started = True
+
+
+def _bootstrap_market_realtime_publisher() -> None:
+    with market_realtime_publisher_lock:
+        alive = market_realtime_publisher_thread is not None and market_realtime_publisher_thread.is_alive()
+        if not alive:
+            _start_market_realtime_publisher_locked()
+
+
+def _stop_market_realtime_publisher() -> None:
+    global market_realtime_publisher_started, market_realtime_publisher_thread
+    with market_realtime_publisher_lock:
+        thread = market_realtime_publisher_thread
+        if thread is None:
+            market_realtime_publisher_started = False
+            return
+        market_realtime_stop_event.set()
+        if thread.is_alive():
+            thread.join(timeout=1.0)
+        market_realtime_publisher_thread = None
+        market_realtime_publisher_started = False
 
 
 def _bootstrap_v2_bus_producer() -> None:
@@ -1474,6 +1888,57 @@ def _build_market_runtime_symbol_state(symbol: str) -> Dict[str, Any]:
     return v2_market_runtime.build_symbol_state(runtime, symbol)
 
 
+def _build_runtime_patch_row_from_candle(candle: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """把当前分钟 patch candle 还原成 market/candles 所需的原始 kline 行。"""
+    if not isinstance(candle, dict):
+        return None
+    return {
+        "k": {
+            "t": candle.get("openTime"),
+            "T": candle.get("closeTime"),
+            "s": candle.get("symbol"),
+            "i": candle.get("interval"),
+            "o": str(candle.get("open", 0.0) or 0.0),
+            "h": str(candle.get("high", 0.0) or 0.0),
+            "l": str(candle.get("low", 0.0) or 0.0),
+            "c": str(candle.get("close", 0.0) or 0.0),
+            "v": str(candle.get("volume", 0.0) or 0.0),
+            "q": str(candle.get("quoteVolume", 0.0) or 0.0),
+            "n": int(candle.get("tradeCount", 0) or 0),
+            "x": False,
+        }
+    }
+
+
+def _is_runtime_patch_fresh(latest_patch: Optional[Dict[str, Any]], now_ms: int) -> bool:
+    """当前分钟 patch 只在其所属分钟窗口内有效，过期后必须立刻视为无效。"""
+    if not isinstance(latest_patch, dict):
+        return False
+    open_time = int(latest_patch.get("openTime", 0) or 0)
+    close_time = int(latest_patch.get("closeTime", 0) or 0)
+    safe_now_ms = max(0, int(now_ms or 0))
+    return open_time > 0 and close_time >= safe_now_ms and open_time <= safe_now_ms
+
+
+def _sanitize_runtime_symbol_state(runtime_state: Dict[str, Any], now_ms: int) -> Dict[str, Any]:
+    """去掉已经过期的 runtime patch，禁止旧分钟继续冒充当前分钟。"""
+    sanitized = dict(runtime_state or {})
+    latest_patch = sanitized.get("latestPatch")
+    if _is_runtime_patch_fresh(latest_patch, now_ms):
+        return sanitized
+    latest_closed = sanitized.get("latestClosedCandle")
+    sanitized["latestPatch"] = None
+    if isinstance(latest_closed, dict):
+        sanitized["latestPrice"] = float(latest_closed.get("close", 0.0) or 0.0)
+        sanitized["latestOpenTime"] = int(latest_closed.get("openTime", 0) or 0)
+        sanitized["latestCloseTime"] = int(latest_closed.get("closeTime", 0) or 0)
+    else:
+        sanitized["latestPrice"] = 0.0
+        sanitized["latestOpenTime"] = 0
+        sanitized["latestCloseTime"] = 0
+    return sanitized
+
+
 def _get_market_runtime_patch_row(symbol: str) -> Optional[Dict[str, Any]]:
     """兼容真实 runtime 字典和测试注入桩，统一读取当前 1m patch 原始行。"""
     runtime = market_stream_runtime
@@ -1501,6 +1966,33 @@ def _build_market_runtime_source_status() -> Dict[str, Any]:
     return v2_market_runtime.build_source_status(runtime)
 
 
+def _is_market_stream_runtime_stale(now_ms: int) -> bool:
+    """按最近真实业务事件时间判活，连接活着但没有新 kline 也必须认定为失活。"""
+    runtime_status = _build_market_runtime_source_status()
+    if not bool(runtime_status.get("marketRuntimeConnected")):
+        return False
+    last_event_time = max(
+        int(runtime_status.get("marketRuntimeLastEventTime", 0) or 0),
+        int(runtime_status.get("marketRuntimeConnectedAt", 0) or 0),
+    )
+    if last_event_time <= 0:
+        return False
+    return max(0, int(now_ms or 0)) - last_event_time >= MARKET_STREAM_EVENT_TIMEOUT_MS
+
+
+def _mark_market_stream_runtime_stale(now_ms: int, reason: str) -> None:
+    """市场 WS 一旦长时间没有新业务帧，就立刻撤销旧 patch 并要求重连。"""
+    v2_market_runtime.clear_all_patches(market_stream_runtime)
+    v2_market_runtime.mark_connection_state(
+        market_stream_runtime,
+        connecting=False,
+        connected=False,
+        updated_at_ms=max(0, int(now_ms or 0)),
+        last_error=str(reason or ""),
+    )
+    _request_v2_market_publish("market_stream_stale")
+
+
 def _bootstrap_market_stream_runtime_from_rest() -> None:
     """在 WS 真值尚未连上前，用极小的 REST 窗口补一层冷启动底稿。"""
     runtime = market_stream_runtime
@@ -1523,6 +2015,7 @@ def _bootstrap_market_stream_runtime_from_rest() -> None:
             v2_market_runtime.bootstrap_symbol_from_rest_rows(runtime, symbol, rows, _now_ms())
         except Exception:
             continue
+    _request_v2_market_publish("market_bootstrap")
 
 
 def _market_runtime_bootstrap_minute_limit() -> int:
@@ -1551,31 +2044,34 @@ def _market_runtime_bootstrap_minute_limit() -> int:
 
 
 def _build_market_stream_upstream_url() -> str:
-    """构建 Binance combined stream URL，只订阅当前服务需要的 1m K 线。"""
-    streams = "/".join(symbol.lower() + "@kline_1m" for symbol in ABNORMAL_SYMBOLS)
+    """构建 Binance combined stream URL，只订阅当前服务需要的 trade 流。"""
+    streams = "/".join(symbol.lower() + "@trade" for symbol in ABNORMAL_SYMBOLS)
     return _build_binance_ws_upstream_url("/stream", f"streams={streams}")
 
 
 def _consume_market_stream_runtime_message(raw_message: Any) -> None:
-    """解析 WS 文本并推进市场运行时。只处理 kline 事件，其它消息直接忽略。"""
+    """解析 WS 文本并推进市场运行时。只处理 trade 事件，其它消息直接忽略。"""
     text = raw_message.decode("utf-8") if isinstance(raw_message, (bytes, bytearray)) else str(raw_message or "")
     if not text:
         return
     payload = json.loads(text)
     event = dict((payload or {}).get("data") or payload or {})
-    if not isinstance(event.get("k"), dict):
+    if str(event.get("e") or "").strip().lower() != "trade":
         return
-    v2_market_runtime.apply_ws_kline_event(market_stream_runtime, payload)
+    applied = v2_market_runtime.apply_ws_trade_event(market_stream_runtime, payload)
+    if applied is not None:
+        _request_v2_market_publish("market_stream_trade")
 
 
 async def _run_market_stream_runtime_loop() -> None:
     """保持 Binance 市场 WS 长连接，并把 1m K 线持续写入内存真值。"""
     upstream_url = _build_market_stream_upstream_url()
+    connected_at_ms = _now_ms()
     v2_market_runtime.mark_connection_state(
         market_stream_runtime,
         connecting=True,
         connected=False,
-        updated_at_ms=_now_ms(),
+        updated_at_ms=connected_at_ms,
         last_error="",
     )
     async with websockets.connect(
@@ -1584,17 +2080,22 @@ async def _run_market_stream_runtime_loop() -> None:
         ping_timeout=20,
         close_timeout=5,
     ) as upstream:
+        connected_at_ms = _now_ms()
         v2_market_runtime.mark_connection_state(
             market_stream_runtime,
             connecting=False,
             connected=True,
-            updated_at_ms=_now_ms(),
+            updated_at_ms=connected_at_ms,
             last_error="",
         )
         while not market_stream_runtime_stop_event.is_set():
             try:
                 message = await asyncio.wait_for(upstream.recv(), timeout=1.0)
             except asyncio.TimeoutError:
+                if _is_market_stream_runtime_stale(_now_ms()):
+                    raise RuntimeError(
+                        f"market stream stalled for {MARKET_STREAM_EVENT_TIMEOUT_MS}ms without new trade event"
+                    )
                 continue
             _consume_market_stream_runtime_message(message)
 
@@ -1606,6 +2107,7 @@ def _market_stream_runtime_worker() -> None:
         try:
             asyncio.run(_run_market_stream_runtime_loop())
         except Exception as exc:
+            _mark_market_stream_runtime_stale(_now_ms(), str(exc))
             v2_market_runtime.mark_connection_state(
                 market_stream_runtime,
                 connecting=False,
@@ -2771,6 +3273,153 @@ def _resolve_direct_login_terminal_path() -> Tuple[Optional[str], str]:
     return None, "missing"
 
 
+def _read_text_file_utf8(path_value: Path) -> str:
+    """统一按 UTF-8 读取本地文本，缺失时返回空字符串。"""
+    if not isinstance(path_value, Path) or not path_value.exists():
+        return ""
+    return path_value.read_text(encoding="utf-8", errors="replace").lstrip("\ufeff")
+
+
+def _resolve_mt5_terminal_common_ini_path(path_value: Optional[str]) -> Optional[Path]:
+    """按终端 exe 路径定位当前实例真正使用的 common.ini。"""
+    normalized_path = _normalize_path(str(path_value or ""))
+    if not normalized_path:
+        return None
+    terminal_path = Path(normalized_path)
+    install_dir = terminal_path.parent if terminal_path.suffix else terminal_path
+    portable_common_ini = install_dir / "config" / "common.ini"
+    if portable_common_ini.exists():
+        return portable_common_ini
+
+    app_data = str(os.getenv("APPDATA", "") or "").strip()
+    if not app_data:
+        return None
+    terminal_root = Path(app_data) / "MetaQuotes" / "Terminal"
+    if not terminal_root.exists():
+        return None
+
+    normalized_install_dir = _normalize_windows_executable_identity(str(install_dir))
+    for child in terminal_root.iterdir():
+        if not child.is_dir():
+            continue
+        origin_path = child / "origin.txt"
+        common_ini_path = child / "config" / "common.ini"
+        if not origin_path.exists() or not common_ini_path.exists():
+            continue
+        origin_text = _read_text_file_utf8(origin_path).strip()
+        if _normalize_windows_executable_identity(origin_text) == normalized_install_dir:
+            return common_ini_path
+    return None
+
+
+def _ensure_mt5_terminal_auto_trading_config(path_value: Optional[str]) -> Dict[str, Any]:
+    """把目标 MT5 终端收口到允许自动交易和外部 API 交易的正式配置。"""
+    normalized_path = _normalize_path(str(path_value or ""))
+    common_ini_path = _resolve_mt5_terminal_common_ini_path(normalized_path)
+    result = {
+        "terminalPath": normalized_path,
+        "commonIniPath": "" if common_ini_path is None else str(common_ini_path),
+        "changed": False,
+        "exists": common_ini_path is not None and common_ini_path.exists(),
+    }
+    if common_ini_path is None or not common_ini_path.exists():
+        return result
+
+    parser = configparser.RawConfigParser()
+    parser.optionxform = str
+    parser.read(str(common_ini_path), encoding="utf-8")
+    if not parser.has_section("Experts"):
+        parser.add_section("Experts")
+
+    expected_values = {
+        "Enabled": "1",
+        "Api": "1",
+    }
+    changed = False
+    for key, expected_value in expected_values.items():
+        current_value = str(parser.get("Experts", key, fallback="")).strip()
+        if current_value == expected_value:
+            continue
+        parser.set("Experts", key, expected_value)
+        changed = True
+
+    if changed:
+        with common_ini_path.open("w", encoding="utf-8", newline="\n") as config_file:
+            parser.write(config_file, space_around_delimiters=False)
+
+    result["changed"] = changed
+    return result
+
+
+def _read_mt5_terminal_trade_permission_state() -> Dict[str, Any]:
+    """读取当前已附着 MT5 终端的自动交易运行态。"""
+    if mt5 is None:
+        return {
+            "known": False,
+            "tradeAllowed": True,
+            "tradeApiDisabled": False,
+        }
+    try:
+        terminal_info = mt5.terminal_info()
+    except Exception:
+        terminal_info = None
+    if terminal_info is None:
+        return {
+            "known": False,
+            "tradeAllowed": True,
+            "tradeApiDisabled": False,
+        }
+    known = hasattr(terminal_info, "trade_allowed") or hasattr(terminal_info, "tradeapi_disabled")
+    return {
+        "known": bool(known),
+        "tradeAllowed": bool(getattr(terminal_info, "trade_allowed", True)),
+        "tradeApiDisabled": bool(getattr(terminal_info, "tradeapi_disabled", False)),
+    }
+
+
+def _is_mt5_terminal_trade_blocked(state: Dict[str, Any]) -> bool:
+    """统一判断当前 MT5 终端是否仍禁止自动交易。"""
+    if not isinstance(state, dict) or not bool(state.get("known")):
+        return False
+    if not bool(state.get("tradeAllowed", True)):
+        return True
+    return bool(state.get("tradeApiDisabled", False))
+
+
+def _build_mt5_client_disabled_result(comment: str = "AutoTrading disabled by client") -> Any:
+    """构造统一的“终端侧自动交易被关闭”伪 MT5 返回。"""
+    return type(
+        "SyntheticMt5Result",
+        (),
+        {
+            "retcode": -20001,
+            "comment": str(comment or "AutoTrading disabled by client"),
+            "order": 0,
+            "deal": 0,
+            "volume": 0.0,
+            "price": 0.0,
+            "request_id": "",
+        },
+    )()
+
+
+def _ensure_mt5_trade_runtime_ready() -> bool:
+    """确保当前 MT5 终端运行态允许真实交易；必要时自动修配置并重启终端。"""
+    terminal_path, _ = _resolve_direct_login_terminal_path()
+    config_result = _ensure_mt5_terminal_auto_trading_config(terminal_path)
+    initial_state = _read_mt5_terminal_trade_permission_state()
+    if not bool(config_result.get("changed")) and not _is_mt5_terminal_trade_blocked(initial_state):
+        return True
+    if not terminal_path:
+        return not _is_mt5_terminal_trade_blocked(initial_state)
+
+    _shutdown_mt5()
+    _restart_mt5_terminal_for_direct_login(terminal_path, wait_timeout_ms=MT5_INIT_TIMEOUT_MS)
+    _ensure_mt5()
+    final_state = _read_mt5_terminal_trade_permission_state()
+    return not _is_mt5_terminal_trade_blocked(final_state)
+
+
 def _now_monotonic_ms() -> int:
     """返回单调时钟毫秒值，供切号耗时统计使用。"""
     return int(time.monotonic() * 1000)
@@ -2842,6 +3491,85 @@ def _parse_mt5_gui_detection_payload(payload_text: str) -> Dict[str, Any]:
     }
 
 
+def _build_mt5_terminal_window_probe_command(path_value: Optional[str] = None) -> str:
+    """按精确路径探测 MT5 终端是否已进入可见交互会话并拥有窗口句柄。"""
+    normalized_target_path = _normalize_windows_executable_identity(str(path_value or ""))
+    return (
+        "$targetPath = "
+        + _ps_quote(normalized_target_path)
+        + "; "
+        + "$currentSessionId = [int](Get-Process -Id $PID -ErrorAction SilentlyContinue).SessionId; "
+        + "$interactiveSessionIds = @(); "
+        + "try { "
+        + "$interactiveSessionIds = @(Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -ExpandProperty SessionId -Unique) "
+        + "} catch { $interactiveSessionIds = @() }; "
+        + "$normalizePath = { "
+        + "param([string]$value) "
+        + "if ([string]::IsNullOrWhiteSpace($value)) { return '' } "
+        + "return (($value -replace '\\\\', '/').ToLowerInvariant()) "
+        + "}; "
+        + "$items = @(); "
+        + "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { "
+        + "$_.Name -eq 'terminal64.exe' -or $_.Name -eq 'terminal.exe' -or $_.Name -eq 'terminal64' -or $_.Name -eq 'terminal' "
+        + "} | ForEach-Object { "
+        + "$rawExecutablePath = [string]$_.ExecutablePath; "
+        + "$normalizedExecutablePath = & $normalizePath ([string]$_.ExecutablePath); "
+        + "$processDetails = Get-Process -Id ([int]$_.ProcessId) -ErrorAction SilentlyContinue; "
+        + "$mainWindowHandle = 0; "
+        + "if ($processDetails) { $mainWindowHandle = [int64]$processDetails.MainWindowHandle }; "
+        + "$items += @{ "
+        + "processId = [int]$_.ProcessId; "
+        + "sessionId = [int]$_.SessionId; "
+        + "sameSession = ([int]$_.SessionId -eq $currentSessionId); "
+        + "interactiveSession = ($interactiveSessionIds -contains [int]$_.SessionId); "
+        + "mainWindowHandle = $mainWindowHandle; "
+        + "hasVisibleWindow = ($mainWindowHandle -gt 0); "
+        + "executablePath = $rawExecutablePath; "
+        + "normalizedExecutablePath = $normalizedExecutablePath; "
+        + "exactPath = (-not [string]::IsNullOrWhiteSpace($targetPath)) -and ($normalizedExecutablePath -eq $targetPath) "
+        + "} "
+        + "}; "
+        + "@{ "
+        + "currentSessionId = $currentSessionId; "
+        + "interactiveSessionIds = @($interactiveSessionIds); "
+        + "processCount = $items.Count; "
+        + "sameSessionCount = @($items | Where-Object { $_.sameSession }).Count; "
+        + "exactPathCount = @($items | Where-Object { $_.exactPath }).Count; "
+        + "interactiveSessionCount = @($items | Where-Object { $_.interactiveSession }).Count; "
+        + "visibleWindowCount = @($items | Where-Object { $_.hasVisibleWindow }).Count; "
+        + "interactiveVisibleWindowCount = @($items | Where-Object { $_.interactiveSession -and $_.hasVisibleWindow }).Count; "
+        + "items = $items "
+        + "} | ConvertTo-Json -Compress"
+    )
+
+
+def _parse_mt5_terminal_window_probe_payload(payload_text: str) -> Dict[str, Any]:
+    """解析 MT5 终端窗口探测结果。"""
+    try:
+        payload = json.loads(str(payload_text or "").strip() or "{}")
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    items = payload.get("items")
+    if not isinstance(items, list):
+        items = []
+    interactive_session_ids = payload.get("interactiveSessionIds")
+    if not isinstance(interactive_session_ids, list):
+        interactive_session_ids = []
+    return {
+        "currentSessionId": int(payload.get("currentSessionId") or 0),
+        "interactiveSessionIds": [int(item) for item in interactive_session_ids if str(item).strip()],
+        "processCount": int(payload.get("processCount") or 0),
+        "sameSessionCount": int(payload.get("sameSessionCount") or 0),
+        "exactPathCount": int(payload.get("exactPathCount") or 0),
+        "interactiveSessionCount": int(payload.get("interactiveSessionCount") or 0),
+        "visibleWindowCount": int(payload.get("visibleWindowCount") or 0),
+        "interactiveVisibleWindowCount": int(payload.get("interactiveVisibleWindowCount") or 0),
+        "items": items,
+    }
+
+
 def _inspect_mt5_gui_terminals(path_value: Optional[str] = None) -> Dict[str, Any]:
     """读取当前机器上 MT5 终端进程明细。"""
     completed = subprocess.run(
@@ -2868,6 +3596,90 @@ def _inspect_mt5_gui_terminals(path_value: Optional[str] = None) -> Dict[str, An
         }
     stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
     return _parse_mt5_gui_detection_payload(stdout_text)
+
+
+def _inspect_mt5_terminal_windows(path_value: Optional[str] = None) -> Dict[str, Any]:
+    """读取当前机器上 MT5 终端的窗口与交互会话状态。"""
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            _build_mt5_terminal_window_probe_command(path_value),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=15,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return {
+            "currentSessionId": 0,
+            "interactiveSessionIds": [],
+            "processCount": 0,
+            "sameSessionCount": 0,
+            "exactPathCount": 0,
+            "interactiveSessionCount": 0,
+            "visibleWindowCount": 0,
+            "interactiveVisibleWindowCount": 0,
+            "items": [],
+        }
+    stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+    return _parse_mt5_terminal_window_probe_payload(stdout_text)
+
+
+def _resolve_visible_mt5_terminal_path(payload: Optional[Dict[str, Any]], preferred_path: Optional[str] = None) -> Optional[str]:
+    """只把已进入交互会话且拥有可见窗口的 MT5 终端视作直登可驱动实例。"""
+    normalized_preferred_path = _normalize_path(str(preferred_path or ""))
+    items = (dict(payload or {})).get("items")
+    if not isinstance(items, list):
+        items = []
+    visible_items: List[Dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if not bool(item.get("interactiveSession")):
+            continue
+        if not bool(item.get("hasVisibleWindow")):
+            continue
+        normalized_path = _normalize_path(str(item.get("executablePath") or ""))
+        if not normalized_path:
+            continue
+        normalized_item = dict(item)
+        normalized_item["normalizedExecutablePath"] = normalized_path
+        visible_items.append(normalized_item)
+    if normalized_preferred_path:
+        for item in visible_items:
+            if bool(item.get("exactPath")) or str(item.get("normalizedExecutablePath") or "") == normalized_preferred_path:
+                return normalized_preferred_path
+    if len(visible_items) == 1:
+        return str(visible_items[0].get("normalizedExecutablePath") or "").strip() or None
+    return None
+
+
+def _resolve_mt5_terminal_window_state(path_value: Optional[str], timeout_ms: int) -> Dict[str, Any]:
+    """轮询直到目标 MT5 终端真正进入可见交互会话，或超时返回最后一次探测结果。"""
+    deadline = time.monotonic() + max(0.5, float(timeout_ms or 0) / 1000.0)
+    latest_payload = _inspect_mt5_terminal_windows(path_value)
+    while True:
+        resolved_path = _resolve_visible_mt5_terminal_path(latest_payload, preferred_path=path_value)
+        if resolved_path:
+            return {
+                "ready": True,
+                "resolvedPath": resolved_path,
+                "payload": latest_payload,
+            }
+        if time.monotonic() >= deadline:
+            return {
+                "ready": False,
+                "resolvedPath": None,
+                "payload": latest_payload,
+            }
+        time.sleep(0.25)
+        latest_payload = _inspect_mt5_terminal_windows(path_value)
 
 
 def _resolve_attachable_mt5_gui_terminal_path(payload: Optional[Dict[str, Any]], preferred_path: Optional[str] = None) -> Optional[str]:
@@ -3464,9 +4276,11 @@ def _read_lightweight_current_mt5_account_identity() -> Optional[Dict[str, str]]
         _shutdown_mt5()
 
 
-def _build_verified_session_status_payload() -> Dict[str, Any]:
-    """在返回 session status 前做一次轻量账号确认。"""
+def _build_verified_session_status_payload(verify_live_identity: bool = True) -> Dict[str, Any]:
+    """在返回 session status 前按需做一次轻量账号确认。"""
     status = session_manager.build_status_payload()
+    if not verify_live_identity:
+        return status
     active_account = (status or {}).get("activeAccount") or None
     if not isinstance(active_account, dict) or not active_account:
         return status
@@ -3818,6 +4632,59 @@ def _login_mt5_direct_with_input_credentials(*,
             "pathSource": terminal_path_source,
             "matchedCount": int(terminal_start_result.get("matchedCount") or 0),
         },
+    )
+
+    window_wait_timeout_ms = min(max(5000, int(MT5_INIT_TIMEOUT_MS / 3)), int(MT5_INIT_TIMEOUT_MS))
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_terminal_window_wait_start",
+        status="pending",
+        message="开始确认 MT5 是否已进入可见交互会话并出现窗口",
+        server_time=_now_ms(),
+        detail={
+            "terminalPath": str(terminal_path or "").strip(),
+            "pathSource": terminal_path_source,
+            "timeoutMs": window_wait_timeout_ms,
+        },
+    )
+    terminal_window_state = _resolve_mt5_terminal_window_state(terminal_path, window_wait_timeout_ms)
+    terminal_window_payload = dict(terminal_window_state.get("payload") or {})
+    terminal_window_detail = {
+        "terminalPath": str(terminal_path or "").strip(),
+        "pathSource": terminal_path_source,
+        "currentSessionId": int(terminal_window_payload.get("currentSessionId") or 0),
+        "interactiveSessionIds": list(terminal_window_payload.get("interactiveSessionIds") or []),
+        "processCount": int(terminal_window_payload.get("processCount") or 0),
+        "sameSessionCount": int(terminal_window_payload.get("sameSessionCount") or 0),
+        "exactPathCount": int(terminal_window_payload.get("exactPathCount") or 0),
+        "interactiveSessionCount": int(terminal_window_payload.get("interactiveSessionCount") or 0),
+        "visibleWindowCount": int(terminal_window_payload.get("visibleWindowCount") or 0),
+        "interactiveVisibleWindowCount": int(terminal_window_payload.get("interactiveVisibleWindowCount") or 0),
+    }
+    if not bool(terminal_window_state.get("ready")):
+        _append_session_diagnostic_entry(
+            request_id=request_id,
+            action=action,
+            stage="direct_terminal_window_not_ready",
+            status="failed",
+            message="MT5 进程已启动，但未检测到可见交互窗口，无法确认当前前台终端可被驱动",
+            server_time=_now_ms(),
+            error_code="SESSION_DIRECT_TERMINAL_WINDOW_NOT_READY",
+            detail=terminal_window_detail,
+        )
+        raise RuntimeError(
+            "MT5 terminal started but no visible interactive window was detected; "
+            "the gateway may be launching MT5 in a non-interactive Windows session"
+        )
+    _append_session_diagnostic_entry(
+        request_id=request_id,
+        action=action,
+        stage="direct_terminal_window_ready",
+        status="ok",
+        message="已确认 MT5 终端进入可见交互会话",
+        server_time=_now_ms(),
+        detail=terminal_window_detail,
     )
 
     return _login_mt5_in_isolated_process(
@@ -6575,57 +7442,8 @@ def _build_v2_account_section_from_snapshot(snapshot: Dict[str, Any]) -> Dict[st
 # 构建单个产品的行情同步摘要，供 v2 stream 纯消费链直接落地。
 def _build_market_stream_symbol_state(symbol: str, server_time: int) -> Dict[str, Any]:
     runtime_state = _build_market_runtime_symbol_state(symbol)
-    if runtime_state.get("latestPatch") is not None or runtime_state.get("latestClosedCandle") is not None:
-        return runtime_state
-    symbol_descriptor = _resolve_symbol_descriptor(symbol)
-    rows = _fetch_market_candle_rows_with_cache(
-        symbol_descriptor["marketSymbol"],
-        "1m",
-        2,
-        start_time_ms=0,
-        end_time_ms=0,
-    )
-    closed_rows, patch_row = v2_market.separate_closed_rest_rows(rows, server_time)
-    latest_closed_payload: Optional[Dict[str, Any]] = None
-    latest_patch_payload: Optional[Dict[str, Any]] = None
-    if closed_rows:
-        latest_closed_payload = v2_market.build_market_candle_payload(
-            symbol_descriptor["marketSymbol"],
-            "1m",
-            row=closed_rows[-1],
-            is_closed=True,
-            source="binance-rest",
-        )
-    if patch_row is not None:
-        latest_patch_payload = v2_market.build_market_candle_payload(
-            symbol_descriptor["marketSymbol"],
-            "1m",
-            row=patch_row,
-            is_closed=False,
-            source="binance-rest",
-        )
-    latest_price = 0.0
-    latest_open_time = 0
-    latest_close_time = 0
-    if latest_patch_payload is not None:
-        latest_price = float(latest_patch_payload.get("close", 0.0) or 0.0)
-        latest_open_time = int(latest_patch_payload.get("openTime", 0) or 0)
-        latest_close_time = int(latest_patch_payload.get("closeTime", 0) or 0)
-    elif latest_closed_payload is not None:
-        latest_price = float(latest_closed_payload.get("close", 0.0) or 0.0)
-        latest_open_time = int(latest_closed_payload.get("openTime", 0) or 0)
-        latest_close_time = int(latest_closed_payload.get("closeTime", 0) or 0)
-    return {
-        "productId": symbol_descriptor["productId"],
-        "marketSymbol": symbol_descriptor["marketSymbol"],
-        "tradeSymbol": symbol_descriptor["tradeSymbol"],
-        "interval": "1m",
-        "latestPrice": latest_price,
-        "latestOpenTime": latest_open_time,
-        "latestCloseTime": latest_close_time,
-        "latestClosedCandle": latest_closed_payload,
-        "latestPatch": latest_patch_payload,
-    }
+    sanitized_runtime_state = _sanitize_runtime_symbol_state(runtime_state, server_time)
+    return sanitized_runtime_state
 
 
 # 基于 Binance 数据构建 v2 行情区统一返回体。
@@ -6865,6 +7683,51 @@ def _fetch_market_candle_rows_backward(symbol: str,
     return [collected[key] for key in sorted(collected.keys())]
 
 
+# 周/月线当前未闭合桶需要独立探测，避免主查询链丢掉 latestPatch 后整段长周期冻结。
+def _supports_direct_rest_bucket_probe(interval: str) -> bool:
+    return str(interval or "").strip() in ("1w", "1M")
+
+
+# 统一计算 Binance 周/月桶起点；周线按 UTC 周一 00:00 开始，月线按 UTC 每月 1 号 00:00 开始。
+def _resolve_market_bucket_start_ms(interval: str, reference_ms: int) -> int:
+    safe_reference_ms = max(0, int(reference_ms or 0))
+    safe_interval = str(interval or "").strip()
+    utc_time = datetime.fromtimestamp(safe_reference_ms / 1000.0, tz=timezone.utc)
+    if safe_interval == "1w":
+        week_start = (utc_time - timedelta(days=utc_time.weekday())).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        return int(week_start.timestamp() * 1000)
+    if safe_interval == "1M":
+        month_start = utc_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return int(month_start.timestamp() * 1000)
+    return 0
+
+
+# 当主查询链没拿到长周期 latestPatch 时，直接按当前桶起点探测 Binance REST 当前未闭合桶。
+def _probe_current_rest_bucket_patch_row(symbol: str,
+                                         interval: str,
+                                         now_ms: int) -> Optional[Any]:
+    safe_interval = str(interval or "").strip()
+    if not _supports_direct_rest_bucket_probe(safe_interval):
+        return None
+    bucket_start_ms = _resolve_market_bucket_start_ms(safe_interval, now_ms)
+    if bucket_start_ms <= 0:
+        return None
+    rows = _fetch_binance_kline_rows_resilient(
+        symbol,
+        safe_interval,
+        1,
+        start_time_ms=bucket_start_ms,
+        end_time_ms=0,
+    ) or []
+    _, latest_rest_patch = v2_market.separate_closed_rest_rows(rows, now_ms)
+    return latest_rest_patch
+
+
 # 统一提取 K 线开盘时间，供分页去重和翻页游标使用。
 def _extract_market_row_open_time(row: Any) -> int:
     if isinstance(row, (list, tuple)) and row:
@@ -7024,14 +7887,16 @@ def source_status():
 
 
 @app.get("/v2/session/status")
-def v2_session_status():
+def v2_session_status(request: Request = None):
     """返回当前会话状态。"""
+    _record_runtime_http_request("/v2/session/status", getattr(request, "client", None))
     return _build_verified_session_status_payload()
 
 
 @app.get("/v2/session/public-key")
-def v2_session_public_key():
+def v2_session_public_key(request: Request = None):
     """返回登录信封公钥和当前会话摘要。"""
+    _record_runtime_http_request("/v2/session/public-key", getattr(request, "client", None))
     status = session_manager.build_status_payload()
     return session_envelope_crypto.build_public_key_payload(
         active_account=status.get("activeAccount"),
@@ -7065,10 +7930,11 @@ def _build_session_error_detail(
 
 
 @app.post("/v2/session/login")
-def v2_session_login(payload: Dict[str, Any]):
+def v2_session_login(payload: Dict[str, Any], request: Request = None):
     """接收加密登录信封并登录新账号。"""
     safe_payload = dict(payload or {})
     request_id = str(safe_payload.get("requestId") or "")
+    _record_runtime_http_request("/v2/session/login", getattr(request, "client", None))
     _append_session_diagnostic_entry(
         request_id=request_id,
         action="login",
@@ -7112,8 +7978,10 @@ def v2_session_login(payload: Dict[str, Any]):
             message=str(payload.get("message") or "登录成功"),
             server_time=_now_ms(),
         )
+        _record_runtime_session_action("login", "ok", getattr(request, "client", None))
         return payload
     except ValueError as exc:
+        _record_runtime_session_action("login", "invalid", getattr(request, "client", None))
         _append_session_diagnostic_entry(
             request_id=request_id,
             action="login",
@@ -7125,6 +7993,7 @@ def v2_session_login(payload: Dict[str, Any]):
         )
         raise HTTPException(status_code=400, detail=_build_session_error_detail("SESSION_LOGIN_INVALID", str(exc), request_id=request_id))
     except Mt5AccountSwitchFlowError as exc:
+        _record_runtime_session_action("login", "failed", getattr(request, "client", None))
         raise HTTPException(
             status_code=502,
             detail=_build_session_error_detail(
@@ -7135,6 +8004,7 @@ def v2_session_login(payload: Dict[str, Any]):
             ),
         )
     except Exception as exc:
+        _record_runtime_session_action("login", "failed", getattr(request, "client", None))
         _append_session_diagnostic_entry(
             request_id=request_id,
             action="login",
@@ -7148,12 +8018,14 @@ def v2_session_login(payload: Dict[str, Any]):
 
 
 @app.post("/v2/session/switch")
-def v2_session_switch(payload: Dict[str, Any]):
+def v2_session_switch(payload: Dict[str, Any], request: Request = None):
     """切换到已保存账号。"""
     safe_payload = dict(payload or {})
     request_id = str(safe_payload.get("requestId") or "")
     profile_id = str(safe_payload.get("accountProfileId") or safe_payload.get("profileId") or "").strip()
+    _record_runtime_http_request("/v2/session/switch", getattr(request, "client", None))
     if not profile_id:
+        _record_runtime_session_action("switch", "invalid", getattr(request, "client", None))
         raise HTTPException(status_code=400, detail="accountProfileId is required")
     _append_session_diagnostic_entry(
         request_id=request_id,
@@ -7174,8 +8046,10 @@ def v2_session_switch(payload: Dict[str, Any]):
             message=str(switch_payload.get("message") or "切换成功"),
             server_time=_now_ms(),
         )
+        _record_runtime_session_action("switch", "ok", getattr(request, "client", None))
         return switch_payload
     except ValueError as exc:
+        _record_runtime_session_action("switch", "invalid", getattr(request, "client", None))
         _append_session_diagnostic_entry(
             request_id=request_id,
             action="switch",
@@ -7187,6 +8061,7 @@ def v2_session_switch(payload: Dict[str, Any]):
         )
         raise HTTPException(status_code=400, detail=_build_session_error_detail("SESSION_SWITCH_INVALID", str(exc), request_id=request_id))
     except Mt5AccountSwitchFlowError as exc:
+        _record_runtime_session_action("switch", "failed", getattr(request, "client", None))
         raise HTTPException(
             status_code=502,
             detail=_build_session_error_detail(
@@ -7197,6 +8072,7 @@ def v2_session_switch(payload: Dict[str, Any]):
             ),
         )
     except Exception as exc:
+        _record_runtime_session_action("switch", "failed", getattr(request, "client", None))
         _append_session_diagnostic_entry(
             request_id=request_id,
             action="switch",
@@ -7210,29 +8086,39 @@ def v2_session_switch(payload: Dict[str, Any]):
 
 
 @app.post("/v2/session/logout")
-def v2_session_logout(payload: Dict[str, Any]):
+def v2_session_logout(payload: Dict[str, Any], request: Request = None):
     """退出当前激活账号。"""
     request_id = str((payload or {}).get("requestId") or "")
-    return session_manager.logout_current_session(request_id=request_id)
+    _record_runtime_http_request("/v2/session/logout", getattr(request, "client", None))
+    try:
+        result = session_manager.logout_current_session(request_id=request_id)
+        _record_runtime_session_action("logout", "ok" if bool((result or {}).get("ok")) else "failed", getattr(request, "client", None))
+        return result
+    except Exception:
+        _record_runtime_session_action("logout", "failed", getattr(request, "client", None))
+        raise
 
 
 @app.get("/v2/session/diagnostic/latest")
-def v2_session_diagnostic_latest(requestId: str = Query(default="")):
+def v2_session_diagnostic_latest(requestId: str = Query(default=""), request: Request = None):
     """返回最近一次或指定 requestId 的会话诊断时间线。"""
+    _record_runtime_http_request("/v2/session/diagnostic/latest", getattr(request, "client", None))
     items = session_diagnostic_store.latest_timeline(requestId)
     return _build_session_diagnostic_payload(items)
 
 
 @app.get("/v2/session/diagnostic/lookup")
-def v2_session_diagnostic_lookup(requestId: str = Query(default="")):
+def v2_session_diagnostic_lookup(requestId: str = Query(default=""), request: Request = None):
     """按 requestId 返回完整会话诊断时间线。"""
+    _record_runtime_http_request("/v2/session/diagnostic/lookup", getattr(request, "client", None))
     items = session_diagnostic_store.lookup(requestId)
     return _build_session_diagnostic_payload(items)
 
 
 @app.get("/v2/market/snapshot")
-def v2_market_snapshot():
+def v2_market_snapshot(request: Request = None):
     try:
+        _record_runtime_http_request("/v2/market/snapshot", getattr(request, "client", None))
         now_ms = _now_ms()
         session_status = session_manager.build_status_payload()
         active_account = (session_status or {}).get("activeAccount") or None
@@ -7254,8 +8140,10 @@ def v2_market_candles(symbol: str,
                       interval: str,
                       limit: int = Query(default=300, ge=1, le=1500),
                       startTime: int = Query(default=0, ge=0),
-                      endTime: int = Query(default=0, ge=0)):
+                      endTime: int = Query(default=0, ge=0),
+                      request: Request = None):
     try:
+        _record_runtime_http_request("/v2/market/candles", getattr(request, "client", None))
         now_ms = _now_ms()
         rest_rows = _fetch_market_candle_rows_with_cache(
             symbol,
@@ -7265,31 +8153,44 @@ def v2_market_candles(symbol: str,
             end_time_ms=endTime,
         )
         closed_rest_rows, latest_rest_patch = v2_market.separate_closed_rest_rows(rest_rows, now_ms)
-        runtime_patch_row = None
-        patch_source = "binance-rest"
+        selected_patch_row = None
+        patch_source = ""
         if str(interval or "").strip() == "1m":
-            runtime_patch_row = _get_market_runtime_patch_row(symbol)
-            if runtime_patch_row is not None:
+            runtime_state = _sanitize_runtime_symbol_state(_build_market_runtime_symbol_state(symbol), now_ms)
+            runtime_patch = runtime_state.get("latestPatch")
+            if _is_runtime_patch_fresh(runtime_patch, now_ms):
+                selected_patch_row = _build_runtime_patch_row_from_candle(runtime_patch)
+            if selected_patch_row is not None:
                 patch_source = "binance-ws"
         else:
-            runtime_patch_row = _build_market_runtime_interval_patch(symbol, str(interval or "").strip())
-            if runtime_patch_row is not None:
+            runtime_state = _sanitize_runtime_symbol_state(_build_market_runtime_symbol_state(symbol), now_ms)
+            if _is_runtime_patch_fresh(runtime_state.get("latestPatch"), now_ms):
+                selected_patch_row = _build_market_runtime_interval_patch(symbol, str(interval or "").strip())
+            if selected_patch_row is not None:
                 patch_source = "binance-ws"
+            elif latest_rest_patch is not None:
+                selected_patch_row = latest_rest_patch
+                patch_source = "binance-rest"
+            else:
+                selected_patch_row = _probe_current_rest_bucket_patch_row(symbol, str(interval or "").strip(), now_ms)
+                if selected_patch_row is not None:
+                    patch_source = "binance-rest"
         return v2_market.build_market_candles_response(
             symbol=symbol,
             interval=interval,
             server_time=now_ms,
             rest_rows=closed_rest_rows,
-            latest_patch=runtime_patch_row if runtime_patch_row is not None else latest_rest_patch,
-            patch_source=patch_source,
+            latest_patch=selected_patch_row,
+            patch_source=patch_source or "binance-ws",
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/v2/account/snapshot")
-def v2_account_snapshot():
+def v2_account_snapshot(request: Request = None):
     try:
+        _record_runtime_http_request("/v2/account/snapshot", getattr(request, "client", None))
         now_ms = _now_ms()
         session_status = session_manager.build_status_payload()
         active_account = (session_status or {}).get("activeAccount") or None
@@ -7341,8 +8242,10 @@ def v2_account_snapshot():
 def v2_account_history(
     range: str = Query(default="all", pattern="^(1d|7d|1m|3m|1y|all)$"),
     cursor: str = Query(default=""),
+    request: Request = None,
 ):
     try:
+        _record_runtime_http_request("/v2/account/history", getattr(request, "client", None))
         now_ms = _now_ms()
         range_key = range.lower()
         session_status = session_manager.build_status_payload()
@@ -7378,8 +8281,9 @@ def v2_account_history(
 
 
 @app.get("/v2/account/full")
-def v2_account_full():
+def v2_account_full(request: Request = None):
     try:
+        _record_runtime_http_request("/v2/account/full", getattr(request, "client", None))
         now_ms = _now_ms()
         session_status = session_manager.build_status_payload()
         active_account = (session_status or {}).get("activeAccount") or None
@@ -7416,7 +8320,8 @@ def v2_account_full():
 
 
 @app.post("/v2/trade/check")
-def v2_trade_check(payload: Dict[str, Any]):
+def v2_trade_check(payload: Dict[str, Any], request: Request = None):
+    _record_runtime_http_request("/v2/trade/check", getattr(request, "client", None))
     try:
         now_ms = _now_ms()
         account_mode = _detect_account_mode()
@@ -7469,6 +8374,7 @@ def v2_trade_check(payload: Dict[str, Any]):
             message="检查通过" if check_error is None else str((check_error or {}).get("message") or "检查未通过"),
             server_time=now_ms,
         )
+        _record_runtime_trade_action("check", str(response.get("status") or ""), getattr(request, "client", None))
         return response
     except Exception as exc:
         now_ms = _now_ms()
@@ -7491,11 +8397,13 @@ def v2_trade_check(payload: Dict[str, Any]):
             message=str(exc),
             server_time=now_ms,
         )
+        _record_runtime_trade_action("check", str(response.get("status") or "FAILED"), getattr(request, "client", None))
         return response
 
 
 @app.post("/v2/trade/submit")
-def v2_trade_submit(payload: Dict[str, Any]):
+def v2_trade_submit(payload: Dict[str, Any], request: Request = None):
+    _record_runtime_http_request("/v2/trade/submit", getattr(request, "client", None))
     now_ms = _now_ms()
     account_mode = _detect_account_mode()
     prepared = _prepare_trade_command(payload or {}, account_mode)
@@ -7532,6 +8440,7 @@ def v2_trade_submit(payload: Dict[str, Any]):
                 message=str((response.get("error") or {}).get("message") or "交易失败"),
                 server_time=now_ms,
             )
+            _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
             return response
         response = v2_trade_models.build_trade_submit_response(
             request_id=request_id,
@@ -7556,6 +8465,7 @@ def v2_trade_submit(payload: Dict[str, Any]):
             message=str((response.get("error") or {}).get("message") or "重复 requestId，已按幂等返回"),
             server_time=now_ms,
         )
+        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
         return response
 
     prepare_error = prepared.get("error")
@@ -7581,6 +8491,7 @@ def v2_trade_submit(payload: Dict[str, Any]):
             message=str((response.get("error") or {}).get("message") or "交易失败"),
             server_time=now_ms,
         )
+        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
         return response
 
     try:
@@ -7607,6 +8518,7 @@ def v2_trade_submit(payload: Dict[str, Any]):
             message=str(exc),
             server_time=now_ms,
         )
+        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
         return response
 
     check_error = v2_trade_models.error_from_retcode(
@@ -7635,6 +8547,7 @@ def v2_trade_submit(payload: Dict[str, Any]):
             message=str((response.get("error") or {}).get("message") or "交易失败"),
             server_time=now_ms,
         )
+        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
         return response
 
     try:
@@ -7661,6 +8574,7 @@ def v2_trade_submit(payload: Dict[str, Any]):
             message=str((response.get("error") or {}).get("message") or str(exc)),
             server_time=now_ms,
         )
+        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
         return response
 
     send_error = v2_trade_models.error_from_retcode(
@@ -7688,6 +8602,7 @@ def v2_trade_submit(payload: Dict[str, Any]):
         message="交易已受理" if send_error is None else str((response.get("error") or {}).get("message") or "交易失败"),
         server_time=now_ms,
     )
+    _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
     if send_error is None:
         _invalidate_account_runtime_cache_after_trade_commit()
         _publish_account_trade_commit_sync_state()
@@ -7695,7 +8610,8 @@ def v2_trade_submit(payload: Dict[str, Any]):
 
 
 @app.get("/v2/trade/result")
-def v2_trade_result(requestId: str = Query(default="")):
+def v2_trade_result(requestId: str = Query(default=""), request: Request = None):
+    _record_runtime_http_request("/v2/trade/result", getattr(request, "client", None))
     request_id = str(requestId or "").strip()
     if not request_id:
         _record_single_trade_audit(
@@ -7739,7 +8655,8 @@ def v2_trade_result(requestId: str = Query(default="")):
 
 
 @app.post("/v2/trade/batch/submit")
-def v2_trade_batch_submit(payload: Dict[str, Any]):
+def v2_trade_batch_submit(payload: Dict[str, Any], request: Request = None):
+    _record_runtime_http_request("/v2/trade/batch/submit", getattr(request, "client", None))
     now_ms = _now_ms()
     account_mode = _detect_account_mode()
     result = v2_trade_batch.submit_trade_batch(
@@ -7762,6 +8679,7 @@ def v2_trade_batch_submit(payload: Dict[str, Any]):
         message=str((result.get("error") or {}).get("message") or result.get("status") or "批量提交完成"),
         server_time=int(result.get("serverTime") or now_ms),
     )
+    _record_runtime_trade_action("batch_submit", str(result.get("status") or ""), getattr(request, "client", None))
     if str(result.get("status") or "") in {v2_trade_models.STATUS_ACCEPTED, v2_trade_models.STATUS_PARTIAL}:
         _invalidate_account_runtime_cache_after_trade_commit()
         _publish_account_trade_commit_sync_state()
@@ -7769,7 +8687,8 @@ def v2_trade_batch_submit(payload: Dict[str, Any]):
 
 
 @app.get("/v2/trade/batch/result")
-def v2_trade_batch_result(batchId: str = Query(default="")):
+def v2_trade_batch_result(batchId: str = Query(default=""), request: Request = None):
+    _record_runtime_http_request("/v2/trade/batch/result", getattr(request, "client", None))
     batch_id = str(batchId or "").strip()
     if not batch_id:
         _record_batch_trade_audit(
@@ -8005,6 +8924,18 @@ def admin_cache_clear():
     return {"ok": True, "cleared": cleared}
 
 
+@app.get("/internal/runtime/status")
+def internal_runtime_status():
+    """返回状态面板需要的运行时交互真值。"""
+    return _build_gateway_runtime_status_payload()
+
+
+@app.get("/internal/runtime/panel")
+def internal_runtime_panel():
+    """返回状态面板需要的一次性聚合快照。"""
+    return _build_runtime_panel_payload()
+
+
 @app.websocket("/binance-ws/{path_value:path}")
 async def binance_ws_proxy(client: WebSocket, path_value: str):
     await _proxy_binance_websocket(client, path_value)
@@ -8013,29 +8944,53 @@ async def binance_ws_proxy(client: WebSocket, path_value: str):
 @app.websocket("/v2/stream")
 async def v2_stream(client: WebSocket):
     await client.accept()
+    _record_runtime_stream_connected(getattr(client, "client", None))
     current_bus_seq = 0
-    push_interval_sec = float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0
+    current_market_seq = 0
     loop = asyncio.get_running_loop()
-    next_tick = loop.time()
+    event_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue(maxsize=1)
+    subscriber_id = _register_v2_stream_subscriber(loop, event_queue)
+    heartbeat_interval_sec = max(15.0, float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0)
     try:
         while True:
-            message = _build_v2_stream_event_for_client(last_bus_seq=current_bus_seq)
-            current_bus_seq = int(message.get("busSeq", current_bus_seq) or current_bus_seq)
-            message["serverTime"] = _now_ms()
-            await client.send_json(message)
-            next_tick += push_interval_sec
-            sleep_sec = next_tick - loop.time()
-            if sleep_sec > 0:
-                await asyncio.sleep(sleep_sec)
-            else:
-                next_tick = loop.time()
+            message = _build_v2_stream_event_for_client(
+                last_bus_seq=current_bus_seq,
+                last_market_seq=current_market_seq,
+            )
+            message_type = str(message.get("type", "") or "")
+            next_bus_seq = int(message.get("busSeq", current_bus_seq) or current_bus_seq)
+            next_market_seq = int(message.get("marketSeq", current_market_seq) or current_market_seq)
+            if message_type != "heartbeat":
+                if message_type == "marketTick":
+                    current_market_seq = max(current_market_seq, next_market_seq)
+                else:
+                    current_bus_seq = max(current_bus_seq, next_bus_seq)
+                message["serverTime"] = _now_ms()
+                await client.send_json(message)
+                continue
+            try:
+                awaited_event = await asyncio.wait_for(event_queue.get(), timeout=heartbeat_interval_sec)
+                awaited_kind = str((awaited_event or {}).get("kind", "") or "")
+                awaited_seq = int((awaited_event or {}).get("seq", 0) or 0)
+                if awaited_kind == "marketTick" and awaited_seq > current_market_seq:
+                    continue
+                if awaited_kind == "syncEvent" and awaited_seq > current_bus_seq:
+                    continue
+            except asyncio.TimeoutError:
+                heartbeat = _build_v2_stream_heartbeat_message(current_bus_seq)
+                heartbeat["serverTime"] = _now_ms()
+                await client.send_json(heartbeat)
     except WebSocketDisconnect:
+        _record_runtime_stream_disconnected(getattr(client, "client", None))
         return
     except Exception as exc:
+        _record_runtime_stream_disconnected(getattr(client, "client", None))
         try:
             await client.close(code=1011, reason=f"v2 stream failed: {exc}")
         except Exception:
             return
+    finally:
+        _unregister_v2_stream_subscriber(subscriber_id)
 
 
 if __name__ == "__main__":

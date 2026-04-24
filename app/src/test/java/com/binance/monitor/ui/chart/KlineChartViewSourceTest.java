@@ -267,6 +267,7 @@ public class KlineChartViewSourceTest {
         assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(latestPriceTagTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
         assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(extremeLabelTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
         assertTrue(source.contains("TextAppearanceScaleResolver.applyTextSize(overlayLabelTextPaint, getContext(), R.style.TextAppearance_BinanceMonitor_ChartDense);"));
+        assertTrue(source.contains("String priceText = FormatUtils.formatPriceNoDecimal(latest.getClose());"));
         assertFalse(source.contains("getResources().getDimension(R.dimen.chart_price_info_text_size)"));
         assertFalse(source.contains("textPaint.setTextSize(dp(9f));"));
         assertFalse(source.contains("setTextSize(dp(8f));"));
@@ -293,5 +294,29 @@ public class KlineChartViewSourceTest {
         assertTrue(source.contains("private int latestPriceGuideColor() {"));
         assertTrue(source.contains("private int overlayLabelBackgroundColor(boolean selected) {"));
         assertTrue(source.contains("private int pointOverlayLabelBackgroundColor(boolean selected) {"));
+    }
+
+    @Test
+    public void volumeThresholdLineShouldUseVolumePlotRectAndRenderAxisLabel() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/chart/KlineChartView.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("double maxVolume = resolveVolumeScaleMax(start, end);"));
+        assertTrue(source.contains("private double resolveVolumeScaleMax(int start, int end) {"));
+        assertTrue(source.contains("maxVolume = Math.max(maxVolume, volumeThresholdValue);"));
+        assertTrue(source.contains("canvas.drawLine(plotRect.left, plotRect.top, plotRect.right, plotRect.top, axisPaint);"));
+        assertTrue(source.contains("canvas.drawLine(plotRect.right, plotRect.top, plotRect.right, plotRect.bottom, axisPaint);"));
+        assertTrue(source.contains("canvas.drawText(formatVolumeNumber(maxVolume, true), volRect.right + dp(4f), resolveAxisTopBaseline(plotRect), textPaint);"));
+        assertTrue(source.contains("canvas.drawText(\"0\", volRect.right + dp(4f), resolveAxisBottomBaseline(plotRect), textPaint);"));
+        assertTrue(source.contains("drawVolumeThreshold(canvas, maxVolume, plotRect);"));
+        assertTrue(source.contains("private void drawVolumeThreshold(Canvas canvas, double maxVolume, @NonNull RectF plotRect) {"));
+        assertTrue(source.contains("float y = (float) (plotRect.bottom - (volumeThresholdValue / denominator) * plotRect.height());"));
+        assertTrue(source.contains("canvas.drawLine(plotRect.left, y, plotRect.right, y, volumeThresholdPaint);"));
+        assertTrue(source.contains("String thresholdText = formatVolumeNumber(volumeThresholdValue, true);"));
+        assertTrue(source.contains("canvas.drawText(thresholdText, volRect.right + dp(4f), clampAxisBaseline(plotRect, y), textPaint);"));
+        assertFalse(source.contains("float y = (float) (volRect.bottom - (volumeThresholdValue / denominator) * volRect.height());"));
+        assertFalse(source.contains("canvas.drawLine(volRect.left, y, volRect.right, y, volumeThresholdPaint);"));
     }
 }

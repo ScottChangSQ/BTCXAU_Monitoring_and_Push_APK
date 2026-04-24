@@ -130,14 +130,17 @@ final class ChartQuickTradeCoordinator {
     private void executePending(@NonNull String volumeText, double linePrice, boolean buySide) {
         double currentPrice = requireCurrentPrice();
         String orderType = resolvePendingOrderType(buySide, linePrice, currentPrice);
-        executor.execute(TradeCommandFactory.pendingAdd(
-                requireAccountId(),
-                requireSymbol(),
-                orderType,
-                requireVolume(volumeText),
-                linePrice,
-                0d,
-                0d
+        executor.execute(TradeCommandFactory.withEntryMode(
+                TradeCommandFactory.pendingAdd(
+                        requireAccountId(),
+                        requireSymbol(),
+                        orderType,
+                        requireVolume(volumeText),
+                        linePrice,
+                        0d,
+                        0d
+                ),
+                "quick"
         ));
     }
 

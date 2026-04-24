@@ -1333,27 +1333,14 @@ function Show-DeployWindow {
     $form.ShowInTaskbar = $true
     $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
 
-    $titleLabel = New-Object System.Windows.Forms.Label
-    $titleLabel.Text = "MT5 部署与连接状态"
-    $titleLabel.Location = New-Object System.Drawing.Point(16, 14)
-    $titleLabel.Size = New-Object System.Drawing.Size(620, 26)
-    $titleLabel.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 13, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($titleLabel)
-
     $statusLabel = New-Object System.Windows.Forms.Label
     $statusLabel.Text = "状态：启动中"
-    $statusLabel.Location = New-Object System.Drawing.Point(16, 46)
+    $statusLabel.Location = New-Object System.Drawing.Point(16, 14)
     $statusLabel.Size = New-Object System.Drawing.Size(940, 22)
     $form.Controls.Add($statusLabel)
 
-    $bundleLabel = New-Object System.Windows.Forms.Label
-    $bundleLabel.Text = "部署目录：" + $ResolvedBundleRoot
-    $bundleLabel.Location = New-Object System.Drawing.Point(16, 70)
-    $bundleLabel.Size = New-Object System.Drawing.Size(940, 22)
-    $form.Controls.Add($bundleLabel)
-
     $stepList = New-Object System.Windows.Forms.ListView
-    $stepList.Location = New-Object System.Drawing.Point(16, 104)
+    $stepList.Location = New-Object System.Drawing.Point(16, 46)
     $stepList.Size = New-Object System.Drawing.Size(950, 116)
     $stepList.View = [System.Windows.Forms.View]::Details
     $stepList.FullRowSelect = $true
@@ -1365,8 +1352,8 @@ function Show-DeployWindow {
 
     $panelColumnWidth = 227
     $panelColumnGap = 14
-    $panelTopY = 236
-    $panelBoxTopY = 262
+    $panelTopY = 178
+    $panelBoxTopY = 204
     $panelBoxHeight = 210
 
     $localLabel = New-Object System.Windows.Forms.Label
@@ -1394,7 +1381,7 @@ function Show-DeployWindow {
     $localBox.ReadOnly = $true
     $localBox.HideSelection = $false
     $localBox.DetectUrls = $false
-    $localBox.WordWrap = $false
+    $localBox.WordWrap = $true
     $localBox.Font = New-Object System.Drawing.Font("Consolas", 10)
     $localBox.Text = "等待部署完成"
     $form.Controls.Add($localBox)
@@ -1406,7 +1393,7 @@ function Show-DeployWindow {
     $marketBox.ReadOnly = $true
     $marketBox.HideSelection = $false
     $marketBox.DetectUrls = $false
-    $marketBox.WordWrap = $false
+    $marketBox.WordWrap = $true
     $marketBox.Font = New-Object System.Drawing.Font("Consolas", 10)
     $marketBox.Text = "等待部署完成"
     $form.Controls.Add($marketBox)
@@ -1418,7 +1405,7 @@ function Show-DeployWindow {
     $accountBox.ReadOnly = $true
     $accountBox.HideSelection = $false
     $accountBox.DetectUrls = $false
-    $accountBox.WordWrap = $false
+    $accountBox.WordWrap = $true
     $accountBox.Font = New-Object System.Drawing.Font("Consolas", 10)
     $accountBox.Text = "等待部署完成"
     $form.Controls.Add($accountBox)
@@ -1436,19 +1423,19 @@ function Show-DeployWindow {
     $appBox.ReadOnly = $true
     $appBox.HideSelection = $false
     $appBox.DetectUrls = $false
-    $appBox.WordWrap = $false
+    $appBox.WordWrap = $true
     $appBox.Font = New-Object System.Drawing.Font("Consolas", 10)
     $appBox.Text = "等待部署完成"
     $form.Controls.Add($appBox)
 
     $detailLabel = New-Object System.Windows.Forms.Label
     $detailLabel.Text = "执行日志（仅内容变化时刷新）"
-    $detailLabel.Location = New-Object System.Drawing.Point(16, 486)
+    $detailLabel.Location = New-Object System.Drawing.Point(16, 428)
     $detailLabel.Size = New-Object System.Drawing.Size(240, 22)
     $form.Controls.Add($detailLabel)
 
     $logBox = New-Object System.Windows.Forms.RichTextBox
-    $logBox.Location = New-Object System.Drawing.Point(16, 512)
+    $logBox.Location = New-Object System.Drawing.Point(16, 454)
     $logBox.Size = New-Object System.Drawing.Size(950, 412)
     $logBox.ScrollBars = "Vertical"
     $logBox.ReadOnly = $true
@@ -1460,7 +1447,7 @@ function Show-DeployWindow {
 
     $closeButton = New-Object System.Windows.Forms.Button
     $closeButton.Text = "关闭窗口"
-    $closeButton.Location = New-Object System.Drawing.Point(836, 936)
+    $closeButton.Location = New-Object System.Drawing.Point(836, 878)
     $closeButton.Size = New-Object System.Drawing.Size(130, 30)
     $closeButton.Add_Click({ $form.Close() })
     $form.Controls.Add($closeButton)

@@ -14,6 +14,10 @@ public final class FormatUtils {
         return decimal("#,##0.00", value);
     }
 
+    public static String formatPriceNoDecimal(double value) {
+        return decimal("#,##0", value);
+    }
+
     public static String formatAmount(double value) {
         return decimal("#,##0.00", value / 1_000_000d) + "M$";
     }

@@ -8,7 +8,8 @@
 - App 的 Binance REST / WebSocket 默认入口也已经固定到 `https://tradeapp.ltd/binance-rest/*` 与 `wss://tradeapp.ltd/binance-ws/*`
 - 行情、账户、会话三条主链统一走服务端 `/v2/*`，客户端负责请求、展示和本地缓存
 - 服务端账户真值已经收口到 `MT5 Python Pull`，旧 EA 上报只保留原始存档，不再参与主链选源
-- 监控链已经收口为纯消费层，`v2/stream` 默认 1s 推送一次，消息直接携带市场/账户快照增量，客户端不再按每条消息回源市场 REST
+- 监控链已经收口为纯消费层，`v2/stream` 当前拆成“`marketTick` 市场直推主链 + `syncEvent/heartbeat` 兼容链”：服务端按固定 `0.5s` 合批发布完整市场快照，客户端收到 `marketTick` 后直接更新本地数据中心，不再依赖 `changes.market` 才能刷新图表和悬浮窗
+- 最新一轮市场实时链已经进一步收口为“`Binance trade WS -> 服务端本地 1m 聚合 -> 0.5s marketTick -> APP 真值中心`”：服务端不再依赖失效的 `@kline_1m` 上游，也不再在 `marketTick` 热路径里用 REST 冒充当前分钟 patch；`1m`、悬浮窗和 `5m~1d` 最新未闭合尾部现在都围绕同一份服务端 `1m` 真值运行
 - 行情监控页里的开盘价、收盘价、成交量、成交额、价格变化、涨跌幅，已经收口为“上一根已闭合 1 分钟 K 线”口径；实时价格和图表尾部仍继续消费实时 patch
 - APP 全局字号现已统一收口为 `22 / 18 / 16 / 14 / 12 / 10sp` 六档；XML、运行时 TextView、自定义 View、图表和悬浮窗都统一从 `TextAppearance` 取字号，不再允许硬编码字号、补缝字号或 `dp` 文字尺寸
 - 账户展示链已经收口为纯消费层：主字段继续只消费 canonical 字段；仅 `当日盈亏/当日收益率`、`累计盈亏/累计收益率` 这类在 APP 侧已有完整真值的展示位，才允许做严格本地覆盖
@@ -41,7 +42,7 @@
 - 图表页交易链对 `positionTicket` 已做三层硬校验，平仓 / 改 TP/SL 缺目标时会在客户端直接拒绝
 - 交易命令已受理但账户强刷还未收敛时，页面提示改为“已受理，等待同步”，不再误报成“结果未确认”
 - 第三阶段“批量与复杂交易”已落地：服务端新增正式 `/v2/trade/batch/submit`、`/v2/trade/batch/result`，客户端新增 `BatchTradeCoordinator / TradeComplexActionPlanner / BatchTradeResultFormatter`；图表页复杂持仓操作现已支持“部分平仓 / 加仓 / 反手 / Close By”走同一条 batch 主链，并展示“总览 + 单项结果清单”
-- 第四阶段“无 DOM 市价交易增强”已完成代码落地：交易模板与默认参数已正式进入 `TradeTemplateRepository + ConfigManager` 真值；设置页“交易设置”除默认模板/快捷模板选择外，也已支持低频维护模板草稿（新增 / 编辑 / 删除非系统模板）；服务端 `v2_trade_audit.py` 与客户端 `TradeAuditStore / TradeAuditActivity` 已支持 recent、按 `requestId / batchId` 查询和时间线回放；`TradeRiskGuard` 已把单笔市价上限、批量规模、加仓/反手强制确认收口到统一风控中心
+- 最新一轮实盘交易重构已完成主要收口：模板与默认参数的用户功能已移除；新开市价单和挂单默认手数改为冷启动 `0.05`、本次运行期间记住最近一次成功提交手数、重启后回到 `0.05`；设置页交易项只保留“一键模式开关”；图表页与账户页新增共用“批量操作”入口，统一支持批量平仓、批量撤销挂单、批量修改挂单、批量修改多笔持仓 `TP/SL`；账户页单笔平仓/改单/撤单也已改为原地完成，图表线上可直接触发平仓/撤销
 - 监控服务入口已统一收口到 `MonitorServiceController`，监控开关也改成真实持久化，应用重启或开机不会再把用户主动关闭的监控偷偷打开
 - 历史、曲线、比例补算和启发式归并已经从主链移除，页面只基于服务端给出的标准数据做展示
 - 服务端轻快照主链不再展开全量历史，但会返回 `accountMeta.historyRevision`（由成交历史 canonical digest 生成），供 App 只在历史修订号变化时补拉全量历史；缓存 miss 也不再并发放大
@@ -60,13 +61,17 @@
 - 服务端：Python MT5 Gateway + `server_v2.py` + `admin_panel.py`
 - UI 主壳：`MainHostActivity + Trading / Account / Analysis` 3 个常驻 Tab，`SettingsActivity` 作为独立目录入口
 - 网络主链：App 固定访问 `https://tradeapp.ltd`，服务端统一承接 `/v2/*`、`/admin/*`、`/binance-rest/*`、`/binance-ws/*`
-- 账户主链：服务端只认 `MT5 Python Pull` 的快照、历史、曲线；`/v2/account/full` 提供一次性强一致真值，`/v2/stream` 改为“事件驱动发布 + websocket 定时发送 heartbeat”，App 只消费 `orders / trades / curvePoints / accountMeta.historyRevision` 等 canonical 字段
+- 账户主链：服务端只认 `MT5 Python Pull` 的快照、历史、曲线；`/v2/account/full` 提供一次性强一致真值，`/v2/stream` 当前按“`marketTick` 独立市场主显示流 + `syncEvent/heartbeat` 账户/异常兼容流”运行，App 只消费 `orders / trades / curvePoints / accountMeta.historyRevision` 等 canonical 字段
 - 会话主链：服务端负责远程账号登录、切换、退出和激活账号确认；App 只消费 `activeAccount / active` 这组 canonical 字段
 - 会话诊断链：`server_v2.py + v2_mt5_account_switch.py + v2_session_diagnostic.py` 会按 `requestId` 缓存登录阶段事实；当前正式登录主链优先记录 `window_not_found_then_launch_failed / window_not_found_then_window_ready_timeout / attach_failed / baseline_account_read_failed / switch_call_exception / final_account_read_failed / switch_timeout_account_not_changed` 这些真实阶段，`GatewayV2SessionClient` 再把这些事实格式化给账户登录失败弹窗展示
 - 产品命名主链：市场侧统一为 `BTCUSDT / XAUUSDT`，交易侧统一为 `BTCUSD / XAUUSD`，跨层映射集中在 `ProductSymbolMapper`
 - 安全链路：远程登录使用 `rsa-oaep+aes-gcm`，服务器端账号档案使用 Windows DPAPI，客户端本地会话摘要使用 Android Keystore
 - 本地账户缓存链：`AccountStorageRepository` 现已按 `account + server` 分区保存历史交易、持仓、挂单和摘要，不再用单槽位覆盖其他账户
 - 运行时边界：`MonitorServiceController` 统一分发服务动作，`ConfigManager` 统一保存监控开关真值，`V2StreamSequenceGuard` 采用“成功应用后再 commit busSeq”
+- 交易交互链：图表页与账户页共用 `TradeExecutionCoordinator / BatchTradeCoordinator / TradeBatchActionDialogCoordinator`；会话内默认手数由 `TradeSessionVolumeMemory` 维护，一键模式只由 `ConfigManager` 保存开关真值
+- 市场显示链：客户端现已新增 `MarketTruthCenter`，统一承接 `v2/stream` 的最新价/1m 草稿/闭合分钟，以及图表 REST 周期历史与最近 `1m` 修补；图表主显示、实时尾巴与悬浮窗最新价现在都只从这一份市场真值出口读取，不再各自保留一套最新价或高周期尾部真值
+- 服务端市场实时链：`server_v2.py + v2_market_runtime.py` 现在固定订阅 Binance `@trade`，在服务端本地聚合 `1m latestPatch/latestClosedCandle`，再按固定 `500ms` 发布 `marketTick`；`/v2/market/snapshot` 与 `marketTick` 热路径不再回退 REST 当前分钟，`/v2/market/candles` 的 `1m` 与 `5m~1d` 最新未闭合 patch 也统一从这份本地 `1m` 真值导出
+- 市场补修链：当 `v2/stream` 长时间没有推进市场真值，或闭合 `1m` 底稿出现缺口时，`MonitorService` 会按 `1m REST` 正式补修 `MarketTruthCenter`；同一缺口的自动补修现在会经过 `GapRepairStateStore` 状态机，只有出现新的上游证据后才允许再次补，避免低频无限重试
 - 字号渲染链：`styles.xml` 的 6 档 `TextAppearance` 是唯一字号真值；布局、运行时控件和自定义 View/Canvas 都统一通过共享样式与解析器读取字号，不再各自维护局部文字尺寸
 - 全局尺寸系统链：基础尺度阶梯只允许 `2 / 4 / 8 / 12 / 16 / 24dp`；页面、抽屉、弹窗、容器、行、控件只允许消费语义 spacing token；非零 spacing literal 禁止直接写入 XML 与 Java；行高只允许在文字体系中统一维护
 - UI 标准主体链：全局交互控件统一为 7 类标准主体（`ActionButton / TextTrigger / SegmentedOption / SelectField / InputField / ToggleChoice / PickerWheel`），页面不再自造按钮、筛选、输入的私有外壳，也不允许新增第 8 类主体
@@ -99,7 +104,14 @@
 
 ## 已完成功能列表
 
-- 已完成第四阶段“无 DOM 市价交易增强”代码闭环：模板/默认参数、模板正式维护入口、交易审计、交易回放、细粒度风控和设置页交易低频配置入口都已接入正式主链；本地 fresh 回归已通过，但真机安装仍待设备恢复
+- 已完成“统一市场真值中心”第一轮正式接入：`MarketTruthCenter / MinuteBaseStore / IntervalProjectionStore / GapDetector / HistoryRepairCoordinator` 已落地，`MonitorRepository` 已切成统一市场出口；图表主请求、实时尾巴、左滑补页与悬浮窗最新价都改为优先读取统一真值中心，不再各自直接信任 REST 回包或旧运行态回退分支
+- 已完成“统一市场真值中心”第二轮运行修正：`MonitorService` 已补上“市场真值长期不前进时，用正式 `1m REST` 补修”的主链；悬浮窗与监控首页也已开始直接跟随 `MarketTruthSnapshot` 变化刷新，避免出现“图表动了、悬浮窗和首页仍卡在旧价”的分叉
+- 已完成这轮市场真值专项的新增两条底层规则：`MinuteBaseStore` 已删除“同一分钟只有量额增长才算推进”的 APP 侧业务门闩，服务端已发布的新 `market.snapshot` 现在会直接推进统一真值；同时已新增 `GapRepairStateStore`，把“同一缺口无新证据不得重复补修”正式收口到共享状态机
+- 已完成这轮“1m 实时链延迟修复”第三轮收口：服务端 `server_v2.py` 已把市场推送改成“市场事件唤醒 + 单层 0.5s 合批发布 + websocket 事件驱动发送”，APP 侧 `MonitorService` 已把实时市场消息执行器和补修/配置后台执行器拆开，图表实时新鲜度与断流补修门槛也已从旧的 `95s/70s/15s` 收紧到 `5s/8s/3s`
+- 已完成这轮“trade 实时主链替换”正式收口：服务端已把市场上游从 `@kline_1m` 切到 `@trade`，并在 `v2_market_runtime.py` 内本地聚合当前 `1m` 真值；`marketTick` 热路径不再在 runtime 缺 patch 时回退 REST，图表页实时尾巴 token 也已扩到 `close/high/low/volume/quoteAssetVolume`，避免同一分钟价格不变时不重绘。当前本地验证已通过 100 项 Python 回归、定向 Android 单测、APK 编译、bundle 重建与真机安装
+- 已完成最新一轮“实盘交易重构”主链：模板与默认参数的用户入口已移除；市价开仓/新增挂单默认手数统一改为“冷启动 `0.05` + 会话内记住最近一次成功手数”；图表页和账户页共用正式“批量操作”链；账户页单笔平仓/改单/撤单已原地完成；图表页订单线与挂单线也可直接触发平仓/撤销
+- 2026-04-24 最新交易重构定向回归已通过：`MarketChartLayoutResourceTest / MarketChartTradeSourceTest / ChartOverlaySnapshotFactoryTest / KlineChartViewSourceTest / ChartTradeLayerSnapshotTest / ChartQuickTradeCoordinatorTest / SettingsSectionActivitySourceTest / TradeExecutionCoordinatorTest / TradeQuickModePolicyTest / TradeRiskGuardTest / ConfigManagerSourceTest` 以及 `:app:assembleDebug` 已 fresh 通过
+- 2026-04-24 最新市场真值延迟专项验证已通过：服务端 `test_v2_sync_pipeline / test_v2_account_pipeline / test_gateway_bundle_parity / test_windows_server_bundle / test_check_windows_server_bundle` 共 74 项通过；APP 侧 `MonitorServiceRealtimeIngressTest / MonitorServiceSourceTest / MonitorServiceMarketRepairPolicyTest / MarketChartRefreshHelperTest / MarketChartRefreshHelperAdditionalTest / MarketTruthCenterTest / MinuteBaseStoreTest / HistoryRepairCoordinatorTest / GapRepairStateStoreTest / MonitorFloatingCoordinatorSourceTest / MainViewModelDisplaySnapshotSourceTest / MarketMonitorPageRuntimeSourceTest` 已通过；最新 debug 包也已覆盖安装到设备 `7fab54c4`
 - 已完成“7 类标准主体”主链迁移与 Task 8 清理：交易页、账户页、分析页、设置页、全局状态弹层、异常阈值弹窗，以及行情监控首页残留按钮/选择字段都已切回 7 类标准主体；活跃页面不再保留第 8 类主体，旧 bridge/activity 兼容壳继续复用同一套入口
 - 已完成“全局规则中心”落地：新增 `ui/rules` 下的 `IndicatorRegistry / IndicatorFormatterCenter / IndicatorPresentationPolicy / ContainerSurfaceRegistry`，并把账户总览、核心统计绑定、持仓/历史/聚合摘要、账户分析页两条宿主路径的交易汇总、图表顶部持仓摘要、悬浮窗文案统一接回规则中心；页面侧继续退出“自己起指标名、自己拼金额百分比、自己猜红绿”的旧做法
 - 单主壳 `MainHostActivity`、`HostTabNavigator`、`HostTabPage`、3 个常驻 Tab Fragment 骨架和共享 `PageController` 已建立，`SettingsActivity` 作为独立目录入口保留
@@ -173,6 +185,14 @@ Android 常用命令：
 .\gradlew.bat :app:compileDebugJavaWithJavac
 .\gradlew.bat :app:testDebugUnitTest
 .\gradlew.bat :app:assembleDebug -x lint
+```
+
+统一市场真值中心定向验证：
+
+```bash
+.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.data.repository.MonitorRepositoryDisplaySnapshotSourceTest" --tests "com.binance.monitor.service.MonitorServiceSourceTest" --tests "com.binance.monitor.service.MonitorFloatingCoordinatorSourceTest" --tests "com.binance.monitor.service.MonitorServiceRealtimeIngressTest" --tests "com.binance.monitor.service.MonitorServiceMarketRepairPolicyTest" --tests "com.binance.monitor.ui.chart.MarketChartTradeSourceTest" --tests "com.binance.monitor.ui.chart.MarketChartRealtimeTailHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperTest" --tests "com.binance.monitor.ui.chart.MarketChartRefreshHelperAdditionalTest" --tests "com.binance.monitor.runtime.market.truth.MarketTruthCenterTest" --tests "com.binance.monitor.runtime.market.truth.MinuteBaseStoreTest" --tests "com.binance.monitor.runtime.market.truth.IntervalProjectionStoreTest" --tests "com.binance.monitor.runtime.market.truth.GapDetectorTest" --tests "com.binance.monitor.runtime.market.truth.HistoryRepairCoordinatorTest" --tests "com.binance.monitor.runtime.market.truth.GapRepairStateStoreTest"
+.\gradlew.bat :app:testDebugUnitTest --tests "com.binance.monitor.ui.main.MainViewModelDisplaySnapshotSourceTest" --tests "com.binance.monitor.ui.market.MarketMonitorPageRuntimeSourceTest"
+adb -s 7fab54c4 install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 全局规则中心定向验证：
@@ -292,9 +312,9 @@ python -m unittest bridge.mt5_gateway.tests.test_summary_response.SummaryRespons
 
 ## 待办事项
 
-- 第四阶段真机安装与人工复核仍未完成：2026-04-20 再次执行 `adb devices` 结果为空；后续需要在设备恢复后补跑安装、启动和 6 项人工验收
+- 最新 `1m` 实时链修复代码、专项回归和真机安装都已完成；当前待办只剩真机继续停留在 `1m / 5m / 15m / 1h / 1d` 页面复测“最新价是否持续前进且始终同源”，并继续观察悬浮窗是否还会闪回旧价
 - 评估是否继续物理删除 `AccountStatsBridgeActivity`、`MarketChartActivity` 内保留的历史实现代码；当前运行链已不再依赖它们
-- 当前设备连接状态以实时 `adb devices` 为准；2026-04-20 本轮结果为空，尚不能在本机直接补真机安装与启动验证
+- 当前设备连接状态以实时 `adb devices` 为准；2026-04-24 最新结果已恢复为设备 `7fab54c4` 在线，最新 debug 包也已完成覆盖安装
 - 若要继续做更严格的耗电结论，仍建议在更长时长和更稳定交互条件下单独重复采样；当前 README 里的本轮数字只代表固定路径主壳验收结果
 - 部署现场仍需再次确认域名、证书、443 放行和 `/v2/session/*` 的 HTTPS 暴露状态
 - 2026-04-13 实时复核：公网 `tradeapp.ltd` 的 `/health`、`/v2/account/snapshot`、`/v2/account/history?range=all` 已全部恢复 `200`，`MT5_SERVER_TIMEZONE=Asia/Seoul` 已在线生效；但线上当前 bundle 指纹仍为 `80c4fd773eaefe6f938ecc430323d7cfb41f4c582ff066bcd528311cffcc7982`，尚未切到本地最新 `2b24d1238924476899f684847d1453980c7777750ec006e0060f4df31a6fc10c`

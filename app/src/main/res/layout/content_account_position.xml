@@ -90,12 +90,32 @@
                     android:orientation="vertical"
                     android:padding="@dimen/container_padding">
 
-                    <TextView
-                        android:id="@+id/tvPositionSectionTitle"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/current_positions_title"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tvPositionSectionTitle"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/current_positions_title"
+                            android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionTitle" />
+
+                        <TextView
+                            android:id="@+id/btnAccountBatchActions"
+                            style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
+                            android:layout_width="wrap_content"
+                            android:layout_height="@dimen/position_row_action_height"
+                            android:layout_marginStart="@dimen/inline_gap"
+                            android:minHeight="@dimen/subject_height_compact"
+                            android:paddingStart="@dimen/field_padding_x_compact"
+                            android:paddingEnd="@dimen/field_padding_x_compact"
+                            android:text="批量操作"
+                            android:textAllCaps="false" />
+                    </LinearLayout>
 
                     <TextView
                         android:id="@+id/tvPositionSummary"

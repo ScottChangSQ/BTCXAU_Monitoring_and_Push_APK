@@ -47,4 +47,23 @@ public class GatewayV2StreamClientTest {
         assertEquals(0, message.getRevisions().length());
         assertEquals(0, message.getChanges().length());
     }
+
+    @Test
+    public void parseMessageShouldReadMarketTickFields() throws Exception {
+        String body = "{"
+                + "\"type\":\"marketTick\","
+                + "\"marketSeq\":21,"
+                + "\"publishedAt\":3000,"
+                + "\"serverTime\":789,"
+                + "\"market\":{\"symbolStates\":[{\"marketSymbol\":\"BTCUSDT\"}]}"
+                + "}";
+
+        GatewayV2StreamClient.StreamMessage message = GatewayV2StreamClient.parseMessage(body);
+
+        assertEquals("marketTick", message.getType());
+        assertEquals(21L, message.getMarketSeq());
+        assertEquals(3000L, message.getPublishedAt());
+        assertEquals(789L, message.getServerTime());
+        assertEquals("BTCUSDT", message.getMarketSnapshot().optJSONArray("symbolStates").optJSONObject(0).optString("marketSymbol"));
+    }
 }

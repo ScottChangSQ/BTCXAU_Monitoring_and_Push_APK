@@ -98,6 +98,31 @@ public class AccountDeferredSnapshotRenderHelperTest {
     }
 
     @Test
+    public void buildCurveProjectionShouldUseAppliedUpdateTimeAsViewportEndForRollingRanges() {
+        List<CurvePoint> curvePoints = Arrays.asList(
+                new CurvePoint(100_000_000L, 100d, 100d, 0.10d),
+                new CurvePoint(140_000_000L, 105d, 104d, 0.20d),
+                new CurvePoint(170_000_000L, 110d, 108d, 0.15d)
+        );
+
+        AccountDeferredSnapshotRenderHelper.CurveProjection projection =
+                AccountDeferredSnapshotRenderHelper.buildCurveProjection(
+                        curvePoints,
+                        AccountTimeRange.D1,
+                        false,
+                        0L,
+                        0L,
+                        200_000_000L
+                );
+
+        assertEquals(113_600_000L, projection.getViewportStartTs());
+        assertEquals(200_000_000L, projection.getViewportEndTs());
+        assertEquals(2, projection.getDisplayedCurvePoints().size());
+        assertEquals(140_000_000L, projection.getDisplayedCurvePoints().get(0).getTimestamp());
+        assertEquals(170_000_000L, projection.getDisplayedCurvePoints().get(1).getTimestamp());
+    }
+
+    @Test
     public void prepareShouldBuildFallbackTradeStatsMetricsWhenSnapshotMetricsAreMissing() {
         List<CurvePoint> curvePoints = Arrays.asList(
                 new CurvePoint(1_000L, 100_000d, 100_000d, 0.10d),
@@ -190,6 +215,17 @@ public class AccountDeferredSnapshotRenderHelperTest {
                 );
 
         assertEquals("-1.96%", findMetricValue(analytics.getTradeStatsMetrics(), "最大回撤"));
+    }
+
+    @Test
+    public void buildPeriodReturnValueShouldUseCurrentDisplayedCurveRange() {
+        List<CurvePoint> curvePoints = Arrays.asList(
+                new CurvePoint(1_000L, 100_000d, 100_000d, 0.10d),
+                new CurvePoint(2_000L, 105_000d, 104_500d, 0.20d),
+                new CurvePoint(3_000L, 112_500d, 111_000d, 0.15d)
+        );
+
+        assertEquals("+12.50%", AccountDeferredSnapshotRenderHelper.buildPeriodReturnValue(curvePoints));
     }
 
     private static TradeRecordItem buildTrade(String code,

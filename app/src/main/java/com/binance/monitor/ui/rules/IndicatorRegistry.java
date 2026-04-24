@@ -98,6 +98,51 @@ public final class IndicatorRegistry {
                 "Position Return"
         ));
         register(new IndicatorDefinition(
+                IndicatorId.ACCOUNT_1D_RETURN,
+                "近1日收益",
+                "近1日收益",
+                IndicatorCategory.RETURN,
+                IndicatorValueType.PERCENT,
+                "%",
+                2,
+                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                "1D Return"
+        ));
+        register(new IndicatorDefinition(
+                IndicatorId.ACCOUNT_7D_RETURN,
+                "近7日收益",
+                "近7日收益",
+                IndicatorCategory.RETURN,
+                IndicatorValueType.PERCENT,
+                "%",
+                2,
+                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                "7D Return"
+        ));
+        register(new IndicatorDefinition(
+                IndicatorId.ACCOUNT_30D_RETURN,
+                "近30日收益",
+                "近30日收益",
+                IndicatorCategory.RETURN,
+                IndicatorValueType.PERCENT,
+                "%",
+                2,
+                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                "30D Return"
+        ));
+        register(new IndicatorDefinition(
+                IndicatorId.ACCOUNT_PERIOD_RETURN,
+                "期间收益",
+                "期间收益",
+                IndicatorCategory.RETURN,
+                IndicatorValueType.PERCENT,
+                "%",
+                2,
+                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                "区间收益",
+                "Period Return"
+        ));
+        register(new IndicatorDefinition(
                 IndicatorId.ACCOUNT_TOTAL_RETURN_AMOUNT,
                 "累计收益额",
                 "累计收益额",
@@ -121,6 +166,39 @@ public final class IndicatorRegistry {
                 IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
                 "Total Return",
                 "Cumulative Return"
+        ));
+        register(new IndicatorDefinition(
+                IndicatorId.ACCOUNT_MONTH_RETURN,
+                "本月收益",
+                "本月收益",
+                IndicatorCategory.RETURN,
+                IndicatorValueType.MONEY,
+                "$",
+                2,
+                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                "Month Profit"
+        ));
+        register(new IndicatorDefinition(
+                IndicatorId.ACCOUNT_YTD_RETURN,
+                "年内收益",
+                "年内收益",
+                IndicatorCategory.RETURN,
+                IndicatorValueType.MONEY,
+                "$",
+                2,
+                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                "YTD Profit"
+        ));
+        register(new IndicatorDefinition(
+                IndicatorId.ACCOUNT_DAILY_AVG_RETURN,
+                "日均收益",
+                "日均收益",
+                IndicatorCategory.RETURN,
+                IndicatorValueType.MONEY,
+                "$",
+                2,
+                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                "Daily Avg Profit"
         ));
         register(new IndicatorDefinition(
                 IndicatorId.ACCOUNT_MAX_DRAWDOWN,
@@ -165,7 +243,7 @@ public final class IndicatorRegistry {
                 IndicatorValueType.PERCENT,
                 "%",
                 2,
-                IndicatorColorRule.PROFIT_UP_LOSS_DOWN,
+                IndicatorColorRule.NEUTRAL,
                 "Win Rate"
         ));
         register(new IndicatorDefinition(

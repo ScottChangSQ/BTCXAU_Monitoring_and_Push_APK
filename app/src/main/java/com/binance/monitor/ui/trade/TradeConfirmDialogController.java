@@ -31,11 +31,12 @@ public class TradeConfirmDialogController {
             return new Decision(false, true, false, "检查结果缺失，请重新确认", null);
         }
         TradeRiskPreview riskPreview = TradeRiskPreviewResolver.resolve(command, checkResult);
-        TradeRiskGuard.Decision riskDecision = TradeRiskGuard.evaluateTrade(command, configProvider.getConfig());
+        TradeRiskGuard.Config config = configProvider.getConfig();
+        TradeRiskGuard.Decision riskDecision = TradeRiskGuard.evaluateTrade(command, config);
         String message = buildConfirmationMessage(riskPreview, riskDecision);
-        boolean quickModeEnabled = "quick".equalsIgnoreCase(command.getParams().optString("entryMode", ""));
+        boolean quickModeEnabled = config != null && config.isOneClickTradingEnabled();
         boolean allowOneClick = riskDecision.isAllowed()
-                && TradeQuickModePolicy.shouldAllowQuickMode(command, quickModeEnabled, configProvider.getConfig());
+                && TradeQuickModePolicy.shouldAllowQuickMode(command, quickModeEnabled, config);
         return new Decision(
                 riskDecision.isAllowed(),
                 !allowOneClick || riskDecision.isConfirmationRequired(),
@@ -57,9 +58,6 @@ public class TradeConfirmDialogController {
         }
         StringBuilder builder = new StringBuilder();
         builder.append(riskPreview.getActionSummary());
-        if (!riskPreview.getTemplateName().isEmpty()) {
-            builder.append("\n当前模板：").append(riskPreview.getTemplateName());
-        }
         builder.append("\n\n风险摘要");
         if (!riskPreview.getMarginText().isEmpty()) {
             builder.append("\n预计保证金：").append(riskPreview.getMarginText());

@@ -41,6 +41,22 @@ public class AccountValueStyleHelperTest {
     }
 
     @Test
+    public void resolveMetricDirectionShouldTintReturnMetricsButKeepWinRateNeutral() {
+        assertEquals(
+                AccountValueStyleHelper.Direction.POSITIVE,
+                AccountValueStyleHelper.resolveMetricDirection("本月收益", "+$123.45")
+        );
+        assertEquals(
+                AccountValueStyleHelper.Direction.NEGATIVE,
+                AccountValueStyleHelper.resolveMetricDirection("期间收益", "-8.88%")
+        );
+        assertEquals(
+                AccountValueStyleHelper.Direction.NONE,
+                AccountValueStyleHelper.resolveMetricDirection("胜率", "+57.00%")
+        );
+    }
+
+    @Test
     public void findFirstNumericTokenRangeShouldIncludeSignCurrencyAndPercent() {
         String positiveMoney = "+$123.45";
         AccountValueStyleHelper.NumericTokenRange positiveMoneyRange =

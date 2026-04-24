@@ -26,6 +26,8 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
 public class GatewayV2StreamClient {
+    public static final String MESSAGE_TYPE_MARKET_TICK = "marketTick";
+
 
     public interface Listener {
         void onStateChanged(ConnectionEvent event);
@@ -188,6 +190,7 @@ public class GatewayV2StreamClient {
     // 解析服务端 v2 stream 消息，严格按新根级事件字段读取。
     public static StreamMessage parseMessage(String body) throws Exception {
         JSONObject json = new JSONObject(body == null ? "{}" : body);
+        String messageType = json.optString("type", "");
         JSONObject revisions = json.optJSONObject("revisions");
         if (revisions == null) {
             revisions = new JSONObject();
@@ -196,14 +199,24 @@ public class GatewayV2StreamClient {
         if (changes == null) {
             changes = new JSONObject();
         }
+        JSONObject marketSnapshot = null;
+        JSONObject payload;
+        if (MESSAGE_TYPE_MARKET_TICK.equals(messageType)) {
+            marketSnapshot = json.optJSONObject("market");
+            payload = buildMarketTickEnvelope(json.optLong("marketSeq", 0L), marketSnapshot);
+        } else {
+            payload = buildPlannerEnvelope(revisions, changes);
+        }
         return new StreamMessage(
-                json.optString("type", ""),
+                messageType,
                 json.optLong("busSeq", 0L),
+                json.optLong("marketSeq", 0L),
                 json.optLong("publishedAt", 0L),
                 revisions,
                 changes,
+                marketSnapshot,
                 json.optLong("serverTime", 0L),
-                buildPlannerEnvelope(revisions, changes)
+                payload
         );
     }
 
@@ -212,6 +225,13 @@ public class GatewayV2StreamClient {
         return new JSONObject()
                 .put("revisions", revisions == null ? new JSONObject() : revisions)
                 .put("changes", changes == null ? new JSONObject() : changes);
+    }
+
+    // 为 marketTick 保留根级市场快照封套，方便服务层直接读取。
+    private static JSONObject buildMarketTickEnvelope(long marketSeq, @Nullable JSONObject marketSnapshot) throws Exception {
+        return new JSONObject()
+                .put("marketSeq", marketSeq)
+                .put("market", marketSnapshot == null ? new JSONObject() : marketSnapshot);
     }
 
     private void notifyState(ConnectionStage stage, String message) {
@@ -253,24 +273,30 @@ public class GatewayV2StreamClient {
     public static class StreamMessage {
         private final String type;
         private final long busSeq;
+        private final long marketSeq;
         private final long publishedAt;
         private final JSONObject revisions;
         private final JSONObject changes;
+        private final JSONObject marketSnapshot;
         private final long serverTime;
         private final JSONObject payload;
 
         public StreamMessage(String type,
                              long busSeq,
+                             long marketSeq,
                              long publishedAt,
                              JSONObject revisions,
                              JSONObject changes,
+                             @Nullable JSONObject marketSnapshot,
                              long serverTime,
                              JSONObject payload) {
             this.type = type == null ? "" : type;
             this.busSeq = busSeq;
+            this.marketSeq = marketSeq;
             this.publishedAt = publishedAt;
             this.revisions = revisions == null ? new JSONObject() : revisions;
             this.changes = changes == null ? new JSONObject() : changes;
+            this.marketSnapshot = marketSnapshot == null ? null : marketSnapshot;
             this.serverTime = serverTime;
             this.payload = payload == null ? new JSONObject() : payload;
         }
@@ -283,6 +309,10 @@ public class GatewayV2StreamClient {
             return busSeq;
         }
 
+        public long getMarketSeq() {
+            return marketSeq;
+        }
+
         public long getPublishedAt() {
             return publishedAt;
         }
@@ -293,6 +323,11 @@ public class GatewayV2StreamClient {
 
         public JSONObject getChanges() {
             return changes;
+        }
+
+        @Nullable
+        public JSONObject getMarketSnapshot() {
+            return marketSnapshot;
         }
 
         public JSONObject getPayload() {

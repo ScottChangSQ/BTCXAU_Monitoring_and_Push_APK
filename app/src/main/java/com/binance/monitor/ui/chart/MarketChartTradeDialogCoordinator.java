@@ -37,6 +37,7 @@ import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.ui.trade.BatchTradeCoordinator;
 import com.binance.monitor.ui.trade.BatchTradeResultFormatter;
+import com.binance.monitor.ui.trade.TradeSessionVolumeMemory;
 import com.binance.monitor.ui.trade.TradeAuditActivity;
 import com.binance.monitor.ui.trade.TradeComplexActionPlanner;
 import com.binance.monitor.ui.trade.TradeCommandFactory;
@@ -226,7 +227,6 @@ final class MarketChartTradeDialogCoordinator {
         boolean showRiskFields = action != ChartTradeAction.CLOSE_POSITION
                 && action != ChartTradeAction.PENDING_CANCEL;
         double referencePrice = resolveTradeReferencePrice(targetItem, targetItem);
-        TradeTemplate defaultTemplate = resolveDefaultTradeTemplate(action);
 
         dialogBinding.layoutTradeOrderType.setVisibility(showOrderType ? View.VISIBLE : View.GONE);
         dialogBinding.layoutTradeComplexAction.setVisibility(showComplexAction ? View.VISIBLE : View.GONE);
@@ -273,24 +273,13 @@ final class MarketChartTradeDialogCoordinator {
             dialogBinding.etTradeTargetVolume.setVisibility(View.GONE);
         }
         if (showVolume) {
-            double defaultVolume = defaultTemplate == null ? 0d : defaultTemplate.getDefaultVolume();
-            if (defaultVolume <= 0d && tradeTemplateRepository != null) {
-                defaultVolume = tradeTemplateRepository.getDefaultVolume();
-            }
+            double defaultVolume = TradeSessionVolumeMemory.getInstance().getCurrentVolume();
             if (defaultVolume > 0d) {
                 dialogBinding.etTradeVolume.setText(FormatUtils.formatVolume(defaultVolume));
             }
         }
         if (showPrice && referencePrice > 0d) {
             dialogBinding.etTradePrice.setText(FormatUtils.formatPrice(referencePrice));
-        }
-        if (showRiskFields && defaultTemplate != null) {
-            if (defaultTemplate.getDefaultSl() > 0d) {
-                dialogBinding.etTradeSl.setText(FormatUtils.formatPrice(defaultTemplate.getDefaultSl()));
-            }
-            if (defaultTemplate.getDefaultTp() > 0d) {
-                dialogBinding.etTradeTp.setText(FormatUtils.formatPrice(defaultTemplate.getDefaultTp()));
-            }
         }
         if (action == ChartTradeAction.PENDING_MODIFY && targetItem != null) {
             if (targetItem.getPendingPrice() > 0d) {
@@ -656,17 +645,16 @@ final class MarketChartTradeDialogCoordinator {
 
     // 把表单输入转换成第一阶段交易命令。
     private TradeCommand buildTradeCommand(@NonNull String accountId, @NonNull TradeDialogInput input) {
-        TradeTemplate template = resolveDefaultTradeTemplate(input.action);
         switch (input.action) {
             case OPEN_BUY:
-                return applyTemplate(TradeCommandFactory.openMarket(accountId, input.symbol, "buy",
-                        input.volume, input.price, input.sl, input.tp), template);
+                return TradeCommandFactory.openMarket(accountId, input.symbol, "buy",
+                        input.volume, input.price, input.sl, input.tp);
             case OPEN_SELL:
-                return applyTemplate(TradeCommandFactory.openMarket(accountId, input.symbol, "sell",
-                        input.volume, input.price, input.sl, input.tp), template);
+                return TradeCommandFactory.openMarket(accountId, input.symbol, "sell",
+                        input.volume, input.price, input.sl, input.tp);
             case PENDING_ADD:
-                return applyTemplate(TradeCommandFactory.pendingAdd(accountId, input.symbol, input.orderType,
-                        input.volume, input.price, input.sl, input.tp), template);
+                return TradeCommandFactory.pendingAdd(accountId, input.symbol, input.orderType,
+                        input.volume, input.price, input.sl, input.tp);
             case PENDING_MODIFY:
                 return TradeCommandFactory.pendingModify(accountId, input.symbol,
                         input.orderTicket, input.price, input.sl, input.tp);
@@ -681,50 +669,6 @@ final class MarketChartTradeDialogCoordinator {
             default:
                 throw new IllegalArgumentException("当前动作不在第一阶段范围");
         }
-    }
-
-    @Nullable
-    private TradeTemplate resolveDefaultTradeTemplate() {
-        return tradeTemplateRepository == null ? null : tradeTemplateRepository.getDefaultTemplate();
-    }
-
-    @Nullable
-    private TradeTemplate resolveDefaultTradeTemplate(@NonNull ChartTradeAction action) {
-        TradeTemplate defaultTemplate = resolveDefaultTradeTemplate();
-        if (defaultTemplate == null) {
-            return null;
-        }
-        if (action != ChartTradeAction.OPEN_BUY
-                && action != ChartTradeAction.OPEN_SELL
-                && action != ChartTradeAction.PENDING_ADD) {
-            return null;
-        }
-        String requiredScope = action == ChartTradeAction.PENDING_ADD ? "pending" : "market";
-        if (supportsEntryScope(defaultTemplate, requiredScope)) {
-            return defaultTemplate;
-        }
-        for (TradeTemplate template : tradeTemplateRepository.getTemplates()) {
-            if (supportsEntryScope(template, requiredScope)) {
-                return template;
-            }
-        }
-        return defaultTemplate;
-    }
-
-    private boolean supportsEntryScope(@Nullable TradeTemplate template, @NonNull String requiredScope) {
-        if (template == null) {
-            return false;
-        }
-        String scope = template.getEntryScope().trim().toLowerCase(Locale.ROOT);
-        return scope.isEmpty() || "both".equals(scope) || requiredScope.equals(scope);
-    }
-
-    @NonNull
-    private TradeCommand applyTemplate(@NonNull TradeCommand command, @Nullable TradeTemplate template) {
-        if (tradeTemplateRepository == null) {
-            return TradeCommandFactory.withTemplate(command, template);
-        }
-        return tradeTemplateRepository.applyTemplate(command, template);
     }
 
     // 优先使用最新缓存，缺失时再触发一次前台抓取。

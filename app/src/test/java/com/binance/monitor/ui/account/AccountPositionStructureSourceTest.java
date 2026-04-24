@@ -43,6 +43,7 @@ public class AccountPositionStructureSourceTest {
 
         assertTrue(pageSource.contains("UiPaletteManager.styleTextTrigger(\n                binding.btnOpenAccountHistory,"));
         assertTrue(pageSource.contains("UiPaletteManager.styleTextTrigger(\n                    binding.tvAccountConnectionStatus,"));
+        assertTrue(pageSource.contains("UiPaletteManager.styleActionButton(\n                binding.btnAccountBatchActions,"));
         assertFalse(pageSource.contains("binding.btnOpenAccountHistory.setBackground(UiPaletteManager.createOutlinedDrawable("));
         assertFalse(pageSource.contains("binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createFilledDrawable("));
         assertFalse(pageSource.contains("binding.tvAccountConnectionStatus.setBackground(UiPaletteManager.createOutlinedDrawable("));

@@ -158,9 +158,10 @@ public class AccountPositionUiModelFactory {
         boolean connected = cache != null && cache.isConnected();
         String account = safeText(cache == null ? null : cache.getAccount());
         if (!connected) {
-            return account.isEmpty() ? "未连接账户" : "已登录账户";
+            return account.isEmpty() ? "未连接账户 | 未登录" : "已登录账户 | 待同步";
         }
-        return account.isEmpty() ? "已连接账户" : "已连接账户 " + account;
+        String accountSummary = account.isEmpty() ? "已连接账户" : account;
+        return accountSummary + " | 实时同步中";
     }
 
     // 用更新时间优先、拉取时间兜底的方式生成单调版本，避免旧缓存异步回盖新界面。

@@ -56,7 +56,7 @@ public class TradeExecutionCoordinatorTest {
     }
 
     @Test
-    public void prepareExecutionShouldIncludeCurrentTemplateInConfirmationMessage() throws Exception {
+    public void prepareExecutionShouldNotIncludeLegacyTemplateTextInConfirmationMessage() throws Exception {
         FakeTradeGateway gateway = new FakeTradeGateway();
         gateway.checkResult = executableCheck("req-template");
         TradeExecutionCoordinator coordinator = new TradeExecutionCoordinator(
@@ -79,7 +79,7 @@ public class TradeExecutionCoordinatorTest {
 
         TradeExecutionCoordinator.PreparedTrade prepared = coordinator.prepareExecution(command);
 
-        assertTrue(prepared.getMessage().contains("当前模板：默认模板"));
+        assertFalse(prepared.getMessage().contains("当前模板：默认模板"));
     }
 
     @Test
@@ -136,7 +136,7 @@ public class TradeExecutionCoordinatorTest {
     }
 
     @Test
-    public void prepareExecutionShouldAllowQuickModeForSmallQuickMarketOrder() throws Exception {
+    public void prepareExecutionShouldKeepConfirmationWhenOneClickModeIsDisabled() throws Exception {
         FakeTradeGateway gateway = new FakeTradeGateway();
         gateway.checkResult = executableCheck("req-quick-market");
         TradeExecutionCoordinator coordinator = new TradeExecutionCoordinator(
@@ -153,9 +153,9 @@ public class TradeExecutionCoordinatorTest {
         TradeExecutionCoordinator.PreparedTrade prepared = coordinator.prepareExecution(command);
 
         assertEquals(TradeExecutionCoordinator.UiState.AWAITING_CONFIRMATION, prepared.getUiState());
-        assertFalse(prepared.requiresConfirmation());
-        assertTrue(prepared.isOneClickTradingEnabled());
-        assertTrue(prepared.isConfirmed());
+        assertTrue(prepared.requiresConfirmation());
+        assertFalse(prepared.isOneClickTradingEnabled());
+        assertFalse(prepared.isConfirmed());
     }
 
     @Test

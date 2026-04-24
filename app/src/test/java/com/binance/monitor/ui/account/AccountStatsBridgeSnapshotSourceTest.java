@@ -433,6 +433,7 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertTrue(coordinatorSource.contains("host.renderReturnStatsTable(host.getAllCurvePoints());"));
         assertTrue(coordinatorSource.contains("void refreshCurveProjection()"));
         assertTrue(coordinatorSource.contains("AccountDeferredSnapshotRenderHelper.buildCurveProjection("));
+        assertTrue(coordinatorSource.contains("host.getAppliedAccountUpdatedAt()"));
         assertTrue(coordinatorSource.contains("host.applyPreparedCurveProjection(curveProjection);"));
     }
 

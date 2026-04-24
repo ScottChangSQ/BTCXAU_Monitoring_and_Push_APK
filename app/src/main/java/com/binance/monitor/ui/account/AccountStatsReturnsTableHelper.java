@@ -559,6 +559,7 @@ final class AccountStatsReturnsTableHelper {
 
         int totalCells = firstWeek + daysInMonth;
         int rows = (int) Math.ceil(totalCells / 7d);
+        int localTodayDayKey = resolveLocalTodayDayKey();
         int day = 1;
         for (int row = 0; row < rows; row++) {
             TableRow tableRow = new TableRow(binding.getRoot().getContext());
@@ -582,13 +583,15 @@ final class AccountStatsReturnsTableHelper {
                 }
                 DayBucket bucket = dayBuckets.get(day);
                 if (bucket == null) {
+                    int currentDayKey = year * 10_000 + (month + 1) * 100 + day;
+                    boolean afterLocalToday = localTodayDayKey > 0 && currentDayKey > localTodayDayKey;
                     View dayCell = host.createDailyReturnsCell(
                             String.valueOf(day),
-                            host.formatReturnValue(0d, 0d, true),
+                            afterLocalToday ? "--" : host.formatReturnValue(0d, 0d, true),
                             androidx.core.content.ContextCompat.getColor(binding.getRoot().getContext(), com.binance.monitor.R.color.text_primary),
-                            host.resolveReturnDisplayColor(0d, 0d, com.binance.monitor.R.color.text_secondary),
+                            afterLocalToday ? null : host.resolveReturnDisplayColor(0d, 0d, com.binance.monitor.R.color.text_secondary),
                             null,
-                            null
+                            afterLocalToday ? null : 0d
                     );
                     host.applyReturnsCellLayout(dayCell, 0, 1f, 42, 1, 1, 1, 1);
                     tableRow.addView(dayCell);
@@ -624,6 +627,14 @@ final class AccountStatsReturnsTableHelper {
             }
             table.addView(tableRow);
         }
+    }
+
+    // 日收益表空白日期是否显示 --，统一以 APP 本地今天为边界。
+    private int resolveLocalTodayDayKey() {
+        Calendar today = Calendar.getInstance();
+        return today.get(Calendar.YEAR) * 10_000
+                + (today.get(Calendar.MONTH) + 1) * 100
+                + today.get(Calendar.DAY_OF_MONTH);
     }
 
     private void rebuildMonthlyTableThreeRowsV4(@NonNull List<YearlyReturnRow> rows) {

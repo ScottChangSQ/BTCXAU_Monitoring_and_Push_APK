@@ -185,14 +185,16 @@ public class SettingsSectionActivitySourceTest {
                 layout.contains("android:id=\"@+id/cardTradeSection\""));
         assertTrue("交易设置卡片应提供保存入口",
                 layout.contains("android:id=\"@+id/btnSaveTradeSettings\""));
+        assertTrue("交易设置卡片应提供一键交易模式开关",
+                layout.contains("android:id=\"@+id/switchTradeOneClickMode\""));
         assertTrue("设置详情页应在交易 section 可见时显示交易卡片",
                 source.contains("binding.cardTradeSection.setVisibility(SettingsActivity.SECTION_TRADE.equals(sectionKey) ? View.VISIBLE : View.GONE);"));
-        assertTrue("设置详情页应通过模板仓库管理交易模板真值",
+        assertFalse("交易设置页不应再依赖模板仓库",
                 source.contains("TradeTemplateRepository"));
     }
 
     @Test
-    public void settingsShouldExposeTemplateManagementEntryAndCrudFlow() throws Exception {
+    public void settingsShouldKeepOnlyOneClickSwitchAndSessionVolumeCopy() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
                 "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
@@ -202,16 +204,16 @@ public class SettingsSectionActivitySourceTest {
                 "src/main/res/layout/activity_settings_detail.xml"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("交易设置卡片应提供模板正式维护入口",
+        assertTrue("交易设置卡片应保留一键交易模式开关",
+                layout.contains("android:id=\"@+id/switchTradeOneClickMode\""));
+        assertTrue("设置详情页应回显一键交易模式",
+                source.contains("binding.switchTradeOneClickMode.setChecked(configManager.isTradeOneClickModeEnabled());"));
+        assertTrue("设置详情页应保存一键交易模式",
+                source.contains("configManager.setTradeOneClickModeEnabled(binding.switchTradeOneClickMode.isChecked());"));
+        assertTrue("交易设置卡片应提示默认手数与会话记忆规则",
+                layout.contains("重启 APP 后手数会恢复到 0.05。"));
+        assertFalse("交易设置卡片不应再保留模板管理入口",
                 layout.contains("android:id=\"@+id/btnManageTradeTemplates\""));
-        assertTrue("设置详情页应绑定模板管理入口点击事件",
-                source.contains("binding.btnManageTradeTemplates.setOnClickListener(v -> showTradeTemplateManagementDialog());"));
-        assertTrue("设置详情页应存在模板管理对话框入口方法",
-                source.contains("private void showTradeTemplateManagementDialog()"));
-        assertTrue("设置详情页应存在模板编辑对话框入口方法",
-                source.contains("private void showTradeTemplateEditorDialog"));
-        assertTrue("设置详情页应存在模板删除方法",
-                source.contains("private void deleteTradeTemplate("));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

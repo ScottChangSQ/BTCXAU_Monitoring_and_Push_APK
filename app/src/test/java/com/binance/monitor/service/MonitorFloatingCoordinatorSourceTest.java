@@ -59,21 +59,32 @@ public class MonitorFloatingCoordinatorSourceTest {
     }
 
     @Test
-    public void floatingCoordinatorShouldDeriveMarketSnapshotsFromUnifiedRuntimeSnapshot() throws Exception {
+    public void floatingCoordinatorShouldDeriveMarketSnapshotsFromCurrentMinuteTruth() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
                 "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("private java.util.Map<String, KlineData> buildVisibleClosedMinuteSnapshot("));
-        assertTrue(source.contains("private java.util.Map<String, Double> buildVisiblePriceSnapshot("));
-        assertTrue(source.contains("repository.selectClosedMinute(symbol)"));
-        assertTrue(source.contains("repository.selectLatestPrice(symbol)"));
+        assertTrue(source.contains("private java.util.Map<String, CurrentMinuteSnapshot> buildVisibleCurrentMinuteSnapshot("));
+        assertTrue(source.contains("repository.selectCurrentMinuteSnapshot(symbol)"));
         assertTrue(source.contains("repository.selectMarketWindowSignature(symbol)"));
         assertFalse(source.contains("repository == null ? null : repository.getDisplayOverviewKlineSnapshot()"));
         assertFalse(source.contains("repository == null ? null : repository.getDisplayPriceSnapshot()"));
         assertFalse(source.contains("repository.getMarketRuntimeSnapshotLiveData().getValue()"));
         assertFalse(source.contains("runtimeSnapshot.getSymbolWindow(symbol)"));
+    }
+
+    @Test
+    public void floatingCoordinatorLatestPriceShouldOnlyComeFromCurrentMinuteTruthSelector() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private java.util.Map<String, CurrentMinuteSnapshot> buildVisibleCurrentMinuteSnapshot(@NonNull List<String> visibleSymbols) {"));
+        assertTrue(source.contains("snapshot.put(symbol, repository.selectCurrentMinuteSnapshot(symbol));"));
+        assertFalse(source.contains("gatewayV2Client.fetchMarketSeries("));
+        assertFalse(source.contains("klineCache"));
     }
 
     @Test

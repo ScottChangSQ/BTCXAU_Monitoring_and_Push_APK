@@ -37,7 +37,8 @@ public class GlobalStatusBottomSheetSourceTest {
         assertTrue(layout.contains("@string/global_status_button_offline"));
         assertTrue(controller.contains("BottomSheetDialog"));
         assertTrue(controller.contains("dialog_global_status_sheet"));
-        assertTrue(controller.contains("snapshot.getCompactAccountText()"));
+        assertTrue(controller.contains("button.setText(snapshot.getStageText());"));
+        assertFalse(controller.contains("snapshot.getCompactAccountText()"));
         assertTrue(controller.contains("UiPaletteManager.applyBottomSheetSurface(dialog, palette);"));
         assertTrue(controller.contains("UiPaletteManager.applyAlertDialogSurface(dialog, palette);"));
         assertTrue(controller.contains("new Intent(activity, SettingsActivity.class)"));
@@ -86,7 +87,7 @@ public class GlobalStatusBottomSheetSourceTest {
         assertTrue(abnormalAdapter.contains("binding.getRoot().setCardBackgroundColor(palette.card);"));
         assertTrue(abnormalAdapter.contains("binding.tvSymbol.setTextColor(palette.primary);"));
         assertTrue(abnormalAdapter.contains("binding.tvSymbol.setTextColor(palette.xau);"));
-        assertTrue(strings.contains("<string name=\"global_status_button_offline\">未连接 | 账户离线</string>"));
+        assertTrue(strings.contains("<string name=\"global_status_button_offline\">未连接</string>"));
         assertTrue(strings.contains("<string name=\"global_status_button_compact\">%1$s | %2$s</string>"));
         assertTrue(strings.contains("<string name=\"global_status_action_threshold\">阈值设置</string>"));
         assertTrue(readUtf8("src/main/res/layout/dialog_global_status_sheet.xml").contains("@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"));

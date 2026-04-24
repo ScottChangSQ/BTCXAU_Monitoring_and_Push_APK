@@ -244,7 +244,8 @@ public class ChartOverlaySnapshotFactory {
             String[] detailLines = new String[]{
                     safeTradePopupValue(item.getProductName(), item.getCode()),
                     "方向 " + side,
-                    "开仓 " + formatPositionOpenTime(anchorTime) + " $" + FormatUtils.formatPrice(price),
+                    "时间 " + formatPositionOpenTime(anchorTime),
+                    "开仓 $" + FormatUtils.formatPrice(price),
                     "数量 " + formatQuantity(Math.abs(item.getQuantity())),
                     "浮盈亏 " + formatSignedUsd(item.getTotalPnL()),
                     "止盈 " + formatOptionalPrice(item.getTakeProfit()),
@@ -306,7 +307,8 @@ public class ChartOverlaySnapshotFactory {
             String[] detailLines = new String[]{
                     safeTradePopupValue(item.getProductName(), item.getCode()),
                     "方向 " + side,
-                    "挂单 " + formatPositionOpenTime(anchorTime) + " $" + FormatUtils.formatPrice(price),
+                    "时间 " + formatPositionOpenTime(anchorTime),
+                    "挂单 $" + FormatUtils.formatPrice(price),
                     "数量 " + qtyLabel,
                     "止盈 " + formatOptionalPrice(item.getTakeProfit()),
                     "止损 " + formatOptionalPrice(item.getStopLoss())
@@ -378,7 +380,7 @@ public class ChartOverlaySnapshotFactory {
                     ChartTradeLineRole.ENTRY,
                     true,
                     false,
-                    ""
+                    "平仓"
             ));
             appendTradeLayerTpSlLines(output, groupId, item, accumulatedFee);
         }
@@ -427,7 +429,7 @@ public class ChartOverlaySnapshotFactory {
                     ChartTradeLineRole.ENTRY,
                     true,
                     false,
-                    ""
+                    "撤销"
             ));
             appendTradeLayerTpSlLines(output, groupId, item, accumulatedFee);
         }

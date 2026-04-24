@@ -4,11 +4,10 @@
  */
 package com.binance.monitor.ui.floating;
 
-import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.runtime.market.truth.model.CurrentMinuteSnapshot;
 import com.binance.monitor.runtime.state.model.FloatingCardRuntimeModel;
-import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 import com.binance.monitor.util.ProductSymbolMapper;
 
 import androidx.annotation.Nullable;
@@ -91,13 +90,12 @@ public class FloatingPositionAggregator {
 
     // 生成悬浮窗产品卡片，确保已启用的产品即使当前无持仓也会展示行情。
     public static List<FloatingSymbolCardData> buildSymbolCards(List<PositionItem> positions,
-                                                                Map<String, KlineData> latestKlines,
-                                                                Map<String, Double> latestPrices,
+                                                                Map<String, CurrentMinuteSnapshot> currentMinutes,
                                                                 boolean showBtc,
                                                                 boolean showXau) {
         Map<String, FloatingPositionPnlItem> grouped = new LinkedHashMap<>();
         if (positions != null) {
-            for (FloatingPositionPnlItem item : aggregate(positions, latestPrices, showBtc, showXau)) {
+            for (FloatingPositionPnlItem item : aggregate(positions, null, showBtc, showXau)) {
                 if (item != null) {
                     grouped.put(item.getCode(), item);
                 }
@@ -112,18 +110,15 @@ public class FloatingPositionAggregator {
         List<FloatingSymbolCardData> result = new ArrayList<>();
         for (String symbol : visibleSymbols) {
             FloatingPositionPnlItem pnlItem = findPnlItemForSymbol(symbol, grouped);
-            KlineData kline = latestKlines == null ? null : latestKlines.get(symbol);
+            CurrentMinuteSnapshot minute = currentMinutes == null ? null : currentMinutes.get(symbol);
             double totalPnl = pnlItem == null ? 0d : pnlItem.getTotalPnl();
             double totalLots = pnlItem == null ? 0d : pnlItem.getTotalLots();
             String label = resolveCardLabel(symbol, pnlItem);
-            double realtimePrice = resolveMarketPrice(symbol, latestPrices);
-            boolean hasPrice = !Double.isNaN(realtimePrice) || kline != null;
-            double latestPrice = !Double.isNaN(realtimePrice)
-                    ? realtimePrice
-                    : (kline == null ? 0d : kline.getClosePrice());
-            double volume = kline == null ? 0d : kline.getVolume();
-            double amount = kline == null ? 0d : kline.getQuoteAssetVolume();
-            long updatedAt = kline == null ? 0L : Math.max(kline.getCloseTime(), kline.getOpenTime());
+            boolean hasPrice = minute != null && minute.getOpenTime() > 0L;
+            double latestPrice = minute == null ? 0d : minute.getLatestPrice();
+            double volume = minute == null ? 0d : minute.getVolume();
+            double amount = minute == null ? 0d : minute.getAmount();
+            long updatedAt = minute == null ? 0L : minute.getUpdatedAt();
             boolean hasPosition = pnlItem != null;
             result.add(new FloatingSymbolCardData(
                     symbol,
@@ -144,8 +139,7 @@ public class FloatingPositionAggregator {
     // 统一运行态存在时，直接按产品快照构造悬浮窗卡片，避免悬浮窗再次自行聚合持仓。
     public static List<FloatingSymbolCardData> buildSymbolCardsFromRuntime(List<String> visibleSymbols,
                                                                            List<FloatingCardRuntimeModel> runtimeCards,
-                                                                           Map<String, KlineData> latestKlines,
-                                                                           Map<String, Double> latestPrices) {
+                                                                           Map<String, CurrentMinuteSnapshot> currentMinutes) {
         List<FloatingSymbolCardData> result = new ArrayList<>();
         if (visibleSymbols == null || visibleSymbols.isEmpty()) {
             return result;
@@ -155,15 +149,12 @@ public class FloatingPositionAggregator {
             double totalPnl = runtimeCard == null ? 0d : runtimeCard.getNetPnl();
             double totalLots = runtimeCard == null ? 0d : runtimeCard.getSignedLots();
             boolean hasPosition = runtimeCard != null && runtimeCard.getPositionCount() > 0;
-            KlineData kline = latestKlines == null ? null : latestKlines.get(symbol);
-            double realtimePrice = resolveMarketPrice(symbol, latestPrices);
-            boolean hasPrice = !Double.isNaN(realtimePrice) || kline != null;
-            double latestPrice = !Double.isNaN(realtimePrice)
-                    ? realtimePrice
-                    : (kline == null ? 0d : kline.getClosePrice());
-            double volume = kline == null ? 0d : kline.getVolume();
-            double amount = kline == null ? 0d : kline.getQuoteAssetVolume();
-            long updatedAt = kline == null ? 0L : Math.max(kline.getCloseTime(), kline.getOpenTime());
+            CurrentMinuteSnapshot minute = currentMinutes == null ? null : currentMinutes.get(symbol);
+            boolean hasPrice = minute != null && minute.getOpenTime() > 0L;
+            double latestPrice = minute == null ? 0d : minute.getLatestPrice();
+            double volume = minute == null ? 0d : minute.getVolume();
+            double amount = minute == null ? 0d : minute.getAmount();
+            long updatedAt = minute == null ? 0L : minute.getUpdatedAt();
             result.add(new FloatingSymbolCardData(
                     symbol,
                     resolveRuntimeCardLabel(symbol, runtimeCard),

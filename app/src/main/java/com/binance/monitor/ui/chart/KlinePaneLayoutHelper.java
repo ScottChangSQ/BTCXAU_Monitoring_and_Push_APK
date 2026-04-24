@@ -5,10 +5,10 @@
 package com.binance.monitor.ui.chart;
 
 final class KlinePaneLayoutHelper {
-    private static final float PRICE_WEIGHT = 9.36f;
+    private static final float PRICE_WEIGHT = 8.76f;
     private static final float VOLUME_WEIGHT = 2.4f;
-    private static final float MACD_WEIGHT = 2f;
-    private static final float STOCH_WEIGHT = 2f;
+    private static final float MACD_WEIGHT = 2.3f;
+    private static final float STOCH_WEIGHT = 2.3f;
     private static final float RSI_WEIGHT = 2f;
     private static final float KDJ_WEIGHT = 2f;
 

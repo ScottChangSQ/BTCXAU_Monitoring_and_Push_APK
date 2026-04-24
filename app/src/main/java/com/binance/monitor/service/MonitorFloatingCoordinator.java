@@ -10,12 +10,12 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.local.ConfigManager;
-import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.runtime.ConnectionStage;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
+import com.binance.monitor.runtime.market.truth.model.CurrentMinuteSnapshot;
 import com.binance.monitor.runtime.state.UnifiedRuntimeSnapshotStore;
 import com.binance.monitor.runtime.state.model.FloatingCardRuntimeModel;
 import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
@@ -170,8 +170,7 @@ final class MonitorFloatingCoordinator {
     @NonNull
     private List<FloatingSymbolCardData> buildFloatingCards(@Nullable AccountStatsPreloadManager.Cache cache) {
         List<String> visibleSymbols = resolveVisibleSymbols();
-        java.util.Map<String, KlineData> latestKlines = buildVisibleClosedMinuteSnapshot(visibleSymbols);
-        java.util.Map<String, Double> latestPrices = buildVisiblePriceSnapshot(visibleSymbols);
+        java.util.Map<String, CurrentMinuteSnapshot> currentMinutes = buildVisibleCurrentMinuteSnapshot(visibleSymbols);
         if (cache != null && cache.getSnapshot() != null) {
             List<FloatingCardRuntimeModel> runtimeCards = new ArrayList<>();
             for (String symbol : visibleSymbols) {
@@ -184,38 +183,21 @@ final class MonitorFloatingCoordinator {
             return FloatingPositionAggregator.buildSymbolCardsFromRuntime(
                     visibleSymbols,
                     runtimeCards,
-                    latestKlines,
-                    latestPrices
+                    currentMinutes
             );
         }
         List<com.binance.monitor.domain.account.model.PositionItem> positions = copyCachePositions(cache);
         return FloatingPositionAggregator.buildSymbolCards(
                 positions,
-                latestKlines,
-                latestPrices,
+                currentMinutes,
                 configManager != null && configManager.isShowBtc(),
                 configManager != null && configManager.isShowXau()
         );
     }
 
     @NonNull
-    private java.util.Map<String, KlineData> buildVisibleClosedMinuteSnapshot(@NonNull List<String> visibleSymbols) {
-        java.util.Map<String, KlineData> snapshot = new LinkedHashMap<>();
-        if (repository == null || visibleSymbols.isEmpty()) {
-            return snapshot;
-        }
-        for (String symbol : visibleSymbols) {
-            KlineData closedMinute = repository.selectClosedMinute(symbol);
-            if (closedMinute != null) {
-                snapshot.put(symbol, closedMinute);
-            }
-        }
-        return snapshot;
-    }
-
-    @NonNull
-    private java.util.Map<String, Double> buildVisiblePriceSnapshot(@NonNull List<String> visibleSymbols) {
-        java.util.Map<String, Double> snapshot = new LinkedHashMap<>();
+    private java.util.Map<String, CurrentMinuteSnapshot> buildVisibleCurrentMinuteSnapshot(@NonNull List<String> visibleSymbols) {
+        java.util.Map<String, CurrentMinuteSnapshot> snapshot = new LinkedHashMap<>();
         if (repository == null || visibleSymbols.isEmpty()) {
             return snapshot;
         }
@@ -223,7 +205,7 @@ final class MonitorFloatingCoordinator {
             if (repository.selectMarketWindowSignature(symbol).isEmpty()) {
                 continue;
             }
-            snapshot.put(symbol, repository.selectLatestPrice(symbol));
+            snapshot.put(symbol, repository.selectCurrentMinuteSnapshot(symbol));
         }
         return snapshot;
     }

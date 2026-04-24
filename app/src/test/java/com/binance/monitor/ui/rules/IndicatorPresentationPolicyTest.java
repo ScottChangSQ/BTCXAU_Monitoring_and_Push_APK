@@ -73,4 +73,22 @@ public class IndicatorPresentationPolicyTest {
         assertEquals("-$23.50", presentation.getFormattedValue());
         assertEquals(IndicatorPresentation.Direction.NEGATIVE, presentation.getDirection());
     }
+
+    @Test
+    public void presentationPolicyShouldKeepWinRateNeutralAndTintMonthReturn() {
+        IndicatorPresentation winRatePresentation = IndicatorPresentationPolicy.presentText(
+                "胜率",
+                "+57.00%",
+                false
+        );
+        IndicatorPresentation monthReturnPresentation = IndicatorPresentationPolicy.presentText(
+                "本月收益",
+                "+$123.45",
+                false
+        );
+
+        assertEquals(IndicatorPresentation.Direction.NONE, winRatePresentation.getDirection());
+        assertEquals(IndicatorPresentation.Direction.POSITIVE, monthReturnPresentation.getDirection());
+        assertEquals("+$123.45", monthReturnPresentation.getFormattedValue());
+    }
 }

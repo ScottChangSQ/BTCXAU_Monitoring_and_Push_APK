@@ -254,7 +254,7 @@ final class MarketChartDataCoordinator {
         if (repository == null) {
             return;
         }
-        repository.getMarketRuntimeSnapshotLiveData().observe(host.getLifecycleOwner(), ignored -> {
+        repository.getMarketTruthSnapshotLiveData().observe(host.getLifecycleOwner(), ignored -> {
             KlineData latestKline = repository.selectDisplayKline(host.getSelectedSymbol());
             if (latestKline == null) {
                 return;
@@ -305,6 +305,7 @@ final class MarketChartDataCoordinator {
         if (!host.cancelRunningRequestIfNeeded(allowCancelRunning, autoRefresh)) {
             return;
         }
+        MonitorRepository repository = host.getMonitorRepository();
 
         boolean shouldWarmDisplay = ChartWarmDisplayPolicyHelper.shouldWarmDisplay(
                 host.getLoadedCandles().isEmpty(),
@@ -338,12 +339,15 @@ final class MarketChartDataCoordinator {
             effectiveRequestReason = MarketChartRefreshHelper.RequestReason.SERIES_REPAIR;
         }
         long latestVisibleTime = host.resolveLatestVisibleCandleTime(localForPlan);
+        long truthProgressAt = repository == null
+                ? latestVisibleTime
+                : repository.selectTruthProgressAt(traceSymbol);
         MarketChartRefreshHelper.SyncPlan refreshPlan = MarketChartRefreshHelper.resolvePlan(
                 localForPlan,
                 reqInterval.getLimit(),
                 host.getRestoreWindowLimit(),
                 System.currentTimeMillis(),
-                latestVisibleTime,
+                truthProgressAt,
                 host.intervalToMs(reqInterval.getKey()),
                 reqInterval.isYearAggregate(),
                 host.hasRealtimeTailSourceForChart(),

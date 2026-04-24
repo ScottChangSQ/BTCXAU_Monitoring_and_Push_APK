@@ -52,6 +52,11 @@ public class FormatUtilsMoneyFormatTest {
     }
 
     @Test
+    public void shouldFormatPriceWithoutDecimal() {
+        assertEquals("1,235", FormatUtils.formatPriceNoDecimal(1234.56));
+    }
+
+    @Test
     public void shouldFormatAmountWithChineseWanUnit() {
         assertEquals("123.46万$", FormatUtils.formatAmountWithChineseUnit(1_234_567d));
     }

@@ -34,6 +34,7 @@ public class ConfigManager {
     private static final String KEY_TRADE_MAX_BATCH_TOTAL_VOLUME = "trade_max_batch_total_volume";
     private static final String KEY_TRADE_FORCE_CONFIRM_ADD_POSITION = "trade_force_confirm_add_position";
     private static final String KEY_TRADE_FORCE_CONFIRM_REVERSE = "trade_force_confirm_reverse";
+    private static final String KEY_TRADE_ONE_CLICK_MODE_ENABLED = "trade_one_click_mode_enabled";
     private static volatile ConfigManager instance;
 
     private final SharedPreferences preferences;
@@ -305,6 +306,14 @@ public class ConfigManager {
 
     public void setTradeForceConfirmReverse(boolean enabled) {
         preferences.edit().putBoolean(KEY_TRADE_FORCE_CONFIRM_REVERSE, enabled).apply();
+    }
+
+    public boolean isTradeOneClickModeEnabled() {
+        return preferences.getBoolean(KEY_TRADE_ONE_CLICK_MODE_ENABLED, false);
+    }
+
+    public void setTradeOneClickModeEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_TRADE_ONE_CLICK_MODE_ENABLED, enabled).apply();
     }
 
     private String getPrefix(String symbol) {

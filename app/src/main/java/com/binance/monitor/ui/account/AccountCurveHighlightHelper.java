@@ -65,6 +65,8 @@ final class AccountCurveHighlightHelper {
                 curvePoints,
                 drawdownPoints,
                 dailyReturnPoints,
+                resolveDefaultViewportStart(curvePoints, fallbackTimestamp),
+                resolveDefaultViewportEnd(curvePoints, fallbackTimestamp),
                 fallbackTimestamp,
                 xRatio,
                 false
@@ -79,7 +81,36 @@ final class AccountCurveHighlightHelper {
                                                     long fallbackTimestamp,
                                                     float xRatio,
                                                     boolean preferExactTimestamp) {
-        long targetTimestamp = resolveTargetTimestamp(curvePoints, fallbackTimestamp, xRatio, preferExactTimestamp);
+        return resolveSharedHighlight(
+                curvePoints,
+                drawdownPoints,
+                dailyReturnPoints,
+                resolveDefaultViewportStart(curvePoints, fallbackTimestamp),
+                resolveDefaultViewportEnd(curvePoints, fallbackTimestamp),
+                fallbackTimestamp,
+                xRatio,
+                preferExactTimestamp
+        );
+    }
+
+    // 允许宿主显式传入当前可视时间范围，避免附图右侧空白区再次被真实采样尾点截断。
+    @Nullable
+    static HighlightSnapshot resolveSharedHighlight(@Nullable List<CurvePoint> curvePoints,
+                                                    @Nullable List<DrawdownPoint> drawdownPoints,
+                                                    @Nullable List<DailyReturnPoint> dailyReturnPoints,
+                                                    long viewportStartTs,
+                                                    long viewportEndTs,
+                                                    long fallbackTimestamp,
+                                                    float xRatio,
+                                                    boolean preferExactTimestamp) {
+        long targetTimestamp = resolveTargetTimestamp(
+                curvePoints,
+                viewportStartTs,
+                viewportEndTs,
+                fallbackTimestamp,
+                xRatio,
+                preferExactTimestamp
+        );
         CurvePoint curvePoint = CurveSeriesInterpolationHelper.interpolateCurvePoint(curvePoints, targetTimestamp);
         if (curvePoint == null) {
             return null;
@@ -94,16 +125,13 @@ final class AccountCurveHighlightHelper {
 
     // 优先按共享横轴比例换算目标时间，避免附图点位稀疏时弹窗停在旧值上。
     private static long resolveTargetTimestamp(@Nullable List<CurvePoint> curvePoints,
+                                               long viewportStartTs,
+                                               long viewportEndTs,
                                                long fallbackTimestamp,
                                                float xRatio,
                                                boolean preferExactTimestamp) {
-        if (curvePoints == null || curvePoints.isEmpty()) {
-            return fallbackTimestamp;
-        }
-        CurvePoint first = curvePoints.get(0);
-        CurvePoint last = curvePoints.get(curvePoints.size() - 1);
-        long startTs = first.getTimestamp();
-        long endTs = Math.max(startTs, last.getTimestamp());
+        long startTs = resolveViewportStart(curvePoints, viewportStartTs, viewportEndTs, fallbackTimestamp);
+        long endTs = resolveViewportEnd(curvePoints, viewportStartTs, viewportEndTs, startTs, fallbackTimestamp);
         if (preferExactTimestamp && fallbackTimestamp > 0L) {
             return clampTimestamp(fallbackTimestamp, startTs, endTs);
         }
@@ -118,18 +146,63 @@ final class AccountCurveHighlightHelper {
 
     // 按共享时间轴把目标时间换算回比例，保证跨图同步时十字线位置跟最终时间一致。
     static float resolveTimestampRatio(@Nullable List<CurvePoint> curvePoints, long targetTimestamp) {
-        if (curvePoints == null || curvePoints.isEmpty()) {
-            return -1f;
-        }
-        CurvePoint first = curvePoints.get(0);
-        CurvePoint last = curvePoints.get(curvePoints.size() - 1);
-        long startTs = first.getTimestamp();
-        long endTs = Math.max(startTs, last.getTimestamp());
+        return resolveTimestampRatio(
+                curvePoints,
+                resolveDefaultViewportStart(curvePoints, targetTimestamp),
+                resolveDefaultViewportEnd(curvePoints, targetTimestamp),
+                targetTimestamp
+        );
+    }
+
+    // 按宿主给出的可视范围换算比例，避免主图同步时又被真实采样尾点拉回去。
+    static float resolveTimestampRatio(@Nullable List<CurvePoint> curvePoints,
+                                       long viewportStartTs,
+                                       long viewportEndTs,
+                                       long targetTimestamp) {
+        long startTs = resolveViewportStart(curvePoints, viewportStartTs, viewportEndTs, targetTimestamp);
+        long endTs = resolveViewportEnd(curvePoints, viewportStartTs, viewportEndTs, startTs, targetTimestamp);
         if (endTs <= startTs) {
             return 0f;
         }
         long clampedTimestamp = clampTimestamp(targetTimestamp, startTs, endTs);
         return clampRatio((float) (clampedTimestamp - startTs) / (float) (endTs - startTs));
+    }
+
+    private static long resolveDefaultViewportStart(@Nullable List<CurvePoint> curvePoints, long fallbackTimestamp) {
+        if (curvePoints == null || curvePoints.isEmpty()) {
+            return Math.max(0L, fallbackTimestamp);
+        }
+        return curvePoints.get(0).getTimestamp();
+    }
+
+    private static long resolveDefaultViewportEnd(@Nullable List<CurvePoint> curvePoints, long fallbackTimestamp) {
+        if (curvePoints == null || curvePoints.isEmpty()) {
+            return Math.max(resolveDefaultViewportStart(curvePoints, fallbackTimestamp) + 1L, fallbackTimestamp);
+        }
+        long startTs = curvePoints.get(0).getTimestamp();
+        long lastTs = curvePoints.get(curvePoints.size() - 1).getTimestamp();
+        return Math.max(startTs, lastTs);
+    }
+
+    private static long resolveViewportStart(@Nullable List<CurvePoint> curvePoints,
+                                             long viewportStartTs,
+                                             long viewportEndTs,
+                                             long fallbackTimestamp) {
+        if (viewportEndTs > viewportStartTs) {
+            return Math.max(0L, viewportStartTs);
+        }
+        return resolveDefaultViewportStart(curvePoints, fallbackTimestamp);
+    }
+
+    private static long resolveViewportEnd(@Nullable List<CurvePoint> curvePoints,
+                                           long viewportStartTs,
+                                           long viewportEndTs,
+                                           long resolvedStartTs,
+                                           long fallbackTimestamp) {
+        if (viewportEndTs > viewportStartTs) {
+            return Math.max(resolvedStartTs + 1L, viewportEndTs);
+        }
+        return Math.max(resolvedStartTs, resolveDefaultViewportEnd(curvePoints, fallbackTimestamp));
     }
 
     private static float clampRatio(float ratio) {

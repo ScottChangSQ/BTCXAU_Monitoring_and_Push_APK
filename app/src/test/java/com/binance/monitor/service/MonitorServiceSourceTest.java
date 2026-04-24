@@ -28,16 +28,18 @@ public class MonitorServiceSourceTest {
                 source.contains("boolean streamHealthy = isV2StreamHealthy(System.currentTimeMillis());"));
         assertTrue("stream 健康时应先做远程会话恢复检查，再直接返回，不再继续重建主链连接",
                 source.contains("if (streamHealthy) {")
+                        && source.contains("requestMarketTruthRepair(false);")
                         && source.contains("reconcileRemoteSessionIfNeeded();")
                         && source.contains("floatingCoordinator.requestRefresh(false);"));
         assertTrue("只有 stream 已失活时才应继续走后面的重建逻辑",
-                source.contains("if (streamHealthy) {\n            reconcileRemoteSessionIfNeeded();\n            floatingCoordinator.requestRefresh(false);\n            updateConnectionStatus();\n            return;\n        }\n"));
+                source.contains("if (streamHealthy) {\n            requestMarketTruthRepair(false);\n            reconcileRemoteSessionIfNeeded();\n            floatingCoordinator.requestRefresh(false);\n            updateConnectionStatus();\n            return;\n        }\n"));
         assertFalse("前台切回时不应无条件重建 v2 stream",
                 source.contains("restartV2Stream(\"foreground_resume\");\n        requestForegroundEntryRefresh();"));
         assertFalse("前台切回时不应再主动补拉 /v2/account/snapshot",
                 source.contains("requestAccountRefreshFromV2();"));
         assertTrue("stream 健康时只应切换消费层刷新节奏，并补一次远程会话一致性检查，不应做全量主链重建",
-                source.contains("reconcileRemoteSessionIfNeeded();")
+                source.contains("requestMarketTruthRepair(false);")
+                        && source.contains("reconcileRemoteSessionIfNeeded();")
                         && source.contains("floatingCoordinator.requestRefresh(false);"));
         assertTrue("服务层应维护结构化连接阶段，避免把重连过程误渲染成离线",
                 source.contains("private volatile ConnectionStage v2StreamStage = ConnectionStage.CONNECTING;"));
@@ -234,6 +236,70 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
+    public void accountRuntimeStreamShouldUseDedicatedExecutorInsteadOfGenericBackgroundQueue() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue("服务层应为高频账户运行态维护独立执行器，避免被补修和恢复任务挤压",
+                source.contains("private ExecutorService accountRuntimeExecutorService;"));
+        assertTrue("初始化时应创建账户运行态专用串行执行器",
+                source.contains("accountRuntimeExecutorService = Executors.newSingleThreadExecutor();"));
+        assertTrue("服务层应提供账户运行态专用投递入口",
+                source.contains("private boolean executeAccountRuntime(Runnable task) {"));
+        assertTrue("stream 账户运行态应用应走专用执行器，而不是通用后台队列",
+                source.contains("executeAccountRuntime(() -> {\n            try {\n                JSONObject snapshotCopy = new JSONObject(snapshotBody);"));
+        assertFalse("stream 账户运行态应用不应继续走 executeBackgroundWork，避免 0.5s 更新被堵住",
+                source.contains("executeBackgroundWork(() -> {\n            try {\n                JSONObject snapshotCopy = new JSONObject(snapshotBody);\n                AccountStatsPreloadManager.Cache cache =\n                        accountStatsPreloadManager.applyPublishedAccountRuntime(snapshotCopy, publishedAt);"));
+    }
+
+    @Test
+    public void monitorServiceShouldNotBypassFloatingCoordinatorWithDirectPriceRendering() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertFalse("服务层不应直接驱动悬浮窗 UI 更新，必须通过协调器统一刷新",
+                source.contains("floatingWindowManager.update("));
+        assertTrue("服务层刷新悬浮窗时只应通过 floatingCoordinator.requestRefresh(...)",
+                source.contains("floatingCoordinator.requestRefresh(false);")
+                        && source.contains("floatingCoordinator.requestRefresh(true);"));
+    }
+
+    @Test
+    public void monitorServiceShouldRepairMarketTruthAndRefreshFloatingFromUnifiedTruthUpdates() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("repository.getMarketTruthSnapshotLiveData().observeForever(marketTruthObserver);"));
+        assertTrue(source.contains("repository.getMarketTruthSnapshotLiveData().removeObserver(marketTruthObserver);"));
+        assertTrue(source.contains("private void requestMarketTruthRepair(boolean force) {"));
+        assertTrue(source.contains("gatewayV2Client.fetchMarketSeries(symbol, \"1m\", MARKET_TRUTH_REPAIR_LIMIT)"));
+        assertTrue(source.contains("repository.applyMarketSeriesPayload("));
+        assertTrue(source.contains("requestMarketTruthRepair(true);"));
+        assertTrue(source.contains("requestMarketTruthRepair(false);"));
+        assertTrue(source.contains("private ExecutorService realtimeMarketExecutorService;"));
+        assertTrue(source.contains("private ExecutorService backgroundExecutorService;"));
+    }
+
+    @Test
+    public void marketTruthRepairGateShouldUseMinuteProgressInsteadOfSnapshotArrivalTime() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private long resolveMarketTruthProgressAt(@Nullable MarketTruthSnapshot snapshot) {"));
+        assertTrue(source.contains("MarketTruthSymbolState state = snapshot.getSymbolState(symbol);"));
+        assertTrue(source.contains("state.getLastTruthUpdateAt()"));
+        assertFalse(source.contains("long updatedAt = snapshot == null ? 0L : Math.max(0L, snapshot.getUpdatedAt());"));
+    }
+
+    @Test
     public void malformedAccountRuntimePayloadShouldNotReferenceRemovedStreamSnapshotState() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
@@ -277,7 +343,9 @@ public class MonitorServiceSourceTest {
         assertTrue("新连接建立后应重置顺序守卫，允许接收新的 stream 序列",
                 source.contains("if (v2StreamConnected) {\n                        v2StreamSequenceGuard.reset();"));
         assertTrue("消费 stream 消息前应先按 busSeq 判断是否仍是当前有效序列",
-                source.contains("if (!v2StreamSequenceGuard.shouldApply(busSeq)) {\n            return;\n        }"));
+                source.contains("if (!v2StreamSequenceGuard.shouldApplyBusSeq(busSeq)) {\n            return;\n        }"));
+        assertTrue("marketTick 也应使用独立的 marketSeq 顺序守卫，避免旧 tick 覆盖当前分钟",
+                source.contains("if (!v2StreamSequenceGuard.shouldApplyMarketSeq(marketSeq)) {\n            return;\n        }"));
     }
 
     @Test
@@ -384,8 +452,8 @@ public class MonitorServiceSourceTest {
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("stream 消息应先进入后台串行执行器，不能直接把 payload 解析压到主线程",
-                source.contains("executeOnWorker(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
+        assertTrue("stream 消息应先进入实时市场执行器，不能直接把 payload 解析压到主线程",
+                source.contains("executeRealtimeMarket(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
         assertTrue("后台消费完 stream 后，主线程只负责刷新连接状态",
                 source.contains("mainHandler.post(MonitorService.this::updateConnectionStatus);")
                         || source.contains("mainHandler.post(() -> updateConnectionStatus());"));
@@ -394,18 +462,20 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
-    public void lateCallbacksShouldNotSubmitWorkIntoDestroyedExecutorService() throws Exception {
+    public void lateCallbacksShouldNotSubmitWorkIntoDestroyedExecutors() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("MonitorService 应通过统一安全投递入口向后台线程池派发任务",
-                source.contains("executeOnWorker(() -> {"));
-        assertTrue("安全投递入口应先判断线程池是否已关闭",
+        assertTrue("MonitorService 应通过实时/后台两条安全入口向执行器派发任务",
+                source.contains("executeRealtimeMarket(() -> {")
+                        && source.contains("executeBackgroundWork(() -> {"));
+        assertTrue("安全投递入口应先判断执行器是否已关闭",
                 source.contains("if (currentExecutor == null || currentExecutor.isShutdown() || currentExecutor.isTerminated()) {"));
-        assertTrue("线程池销毁后应回收引用，避免晚到回调继续命中旧实例",
-                source.contains("executorService = null;"));
+        assertTrue("执行器销毁后应回收引用，避免晚到回调继续命中旧实例",
+                source.contains("realtimeMarketExecutorService = null;")
+                        && source.contains("backgroundExecutorService = null;"));
         assertTrue("晚到回调命中已关闭线程池时应显式吞掉拒绝异常",
                 source.contains("} catch (RejectedExecutionException exception) {"));
     }
@@ -417,18 +487,22 @@ public class MonitorServiceSourceTest {
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("服务层应统一通过安全投递入口把后台任务交给串行线程池",
-                source.contains("private boolean executeOnWorker(Runnable task) {"));
-        assertTrue("服务销毁时应先关闭线程池再清空引用，避免晚到回调继续提交",
-                source.contains("executorService.shutdownNow();\n            executorService = null;"));
+        assertTrue("服务层应同时暴露实时市场、账户运行态与后台任务三个安全投递入口",
+                source.contains("private boolean executeRealtimeMarket(Runnable task) {")
+                        && source.contains("private boolean executeAccountRuntime(Runnable task) {")
+                        && source.contains("private boolean executeBackgroundWork(Runnable task) {"));
+        assertTrue("服务销毁时应先关闭三条执行器再清空引用，避免晚到回调继续提交",
+                source.contains("realtimeMarketExecutorService.shutdownNow();\n            realtimeMarketExecutorService = null;")
+                        && source.contains("accountRuntimeExecutorService.shutdownNow();\n            accountRuntimeExecutorService = null;")
+                        && source.contains("backgroundExecutorService.shutdownNow();\n            backgroundExecutorService = null;"));
         assertTrue("stream 消息应通过安全投递入口执行，避免销毁后 RejectedExecutionException",
-                source.contains("executeOnWorker(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
+                source.contains("executeRealtimeMarket(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
         assertTrue("历史补拉应直接委托预加载管理器自己的排队入口，避免服务层继续维护第二套线程与 gate",
                 source.contains("accountStatsPreloadManager.queueHistoryRefreshForRevision("));
         assertTrue("账户运行态应用应通过安全投递入口执行，避免销毁后继续提交",
-                source.contains("executeOnWorker(() -> {\n            try {\n                JSONObject snapshotCopy = new JSONObject(snapshotBody);"));
+                source.contains("executeAccountRuntime(() -> {\n            try {\n                JSONObject snapshotCopy = new JSONObject(snapshotBody);"));
         assertTrue("异常配置同步也应通过安全投递入口执行，避免销毁后继续提交",
-                source.contains("executeOnWorker(() -> {\n            AbnormalGatewayClient.PushResult result = abnormalGatewayClient.pushConfig"));
+                source.contains("executeBackgroundWork(() -> {\n            AbnormalGatewayClient.PushResult result = abnormalGatewayClient.pushConfig"));
     }
 
     @Test

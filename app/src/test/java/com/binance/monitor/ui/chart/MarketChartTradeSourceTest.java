@@ -20,18 +20,19 @@ public class MarketChartTradeSourceTest {
 
         assertTrue(screenSource.contains("private MarketChartTradeDialogCoordinator tradeDialogCoordinator;"));
         assertTrue(screenSource.contains("private ChartQuickTradeCoordinator chartQuickTradeCoordinator;"));
-        assertTrue(screenSource.contains("private TradeTemplateRepository tradeTemplateRepository;"));
+        assertTrue(screenSource.contains("private TradeBatchActionDialogCoordinator batchActionDialogCoordinator;"));
         assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION = \"extra_trade_action\";"));
         assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION_CLOSE_POSITION = \"close_position\";"));
         assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION_MODIFY_POSITION = \"modify_position\";"));
         assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION_MODIFY_PENDING = \"modify_pending\";"));
         assertTrue(screenSource.contains("public static final String EXTRA_TRADE_ACTION_CANCEL_PENDING = \"cancel_pending\";"));
         assertTrue(screenSource.contains("tradeDialogCoordinator = new MarketChartTradeDialogCoordinator("));
+        assertTrue(screenSource.contains("batchActionDialogCoordinator = new TradeBatchActionDialogCoordinator("));
         assertTrue(screenSource.contains("chartQuickTradeCoordinator = new ChartQuickTradeCoordinator("));
+        assertTrue(screenSource.contains("binding.btnBatchTradeActions.setOnClickListener(v -> openBatchTradeActions());"));
         assertTrue(screenSource.contains("binding.btnQuickTradePrimary.setOnClickListener(v -> executePrimaryQuickTrade());"));
         assertTrue(screenSource.contains("binding.btnQuickTradeSecondary.setOnClickListener(v -> executeSecondaryQuickTrade());"));
-        assertTrue(screenSource.contains("binding.btnQuickTradeTemplate"));
-        assertTrue(layoutSource.contains("android:id=\"@+id/btnQuickTradeTemplate\""));
+        assertTrue(layoutSource.contains("android:id=\"@+id/btnBatchTradeActions\""));
         assertTrue(screenSource.contains("consumePendingTradeActionIfNeeded();"));
         assertTrue(coordinatorSource.contains("tradeExecutionCoordinator.prepareExecution("));
         assertTrue(coordinatorSource.contains("tradeExecutionCoordinator.submitAfterConfirmation("));
@@ -180,6 +181,23 @@ public class MarketChartTradeSourceTest {
     }
 
     @Test
+    public void chartScreenShouldUseTruthCenterForMainDisplayAndHistoryPaging() throws Exception {
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(screenSource.contains("return resolveTruthDisplaySeriesOrLoaded(symbol, interval, loaded, Math.max(interval.getLimit(), RESTORE_WINDOW_LIMIT));"));
+        assertTrue(screenSource.contains("return resolveTruthDisplaySeriesOrLoaded(symbol, interval, fetched, truthLimit);"));
+        assertTrue(screenSource.contains("List<CandleEntry> mergedDisplay = resolveTruthDisplaySeriesOrLoaded("));
+        assertTrue(screenSource.contains("private List<CandleEntry> resolveTruthDisplaySeriesOrLoaded(@NonNull String symbol,"));
+        assertTrue(screenSource.contains("MarketDisplaySeries truthSeries = monitorRepository.selectDisplaySeries("));
+        assertFalse(screenSource.contains("legacyLoadCandlesForRequest("));
+        assertFalse(screenSource.contains("legacyFetchV2SeriesAfter("));
+        assertFalse(screenSource.contains("legacyMergeRealtimeMinuteCache("));
+        assertFalse(screenSource.contains("legacyBuildRealtimeDisplayCandles("));
+    }
+
+    @Test
     public void topControlRowShouldKeepModeButtonsCenteredWithCompactSizing() throws Exception {
         String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java");
         String layoutSource = readUtf8("src/main/res/layout/activity_market_chart.xml");
@@ -187,17 +205,48 @@ public class MarketChartTradeSourceTest {
         assertTrue(layoutSource.contains("android:id=\"@+id/layoutChartModeToggleGroup\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/layoutChartSymbolPickerContainer\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/layoutChartSymbolPickerContainer\"\n                    android:layout_width=\"0dp\""));
-        assertTrue(layoutSource.contains("app:layout_constraintStart_toEndOf=\"@+id/layoutChartSymbolPickerContainer\""));
-        assertTrue(layoutSource.contains("app:layout_constraintEnd_toStartOf=\"@+id/btnGlobalStatus\""));
-        assertTrue(layoutSource.contains("android:layout_marginEnd=\"@dimen/inline_gap\""));
+        assertTrue(layoutSource.contains("app:layout_constraintStart_toStartOf=\"parent\""));
+        assertTrue(layoutSource.contains("app:layout_constraintEnd_toEndOf=\"parent\""));
+        assertTrue(layoutSource.contains("android:id=\"@+id/layoutChartStatusContainer\""));
+        assertTrue(layoutSource.contains("android:id=\"@+id/layoutChartStatusContainer\"\n                    android:layout_width=\"0dp\""));
+        assertTrue(layoutSource.contains("app:layout_constraintStart_toEndOf=\"@+id/layoutChartModeToggleGroup\""));
+        assertTrue(layoutSource.contains("android:id=\"@+id/btnGlobalStatus\"\n                        style=\"@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary\"\n                        android:layout_width=\"match_parent\""));
+        assertTrue(layoutSource.contains("android:layout_gravity=\"end|center_vertical\""));
+        assertTrue(layoutSource.contains("android:id=\"@+id/layoutChartTopRightActions\""));
+        assertTrue(layoutSource.contains("android:layout_gravity=\"end|top\""));
+        assertTrue(layoutSource.contains("android:layout_marginEnd=\"@dimen/kline_price_axis_reserved_width\""));
         assertTrue(layoutSource.contains("android:layout_height=\"@dimen/subject_height_compact\""));
         assertTrue(screenSource.contains("R.style.TextAppearance_BinanceMonitor_ControlCompact"));
         assertTrue(screenSource.contains("R.dimen.subject_height_compact"));
         assertTrue(screenSource.contains("R.dimen.chart_top_mode_button_min_width"));
         assertTrue(screenSource.contains("R.dimen.field_padding_x"));
         assertTrue(screenSource.contains("R.dimen.field_trailing_reserve_compact"));
+        assertTrue(screenSource.contains("button.setTextColor(palette.primary);"));
+        assertTrue(screenSource.contains("styleOverlayActionTrigger(binding.btnBatchTradeActions);"));
         assertFalse(screenSource.contains("R.dimen.subject_select_field_trailing_reserve"));
         assertTrue(screenSource.contains("button.setMinimumWidth(minWidthPx);"));
+    }
+
+    @Test
+    public void accountOverlaySignatureShouldIncludeProductRuntimeSummaryState() throws Exception {
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(screenSource.contains("private com.binance.monitor.runtime.state.model.ChartProductRuntimeModel resolveChartRuntimeModel("));
+        assertTrue("交易页叠加层签名必须把当前产品运行态带进去，否则只变盈亏/手数时会被误判成未变化",
+                screenSource.contains("return overlaySnapshotFactory().buildInputSignature(\n                selectedSymbol,\n                loadedCandles,\n                resolvedSnapshot,\n                cache,\n                resolveChartRuntimeModel(cache)\n        );"));
+    }
+
+    @Test
+    public void quickTradeButtonsShouldUseStrongerBuySellSemanticColors() throws Exception {
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(screenSource.contains("int accentColor = primaryAction ? palette.rise : palette.fall;"));
+        assertTrue(screenSource.contains("ColorUtils.setAlphaComponent(accentColor, 44)"));
+        assertFalse(screenSource.contains("ColorUtils.setAlphaComponent(accentColor, 26)"));
     }
 
     @Test
@@ -253,6 +302,25 @@ public class MarketChartTradeSourceTest {
 
         assertTrue(screenSource.contains("import com.binance.monitor.util.ProductSymbolMapper;"));
         assertTrue(screenSource.contains("return ProductSymbolMapper.toMarketSymbol(raw);"));
+    }
+
+    @Test
+    public void selectedSymbolShouldPersistAcrossTabReturnAndExternalTargetShouldOnlyApplyOnce() throws Exception {
+        String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(screenSource.contains("private static final String PREF_KEY_SELECTED_SYMBOL = \"selected_symbol\";"));
+        assertTrue(screenSource.contains("restoreSelectedSymbol();"));
+        assertTrue(screenSource.contains("private void restoreSelectedSymbol() {"));
+        assertTrue(screenSource.contains("preferences.getString(PREF_KEY_SELECTED_SYMBOL, selectedSymbol)"));
+        assertTrue(screenSource.contains("private void persistSelectedSymbol() {"));
+        assertTrue(screenSource.contains(".putString(PREF_KEY_SELECTED_SYMBOL, selectedSymbol)"));
+        assertTrue(screenSource.contains("void commitSelectedSymbol(@NonNull String symbol) {\n        selectedSymbol = symbol;\n        persistSelectedSymbol();"));
+        assertTrue(screenSource.contains("selectedSymbol = symbol;\n        persistSelectedSymbol();\n        if (binding == null) {"));
+        assertTrue(screenSource.contains("clearConsumedTargetSymbolIntent(intent);"));
+        assertTrue(screenSource.contains("private void clearConsumedTargetSymbolIntent(@Nullable Intent intent) {"));
+        assertTrue(screenSource.contains("intent.removeExtra(EXTRA_TARGET_SYMBOL);"));
     }
 
     @Test
@@ -361,7 +429,7 @@ public class MarketChartTradeSourceTest {
     }
 
     @Test
-    public void tradeEntriesShouldReadTemplateRepositoryInsteadOfHardcodedDefaults() throws Exception {
+    public void tradeEntriesShouldReadSessionVolumeMemoryInsteadOfTemplateDefaults() throws Exception {
         String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/chart/MarketChartScreen.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
@@ -372,22 +440,19 @@ public class MarketChartTradeSourceTest {
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(screenSource.contains("TradeTemplateRepository"));
-        assertTrue(screenSource.contains("tradeTemplateRepository = new TradeTemplateRepository("));
-        assertTrue(screenSource.contains("tradeTemplateRepository.getDefaultVolume()"));
-        assertTrue(screenSource.contains("binding.btnQuickTradeTemplate"));
-        assertTrue(screenSource.contains("updateQuickTradeTemplateButton("));
-        assertTrue(screenSource.contains("tradeTemplateRepository.applyTemplate("));
+        assertTrue(screenSource.contains("TradeSessionVolumeMemory"));
+        assertTrue(screenSource.contains("syncQuickTradeVolumeState(false);"));
+        assertTrue(screenSource.contains("TradeSessionVolumeMemory.getInstance().getCurrentVolume()"));
+        assertFalse(screenSource.contains("tradeTemplateRepository = new TradeTemplateRepository("));
         assertFalse(screenSource.contains("binding.etQuickTradeVolume.setText(R.string.chart_quick_trade_default_volume);"));
-        assertTrue(coordinatorSource.contains("TradeTemplateRepository"));
-        assertTrue(coordinatorSource.contains("resolveDefaultTradeTemplate()"));
-        assertTrue(coordinatorSource.contains("tradeTemplateRepository.applyTemplate("));
+        assertTrue(coordinatorSource.contains("TradeSessionVolumeMemory.getInstance().getCurrentVolume()"));
+        assertFalse(coordinatorSource.contains("resolveDefaultTradeTemplate()"));
         assertFalse(coordinatorSource.contains("dialogBinding.etTradeVolume.setText(\"0.10\");"));
-        assertTrue(layoutSource.contains("android:id=\"@+id/btnQuickTradeTemplate\""));
+        assertFalse(layoutSource.contains("android:id=\"@+id/btnQuickTradeTemplate\""));
     }
 
     @Test
-    public void templateSummaryShouldAppearInConfirmPreviewChain() throws Exception {
+    public void confirmPreviewShouldNoLongerAppendTemplateSummary() throws Exception {
         String confirmSource = readUtf8("src/main/java/com/binance/monitor/ui/trade/TradeConfirmDialogController.java");
         String previewSource = readUtf8("src/main/java/com/binance/monitor/ui/trade/TradeRiskPreview.java");
         String resolverSource = readUtf8("src/main/java/com/binance/monitor/ui/trade/TradeRiskPreviewResolver.java");
@@ -395,8 +460,7 @@ public class MarketChartTradeSourceTest {
         assertTrue(previewSource.contains("private final String templateName;"));
         assertTrue(previewSource.contains("public String getTemplateName() {"));
         assertTrue(resolverSource.contains("command.getParams().optString(\"templateName\", \"\")"));
-        assertTrue(confirmSource.contains("当前模板："));
-        assertTrue(confirmSource.contains("riskPreview.getTemplateName()"));
+        assertFalse(confirmSource.contains("当前模板："));
     }
 
     @Test

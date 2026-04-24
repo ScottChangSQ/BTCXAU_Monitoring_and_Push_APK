@@ -12,6 +12,7 @@ import android.os.Looper;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.lifecycle.Observer;
 
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
@@ -33,6 +34,9 @@ import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.runtime.account.AccountSessionRecoveryHelper;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.runtime.market.model.MarketRuntimeSnapshot;
+import com.binance.monitor.runtime.market.truth.GapDetector;
+import com.binance.monitor.runtime.market.truth.model.MarketTruthSnapshot;
+import com.binance.monitor.runtime.market.truth.model.MarketTruthSymbolState;
 import com.binance.monitor.runtime.market.model.SymbolMarketWindow;
 import com.binance.monitor.security.SecureSessionPrefs;
 import com.binance.monitor.security.SessionSummarySnapshot;
@@ -58,6 +62,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class MonitorService extends Service {
+    private static final int MARKET_TRUTH_REPAIR_LIMIT = 180;
+    private static final long MARKET_TRUTH_REPAIR_COOLDOWN_MS = 5_000L;
     private static volatile boolean serviceRunning;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Map<String, Long> lastNotifyAt = new HashMap<>();
@@ -71,6 +77,7 @@ public class MonitorService extends Service {
         }
     };
     private final Runnable suppressForegroundNotificationRunnable = this::suppressForegroundNotification;
+    private final Observer<MarketTruthSnapshot> marketTruthObserver = snapshot -> handleMarketTruthChanged();
 
     private MonitorRepository repository;
     private LogManager logManager;
@@ -85,15 +92,19 @@ public class MonitorService extends Service {
     private SecureSessionPrefs secureSessionPrefs;
     private AccountSessionRecoveryHelper accountSessionRecoveryHelper;
     private AccountStatsPreloadManager accountStatsPreloadManager;
-    private ExecutorService executorService;
+    private ExecutorService realtimeMarketExecutorService;
+    private ExecutorService accountRuntimeExecutorService;
+    private ExecutorService backgroundExecutorService;
     private MonitorForegroundNotificationCoordinator foregroundNotificationCoordinator;
     private MonitorFloatingCoordinator floatingCoordinator;
     private boolean pipelineStarted;
     private final V2StreamSequenceGuard v2StreamSequenceGuard = new V2StreamSequenceGuard();
     private final AtomicBoolean remoteSessionRecoveryInFlight = new AtomicBoolean(false);
+    private final AtomicBoolean marketTruthRepairInFlight = new AtomicBoolean(false);
     private volatile ConnectionStage v2StreamStage = ConnectionStage.CONNECTING;
     private volatile boolean v2StreamConnected;
     private volatile long lastV2StreamMessageAt;
+    private volatile long lastMarketTruthRepairAt;
     private String lastPublishedConnectionStatus = "";
     private final Set<String> dispatchedServerAlertIds = new HashSet<>();
 
@@ -120,7 +131,9 @@ public class MonitorService extends Service {
                 accountStatsPreloadManager,
                 logManager
         );
-        executorService = Executors.newSingleThreadExecutor();
+        realtimeMarketExecutorService = Executors.newSingleThreadExecutor();
+        accountRuntimeExecutorService = Executors.newSingleThreadExecutor();
+        backgroundExecutorService = Executors.newSingleThreadExecutor();
         foregroundNotificationCoordinator = new MonitorForegroundNotificationCoordinator(notificationHelper, repository);
         floatingCoordinator = new MonitorFloatingCoordinator(
                 mainHandler,
@@ -144,6 +157,7 @@ public class MonitorService extends Service {
                     }
                 }
         );
+        repository.getMarketTruthSnapshotLiveData().observeForever(marketTruthObserver);
         synchronized (dispatchedServerAlertIds) {
             dispatchedServerAlertIds.clear();
             if (abnormalAlertDispatchStore != null) {
@@ -211,9 +225,20 @@ public class MonitorService extends Service {
         if (v2StreamClient != null) {
             v2StreamClient.disconnect();
         }
-        if (executorService != null) {
-            executorService.shutdownNow();
-            executorService = null;
+        if (repository != null) {
+            repository.getMarketTruthSnapshotLiveData().removeObserver(marketTruthObserver);
+        }
+        if (realtimeMarketExecutorService != null) {
+            realtimeMarketExecutorService.shutdownNow();
+            realtimeMarketExecutorService = null;
+        }
+        if (accountRuntimeExecutorService != null) {
+            accountRuntimeExecutorService.shutdownNow();
+            accountRuntimeExecutorService = null;
+        }
+        if (backgroundExecutorService != null) {
+            backgroundExecutorService.shutdownNow();
+            backgroundExecutorService = null;
         }
         mainHandler.removeCallbacksAndMessages(null);
         AppForegroundTracker.getInstance().removeListener(appForegroundListener);
@@ -232,6 +257,14 @@ public class MonitorService extends Service {
         if (notificationHelper != null) {
             notificationHelper.cancelServiceNotification();
         }
+    }
+
+    // 统一在主线程把市场真值变化转成悬浮窗刷新请求，避免 service 和 chart 各自再接一条悬浮窗市场链。
+    private void handleMarketTruthChanged() {
+        if (floatingCoordinator == null) {
+            return;
+        }
+        mainHandler.post(() -> floatingCoordinator.requestRefresh(false));
     }
 
     // 统一在主线程下一拍清理历史服务通知，避免旧版本残留。
@@ -292,7 +325,7 @@ public class MonitorService extends Service {
 
             @Override
             public void onMessage(GatewayV2StreamClient.StreamMessage message) {
-                executeOnWorker(() -> {
+                executeRealtimeMarket(() -> {
                     lastV2StreamMessageAt = System.currentTimeMillis();
                     try {
                         handleV2StreamMessage(message);
@@ -320,8 +353,12 @@ public class MonitorService extends Service {
         if (message == null) {
             return;
         }
+        if (GatewayV2StreamClient.MESSAGE_TYPE_MARKET_TICK.equals(message.getType())) {
+            handleMarketTickMessage(message);
+            return;
+        }
         long busSeq = message.getBusSeq();
-        if (!v2StreamSequenceGuard.shouldApply(busSeq)) {
+        if (!v2StreamSequenceGuard.shouldApplyBusSeq(busSeq)) {
             return;
         }
         V2StreamRefreshPlanner.RefreshPlan plan = V2StreamRefreshPlanner.plan(
@@ -344,7 +381,22 @@ public class MonitorService extends Service {
         if (plan.shouldRefreshFloating()) {
             floatingCoordinator.requestRefresh(false);
         }
-        v2StreamSequenceGuard.commitApplied(busSeq);
+        v2StreamSequenceGuard.commitAppliedBusSeq(busSeq);
+    }
+
+    // 市场直推链单独消费 marketTick，不再依赖旧 changes.market 才允许推进真值。
+    private void handleMarketTickMessage(@Nullable GatewayV2StreamClient.StreamMessage message) {
+        if (message == null) {
+            return;
+        }
+        long marketSeq = message.getMarketSeq();
+        if (!v2StreamSequenceGuard.shouldApplyMarketSeq(marketSeq)) {
+            return;
+        }
+        ChainLatencyTracer.markStreamMessage(message.getType(), true);
+        applyMarketSnapshotFromStream(message.getMarketSnapshot());
+        floatingCoordinator.requestRefresh(false);
+        v2StreamSequenceGuard.commitAppliedMarketSeq(marketSeq);
     }
 
     // 只有 history revision 前进时才补拉 history，避免运行态每次都重复打 snapshot。
@@ -432,15 +484,14 @@ public class MonitorService extends Service {
         if (accountSnapshot == null) {
             return;
         }
-        if (executorService == null || accountStatsPreloadManager == null) {
+        if (accountRuntimeExecutorService == null || accountStatsPreloadManager == null) {
             return;
         }
         final String snapshotBody = accountSnapshot.toString();
-        executeOnWorker(() -> {
+        executeAccountRuntime(() -> {
             try {
                 JSONObject snapshotCopy = new JSONObject(snapshotBody);
-                AccountStatsPreloadManager.Cache cache =
-                        accountStatsPreloadManager.applyPublishedAccountRuntime(snapshotCopy, publishedAt);
+                accountStatsPreloadManager.applyPublishedAccountRuntime(snapshotCopy, publishedAt);
             } catch (Exception exception) {
                 logManager.warn("v2 stream 账户运行态应用失败: " + exception.getMessage());
             } finally {
@@ -466,12 +517,13 @@ public class MonitorService extends Service {
     }
 
     private void fetchBootstrapData() {
+        requestMarketTruthRepair(true);
         floatingCoordinator.requestRefresh(true);
     }
 
     // 把当前本地阈值配置推到网关端，保证服务端判断与设置页一致。
     private void syncAbnormalConfigAsync() {
-        if (abnormalGatewayClient == null || executorService == null || configManager == null) {
+        if (abnormalGatewayClient == null || backgroundExecutorService == null || configManager == null) {
             return;
         }
         List<SymbolConfig> configs = new ArrayList<>();
@@ -479,7 +531,7 @@ public class MonitorService extends Service {
             configs.add(configManager.getSymbolConfig(symbol));
         }
         boolean logicAnd = configManager.isUseAndMode();
-        executeOnWorker(() -> {
+        executeBackgroundWork(() -> {
             AbnormalGatewayClient.PushResult result = abnormalGatewayClient.pushConfig(logicAnd, configs);
             if (result != null && !result.isSuccess() && result.getError() != null && !result.getError().trim().isEmpty()) {
                 logManager.warn("异常配置同步失败: " + result.getError());
@@ -487,12 +539,27 @@ public class MonitorService extends Service {
         });
     }
 
-    // 统一把后台任务投递到串行执行器；服务销毁或线程池关闭后直接丢弃晚到回调。
-    private boolean executeOnWorker(Runnable task) {
+    // 实时市场链独占一条串行执行器，保证 stream 消息不会被补修和配置同步阻塞。
+    private boolean executeRealtimeMarket(Runnable task) {
+        return executeOnExecutor(realtimeMarketExecutorService, task);
+    }
+
+    // 账户运行态高频更新单独走一条串行执行器，避免 0.5s 刷新被通用后台任务挤压。
+    private boolean executeAccountRuntime(Runnable task) {
+        return executeOnExecutor(accountRuntimeExecutorService, task);
+    }
+
+    // 补修、配置同步、会话恢复等后台动作统一走非实时执行器。
+    private boolean executeBackgroundWork(Runnable task) {
+        return executeOnExecutor(backgroundExecutorService, task);
+    }
+
+    // 统一把任务投递到指定执行器；服务销毁或线程池关闭后直接丢弃晚到回调。
+    private boolean executeOnExecutor(@Nullable ExecutorService executor, Runnable task) {
         if (task == null) {
             return false;
         }
-        ExecutorService currentExecutor = executorService;
+        ExecutorService currentExecutor = executor;
         if (currentExecutor == null || currentExecutor.isShutdown() || currentExecutor.isTerminated()) {
             return false;
         }
@@ -527,6 +594,7 @@ public class MonitorService extends Service {
         }
         boolean streamHealthy = isV2StreamHealthy(System.currentTimeMillis());
         if (streamHealthy) {
+            requestMarketTruthRepair(false);
             reconcileRemoteSessionIfNeeded();
             floatingCoordinator.requestRefresh(false);
             updateConnectionStatus();
@@ -604,7 +672,7 @@ public class MonitorService extends Service {
                 || !remoteSessionRecoveryInFlight.compareAndSet(false, true)) {
             return;
         }
-        boolean submitted = executeOnWorker(() -> {
+        boolean submitted = executeBackgroundWork(() -> {
             try {
                 AccountSessionRecoveryHelper.RecoveryResult recoveryResult =
                         accountSessionRecoveryHelper.reconcileRemoteSession();
@@ -806,10 +874,153 @@ public class MonitorService extends Service {
         }
         long now = System.currentTimeMillis();
         if (isV2StreamHealthy(now)) {
+            requestMarketTruthRepair(false);
             return;
         }
         restartV2Stream("stale_watchdog");
         updateConnectionStatus();
+    }
+
+    // 当 stream 长时间没有推进市场真值时，用正式 1m REST 窗口补修统一市场底稿。
+    private void requestMarketTruthRepair(boolean force) {
+        long requestedAt = System.currentTimeMillis();
+        if (repository == null
+                || gatewayV2Client == null
+                || !force && !shouldRepairMarketTruth(requestedAt)) {
+            return;
+        }
+        if (!marketTruthRepairInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        boolean submitted = executeBackgroundWork(() -> {
+            try {
+                MarketTruthSnapshot snapshot = repository.getMarketTruthSnapshotLiveData().getValue();
+                for (String symbol : AppConstants.MONITOR_SYMBOLS) {
+                    if (symbol == null || symbol.trim().isEmpty()) {
+                        continue;
+                    }
+                    if (!force && !shouldRepairMarketTruthForSymbol(snapshot, symbol, requestedAt)) {
+                        continue;
+                    }
+                    repairMarketTruthForSymbol(symbol, requestedAt);
+                }
+            } catch (Exception exception) {
+                if (logManager != null) {
+                    logManager.warn("市场真值补修失败: " + exception.getMessage());
+                }
+            } finally {
+                lastMarketTruthRepairAt = System.currentTimeMillis();
+                marketTruthRepairInFlight.set(false);
+            }
+        });
+        if (!submitted) {
+            marketTruthRepairInFlight.set(false);
+        }
+    }
+
+    // 真值长时间未推进时，允许服务层用 REST 对统一市场底稿做一次正式补修。
+    private boolean shouldRepairMarketTruth(long now) {
+        long safeNow = Math.max(0L, now);
+        if (safeNow - lastMarketTruthRepairAt < MARKET_TRUTH_REPAIR_COOLDOWN_MS) {
+            return false;
+        }
+        MarketTruthSnapshot snapshot = repository == null
+                ? null
+                : repository.getMarketTruthSnapshotLiveData().getValue();
+        for (String symbol : AppConstants.MONITOR_SYMBOLS) {
+            if (shouldRepairMarketTruthForSymbol(snapshot, symbol, safeNow)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 补修门闩只看 1m 真值真正前进的时间，不能把重复旧包的外层到达时间误判成进度。
+    private long resolveMarketTruthProgressAt(@Nullable MarketTruthSnapshot snapshot) {
+        if (snapshot == null) {
+            return 0L;
+        }
+        long oldestRequiredProgressAt = Long.MAX_VALUE;
+        for (String symbol : AppConstants.MONITOR_SYMBOLS) {
+            if (symbol == null || symbol.trim().isEmpty()) {
+                continue;
+            }
+            MarketTruthSymbolState state = snapshot.getSymbolState(symbol);
+            long symbolUpdatedAt = state == null ? 0L : Math.max(0L, state.getLastTruthUpdateAt());
+            if (symbolUpdatedAt <= 0L) {
+                return 0L;
+            }
+            oldestRequiredProgressAt = Math.min(oldestRequiredProgressAt, symbolUpdatedAt);
+        }
+        return oldestRequiredProgressAt == Long.MAX_VALUE ? 0L : oldestRequiredProgressAt;
+    }
+
+    // 对单个品种判断当前是“真值长时间不前进”还是“存在允许重试的历史缺口”。
+    private boolean shouldRepairMarketTruthForSymbol(@Nullable MarketTruthSnapshot snapshot,
+                                                     @Nullable String symbol,
+                                                     long now) {
+        if (repository == null || symbol == null || symbol.trim().isEmpty()) {
+            return false;
+        }
+        GapDetector.Gap gap = repository.selectMinuteGap(symbol);
+        if (gap != null) {
+            String evidenceToken = repository.buildMinuteGapEvidenceToken(symbol);
+            return repository.shouldRetryMinuteGapRepair(symbol, gap, evidenceToken, now);
+        }
+        MarketTruthSymbolState state = snapshot == null ? null : snapshot.getSymbolState(symbol);
+        long symbolUpdatedAt = state == null ? 0L : Math.max(0L, state.getLastTruthUpdateAt());
+        return symbolUpdatedAt <= 0L || now - symbolUpdatedAt >= AppConstants.SOCKET_STALE_TIMEOUT_MS;
+    }
+
+    // 对单个品种执行正式补修，并把缺口状态机从“请求中”推进到“已解决/仍缺失”。
+    private void repairMarketTruthForSymbol(@NonNull String symbol, long requestedAt) throws Exception {
+        if (repository == null || gatewayV2Client == null) {
+            return;
+        }
+        GapDetector.Gap gapBefore = repository.selectMinuteGap(symbol);
+        String evidenceToken = gapBefore == null ? "" : repository.buildMinuteGapEvidenceToken(symbol);
+        if (gapBefore != null) {
+            repository.markMinuteGapRepairAttempted(symbol, gapBefore, evidenceToken, requestedAt);
+        }
+        try {
+            repository.applyMarketSeriesPayload(
+                    symbol,
+                    "1m",
+                    gatewayV2Client.fetchMarketSeries(symbol, "1m", MARKET_TRUTH_REPAIR_LIMIT)
+            );
+            settleMinuteGapRepairState(symbol, gapBefore, evidenceToken, System.currentTimeMillis());
+        } catch (Exception exception) {
+            if (gapBefore != null) {
+                repository.markMinuteGapRepairStillMissing(symbol, gapBefore, evidenceToken, System.currentTimeMillis());
+            }
+            throw exception;
+        }
+    }
+
+    // 只冻结“补完后仍是同一段”的缺口；若范围变化则交给新的缺口重新走状态机。
+    private void settleMinuteGapRepairState(@NonNull String symbol,
+                                            @Nullable GapDetector.Gap gapBefore,
+                                            @Nullable String evidenceToken,
+                                            long settledAt) {
+        if (repository == null || gapBefore == null) {
+            return;
+        }
+        GapDetector.Gap gapAfter = repository.selectMinuteGap(symbol);
+        if (gapAfter == null) {
+            repository.markMinuteGapRepairResolved(symbol, gapBefore, settledAt);
+            return;
+        }
+        if (isSameMinuteGap(gapBefore, gapAfter)) {
+            repository.markMinuteGapRepairStillMissing(symbol, gapBefore, evidenceToken, settledAt);
+            return;
+        }
+        repository.markMinuteGapRepairResolved(symbol, gapBefore, settledAt);
+    }
+
+    // 同一缺口必须起止都一致，才能继续沿用旧状态。
+    private boolean isSameMinuteGap(@NonNull GapDetector.Gap left, @NonNull GapDetector.Gap right) {
+        return left.getMissingStartOpenTime() == right.getMissingStartOpenTime()
+                && left.getMissingEndCloseTime() == right.getMissingEndCloseTime();
     }
 
     // 当 v2 stream 仍健康时，旧 WebSocket 只保留为回退层，不再主导状态和重连。

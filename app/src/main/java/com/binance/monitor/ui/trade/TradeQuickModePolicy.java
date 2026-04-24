@@ -25,10 +25,17 @@ public final class TradeQuickModePolicy {
         if (!quickModeEnabled || command == null || config == null) {
             return false;
         }
-        if (!"OPEN_MARKET".equalsIgnoreCase(command.getAction())) {
+        TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateTrade(command, config);
+        if (!decision.isAllowed()) {
             return false;
         }
-        TradeRiskGuard.Decision decision = TradeRiskGuard.evaluateTrade(command, config);
-        return decision.isAllowed() && !decision.isConfirmationRequired();
+        String action = command.getAction() == null ? "" : command.getAction().trim();
+        if ("CLOSE_POSITION".equalsIgnoreCase(action) || "PENDING_CANCEL".equalsIgnoreCase(action)) {
+            return true;
+        }
+        if ("OPEN_MARKET".equalsIgnoreCase(action) || "PENDING_ADD".equalsIgnoreCase(action)) {
+            return "quick".equalsIgnoreCase(command.getParams().optString("entryMode", ""));
+        }
+        return false;
     }
 }

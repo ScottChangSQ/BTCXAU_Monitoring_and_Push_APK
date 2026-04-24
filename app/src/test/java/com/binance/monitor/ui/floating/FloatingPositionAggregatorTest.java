@@ -10,6 +10,7 @@ import static org.junit.Assert.assertTrue;
 
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.domain.account.model.PositionItem;
+import com.binance.monitor.runtime.market.truth.model.CurrentMinuteSnapshot;
 import com.binance.monitor.runtime.state.model.FloatingCardRuntimeModel;
 import com.binance.monitor.runtime.state.model.ProductRuntimeSnapshot;
 
@@ -93,36 +94,27 @@ public class FloatingPositionAggregatorTest {
                         0.01d, 0.01d, 4500d, 4510d, 45.1d, 0.01d,
                         2d, 4d, 0.001d, 0d, 0, 0d, 0d, 0d, 0d)
         );
-        Map<String, com.binance.monitor.data.model.KlineData> latestKlines = new HashMap<>();
-        latestKlines.put(AppConstants.SYMBOL_BTC, new com.binance.monitor.data.model.KlineData(
+        Map<String, CurrentMinuteSnapshot> currentMinutes = new HashMap<>();
+        currentMinutes.put(AppConstants.SYMBOL_BTC, currentMinute(
                 AppConstants.SYMBOL_BTC,
-                66_000d,
-                67_500d,
-                65_800d,
                 67_123.4d,
                 123d,
                 456_000d,
                 1_000L,
-                2_000L,
-                true
+                1_500L
         ));
-        latestKlines.put(AppConstants.SYMBOL_XAU, new com.binance.monitor.data.model.KlineData(
+        currentMinutes.put(AppConstants.SYMBOL_XAU, currentMinute(
                 AppConstants.SYMBOL_XAU,
-                2_300d,
-                2_335d,
-                2_295d,
                 2_329.5d,
                 456d,
                 789_000d,
                 1_000L,
-                2_000L,
-                true
+                1_500L
         ));
 
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 positions,
-                latestKlines,
-                new HashMap<>(),
+                currentMinutes,
                 true,
                 true
         );
@@ -173,26 +165,19 @@ public class FloatingPositionAggregatorTest {
                         0.05d, 0.05d, 66000d, 67000d, 3350d, 0.1d,
                         -10d, -20d, -0.03d, 0d, 0, 0d, 0d, 0d, 0d)
         );
-        Map<String, com.binance.monitor.data.model.KlineData> latestKlines = new HashMap<>();
-        latestKlines.put(AppConstants.SYMBOL_BTC, new com.binance.monitor.data.model.KlineData(
+        Map<String, CurrentMinuteSnapshot> currentMinutes = new HashMap<>();
+        currentMinutes.put(AppConstants.SYMBOL_BTC, currentMinute(
                 AppConstants.SYMBOL_BTC,
-                66_000d,
-                67_050d,
-                65_950d,
-                67_000d,
+                67_123.4d,
                 123d,
                 456_000d,
                 1_000L,
-                2_000L,
-                true
+                1_500L
         ));
-        Map<String, Double> latestPrices = new HashMap<>();
-        latestPrices.put(AppConstants.SYMBOL_BTC, 67_123.4d);
 
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 positions,
-                latestKlines,
-                latestPrices,
+                currentMinutes,
                 true,
                 true
         );
@@ -211,7 +196,6 @@ public class FloatingPositionAggregatorTest {
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 positions,
                 null,
-                Collections.emptyMap(),
                 true,
                 true
         );
@@ -223,8 +207,15 @@ public class FloatingPositionAggregatorTest {
 
     @Test
     public void buildSymbolCardsFromRuntimeShouldReuseUnifiedProductSnapshot() {
-        Map<String, Double> latestPrices = new HashMap<>();
-        latestPrices.put(AppConstants.SYMBOL_BTC, 67_123.4d);
+        Map<String, CurrentMinuteSnapshot> currentMinutes = new HashMap<>();
+        currentMinutes.put(AppConstants.SYMBOL_BTC, currentMinute(
+                AppConstants.SYMBOL_BTC,
+                67_123.4d,
+                123d,
+                456_000d,
+                1_000L,
+                1_500L
+        ));
 
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCardsFromRuntime(
                 Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
@@ -232,14 +223,16 @@ public class FloatingPositionAggregatorTest {
                         new ProductRuntimeSnapshot("BTCUSD", 3L, 2, 0, -0.10d, -28d,
                                 "盈亏：-28.00 | 持仓：-0.10手", "挂单：--")
                 )),
-                Collections.emptyMap(),
-                latestPrices
+                currentMinutes
         );
 
         assertEquals(2, cards.size());
         assertEquals("BTC", cards.get(0).getLabel());
         assertEquals(-28d, cards.get(0).getTotalPnl(), 0.0001d);
         assertEquals(-0.10d, cards.get(0).getTotalLots(), 0.0001d);
+        assertEquals(67_123.4d, cards.get(0).getLatestPrice(), 0.0001d);
+        assertEquals(123d, cards.get(0).getVolume(), 0.0001d);
+        assertEquals(456_000d, cards.get(0).getAmount(), 0.0001d);
         assertTrue(cards.get(0).hasPosition());
         assertFalse(cards.get(1).hasPosition());
     }
@@ -252,7 +245,6 @@ public class FloatingPositionAggregatorTest {
                         new ProductRuntimeSnapshot("XAUUSD", 7L, 1, 0, 0.05d, 0.05d, 18d,
                                 "伦敦金", "", "盈亏：+$18.00 | 持仓：0.05手", "挂单：--")
                 )),
-                Collections.emptyMap(),
                 Collections.emptyMap()
         );
 
@@ -262,24 +254,19 @@ public class FloatingPositionAggregatorTest {
 
     @Test
     public void buildSymbolCardsShouldMarkConfiguredSymbolWithoutPositionAsInactive() {
-        Map<String, com.binance.monitor.data.model.KlineData> latestKlines = new HashMap<>();
-        latestKlines.put(AppConstants.SYMBOL_BTC, new com.binance.monitor.data.model.KlineData(
+        Map<String, CurrentMinuteSnapshot> currentMinutes = new HashMap<>();
+        currentMinutes.put(AppConstants.SYMBOL_BTC, currentMinute(
                 AppConstants.SYMBOL_BTC,
-                66_000d,
-                67_000d,
-                65_900d,
                 66_500d,
                 123d,
                 456_000d,
                 1_000L,
-                2_000L,
-                true
+                1_500L
         ));
 
         List<FloatingSymbolCardData> cards = FloatingPositionAggregator.buildSymbolCards(
                 new java.util.ArrayList<>(),
-                latestKlines,
-                new HashMap<>(),
+                currentMinutes,
                 true,
                 false
         );
@@ -369,5 +356,23 @@ public class FloatingPositionAggregatorTest {
         );
 
         assertEquals(0, items.size());
+    }
+
+    // 构造统一当前分钟快照，模拟悬浮窗与 1m 图表共用的同源读模型。
+    private static CurrentMinuteSnapshot currentMinute(String symbol,
+                                                       double latestPrice,
+                                                       double volume,
+                                                       double amount,
+                                                       long openTime,
+                                                       long updatedAt) {
+        return new CurrentMinuteSnapshot(
+                symbol,
+                latestPrice,
+                volume,
+                amount,
+                openTime,
+                openTime + 59_999L,
+                updatedAt
+        );
     }
 }

@@ -12,6 +12,7 @@ import com.binance.monitor.data.model.KlineData;
 import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.runtime.market.model.MarketRuntimeSnapshot;
+import com.binance.monitor.runtime.market.truth.model.MarketTruthSnapshot;
 
 import java.util.List;
 
@@ -38,6 +39,10 @@ public class MainViewModel extends AndroidViewModel {
 
     public LiveData<MarketRuntimeSnapshot> getMarketRuntimeSnapshotLiveData() {
         return repository.getMarketRuntimeSnapshotLiveData();
+    }
+
+    public LiveData<MarketTruthSnapshot> getMarketTruthSnapshotLiveData() {
+        return repository.getMarketTruthSnapshotLiveData();
     }
 
     @Nullable

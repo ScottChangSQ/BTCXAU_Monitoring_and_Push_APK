@@ -369,6 +369,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private List<CurvePoint> displayedCurvePoints = new ArrayList<>();
     private List<CurveAnalyticsHelper.DrawdownPoint> displayedDrawdownPoints = new ArrayList<>();
     private List<CurveAnalyticsHelper.DailyReturnPoint> displayedDailyReturnPoints = new ArrayList<>();
+    private long displayedCurveViewportStartTs;
+    private long displayedCurveViewportEndTs = 1L;
     private List<AccountMetric> latestCurveIndicators = new ArrayList<>();
     private List<AccountMetric> latestStatsMetrics = new ArrayList<>();
     private List<AccountMetric> latestTradeStatsMetrics = new ArrayList<>();
@@ -446,6 +448,12 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private ViewTreeObserver.OnDrawListener firstFrameDrawListener;
     private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {
         if (cache == null || isHostFinishing() || isHostDestroyed() || loading) {
+            return;
+        }
+        // 分析页只在首帧或历史修订推进时重放预加载快照，避免 0.5s 持仓运行态把整页统计高频重画。
+        boolean shouldApplyPreloadedCache = !hasRenderableCurrentSessionState()
+                || !trim(cache.getHistoryRevision()).equals(trim(latestHistoryRevision));
+        if (!shouldApplyPreloadedCache) {
             return;
         }
         if (snapshotRefreshCoordinator != null) {
@@ -1080,6 +1088,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             @Override
             public long getManualCurveRangeEndMs() {
                 return manualCurveRangeEndMs;
+            }
+
+            @Override
+            public long getAppliedAccountUpdatedAt() {
+                return AccountStatsScreen.this.getAppliedAccountUpdatedAt();
             }
 
             @NonNull
@@ -2052,6 +2065,10 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         baseTrades = new ArrayList<>();
         allCurvePoints = new ArrayList<>();
         displayedCurvePoints = new ArrayList<>();
+        displayedDrawdownPoints = new ArrayList<>();
+        displayedDailyReturnPoints = new ArrayList<>();
+        displayedCurveViewportStartTs = 0L;
+        displayedCurveViewportEndTs = 1L;
         latestCurveIndicators = new ArrayList<>();
         latestStatsMetrics = new ArrayList<>();
         latestTradeStatsMetrics = new ArrayList<>();
@@ -5132,7 +5149,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 return manualPoints;
             }
         }
-        List<CurvePoint> rangedPoints = filterCurveByRange(allCurvePoints, selectedRange);
+        List<CurvePoint> rangedPoints = filterCurveByRange(
+                allCurvePoints,
+                selectedRange,
+                getAppliedAccountUpdatedAt()
+        );
         syncRangeInputsWithDisplayedCurve(rangedPoints);
         return rangedPoints;
     }
@@ -5167,6 +5188,15 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     }
 
     private List<CurvePoint> filterCurveByRange(List<CurvePoint> source, AccountTimeRange range) {
+        long fallbackRangeEndTs = source == null || source.isEmpty()
+                ? 0L
+                : source.get(source.size() - 1).getTimestamp();
+        return filterCurveByRange(source, range, fallbackRangeEndTs);
+    }
+
+    private List<CurvePoint> filterCurveByRange(List<CurvePoint> source,
+                                                AccountTimeRange range,
+                                                long rangeEndReferenceTs) {
         if (source == null || source.isEmpty()) {
             return new ArrayList<>();
         }
@@ -5196,11 +5226,12 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 return new ArrayList<>(source);
         }
 
-        long end = source.get(source.size() - 1).getTimestamp();
+        long end = Math.max(source.get(source.size() - 1).getTimestamp(), rangeEndReferenceTs);
         long start = end - durationMs;
         List<CurvePoint> filtered = new ArrayList<>();
         for (CurvePoint point : source) {
-            if (point.getTimestamp() >= start) {
+            long timestamp = point.getTimestamp();
+            if (timestamp >= start && timestamp <= end) {
                 filtered.add(point);
             }
         }
@@ -5219,8 +5250,17 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         }
         binding.cardCurveSection.setVisibility(View.VISIBLE);
         binding.tvCurveMeta.setVisibility(View.GONE);
-        AccountStatsCurveRenderHelper.RenderResult result = curveRenderHelper.renderImmediate(
-                points,
+        AccountDeferredSnapshotRenderHelper.CurveProjection curveProjection =
+                AccountDeferredSnapshotRenderHelper.buildCurveProjection(
+                        allCurvePoints,
+                        selectedRange,
+                        manualCurveRangeEnabled,
+                        manualCurveRangeStartMs,
+                        manualCurveRangeEndMs,
+                        getAppliedAccountUpdatedAt()
+                );
+        AccountStatsCurveRenderHelper.RenderResult result = curveRenderHelper.applyPreparedProjection(
+                curveProjection,
                 latestCurveIndicators,
                 secondarySectionsAttached,
                 isPrivacyMasked()
@@ -5228,6 +5268,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         displayedCurvePoints = result.getDisplayedCurvePoints();
         displayedDrawdownPoints = result.getDisplayedDrawdownPoints();
         displayedDailyReturnPoints = result.getDisplayedDailyReturnPoints();
+        displayedCurveViewportStartTs = result.getViewportStartTs();
+        displayedCurveViewportEndTs = result.getViewportEndTs();
         defaultCurveMeta = result.getDefaultCurveMeta();
         curveBaseBalance = result.getCurveBaseBalance();
         clearSharedCurveHighlight();
@@ -5250,6 +5292,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         displayedCurvePoints = result.getDisplayedCurvePoints();
         displayedDrawdownPoints = result.getDisplayedDrawdownPoints();
         displayedDailyReturnPoints = result.getDisplayedDailyReturnPoints();
+        displayedCurveViewportStartTs = result.getViewportStartTs();
+        displayedCurveViewportEndTs = result.getViewportEndTs();
         defaultCurveMeta = result.getDefaultCurveMeta();
         curveBaseBalance = result.getCurveBaseBalance();
         refreshAnalysisSummaryCards();
@@ -5267,6 +5311,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                         displayedCurvePoints,
                         displayedDrawdownPoints,
                         displayedDailyReturnPoints,
+                        displayedCurveViewportStartTs,
+                        displayedCurveViewportEndTs,
                         timestamp,
                         xRatio,
                         preferExactTimestamp
@@ -5282,7 +5328,12 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         extraLines.add("仓位 " + formatPercentValue(point.getPositionRatio(), false));
         extraLines.add("回撤 " + formatPercentValue(drawdownPoint == null ? null : drawdownPoint.getDrawdownRate(), false));
         extraLines.add("日收益 " + formatPercentValue(dailyReturnPoint == null ? null : dailyReturnPoint.getReturnRate(), true));
-        float syncedRatio = AccountCurveHighlightHelper.resolveTimestampRatio(displayedCurvePoints, snapshot.getTargetTimestamp());
+        float syncedRatio = AccountCurveHighlightHelper.resolveTimestampRatio(
+                displayedCurvePoints,
+                displayedCurveViewportStartTs,
+                displayedCurveViewportEndTs,
+                snapshot.getTargetTimestamp()
+        );
         syncingCurveHighlight = true;
         binding.tvCurveMeta.setText("");
         binding.equityCurveView.setTooltipExtraLines(extraLines);
@@ -6101,6 +6152,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
         int totalCells = firstWeek + daysInMonth;
         int rows = (int) Math.ceil(totalCells / 7d);
+        int localTodayDayKey = resolveLocalTodayDayKey();
         int day = 1;
         for (int row = 0; row < rows; row++) {
             TableRow tableRow = new TableRow(this);
@@ -6129,13 +6181,15 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
                 DayBucket bucket = dayBuckets.get(day);
                 if (bucket == null) {
+                    int currentDayKey = year * 10_000 + (month + 1) * 100 + day;
+                    boolean afterLocalToday = localTodayDayKey > 0 && currentDayKey > localTodayDayKey;
                     View dayCell = createDailyReturnsCell(
                             String.valueOf(day),
-                            formatReturnValue(0d, 0d, true),
+                            afterLocalToday ? "--" : formatReturnValue(0d, 0d, true),
                             UiPaletteManager.resolve(this).textPrimary,
-                            resolveReturnDisplayColor(0d, 0d, R.color.text_secondary),
+                            afterLocalToday ? null : resolveReturnDisplayColor(0d, 0d, R.color.text_secondary),
                             null,
-                            0d);
+                            afterLocalToday ? null : 0d);
                     applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
                     tableRow.addView(dayCell);
@@ -6171,6 +6225,14 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             }
             table.addView(tableRow);
         }
+    }
+
+    // 日收益表空白日期是否显示 --，统一以 APP 本地今天为边界。
+    private int resolveLocalTodayDayKey() {
+        Calendar today = Calendar.getInstance();
+        return today.get(Calendar.YEAR) * 10_000
+                + (today.get(Calendar.MONTH) + 1) * 100
+                + today.get(Calendar.DAY_OF_MONTH);
     }
 
     private void rebuildMonthlyTableTwoRowsV3(TableLayout table, List<YearlyReturnRow> rows) {
@@ -6707,8 +6769,9 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         valueView.setGravity(Gravity.CENTER);
         valueView.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
         valueView.setIncludeFontPadding(false);
-        String displayValue = value == null ? "00.0%" : value;
-        boolean masked = isPrivacyMasked() && value != null;
+        String safeValue = value == null ? "" : trim(value);
+        String displayValue = safeValue.isEmpty() ? "--" : safeValue;
+        boolean masked = isPrivacyMasked() && !"--".equals(displayValue);
         if (masked) {
             displayValue = SensitiveDisplayMasker.MASK_TEXT;
         }
@@ -6728,6 +6791,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
         if (value == null) {
             valueView.setAlpha(0f);
+        } else {
+            valueView.setAlpha(1f);
         }
         if (clickListener != null) {
             container.setOnClickListener(clickListener);

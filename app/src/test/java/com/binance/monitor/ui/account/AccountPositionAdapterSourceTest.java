@@ -122,6 +122,9 @@ public class AccountPositionAdapterSourceTest {
         assertTrue(source.contains("String pendingPriceText = formatCollapsedPendingPrice(pendingPrice);"));
         assertTrue(source.contains("private static String formatCollapsedPendingPrice(double price)"));
         assertTrue(source.contains("String.format(Locale.getDefault(), \"%,.0f\", roundedPrice)"));
+        assertTrue(source.contains("IndicatorFormatterCenter.formatQuantity(displayLots, 2, \"手\")"));
+        assertTrue(source.contains("? (pendingCount + \"单\")"));
+        assertTrue(source.contains("\"%s|%s|%s|%s\""));
     }
 
     @Test

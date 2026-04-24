@@ -14,21 +14,34 @@ public class V2StreamSequenceGuardTest {
     public void shouldRejectOlderOrDuplicateBusSeqAfterNewerMessageApplied() {
         V2StreamSequenceGuard guard = new V2StreamSequenceGuard();
 
-        assertTrue(guard.shouldApply(10L));
-        assertTrue(guard.shouldApply(10L));
-        guard.commitApplied(10L);
-        assertFalse(guard.shouldApply(10L));
-        assertFalse(guard.shouldApply(9L));
-        assertTrue(guard.shouldApply(11L));
+        assertTrue(guard.shouldApplyBusSeq(10L));
+        assertTrue(guard.shouldApplyBusSeq(10L));
+        guard.commitAppliedBusSeq(10L);
+        assertFalse(guard.shouldApplyBusSeq(10L));
+        assertFalse(guard.shouldApplyBusSeq(9L));
+        assertTrue(guard.shouldApplyBusSeq(11L));
+    }
+
+    @Test
+    public void shouldRejectOlderOrDuplicateMarketSeqAfterNewerTickApplied() {
+        V2StreamSequenceGuard guard = new V2StreamSequenceGuard();
+
+        assertTrue(guard.shouldApplyMarketSeq(3L));
+        assertTrue(guard.shouldApplyMarketSeq(3L));
+        guard.commitAppliedMarketSeq(3L);
+        assertFalse(guard.shouldApplyMarketSeq(3L));
+        assertFalse(guard.shouldApplyMarketSeq(2L));
+        assertTrue(guard.shouldApplyMarketSeq(4L));
     }
 
     @Test
     public void resetShouldAllowNewConnectionSequenceToStartAgain() {
         V2StreamSequenceGuard guard = new V2StreamSequenceGuard();
 
-        assertTrue(guard.shouldApply(5L));
-        guard.commitApplied(5L);
+        assertTrue(guard.shouldApplyBusSeq(5L));
+        guard.commitAppliedBusSeq(5L);
         guard.reset();
-        assertTrue(guard.shouldApply(1L));
+        assertTrue(guard.shouldApplyBusSeq(1L));
+        assertTrue(guard.shouldApplyMarketSeq(1L));
     }
 }

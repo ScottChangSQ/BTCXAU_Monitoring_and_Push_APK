@@ -52,7 +52,7 @@ public class AccountCurveHighlightHelperTest {
     }
 
     @Test
-    public void resolveSharedHighlightShouldSnapToNearestRealPointForMidpoint() {
+    public void resolveSharedHighlightShouldInterpolateMidpointValues() {
         List<CurvePoint> curvePoints = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 90d, 0.10d),
                 new CurvePoint(3_000L, 140d, 110d, 0.50d)
@@ -77,12 +77,14 @@ public class AccountCurveHighlightHelperTest {
 
         assertNotNull(snapshot);
         assertEquals(2_000L, snapshot.getTargetTimestamp());
-        assertEquals(1_000L, snapshot.getCurvePoint().getTimestamp());
-        assertEquals(100d, snapshot.getCurvePoint().getEquity(), 1e-9);
-        assertEquals(90d, snapshot.getCurvePoint().getBalance(), 1e-9);
-        assertEquals(0.10d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
-        assertEquals(-0.20d, snapshot.getDrawdownPoint().getDrawdownRate(), 1e-9);
-        assertEquals(-0.08d, snapshot.getDailyReturnPoint().getReturnRate(), 1e-9);
+        assertEquals(2_000L, snapshot.getCurvePoint().getTimestamp());
+        assertEquals(120d, snapshot.getCurvePoint().getEquity(), 1e-9);
+        assertEquals(100d, snapshot.getCurvePoint().getBalance(), 1e-9);
+        assertEquals(0.30d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
+        assertEquals(2_000L, snapshot.getDrawdownPoint().getTimestamp());
+        assertEquals(-0.12d, snapshot.getDrawdownPoint().getDrawdownRate(), 1e-9);
+        assertEquals(2_000L, snapshot.getDailyReturnPoint().getTimestamp());
+        assertEquals(0.02d, snapshot.getDailyReturnPoint().getReturnRate(), 1e-9);
     }
 
     @Test
@@ -108,7 +110,7 @@ public class AccountCurveHighlightHelperTest {
     }
 
     @Test
-    public void resolveSharedHighlightShouldUseExactTimestampAsAnchorButStillSnapToRealPoint() {
+    public void resolveSharedHighlightShouldUseExactTimestampAsAnchorAndKeepInterpolatedValues() {
         List<CurvePoint> curvePoints = Arrays.asList(
                 new CurvePoint(1_000L, 100d, 90d, 0.10d),
                 new CurvePoint(2_000L, 140d, 110d, 0.50d),
@@ -127,10 +129,37 @@ public class AccountCurveHighlightHelperTest {
 
         assertNotNull(snapshot);
         assertEquals(2_500L, snapshot.getTargetTimestamp());
-        assertEquals(2_000L, snapshot.getCurvePoint().getTimestamp());
-        assertEquals(140d, snapshot.getCurvePoint().getEquity(), 1e-9);
-        assertEquals(110d, snapshot.getCurvePoint().getBalance(), 1e-9);
-        assertEquals(0.50d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
+        assertEquals(2_500L, snapshot.getCurvePoint().getTimestamp());
+        assertEquals(160d, snapshot.getCurvePoint().getEquity(), 1e-9);
+        assertEquals(120d, snapshot.getCurvePoint().getBalance(), 1e-9);
+        assertEquals(0.70d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
+    }
+
+    @Test
+    public void resolveSharedHighlightShouldKeepExactTimestampWhenViewportExtendsBeyondLastPoint() {
+        List<CurvePoint> curvePoints = Arrays.asList(
+                new CurvePoint(1_000L, 100d, 90d, 0.10d),
+                new CurvePoint(2_000L, 140d, 110d, 0.50d),
+                new CurvePoint(3_000L, 180d, 130d, 0.90d)
+        );
+
+        AccountCurveHighlightHelper.HighlightSnapshot snapshot =
+                AccountCurveHighlightHelper.resolveSharedHighlight(
+                        curvePoints,
+                        null,
+                        null,
+                        1_000L,
+                        4_000L,
+                        3_500L,
+                        0.875f,
+                        true
+                );
+
+        assertNotNull(snapshot);
+        assertEquals(3_500L, snapshot.getTargetTimestamp());
+        assertEquals(180d, snapshot.getCurvePoint().getEquity(), 1e-9);
+        assertEquals(130d, snapshot.getCurvePoint().getBalance(), 1e-9);
+        assertEquals(0.90d, snapshot.getCurvePoint().getPositionRatio(), 1e-9);
     }
 
     @Test
@@ -144,5 +173,20 @@ public class AccountCurveHighlightHelperTest {
         assertEquals(0.75f, AccountCurveHighlightHelper.resolveTimestampRatio(curvePoints, 2_500L), 1e-6f);
         assertEquals(0f, AccountCurveHighlightHelper.resolveTimestampRatio(curvePoints, 500L), 1e-6f);
         assertEquals(1f, AccountCurveHighlightHelper.resolveTimestampRatio(curvePoints, 4_000L), 1e-6f);
+    }
+
+    @Test
+    public void resolveTimestampRatioShouldRespectViewportWhenRightSideExtendsBeyondLastPoint() {
+        List<CurvePoint> curvePoints = Arrays.asList(
+                new CurvePoint(1_000L, 100d, 90d, 0.10d),
+                new CurvePoint(2_000L, 140d, 110d, 0.50d),
+                new CurvePoint(3_000L, 180d, 130d, 0.90d)
+        );
+
+        assertEquals(
+                5f / 6f,
+                AccountCurveHighlightHelper.resolveTimestampRatio(curvePoints, 1_000L, 4_000L, 3_500L),
+                1e-6f
+        );
     }
 }

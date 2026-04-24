@@ -84,6 +84,7 @@ public class BatchTradeCoordinator {
             recordBatchAudit(plan, "batch_result", receipt.getStatus(), receipt.getError(), resolveReceiptMessage(receipt), receipt.getServerTime());
             return new ExecutionResult(uiState, receipt, null, resolveReceiptMessage(receipt));
         }
+        TradeSessionVolumeMemory.getInstance().rememberSuccessfulBatch(plan);
 
         AccountStatsPreloadManager.Cache latestCache = null;
         Exception lastException = null;

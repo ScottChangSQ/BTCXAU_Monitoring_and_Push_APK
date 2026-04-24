@@ -59,11 +59,7 @@ public final class GlobalStatusBottomSheetController {
 
     // 刷新顶部状态按钮，让按钮文案与弹层使用同一份状态快照。
     public void bindCompactButton(@NonNull TextView button, @NonNull StatusSnapshot snapshot) {
-        button.setText(activity.getString(
-                R.string.global_status_button_compact,
-                snapshot.getStageText(),
-                snapshot.getCompactAccountText()
-        ));
+        button.setText(snapshot.getStageText());
     }
 
     // 展示底部弹层，并提供设置、交易追踪、日志和异常列表四个快捷入口。

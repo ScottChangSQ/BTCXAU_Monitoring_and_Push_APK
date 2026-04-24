@@ -37,9 +37,12 @@ public class MarketChartLayoutResourceTest {
         Element symbolContainer = requireElementById(document, "layoutChartSymbolPickerContainer");
         Element symbolLabel = requireElementById(document, "tvChartSymbolPickerLabel");
         Element modeGroup = requireElementById(document, "layoutChartModeToggleGroup");
+        Element statusContainer = requireElementById(document, "layoutChartStatusContainer");
         Element marketMode = requireElementById(document, "btnChartModeMarket");
         Element pendingMode = requireElementById(document, "btnChartModePending");
+        Element batchAction = requireElementById(document, "btnBatchTradeActions");
         Element globalStatus = requireElementById(document, "btnGlobalStatus");
+        Element topRightActions = requireElementById(document, "layoutChartTopRightActions");
         Element quickTradeBar = requireElementById(document, "layoutChartQuickTradeBar");
         Element quickTradePrimary = requireElementById(document, "btnQuickTradePrimary");
         Element quickTradeInput = requireElementById(document, "etQuickTradeVolume");
@@ -71,17 +74,9 @@ public class MarketChartLayoutResourceTest {
         assertAttributeMissing(symbolLabel, "android:paddingEnd");
         assertAttributeMissing(symbolLabel, "android:textAppearance");
 
-        assertAttributeEquals(modeGroup, "android:layout_marginEnd", "@dimen/inline_gap");
-        assertAttributeEquals(
-                modeGroup,
-                "app:layout_constraintStart_toEndOf",
-                "@+id/layoutChartSymbolPickerContainer"
-        );
-        assertAttributeEquals(
-                modeGroup,
-                "app:layout_constraintEnd_toStartOf",
-                "@+id/btnGlobalStatus"
-        );
+        assertAttributeMissing(modeGroup, "android:layout_marginEnd");
+        assertAttributeEquals(modeGroup, "app:layout_constraintStart_toStartOf", "parent");
+        assertAttributeEquals(modeGroup, "app:layout_constraintEnd_toEndOf", "parent");
 
         assertAttributeEquals(marketMode, "style", "@style/Widget.BinanceMonitor.Subject.SegmentedOption");
         assertAttributeEquals(marketMode, "android:layout_height", "@dimen/subject_height_compact");
@@ -89,14 +84,25 @@ public class MarketChartLayoutResourceTest {
         assertAttributeEquals(pendingMode, "style", "@style/Widget.BinanceMonitor.Subject.SegmentedOption");
         assertAttributeEquals(pendingMode, "android:layout_height", "@dimen/subject_height_compact");
 
-        assertAttributeEquals(globalStatus, "style", "@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary");
-        assertAttributeEquals(globalStatus, "android:layout_height", "@dimen/subject_height_compact");
+        assertEquals("FrameLayout", statusContainer.getTagName());
+        assertAttributeEquals(statusContainer, "android:layout_width", "0dp");
+        assertAttributeEquals(statusContainer, "android:layout_marginStart", "@dimen/inline_gap");
         assertAttributeEquals(
-                globalStatus,
+                statusContainer,
                 "app:layout_constraintStart_toEndOf",
                 "@+id/layoutChartModeToggleGroup"
         );
-        assertAttributeMissing(globalStatus, "android:layout_marginStart");
+        assertAttributeEquals(statusContainer, "app:layout_constraintEnd_toEndOf", "parent");
+        assertAttributeEquals(globalStatus, "style", "@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary");
+        assertAttributeEquals(globalStatus, "android:layout_width", "match_parent");
+        assertAttributeEquals(globalStatus, "android:layout_height", "@dimen/subject_height_compact");
+        assertAttributeEquals(globalStatus, "android:layout_gravity", "end|center_vertical");
+        assertAttributeEquals(topRightActions, "android:layout_gravity", "end|top");
+        assertAttributeEquals(topRightActions, "android:layout_marginTop", "@dimen/inline_gap");
+        assertAttributeEquals(topRightActions, "android:layout_marginEnd", "@dimen/kline_price_axis_reserved_width");
+        assertAttributeEquals(batchAction, "android:background", "@android:color/transparent");
+        assertAttributeEquals(batchAction, "android:minWidth", "0dp");
+        assertAttributeEquals(batchAction, "android:text", "批量操作");
 
         assertEquals("com.binance.monitor.ui.chart.KlineChartView", klineChartView.getTagName());
         assertAttributeEquals(positionSummary, "android:text", "盈亏：-- | 持仓：--");
@@ -127,6 +133,8 @@ public class MarketChartLayoutResourceTest {
         assertAttributeMissing(quickTradeInput, "android:textColor");
         assertAttributeMissing(quickTradeInput, "android:textAppearance");
 
+        assertTrue(indexOfChildWithId(topRightActions, "tvChartLoading") <
+                indexOfChildWithId(topRightActions, "btnBatchTradeActions"));
         assertTrue(indexOfChildWithId(overlayGroup, "btnToggleHistoryTrades") <
                 indexOfChildWithId(overlayGroup, "btnTogglePositionOverlays"));
 

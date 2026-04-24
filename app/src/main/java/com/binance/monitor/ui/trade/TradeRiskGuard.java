@@ -27,23 +27,25 @@ public final class TradeRiskGuard {
             return Decision.reject("交易命令无效");
         }
         String action = safe(command.getAction()).toUpperCase(Locale.ROOT);
-        if (!"OPEN_MARKET".equals(action)) {
+        if ("OPEN_MARKET".equals(action) || "PENDING_ADD".equals(action) || "CLOSE_POSITION".equals(action)) {
+            double volume = Math.abs(command.getVolume());
+            if (volume <= 0d) {
+                return Decision.reject("交易手数必须大于 0");
+            }
+        }
+        if ("PENDING_MODIFY".equals(action) && command.getPrice() <= 0d && command.getSl() <= 0d && command.getTp() <= 0d) {
+            return Decision.reject("修改挂单至少要传一个有效价格");
+        }
+        if ("MODIFY_TPSL".equals(action) && command.getSl() <= 0d && command.getTp() <= 0d) {
+            return Decision.reject("止盈止损至少要修改一项");
+        }
+        if ("PENDING_CANCEL".equals(action) || "CLOSE_BY".equals(action) || "PENDING_MODIFY".equals(action) || "MODIFY_TPSL".equals(action)) {
             return Decision.allowWithConfirmation("当前交易需要确认后才能提交");
-        }
-        double volume = Math.abs(command.getVolume());
-        if (volume <= 0d) {
-            return Decision.reject("交易手数必须大于 0");
-        }
-        if (volume > config.getMaxSingleMarketVolume()) {
-            return Decision.reject("单笔市价手数超过上限，请拆分后再提交");
         }
         if (shouldForceConfirmByContext(command, config)) {
             return Decision.allowWithConfirmation("当前交易动作必须二次确认");
         }
-        if (volume > config.getMaxQuickMarketVolume()) {
-            return Decision.allowWithConfirmation("当前手数超过一键交易上限，需确认后提交");
-        }
-        return Decision.allowWithoutConfirmation("当前手数符合一键交易边界");
+        return Decision.allowWithConfirmation("当前交易需要确认后才能提交");
     }
 
     @NonNull
@@ -55,25 +57,10 @@ public final class TradeRiskGuard {
         if (items == null || items.isEmpty()) {
             return Decision.reject("批量计划不能为空");
         }
-        if (items.size() > config.getMaxBatchItems()) {
-            return Decision.reject("批量项数超过上限，请减少后再提交");
-        }
-        double totalVolume = 0d;
         for (BatchTradeItem item : items) {
             if (item == null || item.getCommand() == null) {
-                continue;
+                return Decision.reject("批量项里存在无效命令");
             }
-            totalVolume += Math.abs(item.getCommand().getVolume());
-        }
-        if (totalVolume > config.getMaxBatchTotalVolume()) {
-            return Decision.reject("批量总手数超过上限，请拆分后再提交");
-        }
-        String summary = safe(plan.getSummary());
-        if (config.isForceConfirmForReverse() && summary.contains("反手")) {
-            return Decision.allowWithConfirmation("反手操作必须二次确认");
-        }
-        if (config.isForceConfirmForAddPosition() && summary.contains("加仓")) {
-            return Decision.allowWithConfirmation("加仓操作必须二次确认");
         }
         return Decision.allowWithoutConfirmation("批量交易未命中额外风控限制");
     }
@@ -102,6 +89,7 @@ public final class TradeRiskGuard {
         private final double maxBatchTotalVolume;
         private final boolean forceConfirmForAddPosition;
         private final boolean forceConfirmForReverse;
+        private final boolean oneClickTradingEnabled;
 
         public Config(double maxQuickMarketVolume,
                       double maxSingleMarketVolume,
@@ -109,17 +97,34 @@ public final class TradeRiskGuard {
                       double maxBatchTotalVolume,
                       boolean forceConfirmForAddPosition,
                       boolean forceConfirmForReverse) {
+            this(maxQuickMarketVolume,
+                    maxSingleMarketVolume,
+                    maxBatchItems,
+                    maxBatchTotalVolume,
+                    forceConfirmForAddPosition,
+                    forceConfirmForReverse,
+                    false);
+        }
+
+        public Config(double maxQuickMarketVolume,
+                      double maxSingleMarketVolume,
+                      int maxBatchItems,
+                      double maxBatchTotalVolume,
+                      boolean forceConfirmForAddPosition,
+                      boolean forceConfirmForReverse,
+                      boolean oneClickTradingEnabled) {
             this.maxQuickMarketVolume = Math.max(0d, maxQuickMarketVolume);
             this.maxSingleMarketVolume = Math.max(this.maxQuickMarketVolume, maxSingleMarketVolume);
             this.maxBatchItems = Math.max(1, maxBatchItems);
             this.maxBatchTotalVolume = Math.max(0d, maxBatchTotalVolume);
             this.forceConfirmForAddPosition = forceConfirmForAddPosition;
             this.forceConfirmForReverse = forceConfirmForReverse;
+            this.oneClickTradingEnabled = oneClickTradingEnabled;
         }
 
         @NonNull
         public static Config defaultConfig() {
-            return new Config(0.10d, 1.00d, 4, 2.00d, true, true);
+            return new Config(0.10d, 1.00d, 4, 2.00d, true, true, false);
         }
 
         public double getMaxQuickMarketVolume() {
@@ -144,6 +149,10 @@ public final class TradeRiskGuard {
 
         public boolean isForceConfirmForReverse() {
             return forceConfirmForReverse;
+        }
+
+        public boolean isOneClickTradingEnabled() {
+            return oneClickTradingEnabled;
         }
     }
 

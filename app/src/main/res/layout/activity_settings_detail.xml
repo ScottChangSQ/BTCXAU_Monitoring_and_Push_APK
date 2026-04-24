@@ -149,187 +149,24 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_8"
-                    android:text="@string/settings_trade_section_summary"
+                    android:text="交易设置只保留一键模式开关；默认手数固定 0.05，当前运行期间会记住最近一次成功提交的开仓或挂单手数。"
                     android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
 
                 <TextView
-                    android:id="@+id/tvTradeDefaultTemplate"
+                    android:id="@+id/tvTradeSessionVolumeSummary"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_12"
+                    android:text="重启 APP 后手数会恢复到 0.05。"
                     android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
-
-                <TextView
-                    android:id="@+id/tvTradeTemplateManageSummary"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.Caption" />
-
-                <Button
-                    android:id="@+id/btnManageTradeTemplates"
-                    style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
-                    android:layout_width="match_parent"
-                    android:layout_height="@dimen/control_height_md"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:text="@string/settings_trade_template_manage_action" />
-
-                <Button
-                    android:id="@+id/btnSelectDefaultTradeTemplate"
-                    style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
-                    android:layout_width="match_parent"
-                    android:layout_height="@dimen/control_height_md"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:text="@string/settings_trade_default_template_action" />
-
-                <TextView
-                    android:id="@+id/tvTradeQuickTemplate"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_12"
-                    android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
-
-                <Button
-                    android:id="@+id/btnSelectQuickTradeTemplate"
-                    style="@style/Widget.BinanceMonitor.Subject.ActionButton.Secondary"
-                    android:layout_width="match_parent"
-                    android:layout_height="@dimen/control_height_md"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:text="@string/settings_trade_quick_template_action" />
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/inputLayoutTradeDefaultVolume"
-                    style="@style/Widget.BinanceMonitor.Subject.InputField"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_12"
-                    android:hint="@string/settings_trade_default_volume">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etTradeDefaultVolume"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="numberDecimal"
-                        android:maxLines="1"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/inputLayoutTradeDefaultSl"
-                    style="@style/Widget.BinanceMonitor.Subject.InputField"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:hint="@string/settings_trade_default_sl">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etTradeDefaultSl"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="numberDecimal"
-                        android:maxLines="1"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/inputLayoutTradeDefaultTp"
-                    style="@style/Widget.BinanceMonitor.Subject.InputField"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:hint="@string/settings_trade_default_tp">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etTradeDefaultTp"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="numberDecimal"
-                        android:maxLines="1"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/inputLayoutTradeMaxQuickVolume"
-                    style="@style/Widget.BinanceMonitor.Subject.InputField"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_12"
-                    android:hint="@string/settings_trade_max_quick_volume">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etTradeMaxQuickVolume"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="numberDecimal"
-                        android:maxLines="1"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/inputLayoutTradeMaxSingleVolume"
-                    style="@style/Widget.BinanceMonitor.Subject.InputField"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:hint="@string/settings_trade_max_single_volume">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etTradeMaxSingleVolume"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="numberDecimal"
-                        android:maxLines="1"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/inputLayoutTradeMaxBatchItems"
-                    style="@style/Widget.BinanceMonitor.Subject.InputField"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:hint="@string/settings_trade_max_batch_items">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etTradeMaxBatchItems"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="number"
-                        android:maxLines="1"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/inputLayoutTradeMaxBatchTotalVolume"
-                    style="@style/Widget.BinanceMonitor.Subject.InputField"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_8"
-                    android:hint="@string/settings_trade_max_batch_total_volume">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etTradeMaxBatchTotalVolume"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="numberDecimal"
-                        android:maxLines="1"
-                        android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
-                </com.google.android.material.textfield.TextInputLayout>
 
                 <androidx.appcompat.widget.AppCompatCheckBox
-                    android:id="@+id/switchTradeForceConfirmAddPosition"
+                    android:id="@+id/switchTradeOneClickMode"
                     style="@style/Widget.BinanceMonitor.Subject.ToggleChoice"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_12"
-                    android:text="@string/settings_trade_force_confirm_add_position" />
-
-                <androidx.appcompat.widget.AppCompatCheckBox
-                    android:id="@+id/switchTradeForceConfirmReverse"
-                    style="@style/Widget.BinanceMonitor.Subject.ToggleChoice"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_trade_force_confirm_reverse" />
+                    android:text="一键交易模式" />
 
                 <Button
                     android:id="@+id/btnSaveTradeSettings"

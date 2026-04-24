@@ -397,13 +397,13 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                     ? item.getPendingCount()
                     : (useRuntimePendingSummary ? runtimeSnapshot.getPendingCount() : 0);
             String qtyText = displayLots > 1e-9
-                    ? IndicatorFormatterCenter.formatQuantity(displayLots, 2, " 手")
+                    ? IndicatorFormatterCenter.formatQuantity(displayLots, 2, "手")
                     : (pendingCount > 0
-                    ? (pendingCount + " 单")
-                    : "0.00 手");
+                    ? (pendingCount + "单")
+                    : "0.00手");
             String pendingPriceText = formatCollapsedPendingPrice(pendingPrice);
             String summaryRaw = String.format(Locale.getDefault(),
-                    "%s | %s | %s | %s",
+                    "%s|%s|%s|%s",
                     resolveDisplayProductName(item, runtimeSnapshot),
                     sideText,
                     qtyText,

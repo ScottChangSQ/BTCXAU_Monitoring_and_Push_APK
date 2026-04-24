@@ -274,6 +274,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private List<CurvePoint> displayedCurvePoints = new ArrayList<>();
     private List<CurveAnalyticsHelper.DrawdownPoint> displayedDrawdownPoints = new ArrayList<>();
     private List<CurveAnalyticsHelper.DailyReturnPoint> displayedDailyReturnPoints = new ArrayList<>();
+    private long displayedCurveViewportStartTs;
+    private long displayedCurveViewportEndTs = 1L;
     private List<AccountMetric> latestCurveIndicators = new ArrayList<>();
     private List<AccountMetric> latestStatsMetrics = new ArrayList<>();
     private String defaultCurveMeta = "";
@@ -347,6 +349,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private ViewTreeObserver.OnDrawListener firstFrameDrawListener;
     private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {
         if (cache == null || isFinishing() || isDestroyed() || loading) {
+            return;
+        }
+        // 分析页只在首帧或历史修订推进时重放预加载快照，避免 0.5s 持仓运行态把整页统计高频重画。
+        boolean shouldApplyPreloadedCache = !hasRenderableCurrentSessionState()
+                || !trim(cache.getHistoryRevision()).equals(trim(latestHistoryRevision));
+        if (!shouldApplyPreloadedCache) {
             return;
         }
         if (snapshotRefreshCoordinator != null) {
@@ -986,6 +994,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             @Override
             public long getManualCurveRangeEndMs() {
                 return manualCurveRangeEndMs;
+            }
+
+            @Override
+            public long getAppliedAccountUpdatedAt() {
+                return AccountStatsBridgeActivity.this.getAppliedAccountUpdatedAt();
             }
 
             @NonNull
@@ -2252,6 +2265,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         baseTrades = new ArrayList<>();
         allCurvePoints = new ArrayList<>();
         displayedCurvePoints = new ArrayList<>();
+        displayedDrawdownPoints = new ArrayList<>();
+        displayedDailyReturnPoints = new ArrayList<>();
+        displayedCurveViewportStartTs = 0L;
+        displayedCurveViewportEndTs = 1L;
         latestCurveIndicators = new ArrayList<>();
         latestStatsMetrics = new ArrayList<>();
         curveHistory.clear();
@@ -4910,6 +4927,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return String.format(Locale.getDefault(), "%.2f%%", ratio * 100d);
     }
 
+    private long getAppliedAccountUpdatedAt() {
+        return connectedUpdateAtMs;
+    }
+
     // 首屏先只解析当前范围下的主曲线点，避免等待次级区块后台结果后才看到历史曲线。
     private List<CurvePoint> resolveImmediateCurvePoints() {
         if (manualCurveRangeEnabled) {
@@ -4923,7 +4944,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 return manualPoints;
             }
         }
-        List<CurvePoint> rangedPoints = filterCurveByRange(allCurvePoints, selectedRange);
+        List<CurvePoint> rangedPoints = filterCurveByRange(
+                allCurvePoints,
+                selectedRange,
+                getAppliedAccountUpdatedAt()
+        );
         syncRangeInputsWithDisplayedCurve(rangedPoints);
         return rangedPoints;
     }
@@ -4958,6 +4983,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private List<CurvePoint> filterCurveByRange(List<CurvePoint> source, AccountTimeRange range) {
+        long fallbackRangeEndTs = source == null || source.isEmpty()
+                ? 0L
+                : source.get(source.size() - 1).getTimestamp();
+        return filterCurveByRange(source, range, fallbackRangeEndTs);
+    }
+
+    private List<CurvePoint> filterCurveByRange(List<CurvePoint> source,
+                                                AccountTimeRange range,
+                                                long rangeEndReferenceTs) {
         if (source == null || source.isEmpty()) {
             return new ArrayList<>();
         }
@@ -4987,11 +5021,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 return new ArrayList<>(source);
         }
 
-        long end = source.get(source.size() - 1).getTimestamp();
+        long end = Math.max(source.get(source.size() - 1).getTimestamp(), rangeEndReferenceTs);
         long start = end - durationMs;
         List<CurvePoint> filtered = new ArrayList<>();
         for (CurvePoint point : source) {
-            if (point.getTimestamp() >= start) {
+            long timestamp = point.getTimestamp();
+            if (timestamp >= start && timestamp <= end) {
                 filtered.add(point);
             }
         }
@@ -5010,8 +5045,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         binding.tvCurveMeta.setVisibility(View.GONE);
         binding.tvCurveMeta.setText("");
-        AccountStatsCurveRenderHelper.RenderResult result = curveRenderHelper.renderImmediate(
-                points,
+        AccountDeferredSnapshotRenderHelper.CurveProjection curveProjection =
+                AccountDeferredSnapshotRenderHelper.buildCurveProjection(
+                        allCurvePoints,
+                        selectedRange,
+                        manualCurveRangeEnabled,
+                        manualCurveRangeStartMs,
+                        manualCurveRangeEndMs,
+                        getAppliedAccountUpdatedAt()
+                );
+        AccountStatsCurveRenderHelper.RenderResult result = curveRenderHelper.applyPreparedProjection(
+                curveProjection,
                 latestCurveIndicators,
                 secondarySectionsAttached,
                 isPrivacyMasked()
@@ -5019,6 +5063,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         displayedCurvePoints = result.getDisplayedCurvePoints();
         displayedDrawdownPoints = result.getDisplayedDrawdownPoints();
         displayedDailyReturnPoints = result.getDisplayedDailyReturnPoints();
+        displayedCurveViewportStartTs = result.getViewportStartTs();
+        displayedCurveViewportEndTs = result.getViewportEndTs();
         defaultCurveMeta = result.getDefaultCurveMeta();
         curveBaseBalance = result.getCurveBaseBalance();
         clearSharedCurveHighlight();
@@ -5040,6 +5086,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         displayedCurvePoints = result.getDisplayedCurvePoints();
         displayedDrawdownPoints = result.getDisplayedDrawdownPoints();
         displayedDailyReturnPoints = result.getDisplayedDailyReturnPoints();
+        displayedCurveViewportStartTs = result.getViewportStartTs();
+        displayedCurveViewportEndTs = result.getViewportEndTs();
         defaultCurveMeta = result.getDefaultCurveMeta();
         curveBaseBalance = result.getCurveBaseBalance();
         clearSharedCurveHighlight();
@@ -5056,6 +5104,8 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                         displayedCurvePoints,
                         displayedDrawdownPoints,
                         displayedDailyReturnPoints,
+                        displayedCurveViewportStartTs,
+                        displayedCurveViewportEndTs,
                         timestamp,
                         xRatio,
                         preferExactTimestamp
@@ -5071,7 +5121,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         extraLines.add("仓位 " + formatPercentValue(point.getPositionRatio(), false));
         extraLines.add("回撤 " + formatPercentValue(drawdownPoint == null ? null : drawdownPoint.getDrawdownRate(), false));
         extraLines.add("日收益 " + formatPercentValue(dailyReturnPoint == null ? null : dailyReturnPoint.getReturnRate(), true));
-        float syncedRatio = AccountCurveHighlightHelper.resolveTimestampRatio(displayedCurvePoints, snapshot.getTargetTimestamp());
+        float syncedRatio = AccountCurveHighlightHelper.resolveTimestampRatio(
+                displayedCurvePoints,
+                displayedCurveViewportStartTs,
+                displayedCurveViewportEndTs,
+                snapshot.getTargetTimestamp()
+        );
         syncingCurveHighlight = true;
         binding.tvCurveMeta.setText("");
         binding.equityCurveView.setTooltipExtraLines(extraLines);
@@ -5890,6 +5945,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         int totalCells = firstWeek + daysInMonth;
         int rows = (int) Math.ceil(totalCells / 7d);
+        int localTodayDayKey = resolveLocalTodayDayKey();
         int day = 1;
         for (int row = 0; row < rows; row++) {
             TableRow tableRow = new TableRow(this);
@@ -5918,13 +5974,15 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
                 DayBucket bucket = dayBuckets.get(day);
                 if (bucket == null) {
+                    int currentDayKey = year * 10_000 + (month + 1) * 100 + day;
+                    boolean afterLocalToday = localTodayDayKey > 0 && currentDayKey > localTodayDayKey;
                     View dayCell = createDailyReturnsCell(
                             String.valueOf(day),
-                            formatReturnValue(0d, 0d, true),
+                            afterLocalToday ? "--" : formatReturnValue(0d, 0d, true),
                             ContextCompat.getColor(this, R.color.text_primary),
-                            resolveReturnDisplayColor(0d, 0d, R.color.text_secondary),
+                            afterLocalToday ? null : resolveReturnDisplayColor(0d, 0d, R.color.text_secondary),
                             null,
-                            0d);
+                            afterLocalToday ? null : 0d);
                     applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
                     tableRow.addView(dayCell);
@@ -5960,6 +6018,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
             table.addView(tableRow);
         }
+    }
+
+    // 日收益表空白日期是否显示 --，统一以 APP 本地今天为边界。
+    private int resolveLocalTodayDayKey() {
+        Calendar today = Calendar.getInstance();
+        return today.get(Calendar.YEAR) * 10_000
+                + (today.get(Calendar.MONTH) + 1) * 100
+                + today.get(Calendar.DAY_OF_MONTH);
     }
 
     private void rebuildMonthlyTableTwoRowsV3(TableLayout table, List<YearlyReturnRow> rows) {

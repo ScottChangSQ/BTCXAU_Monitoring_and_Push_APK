@@ -6,6 +6,8 @@ package com.binance.monitor.service;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.data.remote.v2.GatewayV2StreamClient;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -16,6 +18,19 @@ public final class V2StreamRefreshPlanner {
 
     // 根据 v2 stream 新协议事件封套，生成本轮最小刷新计划。
     public static RefreshPlan plan(@Nullable String messageType, @Nullable JSONObject payload) {
+        if (GatewayV2StreamClient.MESSAGE_TYPE_MARKET_TICK.equals(messageType)) {
+            return new RefreshPlan(
+                    false,
+                    false,
+                    false,
+                    false,
+                    null,
+                    null,
+                    false,
+                    "",
+                    messageType == null ? "" : messageType
+            );
+        }
         JSONObject safePayload = payload == null ? new JSONObject() : payload;
         JSONObject revisions = safePayload.optJSONObject("revisions");
         if (revisions == null) {

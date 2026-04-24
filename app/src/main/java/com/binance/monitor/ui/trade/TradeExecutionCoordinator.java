@@ -238,6 +238,7 @@ public class TradeExecutionCoordinator {
                     TradeRejectMessageMapper.toUserMessage(stateMachine.getError())
             );
         }
+        TradeSessionVolumeMemory.getInstance().rememberSuccessfulTrade(stateMachine.getCommand());
 
         AccountStatsPreloadManager.Cache latestCache = null;
         long refreshStartedAt = System.currentTimeMillis();

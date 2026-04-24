@@ -103,7 +103,18 @@ PORT = int(os.getenv("GATEWAY_PORT", "8787"))
 GATEWAY_MODE = os.getenv("GATEWAY_MODE", "auto").strip().lower()  # auto | pull | ea
 EA_SNAPSHOT_TTL_SEC = int(os.getenv("EA_SNAPSHOT_TTL_SEC", "35"))
 EA_INGEST_TOKEN = os.getenv("EA_INGEST_TOKEN", "").strip()
-SNAPSHOT_BUILD_CACHE_MS = int(os.getenv("SNAPSHOT_BUILD_CACHE_MS", "1000"))
+V2_STREAM_PUSH_INTERVAL_MS = _read_bounded_env_int(
+    "V2_STREAM_PUSH_INTERVAL_MS",
+    default=500,
+    minimum=200,
+    maximum=10000,
+)
+SNAPSHOT_BUILD_CACHE_MS = _read_bounded_env_int(
+    "SNAPSHOT_BUILD_CACHE_MS",
+    default=V2_STREAM_PUSH_INTERVAL_MS,
+    minimum=200,
+    maximum=V2_STREAM_PUSH_INTERVAL_MS,
+)
 SNAPSHOT_BUILD_MAX_STALE_MS = max(
     SNAPSHOT_BUILD_CACHE_MS,
     int(os.getenv("SNAPSHOT_BUILD_MAX_STALE_MS", "30000"))
@@ -119,16 +130,16 @@ TRADE_REQUEST_STORE_MAX_ENTRIES = max(100, int(os.getenv("TRADE_REQUEST_STORE_MA
 BINANCE_REST_UPSTREAM = (os.getenv("BINANCE_REST_UPSTREAM", "https://fapi.binance.com").strip().rstrip("/"))
 BINANCE_WS_UPSTREAM = (os.getenv("BINANCE_WS_UPSTREAM", "wss://fstream.binance.com").strip().rstrip("/"))
 HEALTH_CACHE_MS = max(1000, int(os.getenv("HEALTH_CACHE_MS", "5000")))
-# 行情 stream 默认每秒推送一次；缓存寿命必须略长于推送节奏，否则每轮都会重新打上游。
+# 行情 stream 当前采用事件驱动 + 0.5s 合批发布；缓存寿命只服务闭合历史读取，不参与当前分钟 patch 真值。
 MARKET_CANDLES_CACHE_MS = max(1500, int(os.getenv("MARKET_CANDLES_CACHE_MS", "2000")))
 MARKET_CANDLES_CACHE_MAX_ENTRIES = max(8, int(os.getenv("MARKET_CANDLES_CACHE_MAX_ENTRIES", "120")))
 MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT = max(100, min(1000, int(os.getenv("MARKET_CANDLES_UPSTREAM_CHUNK_LIMIT", "500"))))
 MARKET_CANDLES_UPSTREAM_RETRY = max(0, int(os.getenv("MARKET_CANDLES_UPSTREAM_RETRY", "1")))
-V2_STREAM_PUSH_INTERVAL_MS = _read_bounded_env_int(
-    "V2_STREAM_PUSH_INTERVAL_MS",
-    default=1000,
-    minimum=200,
-    maximum=10000,
+MARKET_STREAM_EVENT_TIMEOUT_MS = _read_bounded_env_int(
+    "MARKET_STREAM_EVENT_TIMEOUT_MS",
+    default=5000,
+    minimum=1000,
+    maximum=60000,
 )
 ABNORMAL_RECORD_LIMIT = max(50, int(os.getenv("ABNORMAL_RECORD_LIMIT", "5000")))
 ABNORMAL_ALERT_LIMIT = max(20, int(os.getenv("ABNORMAL_ALERT_LIMIT", "120")))
@@ -180,12 +191,29 @@ account_publish_state: Dict[str, Any] = {
     "pendingEventType": "",
     "pendingReasons": [],
 }
+market_realtime_publish_state: Dict[str, Any] = {
+    "seq": 0,
+    "publishedAt": 0,
+    "latestEventAt": 0,
+    "dirty": False,
+    "dirtyVersion": 0,
+    "publishedVersion": 0,
+    "latestSnapshot": None,
+    "pendingReasons": [],
+}
 v2_sync_state: Dict[str, Any] = {}
 v2_bus_producer_lock = Lock()
 v2_bus_producer_started = False
 v2_bus_producer_thread: Optional[Thread] = None
 v2_bus_stop_event = Event()
 v2_bus_wake_event = Event()
+market_realtime_publisher_lock = Lock()
+market_realtime_publisher_started = False
+market_realtime_publisher_thread: Optional[Thread] = None
+market_realtime_stop_event = Event()
+v2_stream_subscribers_lock = Lock()
+v2_stream_subscribers: Dict[int, Dict[str, Any]] = {}
+v2_stream_subscriber_seq = 0
 market_candles_cache: Dict[str, Dict[str, Any]] = {}
 health_status_cache: Dict[str, Any] = {}
 abnormal_config_state: Dict[str, Any] = {"logicAnd": False, "symbols": {}}
@@ -234,12 +262,14 @@ if hasattr(app, "on_event"):
     @app.on_event("startup")
     def _startup_v2_bus_runtime() -> None:
         _bootstrap_v2_bus_producer()
+        _bootstrap_market_realtime_publisher()
         _start_market_stream_runtime()
 
 
     @app.on_event("shutdown")
     def _shutdown_v2_bus_runtime() -> None:
         _stop_v2_bus_producer()
+        _stop_market_realtime_publisher()
         _stop_market_stream_runtime()
 
 
@@ -444,6 +474,21 @@ def _reset_account_publish_state_locked() -> None:
     })
 
 
+def _reset_market_realtime_publish_state_locked() -> None:
+    """重置市场实时发布态，保证独立 marketTick 序号与快照一起清零。"""
+    market_realtime_publish_state.clear()
+    market_realtime_publish_state.update({
+        "seq": 0,
+        "publishedAt": 0,
+        "latestEventAt": 0,
+        "dirty": False,
+        "dirtyVersion": 0,
+        "publishedVersion": 0,
+        "latestSnapshot": None,
+        "pendingReasons": [],
+    })
+
+
 def _read_account_publish_state() -> Dict[str, Any]:
     with snapshot_cache_lock:
         state = account_publish_state or {}
@@ -462,6 +507,21 @@ def _read_account_publish_state() -> Dict[str, Any]:
             "event": _clone_json_value(event) if event is not None else None,
             "abnormalSnapshot": _clone_json_value(state.get("abnormalSnapshot")) if state.get("abnormalSnapshot") is not None else None,
             "pendingEventType": str(state.get("pendingEventType", "") or ""),
+            "pendingReasons": [str(item) for item in (state.get("pendingReasons") or [])],
+        }
+
+
+def _read_market_realtime_publish_state() -> Dict[str, Any]:
+    with snapshot_cache_lock:
+        state = market_realtime_publish_state or {}
+        return {
+            "seq": int(state.get("seq", 0) or 0),
+            "publishedAt": int(state.get("publishedAt", 0) or 0),
+            "latestEventAt": int(state.get("latestEventAt", 0) or 0),
+            "dirty": bool(state.get("dirty", False)),
+            "dirtyVersion": int(state.get("dirtyVersion", 0) or 0),
+            "publishedVersion": int(state.get("publishedVersion", 0) or 0),
+            "latestSnapshot": _clone_json_value(state.get("latestSnapshot")) if state.get("latestSnapshot") is not None else None,
             "pendingReasons": [str(item) for item in (state.get("pendingReasons") or [])],
         }
 
@@ -491,7 +551,43 @@ def _publish_v2_bus_event(event_type: str,
             "pendingEventType": "",
             "pendingReasons": [],
         })
-        return _clone_json_value(event)
+        published_event = _clone_json_value(event)
+    _notify_v2_stream_subscribers({
+        "kind": "syncEvent",
+        "seq": int(published_event.get("busSeq", 0) or 0),
+    })
+    return published_event
+
+
+def _build_market_tick_message(snapshot: Dict[str, Any], seq: int, published_at: int) -> Dict[str, Any]:
+    return {
+        "type": "marketTick",
+        "marketSeq": max(0, int(seq or 0)),
+        "publishedAt": int(published_at or 0),
+        "market": _clone_json_value(snapshot or {}),
+    }
+
+
+def _publish_market_tick(snapshot: Dict[str, Any], published_at: int, published_version: int) -> Dict[str, Any]:
+    with snapshot_cache_lock:
+        seq = int(market_realtime_publish_state.get("seq", 0) or 0) + 1
+        current_dirty_version = int(market_realtime_publish_state.get("dirtyVersion", 0) or 0)
+        has_newer_dirty = current_dirty_version > max(0, int(published_version or 0))
+        pending_reasons = [str(item) for item in (market_realtime_publish_state.get("pendingReasons") or [])]
+        market_realtime_publish_state.update({
+            "seq": seq,
+            "publishedAt": int(published_at or 0),
+            "publishedVersion": max(0, int(published_version or 0)),
+            "dirty": has_newer_dirty,
+            "latestSnapshot": _clone_json_value(snapshot or {}),
+            "pendingReasons": pending_reasons if has_newer_dirty else [],
+        })
+        message = _build_market_tick_message(snapshot, seq, published_at)
+    _notify_v2_stream_subscribers({
+        "kind": "marketTick",
+        "seq": int(message.get("marketSeq", 0) or 0),
+    })
+    return message
 
 
 def _request_v2_publish(reason: str, event_type: str = "syncEvent") -> None:
@@ -507,6 +603,20 @@ def _request_v2_publish(reason: str, event_type: str = "syncEvent") -> None:
         if event_type_text == "syncBootstrap" or not current_event_type:
             account_publish_state["pendingEventType"] = event_type_text
     v2_bus_wake_event.set()
+
+
+def _request_v2_market_publish(reason: str = "market_stream") -> None:
+    """市场链只负责标记独立 marketTick 发布器，不再混入账户 bus 状态。"""
+    reason_text = str(reason or "market_stream").strip() or "market_stream"
+    now_ms = _now_ms()
+    with snapshot_cache_lock:
+        pending_reasons = [str(item) for item in (market_realtime_publish_state.get("pendingReasons") or [])]
+        if reason_text not in pending_reasons:
+            pending_reasons.append(reason_text)
+        market_realtime_publish_state["pendingReasons"] = pending_reasons
+        market_realtime_publish_state["dirty"] = True
+        market_realtime_publish_state["latestEventAt"] = now_ms
+        market_realtime_publish_state["dirtyVersion"] = int(market_realtime_publish_state.get("dirtyVersion", 0) or 0) + 1
 
 
 def _read_abnormal_sync_state_for_bus() -> Dict[str, Any]:
@@ -608,7 +718,32 @@ def _build_v2_stream_bootstrap_message(state: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
-def _build_v2_stream_event_for_client(last_bus_seq: int) -> Dict[str, Any]:
+def _build_v2_stream_heartbeat_message(last_bus_seq: int) -> Dict[str, Any]:
+    state = _read_account_publish_state()
+    current_bus_seq = int(state.get("busSeq", 0) or 0)
+    published_at = int(state.get("publishedAt", 0) or 0)
+    revisions = dict(state.get("revisions") or {})
+    heartbeat_bus_seq = current_bus_seq if current_bus_seq > 0 else int(last_bus_seq or 0)
+    return _normalize_v2_stream_message("heartbeat", heartbeat_bus_seq, published_at, revisions, {})
+
+
+def _build_market_tick_message_for_client(last_market_seq: int) -> Optional[Dict[str, Any]]:
+    state = _read_market_realtime_publish_state()
+    current_market_seq = int(state.get("seq", 0) or 0)
+    if current_market_seq <= 0 or current_market_seq <= int(last_market_seq or 0):
+        return None
+    snapshot = state.get("latestSnapshot") or {}
+    return _build_market_tick_message(
+        snapshot=snapshot,
+        seq=current_market_seq,
+        published_at=int(state.get("publishedAt", 0) or 0),
+    )
+
+
+def _build_v2_stream_event_for_client(last_bus_seq: int, last_market_seq: int = 0) -> Dict[str, Any]:
+    market_tick = _build_market_tick_message_for_client(last_market_seq)
+    if market_tick is not None:
+        return market_tick
     state = _read_account_publish_state()
     current_bus_seq = int(state.get("busSeq", 0) or 0)
     published_at = int(state.get("publishedAt", 0) or 0)
@@ -631,6 +766,64 @@ def _build_v2_stream_event_for_client(last_bus_seq: int) -> Dict[str, Any]:
             changes=dict(event.get("changes") or {}),
         )
     return _build_v2_stream_bootstrap_message(state)
+
+
+def _register_v2_stream_subscriber(loop: asyncio.AbstractEventLoop,
+                                   queue: "asyncio.Queue[Dict[str, Any]]") -> int:
+    """注册一个 stream 客户端，供 marketTick/syncEvent 发布后事件驱动唤醒发送循环。"""
+    global v2_stream_subscriber_seq
+    with v2_stream_subscribers_lock:
+        v2_stream_subscriber_seq += 1
+        subscriber_id = v2_stream_subscriber_seq
+        v2_stream_subscribers[subscriber_id] = {
+            "loop": loop,
+            "queue": queue,
+        }
+        return subscriber_id
+
+
+def _unregister_v2_stream_subscriber(subscriber_id: int) -> None:
+    """移除已经断开的 stream 客户端订阅。"""
+    with v2_stream_subscribers_lock:
+        v2_stream_subscribers.pop(int(subscriber_id or 0), None)
+
+
+def _push_v2_stream_event(queue: "asyncio.Queue[Dict[str, Any]]", event: Dict[str, Any]) -> None:
+    """每个客户端只保留最近一次唤醒事件，避免持续行情把 websocket 队列堆满。"""
+    try:
+        while True:
+            queue.get_nowait()
+    except Exception:
+        pass
+    try:
+        queue.put_nowait({
+            "kind": str((event or {}).get("kind", "") or ""),
+            "seq": max(0, int((event or {}).get("seq", 0) or 0)),
+        })
+    except Exception:
+        return
+
+
+def _notify_v2_stream_subscribers(event: Dict[str, Any]) -> None:
+    """发布完成后立即唤醒 websocket 客户端，由客户端循环自行决定发送哪类消息。"""
+    event_kind = str((event or {}).get("kind", "") or "")
+    event_seq = int((event or {}).get("seq", 0) or 0)
+    if not event_kind or event_seq <= 0:
+        return
+    with v2_stream_subscribers_lock:
+        subscribers = list(v2_stream_subscribers.values())
+    for subscriber in subscribers:
+        loop = subscriber.get("loop")
+        queue = subscriber.get("queue")
+        if loop is None or queue is None:
+            continue
+        try:
+            loop.call_soon_threadsafe(_push_v2_stream_event, queue, {
+                "kind": event_kind,
+                "seq": event_seq,
+            })
+        except Exception:
+            continue
 
 
 # 生成交易命令摘要，用于 requestId 幂等的内容一致性校验。
@@ -1567,11 +1760,31 @@ def _v2_bus_publish_current_state() -> None:
 
 def _v2_bus_producer_loop() -> None:
     interval_sec = max(0.2, float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0)
+    publish_due_at = 0.0
+    has_pending_publish = False
     while not v2_bus_stop_event.is_set():
-        v2_bus_wake_event.wait(interval_sec)
-        v2_bus_wake_event.clear()
+        if has_pending_publish and publish_due_at > 0.0 and time.monotonic() >= publish_due_at:
+            publish_due_at = 0.0
+            has_pending_publish = False
+            try:
+                _v2_bus_publish_current_state()
+            except Exception:
+                pass
+            continue
+        wait_timeout = interval_sec if publish_due_at <= 0.0 else max(0.0, publish_due_at - time.monotonic())
+        wake_triggered = v2_bus_wake_event.wait(wait_timeout)
         if v2_bus_stop_event.is_set():
             break
+        if wake_triggered:
+            v2_bus_wake_event.clear()
+            has_pending_publish = True
+            if publish_due_at <= 0.0:
+                publish_due_at = time.monotonic() + interval_sec
+            continue
+        if not has_pending_publish:
+            continue
+        publish_due_at = 0.0
+        has_pending_publish = False
         try:
             _v2_bus_publish_current_state()
         except Exception:
@@ -1586,6 +1799,61 @@ def _start_v2_bus_producer_locked() -> None:
     thread.start()
     v2_bus_producer_thread = thread
     v2_bus_producer_started = True
+
+
+def _publish_market_realtime_current_state() -> None:
+    with snapshot_cache_lock:
+        dirty = bool(market_realtime_publish_state.get("dirty", False))
+        dirty_version = int(market_realtime_publish_state.get("dirtyVersion", 0) or 0)
+        published_version = int(market_realtime_publish_state.get("publishedVersion", 0) or 0)
+    if not dirty or dirty_version <= published_version:
+        return
+    now_ms = _now_ms()
+    snapshot = _build_v2_market_section(now_ms)
+    _publish_market_tick(
+        snapshot=snapshot,
+        published_at=now_ms,
+        published_version=dirty_version,
+    )
+
+
+def _market_realtime_publisher_loop() -> None:
+    interval_sec = max(0.2, float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0)
+    while not market_realtime_stop_event.wait(interval_sec):
+        try:
+            _publish_market_realtime_current_state()
+        except Exception:
+            continue
+
+
+def _start_market_realtime_publisher_locked() -> None:
+    global market_realtime_publisher_started, market_realtime_publisher_thread
+    market_realtime_stop_event.clear()
+    thread = Thread(target=_market_realtime_publisher_loop, name="market-realtime-publisher", daemon=True)
+    thread.start()
+    market_realtime_publisher_thread = thread
+    market_realtime_publisher_started = True
+
+
+def _bootstrap_market_realtime_publisher() -> None:
+    with market_realtime_publisher_lock:
+        alive = market_realtime_publisher_thread is not None and market_realtime_publisher_thread.is_alive()
+        if not alive:
+            _start_market_realtime_publisher_locked()
+
+
+def _stop_market_realtime_publisher() -> None:
+    global market_realtime_publisher_started, market_realtime_publisher_thread
+    with market_realtime_publisher_lock:
+        thread = market_realtime_publisher_thread
+        if thread is None:
+            market_realtime_publisher_started = False
+            return
+        market_realtime_stop_event.set()
+        if thread.is_alive():
+            thread.join(timeout=1.0)
+        market_realtime_publisher_thread = None
+        market_realtime_publisher_started = False
 
 
 def _bootstrap_v2_bus_producer() -> None:
@@ -1620,6 +1888,57 @@ def _build_market_runtime_symbol_state(symbol: str) -> Dict[str, Any]:
     return v2_market_runtime.build_symbol_state(runtime, symbol)
 
 
+def _build_runtime_patch_row_from_candle(candle: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """把当前分钟 patch candle 还原成 market/candles 所需的原始 kline 行。"""
+    if not isinstance(candle, dict):
+        return None
+    return {
+        "k": {
+            "t": candle.get("openTime"),
+            "T": candle.get("closeTime"),
+            "s": candle.get("symbol"),
+            "i": candle.get("interval"),
+            "o": str(candle.get("open", 0.0) or 0.0),
+            "h": str(candle.get("high", 0.0) or 0.0),
+            "l": str(candle.get("low", 0.0) or 0.0),
+            "c": str(candle.get("close", 0.0) or 0.0),
+            "v": str(candle.get("volume", 0.0) or 0.0),
+            "q": str(candle.get("quoteVolume", 0.0) or 0.0),
+            "n": int(candle.get("tradeCount", 0) or 0),
+            "x": False,
+        }
+    }
+
+
+def _is_runtime_patch_fresh(latest_patch: Optional[Dict[str, Any]], now_ms: int) -> bool:
+    """当前分钟 patch 只在其所属分钟窗口内有效，过期后必须立刻视为无效。"""
+    if not isinstance(latest_patch, dict):
+        return False
+    open_time = int(latest_patch.get("openTime", 0) or 0)
+    close_time = int(latest_patch.get("closeTime", 0) or 0)
+    safe_now_ms = max(0, int(now_ms or 0))
+    return open_time > 0 and close_time >= safe_now_ms and open_time <= safe_now_ms
+
+
+def _sanitize_runtime_symbol_state(runtime_state: Dict[str, Any], now_ms: int) -> Dict[str, Any]:
+    """去掉已经过期的 runtime patch，禁止旧分钟继续冒充当前分钟。"""
+    sanitized = dict(runtime_state or {})
+    latest_patch = sanitized.get("latestPatch")
+    if _is_runtime_patch_fresh(latest_patch, now_ms):
+        return sanitized
+    latest_closed = sanitized.get("latestClosedCandle")
+    sanitized["latestPatch"] = None
+    if isinstance(latest_closed, dict):
+        sanitized["latestPrice"] = float(latest_closed.get("close", 0.0) or 0.0)
+        sanitized["latestOpenTime"] = int(latest_closed.get("openTime", 0) or 0)
+        sanitized["latestCloseTime"] = int(latest_closed.get("closeTime", 0) or 0)
+    else:
+        sanitized["latestPrice"] = 0.0
+        sanitized["latestOpenTime"] = 0
+        sanitized["latestCloseTime"] = 0
+    return sanitized
+
+
 def _get_market_runtime_patch_row(symbol: str) -> Optional[Dict[str, Any]]:
     """兼容真实 runtime 字典和测试注入桩，统一读取当前 1m patch 原始行。"""
     runtime = market_stream_runtime
@@ -1647,6 +1966,33 @@ def _build_market_runtime_source_status() -> Dict[str, Any]:
     return v2_market_runtime.build_source_status(runtime)
 
 
+def _is_market_stream_runtime_stale(now_ms: int) -> bool:
+    """按最近真实业务事件时间判活，连接活着但没有新 kline 也必须认定为失活。"""
+    runtime_status = _build_market_runtime_source_status()
+    if not bool(runtime_status.get("marketRuntimeConnected")):
+        return False
+    last_event_time = max(
+        int(runtime_status.get("marketRuntimeLastEventTime", 0) or 0),
+        int(runtime_status.get("marketRuntimeConnectedAt", 0) or 0),
+    )
+    if last_event_time <= 0:
+        return False
+    return max(0, int(now_ms or 0)) - last_event_time >= MARKET_STREAM_EVENT_TIMEOUT_MS
+
+
+def _mark_market_stream_runtime_stale(now_ms: int, reason: str) -> None:
+    """市场 WS 一旦长时间没有新业务帧，就立刻撤销旧 patch 并要求重连。"""
+    v2_market_runtime.clear_all_patches(market_stream_runtime)
+    v2_market_runtime.mark_connection_state(
+        market_stream_runtime,
+        connecting=False,
+        connected=False,
+        updated_at_ms=max(0, int(now_ms or 0)),
+        last_error=str(reason or ""),
+    )
+    _request_v2_market_publish("market_stream_stale")
+
+
 def _bootstrap_market_stream_runtime_from_rest() -> None:
     """在 WS 真值尚未连上前，用极小的 REST 窗口补一层冷启动底稿。"""
     runtime = market_stream_runtime
@@ -1669,6 +2015,7 @@ def _bootstrap_market_stream_runtime_from_rest() -> None:
             v2_market_runtime.bootstrap_symbol_from_rest_rows(runtime, symbol, rows, _now_ms())
         except Exception:
             continue
+    _request_v2_market_publish("market_bootstrap")
 
 
 def _market_runtime_bootstrap_minute_limit() -> int:
@@ -1697,31 +2044,34 @@ def _market_runtime_bootstrap_minute_limit() -> int:
 
 
 def _build_market_stream_upstream_url() -> str:
-    """构建 Binance combined stream URL，只订阅当前服务需要的 1m K 线。"""
-    streams = "/".join(symbol.lower() + "@kline_1m" for symbol in ABNORMAL_SYMBOLS)
+    """构建 Binance combined stream URL，只订阅当前服务需要的 trade 流。"""
+    streams = "/".join(symbol.lower() + "@trade" for symbol in ABNORMAL_SYMBOLS)
     return _build_binance_ws_upstream_url("/stream", f"streams={streams}")
 
 
 def _consume_market_stream_runtime_message(raw_message: Any) -> None:
-    """解析 WS 文本并推进市场运行时。只处理 kline 事件，其它消息直接忽略。"""
+    """解析 WS 文本并推进市场运行时。只处理 trade 事件，其它消息直接忽略。"""
     text = raw_message.decode("utf-8") if isinstance(raw_message, (bytes, bytearray)) else str(raw_message or "")
     if not text:
         return
     payload = json.loads(text)
     event = dict((payload or {}).get("data") or payload or {})
-    if not isinstance(event.get("k"), dict):
+    if str(event.get("e") or "").strip().lower() != "trade":
         return
-    v2_market_runtime.apply_ws_kline_event(market_stream_runtime, payload)
+    applied = v2_market_runtime.apply_ws_trade_event(market_stream_runtime, payload)
+    if applied is not None:
+        _request_v2_market_publish("market_stream_trade")
 
 
 async def _run_market_stream_runtime_loop() -> None:
     """保持 Binance 市场 WS 长连接，并把 1m K 线持续写入内存真值。"""
     upstream_url = _build_market_stream_upstream_url()
+    connected_at_ms = _now_ms()
     v2_market_runtime.mark_connection_state(
         market_stream_runtime,
         connecting=True,
         connected=False,
-        updated_at_ms=_now_ms(),
+        updated_at_ms=connected_at_ms,
         last_error="",
     )
     async with websockets.connect(
@@ -1730,17 +2080,22 @@ async def _run_market_stream_runtime_loop() -> None:
         ping_timeout=20,
         close_timeout=5,
     ) as upstream:
+        connected_at_ms = _now_ms()
         v2_market_runtime.mark_connection_state(
             market_stream_runtime,
             connecting=False,
             connected=True,
-            updated_at_ms=_now_ms(),
+            updated_at_ms=connected_at_ms,
             last_error="",
         )
         while not market_stream_runtime_stop_event.is_set():
             try:
                 message = await asyncio.wait_for(upstream.recv(), timeout=1.0)
             except asyncio.TimeoutError:
+                if _is_market_stream_runtime_stale(_now_ms()):
+                    raise RuntimeError(
+                        f"market stream stalled for {MARKET_STREAM_EVENT_TIMEOUT_MS}ms without new trade event"
+                    )
                 continue
             _consume_market_stream_runtime_message(message)
 
@@ -1752,6 +2107,7 @@ def _market_stream_runtime_worker() -> None:
         try:
             asyncio.run(_run_market_stream_runtime_loop())
         except Exception as exc:
+            _mark_market_stream_runtime_stale(_now_ms(), str(exc))
             v2_market_runtime.mark_connection_state(
                 market_stream_runtime,
                 connecting=False,
@@ -7086,57 +7442,8 @@ def _build_v2_account_section_from_snapshot(snapshot: Dict[str, Any]) -> Dict[st
 # 构建单个产品的行情同步摘要，供 v2 stream 纯消费链直接落地。
 def _build_market_stream_symbol_state(symbol: str, server_time: int) -> Dict[str, Any]:
     runtime_state = _build_market_runtime_symbol_state(symbol)
-    if runtime_state.get("latestPatch") is not None or runtime_state.get("latestClosedCandle") is not None:
-        return runtime_state
-    symbol_descriptor = _resolve_symbol_descriptor(symbol)
-    rows = _fetch_market_candle_rows_with_cache(
-        symbol_descriptor["marketSymbol"],
-        "1m",
-        2,
-        start_time_ms=0,
-        end_time_ms=0,
-    )
-    closed_rows, patch_row = v2_market.separate_closed_rest_rows(rows, server_time)
-    latest_closed_payload: Optional[Dict[str, Any]] = None
-    latest_patch_payload: Optional[Dict[str, Any]] = None
-    if closed_rows:
-        latest_closed_payload = v2_market.build_market_candle_payload(
-            symbol_descriptor["marketSymbol"],
-            "1m",
-            row=closed_rows[-1],
-            is_closed=True,
-            source="binance-rest",
-        )
-    if patch_row is not None:
-        latest_patch_payload = v2_market.build_market_candle_payload(
-            symbol_descriptor["marketSymbol"],
-            "1m",
-            row=patch_row,
-            is_closed=False,
-            source="binance-rest",
-        )
-    latest_price = 0.0
-    latest_open_time = 0
-    latest_close_time = 0
-    if latest_patch_payload is not None:
-        latest_price = float(latest_patch_payload.get("close", 0.0) or 0.0)
-        latest_open_time = int(latest_patch_payload.get("openTime", 0) or 0)
-        latest_close_time = int(latest_patch_payload.get("closeTime", 0) or 0)
-    elif latest_closed_payload is not None:
-        latest_price = float(latest_closed_payload.get("close", 0.0) or 0.0)
-        latest_open_time = int(latest_closed_payload.get("openTime", 0) or 0)
-        latest_close_time = int(latest_closed_payload.get("closeTime", 0) or 0)
-    return {
-        "productId": symbol_descriptor["productId"],
-        "marketSymbol": symbol_descriptor["marketSymbol"],
-        "tradeSymbol": symbol_descriptor["tradeSymbol"],
-        "interval": "1m",
-        "latestPrice": latest_price,
-        "latestOpenTime": latest_open_time,
-        "latestCloseTime": latest_close_time,
-        "latestClosedCandle": latest_closed_payload,
-        "latestPatch": latest_patch_payload,
-    }
+    sanitized_runtime_state = _sanitize_runtime_symbol_state(runtime_state, server_time)
+    return sanitized_runtime_state
 
 
 # 基于 Binance 数据构建 v2 行情区统一返回体。
@@ -7374,6 +7681,51 @@ def _fetch_market_candle_rows_backward(symbol: str,
         cursor_end = first_open_time - 1
 
     return [collected[key] for key in sorted(collected.keys())]
+
+
+# 周/月线当前未闭合桶需要独立探测，避免主查询链丢掉 latestPatch 后整段长周期冻结。
+def _supports_direct_rest_bucket_probe(interval: str) -> bool:
+    return str(interval or "").strip() in ("1w", "1M")
+
+
+# 统一计算 Binance 周/月桶起点；周线按 UTC 周一 00:00 开始，月线按 UTC 每月 1 号 00:00 开始。
+def _resolve_market_bucket_start_ms(interval: str, reference_ms: int) -> int:
+    safe_reference_ms = max(0, int(reference_ms or 0))
+    safe_interval = str(interval or "").strip()
+    utc_time = datetime.fromtimestamp(safe_reference_ms / 1000.0, tz=timezone.utc)
+    if safe_interval == "1w":
+        week_start = (utc_time - timedelta(days=utc_time.weekday())).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        return int(week_start.timestamp() * 1000)
+    if safe_interval == "1M":
+        month_start = utc_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return int(month_start.timestamp() * 1000)
+    return 0
+
+
+# 当主查询链没拿到长周期 latestPatch 时，直接按当前桶起点探测 Binance REST 当前未闭合桶。
+def _probe_current_rest_bucket_patch_row(symbol: str,
+                                         interval: str,
+                                         now_ms: int) -> Optional[Any]:
+    safe_interval = str(interval or "").strip()
+    if not _supports_direct_rest_bucket_probe(safe_interval):
+        return None
+    bucket_start_ms = _resolve_market_bucket_start_ms(safe_interval, now_ms)
+    if bucket_start_ms <= 0:
+        return None
+    rows = _fetch_binance_kline_rows_resilient(
+        symbol,
+        safe_interval,
+        1,
+        start_time_ms=bucket_start_ms,
+        end_time_ms=0,
+    ) or []
+    _, latest_rest_patch = v2_market.separate_closed_rest_rows(rows, now_ms)
+    return latest_rest_patch
 
 
 # 统一提取 K 线开盘时间，供分页去重和翻页游标使用。
@@ -7801,23 +8153,35 @@ def v2_market_candles(symbol: str,
             end_time_ms=endTime,
         )
         closed_rest_rows, latest_rest_patch = v2_market.separate_closed_rest_rows(rest_rows, now_ms)
-        runtime_patch_row = None
-        patch_source = "binance-rest"
+        selected_patch_row = None
+        patch_source = ""
         if str(interval or "").strip() == "1m":
-            runtime_patch_row = _get_market_runtime_patch_row(symbol)
-            if runtime_patch_row is not None:
+            runtime_state = _sanitize_runtime_symbol_state(_build_market_runtime_symbol_state(symbol), now_ms)
+            runtime_patch = runtime_state.get("latestPatch")
+            if _is_runtime_patch_fresh(runtime_patch, now_ms):
+                selected_patch_row = _build_runtime_patch_row_from_candle(runtime_patch)
+            if selected_patch_row is not None:
                 patch_source = "binance-ws"
         else:
-            runtime_patch_row = _build_market_runtime_interval_patch(symbol, str(interval or "").strip())
-            if runtime_patch_row is not None:
+            runtime_state = _sanitize_runtime_symbol_state(_build_market_runtime_symbol_state(symbol), now_ms)
+            if _is_runtime_patch_fresh(runtime_state.get("latestPatch"), now_ms):
+                selected_patch_row = _build_market_runtime_interval_patch(symbol, str(interval or "").strip())
+            if selected_patch_row is not None:
                 patch_source = "binance-ws"
+            elif latest_rest_patch is not None:
+                selected_patch_row = latest_rest_patch
+                patch_source = "binance-rest"
+            else:
+                selected_patch_row = _probe_current_rest_bucket_patch_row(symbol, str(interval or "").strip(), now_ms)
+                if selected_patch_row is not None:
+                    patch_source = "binance-rest"
         return v2_market.build_market_candles_response(
             symbol=symbol,
             interval=interval,
             server_time=now_ms,
             rest_rows=closed_rest_rows,
-            latest_patch=runtime_patch_row if runtime_patch_row is not None else latest_rest_patch,
-            patch_source=patch_source,
+            latest_patch=selected_patch_row,
+            patch_source=patch_source or "binance-ws",
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -8582,21 +8946,40 @@ async def v2_stream(client: WebSocket):
     await client.accept()
     _record_runtime_stream_connected(getattr(client, "client", None))
     current_bus_seq = 0
-    push_interval_sec = float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0
+    current_market_seq = 0
     loop = asyncio.get_running_loop()
-    next_tick = loop.time()
+    event_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue(maxsize=1)
+    subscriber_id = _register_v2_stream_subscriber(loop, event_queue)
+    heartbeat_interval_sec = max(15.0, float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0)
     try:
         while True:
-            message = _build_v2_stream_event_for_client(last_bus_seq=current_bus_seq)
-            current_bus_seq = int(message.get("busSeq", current_bus_seq) or current_bus_seq)
-            message["serverTime"] = _now_ms()
-            await client.send_json(message)
-            next_tick += push_interval_sec
-            sleep_sec = next_tick - loop.time()
-            if sleep_sec > 0:
-                await asyncio.sleep(sleep_sec)
-            else:
-                next_tick = loop.time()
+            message = _build_v2_stream_event_for_client(
+                last_bus_seq=current_bus_seq,
+                last_market_seq=current_market_seq,
+            )
+            message_type = str(message.get("type", "") or "")
+            next_bus_seq = int(message.get("busSeq", current_bus_seq) or current_bus_seq)
+            next_market_seq = int(message.get("marketSeq", current_market_seq) or current_market_seq)
+            if message_type != "heartbeat":
+                if message_type == "marketTick":
+                    current_market_seq = max(current_market_seq, next_market_seq)
+                else:
+                    current_bus_seq = max(current_bus_seq, next_bus_seq)
+                message["serverTime"] = _now_ms()
+                await client.send_json(message)
+                continue
+            try:
+                awaited_event = await asyncio.wait_for(event_queue.get(), timeout=heartbeat_interval_sec)
+                awaited_kind = str((awaited_event or {}).get("kind", "") or "")
+                awaited_seq = int((awaited_event or {}).get("seq", 0) or 0)
+                if awaited_kind == "marketTick" and awaited_seq > current_market_seq:
+                    continue
+                if awaited_kind == "syncEvent" and awaited_seq > current_bus_seq:
+                    continue
+            except asyncio.TimeoutError:
+                heartbeat = _build_v2_stream_heartbeat_message(current_bus_seq)
+                heartbeat["serverTime"] = _now_ms()
+                await client.send_json(heartbeat)
     except WebSocketDisconnect:
         _record_runtime_stream_disconnected(getattr(client, "client", None))
         return
@@ -8606,6 +8989,8 @@ async def v2_stream(client: WebSocket):
             await client.close(code=1011, reason=f"v2 stream failed: {exc}")
         except Exception:
             return
+    finally:
+        _unregister_v2_stream_subscriber(subscriber_id)
 
 
 if __name__ == "__main__":

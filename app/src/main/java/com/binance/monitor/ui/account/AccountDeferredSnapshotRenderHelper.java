@@ -52,7 +52,8 @@ public final class AccountDeferredSnapshotRenderHelper {
                 request.getSelectedRange(),
                 request.isManualCurveRangeEnabled(),
                 request.getManualCurveRangeStartMs(),
-                request.getManualCurveRangeEndMs()
+                request.getManualCurveRangeEndMs(),
+                request.getAppliedUpdateAtMs()
         );
         TradeAnalytics tradeAnalytics = buildTradeAnalytics(
                 request.getLatestStatsMetrics(),
@@ -100,6 +101,27 @@ public final class AccountDeferredSnapshotRenderHelper {
                                                        boolean manualCurveRangeEnabled,
                                                        long manualCurveRangeStartMs,
                                                        long manualCurveRangeEndMs) {
+        long fallbackRangeEndTs = allCurvePoints == null || allCurvePoints.isEmpty()
+                ? 0L
+                : allCurvePoints.get(allCurvePoints.size() - 1).getTimestamp();
+        return buildCurveProjection(
+                allCurvePoints,
+                selectedRange,
+                manualCurveRangeEnabled,
+                manualCurveRangeStartMs,
+                manualCurveRangeEndMs,
+                fallbackRangeEndTs
+        );
+    }
+
+    // 构建曲线投影时显式接收账户最新更新时间，保证滚动区间右边界不会被旧尾点卡死。
+    @NonNull
+    public static CurveProjection buildCurveProjection(List<CurvePoint> allCurvePoints,
+                                                       AccountTimeRange selectedRange,
+                                                       boolean manualCurveRangeEnabled,
+                                                       long manualCurveRangeStartMs,
+                                                       long manualCurveRangeEndMs,
+                                                       long appliedUpdateAtMs) {
         boolean manualRangeApplied = false;
         List<CurvePoint> displayedCurvePoints;
         if (manualCurveRangeEnabled) {
@@ -112,19 +134,27 @@ public final class AccountDeferredSnapshotRenderHelper {
                 displayedCurvePoints = manualPoints;
                 manualRangeApplied = true;
             } else {
-                displayedCurvePoints = filterCurveByRange(allCurvePoints, selectedRange);
+                displayedCurvePoints = filterCurveByRange(allCurvePoints, selectedRange, appliedUpdateAtMs);
             }
         } else {
-            displayedCurvePoints = filterCurveByRange(allCurvePoints, selectedRange);
+            displayedCurvePoints = filterCurveByRange(allCurvePoints, selectedRange, appliedUpdateAtMs);
         }
         CurveAnalyticsHelper.DrawdownSegment drawdownSegment =
                 CurveAnalyticsHelper.resolveMaxDrawdownSegment(displayedCurvePoints);
-        long viewportStartTs = displayedCurvePoints.isEmpty()
-                ? 0L
-                : displayedCurvePoints.get(0).getTimestamp();
-        long viewportEndTs = displayedCurvePoints.size() > 1
-                ? displayedCurvePoints.get(displayedCurvePoints.size() - 1).getTimestamp()
-                : viewportStartTs + 1L;
+        long viewportStartTs = resolveCurveViewportStartTs(
+                displayedCurvePoints,
+                selectedRange,
+                manualRangeApplied,
+                manualCurveRangeStartMs,
+                appliedUpdateAtMs
+        );
+        long viewportEndTs = resolveCurveViewportEndTs(
+                displayedCurvePoints,
+                selectedRange,
+                manualRangeApplied,
+                manualCurveRangeEndMs,
+                appliedUpdateAtMs
+        );
         return new CurveProjection(
                 displayedCurvePoints,
                 CurveAnalyticsHelper.buildDrawdownSeries(displayedCurvePoints),
@@ -278,6 +308,25 @@ public final class AccountDeferredSnapshotRenderHelper {
         double volatility = Math.sqrt(variance) * Math.sqrt(365d);
         double sharpe = volatility > 1e-9 ? (meanReturn * 365d) / volatility : 0d;
         return String.format(Locale.getDefault(), "%.2f", sharpe);
+    }
+
+    // 期间收益统一按当前显示区间首末净值计算，供曲线底部指标和高亮说明共用同一口径。
+    @NonNull
+    static String buildPeriodReturnValue(@Nullable List<CurvePoint> curvePoints) {
+        if (curvePoints == null || curvePoints.size() < 2) {
+            return "--";
+        }
+        CurvePoint startPoint = curvePoints.get(0);
+        CurvePoint endPoint = curvePoints.get(curvePoints.size() - 1);
+        if (startPoint == null || endPoint == null) {
+            return "--";
+        }
+        double startEquity = startPoint.getEquity();
+        if (Math.abs(startEquity) < 1e-9) {
+            return IndicatorFormatterCenter.formatPercent(0d, 2, true);
+        }
+        double periodReturn = safeDivide(endPoint.getEquity() - startEquity, startEquity);
+        return IndicatorFormatterCenter.formatPercent(periodReturn, 2, true);
     }
 
     // 缺失或占位时补入统一指标，避免核心统计固定字段出现空洞。
@@ -520,6 +569,17 @@ public final class AccountDeferredSnapshotRenderHelper {
     // 按当前时间范围过滤曲线点，并保持至少两点展示语义。
     @NonNull
     private static List<CurvePoint> filterCurveByRange(List<CurvePoint> source, AccountTimeRange range) {
+        long fallbackRangeEndTs = source == null || source.isEmpty()
+                ? 0L
+                : source.get(source.size() - 1).getTimestamp();
+        return filterCurveByRange(source, range, fallbackRangeEndTs);
+    }
+
+    // 滚动区间过滤需要按账户最新更新时间对齐右边界，避免长按时间被旧尾点截断。
+    @NonNull
+    private static List<CurvePoint> filterCurveByRange(List<CurvePoint> source,
+                                                       AccountTimeRange range,
+                                                       long rangeEndReferenceTs) {
         if (source == null || source.isEmpty()) {
             return new ArrayList<>();
         }
@@ -547,11 +607,12 @@ public final class AccountDeferredSnapshotRenderHelper {
             default:
                 return new ArrayList<>(source);
         }
-        long end = source.get(source.size() - 1).getTimestamp();
+        long end = Math.max(source.get(source.size() - 1).getTimestamp(), rangeEndReferenceTs);
         long start = end - durationMs;
         List<CurvePoint> filtered = new ArrayList<>();
         for (CurvePoint point : source) {
-            if (point.getTimestamp() >= start) {
+            long timestamp = point.getTimestamp();
+            if (timestamp >= start && timestamp <= end) {
                 filtered.add(point);
             }
         }
@@ -562,6 +623,66 @@ public final class AccountDeferredSnapshotRenderHelper {
             return new ArrayList<>(source.subList(source.size() - 2, source.size()));
         }
         return new ArrayList<>(source);
+    }
+
+    private static long resolveCurveViewportStartTs(@NonNull List<CurvePoint> displayedCurvePoints,
+                                                    @Nullable AccountTimeRange selectedRange,
+                                                    boolean manualRangeApplied,
+                                                    long manualCurveRangeStartMs,
+                                                    long appliedUpdateAtMs) {
+        if (manualRangeApplied) {
+            return Math.max(0L, manualCurveRangeStartMs);
+        }
+        if (selectedRange == null || selectedRange == AccountTimeRange.ALL) {
+            return displayedCurvePoints.isEmpty() ? 0L : displayedCurvePoints.get(0).getTimestamp();
+        }
+        long viewportEndTs = resolveCurveViewportEndTs(
+                displayedCurvePoints,
+                selectedRange,
+                false,
+                0L,
+                appliedUpdateAtMs
+        );
+        return Math.max(0L, viewportEndTs - resolveRangeDurationMs(selectedRange));
+    }
+
+    private static long resolveCurveViewportEndTs(@NonNull List<CurvePoint> displayedCurvePoints,
+                                                  @Nullable AccountTimeRange selectedRange,
+                                                  boolean manualRangeApplied,
+                                                  long manualCurveRangeEndMs,
+                                                  long appliedUpdateAtMs) {
+        long lastPointTs = displayedCurvePoints.isEmpty()
+                ? 0L
+                : displayedCurvePoints.get(displayedCurvePoints.size() - 1).getTimestamp();
+        if (manualRangeApplied) {
+            long manualEndTs = Math.max(0L, manualCurveRangeEndMs);
+            return Math.max(lastPointTs, manualEndTs);
+        }
+        if (selectedRange == null || selectedRange == AccountTimeRange.ALL) {
+            return lastPointTs;
+        }
+        return Math.max(lastPointTs, appliedUpdateAtMs);
+    }
+
+    private static long resolveRangeDurationMs(@Nullable AccountTimeRange range) {
+        if (range == null) {
+            return 0L;
+        }
+        switch (range) {
+            case D1:
+                return 24L * 60L * 60L * 1000L;
+            case D7:
+                return 7L * 24L * 60L * 60L * 1000L;
+            case M1:
+                return 30L * 24L * 60L * 60L * 1000L;
+            case M3:
+                return 90L * 24L * 60L * 60L * 1000L;
+            case Y1:
+                return 365L * 24L * 60L * 60L * 1000L;
+            case ALL:
+            default:
+                return 0L;
+        }
     }
 
     // 曲线百分比以当前显示范围第一点为基准，缺数据时退回 1。
@@ -665,6 +786,7 @@ public final class AccountDeferredSnapshotRenderHelper {
         private final boolean manualCurveRangeEnabled;
         private final long manualCurveRangeStartMs;
         private final long manualCurveRangeEndMs;
+        private final long appliedUpdateAtMs;
         private final TradePnlSideMode tradePnlSideMode;
         private final TradeWeekdayBasis tradeWeekdayBasis;
         private final TradeFilterRequest tradeFilterRequest;
@@ -679,6 +801,32 @@ public final class AccountDeferredSnapshotRenderHelper {
                               TradePnlSideMode tradePnlSideMode,
                               TradeWeekdayBasis tradeWeekdayBasis,
                               TradeFilterRequest tradeFilterRequest) {
+            this(
+                    latestStatsMetrics,
+                    baseTrades,
+                    allCurvePoints,
+                    selectedRange,
+                    manualCurveRangeEnabled,
+                    manualCurveRangeStartMs,
+                    manualCurveRangeEndMs,
+                    0L,
+                    tradePnlSideMode,
+                    tradeWeekdayBasis,
+                    tradeFilterRequest
+            );
+        }
+
+        public PrepareRequest(List<AccountMetric> latestStatsMetrics,
+                              List<TradeRecordItem> baseTrades,
+                              List<CurvePoint> allCurvePoints,
+                              AccountTimeRange selectedRange,
+                              boolean manualCurveRangeEnabled,
+                              long manualCurveRangeStartMs,
+                              long manualCurveRangeEndMs,
+                              long appliedUpdateAtMs,
+                              TradePnlSideMode tradePnlSideMode,
+                              TradeWeekdayBasis tradeWeekdayBasis,
+                              TradeFilterRequest tradeFilterRequest) {
             this.latestStatsMetrics = latestStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(latestStatsMetrics);
             this.baseTrades = baseTrades == null ? new ArrayList<>() : new ArrayList<>(baseTrades);
             this.allCurvePoints = allCurvePoints == null ? new ArrayList<>() : new ArrayList<>(allCurvePoints);
@@ -686,6 +834,7 @@ public final class AccountDeferredSnapshotRenderHelper {
             this.manualCurveRangeEnabled = manualCurveRangeEnabled;
             this.manualCurveRangeStartMs = manualCurveRangeStartMs;
             this.manualCurveRangeEndMs = manualCurveRangeEndMs;
+            this.appliedUpdateAtMs = appliedUpdateAtMs;
             this.tradePnlSideMode = tradePnlSideMode == null ? TradePnlSideMode.ALL : tradePnlSideMode;
             this.tradeWeekdayBasis = tradeWeekdayBasis == null ? TradeWeekdayBasis.CLOSE_TIME : tradeWeekdayBasis;
             this.tradeFilterRequest = tradeFilterRequest == null
@@ -719,6 +868,10 @@ public final class AccountDeferredSnapshotRenderHelper {
 
         public long getManualCurveRangeEndMs() {
             return manualCurveRangeEndMs;
+        }
+
+        public long getAppliedUpdateAtMs() {
+            return appliedUpdateAtMs;
         }
 
         public TradePnlSideMode getTradePnlSideMode() {

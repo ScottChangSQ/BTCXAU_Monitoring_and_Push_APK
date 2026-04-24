@@ -141,7 +141,7 @@ public class SpacingTokenContractResourceTest {
         expected.put("field_padding_x", "12dp");
         expected.put("field_padding_x_compact", "8dp");
         expected.put("field_trailing_reserve", "16dp");
-        expected.put("field_trailing_reserve_compact", "12dp");
+        expected.put("field_trailing_reserve_compact", "8dp");
         expected.put("icon_text_gap", "4dp");
         expected.put("list_item_padding_x", "12dp");
         expected.put("list_item_padding_y", "8dp");

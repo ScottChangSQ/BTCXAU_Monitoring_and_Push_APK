@@ -25,7 +25,7 @@
     <dimen name="field_padding_x">12dp</dimen>
     <dimen name="field_padding_x_compact">8dp</dimen>
     <dimen name="field_trailing_reserve">16dp</dimen>
-    <dimen name="field_trailing_reserve_compact">12dp</dimen>
+    <dimen name="field_trailing_reserve_compact">8dp</dimen>
     <dimen name="icon_text_gap">4dp</dimen>
     <dimen name="list_item_padding_x">12dp</dimen>
     <dimen name="list_item_padding_y">8dp</dimen>
@@ -42,11 +42,13 @@
     <dimen name="curve_axis_stroke">1dp</dimen>
     <dimen name="curve_equity_stroke">1.6dp</dimen>
     <dimen name="curve_balance_stroke">1.3dp</dimen>
+    <dimen name="kline_plot_left_inset">4dp</dimen>
     <dimen name="kline_indicator_plot_top_inset">18dp</dimen>
     <dimen name="kline_indicator_plot_bottom_inset">6dp</dimen>
     <dimen name="kline_pane_title_baseline_offset">12dp</dimen>
     <dimen name="kline_axis_top_baseline_offset">12dp</dimen>
     <dimen name="kline_axis_bottom_inset">6dp</dimen>
+    <dimen name="kline_price_axis_reserved_width">40dp</dimen>
     <dimen name="trade_scrollbar_track_width">4dp</dimen>
     <dimen name="trade_scrollbar_thumb_width">10dp</dimen>
     <dimen name="trade_scrollbar_min_thumb_height">40dp</dimen>
@@ -54,7 +56,7 @@
 
     <dimen name="chart_overlay_toggle_gap">6dp</dimen>
     <dimen name="chart_quick_trade_volume_width">88dp</dimen>
-    <dimen name="chart_top_mode_button_min_width">60dp</dimen>
+    <dimen name="chart_top_mode_button_min_width">52dp</dimen>
 
     <dimen name="radius_sm">0dp</dimen>
     <dimen name="radius_md">0dp</dimen>

@@ -393,6 +393,9 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         viewModel.getMarketRuntimeSnapshotLiveData().observe(lifecycleOwner, snapshot -> {
             renderMarketIfNeeded();
         });
+        viewModel.getMarketTruthSnapshotLiveData().observe(lifecycleOwner, snapshot -> {
+            renderMarketIfNeeded();
+        });
         viewModel.getRecords().observe(lifecycleOwner, records -> {
             recentRecordsSource = records == null ? Collections.emptyList() : records;
             renderRecentRecords();

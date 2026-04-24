@@ -41,6 +41,7 @@ public class MarketMonitorPageRuntimeSourceTest {
         );
 
         assertTrue(source.contains("viewModel.getMarketRuntimeSnapshotLiveData().observe(lifecycleOwner"));
+        assertTrue(source.contains("viewModel.getMarketTruthSnapshotLiveData().observe(lifecycleOwner"));
         assertTrue(source.contains("renderMarketIfNeeded();"));
         assertFalse(source.contains("viewModel.getMarketRuntimeSnapshotLiveData().getValue()"));
         assertFalse(source.contains("viewModel.getDisplayPrices().observe(lifecycleOwner"));

@@ -42,16 +42,28 @@ function renderComponents(components) {
         const detail = state.details ? JSON.stringify(state.details, null, 2) : '';
         card.innerHTML = `
             <div class="card-top">
-                <div class="card-title">${component.label || key}</div>
-                <span class="badge ${state.running ? 'running' : 'stopped'}">${state.statusText || '未知'}</span>
+                <div class="card-title"></div>
+                <span class="badge ${state.running ? 'running' : 'stopped'}"></span>
             </div>
-            <div class="card-detail">${detail ? detail.replace(/</g, '&lt;') : '暂无详细信息'}</div>
+            <div class="card-detail"></div>
             <div class="card-actions">
                 <button class="secondary-btn" data-target="${key}" data-action="start" ${actions.start ? '' : 'disabled'}>启动</button>
                 <button class="secondary-btn" data-target="${key}" data-action="stop" ${actions.stop ? '' : 'disabled'}>停止</button>
                 <button class="primary-btn" data-target="${key}" data-action="restart" ${actions.restart ? '' : 'disabled'}>重启</button>
             </div>
         `;
+        const titleNode = card.querySelector('.card-title');
+        const badgeNode = card.querySelector('.badge');
+        const detailNode = card.querySelector('.card-detail');
+        if (titleNode) {
+            titleNode.textContent = component.label || key;
+        }
+        if (badgeNode) {
+            badgeNode.textContent = state.statusText || '未知';
+        }
+        if (detailNode) {
+            detailNode.textContent = detail || '暂无详细信息';
+        }
         componentGrid.appendChild(card);
     });
 }

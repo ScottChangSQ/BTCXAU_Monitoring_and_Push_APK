@@ -85,6 +85,21 @@ public class EquityCurveViewSourceTest {
                 source.contains("return Math.max(top + dp(9f), Math.min(bottom - dp(2f), y + dp(3f)));"));
     }
 
+    @Test
+    public void equityCurveShouldRespectSharedViewportRangeForDrawingAndTouch() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java",
+                "src/main/java/com/binance/monitor/ui/account/EquityCurveView.java"
+        );
+
+        assertTrue("主图需要显式接收共享 viewport，避免继续只按最后真实点做横轴范围",
+                source.contains("public void setViewport(long startTs, long endTs)"));
+        assertTrue("主图绘制横轴起点应优先使用共享 viewportStartTs",
+                source.contains("chartStartTs = viewportStartTs > 0L ? viewportStartTs : points.get(0).getTimestamp();"));
+        assertTrue("主图绘制横轴终点应优先使用共享 viewportEndTs",
+                source.contains("chartEndTs = viewportEndTs > chartStartTs ? viewportEndTs : points.get(points.size() - 1).getTimestamp();"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

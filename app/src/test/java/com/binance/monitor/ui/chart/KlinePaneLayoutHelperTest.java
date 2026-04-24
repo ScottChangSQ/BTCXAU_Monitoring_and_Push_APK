@@ -29,4 +29,21 @@ public class KlinePaneLayoutHelperTest {
         assertEquals(layout.stoch.bottom, layout.rsi.top, 1e-4f);
         assertEquals(layout.rsi.bottom, layout.kdj.top, 1e-4f);
     }
+
+    @Test
+    public void computeShouldGiveMacdAndStochMoreHeightThanPreviousLayout() {
+        KlinePaneLayoutHelper.PaneLayout layout = KlinePaneLayoutHelper.compute(
+                0f,
+                100f,
+                true,
+                true,
+                true,
+                false,
+                false
+        );
+
+        assertTrue(layout.macd.height() > 12.69f);
+        assertTrue(layout.stoch.height() > 12.69f);
+        assertEquals(100f, layout.stoch.bottom, 1e-4f);
+    }
 }
