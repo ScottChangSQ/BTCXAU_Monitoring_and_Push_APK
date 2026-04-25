@@ -49,6 +49,7 @@ import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
 import com.binance.monitor.ui.chart.MarketChartTradeSupport;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
+import com.binance.monitor.ui.runtime.ScreenDependencyProvider;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.ui.trade.BatchTradeCoordinator;
 import com.binance.monitor.ui.trade.TradeAuditStore;
@@ -67,7 +68,6 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public final class AccountPositionPageController {
 
@@ -75,6 +75,7 @@ public final class AccountPositionPageController {
     private final ContentAccountPositionBinding binding;
     @Nullable
     private final BottomNavBinding bottomNavBinding;
+    private final ScreenDependencyProvider dependencyProvider;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AccountStatsPreloadManager.CacheListener cacheListener = this::handleCacheChanged;
 
@@ -107,9 +108,17 @@ public final class AccountPositionPageController {
     public AccountPositionPageController(@NonNull Host host,
                                          @NonNull ContentAccountPositionBinding binding,
                                          @Nullable BottomNavBinding bottomNavBinding) {
+        this(host, binding, bottomNavBinding, ScreenDependencyProvider.defaultProvider());
+    }
+
+    public AccountPositionPageController(@NonNull Host host,
+                                         @NonNull ContentAccountPositionBinding binding,
+                                         @Nullable BottomNavBinding bottomNavBinding,
+                                         @NonNull ScreenDependencyProvider dependencyProvider) {
         this.host = host;
         this.binding = binding;
         this.bottomNavBinding = bottomNavBinding;
+        this.dependencyProvider = dependencyProvider;
     }
 
     // 首次装配账户持仓页，建立依赖、静态 UI 和初始数据链。
@@ -156,8 +165,8 @@ public final class AccountPositionPageController {
                 }
         );
         tradeHistoryBottomSheetController = new AccountTradeHistoryBottomSheetController(host.requireActivity());
-        uiModelExecutor = Executors.newSingleThreadExecutor();
-        tradeExecutor = Executors.newSingleThreadExecutor();
+        uiModelExecutor = dependencyProvider.createSingleThreadExecutor("account-position-ui");
+        tradeExecutor = dependencyProvider.createSingleThreadExecutor("account-position-trade");
         tradeExecutionCoordinator = createTradeExecutionCoordinator();
         batchTradeCoordinator = createBatchTradeCoordinator();
         batchActionDialogCoordinator = new TradeBatchActionDialogCoordinator(

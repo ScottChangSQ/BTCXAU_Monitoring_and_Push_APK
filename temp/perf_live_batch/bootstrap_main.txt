@@ -1,7 +1,0 @@
-Starting: Intent { cmp=com.binance.monitor/.ui.main.MainActivity }
-Status: ok
-LaunchState: WARM
-Activity: com.binance.monitor/.ui.main.MainActivity
-TotalTime: 143
-WaitTime: 149
-Complete

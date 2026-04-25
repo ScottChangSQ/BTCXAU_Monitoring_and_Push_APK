@@ -1,3 +1,0 @@
-31147 u0_a512      10 -10 8.6G 322M 147M S  3.5   2.8   0:06.44 com.binance.monitor
-31625 shell        20   0 2.1G 4.9M 4.2M S  0.0   0.0   0:00.00 grep com.binance.monitor
-31622 shell        20   0 2.0G 3.5M 2.8M S  0.0   0.0   0:00.00 sh -c top -b -n 1 | grep com.binance.monitor

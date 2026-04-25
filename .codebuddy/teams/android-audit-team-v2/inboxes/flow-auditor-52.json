@@ -1,0 +1,11 @@
+[
+  {
+    "id": "msg-1777095755511-pgd8lh",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "【审计团队协调通知】\n\n各位Agent，多Agent审计任务已正式启动。\n\n当前团队组成：\n- 架构分析：arch-analyst-54, arch-analyst-53, arch-analyst-52\n- 流程审计：flow-auditor-54, flow-auditor-53, flow-auditor-52\n- 代码质量：quality-scanner-54, quality-scanner-53, quality-scanner-52\n- Bug扫描：bug-scanner-54, bug-scanner-53, bug-scanner-52\n- Reviewer：reviewer-54, reviewer-53, reviewer-52\n\n任务要求：\n1. 分析Agent请尽快完成各自任务并输出详细报告\n2. 报告必须包含：具体代码位置（文件路径+行号）、问题描述、修复建议\n3. 完成后请通过send_message向所有Reviewer发送报告摘要\n4. Reviewer在收到报告后进行交叉复核\n\n项目路径：E:/Github/BTCXAU_Monitoring_and_Push_APK/\n重点关注：MainActivity.java, MonitorService.java, FloatingWindowManager.java, BinanceApiClient.java\n\n祝工作顺利！",
+    "timestamp": "2026-04-25T05:42:35.511Z",
+    "read": true
+  }
+]

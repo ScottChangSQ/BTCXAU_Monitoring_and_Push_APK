@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -43,6 +44,7 @@ import java.util.ArrayList;
 import java.util.List;
 public class FloatingWindowManager {
     private static final long DRAG_FRAME_INTERVAL_MS = 12L;
+    private static final String TAG = "FloatingWindowManager";
 
     private final Context context;
     private final WindowManager windowManager;
@@ -200,7 +202,8 @@ public class FloatingWindowManager {
         }
         try {
             windowManager.removeViewImmediate(binding.getRoot());
-        } catch (Exception ignored) {
+        } catch (Exception exception) {
+            Log.w(TAG, "removeViewImmediate failed", exception);
         } finally {
             windowAdded = false;
         }
@@ -633,7 +636,8 @@ public class FloatingWindowManager {
         layoutParams.height = root.getMeasuredHeight();
         try {
             windowManager.updateViewLayout(root, layoutParams);
-        } catch (Exception ignored) {
+        } catch (Exception exception) {
+            Log.w(TAG, "requestImmediateWindowRelayout failed", exception);
         }
     }
 
@@ -646,7 +650,8 @@ public class FloatingWindowManager {
         if (windowAdded && binding != null) {
             try {
                 windowManager.updateViewLayout(binding.getRoot(), layoutParams);
-            } catch (Exception ignored) {
+            } catch (Exception exception) {
+                Log.w(TAG, "applyWindowAlpha failed", exception);
             }
         }
     }
@@ -860,7 +865,8 @@ public class FloatingWindowManager {
                             lastDragLayoutAt = now;
                             lastDragLayoutX = targetX;
                             lastDragLayoutY = targetY;
-                        } catch (Exception ignored) {
+                        } catch (Exception exception) {
+                            Log.w(TAG, "drag layout update failed", exception);
                         }
                     }
                     draggingWindow = true;
@@ -874,7 +880,8 @@ public class FloatingWindowManager {
                         layoutParams.y = Math.max(0, downY + Math.round(event.getRawY() - rawY));
                         try {
                             windowManager.updateViewLayout(binding.getRoot(), layoutParams);
-                        } catch (Exception ignored) {
+                        } catch (Exception exception) {
+                            Log.w(TAG, "drag release layout update failed", exception);
                         }
                     }
                     boolean wasDragging = draggingWindow;

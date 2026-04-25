@@ -45,7 +45,6 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
                 chartBinding
         );
         screen.initialize();
-        screen.onNewIntent(requireActivity().getIntent());
         pageRuntime = new MarketChartPageRuntime(new MarketChartPageRuntime.Host() {
                     @NonNull
                     @Override
@@ -340,6 +339,7 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
                     }
                 });
         screen.attachPageRuntime(pageRuntime);
+        screen.onNewIntent(requireActivity().getIntent());
         pageController = new MarketChartPageController(new MarketChartPageHostDelegate(
                 pageRuntime),
                 chartBinding,

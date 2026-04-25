@@ -97,6 +97,7 @@ public final class AccountStatsPageRuntime implements AccountStatsPageHostDelega
         disableSnapshotLoop();
         clearScheduledRefresh();
         host.dismissActiveLoginDialog();
+        host.detachForegroundRefresh();
         host.clearDestroyCallbacks();
         host.shutdownExecutors();
     }

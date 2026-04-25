@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+@Deprecated
 public class PositionAdapter extends RecyclerView.Adapter<PositionAdapter.Holder> {
 
     private final List<PositionItem> items = new ArrayList<>();

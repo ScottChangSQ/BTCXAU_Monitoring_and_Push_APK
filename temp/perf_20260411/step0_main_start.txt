@@ -1,8 +1,0 @@
-Starting: Intent { flg=0x24000000 cmp=com.binance.monitor/.ui.main.MainActivity }
-Warning: Activity not started, its current task has been brought to the front
-Status: ok
-LaunchState: HOT
-Activity: com.binance.monitor/.ui.main.MainActivity
-TotalTime: 66
-WaitTime: 67
-Complete

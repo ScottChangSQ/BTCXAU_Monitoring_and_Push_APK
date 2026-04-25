@@ -877,13 +877,12 @@ public class AccountStatsPreloadManager {
     private void clearStoredSnapshotForResolvedIdentity() {
         String[] identity = resolveStorageIdentity();
         if (identity == null) {
-            clearStoredSnapshotForIdentity("", "");
             return;
         }
         clearStoredSnapshotForIdentity(identity[0], identity[1]);
     }
 
-    // 统一按指定身份清理持久化快照，空身份时退化为全量清理。
+    // 统一按指定身份清理持久化快照；调用方需要先确保传入的是明确身份。
     private void clearStoredSnapshotForIdentity(String account, String server) {
         if (account == null || server == null || account.trim().isEmpty() || server.trim().isEmpty()) {
             accountStorageRepository.clearRuntimeSnapshot();

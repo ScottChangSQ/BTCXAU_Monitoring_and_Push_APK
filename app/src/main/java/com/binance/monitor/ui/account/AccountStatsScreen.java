@@ -99,6 +99,7 @@ import com.binance.monitor.ui.rules.IndicatorId;
 import com.binance.monitor.ui.rules.IndicatorPresentation;
 import com.binance.monitor.ui.rules.IndicatorPresentationPolicy;
 import com.binance.monitor.ui.rules.IndicatorRegistry;
+import com.binance.monitor.ui.runtime.ScreenDependencyProvider;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.SpacingTokenResolver;
 import com.binance.monitor.ui.theme.TextAppearanceScaleResolver;
@@ -130,7 +131,6 @@ import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     public static final String EXTRA_OPEN_LOGIN_DIALOG = "com.binance.monitor.ui.account.extra.OPEN_LOGIN_DIALOG";
@@ -216,22 +216,30 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
 
     private ContentAccountStatsBinding binding;
     private AppCompatActivity activity;
+    private final ScreenDependencyProvider dependencyProvider;
 
 
     AccountStatsScreen(@NonNull AppCompatActivity activity,
                        @NonNull ContentAccountStatsBinding binding) {
+        this(activity, binding, ScreenDependencyProvider.defaultProvider());
+    }
+
+    AccountStatsScreen(@NonNull AppCompatActivity activity,
+                       @NonNull ContentAccountStatsBinding binding,
+                       @NonNull ScreenDependencyProvider dependencyProvider) {
         super(activity, activity.getTheme());
         this.activity = activity;
         this.binding = binding;
+        this.dependencyProvider = dependencyProvider;
     }
 
     void initialize() {
         preloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
-        accountStorageRepository = new AccountStorageRepository(getApplicationContext());
+        accountStorageRepository = dependencyProvider.createAccountStorageRepository(getApplicationContext());
         logManager = LogManager.getInstance(getApplicationContext());
-        ioExecutor = Executors.newSingleThreadExecutor();
-        sessionExecutor = Executors.newSingleThreadExecutor();
-        sessionClient = new GatewayV2SessionClient(getApplicationContext());
+        ioExecutor = dependencyProvider.createSingleThreadExecutor("account-stats-io");
+        sessionExecutor = dependencyProvider.createSingleThreadExecutor("account-stats-session");
+        sessionClient = dependencyProvider.createSessionClient(getApplicationContext());
         secureSessionPrefs = new SecureSessionPrefs(getApplicationContext());
         sessionCredentialEncryptor = new SessionCredentialEncryptor();
         sessionStateMachine = new AccountSessionStateMachine();

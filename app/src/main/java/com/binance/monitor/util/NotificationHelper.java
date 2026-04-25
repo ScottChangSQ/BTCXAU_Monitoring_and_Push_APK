@@ -7,7 +7,6 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
-import android.service.notification.StatusBarNotification;
 
 import androidx.core.app.NotificationCompat;
 
@@ -73,38 +72,10 @@ public class NotificationHelper {
                 .build();
     }
 
-    // 更新前台服务通知内容，但不撤销服务身份。
-    public void updateServiceNotification(String connectionState, boolean monitoringEnabled) {
-        if (manager == null) {
-            return;
-        }
-        manager.notify(
-                AppConstants.SERVICE_NOTIFICATION_ID,
-                buildServiceNotification(connectionState, monitoringEnabled)
-        );
-    }
-
     public void cancelServiceNotification() {
         if (manager != null) {
             manager.cancel(AppConstants.SERVICE_NOTIFICATION_ID);
         }
-    }
-
-    // 判断服务通知是否已经真正进入系统通知列表，供服务在正确时机收起常驻通知。
-    public boolean hasServiceNotification() {
-        if (manager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return false;
-        }
-        StatusBarNotification[] notifications = manager.getActiveNotifications();
-        if (notifications == null || notifications.length == 0) {
-            return false;
-        }
-        for (StatusBarNotification notification : notifications) {
-            if (notification != null && notification.getId() == AppConstants.SERVICE_NOTIFICATION_ID) {
-                return true;
-            }
-        }
-        return false;
     }
 
     public void notifyAbnormalAlert(String title, String content, int notificationId) {

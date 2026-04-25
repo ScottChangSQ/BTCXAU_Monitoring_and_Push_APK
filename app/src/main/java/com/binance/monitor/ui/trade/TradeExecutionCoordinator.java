@@ -27,6 +27,13 @@ import java.util.List;
 import java.util.Locale;
 
 public class TradeExecutionCoordinator {
+    private enum TradeActionType {
+        MODIFY_PRICE,
+        PENDING_ORDER,
+        MARKET_EXECUTION,
+        UNKNOWN
+    }
+
     private final TradeGateway tradeGateway;
     private final AccountRefreshGateway accountRefreshGateway;
     private final TradeConfirmDialogController confirmDialogController;
@@ -611,7 +618,8 @@ public class TradeExecutionCoordinator {
             return false;
         }
         String action = command == null ? "" : safe(command.getAction()).toUpperCase(Locale.ROOT);
-        if (isModifyPriceAction(action)) {
+        TradeActionType actionType = resolveActionType(action);
+        if (actionType == TradeActionType.MODIFY_PRICE) {
             return hasTrackedPriceItemChanged(receiptReference,
                     baselinePositions,
                     latestPositions,
@@ -620,13 +628,13 @@ public class TradeExecutionCoordinator {
                     positionsChanged,
                     pendingOrdersChanged);
         }
-        if (isPendingOrderAction(action)) {
+        if (actionType == TradeActionType.PENDING_ORDER) {
             if (receiptReference.hasReference()) {
                 return receiptTransitionMatched;
             }
             return pendingOrdersChanged;
         }
-        if (isMarketExecutionAction(action)) {
+        if (actionType == TradeActionType.MARKET_EXECUTION) {
             if (receiptReference.hasReference()) {
                 return receiptTransitionMatched;
             }
@@ -638,30 +646,22 @@ public class TradeExecutionCoordinator {
         return anyChanged;
     }
 
-    // 判断是否属于改单、改价、改止盈止损这类动作。
-    private boolean isModifyPriceAction(String action) {
-        return action.contains("MODIFY")
-                || action.contains("UPDATE")
-                || action.contains("SLTP")
-                || action.contains("TAKE_PROFIT")
-                || action.contains("STOP_LOSS");
-    }
-
-    // 判断是否属于挂单相关动作。
-    private boolean isPendingOrderAction(String action) {
-        return action.contains("PENDING")
-                || action.contains("ORDER")
-                || action.contains("LIMIT")
-                || action.contains("STOP")
-                || action.contains("DELETE");
-    }
-
-    // 判断是否属于市价成交或平仓相关动作。
-    private boolean isMarketExecutionAction(String action) {
-        return action.contains("OPEN")
-                || action.contains("CLOSE")
-                || action.contains("MARKET")
-                || action.contains("PARTIAL");
+    // 用显式动作枚举替代字符串 contains，避免未知动作被误归类。
+    @NonNull
+    private TradeActionType resolveActionType(@Nullable String action) {
+        String normalizedAction = safe(action).toUpperCase(Locale.ROOT);
+        if ("MODIFY_TPSL".equals(normalizedAction) || "PENDING_MODIFY".equals(normalizedAction)) {
+            return TradeActionType.MODIFY_PRICE;
+        }
+        if ("PENDING_ADD".equals(normalizedAction) || "PENDING_CANCEL".equals(normalizedAction)) {
+            return TradeActionType.PENDING_ORDER;
+        }
+        if ("OPEN_MARKET".equals(normalizedAction)
+                || "CLOSE_POSITION".equals(normalizedAction)
+                || "CLOSE_BY".equals(normalizedAction)) {
+            return TradeActionType.MARKET_EXECUTION;
+        }
+        return TradeActionType.UNKNOWN;
     }
 
     // 统一规整金额或百分比展示，避免仅格式变化就误判成状态变化。

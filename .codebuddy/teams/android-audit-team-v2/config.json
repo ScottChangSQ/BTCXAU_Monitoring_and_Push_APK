@@ -1,0 +1,93 @@
+{
+  "name": "android-audit-team-v2",
+  "leadAgentId": "bb5d11d2d24b4a16bd781a1e3721e73a",
+  "workspacePath": "e:/Github/BTCXAU_Monitoring_and_Push_APK",
+  "createdAt": "2026-04-25T05:39:38.322Z",
+  "options": {
+    "workspacePath": "e:/Github/BTCXAU_Monitoring_and_Push_APK",
+    "isAutoTeam": false
+  },
+  "members": [
+    {
+      "memberId": "team-lead@android-audit-team-v2",
+      "name": "team-lead",
+      "role": "Team Lead - coordinates the team and interacts with the user"
+    },
+    {
+      "memberId": "arch-analyst-54@android-audit-team-v2",
+      "name": "arch-analyst-54",
+      "role": "架构分析-GPT5.4"
+    },
+    {
+      "memberId": "arch-analyst-52@android-audit-team-v2",
+      "name": "arch-analyst-52",
+      "role": "架构分析-GPT5.2"
+    },
+    {
+      "memberId": "flow-auditor-54@android-audit-team-v2",
+      "name": "flow-auditor-54",
+      "role": "流程审计-GPT5.4"
+    },
+    {
+      "memberId": "arch-analyst-53@android-audit-team-v2",
+      "name": "arch-analyst-53",
+      "role": "架构分析-GPT5.3"
+    },
+    {
+      "memberId": "flow-auditor-52@android-audit-team-v2",
+      "name": "flow-auditor-52",
+      "role": "流程审计-GPT5.2"
+    },
+    {
+      "memberId": "flow-auditor-53@android-audit-team-v2",
+      "name": "flow-auditor-53",
+      "role": "流程审计-GPT5.3"
+    },
+    {
+      "memberId": "quality-scanner-54@android-audit-team-v2",
+      "name": "quality-scanner-54",
+      "role": "代码质量扫描-GPT5.4"
+    },
+    {
+      "memberId": "quality-scanner-52@android-audit-team-v2",
+      "name": "quality-scanner-52",
+      "role": "代码质量扫描-GPT5.2"
+    },
+    {
+      "memberId": "quality-scanner-53@android-audit-team-v2",
+      "name": "quality-scanner-53",
+      "role": "代码质量扫描-GPT5.3"
+    },
+    {
+      "memberId": "bug-scanner-54@android-audit-team-v2",
+      "name": "bug-scanner-54",
+      "role": "Bug扫描-GPT5.4"
+    },
+    {
+      "memberId": "bug-scanner-53@android-audit-team-v2",
+      "name": "bug-scanner-53",
+      "role": "Bug扫描-GPT5.3"
+    },
+    {
+      "memberId": "bug-scanner-52@android-audit-team-v2",
+      "name": "bug-scanner-52",
+      "role": "Bug扫描-GPT5.2"
+    },
+    {
+      "memberId": "reviewer-54@android-audit-team-v2",
+      "name": "reviewer-54",
+      "role": "Reviewer-GPT5.4"
+    },
+    {
+      "memberId": "reviewer-53@android-audit-team-v2",
+      "name": "reviewer-53",
+      "role": "Reviewer-GPT5.3"
+    },
+    {
+      "memberId": "reviewer-52@android-audit-team-v2",
+      "name": "reviewer-52",
+      "role": "Reviewer-GPT5.2"
+    }
+  ],
+  "isAutoTeam": false
+}

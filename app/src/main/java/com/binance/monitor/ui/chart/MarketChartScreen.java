@@ -90,6 +90,7 @@ import com.binance.monitor.ui.chart.runtime.ChartRefreshEvent;
 import com.binance.monitor.ui.chart.runtime.ChartRefreshScheduler;
 import com.binance.monitor.ui.host.GlobalStatusBottomSheetController;
 import com.binance.monitor.ui.main.MainActivity;
+import com.binance.monitor.ui.runtime.ScreenDependencyProvider;
 import com.binance.monitor.ui.settings.SettingsActivity;
 import com.binance.monitor.ui.theme.SpacingTokenResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
@@ -121,7 +122,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 final class MarketChartScreen extends android.view.ContextThemeWrapper {
@@ -235,15 +235,24 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private ActivityMarketChartBinding binding;
     private AppCompatActivity activity;
     private final LifecycleOwner lifecycleOwner;
+    private final ScreenDependencyProvider dependencyProvider;
 
 
     MarketChartScreen(@NonNull AppCompatActivity activity,
                       @NonNull LifecycleOwner lifecycleOwner,
                       @NonNull ActivityMarketChartBinding binding) {
+        this(activity, lifecycleOwner, binding, ScreenDependencyProvider.defaultProvider());
+    }
+
+    MarketChartScreen(@NonNull AppCompatActivity activity,
+                      @NonNull LifecycleOwner lifecycleOwner,
+                      @NonNull ActivityMarketChartBinding binding,
+                      @NonNull ScreenDependencyProvider dependencyProvider) {
         super(activity, activity.getTheme());
         this.activity = activity;
         this.lifecycleOwner = lifecycleOwner;
         this.binding = binding;
+        this.dependencyProvider = dependencyProvider;
     }
 
     void initialize() {
@@ -255,9 +264,9 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         gatewayV2TradeClient = new GatewayV2TradeClient(activity);
         monitorRepository = MonitorRepository.getInstance(getApplicationContext());
         historyRepairCoordinator = new HistoryRepairCoordinator(monitorRepository, gatewayV2Client);
-        ioExecutor = Executors.newFixedThreadPool(2);
+        ioExecutor = dependencyProvider.createFixedThreadPool("market-chart-io", 2);
         chartHistoryRepository = new ChartHistoryRepository(activity);
-        accountStorageRepository = new AccountStorageRepository(getApplicationContext());
+        accountStorageRepository = dependencyProvider.createAccountStorageRepository(getApplicationContext());
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(getApplicationContext());
         abnormalRecordManager = AbnormalRecordManager.getInstance(getApplicationContext());
         secureSessionPrefs = new SecureSessionPrefs(getApplicationContext());

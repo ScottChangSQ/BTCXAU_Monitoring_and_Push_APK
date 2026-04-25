@@ -1,1 +1,0 @@
-  mCurrentFocus=Window{b950571 u0 com.binance.monitor/com.binance.monitor.ui.account.AccountStatsBridgeActivity}

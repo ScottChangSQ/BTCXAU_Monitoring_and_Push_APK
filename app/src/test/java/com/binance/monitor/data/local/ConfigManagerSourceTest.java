@@ -1,5 +1,5 @@
 /*
- * 配置中心源码约束测试，确保旧的 HTTP 网关地址不会继续作为正式入口保留下来。
+ * 配置中心源码约束测试，确保配置入口与持久化真值一致。
  */
 package com.binance.monitor.data.local;
 
@@ -15,20 +15,19 @@ import java.nio.file.Paths;
 public class ConfigManagerSourceTest {
 
     @Test
-    public void gatewayConfigShouldPinGatewayToCanonicalEntry() throws Exception {
+    public void gatewayConfigShouldReadAndWriteGatewayFromPreferences() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/data/local/ConfigManager.java",
                 "src/main/java/com/binance/monitor/data/local/ConfigManager.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue("读取配置时应把持久化值强制收口到唯一入口",
-                source.contains("preferences.edit().putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL).apply();"));
-        assertTrue("读取配置时应直接返回唯一入口常量",
-                source.contains("return AppConstants.MT5_GATEWAY_BASE_URL;"));
-        assertTrue("写入配置时不应再接受自定义入口",
-                source.contains("public void setMt5GatewayBaseUrl(String baseUrl) {")
-                        && source.contains("preferences.edit()")
-                        && source.contains(".putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL)"));
+        assertTrue("读取配置时应直接从 SharedPreferences 读取网关地址",
+                source.contains("return preferences.getString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL);"));
+        assertTrue("写入配置时应先做空白裁剪，再决定回退默认值",
+                source.contains("String normalized = baseUrl == null ? \"\" : baseUrl.trim();")
+                        && source.contains("String target = normalized.isEmpty() ? AppConstants.MT5_GATEWAY_BASE_URL : normalized;"));
+        assertTrue("写入配置时应把最终网关地址写入 SharedPreferences",
+                source.contains("preferences.edit().putString(KEY_MT5_GATEWAY_URL, target).apply();"));
     }
 
     @Test

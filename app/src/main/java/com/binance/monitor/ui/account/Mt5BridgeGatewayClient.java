@@ -128,22 +128,22 @@ public class Mt5BridgeGatewayClient {
 
         SnapshotResult liveResult = fetchScope(range, LIVE_SCOPE, LIVE_ENDPOINT);
         if (!liveResult.isSuccess()) {
-            return fallbackToSnapshot(range, liveResult.getError());
+            return buildCompositeFailureResult(liveResult.getError());
         }
 
         SnapshotResult pendingResult = fetchScope(range, PENDING_SCOPE, PENDING_ENDPOINT);
         if (!pendingResult.isSuccess()) {
-            return fallbackToSnapshot(range, pendingResult.getError());
+            return buildCompositeFailureResult(pendingResult.getError());
         }
 
         SnapshotResult tradesResult = fetchScope(range, TRADES_SCOPE, TRADES_ENDPOINT);
         if (!tradesResult.isSuccess()) {
-            return fallbackToSnapshot(range, tradesResult.getError());
+            return buildCompositeFailureResult(tradesResult.getError());
         }
 
         SnapshotResult curveResult = fetchScope(range, CURVE_SCOPE, CURVE_ENDPOINT);
         if (!curveResult.isSuccess()) {
-            return fallbackToSnapshot(range, curveResult.getError());
+            return buildCompositeFailureResult(curveResult.getError());
         }
 
         SnapshotResult result = new SnapshotResult();
@@ -171,15 +171,14 @@ public class Mt5BridgeGatewayClient {
         return syncSeqByRequestKey.containsKey(requestKey) && syncSeqByRequestKey.get(requestKey) != null;
     }
 
-    private SnapshotResult fallbackToSnapshot(AccountTimeRange range, String reason) {
+    private SnapshotResult buildCompositeFailureResult(@Nullable String reason) {
         synchronized (syncLock) {
             resetSyncStateLocked();
         }
-        SnapshotResult fallback = fetchScope(range, SNAPSHOT_SCOPE, SNAPSHOT_ENDPOINT);
-        if (!fallback.isSuccess() && reason != null && !reason.trim().isEmpty()) {
-            fallback.error = reason + " ; " + fallback.getError();
-        }
-        return fallback;
+        SnapshotResult failed = new SnapshotResult();
+        failed.success = false;
+        failed.error = reason == null ? "" : reason.trim();
+        return failed;
     }
 
     private SnapshotResult fetchScope(AccountTimeRange range, String scope, String endpointPath) {
@@ -374,12 +373,20 @@ public class Mt5BridgeGatewayClient {
             if (body.isEmpty()) {
                 return false;
             }
-            return body.contains("\"gatewayMode\"")
-                    || body.contains("\"mt5PackageAvailable\"")
-                    || body.contains("\"ok\"");
+            return isGatewayHealthPayload(new JSONObject(body));
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    private boolean isGatewayHealthPayload(@Nullable JSONObject payload) {
+        if (payload == null) {
+            return false;
+        }
+        return payload.has("ok")
+                && payload.has("gatewayMode")
+                && payload.has("mt5PackageAvailable")
+                && payload.optBoolean("ok", false);
     }
 
     private List<String> buildLanHostCandidates(SubnetInfo subnet) {

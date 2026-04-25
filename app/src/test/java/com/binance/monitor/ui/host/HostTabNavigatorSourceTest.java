@@ -44,4 +44,15 @@ public class HostTabNavigatorSourceTest {
 
         assertTrue(source.contains("targetFragment = fragment;"));
     }
+
+    @Test
+    public void accountStatsScreenShouldRequestSessionClientFromDependencyProvider() throws Exception {
+        String source = new String(Files.readAllBytes(
+                Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java")
+        ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("ScreenDependencyProvider"));
+        assertTrue(source.contains("dependencyProvider.createSessionClient(getApplicationContext())"));
+        assertFalse(source.contains("new GatewayV2SessionClient(getApplicationContext())"));
+    }
 }

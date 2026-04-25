@@ -104,14 +104,22 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
-    public void monitorServiceShouldSuppressPersistentForegroundNotificationAfterStartup() throws Exception {
+    public void monitorServiceShouldKeepForegroundNotificationUntilServiceDestroy() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
         );
 
-        assertTrue("监控服务应提供单独的常驻通知收口入口，避免状态栏长期保留运行中通知",
+        assertFalse("MonitorService 不应再保留启动后收起常驻通知的旧链 runnable",
+                source.contains("private final Runnable suppressForegroundNotificationRunnable"));
+        assertFalse("MonitorService 不应再保留 suppressForegroundNotification 旧入口",
                 source.contains("private void suppressForegroundNotification() {"));
+        assertFalse("MonitorService 不应再保留 requestSuppressForegroundNotification 旧入口",
+                source.contains("private void requestSuppressForegroundNotification() {"));
+        assertTrue("前台服务入口应真正调用 startForeground",
+                source.contains("startForeground(notificationId, notification);"));
+        assertTrue("服务退出时应调用 stopForeground(true) 收口前台状态",
+                source.contains("stopForeground(true);"));
     }
 
     @Test
@@ -139,7 +147,7 @@ public class MonitorServiceSourceTest {
     }
 
     @Test
-    public void startupShouldLogResolvedGatewayAddresses() throws Exception {
+    public void startupShouldNotKeepGatewayAddressDiagnosticPlaceholder() throws Exception {
         String source = readUtf8(
                 "app/src/main/java/com/binance/monitor/service/MonitorService.java",
                 "src/main/java/com/binance/monitor/service/MonitorService.java"
@@ -147,7 +155,7 @@ public class MonitorServiceSourceTest {
 
         assertFalse("地址诊断明细日志默认应关闭，避免继续污染主链日志",
                 source.contains("APP诊断 BuildConfig MT5="));
-        assertTrue("如需专项排查，服务启动仍应统一走地址诊断入口占位",
+        assertFalse("服务不应继续保留空转的地址诊断占位调用",
                 source.contains("logResolvedGatewayAddresses();"));
     }
 

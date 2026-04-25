@@ -137,6 +137,16 @@ public class FloatingWindowManagerSourceTest {
     }
 
     @Test
+    public void floatingWindowManagerShouldNotSilentlyIgnoreWindowFailures() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertFalse(source.contains("catch (Exception ignored)"));
+    }
+
+    @Test
     public void destroyShouldCutOffAllPendingHandlerCallbacksAndReleaseViewReferences() throws Exception {
         Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
         String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)

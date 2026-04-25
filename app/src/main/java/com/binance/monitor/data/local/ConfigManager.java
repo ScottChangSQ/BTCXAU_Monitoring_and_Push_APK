@@ -127,17 +127,13 @@ public class ConfigManager {
     }
 
     public String getMt5GatewayBaseUrl() {
-        String stored = preferences.getString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL);
-        if (!AppConstants.MT5_GATEWAY_BASE_URL.equals(stored)) {
-            preferences.edit().putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL).apply();
-        }
-        return AppConstants.MT5_GATEWAY_BASE_URL;
+        return preferences.getString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL);
     }
 
     public void setMt5GatewayBaseUrl(String baseUrl) {
-        preferences.edit()
-                .putString(KEY_MT5_GATEWAY_URL, AppConstants.MT5_GATEWAY_BASE_URL)
-                .apply();
+        String normalized = baseUrl == null ? "" : baseUrl.trim();
+        String target = normalized.isEmpty() ? AppConstants.MT5_GATEWAY_BASE_URL : normalized;
+        preferences.edit().putString(KEY_MT5_GATEWAY_URL, target).apply();
     }
 
     public String getBinanceRestBaseUrl() {

@@ -331,16 +331,6 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.tvTradeSessionVolumeSummary.setTextColor(palette.textPrimary);
     }
 
-    // 保存网关地址设置。
-    private void saveMt5GatewayAddress() {
-        viewModel.setMt5GatewayBaseUrl(AppConstants.MT5_GATEWAY_BASE_URL);
-        binding.etMt5GatewayUrl.setText(AppConstants.MT5_GATEWAY_BASE_URL);
-        binding.etMt5GatewayUrl.setSelection(AppConstants.MT5_GATEWAY_BASE_URL.length());
-        AccountStatsPreloadManager.getInstance(getApplicationContext()).clearLatestCache();
-        MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
-        Toast.makeText(this, getString(R.string.mt5_gateway_saved, AppConstants.MT5_GATEWAY_BASE_URL), Toast.LENGTH_SHORT).show();
-    }
-
     // 根据分类控制可见模块。
     private void applyVisibleSection() {
         binding.cardFloatingSection.setVisibility(SettingsActivity.SECTION_DISPLAY.equals(sectionKey) ? View.VISIBLE : View.GONE);

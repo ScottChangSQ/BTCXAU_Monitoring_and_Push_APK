@@ -4,6 +4,7 @@
  */
 package com.binance.monitor.service;
 
+import android.app.Notification;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Handler;
@@ -76,7 +77,6 @@ public class MonitorService extends Service {
             scheduleConnectionWatchdog(resolveHeartbeatDelayMs());
         }
     };
-    private final Runnable suppressForegroundNotificationRunnable = this::suppressForegroundNotification;
     private final Observer<MarketTruthSnapshot> marketTruthObserver = snapshot -> handleMarketTruthChanged();
 
     private MonitorRepository repository;
@@ -97,6 +97,8 @@ public class MonitorService extends Service {
     private ExecutorService backgroundExecutorService;
     private MonitorForegroundNotificationCoordinator foregroundNotificationCoordinator;
     private MonitorFloatingCoordinator floatingCoordinator;
+    private MonitorStreamCoordinator streamCoordinator;
+    private MonitorAlertCoordinator alertCoordinator;
     private boolean pipelineStarted;
     private final V2StreamSequenceGuard v2StreamSequenceGuard = new V2StreamSequenceGuard();
     private final AtomicBoolean remoteSessionRecoveryInFlight = new AtomicBoolean(false);
@@ -135,6 +137,23 @@ public class MonitorService extends Service {
         accountRuntimeExecutorService = Executors.newSingleThreadExecutor();
         backgroundExecutorService = Executors.newSingleThreadExecutor();
         foregroundNotificationCoordinator = new MonitorForegroundNotificationCoordinator(notificationHelper, repository);
+        streamCoordinator = new MonitorStreamCoordinator(new MonitorStreamCoordinator.Host() {
+            @Override
+            public void updateConnectionStatus() {
+                MonitorService.this.updateConnectionStatus();
+            }
+
+            @Override
+            public void applyRealtimeMessage(@Nullable Object message) {
+                // 先只建立 seam，后续再把具体流消息处理迁入协调器。
+            }
+        });
+        alertCoordinator = new MonitorAlertCoordinator(new MonitorAlertCoordinator.Host() {
+            @Override
+            public void dispatchParsedServerAlert(@Nullable Object alert) {
+                // 先只建立 seam，后续再把具体提醒编排迁入协调器。
+            }
+        });
         floatingCoordinator = new MonitorFloatingCoordinator(
                 mainHandler,
                 floatingWindowManager,
@@ -166,7 +185,6 @@ public class MonitorService extends Service {
         }
         AppForegroundTracker.getInstance().addListener(appForegroundListener);
         logManager.info("服务初始化完成");
-        logResolvedGatewayAddresses();
         floatingCoordinator.applyPreferences();
     }
 
@@ -178,8 +196,13 @@ public class MonitorService extends Service {
         }
         foregroundNotificationCoordinator.ensureForeground(new MonitorForegroundNotificationCoordinator.Host() {
             @Override
-            public void suppressServiceNotification() {
-                requestSuppressForegroundNotification();
+            public void enterForeground(int notificationId, @NonNull Notification notification) {
+                startForeground(notificationId, notification);
+            }
+
+            @Override
+            public void exitForeground() {
+                stopForeground(true);
             }
         }, getCurrentConnectionStatus());
         startPipelineIfNeeded();
@@ -194,7 +217,6 @@ public class MonitorService extends Service {
                 break;
             case AppConstants.ACTION_REFRESH_CONFIG:
                 floatingCoordinator.applyPreferences();
-                logResolvedGatewayAddresses();
                 syncAbnormalConfigAsync();
                 break;
             case AppConstants.ACTION_CLEAR_ACCOUNT_RUNTIME:
@@ -252,25 +274,12 @@ public class MonitorService extends Service {
         logManager.info("服务已销毁");
     }
 
-    // 服务完成前台启动握手后立即收起常驻通知，只保留异常交易时的即时提醒。
-    private void suppressForegroundNotification() {
-        if (notificationHelper != null) {
-            notificationHelper.cancelServiceNotification();
-        }
-    }
-
     // 统一在主线程把市场真值变化转成悬浮窗刷新请求，避免 service 和 chart 各自再接一条悬浮窗市场链。
     private void handleMarketTruthChanged() {
         if (floatingCoordinator == null) {
             return;
         }
         mainHandler.post(() -> floatingCoordinator.requestRefresh(false));
-    }
-
-    // 统一在主线程下一拍清理历史服务通知，避免旧版本残留。
-    private void requestSuppressForegroundNotification() {
-        mainHandler.removeCallbacks(suppressForegroundNotificationRunnable);
-        mainHandler.post(suppressForegroundNotificationRunnable);
     }
 
     // 返回当前进程内监控服务是否已经创建完成，供入口页避免重复启动。
@@ -410,11 +419,6 @@ public class MonitorService extends Service {
                 safeHistoryRevision,
                 () -> floatingCoordinator.requestRefresh(false)
         );
-    }
-
-    // 运行态地址诊断只在专项排查时临时开启，默认不写入用户日志。
-    private void logResolvedGatewayAddresses() {
-        // no-op
     }
 
     // 应用 stream 市场快照，直接回写监控页/悬浮窗共用真值。
@@ -747,7 +751,8 @@ public class MonitorService extends Service {
             }
             try {
                 records.add(AbnormalRecord.fromJson(item));
-            } catch (Exception ignored) {
+            } catch (Exception exception) {
+                warnMalformedPayload("异常记录解析失败", exception);
             }
         }
         return records;
@@ -765,7 +770,8 @@ public class MonitorService extends Service {
             }
             try {
                 alerts.add(AbnormalAlertItem.fromJson(item));
-            } catch (Exception ignored) {
+            } catch (Exception exception) {
+                warnMalformedPayload("异常提醒解析失败", exception);
             }
         }
         return alerts;
@@ -1075,7 +1081,8 @@ public class MonitorService extends Service {
         if (value instanceof String) {
             try {
                 return Double.parseDouble(((String) value).trim());
-            } catch (Exception ignored) {
+            } catch (NumberFormatException exception) {
+                warnMalformedPayload("浮点字段解析失败: " + key, exception);
                 return 0d;
             }
         }
@@ -1118,11 +1125,22 @@ public class MonitorService extends Service {
         if (value instanceof String) {
             try {
                 return Long.parseLong(((String) value).trim());
-            } catch (Exception ignored) {
+            } catch (NumberFormatException exception) {
+                warnMalformedPayload("长整数字段解析失败: " + key, exception);
                 return fallback;
             }
         }
         return fallback;
+    }
+
+    private void warnMalformedPayload(@NonNull String message, @Nullable Exception exception) {
+        if (logManager == null) {
+            return;
+        }
+        String detail = exception == null || exception.getMessage() == null
+                ? ""
+                : " - " + exception.getMessage();
+        logManager.warn(message + detail);
     }
 
 }

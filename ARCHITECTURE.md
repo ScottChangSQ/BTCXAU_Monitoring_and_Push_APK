@@ -22,6 +22,10 @@
   悬浮窗协调器，负责悬浮窗偏好应用、刷新节流、统一快照拼装与销毁时的清理链收口；当前在 canonical account cache 存在时已开始优先消费 `UnifiedRuntimeSnapshotStore` 的产品运行态，不再重复自行聚合同一份持仓真值。市场侧刷新门槛也已改为跟随仓库里的统一市场真值签名，不再只看旧 `MarketRuntimeStore`。
 - [app/src/main/java/com/binance/monitor/service/MonitorForegroundNotificationCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorForegroundNotificationCoordinator.java)
   前台通知协调器，负责服务前台通知的启动、去重刷新和销毁时的状态复位。
+- [app/src/main/java/com/binance/monitor/service/MonitorStreamCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorStreamCoordinator.java)
+  `MonitorService` 的实时流协调 seam，当前先承接市场/账户运行态流的边界定义与宿主接口，避免服务类继续把整条 stream 链和 UI/仓库细节混写在同一文件里。
+- [app/src/main/java/com/binance/monitor/service/MonitorAlertCoordinator.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/service/MonitorAlertCoordinator.java)
+  `MonitorService` 的异常提醒协调 seam，当前先承接 alert 分发边界与宿主接口，为后续把提醒链从服务主类继续拆开预留正式入口。
 - [app/src/main/java/com/binance/monitor/data/repository/MonitorRepository.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/repository/MonitorRepository.java)
   监控展示仓库，负责承接市场 selector、连接状态、监控开关和异常记录入口；当前市场显示真值已进一步收口到 `MarketTruthCenter`，对外正式边界只保留 `MarketRuntimeSnapshot` LiveData、`MarketTruthSnapshot` LiveData，以及 `selectLatestPrice / selectClosedMinute / selectDisplayKline / selectDisplaySeries / selectMarketWindowSignature` 这组统一 selector，不再暴露旧 display snapshot 或仓库级同步快照 getter。市场补修链新增 `selectMinuteGap / buildMinuteGapEvidenceToken / shouldRetryMinuteGapRepair` 这一组缺口状态机入口，供服务层和图表页共用同一份缺口记忆。
 - [app/src/main/java/com/binance/monitor/runtime/market/truth/MarketTruthCenter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/market/truth/MarketTruthCenter.java)
@@ -36,16 +40,10 @@
   缺口补修状态存储，负责把同一缺口按 `NEW_GAP / REPAIRING / RESOLVED / STALLED / RETRY_READY` 收口成共享状态机；只有当上游证据变化时，才允许对同一缺口再次自动补修。
 - [app/src/main/java/com/binance/monitor/runtime/market/MarketRuntimeStore.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/market/MarketRuntimeStore.java)
   市场运行态真值中心，负责收口每个交易品种的 `latestPrice / latestClosedMinute / latestPatch`，并通过统一 revision 推进市场底稿版本。
-- [app/src/main/java/com/binance/monitor/runtime/market/MarketSelector.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/market/MarketSelector.java)
-  市场 selector，负责从 `MarketRuntimeStore` 导出兼容读模型；当前最新价、闭合分钟与显示分钟的正式 UI 主链已切到 `MarketTruthCenter`，这里只保留运行态兼容职责。
 - [app/src/main/java/com/binance/monitor/runtime/market/model/MarketRuntimeSnapshot.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/market/model/MarketRuntimeSnapshot.java)
   市场运行态快照，负责承载当前所有交易品种的窗口内容、市场底稿 revision 和更新时间。
 - [app/src/main/java/com/binance/monitor/runtime/market/model/SymbolMarketWindow.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/runtime/market/model/SymbolMarketWindow.java)
   单个交易品种的市场窗口真值，负责把 `latestClosedMinute` 与 `latestPatch` 固定收口在同一对象内，供 selector 统一导出展示态。
-- [app/src/main/java/com/binance/monitor/data/remote/BinanceApiClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/BinanceApiClient.java)
-  Binance REST 数据访问层，负责通过 `/binance-rest` 拉取行情；图表长周期现在固定只走 Binance REST 原生周期接口，不再切到日线聚合或历史回退链。
-- [app/src/main/java/com/binance/monitor/data/remote/FallbackKlineSocketManager.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/FallbackKlineSocketManager.java)
-  Binance 回退 K 线流管理器，负责通过韩国服务器的 `/binance-ws` 订阅 `@kline_1m`，仅在 `v2 stream` 不健康时补最新展示快照。
 - [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2Client.java)
   v2 网关客户端，负责请求 `/v2/market/*` 与 `/v2/account/*` 并把响应解析成 APP 侧统一载荷；当前也承接图表页按 `startTime/endTime` 的分页与增量补尾。`/v2/account/full` 已成为客户端强一致刷新唯一入口；`/v2/account/snapshot` 解析也已改为严格契约：缺失 `account` 对象直接报错，不再本地拼字段兜底。
 - [app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2SessionClient.java)
@@ -110,6 +108,8 @@
   账户统计页旧入口兼容桥接页，当前普通旧入口仍会立即把原始 extras 透传给主壳 `ACCOUNT_STATS` Tab；需要直接打开完整分析深页时，真实运行路径已改由 `AccountStatsScreen` 承接，`pageRuntime.Host` 也不再保留真实页面兜底分支，旧字段和旧方法暂时只用于兼容旧专项链路和源码测试。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java)
   账户统计页共享屏幕对象，负责把原先只留在旧 Activity 里的页面状态、历史刷新协调、收益表渲染和登录会话交互收口成可供 `AccountStatsFragment` 和桥接深页共同复用的真实宿主主链；当前也承接“结构分析 / 历史成交”深页目标区块自动滚动，并已接入 `PageBootstrapStateMachine` 处理“本地恢复中 / 本地已就绪远端同步 / 真正空态”的首帧状态。
+- [app/src/main/java/com/binance/monitor/ui/runtime/ScreenDependencyProvider.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/runtime/ScreenDependencyProvider.java)
+  页面层依赖提供器，负责把 `AccountStorageRepository / GatewayV2SessionClient / ExecutorService` 这类底层依赖的创建集中到单一装配点；当前 `MarketChartScreen / AccountStatsScreen / AccountPositionPageController` 已统一走这里，不再在页面类里直接 `new`。
 - [app/src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/adapter/PositionAdapterV2.java)
   当前持仓单项 adapter，负责持仓列表的折叠/展开显示、操作按钮和单行摘要；现已开始读取 `UnifiedRuntimeSnapshotStore`，并仅在“同产品只有 1 条当前持仓”时复用统一运行态的产品手数/盈亏口径。读取前会先接收页面传入的当前 `account/server` 身份，只消费同一会话下的产品运行态。
 - [app/src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/adapter/PendingOrderAdapter.java)
@@ -152,8 +152,6 @@
   账户曲线归一化工具，只负责过滤无效点、排序和按时间戳去重，不再本地补点、补值或补仓位比例。
 - [app/src/main/java/com/binance/monitor/ui/account/AccountCurveHighlightHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountCurveHighlightHelper.java)
   账户曲线共享高亮工具，负责把附图长按位置换算成统一时间点，再回查主图、回撤和日收益当前值。
-- [app/src/main/java/com/binance/monitor/ui/account/AccountConnectionTransitionHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/AccountConnectionTransitionHelper.java)
-  账户连接状态过渡工具，负责判断何时展示一次性的登录成功提示。
 - [app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/EquityCurveView.java)
   净值/结余曲线控件，负责绘制账户曲线，并用高对比样式标记当前周期下的最大回撤区间。
 - [app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java](/E:/Github/BTCXAU_Monitoring_and_Push_APK/app/src/main/java/com/binance/monitor/ui/account/CurveAnalyticsHelper.java)
@@ -287,8 +285,6 @@
   主壳根据目标 Tab 统一创建或复用常驻页面实例，不再通过底部 Tab 互相 `startActivity(...)`。
 - `MainActivity` -> `HostNavigationIntentFactory` -> `MainHostActivity`
   旧行情监控入口已退成桥接，默认直接跳到主壳 `MARKET_MONITOR` Tab。
-- `MonitorService` -> `FallbackKlineSocketManager`
-  fallback 行情流现在只保留观测用途，不再直接写主监控页和悬浮窗真值。
 - `MonitorService` -> `GatewayV2StreamClient` -> `server_v2.py /v2/stream`
   消费统一同步消息，先把 APP 的同步入口收口到 `v2 stream`。
 - `MonitorService` -> `V2StreamRefreshPlanner`
@@ -373,8 +369,6 @@
   图表页与账户页的“批量操作”入口共用同一条选择、确认与提交链，不再各自维护第二套批量交互。
 - `AccountStatsBridgeActivity` -> `AccountCurveHighlightHelper` -> `EquityCurveView` / `PositionRatioChartView` / `DrawdownChartView` / `DailyReturnChartView`
   附图长按时按共享横轴位置反推目标时间，再同步四张图的十字光标和主图弹窗数据。
-- `AccountStatsBridgeActivity` -> `AccountConnectionTransitionHelper`
-  判断账户连接是否从未连接切到已连接，决定是否播放登录成功提示。
 - `AccountStatsBridgeActivity` -> `CurveAnalyticsHelper` -> `EquityCurveView` / `DrawdownChartView` / `DailyReturnChartView` / `TradeDistributionScatterView` / `HoldingDurationDistributionView`
   先把曲线和交易记录转成统一统计结果，再驱动主图、副图和两张分布图。
 - `AccountStatsBridgeActivity` -> `AccountDeferredSnapshotRenderHelper`
@@ -416,7 +410,7 @@
 - 图表页请求计划当前按 `COLD_START / RESUME / SELECTION_CHANGE / MANUAL / AUTO_REFRESH` 显式分流，而不是继续让冷启动、切产品和自动刷新共用同一套跳过规则；原因是进入新显示上下文时必须做远端校准，但自动刷新和恢复前台在本地窗口仍新鲜时可以跳过请求。
 - 图表页自动刷新当前改成“定时检查 + revision/stale gate 决定是否真的回源”，而不是继续让 `autoRefreshRunnable` 固定频率直连远端；原因是定时器现在只该负责保活和过期判断，不应继续充当页面同步感的主要来源。
 - 运行时版本推进当前先收口为 `RuntimeRevisionCenter` 的 5 类 canonical revision，而不是继续把市场、账户、产品的刷新序号散落在各模块本地字段里；原因是后续图表、账户页、分析页和悬浮窗都要按同一 revision 语义做分区刷新，不先统一命名，后面只能继续各写各的。
-- 市场真值这一轮先收口为 `MonitorService -> MonitorRepository -> MarketRuntimeStore -> MarketSelector` 单链，而不是继续让服务层直接写 3 份展示 cache；原因是价格、最新 patch、闭合 1 分钟必须先进入同一市场底稿，旧 display map 只能做兼容镜像，不能继续充当主真值。
+- 市场真值当前继续收口为 `MonitorService -> MonitorRepository -> MarketTruthCenter` 主链，而不是继续保留旧 `MarketSelector / Binance fallback` 兼容链；原因是价格、闭合 1 分钟与多周期显示都已经有统一底稿，继续把备用链留在仓库里只会制造主链错觉。
 - 主题切换功能和 `Notion Data Desk` 主题已删除，设置页也不再保留“主题设置”入口；原因是用户明确确认该主题未达到预期，当前最小完整方案是回到单一默认主题，避免继续保留无效入口和无效配置。
 - 2026-04-16 UI 第一轮重做已落地：主壳常驻结构已收口为 `交易 / 账户 / 分析`，`设置` 改由独立目录页承接；原因是用户已明确不再需要旧版“行情概览”型首页，也不需要把低频设置入口继续占在底部常驻导航里。
 - 实盘升级先按“交易网关 -> 命令状态机 -> 强一致同步 -> 交易界面增强”四阶段推进；原因是当前项目最大缺口不在图表展示，而在没有真正的下单、校验、确认、回执和审计主链。
@@ -500,5 +494,5 @@
 - MT5 网关曲线改为“成交 + 持仓 + 价格”重放，解决净值与结余长期重合的问题。
 - 账户统计页把最大回撤、回撤附图、日收益率和交易分布统一建立在同一套净值口径上，避免不同模块口径不一致。
 - `MonitorRepository` 收口成“展示快照仓库”而不是“实时主链仓库”；原因是当前图表与账户真值已经分别切到服务端 `v2`，继续让旧名字留着，只会误导后续维护时把它当成主数据源。
-- 旧 Binance WebSocket 管理器改名为 `FallbackKlineSocketManager`，回调也统一改成 fallback 语义；原因是它现在只承担 `v2 stream` 失效时的回退输入，继续保留主链式命名会误导后续维护。
+- 已脱离当前运行主链的 `BinanceApiClient / FallbackKlineSocketManager / MarketSelector` 已归档到 `archived_file`；原因是它们不再被当前 Android 运行代码创建或调用，继续留在仓库里只会增加结构噪音和误判成本。
 - 异常交易提醒先在 App 端提升为更强系统通知；服务器端异常判断迁移后续再评估，不在本轮硬塞进去。

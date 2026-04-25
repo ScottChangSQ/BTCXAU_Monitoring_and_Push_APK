@@ -49,10 +49,35 @@ public class MonitorServiceCoordinatorSourceTest {
                 "app/src/main/java/com/binance/monitor/service/MonitorForegroundNotificationCoordinator.java",
                 "src/main/java/com/binance/monitor/service/MonitorForegroundNotificationCoordinator.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
-        assertTrue("前台通知协调器应在满足启动要求后立即收起常驻通知",
-                foregroundSource.contains("host.suppressServiceNotification();"));
-        assertFalse("常驻通知收起后不应再继续走持续刷新链路",
-                foregroundSource.contains("notificationHelper.updateServiceNotification("));
+        assertTrue("前台通知协调器应驱动服务进入前台态",
+                foregroundSource.contains("host.enterForeground(AppConstants.SERVICE_NOTIFICATION_ID, notification);"));
+        assertTrue("前台通知协调器销毁时应驱动服务退出前台态",
+                foregroundSource.contains("host.exitForeground();"));
+        assertFalse("前台通知协调器不应再保留启动后收起常驻通知的旧口径",
+                foregroundSource.contains("suppressServiceNotification"));
+    }
+
+    @Test
+    public void monitorServiceShouldDeclareDedicatedStreamAndAlertCoordinatorSeams() throws Exception {
+        assertTrue("MonitorStreamCoordinator 文件应存在",
+                exists("app/src/main/java/com/binance/monitor/service/MonitorStreamCoordinator.java",
+                        "src/main/java/com/binance/monitor/service/MonitorStreamCoordinator.java"));
+        assertTrue("MonitorAlertCoordinator 文件应存在",
+                exists("app/src/main/java/com/binance/monitor/service/MonitorAlertCoordinator.java",
+                        "src/main/java/com/binance/monitor/service/MonitorAlertCoordinator.java"));
+
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        );
+        assertTrue("MonitorService 应持有流协调器 seam",
+                source.contains("private MonitorStreamCoordinator streamCoordinator;"));
+        assertTrue("MonitorService 应持有提醒协调器 seam",
+                source.contains("private MonitorAlertCoordinator alertCoordinator;"));
+        assertTrue("MonitorService 初始化时应装配流协调器",
+                source.contains("streamCoordinator = new MonitorStreamCoordinator("));
+        assertTrue("MonitorService 初始化时应装配提醒协调器",
+                source.contains("alertCoordinator = new MonitorAlertCoordinator("));
     }
 
     private static boolean exists(String... candidates) {

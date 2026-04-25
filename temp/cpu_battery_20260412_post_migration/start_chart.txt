@@ -1,1 +1,0 @@
-Starting: Intent { cmp=com.binance.monitor/.ui.chart.MarketChartActivity }

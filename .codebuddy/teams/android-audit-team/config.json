@@ -2,7 +2,7 @@
   "name": "android-audit-team",
   "leadAgentId": "bb5d11d2d24b4a16bd781a1e3721e73a",
   "workspacePath": "e:/Github/BTCXAU_Monitoring_and_Push_APK",
-  "createdAt": "2026-04-17T07:54:14.342Z",
+  "createdAt": "2026-04-25T05:31:36.097Z",
   "options": {
     "workspacePath": "e:/Github/BTCXAU_Monitoring_and_Push_APK",
     "isAutoTeam": false
@@ -12,41 +12,6 @@
       "memberId": "team-lead@android-audit-team",
       "name": "team-lead",
       "role": "Team Lead - coordinates the team and interacts with the user"
-    },
-    {
-      "memberId": "flow-audit-core-b@android-audit-team",
-      "name": "flow-audit-core-b",
-      "role": "流程审计-核心链路-B"
-    },
-    {
-      "memberId": "flow-audit-memory-b@android-audit-team",
-      "name": "flow-audit-memory-b",
-      "role": "流程审计-内存/CPU-B"
-    },
-    {
-      "memberId": "quality-market-a@android-audit-team",
-      "name": "quality-market-a",
-      "role": "代码质量-市场模块-A"
-    },
-    {
-      "memberId": "quality-market-b@android-audit-team",
-      "name": "quality-market-b",
-      "role": "代码质量-市场模块-B"
-    },
-    {
-      "memberId": "quality-account-a@android-audit-team",
-      "name": "quality-account-a",
-      "role": "代码质量-账户模块-A"
-    },
-    {
-      "memberId": "quality-service-a@android-audit-team",
-      "name": "quality-service-a",
-      "role": "代码质量-服务模块-A"
-    },
-    {
-      "memberId": "bug-scanner-a@android-audit-team",
-      "name": "bug-scanner-a",
-      "role": "Bug扫描-Agent A"
     }
   ],
   "isAutoTeam": false

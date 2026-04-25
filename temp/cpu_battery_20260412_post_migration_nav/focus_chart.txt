@@ -1,1 +1,0 @@
-  mCurrentFocus=Window{5a768ae u0 com.binance.monitor/com.binance.monitor.ui.chart.MarketChartActivity}

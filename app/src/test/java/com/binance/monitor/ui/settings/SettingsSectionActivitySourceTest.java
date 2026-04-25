@@ -40,6 +40,8 @@ public class SettingsSectionActivitySourceTest {
                 source.contains("binding.btnSaveMt5GatewayUrl.setVisibility(View.GONE);"));
         assertFalse("设置页不应继续按用户输入保存入口",
                 source.contains("viewModel.setMt5GatewayBaseUrl(input);"));
+        assertFalse("设置页不应继续保留失效的网关保存私有方法",
+                source.contains("private void saveMt5GatewayAddress()"));
     }
 
     @Test
