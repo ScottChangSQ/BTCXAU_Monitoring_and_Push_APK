@@ -23,6 +23,7 @@ import com.binance.monitor.data.model.v2.trade.BatchTradeItem;
 import com.binance.monitor.data.model.v2.trade.BatchTradePlan;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.ui.chart.MarketChartTradeSupport;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.util.FormatUtils;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -739,7 +740,7 @@ public final class TradeBatchActionDialogCoordinator {
     private LinearLayout createFormContainer() {
         LinearLayout container = new LinearLayout(activity);
         container.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(8);
+        int padding = SpacingTokenResolver.px(activity, R.dimen.space_8);
         container.setPadding(padding, padding, padding, padding);
         return container;
     }
@@ -753,7 +754,7 @@ public final class TradeBatchActionDialogCoordinator {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.topMargin = dp(8);
+        params.topMargin = SpacingTokenResolver.px(activity, R.dimen.space_8);
         layout.setLayoutParams(params);
         return layout;
     }
@@ -764,10 +765,6 @@ public final class TradeBatchActionDialogCoordinator {
         input.setInputType(inputType);
         input.setSingleLine(true);
         return input;
-    }
-
-    private int dp(int value) {
-        return Math.round(activity.getResources().getDisplayMetrics().density * value);
     }
 
     private double parseOptionalValue(@Nullable EditText input) {

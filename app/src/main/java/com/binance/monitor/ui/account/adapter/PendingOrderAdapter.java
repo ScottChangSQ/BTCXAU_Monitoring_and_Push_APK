@@ -403,7 +403,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
                     : "0.00手");
             String pendingPriceText = formatCollapsedPendingPrice(pendingPrice);
             String summaryRaw = String.format(Locale.getDefault(),
-                    "%s|%s|%s|%s",
+                    "%s | %s | %s | %s",
                     resolveDisplayProductName(item, runtimeSnapshot),
                     sideText,
                     qtyText,
@@ -550,7 +550,7 @@ public class PendingOrderAdapter extends RecyclerView.Adapter<PendingOrderAdapte
         }
 
         private static String sideCn(String side) {
-            return "buy".equalsIgnoreCase(side) ? "买入" : ("sell".equalsIgnoreCase(side) ? "卖出" : side);
+            return "buy".equalsIgnoreCase(side) ? "买" : ("sell".equalsIgnoreCase(side) ? "卖" : side);
         }
 
         private static int resolveSideColor(@NonNull UiPaletteManager.Palette palette, String side) {

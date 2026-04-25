@@ -3,9 +3,17 @@ package com.binance.monitor.ui.trade;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
+
 import org.junit.Test;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class TradeAuditStoreTest {
 
@@ -102,5 +110,56 @@ public class TradeAuditStoreTest {
         assertEquals(2, entries.size());
         assertTrue(entries.get(0).getTraceId().equals("req-lookup"));
         assertTrue(entries.get(1).getTraceId().equals("req-lookup"));
+    }
+
+    @Test
+    public void recordShouldNotLoseEntriesUnderConcurrentWrites() throws Exception {
+        TradeAuditStore store = TradeAuditStore.createInMemory(() -> 300L);
+        int count = 32;
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        CountDownLatch ready = new CountDownLatch(count);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(count);
+
+        for (int index = 0; index < count; index++) {
+            final int current = index;
+            executor.execute(() -> {
+                ready.countDown();
+                try {
+                    start.await(2, TimeUnit.SECONDS);
+                    store.record(new TradeAuditEntry(
+                            "req-concurrent-" + current,
+                            "single",
+                            "OPEN_MARKET",
+                            "BTCUSD",
+                            "hedging",
+                            "submit",
+                            "ACCEPTED",
+                            "",
+                            "交易已受理",
+                            "买入 BTCUSD",
+                            0L,
+                            0L
+                    ));
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+
+        assertTrue(ready.await(10, TimeUnit.SECONDS));
+        start.countDown();
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        executor.shutdownNow();
+
+        List<TradeAuditEntry> recent = store.getRecent(count);
+        Set<String> traceIds = new HashSet<>();
+        for (TradeAuditEntry entry : recent) {
+            traceIds.add(entry.getTraceId());
+        }
+        assertEquals(count, recent.size());
+        assertEquals(count, traceIds.size());
     }
 }

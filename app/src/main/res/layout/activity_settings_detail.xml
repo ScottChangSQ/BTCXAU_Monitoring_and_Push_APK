@@ -122,6 +122,23 @@
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.BodyCompact" />
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/inputLayoutMt5GatewayAuthToken"
+                    style="@style/Widget.BinanceMonitor.Subject.InputField"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_12"
+                    android:hint="@string/mt5_gateway_auth_token_hint">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etMt5GatewayAuthToken"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textNoSuggestions"
+                        android:maxLines="1"
+                        android:textAppearance="@style/TextAppearance.BinanceMonitor.Body" />
+                </com.google.android.material.textfield.TextInputLayout>
+
                 <Button
                     android:id="@+id/btnSaveMt5GatewayUrl"
                     style="@style/Widget.BinanceMonitor.Subject.ActionButton.Primary"

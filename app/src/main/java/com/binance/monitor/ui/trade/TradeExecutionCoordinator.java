@@ -8,6 +8,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.binance.monitor.data.model.v2.trade.ExecutionError;
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
 import com.binance.monitor.data.model.v2.trade.TradeCheckResult;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
 import com.binance.monitor.data.model.v2.trade.TradeReceipt;
@@ -650,7 +651,9 @@ public class TradeExecutionCoordinator {
     @NonNull
     private TradeActionType resolveActionType(@Nullable String action) {
         String normalizedAction = safe(action).toUpperCase(Locale.ROOT);
-        if ("MODIFY_TPSL".equals(normalizedAction) || "PENDING_MODIFY".equals(normalizedAction)) {
+        if ("MODIFY_TPSL".equals(normalizedAction)
+                || "MODIFY_SLTP".equals(normalizedAction)
+                || "PENDING_MODIFY".equals(normalizedAction)) {
             return TradeActionType.MODIFY_PRICE;
         }
         if ("PENDING_ADD".equals(normalizedAction) || "PENDING_CANCEL".equals(normalizedAction)) {

@@ -161,7 +161,7 @@ public class EquityCurveView extends View {
         balancePaint.setPathEffect(null);
         applyDrawdownPalette(palette);
         crosshairPaint.setColor(applyAlpha(palette.textSecondary, 220));
-        zeroPercentLinePaint.setColor(androidx.core.content.ContextCompat.getColor(getContext(), R.color.text_inverse));
+        zeroPercentLinePaint.setColor(0xFFFFFFFF);
         tooltipBgPaint.setColor(applyAlpha(palette.card, 240));
         tooltipTextPaint.setColor(palette.textPrimary);
         emptyPaint.setColor(palette.textSecondary);

@@ -93,15 +93,30 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertIn("function Resolve-CompatiblePythonCommand", bootstrap_script)
         self.assertIn('Python 3.8 or newer (64-bit) is required for the MT5 gateway bundle.', bootstrap_script)
         self.assertIn('$resolvedPythonCommand = Resolve-CompatiblePythonCommand -PreferredPythonExe $PythonExe', bootstrap_script)
-        self.assertIn('$venvArguments = @($resolvedPythonCommand.PrefixArguments + @("-m", "venv"))', bootstrap_script)
+        self.assertIn('$venvArguments = @($PythonCommand.PrefixArguments + @("-m", "venv"))', bootstrap_script)
         self.assertIn('$venvArguments += "--upgrade"', bootstrap_script)
-        self.assertIn('Invoke-NativeCommandSafely -FilePath $resolvedPythonCommand.FilePath -Arguments $venvArguments', bootstrap_script)
+        self.assertIn("function Initialize-GatewayVenv", bootstrap_script)
+        self.assertIn("function Backup-GatewayVenv", bootstrap_script)
+        self.assertIn("Initialize-GatewayVenv -PythonCommand $resolvedPythonCommand", bootstrap_script)
+        self.assertIn("Backup-GatewayVenv -VenvPath $venvPath -Reason $reason", bootstrap_script)
+        self.assertIn('Invoke-NativeCommandSafely -FilePath $PythonCommand.FilePath -Arguments $venvArguments', bootstrap_script)
         self.assertIn('Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @("-m", "pip", "install", "--upgrade", "pip")', bootstrap_script)
         self.assertIn('Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt")', bootstrap_script)
         self.assertIn('PrefixArguments = @("-3")', bootstrap_script)
         self.assertNotIn('& $PythonExe -m venv .venv', bootstrap_script)
         self.assertNotIn('& $venvPython -m pip install --upgrade pip', bootstrap_script)
         self.assertNotIn('& $venvPython -m pip install -r requirements.txt', bootstrap_script)
+
+    def test_bootstrap_script_should_rebuild_locked_or_broken_existing_venv(self) -> None:
+        bootstrap_script = (builder.SOURCE_WINDOWS_DIR / "01_bootstrap_gateway.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('Rebuilding existing .venv. Reason:', bootstrap_script)
+        self.assertIn('.venv.bak-', bootstrap_script)
+        self.assertIn('Rename-Item -LiteralPath $resolvedVenvPath -NewName $backupName -ErrorAction Stop', bootstrap_script)
+        self.assertIn('takeown.exe /F $resolvedVenvPath /R /D Y', bootstrap_script)
+        self.assertIn('icacls.exe $resolvedVenvPath /grant "*S-1-5-32-544:F" /T', bootstrap_script)
+        self.assertIn('Remove-Item -LiteralPath $requirementsStampPath -Force -ErrorAction SilentlyContinue', bootstrap_script)
+        self.assertIn('$freshVenvArguments = @($PythonCommand.PrefixArguments + @("-m", "venv", ".venv"))', bootstrap_script)
 
     def test_bootstrap_script_should_require_64bit_python_for_windows_mt5_dependencies(self) -> None:
         bootstrap_script = (builder.SOURCE_WINDOWS_DIR / "01_bootstrap_gateway.ps1").read_text(encoding="utf-8")
@@ -138,13 +153,14 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertNotIn('import importlib', start_gateway_script)
         self.assertNotIn('missing.append(f"{name}: {exc}")', start_gateway_script)
 
-    def test_start_gateway_should_capture_native_stderr_via_cmd_like_previous_working_version(self) -> None:
+    def test_start_gateway_should_capture_native_stderr_via_native_runner(self) -> None:
         start_gateway_script = (builder.SOURCE_GATEWAY_DIR / "start_gateway.ps1").read_text(encoding="utf-8")
 
-        self.assertIn('$commandLine = ($commandParts -join " ") + " 2>&1"', start_gateway_script)
-        self.assertIn('& cmd.exe /d /s /c $commandLine | ForEach-Object { $_ }', start_gateway_script)
-        self.assertIn('$exitCode = $LASTEXITCODE', start_gateway_script)
-        self.assertNotIn('NativeCommandRunner', start_gateway_script)
+        self.assertIn("NativeCommandRunner", start_gateway_script)
+        self.assertIn("RedirectStandardOutput = true", start_gateway_script)
+        self.assertIn("RedirectStandardError = true", start_gateway_script)
+        self.assertIn("$exitCode = [NativeCommandRunner]::Run($FilePath, $argumentsLine, $scriptDir)", start_gateway_script)
+        self.assertNotIn('& cmd.exe /d /s /c $commandLine | ForEach-Object { $_ }', start_gateway_script)
 
     def test_deploy_script_should_use_shared_log_io_between_gui_and_worker(self) -> None:
         deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
@@ -184,6 +200,10 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertIn("最近交易动作", deploy_script)
         self.assertIn("最近客户端来源", deploy_script)
         self.assertIn("http://127.0.0.1:8787/internal/runtime/panel", deploy_script)
+        self.assertIn("function Get-GatewayAuthHeaders", deploy_script)
+        self.assertIn('Join-Path $resolvedBundleRoot "mt5_gateway\\.env"', deploy_script)
+        self.assertIn('"X-Gateway-Token"', deploy_script)
+        self.assertIn('Invoke-JsonStatusRequest -Url "http://127.0.0.1:8787/internal/runtime/panel" -Headers $gatewayAuthHeaders', deploy_script)
         self.assertIn("$timer.Interval = 1000", deploy_script)
         self.assertIn("RuntimeSnapshotFile", deploy_script)
         self.assertIn('"-Mode", "RuntimePoller"', deploy_script)
@@ -237,6 +257,9 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertIn('Start-HealthProbe -Context $Context -Label "8787 /v2/account/full (diagnostic)"', deploy_script)
         self.assertIn('http://127.0.0.1:8787/v2/account/full', deploy_script)
         self.assertIn('健康检查通过: 8787 /v2/account/full (diagnostic)', deploy_script)
+        self.assertIn('"X-Gateway-Token" = $gatewayAuthToken', deploy_script)
+        self.assertIn('-Headers $gatewayAuthHeaders', deploy_script)
+        self.assertIn('-GatewayToken $gatewayAuthToken', deploy_script)
 
     def test_deploy_script_should_retry_websocket_probe_until_timeout(self) -> None:
         deploy_script = (builder.SOURCE_WINDOWS_DIR / "deploy_bundle.ps1").read_text(encoding="utf-8")
@@ -273,6 +296,7 @@ class WindowsServerBundleTests(unittest.TestCase):
         self.assertIn('"MT5_PASSWORD"', deploy_script)
         self.assertIn('"MT5_SERVER"', deploy_script)
         self.assertIn('"MT5_SERVER_TIMEZONE"', deploy_script)
+        self.assertIn('"GATEWAY_AUTH_TOKEN"', deploy_script)
         self.assertIn("Test-GatewayEnvContract -Context $Context", deploy_script)
 
     def test_deploy_script_should_include_latest_gateway_log_when_8787_probe_fails(self) -> None:

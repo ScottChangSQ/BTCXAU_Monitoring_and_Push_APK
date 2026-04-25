@@ -53,6 +53,20 @@ public class MarketMonitorPageRuntimeSourceTest {
         assertTrue(source.contains("viewModel.selectClosedMinute(selectedSymbol)"));
     }
 
+    @Test
+    public void recentRecordsAutoRefreshShouldOnlyRunWhenPageVisibleAndRecordsExist() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/ui/market/MarketMonitorPageRuntime.java",
+                "src/main/java/com/binance/monitor/ui/market/MarketMonitorPageRuntime.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private boolean pageVisible;"));
+        assertTrue(source.contains("if (pageVisible) {\n                startRecentRecordsAutoRefresh();\n            }"));
+        assertTrue(source.contains("if (!pageVisible || recentRecordsSource.isEmpty()) {\n            return;\n        }"));
+        assertTrue(source.contains("AppConstants.MARKET_RECENT_RECORDS_REFRESH_INTERVAL_MS"));
+        assertFalse(source.contains("recentRecordsHandler.postDelayed(recentRecordsRefreshRunnable, 30_000L);"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

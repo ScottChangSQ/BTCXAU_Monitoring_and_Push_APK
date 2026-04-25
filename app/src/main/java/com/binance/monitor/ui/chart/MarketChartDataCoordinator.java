@@ -254,7 +254,7 @@ final class MarketChartDataCoordinator {
         if (repository == null) {
             return;
         }
-        repository.getMarketTruthSnapshotLiveData().observe(host.getLifecycleOwner(), ignored -> {
+        repository.getMarketRuntimeSnapshotLiveData().observe(host.getLifecycleOwner(), ignored -> {
             KlineData latestKline = repository.selectDisplayKline(host.getSelectedSymbol());
             if (latestKline == null) {
                 return;

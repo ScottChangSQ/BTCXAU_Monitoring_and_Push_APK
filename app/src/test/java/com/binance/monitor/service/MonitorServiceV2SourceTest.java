@@ -35,6 +35,18 @@ public class MonitorServiceV2SourceTest {
                 source.contains("if (isV2StreamHealthy(now)) {"));
     }
 
+    @Test
+    public void accountRuntimeShouldCommitBusSeqOnlyAfterApplySuccess() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("AccountStatsPreloadManager.ApplyResult result =\n                        accountStatsPreloadManager.applyPublishedAccountRuntime(snapshotCopy, publishedAt);"));
+        assertTrue(source.contains("if (result.isSuccess()) {\n                    v2StreamSequenceGuard.commitAppliedBusSeq(busSeq);\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
+        assertTrue(source.contains("accountApplyPending = applyAccountSnapshotFromStream(plan.getAccountSnapshot(), message.getPublishedAt(), busSeq);"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

@@ -47,9 +47,11 @@ import com.binance.monitor.ui.account.adapter.AccountMetricAdapter;
 import com.binance.monitor.ui.account.adapter.PendingOrderAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAggregateAdapter;
 import com.binance.monitor.ui.account.adapter.PositionAdapterV2;
+import com.binance.monitor.ui.chart.MarketChartActivity;
 import com.binance.monitor.ui.chart.MarketChartTradeSupport;
 import com.binance.monitor.ui.main.BottomTabVisibilityManager;
 import com.binance.monitor.ui.runtime.ScreenDependencyProvider;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 import com.binance.monitor.ui.trade.BatchTradeCoordinator;
 import com.binance.monitor.ui.trade.TradeAuditStore;
@@ -265,12 +267,12 @@ public final class AccountPositionPageController {
         positionAdapter.setActionListener(new PositionAdapterV2.ActionListener() {
             @Override
             public void onCloseRequested(PositionItem item) {
-                requestClosePosition(item);
+                host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_CLOSE_POSITION);
             }
 
             @Override
             public void onModifyRequested(PositionItem item) {
-                showModifyPositionDialog(item);
+                host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_MODIFY_POSITION);
             }
         });
         binding.recyclerPendingOrders.setLayoutManager(new LinearLayoutManager(host.requireActivity()));
@@ -279,12 +281,12 @@ public final class AccountPositionPageController {
         pendingOrderAdapter.setActionListener(new PendingOrderAdapter.ActionListener() {
             @Override
             public void onModifyRequested(PositionItem item) {
-                showModifyPendingDialog(item);
+                host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_MODIFY_PENDING);
             }
 
             @Override
             public void onDeleteRequested(PositionItem item) {
-                requestCancelPendingOrder(item);
+                host.openChartTradeAction(item, MarketChartActivity.EXTRA_TRADE_ACTION_CANCEL_PENDING);
             }
         });
     }
@@ -518,8 +520,9 @@ public final class AccountPositionPageController {
         if (diff.isPendingChanged()) {
             bindPendingOrders(nextModel, masked);
         }
-        // 历史入口只有一个按钮，但状态必须始终跟最新历史快照同步，不能只靠 diff 决定是否刷新。
-        bindHistorySection(currentTradeHistory);
+        if (diff.isHistoryChanged()) {
+            bindHistorySection(tradeHistory);
+        }
         if (diff.hasAnyChange()) {
             currentUiModel = nextModel;
         }
@@ -1125,7 +1128,7 @@ public final class AccountPositionPageController {
     private LinearLayout createTradeFormContainer() {
         LinearLayout container = new LinearLayout(host.requireActivity());
         container.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(8);
+        int padding = SpacingTokenResolver.px(host.requireActivity(), R.dimen.space_8);
         container.setPadding(padding, padding, padding, padding);
         return container;
     }
@@ -1139,7 +1142,7 @@ public final class AccountPositionPageController {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.topMargin = dp(8);
+        params.topMargin = SpacingTokenResolver.px(host.requireActivity(), R.dimen.space_8);
         layout.setLayoutParams(params);
         return layout;
     }
@@ -1158,10 +1161,6 @@ public final class AccountPositionPageController {
                 fallback
         );
         return value <= 0d ? fallback : value;
-    }
-
-    private int dp(int value) {
-        return Math.round(host.requireActivity().getResources().getDisplayMetrics().density * value);
     }
 
     // 账户持仓页也需要保证监控服务在线，避免只剩本地旧缓存而没有实时主链。

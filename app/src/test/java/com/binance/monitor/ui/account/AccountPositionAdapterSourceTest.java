@@ -48,7 +48,7 @@ public class AccountPositionAdapterSourceTest {
 
         assertFalse(source.contains("String openPriceText ="));
         assertFalse(source.contains("开仓 %s"));
-        assertTrue(source.contains("String raw = String.format(Locale.getDefault(), \"%s|%s|%s|%s\","));
+        assertTrue(source.contains("String raw = String.format(Locale.getDefault(), \"%s | %s | %s | %s\","));
         assertTrue(source.contains("resolveSummaryProductCode(item, runtimeSnapshot), sideText, qtyText, pnlText"));
         assertTrue(source.contains("summarySideCn(item.getSide())"));
         assertTrue(source.contains("String qtyText = IndicatorFormatterCenter.formatQuantity(displayQty, 2, \"手\");"));
@@ -124,7 +124,8 @@ public class AccountPositionAdapterSourceTest {
         assertTrue(source.contains("String.format(Locale.getDefault(), \"%,.0f\", roundedPrice)"));
         assertTrue(source.contains("IndicatorFormatterCenter.formatQuantity(displayLots, 2, \"手\")"));
         assertTrue(source.contains("? (pendingCount + \"单\")"));
-        assertTrue(source.contains("\"%s|%s|%s|%s\""));
+        assertTrue(source.contains("\"%s | %s | %s | %s\""));
+        assertTrue(source.contains("return \"buy\".equalsIgnoreCase(side) ? \"买\" : (\"sell\".equalsIgnoreCase(side) ? \"卖\" : side);"));
     }
 
     @Test
@@ -189,13 +190,13 @@ public class AccountPositionAdapterSourceTest {
 
         assertTrue(source.contains("double displayLots = resolveDisplayLots(item);"));
         assertTrue(source.contains("String raw = String.format(Locale.getDefault(),"));
-        assertTrue(source.contains("\"%s|%s|%s|%s\""));
+        assertTrue(source.contains("\"%s | %s | %s | %s\""));
         assertTrue(source.contains("IndicatorFormatterCenter.formatQuantity"));
         assertTrue(source.contains("formatSignedPnlValue(item.getNetPnl())"));
-        assertTrue(source.contains("resolveDirectionText(displayLots)"));
+        assertTrue(source.contains("resolveDirectionText(item.getSignedLots())"));
         assertTrue(source.contains("return isZero(item.getSignedLots()) ? 0d : item.getSignedLots();"));
-        assertTrue(source.contains("return \"买\";"));
-        assertTrue(source.contains("return \"卖\";"));
+        assertTrue(source.contains("return \"买入\";"));
+        assertTrue(source.contains("return \"卖出\";"));
         assertFalse(source.contains("方向："));
         assertFalse(source.contains("盈亏："));
         assertFalse(source.contains("持仓："));

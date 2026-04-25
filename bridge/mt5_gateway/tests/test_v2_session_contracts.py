@@ -186,6 +186,18 @@ class V2SessionContractsTests(unittest.TestCase):
         self.assertIn("runtime", payload)
         self.assertIn("latestDiagnostic", payload)
 
+    def test_internal_runtime_panel_should_return_partial_payload_when_source_fails(self):
+        """状态面板聚合接口局部失败时不能整页 500。"""
+        with mock.patch.object(server_v2, "source_status", side_effect=RuntimeError("source exploded")):
+            payload = server_v2.internal_runtime_panel()
+
+        self.assertIn("health", payload)
+        self.assertIn("source", payload)
+        self.assertEqual("source", payload["source"]["section"])
+        self.assertIn("source exploded", payload["source"]["__error"])
+        self.assertIn("session", payload)
+        self.assertIn("runtime", payload)
+
     def test_internal_runtime_panel_should_not_overwrite_recent_app_request(self):
         """状态面板聚合接口不应把最近 APP 请求覆盖成面板自己的内部读取。"""
         with mock.patch.object(server_v2, "_now_ms", return_value=2000):

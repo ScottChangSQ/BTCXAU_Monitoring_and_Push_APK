@@ -12,6 +12,7 @@ import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.data.model.AbnormalAlertItem;
 import com.binance.monitor.data.model.AbnormalRecord;
 import com.binance.monitor.data.model.SymbolConfig;
+import com.binance.monitor.util.GatewayAuthRequestHelper;
 import com.binance.monitor.util.GatewayUrlResolver;
 import com.binance.monitor.util.ProductSymbolMapper;
 
@@ -67,7 +68,10 @@ public class AbnormalGatewayClient {
                 String endpoint = GatewayUrlResolver.buildEndpoint(baseUrl, ABNORMAL_ENDPOINT)
                         + "?delta=1"
                         + (sinceSeq > 0L ? "&since=" + sinceSeq : "");
-                Request request = new Request.Builder().url(endpoint).get().build();
+                Request request = GatewayAuthRequestHelper
+                        .applyGatewayAuth(new Request.Builder().url(endpoint), configManager)
+                        .get()
+                        .build();
                 try (Response response = client.newCall(request).execute()) {
                     if (!response.isSuccessful()) {
                         errors.add(baseUrl + " -> HTTP " + response.code());
@@ -97,7 +101,10 @@ public class AbnormalGatewayClient {
                 try {
                     String endpoint = GatewayUrlResolver.buildEndpoint(baseUrl, ABNORMAL_CONFIG_ENDPOINT);
                     RequestBody body = RequestBody.create(payload.toString(), JSON_MEDIA_TYPE);
-                    Request request = new Request.Builder().url(endpoint).post(body).build();
+                    Request request = GatewayAuthRequestHelper
+                            .applyGatewayAuth(new Request.Builder().url(endpoint), configManager)
+                            .post(body)
+                            .build();
                     try (Response response = client.newCall(request).execute()) {
                         if (!response.isSuccessful()) {
                             errors.add(baseUrl + " -> HTTP " + response.code());

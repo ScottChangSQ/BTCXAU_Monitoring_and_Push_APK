@@ -99,6 +99,37 @@ public class MonitorFloatingCoordinatorSourceTest {
         assertTrue(source.contains("private List<String> resolveVisibleMarketSignatures() {"));
     }
 
+    @Test
+    public void floatingCoordinatorShouldStopRefreshWhenScreenTurnsOffAndResumeOnScreenOn() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private boolean screenInteractive = true;"));
+        assertTrue(source.contains("void setScreenInteractive(boolean interactive) {"));
+        assertTrue(source.contains("private void cancelScheduledRefresh() {"));
+        assertTrue(source.contains("if (!screenInteractive) {\n            return;\n        }"));
+        assertTrue(source.contains("if (!interactive) {\n            cancelScheduledRefresh();\n            return;\n        }\n        requestRefresh(true);"));
+        assertTrue(source.contains("void notifyAbnormalEvent(@Nullable String symbol) {"));
+        assertTrue(source.contains("if (!screenInteractive || floatingWindowManager == null) {"));
+    }
+
+    @Test
+    public void floatingCoordinatorShouldUseScenarioBasedThrottleInsteadOfSingleForegroundBackgroundPair() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("boolean hasActivePositions = resolveTotalFloatingPositionCount(cache) > 0;"));
+        assertTrue(source.contains("boolean minimized = floatingWindowManager != null && floatingWindowManager.isMinimized();"));
+        assertTrue(source.contains("return MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs("));
+        assertTrue(source.contains("AppForegroundTracker.getInstance().isForeground(),"));
+        assertTrue(source.contains("hasActivePositions,"));
+        assertTrue(source.contains("minimized"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

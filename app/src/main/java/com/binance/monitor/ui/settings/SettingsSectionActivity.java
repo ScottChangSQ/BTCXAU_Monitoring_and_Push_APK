@@ -93,6 +93,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.btnClearCache.setOnClickListener(v -> confirmAndClearCache());
         binding.btnOpenTradeAudit.setOnClickListener(v -> TradeAuditActivity.open(this, ""));
         binding.btnSaveTradeSettings.setOnClickListener(v -> saveTradeSettings());
+        binding.btnSaveMt5GatewayUrl.setOnClickListener(v -> saveGatewayAuthToken());
         binding.switchFloatingEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (applying) {
                 return;
@@ -180,10 +181,10 @@ public class SettingsSectionActivity extends AppCompatActivity {
             marketDeleted += new ChartHistoryRepository(this).clearAllHistory();
         }
         if (selection.shouldClearHistoryTrade()) {
-            tradeDeleted = new AccountStorageRepository(this).clearTradeHistory();
+            tradeDeleted = new AccountStorageRepository(this).clearAllTradeHistoryExplicitly();
         }
         if (selection.shouldClearRuntime()) {
-            new AccountStorageRepository(this).clearRuntimeSnapshot();
+            new AccountStorageRepository(this).clearAllRuntimeSnapshotsExplicitly();
             AccountStatsPreloadManager.getInstance(getApplicationContext()).clearLatestCache();
             getSharedPreferences(MarketChartActivity.PREF_RUNTIME_NAME, MODE_PRIVATE).edit().clear().apply();
             cacheDeleted = deleteDirectoryChildren(getCacheDir());
@@ -248,6 +249,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.tvAlphaValue.setText(getString(R.string.alpha_suffix, alpha));
         binding.switchShowBtc.setChecked(viewModel.isShowBtc());
         binding.switchShowXau.setChecked(viewModel.isShowXau());
+        binding.etMt5GatewayAuthToken.setText(configManager.getMt5GatewayAuthToken());
         applyTradeSettings();
         lockGatewayEntrySection();
         applying = false;
@@ -267,6 +269,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
     }
 
     // 第 1 步入口唯一化后，设置页只展示固定公网入口，不再允许本地改写主链。
+    // 但网关鉴权 token 仍需保留本地输入入口，供手机请求对接部署侧鉴权。
     private void lockGatewayEntrySection() {
         binding.etMt5GatewayUrl.setText(AppConstants.MT5_GATEWAY_BASE_URL);
         binding.etMt5GatewayUrl.setSelection(AppConstants.MT5_GATEWAY_BASE_URL.length());
@@ -274,7 +277,21 @@ public class SettingsSectionActivity extends AppCompatActivity {
         binding.etMt5GatewayUrl.setFocusable(false);
         binding.etMt5GatewayUrl.setFocusableInTouchMode(false);
         binding.etMt5GatewayUrl.setClickable(false);
-        binding.btnSaveMt5GatewayUrl.setVisibility(View.GONE);
+        binding.etMt5GatewayAuthToken.setEnabled(true);
+        binding.etMt5GatewayAuthToken.setFocusable(true);
+        binding.etMt5GatewayAuthToken.setFocusableInTouchMode(true);
+        binding.etMt5GatewayAuthToken.setClickable(true);
+        binding.btnSaveMt5GatewayUrl.setVisibility(View.VISIBLE);
+    }
+
+    // 保存网关鉴权 token，并立即刷新依赖网关的运行时请求配置。
+    private void saveGatewayAuthToken() {
+        String input = binding.etMt5GatewayAuthToken.getText() == null
+                ? ""
+                : binding.etMt5GatewayAuthToken.getText().toString().trim();
+        configManager.setMt5GatewayAuthToken(input);
+        MonitorServiceController.dispatch(this, AppConstants.ACTION_REFRESH_CONFIG);
+        Toast.makeText(this, getString(R.string.mt5_gateway_auth_token_saved), Toast.LENGTH_SHORT).show();
     }
 
     // 设置页里的低频布尔项、输入项和动作按钮统一走标准主体。
@@ -284,6 +301,7 @@ public class SettingsSectionActivity extends AppCompatActivity {
         UiPaletteManager.styleToggleChoice(binding.switchShowXau, palette);
         UiPaletteManager.styleToggleChoice(binding.switchTradeOneClickMode, palette);
         UiPaletteManager.styleInputField(binding.inputLayoutMt5GatewayUrl, palette);
+        UiPaletteManager.styleInputField(binding.inputLayoutMt5GatewayAuthToken, palette);
         UiPaletteManager.styleActionButton(
                 binding.btnClearCache,
                 palette,

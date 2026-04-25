@@ -1751,9 +1751,10 @@ public class KlineChartView extends View {
     }
 
     private int resolveHighlightedTradeAxisTextColor(int backgroundColor) {
+        UiPaletteManager.Palette palette = requirePalette();
         return ColorUtils.calculateLuminance(backgroundColor) >= 0.5d
-                ? 0xFF101418
-                : 0xFFF5F7FA;
+                ? palette.surfaceStart
+                : palette.textPrimary;
     }
 
     private int resolveTradeLayerTextColor(int lineColor, @NonNull String labelText, boolean selected) {

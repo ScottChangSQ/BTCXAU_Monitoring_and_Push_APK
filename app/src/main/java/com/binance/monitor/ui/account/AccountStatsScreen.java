@@ -9,6 +9,7 @@ import android.content.res.ColorStateList;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.Typeface;
 import android.os.Build;
@@ -438,6 +439,8 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private int deferredSecondaryRenderRevision;
     private boolean firstFrameCompleted;
     private boolean firstFrameCompletionPosted;
+    private boolean pendingVisibleSecondaryRenderPosted;
+    private boolean deferredSecondaryVisibilityListenerRegistered;
     private volatile boolean storedSnapshotRestorePending;
     private PageBootstrapStateMachine accountBootstrapStateMachine = new PageBootstrapStateMachine();
     private PageBootstrapSnapshot accountBootstrapSnapshot = PageBootstrapSnapshot.initial();
@@ -452,8 +455,17 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
             renderCoordinator.renderDeferredSnapshotSections();
         }
     };
+    private final Runnable pendingVisibleSecondaryRenderRunnable = () -> {
+        pendingVisibleSecondaryRenderPosted = false;
+        if (renderCoordinator == null || !hasVisiblePendingSecondarySections()) {
+            return;
+        }
+        renderCoordinator.renderDeferredSnapshotSections();
+    };
     @Nullable
     private ViewTreeObserver.OnDrawListener firstFrameDrawListener;
+    private final ViewTreeObserver.OnScrollChangedListener deferredSecondaryVisibilityListener =
+            this::maybeScheduleVisiblePendingSecondarySectionRender;
     private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {
         if (cache == null || isHostFinishing() || isHostDestroyed() || loading) {
             return;
@@ -1071,6 +1083,26 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 return pendingHistoryRenderSignature;
             }
 
+            @Override
+            public boolean isCurveSectionVisible() {
+                return AccountStatsScreen.this.isViewMeaningfullyVisible(binding.layoutCurveSecondarySection);
+            }
+
+            @Override
+            public boolean isReturnSectionVisible() {
+                return AccountStatsScreen.this.isViewMeaningfullyVisible(binding.cardReturnStatsSection);
+            }
+
+            @Override
+            public boolean isTradeStatsSectionVisible() {
+                return AccountStatsScreen.this.isViewMeaningfullyVisible(binding.cardTradeStatsSection);
+            }
+
+            @Override
+            public boolean isTradeRecordsSectionVisible() {
+                return AccountStatsScreen.this.isViewMeaningfullyVisible(binding.cardTradeRecordsSection);
+            }
+
             @NonNull
             @Override
             public List<AccountMetric> getLatestStatsMetrics() {
@@ -1426,8 +1458,11 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     void clearTransientUiCallbacks() {
         binding.tvLoginSuccessBanner.removeCallbacks(hideLoginSuccessBannerRunnable);
         binding.scrollAccountStats.removeCallbacks(deferredSecondarySectionAttachRunnable);
+        binding.scrollAccountStats.removeCallbacks(pendingVisibleSecondaryRenderRunnable);
         deferredSecondarySectionAttachPosted = false;
+        pendingVisibleSecondaryRenderPosted = false;
         clearFirstFrameCompletionListener();
+        clearDeferredSecondaryVisibilityListener();
         hideLoginSuccessBannerNow();
     }
 
@@ -2707,6 +2742,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     // 装配账户统计页的静态页面结构，便于后续 Fragment 复用同一套实现。
     private void initializePageContent() {
         registerFirstFrameCompletionListener();
+        registerDeferredSecondaryVisibilityListener();
         setupRecyclers();
         setupFilters();
         configureToggleButtonsV2();
@@ -2780,6 +2816,30 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         firstFrameCompletionPosted = false;
     }
 
+    // 滚动到离屏区块时再补一次延后渲染，避免首屏就把整页长区块全部主线程绑定。
+    private void registerDeferredSecondaryVisibilityListener() {
+        if (binding == null || deferredSecondaryVisibilityListenerRegistered) {
+            return;
+        }
+        ViewTreeObserver observer = binding.scrollAccountStats.getViewTreeObserver();
+        if (!observer.isAlive()) {
+            return;
+        }
+        observer.addOnScrollChangedListener(deferredSecondaryVisibilityListener);
+        deferredSecondaryVisibilityListenerRegistered = true;
+    }
+
+    private void clearDeferredSecondaryVisibilityListener() {
+        if (binding == null || !deferredSecondaryVisibilityListenerRegistered) {
+            return;
+        }
+        ViewTreeObserver observer = binding.scrollAccountStats.getViewTreeObserver();
+        if (observer.isAlive()) {
+            observer.removeOnScrollChangedListener(deferredSecondaryVisibilityListener);
+        }
+        deferredSecondaryVisibilityListenerRegistered = false;
+    }
+
     // 首屏先只保留可见区块，次屏区块等首帧完成后再挂载，减少账户页首次测量和绘制成本。
     private void scheduleDeferredSecondarySectionAttach() {
         if (binding == null
@@ -2808,6 +2868,47 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 baseTrades.size(),
                 basePositions.size(),
                 allCurvePoints.size());
+    }
+
+    private void maybeScheduleVisiblePendingSecondarySectionRender() {
+        if (binding == null
+                || pendingVisibleSecondaryRenderPosted
+                || renderCoordinator == null
+                || !hasVisiblePendingSecondarySections()) {
+            return;
+        }
+        pendingVisibleSecondaryRenderPosted = true;
+        binding.scrollAccountStats.post(pendingVisibleSecondaryRenderRunnable);
+    }
+
+    private boolean hasVisiblePendingSecondarySections() {
+        if (binding == null
+                || !secondarySectionsAttached
+                || pendingSectionDiff == null
+                || pendingSectionDiff.isEmpty()) {
+            return false;
+        }
+        return pendingSectionDiff.refreshCurveSection && isViewMeaningfullyVisible(binding.layoutCurveSecondarySection)
+                || pendingSectionDiff.refreshReturnSection && isViewMeaningfullyVisible(binding.cardReturnStatsSection)
+                || pendingSectionDiff.refreshTradeStatsSection && isViewMeaningfullyVisible(binding.cardTradeStatsSection)
+                || pendingSectionDiff.refreshTradeRecordsSection && isViewMeaningfullyVisible(binding.cardTradeRecordsSection);
+    }
+
+    private boolean isViewMeaningfullyVisible(@Nullable View view) {
+        if (binding == null
+                || view == null
+                || !secondarySectionsAttached
+                || view.getVisibility() != View.VISIBLE
+                || view.getWidth() <= 0
+                || view.getHeight() <= 0) {
+            return false;
+        }
+        Rect visibleRect = new Rect();
+        if (!view.getGlobalVisibleRect(visibleRect)) {
+            return false;
+        }
+        int minimumVisibleHeight = Math.min(view.getHeight(), dpToPx(96));
+        return visibleRect.height() >= minimumVisibleHeight && visibleRect.width() > 0;
     }
 
     // 新一轮交易统计还在后台准备时，只在首显前保留占位，避免曲线区顶上来造成跳动。
@@ -4332,7 +4433,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
     private void adjustRefreshCadence(boolean connected, boolean unchanged) {
         if (!connected) {
             unchangedRefreshStreak = 0;
-            dynamicRefreshDelayMs = Math.min(ACCOUNT_REFRESH_MAX_MS, ACCOUNT_REFRESH_MIN_MS * 2L);
+            dynamicRefreshDelayMs = AccountPageRefreshCadenceHelper.resolveDelayMs(false, 0);
             return;
         }
         if (unchanged) {
@@ -4340,9 +4441,7 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
         } else {
             unchangedRefreshStreak = 0;
         }
-        dynamicRefreshDelayMs = Math.min(
-                ACCOUNT_REFRESH_MAX_MS,
-                ACCOUNT_REFRESH_MIN_MS + unchangedRefreshStreak * 2_000L);
+        dynamicRefreshDelayMs = AccountPageRefreshCadenceHelper.resolveDelayMs(true, unchangedRefreshStreak);
     }
 
     // 构建当前账户展示快照签名，用于判断“本轮数据是否与上一轮一致”。
@@ -7386,7 +7485,17 @@ final class AccountStatsScreen extends android.view.ContextThemeWrapper {
                 masked
         );
         view.setText(presentation.getFormattedValue());
-        view.setTextColor(presentation.resolveAndroidColor(this));
+        view.setTextColor(resolveDirectionalValueColor(value, UiPaletteManager.resolve(this)));
+    }
+
+    private int resolveDirectionalValueColor(double value, @NonNull UiPaletteManager.Palette palette) {
+        if (value > 0d) {
+            return palette.rise;
+        }
+        if (value < 0d) {
+            return palette.fall;
+        }
+        return palette.textPrimary;
     }
 
     // 收益统计根据当前显示模式切换颜色口径，收益率或收益额为 0 时统一回到中性色。

@@ -92,11 +92,11 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
             String titleText = item.getDisplayLabel().trim().isEmpty()
                     ? item.getCompactDisplayLabel().trim()
                     : item.getDisplayLabel().trim();
-            String directionText = resolveDirectionText(displayLots);
+            String directionText = resolveDirectionText(item.getSignedLots());
             String lotsText = IndicatorFormatterCenter.formatQuantity(displayLots, 2, "手");
             String pnlText = formatSignedPnlValue(item.getNetPnl());
             String raw = String.format(Locale.getDefault(),
-                    "%s|%s|%s|%s",
+                    "%s | %s | %s | %s",
                     titleText,
                     directionText,
                     lotsText,
@@ -154,16 +154,16 @@ public class PositionAggregateAdapter extends RecyclerView.Adapter<PositionAggre
                 return "--";
             }
             if (displayLots > 0d) {
-                return "买";
+                return "买入";
             }
-            return "卖";
+            return "卖出";
         }
 
         private boolean isZero(double value) {
             return Math.abs(value) < 1e-9;
         }
 
-        // 按产品统计里的盈亏只保留数字方向，不再带货币符号，避免摘要过长挤压右侧按钮区。
+        // 按产品统计里的盈亏只保留正负数字，不再带货币符号，避免摘要过长挤压右侧按钮区。
         @NonNull
         private String formatSignedPnlValue(double value) {
             if (isZero(value)) {

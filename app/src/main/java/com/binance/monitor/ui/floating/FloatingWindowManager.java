@@ -26,6 +26,8 @@ import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
+
 import com.binance.monitor.R;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.databinding.LayoutFloatingWindowBinding;
@@ -41,7 +43,9 @@ import com.binance.monitor.util.ProductSymbolMapper;
 import com.binance.monitor.util.SensitiveDisplayMasker;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 public class FloatingWindowManager {
     private static final long DRAG_FRAME_INTERVAL_MS = 12L;
     private static final String TAG = "FloatingWindowManager";
@@ -92,6 +96,7 @@ public class FloatingWindowManager {
     private int lastDragLayoutY = Integer.MIN_VALUE;
     private DragAndClickListener dragAndClickListener;
     private boolean destroyed;
+    private final Map<String, SymbolCardViewHolder> symbolCardHolders = new LinkedHashMap<>();
 
     public FloatingWindowManager(Context context) {
         this.context = context.getApplicationContext();
@@ -183,6 +188,7 @@ public class FloatingWindowManager {
         destroyed = true;
         handler.removeCallbacksAndMessages(null);
         hideWindowInternal();
+        symbolCardHolders.clear();
         binding = null;
         layoutParams = null;
         dragAndClickListener = null;
@@ -198,6 +204,7 @@ public class FloatingWindowManager {
             minimized = false;
             draggingWindow = false;
             pendingRender = false;
+            symbolCardHolders.clear();
             return;
         }
         try {
@@ -210,6 +217,7 @@ public class FloatingWindowManager {
         minimized = false;
         draggingWindow = false;
         pendingRender = false;
+        symbolCardHolders.clear();
     }
 
     private void showIfPossible() {
@@ -222,8 +230,13 @@ public class FloatingWindowManager {
             return;
         }
         applyWindowAlpha();
-        windowManager.addView(binding.getRoot(), layoutParams);
-        windowAdded = true;
+        try {
+            windowManager.addView(binding.getRoot(), layoutParams);
+            windowAdded = true;
+        } catch (RuntimeException exception) {
+            windowAdded = false;
+            Log.w(TAG, "addView failed", exception);
+        }
     }
 
     // 单个管理器只维护一份 root，避免在屏幕灭亮切换时重建第二个悬浮窗。
@@ -447,27 +460,41 @@ public class FloatingWindowManager {
     }
 
     private int renderSymbolCards(List<FloatingSymbolCardData> visibleCards, UiPaletteManager.Palette palette) {
-        binding.layoutSymbolCards.removeAllViews();
+        Map<String, SymbolCardViewHolder> staleHolders = new LinkedHashMap<>(symbolCardHolders);
         for (int i = 0; i < visibleCards.size(); i++) {
             FloatingSymbolCardData card = visibleCards.get(i);
             if (card == null) {
                 continue;
             }
-            binding.layoutSymbolCards.addView(buildSymbolCard(card, palette, i > 0));
+            String cardCode = card.getCode() == null ? "" : card.getCode().trim();
+            SymbolCardViewHolder holder = symbolCardHolders.get(cardCode);
+            if (holder == null) {
+                holder = createSymbolCardViewHolder();
+                symbolCardHolders.put(cardCode, holder);
+            }
+            staleHolders.remove(cardCode);
+            bindSymbolCard(holder, card, palette, i > 0);
+            int currentIndex = binding.layoutSymbolCards.indexOfChild(holder.rootView);
+            if (currentIndex == -1) {
+                binding.layoutSymbolCards.addView(holder.rootView, i);
+            } else if (currentIndex != i) {
+                binding.layoutSymbolCards.removeViewAt(currentIndex);
+                binding.layoutSymbolCards.addView(holder.rootView, i);
+            }
+        }
+        for (Map.Entry<String, SymbolCardViewHolder> entry : staleHolders.entrySet()) {
+            SymbolCardViewHolder holder = entry.getValue();
+            if (holder != null) {
+                binding.layoutSymbolCards.removeView(holder.rootView);
+            }
+            symbolCardHolders.remove(entry.getKey());
         }
         return binding.layoutSymbolCards.getChildCount();
     }
 
-    private View buildSymbolCard(FloatingSymbolCardData card,
-                                 UiPaletteManager.Palette palette,
-                                 boolean addTopSpacing) {
-        boolean masked = SensitiveDisplayMasker.isEnabled(context);
+    private SymbolCardViewHolder createSymbolCardViewHolder() {
         LinearLayout cardView = new LinearLayout(context);
         cardView.setOrientation(LinearLayout.VERTICAL);
-        int topSpacingPx = addTopSpacing
-                ? context.getResources().getDimensionPixelSize(R.dimen.space_4)
-                : 0;
-        cardView.setPadding(0, topSpacingPx, 0, 0);
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -482,16 +509,13 @@ public class FloatingWindowManager {
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
 
-        double totalPnl = card.getTotalPnl();
         TextView titleView = new TextView(context);
         titleView.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
-        titleView.setText(buildStyledCardTitle(card, masked));
         titleView.setTypeface(null, android.graphics.Typeface.BOLD);
         UiPaletteManager.applyTextAppearance(titleView, R.style.TextAppearance_BinanceMonitor_OverlayDense);
-        titleView.setTextColor(palette.textPrimary);
         titleView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         titleView.setSingleLine(false);
         titleView.setMaxLines(2);
@@ -506,11 +530,7 @@ public class FloatingWindowManager {
         );
         priceParams.topMargin = context.getResources().getDimensionPixelSize(R.dimen.inline_gap_compact);
         priceView.setLayoutParams(priceParams);
-        priceView.setText(card.hasLatestPrice()
-                ? FloatingWindowTextFormatter.formatPriceText(card.getLatestPrice(), masked)
-                : "--");
         priceView.setTypeface(null, android.graphics.Typeface.BOLD);
-        priceView.setTextColor(palette.textPrimary);
         UiPaletteManager.applyTextAppearance(priceView, R.style.TextAppearance_BinanceMonitor_Control);
         priceView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         priceView.setSingleLine(true);
@@ -525,12 +545,6 @@ public class FloatingWindowManager {
         );
         volumeParams.topMargin = context.getResources().getDimensionPixelSize(R.dimen.inline_gap_compact);
         volumeView.setLayoutParams(volumeParams);
-        volumeView.setText(FloatingWindowTextFormatter.formatVolumeLine(
-                card.getVolume(),
-                resolveVolumeUnit(card),
-                masked
-        ));
-        volumeView.setTextColor(palette.textSecondary);
         UiPaletteManager.applyTextAppearance(volumeView, R.style.TextAppearance_BinanceMonitor_OverlayDense);
         volumeView.setIncludeFontPadding(false);
         volumeView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
@@ -544,16 +558,41 @@ public class FloatingWindowManager {
         amountParams.topMargin = context.getResources().getDimensionPixelSize(
                 FloatingWindowLayoutHelper.resolveAmountRowGapRes());
         amountView.setLayoutParams(amountParams);
-        amountView.setText(FloatingWindowTextFormatter.formatAmountLine(card.getAmount(), masked));
-        amountView.setTextColor(palette.textSecondary);
         UiPaletteManager.applyTextAppearance(amountView, R.style.TextAppearance_BinanceMonitor_OverlayDense);
         amountView.setIncludeFontPadding(false);
         amountView.setGravity(FloatingWindowLayoutHelper.resolveSymbolTextGravity());
         cardView.addView(amountView);
 
         bindDragSurface(cardView);
-        cardView.setOnClickListener(v -> openChartForCard(card));
-        return cardView;
+        SymbolCardViewHolder holder = new SymbolCardViewHolder(cardView, titleView, priceView, volumeView, amountView);
+        cardView.setOnClickListener(v -> openChartForCard(holder.boundCard));
+        return holder;
+    }
+
+    private void bindSymbolCard(@NonNull SymbolCardViewHolder holder,
+                                @NonNull FloatingSymbolCardData card,
+                                @NonNull UiPaletteManager.Palette palette,
+                                boolean addTopSpacing) {
+        boolean masked = SensitiveDisplayMasker.isEnabled(context);
+        holder.boundCard = card;
+        int topSpacingPx = addTopSpacing
+                ? context.getResources().getDimensionPixelSize(R.dimen.space_4)
+                : 0;
+        holder.rootView.setPadding(0, topSpacingPx, 0, 0);
+        holder.titleView.setText(buildStyledCardTitle(card, masked));
+        holder.titleView.setTextColor(palette.textPrimary);
+        holder.priceView.setText(card.hasLatestPrice()
+                ? FloatingWindowTextFormatter.formatPriceText(card.getLatestPrice(), masked)
+                : "--");
+        holder.priceView.setTextColor(palette.textPrimary);
+        holder.volumeView.setText(FloatingWindowTextFormatter.formatVolumeLine(
+                card.getVolume(),
+                resolveVolumeUnit(card),
+                masked
+        ));
+        holder.volumeView.setTextColor(palette.textSecondary);
+        holder.amountView.setText(FloatingWindowTextFormatter.formatAmountLine(card.getAmount(), masked));
+        holder.amountView.setTextColor(palette.textSecondary);
     }
 
     private void refreshMinimizedState(boolean forceBlink) {
@@ -611,6 +650,10 @@ public class FloatingWindowManager {
     private void setMinimized(boolean minimized) {
         this.minimized = minimized;
         refreshMinimizedState(true);
+    }
+
+    public boolean isMinimized() {
+        return minimized;
     }
 
     // 将拖动与点击判定统一挂到所有可操作区域，避免产品区单独吃掉手势。
@@ -778,6 +821,27 @@ public class FloatingWindowManager {
             handler.postDelayed(this, 300L);
         }
     };
+
+    private static final class SymbolCardViewHolder {
+        private final LinearLayout rootView;
+        private final TextView titleView;
+        private final TextView priceView;
+        private final TextView volumeView;
+        private final TextView amountView;
+        private FloatingSymbolCardData boundCard;
+
+        private SymbolCardViewHolder(@NonNull LinearLayout rootView,
+                                     @NonNull TextView titleView,
+                                     @NonNull TextView priceView,
+                                     @NonNull TextView volumeView,
+                                     @NonNull TextView amountView) {
+            this.rootView = rootView;
+            this.titleView = titleView;
+            this.priceView = priceView;
+            this.volumeView = volumeView;
+            this.amountView = amountView;
+        }
+    }
 
     // 最小化闪烁时只闪背景，不改变字体透明度。
     private void applyMiniSquareBackgroundAlpha(boolean dimmed) {

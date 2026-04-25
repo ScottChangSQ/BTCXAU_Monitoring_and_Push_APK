@@ -139,6 +139,11 @@ def load_env_map() -> Dict[str, str]:
     return parse_env_map(read_text_file_utf8(ENV_PATH))
 
 
+def build_gateway_auth_headers(env_map: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    token = str((env_map if env_map is not None else load_env_map()).get("GATEWAY_AUTH_TOKEN", "") or "").strip()
+    return {"X-Gateway-Token": token} if token else {}
+
+
 # 管理面板优先使用显式网关地址，否则退回本机 127.0.0.1。
 def resolve_gateway_url(env_map: Dict[str, str]) -> str:
     explicit = str((env_map or {}).get("ADMIN_GATEWAY_URL", "") or "").strip()
@@ -519,10 +524,12 @@ def request_gateway_json(base_url: str,
                          timeout: int = 12) -> Dict[str, Any]:
     url = f"{str(base_url or '').rstrip('/')}{path}"
     body = None if payload is None else json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    headers.update(build_gateway_auth_headers())
     request = urllib.request.Request(
         url,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method=method,
     )
     with urllib.request.urlopen(request, timeout=max(1, int(timeout or 12))) as response:

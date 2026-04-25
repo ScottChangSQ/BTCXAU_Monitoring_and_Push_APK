@@ -56,6 +56,7 @@ import com.binance.monitor.data.model.SymbolConfig;
 import com.binance.monitor.data.model.v2.MarketSeriesPayload;
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
+import com.binance.monitor.data.model.v2.trade.TradeTemplate;
 import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.data.remote.v2.GatewayV2Client;
 import com.binance.monitor.data.remote.v2.GatewayV2TradeClient;
@@ -103,6 +104,7 @@ import com.binance.monitor.ui.trade.TradeAuditStore;
 import com.binance.monitor.ui.trade.TradeExecutionCoordinator;
 import com.binance.monitor.ui.trade.TradeRiskGuard;
 import com.binance.monitor.ui.trade.TradeSessionVolumeMemory;
+import com.binance.monitor.ui.trade.TradeTemplateRepository;
 import com.binance.monitor.service.MonitorServiceController;
 import com.binance.monitor.util.ChainLatencyTracer;
 import com.binance.monitor.util.FormatUtils;
@@ -609,6 +611,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private boolean statusSourcesObserved;
     private String lastAccountOverlaySignature = "";
     private ChartQuickTradeMode quickTradeMode = ChartQuickTradeMode.CLOSED;
+    private String lastAppliedQuickTradeTemplateSignature = "";
     private double pendingLinePrice = Double.NaN;
     private ChartQuickTradeCoordinator.PendingDirection pendingDirection = ChartQuickTradeCoordinator.PendingDirection.NONE;
     private ChartQuickTradeCoordinator chartQuickTradeCoordinator;
@@ -628,6 +631,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     @Nullable
     private KlineData pendingRealtimeTailKline;
     private boolean realtimeTailDrainScheduled;
+    private boolean realtimeTailWindowScheduled;
+    private long lastRealtimeTailUiAppliedAt;
     @Nullable
     private Runnable pendingOverlayRefreshAction;
     @Nullable
@@ -638,6 +643,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         @Override
         public void run() {
             realtimeTailDrainScheduled = false;
+            realtimeTailWindowScheduled = false;
             String renderToken = chartRefreshScheduler.drainPendingRenderToken();
             KlineData latestKline = pendingRealtimeTailKline;
             pendingRealtimeTailKline = null;
@@ -2689,6 +2695,8 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private void updateQuickTradeBar() {
         boolean visible = quickTradeMode != ChartQuickTradeMode.CLOSED;
         binding.layoutChartQuickTradeBar.setVisibility(visible ? View.VISIBLE : View.GONE);
+        TradeTemplate quickTemplate = resolveQuickTradeTemplate();
+        syncQuickTradeTemplateState(quickTemplate, false);
         syncQuickTradeVolumeState(false);
         if (quickTradeMode == ChartQuickTradeMode.PENDING) {
             binding.btnQuickTradePrimary.setText(R.string.chart_quick_trade_pending_buy);
@@ -2752,15 +2760,39 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         return pendingDirection == ChartQuickTradeCoordinator.PendingDirection.SELL;
     }
 
+    @NonNull
+    private TradeTemplate resolveQuickTradeTemplate() {
+        return new TradeTemplateRepository(this).getQuickTradeTemplate();
+    }
+
+    private void syncQuickTradeTemplateState(@NonNull TradeTemplate template, boolean forceVolumeReset) {
+        String templateSignature = template.getTemplateId()
+                + '|'
+                + Double.doubleToLongBits(template.getDefaultVolume())
+                + '|'
+                + Double.doubleToLongBits(template.getDefaultSl())
+                + '|'
+                + Double.doubleToLongBits(template.getDefaultTp())
+                + '|'
+                + template.getEntryScope();
+        boolean templateChanged = !templateSignature.equals(lastAppliedQuickTradeTemplateSignature);
+        if (forceVolumeReset || templateChanged || isQuickTradeVolumeBlank()) {
+            double defaultVolume = TradeSessionVolumeMemory.getInstance().getCurrentVolume();
+            if (defaultVolume > 0d) {
+                binding.etQuickTradeVolume.setText(FormatUtils.formatVolume(defaultVolume));
+            }
+        }
+        lastAppliedQuickTradeTemplateSignature = templateSignature;
+    }
+
     // 快捷交易条只认会话手数；手数框为空或主动要求重置时，回填当前会话值。
     private void syncQuickTradeVolumeState(boolean forceVolumeReset) {
-        if (!forceVolumeReset && !isQuickTradeVolumeBlank()) {
+        TradeTemplate template = resolveQuickTradeTemplate();
+        if (forceVolumeReset) {
+            syncQuickTradeTemplateState(template, true);
             return;
         }
-        double defaultVolume = TradeSessionVolumeMemory.getInstance().getCurrentVolume();
-        if (defaultVolume > 0d) {
-            binding.etQuickTradeVolume.setText(FormatUtils.formatVolume(defaultVolume));
-        }
+        syncQuickTradeTemplateState(template, false);
     }
 
     // 仅在手数输入框真的空着时，才允许沿用当前默认值作为首次填充依据。
@@ -3214,14 +3246,29 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         if (realtimeTailDrainScheduled) {
             return;
         }
-        realtimeTailDrainScheduled = true;
-        mainHandler.post(realtimeTailDrainRunnable);
+        long now = System.currentTimeMillis();
+        long elapsed = now - lastRealtimeTailUiAppliedAt;
+        if (elapsed >= AppConstants.CHART_REALTIME_TAIL_UI_WINDOW_MS) {
+            realtimeTailDrainScheduled = true;
+            mainHandler.post(realtimeTailDrainRunnable);
+            return;
+        }
+        if (realtimeTailWindowScheduled) {
+            return;
+        }
+        realtimeTailWindowScheduled = true;
+        long delayMs = Math.max(1L, AppConstants.CHART_REALTIME_TAIL_UI_WINDOW_MS - elapsed);
+        mainHandler.postDelayed(() -> {
+            realtimeTailDrainScheduled = true;
+            realtimeTailDrainRunnable.run();
+        }, delayMs);
     }
 
     private void applyRealtimeChartTailNow(@NonNull KlineData latestKline) {
         if (binding == null || !hasRealtimeTailSourceForChart() || monitorRepository == null) {
             return;
         }
+        lastRealtimeTailUiAppliedAt = System.currentTimeMillis();
         String key = buildCacheKey(selectedSymbol, selectedInterval);
         List<CandleEntry> mergedDisplay = resolveTruthDisplaySeriesOrLoaded(
                 selectedSymbol,
@@ -4464,6 +4511,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         mainHandler.removeCallbacks(overlaySummaryDrainRunnable);
         mainHandler.removeCallbacks(dialogDrainRunnable);
         realtimeTailDrainScheduled = false;
+        realtimeTailWindowScheduled = false;
         overlaySummaryDrainScheduled = false;
         dialogDrainScheduled = false;
         pendingRealtimeTailKline = null;

@@ -18,6 +18,7 @@ import com.binance.monitor.data.model.v2.MarketSeriesPayload;
 import com.binance.monitor.data.model.v2.MarketSnapshotPayload;
 import com.binance.monitor.data.remote.OkHttpTransportResetHelper;
 import com.binance.monitor.domain.account.AccountTimeRange;
+import com.binance.monitor.util.GatewayAuthRequestHelper;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -228,7 +229,10 @@ public class GatewayV2Client {
     private String get(String path) throws Exception {
         String baseUrl = resolveBaseUrl();
         String url = baseUrl + path;
-        Request request = new Request.Builder().url(url).get().build();
+        Request request = GatewayAuthRequestHelper
+                .applyGatewayAuth(new Request.Builder().url(url), configManager)
+                .get()
+                .build();
         try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {

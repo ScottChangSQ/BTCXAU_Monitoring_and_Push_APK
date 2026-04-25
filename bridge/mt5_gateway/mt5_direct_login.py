@@ -91,10 +91,9 @@ def _should_retry_initialize(error_message: str) -> bool:
 
 def _compute_initialize_attempt_timeout(remaining_ms: int) -> int:
     bounded_remaining_ms = max(1000, int(remaining_ms or 0))
-    capped_timeout_ms = min(_INITIALIZE_ATTEMPT_TIMEOUT_CAP_MS, bounded_remaining_ms)
     if bounded_remaining_ms <= _INITIALIZE_ATTEMPT_TIMEOUT_FLOOR_MS:
         return bounded_remaining_ms
-    return max(_INITIALIZE_ATTEMPT_TIMEOUT_FLOOR_MS, capped_timeout_ms)
+    return bounded_remaining_ms
 
 
 def _initialize_once(mt5_module: Any, path_value: str, timeout_ms: int) -> tuple[bool, str]:

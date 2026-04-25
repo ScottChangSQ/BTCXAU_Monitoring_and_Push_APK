@@ -58,19 +58,60 @@ public class AbnormalRecord {
     }
 
     public static AbnormalRecord fromJson(JSONObject object) throws JSONException {
-        return new AbnormalRecord(
-                object.getString("id"),
-                object.getString("symbol"),
-                object.getLong("timestamp"),
-                object.getLong("closeTime"),
-                object.getDouble("openPrice"),
-                object.getDouble("closePrice"),
-                object.getDouble("volume"),
-                object.getDouble("amount"),
-                object.getDouble("priceChange"),
-                object.getDouble("percentChange"),
-                object.getString("triggerSummary")
-        );
+        AbnormalRecord record = parseOrNull(object);
+        if (record == null) {
+            throw new JSONException("invalid abnormal record");
+        }
+        return record;
+    }
+
+    public static AbnormalRecord parseOrNull(JSONObject object) {
+        if (object == null) {
+            return null;
+        }
+        try {
+            String id = object.getString("id").trim();
+            String symbol = object.getString("symbol").trim();
+            long timestamp = object.getLong("timestamp");
+            long closeTime = object.getLong("closeTime");
+            double openPrice = object.getDouble("openPrice");
+            double closePrice = object.getDouble("closePrice");
+            double volume = object.getDouble("volume");
+            double amount = object.getDouble("amount");
+            double priceChange = object.getDouble("priceChange");
+            double percentChange = object.getDouble("percentChange");
+            if (id.isEmpty()
+                    || symbol.isEmpty()
+                    || timestamp <= 0L
+                    || closeTime <= 0L
+                    || !isFinite(openPrice)
+                    || !isFinite(closePrice)
+                    || !isFinite(volume)
+                    || !isFinite(amount)
+                    || !isFinite(priceChange)
+                    || !isFinite(percentChange)) {
+                return null;
+            }
+            return new AbnormalRecord(
+                    id,
+                    symbol,
+                    timestamp,
+                    closeTime,
+                    openPrice,
+                    closePrice,
+                    volume,
+                    amount,
+                    priceChange,
+                    percentChange,
+                    object.optString("triggerSummary", "")
+            );
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private static boolean isFinite(double value) {
+        return !Double.isNaN(value) && !Double.isInfinite(value);
     }
 
     public String getId() {

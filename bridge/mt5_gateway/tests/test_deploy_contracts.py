@@ -9,11 +9,15 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 
-SERVER_SOURCE = Path("bridge/mt5_gateway/server_v2.py")
+ROOT = Path(__file__).resolve().parents[3]
+SERVER_SOURCE = ROOT / "bridge" / "mt5_gateway" / "server_v2.py"
+BUILD_SCRIPT = ROOT / "scripts" / "build_windows_server_bundle.py"
 
 
 def _read_server_source() -> str:
@@ -22,6 +26,24 @@ def _read_server_source() -> str:
 
 
 class DeployContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._bundle_temp_dir = tempfile.TemporaryDirectory()
+        cls.bundle_dir = Path(cls._bundle_temp_dir.name) / "windows_server_bundle"
+        subprocess.run(
+            [sys.executable, str(BUILD_SCRIPT), "--output", str(cls.bundle_dir)],
+            check=True,
+            cwd=ROOT,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        bundle_temp_dir = getattr(cls, "_bundle_temp_dir", None)
+        if bundle_temp_dir is not None:
+            bundle_temp_dir.cleanup()
+        super().tearDownClass()
+
     def test_gateway_source_should_not_embed_default_mt5_credentials(self):
         """服务端源码不能再内置默认 MT5 凭据，缺配置时必须显式失败。"""
         source = _read_server_source()
@@ -36,9 +58,9 @@ class DeployContractTests(unittest.TestCase):
     def test_env_examples_should_define_non_empty_mt5_server_timezone(self):
         """部署样例必须显式给出 MT5_SERVER_TIMEZONE，避免时间轴失真。"""
         example_paths = [
-            Path("bridge/mt5_gateway/.env.example"),
-            Path("dist/windows_server_bundle/mt5_gateway/.env.example"),
-            Path("dist/windows_server_bundle/windows/.env.example"),
+            ROOT / "bridge" / "mt5_gateway" / ".env.example",
+            self.bundle_dir / "mt5_gateway" / ".env.example",
+            self.bundle_dir / "windows" / ".env.example",
         ]
 
         for example_path in example_paths:
@@ -47,12 +69,26 @@ class DeployContractTests(unittest.TestCase):
             self.assertIsNotNone(match, f"{example_path} 缺少 MT5_SERVER_TIMEZONE")
             self.assertTrue(match.group(1).strip(), f"{example_path} 的 MT5_SERVER_TIMEZONE 不能为空")
 
+    def test_env_examples_should_define_non_empty_gateway_auth_token(self):
+        """部署样例必须显式给出 GATEWAY_AUTH_TOKEN，占住公网入口鉴权配置位。"""
+        example_paths = [
+            ROOT / "bridge" / "mt5_gateway" / ".env.example",
+            self.bundle_dir / "mt5_gateway" / ".env.example",
+            self.bundle_dir / "windows" / ".env.example",
+        ]
+
+        for example_path in example_paths:
+            content = example_path.read_text(encoding="utf-8")
+            match = re.search(r"^GATEWAY_AUTH_TOKEN=(.+)$", content, re.MULTILINE)
+            self.assertIsNotNone(match, f"{example_path} 缺少 GATEWAY_AUTH_TOKEN")
+            self.assertTrue(match.group(1).strip(), f"{example_path} 的 GATEWAY_AUTH_TOKEN 不能为空")
+
     def test_icmarkets_examples_should_not_hardcode_seoul_timezone(self):
         """ICMarkets 示例时区不能再误写成部署机器时区首尔。"""
         example_paths = [
-            Path("bridge/mt5_gateway/.env.example"),
-            Path("dist/windows_server_bundle/mt5_gateway/.env.example"),
-            Path("dist/windows_server_bundle/windows/.env.example"),
+            ROOT / "bridge" / "mt5_gateway" / ".env.example",
+            self.bundle_dir / "mt5_gateway" / ".env.example",
+            self.bundle_dir / "windows" / ".env.example",
         ]
 
         for example_path in example_paths:
@@ -62,7 +98,7 @@ class DeployContractTests(unittest.TestCase):
 
     def test_gateway_readme_should_explain_mt5_timezone_is_broker_timezone(self):
         """部署文档必须明确 MT5_SERVER_TIMEZONE 指的是券商服务器时区。"""
-        readme_path = Path("bridge/mt5_gateway/README.md")
+        readme_path = ROOT / "bridge" / "mt5_gateway" / "README.md"
         content = readme_path.read_text(encoding="utf-8")
         self.assertIn("不是部署机器所在时区", content)
         self.assertIn("Europe/Athens", content)
@@ -70,8 +106,8 @@ class DeployContractTests(unittest.TestCase):
     def test_gateway_requirements_should_include_tzdata_for_windows_zoneinfo(self):
         """Windows 部署必须显式安装 tzdata，确保 Asia/Seoul 可被 zoneinfo 解析。"""
         requirement_paths = [
-            Path("bridge/mt5_gateway/requirements.txt"),
-            Path("dist/windows_server_bundle/mt5_gateway/requirements.txt"),
+            ROOT / "bridge" / "mt5_gateway" / "requirements.txt",
+            self.bundle_dir / "mt5_gateway" / "requirements.txt",
         ]
 
         for requirement_path in requirement_paths:
@@ -102,7 +138,7 @@ class DeployContractTests(unittest.TestCase):
 
     def test_start_gateway_should_require_full_mt5_identity_env(self):
         """启动脚本必须把 MT5 登录、密码、服务器、时区都视为强依赖。"""
-        source = Path("bridge/mt5_gateway/start_gateway.ps1").read_text(encoding="utf-8")
+        source = (ROOT / "bridge" / "mt5_gateway" / "start_gateway.ps1").read_text(encoding="utf-8")
 
         self.assertIn('Assert-RequiredGatewayEnv -Keys @(', source)
         self.assertIn('"MT5_LOGIN"', source)
@@ -110,21 +146,22 @@ class DeployContractTests(unittest.TestCase):
         self.assertIn('"MT5_SERVER"', source)
         self.assertIn('"MT5_SERVER_TIMEZONE"', source)
 
+    def test_deploy_bundle_should_require_gateway_auth_token(self):
+        """部署入口必须把 GATEWAY_AUTH_TOKEN 视为公网部署必填项。"""
+        source = (ROOT / "deploy" / "tencent" / "windows" / "deploy_bundle.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('"GATEWAY_AUTH_TOKEN"', source)
+        self.assertIn('throw ("网关环境文件缺少必填项: " + ($missingKeys -join ", ") + " | 文件: " + $envPath)', source)
+
     def test_start_gateway_script_should_parse_under_windows_powershell(self):
         """启动脚本必须能被服务器实际使用的 powershell.exe 解析。"""
         powershell = shutil.which("powershell.exe")
         if not powershell:
             self.skipTest("powershell.exe not available")
 
-        script_path = Path("bridge/mt5_gateway/start_gateway.ps1").resolve()
+        script_path = (ROOT / "bridge" / "mt5_gateway" / "start_gateway.ps1").resolve()
         command = (
-            "$tokens=$null; "
-            "$errors=$null; "
-            f"[System.Management.Automation.Language.Parser]::ParseFile('{script_path}',[ref]$tokens,[ref]$errors) | Out-Null; "
-            "if ($errors.Count -gt 0) { "
-            "$errors | ForEach-Object { Write-Error ((\"{0}:{1}\" -f $_.Extent.StartLineNumber, $_.Message)) }; "
-            "exit 1 "
-            "}"
+            f"[scriptblock]::Create((Get-Content -Raw -Encoding UTF8 '{script_path}')) | Out-Null"
         )
         result = subprocess.run(
             [powershell, "-NoProfile", "-Command", command],

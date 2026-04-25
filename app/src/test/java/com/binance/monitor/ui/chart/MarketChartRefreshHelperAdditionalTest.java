@@ -14,8 +14,8 @@ import java.util.Collections;
 public class MarketChartRefreshHelperAdditionalTest {
 
     @Test
-    public void resolveAutoRefreshDelayMsShouldSlowDownWhenRealtimeIsFresh() {
-        assertEquals(5_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(true, 5_000L, true, 10_000L));
+    public void resolveAutoRefreshDelayMsShouldUseLongerWatchdogWhenRealtimeIsFresh() {
+        assertEquals(10_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(true, 5_000L, true, 10_000L));
         assertEquals(5_000L, MarketChartRefreshHelper.resolveAutoRefreshDelayMs(false, 5_000L, true, 10_000L));
     }
 

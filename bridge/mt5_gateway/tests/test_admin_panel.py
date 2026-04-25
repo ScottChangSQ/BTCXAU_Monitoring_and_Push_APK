@@ -38,7 +38,8 @@ class AdminPanelTests(unittest.TestCase):
             "MT5_LOGIN=7400048\n"
             "MT5_PASSWORD=demo-password\n"
             "MT5_SERVER=ICMarketsSC-MT5-6\n"
-            "MT5_SERVER_TIMEZONE=Asia/Seoul\n",
+            "MT5_SERVER_TIMEZONE=Asia/Seoul\n"
+            "GATEWAY_AUTH_TOKEN=test-token\n",
             encoding="utf-8",
         )
         (fixture_dir / target_script_name).write_text("print('fixture ok')\n", encoding="utf-8")
@@ -64,6 +65,36 @@ class AdminPanelTests(unittest.TestCase):
         env_map = {"ADMIN_GATEWAY_URL": "http://10.0.0.8:8787"}
 
         self.assertEqual("http://10.0.0.8:8787", admin_panel.resolve_gateway_url(env_map))
+
+    def test_build_gateway_auth_headers_should_read_gateway_token(self):
+        headers = admin_panel.build_gateway_auth_headers({"GATEWAY_AUTH_TOKEN": "secret-token"})
+
+        self.assertEqual({"X-Gateway-Token": "secret-token"}, headers)
+
+    def test_request_gateway_json_should_send_gateway_token_header(self):
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'{"ok": true}'
+
+        def fake_urlopen(request, timeout):
+            captured["headers"] = dict(request.header_items())
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with mock.patch.object(admin_panel, "load_env_map", return_value={"GATEWAY_AUTH_TOKEN": "secret-token"}), \
+                mock.patch.object(admin_panel.urllib.request, "urlopen", side_effect=fake_urlopen):
+            payload = admin_panel.request_gateway_json("http://127.0.0.1:8787", "/internal/runtime/panel")
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual("secret-token", captured["headers"].get("X-gateway-token"))
 
     def test_build_component_registry_should_include_gateway_mt5_caddy_and_nginx(self):
         registry = admin_panel.build_component_registry(

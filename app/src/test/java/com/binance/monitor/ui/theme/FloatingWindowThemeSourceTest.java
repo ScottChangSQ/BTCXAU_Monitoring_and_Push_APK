@@ -27,4 +27,15 @@ public class FloatingWindowThemeSourceTest {
         assertTrue("悬浮窗展开态描边应继续保持细边框，不改成粗边框",
                 source.contains("private static int floatingStrokeWidthPx(Context context) {\n        return dp(context, 1);\n    }"));
     }
+
+    @Test
+    public void floatingWindowAddViewShouldNotCrashService() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("try {\n            windowManager.addView(binding.getRoot(), layoutParams);\n            windowAdded = true;\n        } catch (RuntimeException exception) {\n            windowAdded = false;"));
+        assertTrue(source.contains("Log.w(TAG, \"addView failed\", exception);"));
+    }
 }

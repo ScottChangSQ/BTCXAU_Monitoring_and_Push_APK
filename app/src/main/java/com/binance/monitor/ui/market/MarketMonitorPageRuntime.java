@@ -82,7 +82,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         @Override
         public void run() {
             renderRecentRecords();
-            recentRecordsHandler.postDelayed(this, 30_000L);
+            startRecentRecordsAutoRefresh();
         }
     };
     private final Runnable updateTimeTickerRunnable = new Runnable() {
@@ -102,6 +102,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
     private String selectedSymbol = AppConstants.SYMBOL_BTC;
     private boolean applyingConfig;
     private boolean bound;
+    private boolean pageVisible;
     private long lastMarketUpdateMs;
     private String lastMarketRenderSignature = "";
     private ArrayAdapter<String> symbolAdapter;
@@ -149,6 +150,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
     // 页面进入前台时恢复主题、配置和定时刷新链路。
     @Override
     public void onPageShown() {
+        pageVisible = true;
         ensureMonitorServiceStarted();
         applyPaletteStyles();
         applyGlobalPreferences();
@@ -161,6 +163,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
     // 页面离开前台时停止循环刷新，并落盘当前页面配置。
     @Override
     public void onPageHidden() {
+        pageVisible = false;
         stopRecentRecordsAutoRefresh();
         stopUpdateTimeTicker();
         persistCurrentSymbolConfig();
@@ -169,6 +172,7 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
     // 页面销毁时清理定时回调，避免访问已销毁视图。
     @Override
     public void onPageDestroyed() {
+        pageVisible = false;
         stopRecentRecordsAutoRefresh();
         stopUpdateTimeTicker();
     }
@@ -399,6 +403,9 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
         viewModel.getRecords().observe(lifecycleOwner, records -> {
             recentRecordsSource = records == null ? Collections.emptyList() : records;
             renderRecentRecords();
+            if (pageVisible) {
+                startRecentRecordsAutoRefresh();
+            }
         });
     }
 
@@ -414,7 +421,13 @@ public final class MarketMonitorPageRuntime implements MarketMonitorPageHostDele
 
     private void startRecentRecordsAutoRefresh() {
         recentRecordsHandler.removeCallbacks(recentRecordsRefreshRunnable);
-        recentRecordsHandler.postDelayed(recentRecordsRefreshRunnable, 30_000L);
+        if (!pageVisible || recentRecordsSource.isEmpty()) {
+            return;
+        }
+        recentRecordsHandler.postDelayed(
+                recentRecordsRefreshRunnable,
+                AppConstants.MARKET_RECENT_RECORDS_REFRESH_INTERVAL_MS
+        );
     }
 
     private void stopRecentRecordsAutoRefresh() {

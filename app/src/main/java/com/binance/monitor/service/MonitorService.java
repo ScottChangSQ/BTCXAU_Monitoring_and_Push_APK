@@ -6,10 +6,15 @@ package com.binance.monitor.service;
 
 import android.app.Notification;
 import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -70,6 +75,19 @@ public class MonitorService extends Service {
     private final Map<String, Long> lastNotifyAt = new HashMap<>();
     private final AppForegroundTracker.ForegroundStateListener appForegroundListener =
             foreground -> mainHandler.post(() -> handleForegroundStateChanged(foreground));
+    private final BroadcastReceiver screenStateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent == null ? "" : String.valueOf(intent.getAction());
+            if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                mainHandler.post(() -> handleScreenInteractiveChanged(false));
+                return;
+            }
+            if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
+                mainHandler.post(() -> handleScreenInteractiveChanged(true));
+            }
+        }
+    };
     private final Runnable connectionWatchdogRunnable = new Runnable() {
         @Override
         public void run() {
@@ -103,8 +121,11 @@ public class MonitorService extends Service {
     private final V2StreamSequenceGuard v2StreamSequenceGuard = new V2StreamSequenceGuard();
     private final AtomicBoolean remoteSessionRecoveryInFlight = new AtomicBoolean(false);
     private final AtomicBoolean marketTruthRepairInFlight = new AtomicBoolean(false);
+    private boolean screenStateReceiverRegistered;
+    private volatile boolean deviceInteractive = true;
     private volatile ConnectionStage v2StreamStage = ConnectionStage.CONNECTING;
     private volatile boolean v2StreamConnected;
+    private volatile boolean screenInteractive = true;
     private volatile long lastV2StreamMessageAt;
     private volatile long lastMarketTruthRepairAt;
     private String lastPublishedConnectionStatus = "";
@@ -126,6 +147,9 @@ public class MonitorService extends Service {
         v2StreamClient = new GatewayV2StreamClient(this);
         secureSessionPrefs = new SecureSessionPrefs(this);
         accountStatsPreloadManager = AccountStatsPreloadManager.getInstance(this);
+        deviceInteractive = resolveDeviceInteractive();
+        screenInteractive = deviceInteractive;
+        registerScreenStateReceiver();
         accountSessionRecoveryHelper = new AccountSessionRecoveryHelper(
                 new GatewayV2SessionClient(this),
                 secureSessionPrefs,
@@ -186,6 +210,7 @@ public class MonitorService extends Service {
         AppForegroundTracker.getInstance().addListener(appForegroundListener);
         logManager.info("服务初始化完成");
         floatingCoordinator.applyPreferences();
+        floatingCoordinator.setScreenInteractive(screenInteractive);
     }
 
     @Override
@@ -250,6 +275,7 @@ public class MonitorService extends Service {
         if (repository != null) {
             repository.getMarketTruthSnapshotLiveData().removeObserver(marketTruthObserver);
         }
+        unregisterScreenStateReceiver();
         if (realtimeMarketExecutorService != null) {
             realtimeMarketExecutorService.shutdownNow();
             realtimeMarketExecutorService = null;
@@ -335,7 +361,6 @@ public class MonitorService extends Service {
             @Override
             public void onMessage(GatewayV2StreamClient.StreamMessage message) {
                 executeRealtimeMarket(() -> {
-                    lastV2StreamMessageAt = System.currentTimeMillis();
                     try {
                         handleV2StreamMessage(message);
                     } catch (RuntimeException exception) {
@@ -362,8 +387,9 @@ public class MonitorService extends Service {
         if (message == null) {
             return;
         }
+        MonitorStreamRuntimeModeHelper.RuntimeMode runtimeMode = resolveStreamRuntimeMode();
         if (GatewayV2StreamClient.MESSAGE_TYPE_MARKET_TICK.equals(message.getType())) {
-            handleMarketTickMessage(message);
+            handleMarketTickMessage(message, runtimeMode);
             return;
         }
         long busSeq = message.getBusSeq();
@@ -374,27 +400,38 @@ public class MonitorService extends Service {
                 message.getType(),
                 message.getPayload()
         );
-        ChainLatencyTracer.markStreamMessage(message.getType(), plan.shouldRefreshMarket());
-        if (plan.shouldRefreshMarket()) {
-            applyMarketSnapshotFromStream(plan.getMarketSnapshot());
-        }
-        if (plan.shouldRefreshAccount()) {
-            applyAccountSnapshotFromStream(plan.getAccountSnapshot(), message.getPublishedAt());
-        }
-        if (plan.shouldPullAccountHistory()) {
-            requestAccountHistoryRefreshFromV2(plan.getAccountHistoryRevision());
-        }
+        boolean shouldApplyMarketSnapshot = plan.shouldRefreshMarket()
+                && MonitorStreamRuntimeModeHelper.shouldApplyMarketSnapshot(runtimeMode);
+        ChainLatencyTracer.markStreamMessage(message.getType(), shouldApplyMarketSnapshot);
         if (plan.hasAbnormalChange()) {
             applyAbnormalSnapshotFromStream(message.getPayload().optJSONObject("changes").optJSONObject("abnormal"));
         }
-        if (plan.shouldRefreshFloating()) {
+        if (shouldApplyMarketSnapshot) {
+            applyMarketSnapshotFromStream(plan.getMarketSnapshot());
+        }
+        boolean accountApplyPending = false;
+        if (plan.shouldRefreshAccount()) {
+            if (MonitorStreamRuntimeModeHelper.shouldApplyFullAccountRuntime(runtimeMode)) {
+                accountApplyPending = applyAccountSnapshotFromStream(plan.getAccountSnapshot(), message.getPublishedAt(), busSeq);
+            } else if (MonitorStreamRuntimeModeHelper.shouldApplyLiteAccountRuntime(runtimeMode)) {
+                applyAccountSnapshotLiteFromStream(plan.getAccountSnapshot(), message.getPublishedAt());
+            }
+        }
+        if (plan.shouldPullAccountHistory() && MonitorStreamRuntimeModeHelper.shouldPullAccountHistory(runtimeMode)) {
+            requestAccountHistoryRefreshFromV2(plan.getAccountHistoryRevision());
+        }
+        if (!accountApplyPending) {
+            v2StreamSequenceGuard.commitAppliedBusSeq(busSeq);
+            lastV2StreamMessageAt = System.currentTimeMillis();
+        }
+        if (plan.shouldRefreshFloating() && MonitorStreamRuntimeModeHelper.shouldRefreshFloating(runtimeMode)) {
             floatingCoordinator.requestRefresh(false);
         }
-        v2StreamSequenceGuard.commitAppliedBusSeq(busSeq);
     }
 
     // 市场直推链单独消费 marketTick，不再依赖旧 changes.market 才允许推进真值。
-    private void handleMarketTickMessage(@Nullable GatewayV2StreamClient.StreamMessage message) {
+    private void handleMarketTickMessage(@Nullable GatewayV2StreamClient.StreamMessage message,
+                                         @NonNull MonitorStreamRuntimeModeHelper.RuntimeMode runtimeMode) {
         if (message == null) {
             return;
         }
@@ -402,10 +439,19 @@ public class MonitorService extends Service {
         if (!v2StreamSequenceGuard.shouldApplyMarketSeq(marketSeq)) {
             return;
         }
-        ChainLatencyTracer.markStreamMessage(message.getType(), true);
-        applyMarketSnapshotFromStream(message.getMarketSnapshot());
-        floatingCoordinator.requestRefresh(false);
+        boolean shouldApplyMarketSnapshot = MonitorStreamRuntimeModeHelper.shouldApplyMarketSnapshot(runtimeMode);
+        ChainLatencyTracer.markStreamMessage(message.getType(), shouldApplyMarketSnapshot);
+        boolean marketApplied = false;
+        if (shouldApplyMarketSnapshot) {
+            marketApplied = applyMarketSnapshotFromStream(message.getMarketSnapshot());
+        }
         v2StreamSequenceGuard.commitAppliedMarketSeq(marketSeq);
+        if (marketApplied) {
+            lastV2StreamMessageAt = System.currentTimeMillis();
+        }
+        if (MonitorStreamRuntimeModeHelper.shouldRefreshFloating(runtimeMode)) {
+            floatingCoordinator.requestRefresh(false);
+        }
     }
 
     // 只有 history revision 前进时才补拉 history，避免运行态每次都重复打 snapshot。
@@ -422,13 +468,13 @@ public class MonitorService extends Service {
     }
 
     // 应用 stream 市场快照，直接回写监控页/悬浮窗共用真值。
-    private void applyMarketSnapshotFromStream(@Nullable JSONObject marketSnapshot) {
+    private boolean applyMarketSnapshotFromStream(@Nullable JSONObject marketSnapshot) {
         if (marketSnapshot == null) {
-            return;
+            return false;
         }
         JSONArray states = marketSnapshot.optJSONArray("symbolStates");
         if (states == null || states.length() == 0) {
-            return;
+            return false;
         }
         List<SymbolMarketWindow> symbolWindows = new ArrayList<>();
         for (int i = 0; i < states.length(); i++) {
@@ -468,7 +514,11 @@ public class MonitorService extends Service {
             ));
             ChainLatencyTracer.markMarketPayloadApplied(symbol, displayData.getCloseTime(), -1L, -1L, -1L);
         }
+        if (symbolWindows.isEmpty()) {
+            return false;
+        }
         repository.applyMarketRuntimeSnapshot(new MarketRuntimeSnapshot(0L, 0L, System.currentTimeMillis(), toSymbolWindowMap(symbolWindows)));
+        return true;
     }
 
     @NonNull
@@ -484,7 +534,42 @@ public class MonitorService extends Service {
     }
 
     // 应用 stream 账户运行态，同时更新悬浮窗即时持仓和账户页本地运行态缓存。
-    private void applyAccountSnapshotFromStream(@Nullable JSONObject accountSnapshot, long publishedAt) {
+    private boolean applyAccountSnapshotFromStream(@Nullable JSONObject accountSnapshot, long publishedAt, long busSeq) {
+        if (accountSnapshot == null) {
+            return false;
+        }
+        if (accountRuntimeExecutorService == null || accountStatsPreloadManager == null) {
+            if (logManager != null) {
+                logManager.warn("v2 stream 账户运行态应用失败: account runtime executor unavailable");
+            }
+            return true;
+        }
+        final String snapshotBody = accountSnapshot.toString();
+        boolean submitted = executeAccountRuntime(() -> {
+            try {
+                JSONObject snapshotCopy = new JSONObject(snapshotBody);
+                AccountStatsPreloadManager.ApplyResult result =
+                        accountStatsPreloadManager.applyPublishedAccountRuntime(snapshotCopy, publishedAt);
+                if (result.isSuccess()) {
+                    v2StreamSequenceGuard.commitAppliedBusSeq(busSeq);
+                    lastV2StreamMessageAt = System.currentTimeMillis();
+                } else {
+                    logManager.warn("v2 stream 账户运行态应用失败: " + result.getMessage());
+                }
+            } catch (Exception exception) {
+                logManager.warn("v2 stream 账户运行态应用失败: " + exception.getMessage());
+            } finally {
+                mainHandler.post(() -> {
+                    updateConnectionStatus();
+                    floatingCoordinator.requestRefresh(false);
+                });
+            }
+        });
+        return submitted;
+    }
+
+    // 后台亮屏最小模式只保留悬浮窗所需账户运行态，避免整页统计链继续高频推进。
+    private void applyAccountSnapshotLiteFromStream(@Nullable JSONObject accountSnapshot, long publishedAt) {
         if (accountSnapshot == null) {
             return;
         }
@@ -495,9 +580,9 @@ public class MonitorService extends Service {
         executeAccountRuntime(() -> {
             try {
                 JSONObject snapshotCopy = new JSONObject(snapshotBody);
-                accountStatsPreloadManager.applyPublishedAccountRuntime(snapshotCopy, publishedAt);
+                accountStatsPreloadManager.applyPublishedAccountRuntimeLite(snapshotCopy, publishedAt);
             } catch (Exception exception) {
-                logManager.warn("v2 stream 账户运行态应用失败: " + exception.getMessage());
+                logManager.warn("v2 stream 账户轻量运行态应用失败: " + exception.getMessage());
             } finally {
                 mainHandler.post(() -> floatingCoordinator.requestRefresh(false));
             }
@@ -613,6 +698,34 @@ public class MonitorService extends Service {
         restartV2Stream("foreground_resume");
     }
 
+    // 亮灭屏时同步切换心跳与悬浮窗策略；熄屏时退到 alert-only，亮屏后按需要恢复。
+    private void handleScreenInteractiveChanged(boolean interactive) {
+        handleDeviceInteractiveChanged(interactive);
+    }
+
+    // 亮灭屏时同步切换心跳与悬浮窗策略；熄屏时退到 alert-only，亮屏后按需要恢复。
+    private void handleDeviceInteractiveChanged(boolean interactive) {
+        boolean changed = deviceInteractive != interactive;
+        deviceInteractive = interactive;
+        screenInteractive = interactive;
+        if (floatingCoordinator != null) {
+            floatingCoordinator.setScreenInteractive(interactive);
+        }
+        if (!changed || !pipelineStarted) {
+            return;
+        }
+        rescheduleRuntimePolicies();
+        if (!interactive) {
+            return;
+        }
+        if (isV2StreamHealthy(System.currentTimeMillis())) {
+            floatingCoordinator.requestRefresh(true);
+            updateConnectionStatus();
+            return;
+        }
+        restartV2Stream("screen_on_resume");
+    }
+
     // 统一收口 v2 stream 重建，避免息屏或后台切回后继续占用僵死连接。
     private void restartV2Stream(String reason) {
         if (v2StreamClient == null || !pipelineStarted) {
@@ -628,6 +741,31 @@ public class MonitorService extends Service {
     private void requestForegroundEntryRefresh() {
         floatingCoordinator.requestRefresh(true);
         reconcileRemoteSessionIfNeeded();
+    }
+
+    @NonNull
+    private MonitorStreamRuntimeModeHelper.RuntimeMode resolveStreamRuntimeMode() {
+        if (AppForegroundTracker.getInstance().isForeground()) {
+            return MonitorStreamRuntimeModeHelper.RuntimeMode.FOREGROUND_FULL;
+        }
+        if (shouldUseScreenOffAlertOnlyMode()) {
+            return MonitorStreamRuntimeModeHelper.RuntimeMode.ALERT_ONLY;
+        }
+        if (shouldUseMinimalFloatingMode()) {
+            return MonitorStreamRuntimeModeHelper.RuntimeMode.BACKGROUND_FLOATING_MINIMAL;
+        }
+        return MonitorStreamRuntimeModeHelper.RuntimeMode.ALERT_ONLY;
+    }
+
+    private boolean shouldUseMinimalFloatingMode() {
+        return !AppForegroundTracker.getInstance().isForeground()
+                && deviceInteractive
+                && configManager != null
+                && configManager.isFloatingEnabled();
+    }
+
+    private boolean shouldUseScreenOffAlertOnlyMode() {
+        return !deviceInteractive;
     }
 
     // 悬浮窗只允许看到当前活动会话对应的账户缓存，旧账号 cache 不能继续透传下去。
@@ -727,8 +865,8 @@ public class MonitorService extends Service {
             return;
         }
         for (AbnormalRecord record : parseAbnormalRecords(delta.optJSONArray("records"))) {
-            if (recordManager.addRecordIfAbsent(record) && floatingWindowManager != null) {
-                floatingWindowManager.notifyAbnormalEvent(record.getSymbol());
+            if (recordManager.addRecordIfAbsent(record) && floatingCoordinator != null) {
+                floatingCoordinator.notifyAbnormalEvent(record.getSymbol());
             }
         }
         if (!Boolean.TRUE.equals(repository.getMonitoringEnabled().getValue())) {
@@ -749,10 +887,11 @@ public class MonitorService extends Service {
             if (item == null) {
                 continue;
             }
-            try {
-                records.add(AbnormalRecord.fromJson(item));
-            } catch (Exception exception) {
-                warnMalformedPayload("异常记录解析失败", exception);
+            AbnormalRecord record = AbnormalRecord.parseOrNull(item);
+            if (record == null) {
+                warnMalformedPayload("异常记录解析失败", new IllegalArgumentException("invalid abnormal record"));
+            } else {
+                records.add(record);
             }
         }
         return records;
@@ -853,7 +992,9 @@ public class MonitorService extends Service {
         if (!status.equals(currentStatus)) {
             publishConnectionStatus(status);
             foregroundNotificationCoordinator.refreshNotification(status);
-            floatingCoordinator.requestRefresh(false);
+            if (MonitorStreamRuntimeModeHelper.shouldRefreshFloating(resolveStreamRuntimeMode())) {
+                floatingCoordinator.requestRefresh(false);
+            }
         }
     }
 
@@ -871,7 +1012,40 @@ public class MonitorService extends Service {
     // 读取当前连接心跳节奏。
     private long resolveHeartbeatDelayMs() {
         return MonitorRuntimePolicyHelper.resolveHeartbeatDelayMs(
-                AppForegroundTracker.getInstance().isForeground());
+                AppForegroundTracker.getInstance().isForeground(),
+                screenInteractive);
+    }
+
+    private void registerScreenStateReceiver() {
+        if (screenStateReceiverRegistered) {
+            return;
+        }
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_USER_PRESENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(screenStateReceiver, filter);
+        }
+        screenStateReceiverRegistered = true;
+    }
+
+    private void unregisterScreenStateReceiver() {
+        if (!screenStateReceiverRegistered) {
+            return;
+        }
+        try {
+            unregisterReceiver(screenStateReceiver);
+        } catch (IllegalArgumentException ignored) {
+        }
+        screenStateReceiverRegistered = false;
+    }
+
+    private boolean resolveDeviceInteractive() {
+        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        return powerManager == null || powerManager.isInteractive();
     }
 
     private void checkStreamFreshness() {

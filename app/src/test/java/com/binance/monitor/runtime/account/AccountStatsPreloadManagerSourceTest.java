@@ -21,6 +21,17 @@ public class AccountStatsPreloadManagerSourceTest {
 
         assertTrue(source.contains("private void clearStoredSnapshotForResolvedIdentity() {"));
         assertFalse(source.contains("clearStoredSnapshotForIdentity(\"\", \"\")"));
+        assertTrue(source.contains("if (account == null || server == null || account.trim().isEmpty() || server.trim().isEmpty()) {\n            return;\n        }"));
+    }
+
+    @Test
+    public void publishedAccountRuntimeShouldReturnApplyResult() throws Exception {
+        String source = readUtf8("src/main/java/com/binance/monitor/runtime/account/AccountStatsPreloadManager.java");
+
+        assertTrue(source.contains("public ApplyResult applyPublishedAccountRuntime(JSONObject accountRuntimeSnapshot, long publishedAt)"));
+        assertTrue(source.contains("public static class ApplyResult"));
+        assertTrue(source.contains("public boolean isSuccess()"));
+        assertTrue(source.contains("public String getMessage()"));
     }
 
     private static String readUtf8(String relativePath) throws Exception {

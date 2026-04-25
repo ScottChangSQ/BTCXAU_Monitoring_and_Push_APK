@@ -282,3 +282,92 @@ class V2TradeBatchTests(unittest.TestCase):
         self.assertEqual("ACCEPTED", payload["status"])
         self.assertEqual("ACCEPTED", payload["items"][0]["status"])
         self.assertGreaterEqual(state["ensure_calls"], 2)
+
+    def test_batch_submit_should_be_idempotent_for_same_payload(self):
+        check_result = _fake_mt5_result(retcode=0, comment="ok")
+        send_result = _fake_mt5_result(retcode=0, comment="sent", order=1001, deal=2001)
+        payload = {
+            "batchId": "batch-idem-001",
+            "strategy": "BEST_EFFORT",
+            "items": [
+                {
+                    "itemId": "open-1",
+                    "action": "OPEN_MARKET",
+                    "params": {"symbol": "BTCUSD", "side": "BUY", "volume": 0.10},
+                }
+            ],
+        }
+        with mock.patch.object(server_v2, "_detect_account_mode", return_value="hedging"), mock.patch.object(
+            server_v2, "_trade_check_request", return_value=check_result
+        ), mock.patch.object(server_v2, "_trade_send_request", return_value=send_result) as send_mock:
+            first = server_v2.v2_trade_batch_submit(payload)
+            second = server_v2.v2_trade_batch_submit(payload)
+
+        self.assertEqual("ACCEPTED", first["status"])
+        self.assertTrue(second["idempotent"])
+        self.assertEqual(1, send_mock.call_count)
+
+    def test_batch_submit_should_reject_same_batch_id_with_different_payload(self):
+        check_result = _fake_mt5_result(retcode=0, comment="ok")
+        send_result = _fake_mt5_result(retcode=0, comment="sent", order=1001, deal=2001)
+        first_payload = {
+            "batchId": "batch-idem-mismatch-001",
+            "strategy": "BEST_EFFORT",
+            "items": [
+                {
+                    "itemId": "open-1",
+                    "action": "OPEN_MARKET",
+                    "params": {"symbol": "BTCUSD", "side": "BUY", "volume": 0.10},
+                }
+            ],
+        }
+        second_payload = {
+            "batchId": "batch-idem-mismatch-001",
+            "strategy": "BEST_EFFORT",
+            "items": [
+                {
+                    "itemId": "open-1",
+                    "action": "OPEN_MARKET",
+                    "params": {"symbol": "BTCUSD", "side": "BUY", "volume": 0.20},
+                }
+            ],
+        }
+        with mock.patch.object(server_v2, "_detect_account_mode", return_value="hedging"), mock.patch.object(
+            server_v2, "_trade_check_request", return_value=check_result
+        ), mock.patch.object(server_v2, "_trade_send_request", return_value=send_result):
+            server_v2.v2_trade_batch_submit(first_payload)
+            second = server_v2.v2_trade_batch_submit(second_payload)
+
+        self.assertEqual("FAILED", second["status"])
+        self.assertEqual("TRADE_DUPLICATE_PAYLOAD_MISMATCH", second["error"]["code"])
+
+    def test_all_or_none_should_not_send_when_any_check_fails(self):
+        check_results = [
+            _fake_mt5_result(retcode=0, comment="ok"),
+            _fake_mt5_result(retcode=10019, comment="no margin"),
+        ]
+        with mock.patch.object(server_v2, "_detect_account_mode", return_value="hedging"), mock.patch.object(
+            server_v2, "_trade_check_request", side_effect=check_results
+        ), mock.patch.object(server_v2, "_trade_send_request") as send_mock:
+            payload = server_v2.v2_trade_batch_submit(
+                {
+                    "batchId": "batch-aon-check-001",
+                    "strategy": "ALL_OR_NONE",
+                    "items": [
+                        {
+                            "itemId": "open-1",
+                            "action": "OPEN_MARKET",
+                            "params": {"symbol": "BTCUSD", "side": "BUY", "volume": 0.10},
+                        },
+                        {
+                            "itemId": "open-2",
+                            "action": "OPEN_MARKET",
+                            "params": {"symbol": "BTCUSD", "side": "BUY", "volume": 0.20},
+                        },
+                    ],
+                }
+            )
+
+        self.assertEqual("FAILED", payload["status"])
+        self.assertEqual(0, send_mock.call_count)
+        self.assertTrue(all(item["status"] == "REJECTED" for item in payload["items"]))

@@ -133,6 +133,14 @@ final class AccountStatsRenderCoordinator {
         @Nullable
         AccountStatsRenderSignature getPendingHistoryRenderSignature();
 
+        boolean isCurveSectionVisible();
+
+        boolean isReturnSectionVisible();
+
+        boolean isTradeStatsSectionVisible();
+
+        boolean isTradeRecordsSectionVisible();
+
         @NonNull
         List<AccountMetric> getLatestStatsMetrics();
 
@@ -315,14 +323,15 @@ final class AccountStatsRenderCoordinator {
     // 次级区块渲染是否真的需要刷新，由协调器统一判断并调度。
     void renderDeferredSnapshotSections() {
         AccountStatsRenderSignature nextRenderSignature = host.buildCurrentHistoryRenderSignature();
-        AccountStatsSectionDiff sectionDiff = host.isForceDeferredSectionRender()
+        AccountStatsSectionDiff computedDiff = host.isForceDeferredSectionRender()
                 ? new AccountStatsSectionDiff(true, true, true, true)
                 : AccountStatsSectionDiff.between(host.getLastHistoryRenderSignature(), nextRenderSignature);
+        AccountStatsSectionDiff sectionDiff = mergeSectionDiff(host.getPendingSectionDiff(), computedDiff);
         host.setForceDeferredSectionRender(false);
         if (sectionDiff.isEmpty()) {
             host.setDeferredSecondaryRenderPending(false);
             host.setPendingHistoryRenderSignature(nextRenderSignature);
-            host.setPendingSectionDiff(sectionDiff);
+            host.setPendingSectionDiff(null);
             host.setLastHistoryRenderSignature(nextRenderSignature);
             return;
         }
@@ -484,8 +493,11 @@ final class AccountStatsRenderCoordinator {
         AccountStatsSectionDiff sectionDiff = host.getPendingSectionDiff();
         if (sectionDiff == null || sectionDiff.isEmpty()) {
             host.setLastHistoryRenderSignature(host.getPendingHistoryRenderSignature());
+            host.setPendingSectionDiff(null);
             return;
         }
+        AccountStatsSectionDiff visibleSectionDiff = intersectWithVisibleSections(sectionDiff);
+        AccountStatsSectionDiff remainingSectionDiff = subtractSectionDiff(sectionDiff, visibleSectionDiff);
         long stageStartedAt = System.currentTimeMillis();
         host.updateTradeProductOptions(prepared.getTradeProducts(), request.tradeProductFilter);
         host.updateTradeFilterDisplayTexts(request.tradeProductFilter, request.tradeSideFilter, request.rawSortSelection);
@@ -495,7 +507,7 @@ final class AccountStatsRenderCoordinator {
                 host.getBasePositions().size(),
                 host.getAllCurvePoints().size());
 
-        if (sectionDiff.refreshReturnSection) {
+        if (visibleSectionDiff.refreshReturnSection) {
             stageStartedAt = System.currentTimeMillis();
             host.renderReturnStatsTable(host.getAllCurvePoints());
             host.traceAccountRenderPhase("render_returns_table",
@@ -505,7 +517,7 @@ final class AccountStatsRenderCoordinator {
                     host.getAllCurvePoints().size());
         }
 
-        if (sectionDiff.refreshCurveSection) {
+        if (visibleSectionDiff.refreshCurveSection) {
             stageStartedAt = System.currentTimeMillis();
             host.setManualCurveRangeEnabled(prepared.getCurveProjection().isManualRangeApplied());
             host.syncRangeInputsWithDisplayedCurve(prepared.getCurveProjection().getDisplayedCurvePoints());
@@ -517,7 +529,7 @@ final class AccountStatsRenderCoordinator {
                     host.getDisplayedCurvePointCount());
         }
 
-        if (sectionDiff.refreshTradeStatsSection) {
+        if (visibleSectionDiff.refreshTradeStatsSection) {
             stageStartedAt = System.currentTimeMillis();
             host.bindTradeAnalytics(prepared.getTradeStatsMetrics(),
                     prepared.getTradePnlEntries(),
@@ -532,7 +544,7 @@ final class AccountStatsRenderCoordinator {
                     host.getDisplayedCurvePointCount());
         }
 
-        if (sectionDiff.refreshTradeRecordsSection) {
+        if (visibleSectionDiff.refreshTradeRecordsSection) {
             stageStartedAt = System.currentTimeMillis();
             host.bindFilteredTrades(prepared.getFilteredTrades(),
                     prepared.getTradeSummary(),
@@ -546,7 +558,46 @@ final class AccountStatsRenderCoordinator {
                     host.getBasePositions().size(),
                     host.getDisplayedCurvePointCount());
         }
+        host.setPendingSectionDiff(remainingSectionDiff.isEmpty() ? null : remainingSectionDiff);
         host.setLastHistoryRenderSignature(host.getPendingHistoryRenderSignature());
+    }
+
+    @NonNull
+    private AccountStatsSectionDiff mergeSectionDiff(@Nullable AccountStatsSectionDiff pending,
+                                                     @NonNull AccountStatsSectionDiff computed) {
+        if (pending == null || pending.isEmpty()) {
+            return computed;
+        }
+        if (computed.isEmpty()) {
+            return pending;
+        }
+        return new AccountStatsSectionDiff(
+                pending.refreshCurveSection || computed.refreshCurveSection,
+                pending.refreshReturnSection || computed.refreshReturnSection,
+                pending.refreshTradeStatsSection || computed.refreshTradeStatsSection,
+                pending.refreshTradeRecordsSection || computed.refreshTradeRecordsSection
+        );
+    }
+
+    @NonNull
+    private AccountStatsSectionDiff intersectWithVisibleSections(@NonNull AccountStatsSectionDiff sectionDiff) {
+        return new AccountStatsSectionDiff(
+                sectionDiff.refreshCurveSection && host.isCurveSectionVisible(),
+                sectionDiff.refreshReturnSection && host.isReturnSectionVisible(),
+                sectionDiff.refreshTradeStatsSection && host.isTradeStatsSectionVisible(),
+                sectionDiff.refreshTradeRecordsSection && host.isTradeRecordsSectionVisible()
+        );
+    }
+
+    @NonNull
+    private AccountStatsSectionDiff subtractSectionDiff(@NonNull AccountStatsSectionDiff original,
+                                                        @NonNull AccountStatsSectionDiff applied) {
+        return new AccountStatsSectionDiff(
+                original.refreshCurveSection && !applied.refreshCurveSection,
+                original.refreshReturnSection && !applied.refreshReturnSection,
+                original.refreshTradeStatsSection && !applied.refreshTradeStatsSection,
+                original.refreshTradeRecordsSection && !applied.refreshTradeRecordsSection
+        );
     }
 
     // 次级区块后台计算请求，冻结一次渲染所需的筛选条件和数据快照。

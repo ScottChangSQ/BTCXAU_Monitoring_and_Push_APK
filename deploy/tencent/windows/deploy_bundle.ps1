@@ -138,11 +138,53 @@ function Get-PortStateText {
     return "端口 " + $Port + "：未监听"
 }
 
+function Get-GatewayAuthHeaders {
+    $headers = @{}
+    try {
+        $envPath = Join-Path $resolvedBundleRoot "mt5_gateway\.env"
+        if (-not (Test-Path $envPath)) {
+            return $headers
+        }
+        foreach ($line in Get-Content -LiteralPath $envPath -Encoding UTF8) {
+            $trimmed = [string]$line
+            $trimmed = $trimmed.Trim()
+            if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+                continue
+            }
+            $separatorIndex = $trimmed.IndexOf("=")
+            if ($separatorIndex -lt 1) {
+                continue
+            }
+            $key = $trimmed.Substring(0, $separatorIndex).Trim()
+            if ($key -ne "GATEWAY_AUTH_TOKEN") {
+                continue
+            }
+            $value = $trimmed.Substring($separatorIndex + 1).Trim()
+            if (
+                ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+                ($value.StartsWith("'") -and $value.EndsWith("'"))
+            ) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+            if (-not [string]::IsNullOrWhiteSpace($value)) {
+                $headers["X-Gateway-Token"] = $value
+            }
+            return $headers
+        }
+    }
+    catch {
+    }
+    return $headers
+}
+
 function Invoke-JsonStatusRequest {
-    param([string]$Url)
+    param(
+        [string]$Url,
+        [hashtable]$Headers = @{}
+    )
 
     try {
-        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 5
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 5 -Headers $Headers
         if ([string]::IsNullOrWhiteSpace([string]$response.Content)) {
             return $null
         }
@@ -172,7 +214,8 @@ function New-RuntimeSnapshotPayload {
 }
 
 function Build-RuntimeSnapshotPayload {
-    $panel = Invoke-JsonStatusRequest -Url "http://127.0.0.1:8787/internal/runtime/panel"
+    $gatewayAuthHeaders = Get-GatewayAuthHeaders
+    $panel = Invoke-JsonStatusRequest -Url "http://127.0.0.1:8787/internal/runtime/panel" -Headers $gatewayAuthHeaders
     $health = if ($panel -and [string]::IsNullOrWhiteSpace([string]$panel.__error)) { $panel.health } else { $null }
     $source = if ($panel -and [string]::IsNullOrWhiteSpace([string]$panel.__error)) { $panel.source } else { $null }
     $session = if ($panel -and [string]::IsNullOrWhiteSpace([string]$panel.__error)) { $panel.session } else { $null }
@@ -577,14 +620,15 @@ function Start-HealthProbe {
 function Wait-HttpOk {
     param(
         [string]$Url,
-        [int]$MaxSeconds = 60
+        [int]$MaxSeconds = 60,
+        [hashtable]$Headers = @{}
     )
 
     $deadline = (Get-Date).AddSeconds($MaxSeconds)
     $lastFailure = ""
     while ((Get-Date) -lt $deadline) {
         try {
-            $resp = Invoke-WebRequest $Url -UseBasicParsing -TimeoutSec 5
+            $resp = Invoke-WebRequest $Url -UseBasicParsing -TimeoutSec 5 -Headers $Headers
             if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 300) {
                 return $resp
             }
@@ -738,7 +782,8 @@ function Wait-HttpsLoopbackOk {
 function Wait-WebSocketMessage {
     param(
         [string]$Url,
-        [int]$MaxSeconds = 60
+        [int]$MaxSeconds = 60,
+        [string]$GatewayToken = ""
     )
 
     $deadline = (Get-Date).AddSeconds($MaxSeconds)
@@ -748,6 +793,9 @@ function Wait-WebSocketMessage {
         $client = [System.Net.WebSockets.ClientWebSocket]::new()
         $cts = [System.Threading.CancellationTokenSource]::new()
         try {
+            if (-not [string]::IsNullOrWhiteSpace($GatewayToken)) {
+                $client.Options.SetRequestHeader("X-Gateway-Token", $GatewayToken)
+            }
             $remainingSeconds = [Math]::Max(1, [int][Math]::Ceiling(($deadline - (Get-Date)).TotalSeconds))
             $attemptSeconds = [Math]::Min($remainingSeconds, 10)
             $cts.CancelAfter([TimeSpan]::FromSeconds($attemptSeconds))
@@ -859,6 +907,30 @@ function Get-ListenerProcessDetails {
 function Test-GatewayEnvContract {
     param($Context)
 
+    $values = Read-GatewayEnvValues -Context $Context
+    $envPath = Join-Path $Context.GatewayDir ".env"
+    $requiredKeys = @(
+        "MT5_LOGIN",
+        "MT5_PASSWORD",
+        "MT5_SERVER",
+        "MT5_SERVER_TIMEZONE",
+        "GATEWAY_AUTH_TOKEN"
+    )
+
+    $missingKeys = @()
+    foreach ($key in $requiredKeys) {
+        if (-not $values.ContainsKey($key) -or [string]::IsNullOrWhiteSpace([string]$values[$key])) {
+            $missingKeys += $key
+        }
+    }
+    if ($missingKeys.Count -gt 0) {
+        throw ("网关环境文件缺少必填项: " + ($missingKeys -join ", ") + " | 文件: " + $envPath)
+    }
+}
+
+function Read-GatewayEnvValues {
+    param($Context)
+
     $envPath = Join-Path $Context.GatewayDir ".env"
     if (-not (Test-Path $envPath)) {
         throw "网关环境文件缺失: $envPath"
@@ -868,7 +940,8 @@ function Test-GatewayEnvContract {
         "MT5_LOGIN",
         "MT5_PASSWORD",
         "MT5_SERVER",
-        "MT5_SERVER_TIMEZONE"
+        "MT5_SERVER_TIMEZONE",
+        "GATEWAY_AUTH_TOKEN"
     )
     $values = @{}
     foreach ($line in Get-Content -LiteralPath $envPath -Encoding UTF8) {
@@ -894,15 +967,7 @@ function Test-GatewayEnvContract {
         $values[$key] = $value
     }
 
-    $missingKeys = @()
-    foreach ($key in $requiredKeys) {
-        if (-not $values.ContainsKey($key) -or [string]::IsNullOrWhiteSpace([string]$values[$key])) {
-            $missingKeys += $key
-        }
-    }
-    if ($missingKeys.Count -gt 0) {
-        throw ("网关环境文件缺少必填项: " + ($missingKeys -join ", ") + " | 文件: " + $envPath)
-    }
+    return $values
 }
 
 function Get-ServiceLogTail {
@@ -1103,6 +1168,11 @@ function Invoke-DeployWorker {
         Begin-Step -Context $Context -Name "初始化环境" -Message "创建虚拟环境并安装依赖"
         & $bootstrapScript -BundleRoot $Context.BundleRoot
         Test-GatewayEnvContract -Context $Context
+        $gatewayEnvValues = Read-GatewayEnvValues -Context $Context
+        $gatewayAuthToken = [string]$gatewayEnvValues["GATEWAY_AUTH_TOKEN"]
+        $gatewayAuthHeaders = @{
+            "X-Gateway-Token" = $gatewayAuthToken
+        }
         Complete-Step -Context $Context -Name "初始化环境" -Status "success" -Message "Python 环境初始化完成"
 
         Begin-Step -Context $Context -Name "注册任务" -Message "重新注册网关与管理面板开机自启任务"
@@ -1184,22 +1254,22 @@ function Invoke-DeployWorker {
             -MaxSeconds 180
         Write-DeployLog -Context $Context -Message ("健康检查通过: 443 tradeapp.ltd/health -> " + $publicHttpsGateway.StatusCode + " | bundleFingerprint=" + $publicHttpsGateway.FieldValue)
         Start-HealthProbe -Context $Context -Label "8787 /v2/account/snapshot"
-        $directAccountSnapshot = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/snapshot" -MaxSeconds 90
+        $directAccountSnapshot = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/snapshot" -MaxSeconds 90 -Headers $gatewayAuthHeaders
         Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /v2/account/snapshot -> " + $directAccountSnapshot.StatusCode)
         Start-HealthProbe -Context $Context -Label "8787 /v2/account/history?range=all"
-        $directAccountHistory = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/history?range=all" -MaxSeconds 90
+        $directAccountHistory = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/history?range=all" -MaxSeconds 90 -Headers $gatewayAuthHeaders
         Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /v2/account/history?range=all -> " + $directAccountHistory.StatusCode)
         Start-HealthProbe -Context $Context -Label "8787 /v2/account/full (diagnostic)"
-        $directAccountFull = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/full" -MaxSeconds 180
+        $directAccountFull = Wait-HttpOk -Url "http://127.0.0.1:8787/v2/account/full" -MaxSeconds 180 -Headers $gatewayAuthHeaders
         Write-DeployLog -Context $Context -Message ("健康检查通过: 8787 /v2/account/full (diagnostic) -> " + $directAccountFull.StatusCode)
         Start-HealthProbe -Context $Context -Label "443 tradeapp.ltd/v2/account/snapshot"
-        $publicAccountSnapshot = Wait-HttpOk -Url "https://tradeapp.ltd/v2/account/snapshot" -MaxSeconds 180
+        $publicAccountSnapshot = Wait-HttpOk -Url "https://tradeapp.ltd/v2/account/snapshot" -MaxSeconds 180 -Headers $gatewayAuthHeaders
         Write-DeployLog -Context $Context -Message ("健康检查通过: 443 tradeapp.ltd/v2/account/snapshot -> " + $publicAccountSnapshot.StatusCode)
         Start-HealthProbe -Context $Context -Label "443 tradeapp.ltd/v2/account/history?range=all"
-        $publicAccountHistory = Wait-HttpOk -Url "https://tradeapp.ltd/v2/account/history?range=all" -MaxSeconds 180
+        $publicAccountHistory = Wait-HttpOk -Url "https://tradeapp.ltd/v2/account/history?range=all" -MaxSeconds 180 -Headers $gatewayAuthHeaders
         Write-DeployLog -Context $Context -Message ("健康检查通过: 443 tradeapp.ltd/v2/account/history?range=all -> " + $publicAccountHistory.StatusCode)
         Start-HealthProbe -Context $Context -Label "wss://tradeapp.ltd/v2/stream"
-        $streamCheck = Wait-WebSocketMessage -Url "wss://tradeapp.ltd/v2/stream" -MaxSeconds 90
+        $streamCheck = Wait-WebSocketMessage -Url "wss://tradeapp.ltd/v2/stream" -MaxSeconds 90 -GatewayToken $gatewayAuthToken
         Write-DeployLog -Context $Context -Message ("健康检查通过: wss://tradeapp.ltd/v2/stream -> " + $streamCheck.Preview)
 
         $adminProxyStatus = $null

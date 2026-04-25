@@ -14,6 +14,7 @@ public class ConfigManager {
     private static final String KEY_SHOW_BTC = "show_btc";
     private static final String KEY_SHOW_XAU = "show_xau";
     private static final String KEY_MT5_GATEWAY_URL = "mt5_gateway_url";
+    private static final String KEY_MT5_GATEWAY_AUTH_TOKEN = "mt5_gateway_auth_token";
     private static final String KEY_COLOR_PALETTE = "color_palette";
     private static final String KEY_TAB_MARKET_MONITOR_VISIBLE = "tab_market_monitor_visible";
     private static final String KEY_TAB_MARKET_CHART_VISIBLE = "tab_market_chart_visible";
@@ -134,6 +135,16 @@ public class ConfigManager {
         String normalized = baseUrl == null ? "" : baseUrl.trim();
         String target = normalized.isEmpty() ? AppConstants.MT5_GATEWAY_BASE_URL : normalized;
         preferences.edit().putString(KEY_MT5_GATEWAY_URL, target).apply();
+    }
+
+    public String getMt5GatewayAuthToken() {
+        String authToken = preferences.getString(KEY_MT5_GATEWAY_AUTH_TOKEN, "");
+        return authToken == null ? "" : authToken.trim();
+    }
+
+    public void setMt5GatewayAuthToken(String authToken) {
+        String normalized = authToken == null ? "" : authToken.trim();
+        preferences.edit().putString(KEY_MT5_GATEWAY_AUTH_TOKEN, normalized).apply();
     }
 
     public String getBinanceRestBaseUrl() {

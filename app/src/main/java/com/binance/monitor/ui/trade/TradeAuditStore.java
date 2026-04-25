@@ -10,6 +10,8 @@ import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
+
 import org.json.JSONArray;
 
 import java.util.ArrayList;
@@ -25,7 +27,7 @@ public class TradeAuditStore {
         @NonNull
         String getEntriesJson();
 
-        void setEntriesJson(@Nullable String json);
+        boolean setEntriesJson(@Nullable String json);
     }
 
     interface Clock {
@@ -34,6 +36,7 @@ public class TradeAuditStore {
 
     private final JsonStore jsonStore;
     private final Clock clock;
+    private final Object lock = new Object();
 
     // 创建正式本地审计存储。
     public TradeAuditStore(@NonNull Context context) {
@@ -56,23 +59,27 @@ public class TradeAuditStore {
         if (entry == null || entry.getTraceId().isEmpty()) {
             return;
         }
-        List<TradeAuditEntry> entries = readEntries();
-        TradeAuditEntry normalized = entry.getCreatedAt() > 0L ? entry : entry.withCreatedAt(clock.now());
-        entries.add(0, normalized);
-        while (entries.size() > MAX_ENTRIES) {
-            entries.remove(entries.size() - 1);
+        synchronized (lock) {
+            List<TradeAuditEntry> entries = readEntriesLocked();
+            TradeAuditEntry normalized = entry.getCreatedAt() > 0L ? entry : entry.withCreatedAt(clock.now());
+            entries.add(0, normalized);
+            while (entries.size() > MAX_ENTRIES) {
+                entries.remove(entries.size() - 1);
+            }
+            writeEntriesLocked(entries);
         }
-        writeEntries(entries);
     }
 
     // 读取最近记录。
     @NonNull
     public List<TradeAuditEntry> getRecent(int limit) {
-        List<TradeAuditEntry> entries = readEntries();
-        if (limit <= 0 || entries.isEmpty()) {
-            return Collections.emptyList();
+        synchronized (lock) {
+            List<TradeAuditEntry> entries = readEntriesLocked();
+            if (limit <= 0 || entries.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return new ArrayList<>(entries.subList(0, Math.min(limit, entries.size())));
         }
-        return new ArrayList<>(entries.subList(0, Math.min(limit, entries.size())));
     }
 
     // 按 traceId 返回同一交易链的所有记录。
@@ -82,17 +89,19 @@ public class TradeAuditStore {
         if (safeTraceId.isEmpty()) {
             return Collections.emptyList();
         }
-        List<TradeAuditEntry> matched = new ArrayList<>();
-        for (TradeAuditEntry entry : readEntries()) {
-            if (safeTraceId.equals(entry.getTraceId())) {
-                matched.add(entry);
+        synchronized (lock) {
+            List<TradeAuditEntry> matched = new ArrayList<>();
+            for (TradeAuditEntry entry : readEntriesLocked()) {
+                if (safeTraceId.equals(entry.getTraceId())) {
+                    matched.add(entry);
+                }
             }
+            return matched;
         }
-        return matched;
     }
 
     @NonNull
-    private List<TradeAuditEntry> readEntries() {
+    private List<TradeAuditEntry> readEntriesLocked() {
         String json = jsonStore.getEntriesJson();
         if (json.trim().isEmpty()) {
             return new ArrayList<>();
@@ -109,14 +118,14 @@ public class TradeAuditStore {
         }
     }
 
-    private void writeEntries(@NonNull List<TradeAuditEntry> entries) {
+    private boolean writeEntriesLocked(@NonNull List<TradeAuditEntry> entries) {
         JSONArray array = new JSONArray();
         for (TradeAuditEntry entry : entries) {
             if (entry != null) {
                 array.put(entry.toJson());
             }
         }
-        jsonStore.setEntriesJson(array.toString());
+        return jsonStore.setEntriesJson(array.toString());
     }
 
     private static final class SharedPreferenceStore implements JsonStore {
@@ -134,8 +143,8 @@ public class TradeAuditStore {
         }
 
         @Override
-        public void setEntriesJson(@Nullable String json) {
-            preferences.edit().putString(KEY_ENTRIES_JSON, json == null ? "" : json).apply();
+        public boolean setEntriesJson(@Nullable String json) {
+            return preferences.edit().putString(KEY_ENTRIES_JSON, json == null ? "" : json).commit();
         }
     }
 
@@ -149,8 +158,9 @@ public class TradeAuditStore {
         }
 
         @Override
-        public void setEntriesJson(@Nullable String json) {
+        public boolean setEntriesJson(@Nullable String json) {
             this.json = json == null ? "" : json;
+            return true;
         }
     }
 }

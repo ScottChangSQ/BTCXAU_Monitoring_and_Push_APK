@@ -81,7 +81,7 @@ public class AccountTradeHistoryBottomSheetSourceTest {
         String pageSource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountPositionPageController.java");
 
         assertTrue(pageSource.contains("currentTradeHistory = Collections.unmodifiableList(new ArrayList<>(tradeHistory));"));
-        assertTrue(pageSource.contains("bindHistorySection(currentTradeHistory);"));
+        assertTrue(pageSource.contains("bindHistorySection(tradeHistory);"));
         assertTrue(pageSource.contains("currentTradeHistory = Collections.emptyList();"));
         assertTrue(pageSource.contains("bindHistorySection(Collections.emptyList());"));
     }

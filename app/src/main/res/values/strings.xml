@@ -239,7 +239,9 @@
     <string name="privacy_mask_hint">已隐藏账户号、价格、数量和盈亏等敏感数据</string>
     <string name="mt5_gateway_section_title">正式入口</string>
     <string name="mt5_gateway_input_hint"></string>
-    <string name="mt5_gateway_save">保存并应用</string>
+    <string name="mt5_gateway_auth_token_hint">Gateway Auth Token</string>
+    <string name="mt5_gateway_save">保存鉴权 Token</string>
     <string name="mt5_gateway_saved">网关地址已更新：%1$s</string>
+    <string name="mt5_gateway_auth_token_saved">网关鉴权 Token 已更新</string>
     <string name="account_login_success_banner">登录成功</string>
 </resources>

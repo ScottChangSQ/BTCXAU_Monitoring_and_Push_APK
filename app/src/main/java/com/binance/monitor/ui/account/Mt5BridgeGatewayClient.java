@@ -13,6 +13,7 @@ import com.binance.monitor.domain.account.model.CurvePoint;
 import com.binance.monitor.domain.account.model.PositionItem;
 import com.binance.monitor.domain.account.model.TradeRecordItem;
 import com.binance.monitor.runtime.account.MetricNameTranslator;
+import com.binance.monitor.util.GatewayAuthRequestHelper;
 import com.binance.monitor.util.GatewayUrlResolver;
 
 import org.json.JSONArray;
@@ -249,6 +250,9 @@ public class Mt5BridgeGatewayClient {
             url = url + "&delta=1";
         }
         Request request = new Request.Builder().url(url).get().build();
+        request = GatewayAuthRequestHelper
+                .applyGatewayAuth(request.newBuilder(), configManager)
+                .build();
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 errors.add(normalizedBase + " -> HTTP " + response.code());
@@ -361,11 +365,13 @@ public class Mt5BridgeGatewayClient {
     }
 
     private boolean probeGateway(String baseUrl) {
-        Request request = new Request.Builder()
-                .url(baseUrl + "/health")
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(baseUrl + "/health");
+        Request finalRequest = GatewayAuthRequestHelper
+                .applyGatewayAuth(requestBuilder, configManager)
                 .get()
                 .build();
-        try (Response response = discoveryClient.newCall(request).execute()) {
+        try (Response response = discoveryClient.newCall(finalRequest).execute()) {
             if (!response.isSuccessful()) {
                 return false;
             }

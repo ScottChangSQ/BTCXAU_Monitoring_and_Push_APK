@@ -68,6 +68,10 @@ public final class AccountStatsRenderHostDelegate implements AccountStatsRenderC
     @Override public void logRenderWarning(@NonNull String message) { owner.logRenderWarning(message); }
     @Nullable @Override public AccountStatsSectionDiff getPendingSectionDiff() { return owner.getPendingSectionDiff(); }
     @Nullable @Override public AccountStatsRenderSignature getPendingHistoryRenderSignature() { return owner.getPendingHistoryRenderSignature(); }
+    @Override public boolean isCurveSectionVisible() { return owner.isCurveSectionVisible(); }
+    @Override public boolean isReturnSectionVisible() { return owner.isReturnSectionVisible(); }
+    @Override public boolean isTradeStatsSectionVisible() { return owner.isTradeStatsSectionVisible(); }
+    @Override public boolean isTradeRecordsSectionVisible() { return owner.isTradeRecordsSectionVisible(); }
     @NonNull @Override public List<AccountMetric> getLatestStatsMetrics() { return owner.getLatestStatsMetrics(); }
     @NonNull @Override public AccountTimeRange getSelectedRange() { return owner.getSelectedRange(); }
     @Override public boolean isManualCurveRangeEnabled() { return owner.isManualCurveRangeEnabled(); }

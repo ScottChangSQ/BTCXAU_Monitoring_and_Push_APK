@@ -5,7 +5,9 @@
 package com.binance.monitor.data.local;
 
 import android.content.Context;
+import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
@@ -25,16 +27,28 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 public class AbnormalRecordManager {
 
+    private static final String TAG = "AbnormalRecordManager";
     // 图表页需要保留更长的异常历史，避免圆点因为本地缓存过小而缺失。
     private static final int MAX_RECORDS = 5000;
+    private static final long PERSIST_DELAY_MS = 1_200L;
+    private static final int PERSIST_BATCH_THRESHOLD = 8;
     private static volatile AbnormalRecordManager instance;
 
     private final File storeFile;
     private final MutableLiveData<List<AbnormalRecord>> recordsLiveData = new MutableLiveData<>();
     private final List<AbnormalRecord> cache = new ArrayList<>();
+    private final ScheduledExecutorService persistExecutor = Executors.newSingleThreadScheduledExecutor();
+    private volatile String lastStorageError = "";
+    private long persistGeneration;
+    private int pendingPersistMutationCount;
+    private ScheduledFuture<?> pendingPersistFuture;
 
     private AbnormalRecordManager(Context context) {
         storeFile = new File(context.getApplicationContext().getFilesDir(), "abnormal_records.json");
@@ -56,10 +70,14 @@ public class AbnormalRecordManager {
         return recordsLiveData;
     }
 
+    public String getLastStorageError() {
+        return lastStorageError;
+    }
+
     public synchronized void addRecord(AbnormalRecord record) {
         cache.add(0, record);
         trimLocked();
-        persistLocked();
+        schedulePersistLocked(false);
         publishLocked();
     }
 
@@ -70,7 +88,7 @@ public class AbnormalRecordManager {
         }
         cache.add(0, record);
         trimLocked();
-        persistLocked();
+        schedulePersistLocked(false);
         publishLocked();
         return true;
     }
@@ -87,7 +105,7 @@ public class AbnormalRecordManager {
             }
         }
         trimLocked();
-        persistLocked();
+        schedulePersistLocked(false);
         publishLocked();
     }
 
@@ -127,13 +145,7 @@ public class AbnormalRecordManager {
 
     public synchronized void clearAll() {
         cache.clear();
-        if (storeFile.exists()) {
-            try {
-                //noinspection ResultOfMethodCallIgnored
-                storeFile.delete();
-            } catch (Exception ignored) {
-            }
-        }
+        schedulePersistLocked(true);
         publishLocked();
     }
 
@@ -174,10 +186,18 @@ public class AbnormalRecordManager {
                     if (builder.length() > 0) {
                         JSONArray array = new JSONArray(builder.toString());
                         for (int i = 0; i < array.length(); i++) {
-                            cache.add(AbnormalRecord.fromJson(array.getJSONObject(i)));
+                            AbnormalRecord record = AbnormalRecord.parseOrNull(array.optJSONObject(i));
+                            if (record == null) {
+                                lastStorageError = "skip malformed abnormal record at index " + i;
+                                Log.w(TAG, lastStorageError);
+                                continue;
+                            }
+                            cache.add(record);
                         }
                     }
-                } catch (Exception ignored) {
+                } catch (Exception exception) {
+                    lastStorageError = "load abnormal records failed: " + exception.getMessage();
+                    Log.w(TAG, lastStorageError, exception);
                     cache.clear();
                 }
             }
@@ -186,18 +206,70 @@ public class AbnormalRecordManager {
         }
     }
 
-    private void persistLocked() {
+    private void schedulePersistLocked(boolean forceImmediate) {
+        persistGeneration++;
+        long generation = persistGeneration;
+        pendingPersistMutationCount++;
+        long delayMs = forceImmediate || pendingPersistMutationCount >= PERSIST_BATCH_THRESHOLD
+                ? 0L
+                : PERSIST_DELAY_MS;
+        if (pendingPersistFuture != null) {
+            pendingPersistFuture.cancel(false);
+        }
+        List<AbnormalRecord> snapshot = new ArrayList<>(cache);
+        pendingPersistFuture = persistExecutor.schedule(() -> persistSnapshot(snapshot, generation), delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void persistSnapshot(@NonNull List<AbnormalRecord> snapshot, long generation) {
+        if (snapshot.isEmpty()) {
+            deleteStoreFile();
+            synchronized (this) {
+                if (generation != persistGeneration) {
+                    return;
+                }
+                pendingPersistMutationCount = 0;
+                pendingPersistFuture = null;
+            }
+            return;
+        }
         JSONArray array = new JSONArray();
-        for (AbnormalRecord record : cache) {
+        for (AbnormalRecord record : snapshot) {
             try {
                 array.put(record.toJson());
-            } catch (JSONException ignored) {
+            } catch (JSONException exception) {
+                lastStorageError = "serialize abnormal record failed: " + exception.getMessage();
+                Log.w(TAG, lastStorageError, exception);
             }
         }
         try (OutputStreamWriter writer = new OutputStreamWriter(
                 new java.io.FileOutputStream(storeFile, false), StandardCharsets.UTF_8)) {
             writer.write(array.toString());
-        } catch (Exception ignored) {
+            lastStorageError = "";
+        } catch (Exception exception) {
+            lastStorageError = "persist abnormal records failed: " + exception.getMessage();
+            Log.w(TAG, lastStorageError, exception);
+        }
+        synchronized (this) {
+            if (generation != persistGeneration) {
+                return;
+            }
+            pendingPersistMutationCount = 0;
+            pendingPersistFuture = null;
+        }
+    }
+
+    private void deleteStoreFile() {
+        if (!storeFile.exists()) {
+            lastStorageError = "";
+            return;
+        }
+        try {
+            //noinspection ResultOfMethodCallIgnored
+            storeFile.delete();
+            lastStorageError = "";
+        } catch (Exception exception) {
+            lastStorageError = "delete abnormal record store failed: " + exception.getMessage();
+            Log.w(TAG, lastStorageError, exception);
         }
     }
 

@@ -15,6 +15,7 @@ STATUS_FAILED = "FAILED"
 STATUS_DUPLICATE = "DUPLICATE"
 STATUS_PARTIAL = "PARTIAL"
 STATUS_REJECTED = "REJECTED"
+STATUS_PENDING_CONFIRMATION = "PENDING_CONFIRMATION"
 
 STRATEGY_BEST_EFFORT = "BEST_EFFORT"
 STRATEGY_ALL_OR_NONE = "ALL_OR_NONE"
@@ -216,6 +217,7 @@ def build_trade_batch_submit_response(
     error: Optional[Dict[str, Any]],
     items: Optional[list],
     server_time: int,
+    idempotent: bool = False,
 ) -> Dict[str, Any]:
     """构建 `/v2/trade/batch/submit` 的标准返回。"""
     return {
@@ -226,4 +228,5 @@ def build_trade_batch_submit_response(
         "error": None if error is None else dict(error),
         "items": list(items or []),
         "serverTime": int(server_time or 0),
+        "idempotent": bool(idempotent),
     }

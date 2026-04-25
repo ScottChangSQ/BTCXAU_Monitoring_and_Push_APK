@@ -2,6 +2,8 @@ package com.binance.monitor.ui.trade;
 
 import static org.junit.Assert.assertTrue;
 
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
+
 import org.junit.Test;
 
 import java.util.Arrays;

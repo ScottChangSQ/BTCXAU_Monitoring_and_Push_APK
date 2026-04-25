@@ -13,9 +13,17 @@ public final class MonitorRuntimePolicyHelper {
 
     // 解析连接心跳间隔，前台保持当前体验，后台自动放缓。
     public static long resolveHeartbeatDelayMs(boolean foreground) {
-        return foreground
-                ? AppConstants.CONNECTION_HEARTBEAT_INTERVAL_MS
-                : AppConstants.CONNECTION_HEARTBEAT_BACKGROUND_INTERVAL_MS;
+        return resolveHeartbeatDelayMs(foreground, true);
+    }
+
+    // 熄屏后台只保留更慢的 watchdog，亮屏后台继续维持原有后台检查频率。
+    public static long resolveHeartbeatDelayMs(boolean foreground, boolean screenInteractive) {
+        if (foreground) {
+            return AppConstants.CONNECTION_HEARTBEAT_INTERVAL_MS;
+        }
+        return screenInteractive
+                ? AppConstants.CONNECTION_HEARTBEAT_BACKGROUND_INTERVAL_MS
+                : AppConstants.CONNECTION_HEARTBEAT_SCREEN_OFF_INTERVAL_MS;
     }
 
     // 解析异常同步间隔，前台优先实时感，后台优先节电和节流。
@@ -30,5 +38,22 @@ public final class MonitorRuntimePolicyHelper {
         return foreground
                 ? AppConstants.FLOATING_UPDATE_THROTTLE_MS
                 : AppConstants.FLOATING_UPDATE_BACKGROUND_THROTTLE_MS;
+    }
+
+    // 按前后台、是否有持仓和是否最小化计算悬浮窗刷新节奏。
+    public static long resolveFloatingRefreshThrottleMs(boolean foreground,
+                                                        boolean hasActivePositions,
+                                                        boolean minimized) {
+        if (foreground) {
+            return hasActivePositions
+                    ? AppConstants.FLOATING_UPDATE_THROTTLE_MS
+                    : AppConstants.FLOATING_UPDATE_IDLE_THROTTLE_MS;
+        }
+        if (minimized) {
+            return AppConstants.FLOATING_UPDATE_MINIMIZED_THROTTLE_MS;
+        }
+        return hasActivePositions
+                ? AppConstants.FLOATING_UPDATE_BACKGROUND_THROTTLE_MS
+                : AppConstants.FLOATING_UPDATE_BACKGROUND_IDLE_THROTTLE_MS;
     }
 }

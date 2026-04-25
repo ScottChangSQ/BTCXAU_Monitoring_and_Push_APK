@@ -31,10 +31,14 @@ public final class AppConstants {
     public static final int MAX_RECONNECT_ATTEMPTS = 30;
     public static final long WS_PING_INTERVAL_SECONDS = 45L;
     public static final long PRICE_UPDATE_THROTTLE_MS = 1_000L;
-    public static final long FLOATING_UPDATE_THROTTLE_MS = 500L;
+    public static final long FLOATING_UPDATE_THROTTLE_MS = 1_000L;
+    public static final long FLOATING_UPDATE_IDLE_THROTTLE_MS = 1_000L;
     public static final long FLOATING_UPDATE_BACKGROUND_THROTTLE_MS = 500L;
+    public static final long FLOATING_UPDATE_BACKGROUND_IDLE_THROTTLE_MS = 1_500L;
+    public static final long FLOATING_UPDATE_MINIMIZED_THROTTLE_MS = 2_000L;
     public static final long CONNECTION_HEARTBEAT_INTERVAL_MS = 30_000L;
     public static final long CONNECTION_HEARTBEAT_BACKGROUND_INTERVAL_MS = 60_000L;
+    public static final long CONNECTION_HEARTBEAT_SCREEN_OFF_INTERVAL_MS = 90_000L;
     public static final long SOCKET_STALE_TIMEOUT_MS = 8_000L;
     public static final long STALE_RECONNECT_COOLDOWN_MS = 60_000L;
     public static final long NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000L;
@@ -42,6 +46,8 @@ public final class AppConstants {
     public static final long ABNORMAL_SYNC_INTERVAL_MS = 8000L;
     public static final long ABNORMAL_SYNC_BACKGROUND_INTERVAL_MS = 20_000L;
     public static final long CHART_AUTO_REFRESH_INTERVAL_MS = 1_000L;
+    public static final long CHART_AUTO_REFRESH_HEALTHY_INTERVAL_MS = 10_000L;
+    public static final long CHART_REALTIME_TAIL_UI_WINDOW_MS = 1_000L;
     public static final int CHART_BASE_MINUTE_HISTORY_LIMIT = 1500;
 
     public static final String SERVICE_CHANNEL_ID = "monitor_service_channel";
@@ -80,6 +86,7 @@ public final class AppConstants {
     public static final String MT5_GATEWAY_BASE_URL = BuildConfig.MT5_GATEWAY_BASE_URL;
     public static final long ACCOUNT_REFRESH_INTERVAL_MS = 5000L;
     public static final long ACCOUNT_REFRESH_MAX_INTERVAL_MS = 30000L;
+    public static final long MARKET_RECENT_RECORDS_REFRESH_INTERVAL_MS = 60_000L;
 
     private AppConstants() {
     }

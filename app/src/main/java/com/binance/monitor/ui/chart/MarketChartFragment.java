@@ -199,7 +199,7 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
 
                     @Override
                     public long getChartOverlayRefreshDebounceMs() {
-                        return 120L;
+                        return 300L;
                     }
 
                     @Override

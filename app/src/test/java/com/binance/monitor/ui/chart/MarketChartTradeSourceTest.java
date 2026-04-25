@@ -443,6 +443,7 @@ public class MarketChartTradeSourceTest {
         assertTrue(screenSource.contains("TradeSessionVolumeMemory"));
         assertTrue(screenSource.contains("syncQuickTradeVolumeState(false);"));
         assertTrue(screenSource.contains("TradeSessionVolumeMemory.getInstance().getCurrentVolume()"));
+        assertFalse(screenSource.contains("double defaultVolume = template.getDefaultVolume();"));
         assertFalse(screenSource.contains("tradeTemplateRepository = new TradeTemplateRepository("));
         assertFalse(screenSource.contains("binding.etQuickTradeVolume.setText(R.string.chart_quick_trade_default_volume);"));
         assertTrue(coordinatorSource.contains("TradeSessionVolumeMemory.getInstance().getCurrentVolume()"));

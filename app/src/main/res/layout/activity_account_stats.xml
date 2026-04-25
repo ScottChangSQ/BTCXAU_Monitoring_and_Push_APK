@@ -1256,23 +1256,8 @@
         android:layout_height="0dp"
         android:visibility="gone">
 
-        <TextView
-            android:id="@+id/tvAccountMeta"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
-
         <Spinner
             android:id="@+id/spinnerPositionSort"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerOverview"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerPositions"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content" />
 

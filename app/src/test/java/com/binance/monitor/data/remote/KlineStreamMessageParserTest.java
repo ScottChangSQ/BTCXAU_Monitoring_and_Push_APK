@@ -82,4 +82,46 @@ public class KlineStreamMessageParserTest {
 
         assertNull(KlineStreamMessageParser.parse(text));
     }
+
+    @Test
+    public void parseShouldReturnNullForNonFinitePrice() {
+        String text = "{"
+                + "\"e\":\"kline\","
+                + "\"s\":\"BTCUSDT\","
+                + "\"k\":{"
+                + "\"t\":1712277180000,"
+                + "\"T\":1712277239999,"
+                + "\"o\":\"NaN\","
+                + "\"h\":\"66703.10\","
+                + "\"l\":\"66478.50\","
+                + "\"c\":\"66599.90\","
+                + "\"v\":\"5620\","
+                + "\"q\":\"374111934\","
+                + "\"x\":false"
+                + "}"
+                + "}";
+
+        assertNull(KlineStreamMessageParser.parse(text));
+    }
+
+    @Test
+    public void parseShouldReturnNullForBlankSymbol() {
+        String text = "{"
+                + "\"e\":\"kline\","
+                + "\"s\":\"\","
+                + "\"k\":{"
+                + "\"t\":1712277180000,"
+                + "\"T\":1712277239999,"
+                + "\"o\":\"66690.40\","
+                + "\"h\":\"66703.10\","
+                + "\"l\":\"66478.50\","
+                + "\"c\":\"66599.90\","
+                + "\"v\":\"5620\","
+                + "\"q\":\"374111934\","
+                + "\"x\":false"
+                + "}"
+                + "}";
+
+        assertNull(KlineStreamMessageParser.parse(text));
+    }
 }

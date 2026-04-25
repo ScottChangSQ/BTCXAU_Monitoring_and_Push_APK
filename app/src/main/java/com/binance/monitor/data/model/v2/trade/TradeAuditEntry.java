@@ -1,8 +1,8 @@
 /*
  * 交易审计条目，统一承载本地与网关两侧的交易阶段事实。
- * 与 TradeAuditStore、GatewayV2TradeClient 和后续交易追踪页协同工作。
+ * data 层模型不能依赖 UI，交易客户端和页面展示都从这里读取同一份契约。
  */
-package com.binance.monitor.ui.trade;
+package com.binance.monitor.data.model.v2.trade;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;

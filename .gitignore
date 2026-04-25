@@ -10,3 +10,8 @@ dist/
 local.properties
 *.log
 .worktrees/
+__pycache__/
+*.pyc
+.tmp/
+.tmp-*.png
+.tmp-*.json

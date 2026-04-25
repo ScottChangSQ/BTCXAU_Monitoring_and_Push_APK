@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.stream.Stream;
 
 public class AuditStaticGuardSourceTest {
 
@@ -34,6 +35,28 @@ public class AuditStaticGuardSourceTest {
                 "config/checkstyle/audit-critical.xml",
                 "../config/checkstyle/audit-critical.xml"
         ));
+    }
+
+    @Test
+    public void dataLayerShouldNotImportUiLayer() throws Exception {
+        Path root = Paths.get(System.getProperty("user.dir"))
+                .resolve("src/main/java/com/binance/monitor/data")
+                .normalize();
+        assertTrue(Files.exists(root));
+        try (Stream<Path> paths = Files.walk(root)) {
+            paths.filter(path -> path.toString().endsWith(".java"))
+                    .forEach(path -> {
+                        try {
+                            String source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+                            assertTrue(
+                                    "data 层不能 import UI 层: " + path,
+                                    !source.contains("import com.binance.monitor.ui.")
+                            );
+                        } catch (Exception exception) {
+                            throw new IllegalStateException(exception);
+                        }
+                    });
+        }
     }
 
     private static boolean exists(String... candidates) {

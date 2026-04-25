@@ -10,6 +10,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import com.binance.monitor.data.model.v2.trade.ExecutionError;
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
 import com.binance.monitor.data.model.v2.trade.TradeCheckResult;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
 import com.binance.monitor.data.model.v2.trade.TradeReceipt;

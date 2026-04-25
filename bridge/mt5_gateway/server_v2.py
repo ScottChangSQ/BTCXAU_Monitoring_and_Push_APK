@@ -37,6 +37,8 @@ import v2_trade
 import v2_trade_audit
 import v2_trade_batch
 import v2_trade_models
+import v2_trade_service
+import auth_guard
 
 try:
     import MetaTrader5 as mt5
@@ -155,6 +157,13 @@ if not SESSION_DATA_DIR:
 
 app = FastAPI(title="MT5 Bridge Gateway", version="1.1.0")
 app.add_middleware(GZipMiddleware, minimum_size=512)
+if hasattr(app, "middleware"):
+    @app.middleware("http")
+    async def _gateway_auth_middleware(request: Request, call_next):
+        path = str(getattr(getattr(request, "url", None), "path", "") or "")
+        if auth_guard.should_protect_http_path(path):
+            auth_guard.require_http_auth(request)
+        return await call_next(request)
 state_lock = RLock()
 snapshot_cache_lock = Lock()
 abnormal_state_lock = Lock()
@@ -421,13 +430,29 @@ def _build_gateway_runtime_status_payload() -> Dict[str, Any]:
 
 def _build_runtime_panel_payload() -> Dict[str, Any]:
     """构建给 Windows 状态面板使用的单次聚合快照。"""
-    diagnostic_items = session_diagnostic_store.latest_timeline("")
-    latest_diagnostic = diagnostic_items[-1] if diagnostic_items else {}
+    def safe_section(name: str, builder) -> Dict[str, Any]:
+        try:
+            value = builder()
+            return value if isinstance(value, dict) else {"value": value}
+        except Exception as exc:
+            return {"__error": str(exc), "section": name}
+
+    try:
+        diagnostic_items = session_diagnostic_store.latest_timeline("")
+        latest_diagnostic = diagnostic_items[-1] if diagnostic_items else {}
+    except Exception as exc:
+        latest_diagnostic = {
+            "requestId": "",
+            "stage": "runtime_panel",
+            "status": "error",
+            "message": str(exc),
+            "serverTime": _now_ms(),
+        }
     return {
-        "health": health(),
-        "source": source_status(),
-        "session": _build_verified_session_status_payload(verify_live_identity=False),
-        "runtime": _build_gateway_runtime_status_payload(),
+        "health": safe_section("health", health),
+        "source": safe_section("source", source_status),
+        "session": safe_section("session", lambda: _build_verified_session_status_payload(verify_live_identity=False)),
+        "runtime": safe_section("runtime", _build_gateway_runtime_status_payload),
         "latestDiagnostic": {
             "requestId": str(latest_diagnostic.get("requestId") or ""),
             "stage": str(latest_diagnostic.get("stage") or ""),
@@ -826,6 +851,12 @@ def _notify_v2_stream_subscribers(event: Dict[str, Any]) -> None:
             continue
 
 
+def _has_v2_stream_subscribers() -> bool:
+    """只有存在存活的 stream 客户端时，才值得按节拍重建并发布 bus 当前态。"""
+    with v2_stream_subscribers_lock:
+        return bool(v2_stream_subscribers)
+
+
 # 生成交易命令摘要，用于 requestId 幂等的内容一致性校验。
 def _trade_command_digest(command: Dict[str, Any]) -> str:
     payload = json.dumps(command or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -955,12 +986,15 @@ def _get_trade_request_result(request_id: str) -> Optional[Dict[str, Any]]:
 
 
 # 保存批量提交结果，供 batch 查询接口复用。
-def _store_batch_request_result(batch_id: str, result_payload: Dict[str, Any]) -> None:
+def _store_batch_request_result(batch_id: str, payload_digest: str, result_payload: Dict[str, Any]) -> None:
     key = str(batch_id or "")
     if not key:
         return
     with trade_request_lock:
-        batch_request_store[key] = _clone_json_value(result_payload)
+        batch_request_store[key] = {
+            "payloadDigest": str(payload_digest or ""),
+            "response": _clone_json_value(result_payload),
+        }
         while len(batch_request_store) > TRADE_REQUEST_STORE_MAX_ENTRIES:
             oldest_key = next(iter(batch_request_store))
             batch_request_store.pop(oldest_key, None)
@@ -974,6 +1008,14 @@ def _get_batch_request_result(batch_id: str) -> Optional[Dict[str, Any]]:
     with trade_request_lock:
         payload = batch_request_store.get(key)
         return None if payload is None else _clone_json_value(payload)
+
+
+def _get_batch_response(batch_id: str) -> Optional[Dict[str, Any]]:
+    entry = _get_batch_request_result(batch_id)
+    if entry is None:
+        return None
+    response = entry.get("response") if isinstance(entry.get("response"), dict) else entry
+    return None if not isinstance(response, dict) else dict(response)
 
 
 def _resolve_trade_error_fields(error: Optional[Dict[str, Any]]) -> tuple[str, str]:
@@ -1782,7 +1824,8 @@ def _v2_bus_producer_loop() -> None:
                 publish_due_at = time.monotonic() + interval_sec
             continue
         if not has_pending_publish:
-            continue
+            if not _has_v2_stream_subscribers():
+                continue
         publish_due_at = 0.0
         has_pending_publish = False
         try:
@@ -8406,204 +8449,30 @@ def v2_trade_submit(payload: Dict[str, Any], request: Request = None):
     _record_runtime_http_request("/v2/trade/submit", getattr(request, "client", None))
     now_ms = _now_ms()
     account_mode = _detect_account_mode()
-    prepared = _prepare_trade_command(payload or {}, account_mode)
-    command = prepared.get("command") or v2_trade.normalize_trade_payload(payload or {})
-    request_id = str(command.get("requestId") or "")
-    action = str(command.get("action") or "")
-    command_digest = _trade_command_digest(command)
-
-    existing_entry = _get_trade_request_entry(request_id)
-    if existing_entry is not None:
-        existing_digest = str(existing_entry.get("payloadDigest") or "")
-        existing_response = existing_entry.get("response") if isinstance(existing_entry.get("response"), dict) else {}
-        if existing_digest and existing_digest != command_digest:
-            response = v2_trade_models.build_trade_submit_response(
-                request_id=request_id,
-                action=action,
-                account_mode=str(existing_response.get("accountMode") or account_mode),
-                status=v2_trade_models.STATUS_FAILED,
-                error=v2_trade_models.build_error(
-                    v2_trade_models.ERROR_DUPLICATE_PAYLOAD_MISMATCH,
-                    "相同 requestId 的 payload 不一致",
-                ),
-                check=existing_response.get("check"),
-                result=existing_response.get("result"),
-                server_time=now_ms,
-                idempotent=True,
-            )
-            _record_single_trade_audit(
-                command=command,
-                account_mode=str(response.get("accountMode") or ""),
-                stage="submit",
-                status=str(response.get("status") or ""),
-                error=response.get("error"),
-                message=str((response.get("error") or {}).get("message") or "交易失败"),
-                server_time=now_ms,
-            )
-            _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
-            return response
-        response = v2_trade_models.build_trade_submit_response(
-            request_id=request_id,
-            action=action,
-            account_mode=str(existing_response.get("accountMode") or account_mode),
-            status=v2_trade_models.STATUS_DUPLICATE,
-            error=v2_trade_models.build_error(
-                v2_trade_models.ERROR_DUPLICATE,
-                "重复 requestId，已按幂等返回",
-            ),
-            check=existing_response.get("check"),
-            result=existing_response.get("result"),
-            server_time=now_ms,
-            idempotent=True,
-        )
-        _record_single_trade_audit(
-            command=command,
-            account_mode=str(response.get("accountMode") or ""),
-            stage="submit",
-            status=str(response.get("status") or ""),
-            error=response.get("error"),
-            message=str((response.get("error") or {}).get("message") or "重复 requestId，已按幂等返回"),
-            server_time=now_ms,
-        )
-        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
-        return response
-
-    prepare_error = prepared.get("error")
-    if prepare_error is not None:
-        response = v2_trade_models.build_trade_submit_response(
-            request_id=request_id,
-            action=action,
-            account_mode=account_mode,
-            status=v2_trade_models.STATUS_FAILED,
-            error=prepare_error,
-            check=None,
-            result=None,
-            server_time=now_ms,
-            idempotent=False,
-        )
-        _store_trade_request_result(request_id, command_digest, response)
-        _record_single_trade_audit(
-            command=command,
-            account_mode=account_mode,
-            stage="submit",
-            status=str(response.get("status") or ""),
-            error=response.get("error"),
-            message=str((response.get("error") or {}).get("message") or "交易失败"),
-            server_time=now_ms,
-        )
-        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
-        return response
-
-    try:
-        check_result = v2_trade_models.mt5_result_to_dict(_trade_check_request(prepared.get("request") or {}))
-    except Exception as exc:
-        response = v2_trade_models.build_trade_submit_response(
-            request_id=request_id,
-            action=action,
-            account_mode=account_mode,
-            status=v2_trade_models.STATUS_FAILED,
-            error=v2_trade_models.build_error(v2_trade_models.ERROR_TIMEOUT, str(exc)),
-            check=None,
-            result=None,
-            server_time=now_ms,
-            idempotent=False,
-        )
-        _store_trade_request_result(request_id, command_digest, response)
-        _record_single_trade_audit(
-            command=command,
-            account_mode=account_mode,
-            stage="submit",
-            status=str(response.get("status") or ""),
-            error=response.get("error"),
-            message=str(exc),
-            server_time=now_ms,
-        )
-        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
-        return response
-
-    check_error = v2_trade_models.error_from_retcode(
-        check_result.get("retcode", -1),
-        check_result.get("comment", ""),
-    )
-    if check_error is not None:
-        response = v2_trade_models.build_trade_submit_response(
-            request_id=request_id,
-            action=action,
-            account_mode=account_mode,
-            status=v2_trade_models.STATUS_FAILED,
-            error=check_error,
-            check=check_result,
-            result=None,
-            server_time=now_ms,
-            idempotent=False,
-        )
-        _store_trade_request_result(request_id, command_digest, response)
-        _record_single_trade_audit(
-            command=command,
-            account_mode=account_mode,
-            stage="submit",
-            status=str(response.get("status") or ""),
-            error=response.get("error"),
-            message=str((response.get("error") or {}).get("message") or "交易失败"),
-            server_time=now_ms,
-        )
-        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
-        return response
-
-    try:
-        send_result = v2_trade_models.mt5_result_to_dict(_trade_send_request(prepared.get("request") or {}))
-    except Exception as exc:
-        response = v2_trade_models.build_trade_submit_response(
-            request_id=request_id,
-            action=action,
-            account_mode=account_mode,
-            status=v2_trade_models.STATUS_ACCEPTED,
-            error=v2_trade_models.build_error(v2_trade_models.ERROR_RESULT_UNKNOWN, str(exc)),
-            check=check_result,
-            result=None,
-            server_time=now_ms,
-            idempotent=False,
-        )
-        _store_trade_request_result(request_id, command_digest, response)
-        _record_single_trade_audit(
-            command=command,
-            account_mode=account_mode,
-            stage="submit",
-            status=str(response.get("status") or ""),
-            error=response.get("error"),
-            message=str((response.get("error") or {}).get("message") or str(exc)),
-            server_time=now_ms,
-        )
-        _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
-        return response
-
-    send_error = v2_trade_models.error_from_retcode(
-        send_result.get("retcode", -1),
-        send_result.get("comment", ""),
-    )
-    response = v2_trade_models.build_trade_submit_response(
-        request_id=request_id,
-        action=action,
+    submit_result = v2_trade_service.submit_single_trade(
+        payload=payload or {},
         account_mode=account_mode,
-        status=v2_trade_models.STATUS_ACCEPTED if send_error is None else v2_trade_models.STATUS_FAILED,
-        error=send_error,
-        check=check_result,
-        result=send_result,
         server_time=now_ms,
-        idempotent=False,
+        prepare_command=_prepare_trade_command,
+        command_digest=_trade_command_digest,
+        existing_entry_lookup=_get_trade_request_entry,
+        result_store=_store_trade_request_result,
+        check_request=_trade_check_request,
+        send_request=_trade_send_request,
     )
-    _store_trade_request_result(request_id, command_digest, response)
+    command = submit_result.get("command") if isinstance(submit_result.get("command"), dict) else {}
+    response = submit_result.get("response") if isinstance(submit_result.get("response"), dict) else {}
     _record_single_trade_audit(
         command=command,
-        account_mode=account_mode,
+        account_mode=str(response.get("accountMode") or account_mode),
         stage="submit",
         status=str(response.get("status") or ""),
         error=response.get("error"),
-        message="交易已受理" if send_error is None else str((response.get("error") or {}).get("message") or "交易失败"),
+        message=str(submit_result.get("auditMessage") or (response.get("error") or {}).get("message") or "交易失败"),
         server_time=now_ms,
     )
     _record_runtime_trade_action("submit", str(response.get("status") or ""), getattr(request, "client", None))
-    if send_error is None:
+    if submit_result.get("invalidateAccountRuntime"):
         _invalidate_account_runtime_cache_after_trade_commit()
         _publish_account_trade_commit_sync_state()
     return response
@@ -8659,8 +8528,32 @@ def v2_trade_batch_submit(payload: Dict[str, Any], request: Request = None):
     _record_runtime_http_request("/v2/trade/batch/submit", getattr(request, "client", None))
     now_ms = _now_ms()
     account_mode = _detect_account_mode()
+    normalized_batch = v2_trade_batch.normalize_batch_payload(payload or {})
+    batch_id = str(normalized_batch.get("batchId") or "")
+    batch_digest = _trade_command_digest(normalized_batch)
+    existing_entry = _get_batch_request_result(batch_id)
+    if existing_entry is not None:
+        existing_digest = str(existing_entry.get("payloadDigest") or "")
+        existing_response = existing_entry.get("response") if isinstance(existing_entry.get("response"), dict) else existing_entry
+        if existing_digest and existing_digest != batch_digest:
+            return v2_trade_models.build_trade_batch_submit_response(
+                batch_id=batch_id,
+                strategy=str(normalized_batch.get("strategy") or v2_trade_models.STRATEGY_BEST_EFFORT),
+                account_mode=str(existing_response.get("accountMode") or account_mode),
+                status=v2_trade_models.STATUS_FAILED,
+                error=v2_trade_models.build_error(
+                    v2_trade_models.ERROR_DUPLICATE_PAYLOAD_MISMATCH,
+                    "相同 batchId 的 payload 不一致",
+                ),
+                items=list(existing_response.get("items") or []),
+                server_time=now_ms,
+                idempotent=True,
+            )
+        response = _clone_json_value(existing_response)
+        response["idempotent"] = True
+        return response
     result = v2_trade_batch.submit_trade_batch(
-        payload or {},
+        normalized_batch,
         account_mode=account_mode,
         mt5_module=mt5,
         position_lookup=_lookup_trade_position,
@@ -8669,7 +8562,7 @@ def v2_trade_batch_submit(payload: Dict[str, Any], request: Request = None):
         send_request=_trade_send_request,
         server_time=now_ms,
     )
-    _store_batch_request_result(str(result.get("batchId") or ""), result)
+    _store_batch_request_result(str(result.get("batchId") or ""), batch_digest, result)
     _record_batch_trade_audit(
         payload=payload,
         result_payload=result,
@@ -8704,7 +8597,7 @@ def v2_trade_batch_result(batchId: str = Query(default=""), request: Request = N
             status_code=400,
             detail=v2_trade_models.build_error(v2_trade_models.ERROR_BATCH_INVALID_ID, "batchId 不能为空"),
         )
-    payload = _get_batch_request_result(batch_id)
+    payload = _get_batch_response(batch_id)
     if payload is None:
         _record_batch_trade_audit(
             payload={"batchId": batch_id},
@@ -8943,6 +8836,9 @@ async def binance_ws_proxy(client: WebSocket, path_value: str):
 
 @app.websocket("/v2/stream")
 async def v2_stream(client: WebSocket):
+    if not auth_guard.verify_ws_auth(client):
+        await client.close(code=1008, reason="Gateway authentication required")
+        return
     await client.accept()
     _record_runtime_stream_connected(getattr(client, "client", None))
     current_bus_seq = 0
@@ -8953,6 +8849,8 @@ async def v2_stream(client: WebSocket):
     heartbeat_interval_sec = max(15.0, float(V2_STREAM_PUSH_INTERVAL_MS) / 1000.0)
     try:
         while True:
+            # 统一 websocket 继续发送 canonical stream。
+            # screen-off alert-only 客户端只消费 abnormal diff / alerts，其余 market/account 消息可在客户端忽略。
             message = _build_v2_stream_event_for_client(
                 last_bus_seq=current_bus_seq,
                 last_market_seq=current_market_seq,

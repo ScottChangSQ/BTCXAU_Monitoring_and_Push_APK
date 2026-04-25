@@ -96,7 +96,7 @@ public class FloatingWindowManagerSourceTest {
         assertTrue(source.contains("putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_SYMBOL"));
         assertTrue(source.contains("putExtra(OverlayLaunchBridgeActivity.EXTRA_TARGET_DESTINATION"));
         assertTrue(source.contains("Intent.FLAG_ACTIVITY_NEW_TASK"));
-        assertTrue(source.contains("cardView.setOnClickListener(v -> openChartForCard(card));"));
+        assertTrue(source.contains("cardView.setOnClickListener(v -> openChartForCard(holder.boundCard));"));
         assertFalse(source.contains("new Intent(context, MainActivity.class)"));
         assertFalse(source.contains("Intent.FLAG_ACTIVITY_REORDER_TO_FRONT"));
     }
@@ -214,5 +214,31 @@ public class FloatingWindowManagerSourceTest {
 
         assertTrue(source.contains("volumeView.setIncludeFontPadding(false);"));
         assertTrue(source.contains("amountView.setIncludeFontPadding(false);"));
+    }
+
+    @Test
+    public void symbolCardsShouldUseIncrementalReuseInsteadOfRemoveAllViewsRebuild() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("private final Map<String, SymbolCardViewHolder> symbolCardHolders = new LinkedHashMap<>();"));
+        assertTrue(source.contains("Map<String, SymbolCardViewHolder> staleHolders = new LinkedHashMap<>(symbolCardHolders);"));
+        assertTrue(source.contains("SymbolCardViewHolder holder = symbolCardHolders.get(cardCode);"));
+        assertTrue(source.contains("bindSymbolCard(holder, card, palette, i > 0);"));
+        assertTrue(source.contains("binding.layoutSymbolCards.removeView(holder.rootView);"));
+        assertFalse(source.contains("binding.layoutSymbolCards.removeAllViews();"));
+    }
+
+    @Test
+    public void floatingWindowManagerShouldExposeMinimizedStateForScenarioThrottle() throws Exception {
+        Path file = Paths.get("src/main/java/com/binance/monitor/ui/floating/FloatingWindowManager.java");
+        String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+
+        assertTrue(source.contains("public boolean isMinimized() {"));
+        assertTrue(source.contains("return minimized;"));
     }
 }

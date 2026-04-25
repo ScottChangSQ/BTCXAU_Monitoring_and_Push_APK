@@ -28,6 +28,12 @@ public class ConfigManagerSourceTest {
                         && source.contains("String target = normalized.isEmpty() ? AppConstants.MT5_GATEWAY_BASE_URL : normalized;"));
         assertTrue("写入配置时应把最终网关地址写入 SharedPreferences",
                 source.contains("preferences.edit().putString(KEY_MT5_GATEWAY_URL, target).apply();"));
+        assertTrue("配置中心应新增网关鉴权 token 键",
+                source.contains("private static final String KEY_MT5_GATEWAY_AUTH_TOKEN = \"mt5_gateway_auth_token\";"));
+        assertTrue("配置中心应提供网关鉴权 token 读取方法",
+                source.contains("public String getMt5GatewayAuthToken() {"));
+        assertTrue("配置中心应提供网关鉴权 token 写入方法",
+                source.contains("public void setMt5GatewayAuthToken(String authToken) {"));
     }
 
     @Test

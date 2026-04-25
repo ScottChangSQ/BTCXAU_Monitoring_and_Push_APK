@@ -20,7 +20,9 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.binance.monitor.R;
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
 import com.binance.monitor.databinding.ActivityTradeAuditBinding;
+import com.binance.monitor.ui.theme.SpacingTokenResolver;
 import com.binance.monitor.ui.theme.UiPaletteManager;
 
 import java.util.List;
@@ -105,7 +107,12 @@ public class TradeAuditActivity extends AppCompatActivity {
             itemView.setText(buildRecentItemText(entry));
             itemView.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             itemView.setTextAppearance(this, R.style.TextAppearance_BinanceMonitor_BodyCompact);
-            itemView.setPadding(dp(12), dp(10), dp(12), dp(10));
+            itemView.setPadding(
+                    SpacingTokenResolver.px(this, R.dimen.space_12),
+                    SpacingTokenResolver.px(this, R.dimen.space_10),
+                    SpacingTokenResolver.px(this, R.dimen.space_12),
+                    SpacingTokenResolver.px(this, R.dimen.space_10)
+            );
             itemView.setTextColor(palette.textPrimary);
             itemView.setBackground(UiPaletteManager.createListRowBackground(this, palette.surfaceEnd, palette.stroke));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -113,7 +120,7 @@ public class TradeAuditActivity extends AppCompatActivity {
                     LinearLayout.LayoutParams.WRAP_CONTENT
             );
             if (binding.layoutTradeAuditRecentList.getChildCount() > 0) {
-                params.topMargin = dp(8);
+                params.topMargin = SpacingTokenResolver.px(this, R.dimen.space_8);
             }
             itemView.setLayoutParams(params);
             itemView.setOnClickListener(v -> viewModel.lookup(entry.getTraceId()));
@@ -188,8 +195,4 @@ public class TradeAuditActivity extends AppCompatActivity {
         binding.cardTradeAuditDetail.setBackground(UiPaletteManager.createSectionBackground(this, palette.surfaceEnd, palette.stroke));
     }
 
-    private int dp(int value) {
-        float density = getResources().getDisplayMetrics().density;
-        return Math.round(value * density);
-    }
 }

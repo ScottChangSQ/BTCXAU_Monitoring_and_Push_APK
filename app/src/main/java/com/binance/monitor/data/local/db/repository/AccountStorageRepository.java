@@ -421,7 +421,7 @@ public class AccountStorageRepository {
         return result;
     }
 
-    // 清空全部历史交易数据。
+    // 显式清空全部历史交易数据；普通运行态清理不得在身份缺失时调用它。
     public int clearTradeHistory() {
         if (tradeHistoryDao == null) {
             return 0;
@@ -437,12 +437,20 @@ public class AccountStorageRepository {
         return tradeHistoryDao.clearAll(buildIdentityPrefix(account, server));
     }
 
-    // 清空运行时账户快照。
+    // 显式清空全部运行时账户快照；普通运行态清理不得在身份缺失时调用它。
     public void clearRuntimeSnapshot() {
         if (accountSnapshotDao == null) {
             return;
         }
         accountSnapshotDao.clearRuntime();
+    }
+
+    public int clearAllTradeHistoryExplicitly() {
+        return clearTradeHistory();
+    }
+
+    public void clearAllRuntimeSnapshotsExplicitly() {
+        clearRuntimeSnapshot();
     }
 
     // 清空某个身份分区下的运行时账户快照。

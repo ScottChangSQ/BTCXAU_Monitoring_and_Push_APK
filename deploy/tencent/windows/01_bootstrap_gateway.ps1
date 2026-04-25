@@ -193,6 +193,77 @@ function Invoke-NativeCommandSafely {
     }
 }
 
+# 旧虚拟环境损坏或被锁定时，自动改名备份并重建，避免部署时手工处理 .venv。
+function Backup-GatewayVenv {
+    param(
+        [string]$VenvPath,
+        [string]$Reason
+    )
+
+    if (-not (Test-Path $VenvPath)) {
+        return ""
+    }
+
+    $resolvedGatewayDir = (Resolve-Path $gatewayDir).Path.TrimEnd("\")
+    $resolvedVenvPath = (Resolve-Path $VenvPath).Path
+    if (-not $resolvedVenvPath.StartsWith($resolvedGatewayDir + "\", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refuse to rename venv outside gateway directory: $resolvedVenvPath"
+    }
+
+    $stamp = Get-Date -Format "yyyyMMddHHmmss"
+    $backupName = ".venv.bak-" + $stamp
+    $backupPath = Join-Path $gatewayDir $backupName
+    $index = 1
+    while (Test-Path $backupPath) {
+        $backupName = ".venv.bak-" + $stamp + "-" + $index
+        $backupPath = Join-Path $gatewayDir $backupName
+        $index += 1
+    }
+
+    Write-Host ("Rebuilding existing .venv. Reason: " + $Reason)
+    try {
+        Rename-Item -LiteralPath $resolvedVenvPath -NewName $backupName -ErrorAction Stop
+    }
+    catch {
+        Write-Host ("Rename .venv failed, trying to repair directory permissions: " + $_.Exception.Message)
+        & takeown.exe /F $resolvedVenvPath /R /D Y | ForEach-Object { $_ }
+        & icacls.exe $resolvedVenvPath /grant "*S-1-5-32-544:F" /T | ForEach-Object { $_ }
+        Rename-Item -LiteralPath $resolvedVenvPath -NewName $backupName -ErrorAction Stop
+    }
+
+    if (Test-Path $requirementsStampPath) {
+        Remove-Item -LiteralPath $requirementsStampPath -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host ("Old .venv moved to: " + $backupPath)
+    return $backupPath
+}
+
+function Initialize-GatewayVenv {
+    param($PythonCommand)
+
+    $venvPath = Join-Path $gatewayDir ".venv"
+    $venvArguments = @($PythonCommand.PrefixArguments + @("-m", "venv"))
+    $hadExistingVenv = Test-Path $venvPath
+    if ($hadExistingVenv) {
+        $venvArguments += "--upgrade"
+    }
+    $venvArguments += ".venv"
+
+    try {
+        Invoke-NativeCommandSafely -FilePath $PythonCommand.FilePath -Arguments $venvArguments
+        return
+    }
+    catch {
+        if (-not $hadExistingVenv) {
+            throw
+        }
+        $reason = $_.Exception.Message
+        Backup-GatewayVenv -VenvPath $venvPath -Reason $reason | Out-Null
+        $freshVenvArguments = @($PythonCommand.PrefixArguments + @("-m", "venv", ".venv"))
+        Invoke-NativeCommandSafely -FilePath $PythonCommand.FilePath -Arguments $freshVenvArguments
+    }
+}
+
 $resolvedPythonCommand = Resolve-CompatiblePythonCommand -PreferredPythonExe $PythonExe
 Write-Host ("Using Python runtime: " + $resolvedPythonCommand.Label + " (" + $resolvedPythonCommand.Version + ", " + $resolvedPythonCommand.Bits + "-bit)")
 
@@ -202,12 +273,7 @@ if ([string]::IsNullOrWhiteSpace($EnvTemplatePath)) {
 
 Set-Location $gatewayDir
 
-$venvArguments = @($resolvedPythonCommand.PrefixArguments + @("-m", "venv"))
-if (Test-Path ".venv") {
-    $venvArguments += "--upgrade"
-}
-$venvArguments += ".venv"
-Invoke-NativeCommandSafely -FilePath $resolvedPythonCommand.FilePath -Arguments $venvArguments
+Initialize-GatewayVenv -PythonCommand $resolvedPythonCommand
 
 $venvPython = Join-Path $gatewayDir ".venv\Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
@@ -227,6 +293,7 @@ if (-not (Test-Path $envFile)) {
     }
     Copy-Item $EnvTemplatePath $envFile
     Write-Host "Created $envFile from $EnvTemplatePath"
+    Write-Host "Set GATEWAY_AUTH_TOKEN in the generated .env before starting the gateway."
 } else {
     Write-Host ".env already exists, skipped template copy."
 }

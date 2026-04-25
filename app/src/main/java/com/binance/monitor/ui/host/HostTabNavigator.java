@@ -32,13 +32,22 @@ public final class HostTabNavigator {
             }
             if (tab == targetTab) {
                 transaction.show(fragment);
-                notifyPageShown(fragment);
             } else {
                 transaction.hide(fragment);
-                notifyPageHidden(fragment);
             }
         }
         transaction.commitNowAllowingStateLoss();
+        for (HostTab tab : HostTab.values()) {
+            Fragment fragment = tab == targetTab ? targetFragment : fragmentManager.findFragmentByTag(tab.getKey());
+            if (fragment == null) {
+                continue;
+            }
+            if (tab == targetTab) {
+                notifyPageShown(fragment);
+            } else {
+                notifyPageHidden(fragment);
+            }
+        }
     }
 
     @NonNull

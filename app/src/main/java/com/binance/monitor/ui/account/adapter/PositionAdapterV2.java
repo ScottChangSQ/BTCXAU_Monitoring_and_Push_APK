@@ -410,7 +410,7 @@ public class PositionAdapterV2 extends RecyclerView.Adapter<PositionAdapterV2.Ho
                     ? runtimeSnapshot.getTotalLots()
                     : Math.abs(item.getQuantity());
             String qtyText = IndicatorFormatterCenter.formatQuantity(displayQty, 2, "手");
-            String raw = String.format(Locale.getDefault(), "%s|%s|%s|%s",
+            String raw = String.format(Locale.getDefault(), "%s | %s | %s | %s",
                     resolveSummaryProductCode(item, runtimeSnapshot), sideText, qtyText, pnlText);
             SpannableStringBuilder span = new SpannableStringBuilder(raw);
             int sideStart = raw.indexOf(sideText);

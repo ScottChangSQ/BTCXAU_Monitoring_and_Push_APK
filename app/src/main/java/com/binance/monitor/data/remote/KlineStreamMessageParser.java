@@ -35,7 +35,7 @@ final class KlineStreamMessageParser {
             if (kline == null) {
                 return null;
             }
-            KlineData data = KlineData.fromSocket(symbol, kline);
+            KlineData data = KlineData.parseSocketOrNull(symbol, kline);
             return data == null ? null : new ParsedKline(symbol, data);
         } catch (Exception ignored) {
             return null;

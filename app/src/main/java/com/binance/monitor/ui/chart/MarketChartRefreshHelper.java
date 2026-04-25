@@ -6,13 +6,14 @@ package com.binance.monitor.ui.chart;
 
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.model.CandleEntry;
 
 import java.util.List;
 
 final class MarketChartRefreshHelper {
     private static final long REALTIME_FRESHNESS_MS = 5_000L;
-    private static final long HEALTHY_REALTIME_REFRESH_MS = 3_000L;
+    private static final long HEALTHY_REALTIME_REFRESH_MS = AppConstants.CHART_AUTO_REFRESH_HEALTHY_INTERVAL_MS;
     private static final long SOURCE_MINUTE_REFRESH_MS = 60_000L;
     private static final int LATENCY_SMOOTHING_WEIGHT_PREVIOUS = 3;
     private static final int LATENCY_SMOOTHING_WEIGHT_CURRENT = 1;

@@ -310,6 +310,48 @@ class V2SyncPipelineTests(unittest.TestCase):
         self.assertEqual(["published"], published)
         self.assertEqual(2, fake_wake_event.clear_calls)
 
+    def test_v2_bus_producer_loop_should_publish_periodically_when_stream_clients_active_without_explicit_wake(self):
+        published = []
+
+        class _FakeStopEvent:
+            def __init__(self):
+                self.should_stop = False
+
+            def is_set(self):
+                return self.should_stop
+
+        class _FakeWakeEvent:
+            def wait(self, timeout):
+                return False
+
+            def clear(self):
+                return None
+
+        fake_stop_event = _FakeStopEvent()
+        fake_wake_event = _FakeWakeEvent()
+
+        def fake_publish():
+            published.append("published")
+            fake_stop_event.should_stop = True
+
+        with mock.patch.object(server_v2, "v2_bus_stop_event", fake_stop_event, create=True), mock.patch.object(
+            server_v2,
+            "v2_bus_wake_event",
+            fake_wake_event,
+            create=True,
+        ), mock.patch.object(
+            server_v2,
+            "_has_v2_stream_subscribers",
+            return_value=True,
+        ), mock.patch.object(
+            server_v2,
+            "_v2_bus_publish_current_state",
+            side_effect=fake_publish,
+        ):
+            server_v2._v2_bus_producer_loop()
+
+        self.assertEqual(["published"], published)
+
     def test_market_realtime_publisher_loop_should_publish_on_fixed_interval_when_dirty(self):
         published = []
 
@@ -575,6 +617,8 @@ class V2SyncPipelineTests(unittest.TestCase):
             server_v2, "_build_v2_market_section", return_value=market
         ), mock.patch.object(
             server_v2.asyncio, "wait_for", new=_timeout_wait_for
+        ), mock.patch.object(
+            server_v2.auth_guard, "verify_ws_auth", return_value=True
         ):
             server_v2._v2_bus_publish_current_state()
             asyncio.run(server_v2.v2_stream(fake_client))

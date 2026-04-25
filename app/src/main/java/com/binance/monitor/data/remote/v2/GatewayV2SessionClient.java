@@ -17,6 +17,7 @@ import com.binance.monitor.data.model.v2.session.SessionPublicKeyPayload;
 import com.binance.monitor.data.model.v2.session.SessionReceipt;
 import com.binance.monitor.data.model.v2.session.SessionStatusPayload;
 import com.binance.monitor.security.SessionCredentialEncryptor;
+import com.binance.monitor.util.GatewayAuthRequestHelper;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -204,7 +205,10 @@ public class GatewayV2SessionClient {
     // 执行 GET 请求。
     private String get(String path) throws Exception {
         String url = resolveBaseUrl() + path;
-        Request request = new Request.Builder().url(url).get().build();
+        Request request = GatewayAuthRequestHelper
+                .applyGatewayAuth(new Request.Builder().url(url), configManager)
+                .get()
+                .build();
         try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
@@ -218,7 +222,10 @@ public class GatewayV2SessionClient {
     private String post(String path, String bodyJson) throws Exception {
         String url = resolveBaseUrl() + path;
         RequestBody body = RequestBody.create(bodyJson == null ? "{}" : bodyJson, JSON_MEDIA_TYPE);
-        Request request = new Request.Builder().url(url).post(body).build();
+        Request request = GatewayAuthRequestHelper
+                .applyGatewayAuth(new Request.Builder().url(url), configManager)
+                .post(body)
+                .build();
         try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {

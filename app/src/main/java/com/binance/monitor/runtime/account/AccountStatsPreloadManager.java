@@ -176,6 +176,7 @@ public class AccountStatsPreloadManager {
     public void setLiveScreenActive(boolean active) {
         boolean changed = liveScreenActive != active;
         liveScreenActive = active;
+        collapseFullSnapshotWhenBackgroundPassive();
         if (!changed || !started || !isAccountSessionActive()) {
             return;
         }
@@ -241,6 +242,7 @@ public class AccountStatsPreloadManager {
 
     // 前后台切换后按最新策略重排下一次预加载，只切节奏，不因回前台立刻补拉。
     private void handleForegroundStateChanged(boolean foreground) {
+        collapseFullSnapshotWhenBackgroundPassive();
         nextDelayMs = resolveRefreshDelayMs();
         if (foreground) {
             gatewayV2Client.resetTransport();
@@ -257,6 +259,12 @@ public class AccountStatsPreloadManager {
                 AppForegroundTracker.getInstance().isForeground(),
                 fullSnapshotActive
         );
+    }
+
+    private void collapseFullSnapshotWhenBackgroundPassive() {
+        if (!AppForegroundTracker.getInstance().isForeground() && !liveScreenActive) {
+            fullSnapshotActive = false;
+        }
     }
 
     // 统一判断账户会话是否有效，避免各处重复判空和读配置。
@@ -330,16 +338,17 @@ public class AccountStatsPreloadManager {
     }
 
     // 应用服务端发布的账户运行态快照，统一更新本地运行态与页面缓存。
-    public Cache applyPublishedAccountRuntime(JSONObject accountRuntimeSnapshot, long publishedAt) {
+    public ApplyResult applyPublishedAccountRuntime(JSONObject accountRuntimeSnapshot, long publishedAt) {
         if (accountRuntimeSnapshot == null) {
-            return latestCache;
+            Cache cache = latestCache;
+            return ApplyResult.failure("accountRuntimeSnapshot 为空", cache);
         }
         try {
             if (!isAccountSessionActive()) {
                 clearStoredSnapshotForResolvedIdentity();
                 clearLatestCache();
                 nextDelayMs = MAX_REFRESH_MS;
-                return null;
+                return ApplyResult.failure("远程账户会话未激活", null);
             }
             AccountStorageRepository.StoredSnapshot runtimeSnapshot =
                     buildStoredSnapshotFromPublishedRuntime(accountRuntimeSnapshot, publishedAt);
@@ -355,18 +364,44 @@ public class AccountStatsPreloadManager {
             );
             nextDelayMs = resolveRefreshDelayMs();
             updateLatestCache(cache);
-            return cache;
+            return ApplyResult.success(cache);
         } catch (Exception exception) {
             nextDelayMs = resolveRefreshDelayMs();
             Cache previous = latestCache;
             if (previous != null) {
                 Cache cache = buildFailureCache(previous, exception.getMessage());
                 updateLatestCache(cache);
-                return cache;
+                return ApplyResult.failure(exception.getMessage(), cache);
             }
             Cache cache = buildInitialFailureCache(exception.getMessage());
             updateLatestCache(cache);
+            return ApplyResult.failure(exception.getMessage(), cache);
+        }
+    }
+
+    // 后台仅悬浮窗场景只保留最小账户字段，避免每次账户推送都重建整页分析依赖。
+    public Cache applyPublishedAccountRuntimeLite(JSONObject accountRuntimeSnapshot, long publishedAt) {
+        if (accountRuntimeSnapshot == null) {
+            return latestCache;
+        }
+        try {
+            if (!isAccountSessionActive()) {
+                clearStoredSnapshotForResolvedIdentity();
+                clearLatestCache();
+                nextDelayMs = MAX_REFRESH_MS;
+                return null;
+            }
+            Cache cache = buildLiteCacheFromPublishedRuntime(
+                    accountRuntimeSnapshot,
+                    publishedAt,
+                    resolveAccountMode(accountRuntimeSnapshot.optJSONObject("accountMeta"))
+            );
+            nextDelayMs = resolveRefreshDelayMs();
+            replaceLatestCache(cache, false);
             return cache;
+        } catch (Exception exception) {
+            nextDelayMs = resolveRefreshDelayMs();
+            return latestCache;
         }
     }
 
@@ -530,13 +565,19 @@ public class AccountStatsPreloadManager {
 
     // 更新最新缓存并把刷新结果派发给前台页面。
     private void updateLatestCache(Cache cache) {
+        replaceLatestCache(cache, true);
+    }
+
+    private void replaceLatestCache(Cache cache, boolean notifyConsumers) {
         latestCache = cache;
         if (cache == null) {
             unifiedRuntimeSnapshotStore.clearAccountRuntime();
         } else {
             unifiedRuntimeSnapshotStore.applyAccountCache(cache);
         }
-        notifyCacheListeners(cache);
+        if (notifyConsumers) {
+            notifyCacheListeners(cache);
+        }
     }
 
     // 在主线程通知页面刷新，避免监听方自己再切线程。
@@ -630,6 +671,37 @@ public class AccountStatsPreloadManager {
                 parsePositionItems(orders, true),
                 new ArrayList<>(),
                 parseMetrics(statsMetrics)
+        );
+    }
+
+    private Cache buildLiteCacheFromPublishedRuntime(JSONObject runtimeSnapshot,
+                                                     long publishedAt,
+                                                     String accountMode) {
+        JSONObject runtimeMeta = runtimeSnapshot == null ? new JSONObject() : runtimeSnapshot.optJSONObject("accountMeta");
+        JSONArray positions = runtimeSnapshot == null ? new JSONArray() : runtimeSnapshot.optJSONArray("positions");
+        JSONArray orders = runtimeSnapshot == null ? new JSONArray() : runtimeSnapshot.optJSONArray("orders");
+        long updatedAt = resolveUpdatedAt(runtimeMeta, publishedAt);
+        AccountSnapshot snapshot = new AccountSnapshot(
+                new ArrayList<>(),
+                new ArrayList<>(),
+                new ArrayList<>(),
+                parsePositionItems(positions, false),
+                parsePositionItems(orders, true),
+                new ArrayList<>(),
+                new ArrayList<>()
+        );
+        return new Cache(
+                resolveRuntimeConnected(runtimeMeta),
+                snapshot,
+                optString(runtimeMeta, "login", ""),
+                optString(runtimeMeta, "server", ""),
+                resolveV2Source(runtimeMeta),
+                resolveGatewayEndpoint(),
+                updatedAt,
+                "",
+                System.currentTimeMillis(),
+                resolveHistoryRevisionFromPublishedRuntime(runtimeSnapshot),
+                accountMode
         );
     }
 
@@ -885,8 +957,6 @@ public class AccountStatsPreloadManager {
     // 统一按指定身份清理持久化快照；调用方需要先确保传入的是明确身份。
     private void clearStoredSnapshotForIdentity(String account, String server) {
         if (account == null || server == null || account.trim().isEmpty() || server.trim().isEmpty()) {
-            accountStorageRepository.clearRuntimeSnapshot();
-            accountStorageRepository.clearTradeHistory();
             return;
         }
         accountStorageRepository.clearRuntimeSnapshot(account.trim(), server.trim());
@@ -1155,6 +1225,15 @@ public class AccountStatsPreloadManager {
         return fullPayload == null ? 0L : fullPayload.getServerTime();
     }
 
+    // stream 运行态优先沿用服务端发布时间，缺失时再退回当前本地时间。
+    private long resolveUpdatedAt(JSONObject runtimeMeta, long fallbackPublishedAt) {
+        long publishedAt = Math.max(0L, fallbackPublishedAt);
+        if (publishedAt > 0L) {
+            return publishedAt;
+        }
+        return System.currentTimeMillis();
+    }
+
     // 统一读取当前网关地址，用于页面元信息展示。
     private String resolveGatewayEndpoint() {
         if (configManager == null) {
@@ -1331,6 +1410,38 @@ public class AccountStatsPreloadManager {
             }
         }
         return fallback;
+    }
+
+    public static class ApplyResult {
+        private final boolean success;
+        private final String message;
+        private final Cache cache;
+
+        private ApplyResult(boolean success, String message, Cache cache) {
+            this.success = success;
+            this.message = message == null ? "" : message;
+            this.cache = cache;
+        }
+
+        public static ApplyResult success(Cache cache) {
+            return new ApplyResult(true, "", cache);
+        }
+
+        public static ApplyResult failure(String message, Cache cache) {
+            return new ApplyResult(false, message, cache);
+        }
+
+        public boolean isSuccess() {
+            return success;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public Cache getCache() {
+            return cache;
+        }
     }
 
     public static class Cache {

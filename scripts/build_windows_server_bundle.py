@@ -19,6 +19,7 @@ GATEWAY_FILES = (
     ".env.example",
     "admin_panel.py",
     "API.md",
+    "auth_guard.py",
     "mt5_direct_login.py",
     "mt5_login_probe.py",
     "README.md",
@@ -39,6 +40,7 @@ GATEWAY_FILES = (
     "v2_trade_audit.py",
     "v2_trade_batch.py",
     "v2_trade_models.py",
+    "v2_trade_service.py",
 )
 GATEWAY_DIRS = ("ea", "static")
 

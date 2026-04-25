@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import v2_trade
@@ -170,6 +171,77 @@ def _execute_single_item(prepared_item: Mapping[str, Any],
     )
 
 
+def _execute_all_or_none_items(prepared_items: List[Mapping[str, Any]],
+                               *,
+                               check_request: Callable[[Dict[str, Any]], Any],
+                               send_request: Callable[[Dict[str, Any]], Any]) -> List[Dict[str, Any]]:
+    checked_items: List[Dict[str, Any]] = []
+    for prepared_item in prepared_items:
+        prepared = prepared_item.get("prepared") if isinstance(prepared_item.get("prepared"), dict) else {}
+        request = prepared.get("request") if isinstance(prepared.get("request"), dict) else {}
+        check_result = v2_trade_models.mt5_result_to_dict(check_request(request))
+        check_error = v2_trade_models.error_from_retcode(
+            check_result.get("retcode", -1),
+            check_result.get("comment", ""),
+        )
+        checked_items.append({
+            "prepared": prepared_item,
+            "request": request,
+            "check": check_result,
+            "error": check_error,
+        })
+    first_error = next((item.get("error") for item in checked_items if item.get("error") is not None), None)
+    if first_error is not None:
+        return [
+            v2_trade_models.build_trade_batch_item_response(
+                item_id=str(item["prepared"].get("itemId") or ""),
+                action=str(item["prepared"].get("action") or ""),
+                status=v2_trade_models.STATUS_REJECTED,
+                error=item.get("error") or first_error,
+                check=item.get("check"),
+                result=None,
+                group_key=str(item["prepared"].get("groupKey") or ""),
+            )
+            for item in checked_items
+        ]
+    results: List[Dict[str, Any]] = []
+    for item in checked_items:
+        send_result = v2_trade_models.mt5_result_to_dict(send_request(item["request"]))
+        send_error = v2_trade_models.error_from_retcode(
+            send_result.get("retcode", -1),
+            send_result.get("comment", ""),
+        )
+        prepared_item = item["prepared"]
+        results.append(v2_trade_models.build_trade_batch_item_response(
+            item_id=str(prepared_item.get("itemId") or ""),
+            action=str(prepared_item.get("action") or ""),
+            status=v2_trade_models.STATUS_ACCEPTED if send_error is None else v2_trade_models.STATUS_REJECTED,
+            error=send_error,
+            check=item.get("check"),
+            result=send_result,
+            group_key=str(prepared_item.get("groupKey") or ""),
+        ))
+    return results
+
+
+def _execute_grouped_items(prepared_items: List[Mapping[str, Any]],
+                           *,
+                           check_request: Callable[[Dict[str, Any]], Any],
+                           send_request: Callable[[Dict[str, Any]], Any]) -> List[Dict[str, Any]]:
+    grouped: "OrderedDict[str, List[Mapping[str, Any]]]" = OrderedDict()
+    for index, prepared_item in enumerate(prepared_items):
+        group_key = str(prepared_item.get("groupKey") or "").strip() or f"__item_{index}"
+        grouped.setdefault(group_key, []).append(prepared_item)
+    results: List[Dict[str, Any]] = []
+    for group_items in grouped.values():
+        results.extend(_execute_all_or_none_items(
+            list(group_items),
+            check_request=check_request,
+            send_request=send_request,
+        ))
+    return results
+
+
 def submit_trade_batch(payload: Optional[Mapping[str, Any]],
                        *,
                        account_mode: str,
@@ -228,14 +300,27 @@ def submit_trade_batch(payload: Optional[Mapping[str, Any]],
 
     safe_check_request = check_request or (lambda _request: None)
     safe_send_request = send_request or (lambda _request: None)
-    items = [
-        _execute_single_item(
-            prepared,
+    if batch["strategy"] == v2_trade_models.STRATEGY_ALL_OR_NONE:
+        items = _execute_all_or_none_items(
+            prepared_items,
             check_request=safe_check_request,
             send_request=safe_send_request,
         )
-        for prepared in prepared_items
-    ]
+    elif batch["strategy"] == v2_trade_models.STRATEGY_GROUPED:
+        items = _execute_grouped_items(
+            prepared_items,
+            check_request=safe_check_request,
+            send_request=safe_send_request,
+        )
+    else:
+        items = [
+            _execute_single_item(
+                prepared,
+                check_request=safe_check_request,
+                send_request=safe_send_request,
+            )
+            for prepared in prepared_items
+        ]
     accepted_count = sum(1 for item in items if str(item.get("status") or "") == v2_trade_models.STATUS_ACCEPTED)
     rejected_count = len(items) - accepted_count
     if accepted_count > 0 and rejected_count == 0:

@@ -21,8 +21,16 @@ public class MonitorServiceFallbackCleanupSourceTest {
 
         assertTrue("监控服务应通过 v2 stream 市场快照建立展示真值",
                 source.contains("applyMarketSnapshotFromStream("));
-        assertFalse("监控服务主链不应再按 stream 消息触发市场 REST 补拉",
-                source.contains("gatewayV2Client.fetchMarketSeries("));
+        int streamHandlerStart = source.indexOf("private void handleV2StreamMessage(");
+        int streamHandlerEnd = source.indexOf("private void applyAccountRuntimeFromStream(", streamHandlerStart);
+        String streamHandler = streamHandlerStart >= 0 && streamHandlerEnd > streamHandlerStart
+                ? source.substring(streamHandlerStart, streamHandlerEnd)
+                : "";
+        assertFalse("监控服务 stream 主链不应按消息触发市场 REST 补拉",
+                streamHandler.contains("gatewayV2Client.fetchMarketSeries("));
+        assertTrue("市场 REST 补修只能留在后台 truth repair 链路",
+                source.contains("private void requestMarketTruthRepair(")
+                        && source.contains("gatewayV2Client.fetchMarketSeries(symbol, \"1m\", MARKET_TRUTH_REPAIR_LIMIT)"));
         assertFalse("监控服务不应再在冷启动阶段拉旧整窗 1m 历史",
                 source.contains("fetchChartKlineFullWindow("));
         assertFalse("监控服务不应再把旧 1m 底稿写进图表历史库",

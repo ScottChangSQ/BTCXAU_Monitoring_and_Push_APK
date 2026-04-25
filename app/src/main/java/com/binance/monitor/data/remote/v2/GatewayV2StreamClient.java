@@ -13,6 +13,7 @@ import androidx.annotation.Nullable;
 import com.binance.monitor.constants.AppConstants;
 import com.binance.monitor.data.local.ConfigManager;
 import com.binance.monitor.runtime.ConnectionStage;
+import com.binance.monitor.util.GatewayAuthRequestHelper;
 import com.binance.monitor.util.GatewayUrlResolver;
 
 import org.json.JSONObject;
@@ -48,7 +49,7 @@ public class GatewayV2StreamClient {
 
     public GatewayV2StreamClient(@Nullable Context context) {
         client = new OkHttpClient.Builder()
-                .pingInterval(20, TimeUnit.SECONDS)
+                .pingInterval(AppConstants.WS_PING_INTERVAL_SECONDS, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .build();
         configManager = context == null
@@ -57,6 +58,7 @@ public class GatewayV2StreamClient {
     }
 
     // 启动 v2 stream 连接，主线程服务只保留一条统一同步链路。
+    // 熄屏 alert-only 由 MonitorService 在消费侧裁剪，不在传输层拆第二条 websocket。
     public synchronized void connect(@Nullable Listener listener) {
         this.listener = listener;
         running = true;
@@ -103,10 +105,12 @@ public class GatewayV2StreamClient {
         final long activeConnectionId = ++connectionId;
         notifyState(reconnecting ? ConnectionStage.RECONNECTING : ConnectionStage.CONNECTING,
                 reconnecting ? "重连中" : "连接中");
-        Request request = new Request.Builder()
-                .url(resolveStreamUrl())
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(resolveStreamUrl());
+        Request finalRequest = GatewayAuthRequestHelper
+                .applyGatewayAuth(requestBuilder, configManager)
                 .build();
-        socket = client.newWebSocket(request, new WebSocketListener() {
+        socket = client.newWebSocket(finalRequest, new WebSocketListener() {
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
                 synchronized (GatewayV2StreamClient.this) {

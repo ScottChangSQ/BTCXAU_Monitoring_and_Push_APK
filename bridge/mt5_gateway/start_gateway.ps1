@@ -182,7 +182,7 @@ function Test-GatewayDependencyContract {
     return $true
 }
 
-# 通过旧版已验证可用的 cmd 转发链执行原生命令，确保 Python stderr 会进入网关日志。
+# Runs a native command and preserves exit code.
 function Invoke-NativeCommandSafely {
     param(
         [string]$FilePath,
@@ -193,9 +193,61 @@ function Invoke-NativeCommandSafely {
     foreach ($argument in $Arguments) {
         $commandParts += '"' + $argument.Replace('"', '""') + '"'
     }
-    $commandLine = ($commandParts -join " ") + " 2>&1"
-    & cmd.exe /d /s /c $commandLine | ForEach-Object { $_ }
-    $exitCode = $LASTEXITCODE
+    $commandLine = ($commandParts -join " ")
+
+    # Use a C# process runner to forward stdout/stderr without PowerShell runspace callbacks.
+    if (-not ("NativeCommandRunner" -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+
+public static class NativeCommandRunner
+{
+    public static int Run(string filePath, string argumentsLine, string workingDirectory)
+    {
+        var startInfo = new ProcessStartInfo(filePath, argumentsLine)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = workingDirectory
+        };
+
+        using (var process = new Process())
+        {
+            process.StartInfo = startInfo;
+            process.OutputDataReceived += (sender, eventArgs) =>
+            {
+                if (eventArgs.Data != null)
+                {
+                    Console.WriteLine(eventArgs.Data);
+                }
+            };
+            process.ErrorDataReceived += (sender, eventArgs) =>
+            {
+                if (eventArgs.Data != null)
+                {
+                    Console.WriteLine(eventArgs.Data);
+                }
+            };
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            process.WaitForExit();
+            return process.ExitCode;
+        }
+    }
+}
+'@
+    }
+
+    $escapedArguments = @()
+    foreach ($argument in $Arguments) {
+        $escapedArguments += '"' + $argument.Replace('"', '\"') + '"'
+    }
+    $argumentsLine = ($escapedArguments -join " ")
+    $exitCode = [NativeCommandRunner]::Run($FilePath, $argumentsLine, $scriptDir)
 
     if ($exitCode -ne 0) {
         throw "Native command failed: $commandLine (exit code $exitCode)"
@@ -221,7 +273,15 @@ $cachedRequirementsHash = ""
 if (Test-Path $requirementsStampPath) {
     $cachedRequirementsHash = (Get-Content -LiteralPath $requirementsStampPath -ErrorAction SilentlyContinue | Select-Object -First 1).ToString().Trim()
 }
-$dependencyModules = @("fastapi", "uvicorn", "MetaTrader5", "dotenv", "cryptography", "tzdata")
+$requirementsLines = @()
+if (Test-Path (Join-Path $scriptDir "requirements.txt")) {
+    $requirementsLines = Get-Content -Encoding UTF8 (Join-Path $scriptDir "requirements.txt") |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.Trim().StartsWith("#") }
+}
+$dependencyModules = @()
+if ($requirementsLines.Count -gt 0) {
+    $dependencyModules = @("fastapi", "uvicorn", "MetaTrader5", "dotenv", "cryptography", "tzdata")
+}
 $dependencyContractOk = $false
 if ($requirementsHash -eq $cachedRequirementsHash) {
     $dependencyContractOk = Test-GatewayDependencyContract -PythonPath $venvPython -ModuleNames $dependencyModules
@@ -266,7 +326,8 @@ Assert-RequiredGatewayEnv -Keys @(
     "MT5_LOGIN",
     "MT5_PASSWORD",
     "MT5_SERVER",
-    "MT5_SERVER_TIMEZONE"
+    "MT5_SERVER_TIMEZONE",
+    "GATEWAY_AUTH_TOKEN"
 )
 
 Invoke-NativeCommandSafely -FilePath $venvPython -Arguments @("server_v2.py")

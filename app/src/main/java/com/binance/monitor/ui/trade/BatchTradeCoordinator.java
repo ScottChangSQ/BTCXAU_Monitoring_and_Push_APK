@@ -12,6 +12,7 @@ import com.binance.monitor.data.model.v2.trade.BatchTradeItemResult;
 import com.binance.monitor.data.model.v2.trade.BatchTradePlan;
 import com.binance.monitor.data.model.v2.trade.BatchTradeReceipt;
 import com.binance.monitor.data.model.v2.trade.ExecutionError;
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
 import com.binance.monitor.domain.account.AccountTimeRange;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 

@@ -98,6 +98,14 @@ class V2TradeContractTests(unittest.TestCase):
     def setUp(self):
         server_v2.trade_request_store.clear()
 
+    def test_single_trade_submit_should_be_owned_by_trade_service_layer(self):
+        service_source = (ROOT / "v2_trade_service.py").read_text(encoding="utf-8")
+        server_source = (ROOT / "server_v2.py").read_text(encoding="utf-8")
+
+        self.assertIn("def submit_single_trade(", service_source)
+        self.assertNotIn("占位", service_source)
+        self.assertIn("v2_trade_service.submit_single_trade(", server_source)
+
     def test_normalize_v2_account_meta_should_keep_account_mode(self):
         payload = server_v2._normalize_v2_account_meta(
             {
@@ -617,7 +625,7 @@ class V2TradeContractTests(unittest.TestCase):
                 }
             )
 
-        self.assertEqual("ACCEPTED", payload["status"])
+        self.assertEqual("PENDING_CONFIRMATION", payload["status"])
         self.assertEqual("TRADE_RESULT_UNKNOWN", payload["error"]["code"])
 
     def test_trade_submit_should_reject_same_request_id_with_different_payload(self):

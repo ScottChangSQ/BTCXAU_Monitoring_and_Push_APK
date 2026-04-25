@@ -31,16 +31,30 @@ public class SettingsSectionActivitySourceTest {
                 "app/src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java",
                 "src/main/java/com/binance/monitor/ui/settings/SettingsSectionActivity.java"
         );
+        String layout = readUtf8(
+                "app/src/main/res/layout/activity_settings_detail.xml",
+                "src/main/res/layout/activity_settings_detail.xml"
+        );
 
         assertTrue("设置页应把固定入口写回展示框",
                 source.contains("binding.etMt5GatewayUrl.setText(AppConstants.MT5_GATEWAY_BASE_URL);"));
         assertTrue("设置页不应再允许手工编辑入口",
                 source.contains("binding.etMt5GatewayUrl.setEnabled(false);"));
-        assertTrue("设置页不应再显示保存入口按钮",
-                source.contains("binding.btnSaveMt5GatewayUrl.setVisibility(View.GONE);"));
+        assertTrue("设置页应保留网关鉴权 token 输入框",
+                layout.contains("android:id=\"@+id/etMt5GatewayAuthToken\""));
+        assertTrue("设置页应回显网关鉴权 token",
+                source.contains("binding.etMt5GatewayAuthToken.setText(configManager.getMt5GatewayAuthToken());"));
+        assertTrue("设置页应允许编辑网关鉴权 token",
+                source.contains("binding.etMt5GatewayAuthToken.setEnabled(true);"));
+        assertTrue("设置页应保留保存按钮用于提交鉴权 token",
+                source.contains("binding.btnSaveMt5GatewayUrl.setVisibility(View.VISIBLE);"));
+        assertTrue("设置页保存按钮应改为保存鉴权 token",
+                source.contains("binding.btnSaveMt5GatewayUrl.setOnClickListener(v -> saveGatewayAuthToken());"));
+        assertTrue("设置页应提供专门的网关鉴权 token 保存方法",
+                source.contains("private void saveGatewayAuthToken() {"));
         assertFalse("设置页不应继续按用户输入保存入口",
                 source.contains("viewModel.setMt5GatewayBaseUrl(input);"));
-        assertFalse("设置页不应继续保留失效的网关保存私有方法",
+        assertFalse("设置页不应继续保留失效的网关地址保存私有方法",
                 source.contains("private void saveMt5GatewayAddress()"));
     }
 

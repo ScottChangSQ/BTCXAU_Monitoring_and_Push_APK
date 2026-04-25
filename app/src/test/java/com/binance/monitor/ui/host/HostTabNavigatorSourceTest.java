@@ -34,6 +34,7 @@ public class HostTabNavigatorSourceTest {
         assertTrue(source.contains("transaction.add(containerId, fragment, targetTab.getKey())"));
         assertTrue(source.contains("transaction.show(fragment);"));
         assertTrue(source.contains("transaction.hide(fragment);"));
+        assertTrue(source.contains("transaction.commitNowAllowingStateLoss();\n        for (HostTab tab : HostTab.values()) {"));
     }
 
     @Test

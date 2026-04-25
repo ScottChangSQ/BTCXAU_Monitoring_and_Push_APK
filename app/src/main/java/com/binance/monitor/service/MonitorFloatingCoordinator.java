@@ -51,6 +51,7 @@ final class MonitorFloatingCoordinator {
     private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore;
     private final FloatingRevisionRefreshPolicy revisionRefreshPolicy = new FloatingRevisionRefreshPolicy();
     private boolean floatingRefreshScheduled;
+    private boolean screenInteractive = true;
     private long lastFloatingRefreshAt;
     private final Runnable floatingRefreshRunnable = new Runnable() {
         @Override
@@ -102,6 +103,11 @@ final class MonitorFloatingCoordinator {
         if (floatingWindowManager == null) {
             return;
         }
+        if (!screenInteractive) {
+            mainHandler.removeCallbacks(floatingRefreshRunnable);
+            floatingRefreshScheduled = false;
+            return;
+        }
         if (!immediate && !revisionRefreshPolicy.shouldRefresh(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures())) {
             return;
         }
@@ -123,14 +129,47 @@ final class MonitorFloatingCoordinator {
         mainHandler.postDelayed(floatingRefreshRunnable, delay);
     }
 
+    // 亮灭屏时切换悬浮窗刷新资格；熄屏直接停更，亮屏后补一次真值。
+    void setScreenInteractive(boolean interactive) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> setScreenInteractive(interactive));
+            return;
+        }
+        if (screenInteractive == interactive) {
+            return;
+        }
+        screenInteractive = interactive;
+        if (!interactive) {
+            cancelScheduledRefresh();
+            return;
+        }
+        requestRefresh(true);
+    }
+
+    // 熄屏时不再让最小化闪烁维持活跃；亮屏后再恢复。
+    void notifyAbnormalEvent(@Nullable String symbol) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> notifyAbnormalEvent(symbol));
+            return;
+        }
+        if (!screenInteractive || floatingWindowManager == null) {
+            return;
+        }
+        floatingWindowManager.notifyAbnormalEvent(symbol);
+    }
+
     // 销毁时取消悬浮窗排队刷新并隐藏窗口。
     void onDestroy() {
-        mainHandler.removeCallbacks(floatingRefreshRunnable);
-        floatingRefreshScheduled = false;
+        cancelScheduledRefresh();
         lastFloatingRefreshAt = 0L;
         if (floatingWindowManager != null) {
             floatingWindowManager.destroy();
         }
+    }
+
+    private void cancelScheduledRefresh() {
+        mainHandler.removeCallbacks(floatingRefreshRunnable);
+        floatingRefreshScheduled = false;
     }
 
     // 立即拼装并更新悬浮窗快照。
@@ -140,6 +179,9 @@ final class MonitorFloatingCoordinator {
             return;
         }
         if (floatingWindowManager == null) {
+            return;
+        }
+        if (!screenInteractive) {
             return;
         }
         FloatingWindowSnapshot snapshot = buildFloatingSnapshot();
@@ -316,8 +358,13 @@ final class MonitorFloatingCoordinator {
 
     // 后台时放慢悬浮窗刷新，减少不必要的主线程绘制。
     private long resolveFloatingRefreshThrottleMs() {
+        AccountStatsPreloadManager.Cache cache = dataSource.getLatestAccountCache();
+        boolean hasActivePositions = resolveTotalFloatingPositionCount(cache) > 0;
+        boolean minimized = floatingWindowManager != null && floatingWindowManager.isMinimized();
         return MonitorRuntimePolicyHelper.resolveFloatingRefreshThrottleMs(
-                AppForegroundTracker.getInstance().isForeground()
+                AppForegroundTracker.getInstance().isForeground(),
+                hasActivePositions,
+                minimized
         );
     }
 }

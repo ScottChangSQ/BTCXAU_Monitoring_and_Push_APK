@@ -56,6 +56,32 @@ public class GatewayV2StreamClientSourceTest {
                 source.contains("void onStateChanged(ConnectionEvent event);"));
     }
 
+    @Test
+    public void sourceShouldSendConfiguredGatewayTokenOnlyThroughGatewayHeader() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java",
+                "src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java"
+        );
+
+        assertTrue("v2 stream WebSocket 应复用统一网关鉴权 helper，避免各客户端继续散落 header 逻辑",
+                source.contains("GatewayAuthRequestHelper"));
+        assertTrue("v2 stream WebSocket 应通过统一 helper 挂载鉴权头",
+                source.contains(".applyGatewayAuth(requestBuilder, configManager)"));
+        assertFalse("v2 stream WebSocket 不应把 token 放进 URL query，避免掩盖配置不一致",
+                source.contains("access_token") || source.contains("gateway_token") || source.contains("addQueryParameter"));
+    }
+
+    @Test
+    public void sourceShouldUseSharedWsPingIntervalConstantInsteadOfHardcodedTwentySeconds() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java",
+                "src/main/java/com/binance/monitor/data/remote/v2/GatewayV2StreamClient.java"
+        );
+
+        assertTrue(source.contains(".pingInterval(AppConstants.WS_PING_INTERVAL_SECONDS, TimeUnit.SECONDS)"));
+        assertFalse(source.contains(".pingInterval(20, TimeUnit.SECONDS)"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {

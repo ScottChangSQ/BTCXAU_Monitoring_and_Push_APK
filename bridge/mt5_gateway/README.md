@@ -40,6 +40,7 @@
    - `MT5_SERVER_ALIASES=ICMarketsSC-MT5-6,ICMarketsSC-MT5-5,ICMarketsSC-MT5`
    - `GATEWAY_HOST=127.0.0.1`
    - `GATEWAY_PORT=8787`
+   - `GATEWAY_AUTH_TOKEN=change_me_gateway_token`
    - `GATEWAY_MODE=auto`
    - `SNAPSHOT_BUILD_CACHE_MS=8000`
    - `SNAPSHOT_BUILD_MAX_STALE_MS=30000`
@@ -48,6 +49,7 @@
 
 说明：
 - 如果网关前面还有 Caddy / Nginx，建议 `GATEWAY_HOST` 固定为 `127.0.0.1`，不要直接对公网暴露 `8787`。
+- 如果你的公网入口额外要求 `GATEWAY_AUTH_TOKEN`，Android App 也要在设置页填写同一个 token；客户端会同时附带 `Authorization: Bearer <token>` 和 `X-Gateway-Auth-Token: <token>`。
 - `MT5_SERVER_TIMEZONE` 现在是必填项；它必须填写“MT5 / 券商服务器时区”，不是部署机器所在时区。服务端会在网关时间源头把 MT5 服务器 wall-clock 时间统一归一化为 UTC 毫秒，App 不再参与时间纠偏，只按设备本地时区显示。
 - 对 `ICMarketsSC-MT5-6` 这类 `GMT+2 / GMT+3（夏令时）` 服务器，推荐填写 `Europe/Athens`；如果错填成 `Asia/Seoul`，历史成交、开平仓时间和图表标记会整体提前约 6 小时。
 - `MT5_TIME_OFFSET_MINUTES` 仅保留给健康面板展示旧分钟差信息，不再参与历史时间归一化，也不能替代真实时区配置。

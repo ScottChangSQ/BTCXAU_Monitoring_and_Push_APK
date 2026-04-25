@@ -371,8 +371,8 @@ public class MonitorServiceSourceTest {
                 source.contains("private volatile long streamPositionsUpdatedAt;"));
         assertTrue("收到 stream 账户运行态后应直接交给账户预加载管理器",
                 source.contains("accountStatsPreloadManager.applyPublishedAccountRuntime("));
-        assertTrue("stream 账户运行态应用结束后应继续触发悬浮窗刷新",
-                source.contains("mainHandler.post(() -> floatingCoordinator.requestRefresh(false));"));
+        assertTrue("stream 账户运行态应用结束后应先刷新连接状态再触发悬浮窗刷新",
+                source.contains("mainHandler.post(() -> {\n                    updateConnectionStatus();\n                    floatingCoordinator.requestRefresh(false);\n                });"));
     }
 
     @Test
@@ -461,6 +461,8 @@ public class MonitorServiceSourceTest {
         ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue("stream 消息应先进入实时市场执行器，不能直接把 payload 解析压到主线程",
+                source.contains("executeRealtimeMarket(() -> {\n                    try {\n                        handleV2StreamMessage(message);"));
+        assertFalse("收到 stream 文本时不能先刷新成功应用时间，必须等业务应用成功",
                 source.contains("executeRealtimeMarket(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
         assertTrue("后台消费完 stream 后，主线程只负责刷新连接状态",
                 source.contains("mainHandler.post(MonitorService.this::updateConnectionStatus);")
@@ -504,7 +506,7 @@ public class MonitorServiceSourceTest {
                         && source.contains("accountRuntimeExecutorService.shutdownNow();\n            accountRuntimeExecutorService = null;")
                         && source.contains("backgroundExecutorService.shutdownNow();\n            backgroundExecutorService = null;"));
         assertTrue("stream 消息应通过安全投递入口执行，避免销毁后 RejectedExecutionException",
-                source.contains("executeRealtimeMarket(() -> {\n                    lastV2StreamMessageAt = System.currentTimeMillis();"));
+                source.contains("executeRealtimeMarket(() -> {\n                    try {\n                        handleV2StreamMessage(message);"));
         assertTrue("历史补拉应直接委托预加载管理器自己的排队入口，避免服务层继续维护第二套线程与 gate",
                 source.contains("accountStatsPreloadManager.queueHistoryRefreshForRevision("));
         assertTrue("账户运行态应用应通过安全投递入口执行，避免销毁后继续提交",
@@ -558,12 +560,42 @@ public class MonitorServiceSourceTest {
                 source.contains("if (foregroundNotificationCoordinator != null) {\n            foregroundNotificationCoordinator.onDestroy();"));
     }
 
+    @Test
+    public void serviceShouldListenScreenOnOffToSuspendFloatingRefreshWhenScreenIsOff() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private final BroadcastReceiver screenStateReceiver = new BroadcastReceiver() {"));
+        assertTrue(source.contains("if (Intent.ACTION_SCREEN_OFF.equals(action)) {"));
+        assertTrue(source.contains("if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {"));
+        assertTrue(source.contains("registerScreenStateReceiver();"));
+        assertTrue(source.contains("unregisterReceiver(screenStateReceiver);"));
+        assertTrue(source.contains("private void handleScreenInteractiveChanged(boolean interactive) {"));
+        assertTrue(source.contains("floatingCoordinator.setScreenInteractive(interactive);"));
+    }
+
+    @Test
+    public void abnormalBlinkShouldRouteThroughCoordinatorSoScreenOffCanSuspendIt() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorService.java",
+                "src/main/java/com/binance/monitor/service/MonitorService.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("if (recordManager.addRecordIfAbsent(record) && floatingCoordinator != null) {"));
+        assertTrue(source.contains("floatingCoordinator.notifyAbnormalEvent(record.getSymbol());"));
+        assertFalse(source.contains("floatingWindowManager.notifyAbnormalEvent(record.getSymbol());"));
+    }
+
     private static String readUtf8(String... candidates) throws Exception {
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         for (String candidate : candidates) {
             Path path = workingDir.resolve(candidate).normalize();
             if (Files.exists(path)) {
-                return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+                return new String(Files.readAllBytes(path), StandardCharsets.UTF_8)
+                        .replace("\r\n", "\n")
+                        .replace('\r', '\n');
             }
         }
         throw new IllegalStateException("找不到 MonitorService.java");

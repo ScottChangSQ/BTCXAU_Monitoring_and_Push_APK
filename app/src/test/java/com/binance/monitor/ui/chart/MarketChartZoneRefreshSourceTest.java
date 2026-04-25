@@ -25,7 +25,11 @@ public class MarketChartZoneRefreshSourceTest {
         assertTrue(source.contains("mainHandler.post(dialogDrainRunnable);"));
         assertTrue(source.contains("mainHandler.post(overlaySummaryDrainRunnable);"));
         assertTrue(source.contains("chartRefreshScheduler.requestChartRender(buildRealtimeTailRenderToken(latestKline));"));
-        assertTrue(source.contains("mainHandler.post(realtimeTailDrainRunnable);"));
+        assertTrue(source.contains("AppConstants.CHART_REALTIME_TAIL_UI_WINDOW_MS"));
+        assertTrue(source.contains("lastRealtimeTailUiAppliedAt"));
+        assertTrue(source.contains("realtimeTailWindowScheduled"));
+        assertTrue(source.contains("mainHandler.postDelayed(() -> {"));
+        assertTrue(source.contains("realtimeTailDrainRunnable.run();"));
         assertTrue(source.contains("dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);"));
         assertTrue(source.contains("monitorRepository.getConnectionStatus().observe(lifecycleOwner, ignored -> dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null));"));
         assertTrue(source.contains("globalStatusBottomSheetController.updateVisibleSheet(buildGlobalStatusSnapshot());"));

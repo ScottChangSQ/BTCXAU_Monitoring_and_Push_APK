@@ -7,6 +7,8 @@ package com.binance.monitor.ui.trade;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

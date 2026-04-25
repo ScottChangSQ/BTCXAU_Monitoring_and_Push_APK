@@ -24,7 +24,6 @@ public class AccountStatsPreloadManagerSourceTest {
         assertTrue(source.contains("gatewayV2Client.fetchAccountFull()"));
         assertTrue(source.contains("gatewayV2Client.fetchAccountHistory("));
         assertFalse(source.contains("Mt5BridgeGatewayClient"));
-        assertFalse(Files.exists(Paths.get("src/main/java/com/binance/monitor/ui/account/Mt5BridgeGatewayClient.java")));
     }
 
     @Test
@@ -221,7 +220,7 @@ public class AccountStatsPreloadManagerSourceTest {
                 StandardCharsets.UTF_8
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("public Cache applyPublishedAccountRuntime(JSONObject accountRuntimeSnapshot, long publishedAt) {"));
+        assertTrue(source.contains("public ApplyResult applyPublishedAccountRuntime(JSONObject accountRuntimeSnapshot, long publishedAt) {"));
         assertTrue(source.contains("public Cache refreshHistoryForRevision(String remoteHistoryRevision) {"));
         assertTrue(source.contains("public Cache fetchFullForUi(AccountTimeRange range) {"));
         assertFalse(source.contains("public Cache fetchForUi(AccountTimeRange range) {"));

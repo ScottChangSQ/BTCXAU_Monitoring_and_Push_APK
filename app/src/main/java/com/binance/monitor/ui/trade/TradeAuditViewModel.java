@@ -12,6 +12,7 @@ import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
 import com.binance.monitor.data.remote.v2.GatewayV2TradeClient;
 
 import java.util.ArrayList;

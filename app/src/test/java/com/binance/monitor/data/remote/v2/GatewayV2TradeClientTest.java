@@ -7,11 +7,11 @@ import static org.junit.Assert.fail;
 import com.binance.monitor.data.model.v2.trade.BatchTradeItem;
 import com.binance.monitor.data.model.v2.trade.BatchTradeReceipt;
 import com.binance.monitor.data.model.v2.trade.BatchTradePlan;
+import com.binance.monitor.data.model.v2.trade.TradeAuditEntry;
 import com.binance.monitor.data.model.v2.trade.TradeCheckResult;
 import com.binance.monitor.data.model.v2.trade.TradeCommand;
 import com.binance.monitor.data.model.v2.trade.TradeReceipt;
 import com.binance.monitor.ui.trade.TradeCommandFactory;
-import com.binance.monitor.ui.trade.TradeAuditEntry;
 
 import org.json.JSONObject;
 import org.junit.Test;
