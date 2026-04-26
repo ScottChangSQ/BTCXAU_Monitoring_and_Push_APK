@@ -19,8 +19,10 @@ public class FloatingRevisionRefreshPolicySourceTest {
         ).replace("\r\n", "\n").replace('\r', '\n');
 
         assertTrue(source.contains("private final FloatingRevisionRefreshPolicy revisionRefreshPolicy = new FloatingRevisionRefreshPolicy();"));
-        assertTrue(source.contains("if (!immediate && !revisionRefreshPolicy.shouldRefresh(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures())) {"));
-        assertTrue(source.contains("revisionRefreshPolicy.markApplied(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures());"));
+        assertTrue(source.contains("List<Long> productRevisions = resolveVisibleProductRevisions();"));
+        assertTrue(source.contains("List<String> marketSignatures = resolveVisibleMarketSignatures();"));
+        assertTrue(source.contains("if (!immediate && !revisionRefreshPolicy.shouldRefresh(productRevisions, marketSignatures)) {"));
+        assertTrue(source.contains("revisionRefreshPolicy.markApplied(work.productRevisions, work.marketSignatures);"));
         assertTrue(source.contains("private List<Long> resolveVisibleProductRevisions() {"));
         assertTrue(source.contains("private List<String> resolveVisibleMarketSignatures() {"));
     }

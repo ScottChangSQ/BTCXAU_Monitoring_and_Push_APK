@@ -3,7 +3,7 @@
  */
 package com.binance.monitor.service;
 
-import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import com.binance.monitor.constants.AppConstants;
@@ -20,80 +20,70 @@ import java.util.Set;
 public class AbnormalSyncRuntimeHelperTest {
 
     @Test
-    public void shouldSkipServerAlertWhenAnySymbolIsStillInCooldown() {
+    public void shouldOnlyDispatchSymbolsThatAreOutOfCooldown() {
         Map<String, Long> lastNotifyAt = new HashMap<>();
-        Set<String> dispatchedAlertIds = new HashSet<>();
         long now = 1_000_000L;
         lastNotifyAt.put(AppConstants.SYMBOL_BTC, now - 60_000L);
         lastNotifyAt.put(AppConstants.SYMBOL_XAU, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
 
-        boolean eligible = AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
-                "alert-1",
+        assertEquals(Collections.singletonList(AppConstants.SYMBOL_XAU),
+                AbnormalSyncRuntimeHelper.collectDispatchableServerAlertSymbols(
                 Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
-                dispatchedAlertIds,
                 lastNotifyAt,
                 now,
                 AppConstants.NOTIFICATION_COOLDOWN_MS
-        );
-
-        assertFalse(eligible);
+        ));
     }
 
     @Test
-    public void shouldDispatchServerAlertWhenAllSymbolsAreOutOfCooldown() {
+    public void shouldDispatchAllSymbolsWhenAllSymbolsAreOutOfCooldown() {
         Map<String, Long> lastNotifyAt = new HashMap<>();
-        Set<String> dispatchedAlertIds = new HashSet<>();
         long now = 1_000_000L;
         lastNotifyAt.put(AppConstants.SYMBOL_BTC, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
         lastNotifyAt.put(AppConstants.SYMBOL_XAU, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
 
-        boolean eligible = AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
-                "alert-2",
+        assertEquals(Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
+                AbnormalSyncRuntimeHelper.collectDispatchableServerAlertSymbols(
                 Arrays.asList(AppConstants.SYMBOL_BTC, AppConstants.SYMBOL_XAU),
-                dispatchedAlertIds,
                 lastNotifyAt,
                 now,
                 AppConstants.NOTIFICATION_COOLDOWN_MS
-        );
-
-        assertTrue(eligible);
+        ));
     }
 
     @Test
     public void shouldSkipServerAlertWhenAlertIdAlreadyDispatched() {
-        Map<String, Long> lastNotifyAt = new HashMap<>();
         Set<String> dispatchedAlertIds = new HashSet<>(Collections.singleton("alert-3"));
-        long now = 1_000_000L;
-        lastNotifyAt.put(AppConstants.SYMBOL_BTC, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
 
-        boolean eligible = AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
+        assertTrue(AbnormalSyncRuntimeHelper.isServerAlertAlreadyDispatched(
                 "alert-3",
-                Collections.singletonList(AppConstants.SYMBOL_BTC),
-                dispatchedAlertIds,
-                lastNotifyAt,
-                now,
-                AppConstants.NOTIFICATION_COOLDOWN_MS
-        );
-
-        assertFalse(eligible);
+                dispatchedAlertIds
+        ));
     }
 
     @Test
     public void shouldNormalizeDispatchedAlertIdsBeforeComparing() {
-        Map<String, Long> lastNotifyAt = new HashMap<>();
         Set<String> dispatchedAlertIds = new HashSet<>(Collections.singleton(" alert-4 "));
-        long now = 1_000_000L;
-        lastNotifyAt.put(AppConstants.SYMBOL_BTC, now - AppConstants.NOTIFICATION_COOLDOWN_MS - 1L);
 
-        boolean eligible = AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
+        assertTrue(AbnormalSyncRuntimeHelper.isServerAlertAlreadyDispatched(
                 "alert-4",
-                Collections.singletonList(AppConstants.SYMBOL_BTC),
-                dispatchedAlertIds,
-                lastNotifyAt,
-                now,
-                AppConstants.NOTIFICATION_COOLDOWN_MS
-        );
+                dispatchedAlertIds
+        ));
+    }
 
-        assertFalse(eligible);
+    @Test
+    public void shouldExtractOnlyMatchedLineForSymbolScopedContent() {
+        String content = "BTC 的 成交量 出现异常！\nXAU 的 价格变化 出现异常！";
+
+        assertEquals("XAU 的 价格变化 出现异常！",
+                AbnormalSyncRuntimeHelper.buildSymbolScopedAlertContent(content, AppConstants.SYMBOL_XAU));
+    }
+
+    @Test
+    public void shouldFallbackToOriginalContentWhenNoMatchedLineExists() {
+        String content = "组合异常提醒";
+
+        assertEquals(content,
+                AbnormalSyncRuntimeHelper.buildSymbolScopedAlertContent(content, AppConstants.SYMBOL_BTC));
     }
 }

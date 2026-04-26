@@ -43,6 +43,7 @@ public class PositionRatioChartView extends View {
     private final Path linePath = new Path();
     private final Path fillPath = new Path();
     private final GestureDetector gestureDetector;
+    private PositionRatioRenderModel renderModel = PositionRatioRenderModel.empty();
 
     private float chartLeft;
     private float chartTop;
@@ -132,6 +133,7 @@ public class PositionRatioChartView extends View {
         highlightedIndex = -1;
         highlightedXRatio = -1f;
         longPressing = false;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -139,6 +141,23 @@ public class PositionRatioChartView extends View {
     public void setViewport(long startTs, long endTs) {
         viewportStartTs = Math.max(0L, startTs);
         viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
+        rebuildRenderModel();
+        invalidate();
+    }
+
+    public void setRenderData(@Nullable List<CurvePoint> source, long startTs, long endTs) {
+        points.clear();
+        if (source != null) {
+            points.addAll(source);
+            points.sort((left, right) -> Long.compare(left.getTimestamp(), right.getTimestamp()));
+        }
+        viewportStartTs = Math.max(0L, startTs);
+        viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
+        highlightedIndex = -1;
+        highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
+        longPressing = false;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -163,6 +182,7 @@ public class PositionRatioChartView extends View {
             return;
         }
         mergeWithPreviousPane = merge;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -172,6 +192,7 @@ public class PositionRatioChartView extends View {
             return;
         }
         mergeWithNextPane = merge;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -220,33 +241,23 @@ public class PositionRatioChartView extends View {
     }
 
     @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        rebuildRenderModel();
+    }
+
+    // 预生成仓位曲线和填充路径，避免滚动重绘时重复遍历原始点。
+    private void rebuildRenderModel() {
         float width = getWidth();
         float height = getHeight();
-        if (width <= 0f || height <= 0f) {
+        if (width <= 0f || height <= 0f || masked || points.isEmpty()) {
+            renderModel = PositionRatioRenderModel.empty();
             return;
         }
-
-        chartLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
-        chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
-        chartRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
-        chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
-                mergeWithNextPane,
-                false,
-                dp(10f),
-                0f
-        );
-        drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
-
-        if (masked) {
-            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
-            return;
-        }
-        if (points.isEmpty()) {
-            canvas.drawText("暂无仓位数据", width / 2f, height / 2f, emptyPaint);
-            return;
-        }
+        float preparedLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
+        float preparedTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
+        float preparedRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
+        float preparedBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(mergeWithNextPane, false, dp(10f), 0f);
 
         double maxRatio = 0.2d;
         CurvePoint peakPoint = points.get(0);
@@ -257,45 +268,88 @@ public class PositionRatioChartView extends View {
             }
         }
         double chartMax = Math.max(0.2d, maxRatio * 1.12d);
-        double chartMin = 0d;
         seriesStartTs = points.get(0).getTimestamp();
         seriesEndTs = points.get(points.size() - 1).getTimestamp();
         long startTs = viewportStartTs > 0L ? viewportStartTs : seriesStartTs;
         long endTs = viewportEndTs > startTs ? viewportEndTs : Math.max(startTs + 1L, seriesEndTs);
 
-        linePath.reset();
-        fillPath.reset();
-        float zeroY = mapY(0d, chartMin, chartMax, chartTop, chartBottom);
+        Path preparedLinePath = new Path();
+        Path preparedFillPath = new Path();
+        float zeroY = mapY(0d, 0d, chartMax, preparedTop, preparedBottom);
         for (int i = 0; i < points.size(); i++) {
             CurvePoint point = points.get(i);
-            float x = mapX(point.getTimestamp(), startTs, endTs, chartLeft, chartRight);
-            float y = mapY(point.getPositionRatio(), chartMin, chartMax, chartTop, chartBottom);
+            float x = mapX(point.getTimestamp(), startTs, endTs, preparedLeft, preparedRight);
+            float y = mapY(point.getPositionRatio(), 0d, chartMax, preparedTop, preparedBottom);
             if (i == 0) {
-                linePath.moveTo(x, y);
-                fillPath.moveTo(x, zeroY);
-                fillPath.lineTo(x, y);
+                preparedLinePath.moveTo(x, y);
+                preparedFillPath.moveTo(x, zeroY);
+                preparedFillPath.lineTo(x, y);
             } else {
-                linePath.lineTo(x, y);
-                fillPath.lineTo(x, y);
+                preparedLinePath.lineTo(x, y);
+                preparedFillPath.lineTo(x, y);
             }
         }
-        fillPath.lineTo(mapX(points.get(points.size() - 1).getTimestamp(), startTs, endTs, chartLeft, chartRight), zeroY);
-        fillPath.close();
-        canvas.drawPath(fillPath, fillPaint);
-        canvas.drawPath(linePath, linePaint);
+        preparedFillPath.lineTo(mapX(points.get(points.size() - 1).getTimestamp(), startTs, endTs, preparedLeft, preparedRight), zeroY);
+        preparedFillPath.close();
 
-        float peakX = mapX(peakPoint.getTimestamp(), startTs, endTs, chartLeft, chartRight);
-        float peakY = mapY(peakPoint.getPositionRatio(), chartMin, chartMax, chartTop, chartBottom);
-        canvas.drawCircle(peakX, peakY, dp(3.2f), markerPaint);
+        chartLeft = preparedLeft;
+        chartTop = preparedTop;
+        chartRight = preparedRight;
+        chartBottom = preparedBottom;
+        renderModel = new PositionRatioRenderModel(
+                preparedLeft,
+                preparedTop,
+                preparedRight,
+                preparedBottom,
+                chartMax,
+                startTs,
+                endTs,
+                zeroY,
+                mapX(peakPoint.getTimestamp(), startTs, endTs, preparedLeft, preparedRight),
+                mapY(peakPoint.getPositionRatio(), 0d, chartMax, preparedTop, preparedBottom),
+                preparedLinePath,
+                preparedFillPath
+        );
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        float width = getWidth();
+        float height = getHeight();
+        if (width <= 0f || height <= 0f) {
+            return;
+        }
+
+        PositionRatioRenderModel model = renderModel;
+        chartLeft = model.chartLeft;
+        chartTop = model.chartTop;
+        chartRight = model.chartRight;
+        chartBottom = model.chartBottom;
+        drawFrame(canvas, model.chartLeft, model.chartTop, model.chartRight, model.chartBottom);
+
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
+        if (points.isEmpty()) {
+            canvas.drawText("暂无仓位数据", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
+
+        canvas.drawPath(model.fillPath, fillPaint);
+        canvas.drawPath(model.linePath, linePaint);
+
+        canvas.drawCircle(model.peakX, model.peakY, dp(3.2f), markerPaint);
         if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
             CurvePoint point = points.get(highlightedIndex);
-            float highlightX = resolveHighlightX(startTs, endTs);
-            float highlightY = mapY(point.getPositionRatio(), chartMin, chartMax, chartTop, chartBottom);
-            canvas.drawLine(highlightX, chartTop, highlightX, chartBottom, crosshairPaint);
+            float highlightX = resolveHighlightX(model.startTs, model.endTs);
+            float highlightY = mapY(point.getPositionRatio(), 0d, model.chartMax, model.chartTop, model.chartBottom);
+            canvas.drawLine(highlightX, model.chartTop, highlightX, model.chartBottom, crosshairPaint);
             canvas.drawCircle(highlightX, highlightY, dp(3.4f), markerPaint);
         }
-        canvas.drawLine(chartLeft, zeroY, chartRight, zeroY, axisPaint);
-        drawLabels(canvas, chartTop, chartBottom, chartMax);
+        canvas.drawLine(model.chartLeft, model.zeroY, model.chartRight, model.zeroY, axisPaint);
+        drawLabels(canvas, model.chartTop, model.chartBottom, model.chartMax);
     }
 
     // 绘制基础网格和边框。
@@ -358,16 +412,7 @@ public class PositionRatioChartView extends View {
 
     // 按时间找到最近的数据点。
     private int findNearestIndexByTimestamp(long timestamp) {
-        int bestIndex = 0;
-        long bestDistance = Long.MAX_VALUE;
-        for (int i = 0; i < points.size(); i++) {
-            long distance = Math.abs(points.get(i).getTimestamp() - timestamp);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestIndex = i;
-            }
-        }
-        return bestIndex;
+        return CurvePointBinarySearch.nearestCurvePointIndex(points, timestamp);
     }
 
     // 清除用户选中的十字光标并通知宿主。
@@ -431,5 +476,50 @@ public class PositionRatioChartView extends View {
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
         return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
+    }
+
+    private static final class PositionRatioRenderModel {
+        final float chartLeft;
+        final float chartTop;
+        final float chartRight;
+        final float chartBottom;
+        final double chartMax;
+        final long startTs;
+        final long endTs;
+        final float zeroY;
+        final float peakX;
+        final float peakY;
+        final Path linePath;
+        final Path fillPath;
+
+        private PositionRatioRenderModel(float chartLeft,
+                                         float chartTop,
+                                         float chartRight,
+                                         float chartBottom,
+                                         double chartMax,
+                                         long startTs,
+                                         long endTs,
+                                         float zeroY,
+                                         float peakX,
+                                         float peakY,
+                                         Path linePath,
+                                         Path fillPath) {
+            this.chartLeft = chartLeft;
+            this.chartTop = chartTop;
+            this.chartRight = chartRight;
+            this.chartBottom = chartBottom;
+            this.chartMax = chartMax;
+            this.startTs = startTs;
+            this.endTs = endTs;
+            this.zeroY = zeroY;
+            this.peakX = peakX;
+            this.peakY = peakY;
+            this.linePath = linePath;
+            this.fillPath = fillPath;
+        }
+
+        static PositionRatioRenderModel empty() {
+            return new PositionRatioRenderModel(0f, 0f, 0f, 0f, 0.2d, 0L, 1L, 0f, 0f, 0f, new Path(), new Path());
+        }
     }
 }

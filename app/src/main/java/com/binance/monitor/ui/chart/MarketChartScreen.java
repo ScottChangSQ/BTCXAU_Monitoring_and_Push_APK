@@ -238,6 +238,7 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private AppCompatActivity activity;
     private final LifecycleOwner lifecycleOwner;
     private final ScreenDependencyProvider dependencyProvider;
+    private boolean hostPageVisible;
 
 
     MarketChartScreen(@NonNull AppCompatActivity activity,
@@ -367,6 +368,16 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         if (batchActionDialogCoordinator != null) {
             batchActionDialogCoordinator.cancelRunningTask();
         }
+    }
+
+    void onHostPageShown() {
+        hostPageVisible = true;
+        dispatchChartRefresh(ChartRefreshEvent.dialogStateChanged(), null, null);
+    }
+
+    void onHostPageHidden() {
+        hostPageVisible = false;
+        cancelQueuedUiRefreshCallbacks();
     }
 
     void requestAutoRefreshKlines() {
@@ -3809,6 +3820,9 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
     private void dispatchChartRefresh(@NonNull ChartRefreshEvent event,
                                       @Nullable Runnable overlayAction,
                                       @Nullable Runnable realtimeAction) {
+        if (!hostPageVisible) {
+            return;
+        }
         ChartRefreshBudget budget = ChartRefreshBudget.resolve(event);
         if (budget.needsUiStateBind()) {
             applyUiStateRefresh();
@@ -4507,6 +4521,13 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
 
     // 页面销毁时统一关闭图表 IO 执行器，避免多个宿主入口重复展开相同逻辑。
     void shutdownIoExecutor() {
+        cancelQueuedUiRefreshCallbacks();
+        if (ioExecutor != null) {
+            ioExecutor.shutdownNow();
+        }
+    }
+
+    private void cancelQueuedUiRefreshCallbacks() {
         mainHandler.removeCallbacks(realtimeTailDrainRunnable);
         mainHandler.removeCallbacks(overlaySummaryDrainRunnable);
         mainHandler.removeCallbacks(dialogDrainRunnable);
@@ -4517,9 +4538,6 @@ final class MarketChartScreen extends android.view.ContextThemeWrapper {
         pendingRealtimeTailKline = null;
         pendingOverlayRefreshAction = null;
         pendingSummaryRefreshAction = null;
-        if (ioExecutor != null) {
-            ioExecutor.shutdownNow();
-        }
     }
 
     // 只要本地已经落过账户叠加层必需数据，就允许首帧直接恢复，避免当前持仓先空白。

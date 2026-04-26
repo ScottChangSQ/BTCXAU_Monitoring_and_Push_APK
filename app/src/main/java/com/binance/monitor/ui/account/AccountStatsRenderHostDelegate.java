@@ -61,10 +61,12 @@ public final class AccountStatsRenderHostDelegate implements AccountStatsRenderC
     @Override public void setLastHistoryRenderSignature(@Nullable AccountStatsRenderSignature signature) { owner.setLastHistoryRenderSignature(signature); }
     @Override public void hideTradeStatsSectionUntilFreshContentReady() { owner.hideTradeStatsSectionUntilFreshContentReady(); }
     @Override public int nextDeferredSecondaryRenderRevision() { return owner.nextDeferredSecondaryRenderRevision(); }
+    @Override public int nextDeferredCurveProjectionRenderRevision() { return owner.nextDeferredCurveProjectionRenderRevision(); }
     @Override public boolean canExecuteDeferredSecondarySectionRender() { return owner.canExecuteDeferredSecondarySectionRender(); }
     @Override public void executeDeferredSecondaryRender(@NonNull Runnable action) { owner.executeDeferredSecondaryRender(action); }
     @Override public void runOnUiThread(@NonNull Runnable action) { owner.runOnUiThread(action); }
     @Override public boolean shouldIgnoreDeferredSecondaryRenderResult(int renderRevision) { return owner.shouldIgnoreDeferredSecondaryRenderResult(renderRevision); }
+    @Override public boolean shouldIgnoreDeferredCurveProjectionResult(int renderRevision) { return owner.shouldIgnoreDeferredCurveProjectionResult(renderRevision); }
     @Override public void logRenderWarning(@NonNull String message) { owner.logRenderWarning(message); }
     @Nullable @Override public AccountStatsSectionDiff getPendingSectionDiff() { return owner.getPendingSectionDiff(); }
     @Nullable @Override public AccountStatsRenderSignature getPendingHistoryRenderSignature() { return owner.getPendingHistoryRenderSignature(); }

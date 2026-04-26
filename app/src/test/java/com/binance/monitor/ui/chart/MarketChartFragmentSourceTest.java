@@ -32,9 +32,12 @@ public class MarketChartFragmentSourceTest {
         assertTrue(source.contains("new MarketChartPageController.BottomNavBinding("));
         assertTrue(source.contains("pageController.onColdStart();"));
         assertTrue(source.contains("public void onHostPageShown() {"));
+        assertTrue(source.contains("screen.onHostPageShown();"));
         assertTrue(source.contains("screen.onNewIntent(requireActivity().getIntent());"));
         assertTrue(source.contains("pageController.onPageShown();"));
-        assertTrue(source.contains("public void onHostPageHidden() {\n        if (pageController != null) {\n            pageController.onPageHidden();"));
+        assertTrue(source.contains("public void onHostPageHidden() {"));
+        assertTrue(source.contains("screen.onHostPageHidden();"));
+        assertTrue(source.contains("pageController.onPageHidden();"));
         assertTrue(source.contains("public void onDestroyView() {\n        if (pageController != null) {\n            pageController.onDestroy();"));
     }
 }

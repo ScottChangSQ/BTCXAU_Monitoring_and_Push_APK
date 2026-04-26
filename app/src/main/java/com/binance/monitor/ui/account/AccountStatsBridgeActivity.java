@@ -328,10 +328,12 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     private int unchangedRefreshStreak = 0;
     private boolean draggingTradeScrollBar;
     private boolean secondarySectionsAttached;
+    private boolean tradeStatsSectionAttached;
     private boolean deferredSecondaryRenderPending;
     private boolean forceDeferredSectionRender;
     private boolean deferredSecondarySectionAttachPosted;
     private int deferredSecondaryRenderRevision;
+    private int deferredCurveProjectionRenderRevision;
     private boolean firstFrameCompleted;
     private boolean firstFrameCompletionPosted;
     private boolean pendingVisibleSecondaryRenderPosted;
@@ -357,8 +359,10 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     };
     @Nullable
     private ViewTreeObserver.OnDrawListener firstFrameDrawListener;
-    private final ViewTreeObserver.OnScrollChangedListener deferredSecondaryVisibilityListener =
-            this::maybeScheduleVisiblePendingSecondarySectionRender;
+    private final ViewTreeObserver.OnScrollChangedListener deferredSecondaryVisibilityListener = () -> {
+        maybeAttachTradeStatsSectionForScroll();
+        maybeScheduleVisiblePendingSecondarySectionRender();
+    };
     private final AccountStatsPreloadManager.CacheListener preloadCacheListener = cache -> {
         if (cache == null || isFinishing() || isDestroyed() || loading) {
             return;
@@ -940,6 +944,11 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
 
             @Override
+            public int nextDeferredCurveProjectionRenderRevision() {
+                return ++deferredCurveProjectionRenderRevision;
+            }
+
+            @Override
             public boolean canExecuteDeferredSecondarySectionRender() {
                 return binding != null && ioExecutor != null && !ioExecutor.isShutdown();
             }
@@ -960,6 +969,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                         || isDestroyed()
                         || binding == null
                         || renderRevision != deferredSecondaryRenderRevision;
+            }
+
+            @Override
+            public boolean shouldIgnoreDeferredCurveProjectionResult(int renderRevision) {
+                return isFinishing()
+                        || isDestroyed()
+                        || binding == null
+                        || renderRevision != deferredCurveProjectionRenderRevision;
             }
 
             @Override
@@ -998,7 +1015,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
             @Override
             public boolean isTradeRecordsSectionVisible() {
-                return AccountStatsBridgeActivity.this.isViewMeaningfullyVisible(binding.cardTradeRecordsSection);
+                return true;
             }
 
             @NonNull
@@ -3000,6 +3017,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         }
         firstFrameCompleted = true;
         scheduleDeferredSecondarySectionAttach();
+        maybeAttachTradeStatsSectionForScroll();
     }
 
     // 首帧监听器只需要触发一次，页面离开前主动清理避免重复回调。
@@ -3059,14 +3077,37 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         long stageStartedAt = SystemClock.elapsedRealtime();
         binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);
         binding.cardReturnStatsSection.setVisibility(View.VISIBLE);
-        binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);
+        binding.cardTradeStatsSection.setVisibility(View.INVISIBLE);
+        binding.cardTradeRecordsSection.setVisibility(View.GONE);
         secondarySectionsAttached = true;
+        if (renderCoordinator != null) {
+            renderCoordinator.refreshCurveProjectionAsync();
+        }
+        maybeAttachTradeStatsSectionForScroll();
         maybeScrollToAnalysisTarget();
         traceAccountRenderPhase("attach_secondary_sections",
                 stageStartedAt,
                 baseTrades.size(),
                 basePositions.size(),
                 allCurvePoints.size());
+    }
+
+    // 交易统计图表较重，首帧后先占位，滚到附近再真正显示并刷新。
+    private void maybeAttachTradeStatsSectionForScroll() {
+        if (binding == null || tradeStatsSectionAttached || !secondarySectionsAttached) {
+            return;
+        }
+        int viewportBottom = binding.scrollAccountStats.getScrollY() + binding.scrollAccountStats.getHeight();
+        int sectionTop = binding.cardTradeStatsSection.getTop();
+        int preloadDistance = Math.round(getResources().getDisplayMetrics().density * 360f);
+        if (sectionTop > viewportBottom + preloadDistance) {
+            return;
+        }
+        tradeStatsSectionAttached = true;
+        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);
+        if (renderCoordinator != null) {
+            renderCoordinator.refreshTradeStats();
+        }
     }
 
     private void maybeScheduleVisiblePendingSecondarySectionRender() {
@@ -4170,10 +4211,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         if (shouldRejectStaleHistorySnapshot(incomingHistoryRevision, requestStartHistoryRevision)) {
             return false;
         }
-        if (remoteConnected) {
+        return shouldAutoRenderFetchedAnalysisSnapshot(incomingHistoryRevision);
+    }
+
+    // 分析页自动重绘只允许发生在首次拿到可渲染历史，或历史成交版本真正推进时。
+    private boolean shouldAutoRenderFetchedAnalysisSnapshot(@Nullable String incomingHistoryRevision) {
+        if (!hasRenderableCurrentSessionState()) {
             return true;
         }
-        return true;
+        String incomingRevision = trim(incomingHistoryRevision);
+        String appliedRevision = trim(latestHistoryRevision);
+        return !incomingRevision.isEmpty() && !incomingRevision.equals(appliedRevision);
     }
 
     // 如果请求发出后页面已经收到了更新过的历史修订号，旧回包就不能再把交易记录覆盖回去。
@@ -4988,6 +5036,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             sideLabel = "全部";
         }
         String pnlText = IndicatorFormatterCenter.formatMoney(totalPnl, 2, false);
+        tradeStatsSectionAttached = true;
         if (masked) {
             binding.tvTradePnlSummary.setText(String.format(
                     Locale.getDefault(),
@@ -5448,6 +5497,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 info.startMs = startOfDay(closeTime);
                 info.endMs = endOfDay(closeTime);
                 info.hasData = true;
+                info.hasTrades = true;
                 dayInfoMap.put(day, info);
             }
             info.returnAmount += trade.getProfit() + trade.getStorageFee();
@@ -5496,16 +5546,17 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 }
 
                 MonthReturnInfo info = dayInfoMap.get(dayValue);
-                String valueText = formatReturnValue(
-                        info == null ? 0d : info.returnRate,
-                        info == null ? 0d : info.returnAmount,
-                        true);
-                int color = resolveReturnDisplayColor(
-                        info == null ? 0d : info.returnRate,
-                        info == null ? 0d : info.returnAmount,
-                        R.color.text_secondary);
+                String valueText = "--";
+                Integer color = null;
                 View.OnClickListener click = null;
-                Double heatRate = 0d;
+                Double heatRate = null;
+                if (info != null && info.hasData) {
+                    valueText = formatReturnValue(info.returnRate, info.returnAmount, true);
+                    color = resolveReturnDisplayColor(
+                            info.returnRate,
+                            info.returnAmount,
+                            R.color.text_secondary);
+                }
                 if (info != null && info.hasData && info.endMs > info.startMs) {
                     long startMs = info.startMs;
                     long endMs = info.endMs;
@@ -5774,7 +5825,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private TextView createMonthReturnCell(int month, @Nullable MonthReturnInfo info, int widthDp) {
-        if (info == null || !info.hasData) {
+        if (shouldRenderNoTradePlaceholder(info)) {
             return createReturnsCell(buildLabelValueText(month + "月", "--", null), widthDp, false, null, null);
         }
         int textColor = resolveReturnDisplayColor(info.returnRate, info.returnAmount, R.color.text_primary);
@@ -5998,7 +6049,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private TextView createMonthReturnCellV2(int month, @Nullable MonthReturnInfo info, int widthDp) {
-        if (info == null || !info.hasData) {
+        if (shouldRenderNoTradePlaceholder(info)) {
             return createReturnsCell(buildLabelValueText(month + "月", "--", null), widthDp, false, null, null);
         }
         int textColor = resolveReturnDisplayColor(info.returnRate, info.returnAmount, R.color.text_primary);
@@ -6047,7 +6098,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
         int totalCells = firstWeek + daysInMonth;
         int rows = (int) Math.ceil(totalCells / 7d);
-        int localTodayDayKey = resolveLocalTodayDayKey();
         int day = 1;
         for (int row = 0; row < rows; row++) {
             TableRow tableRow = new TableRow(this);
@@ -6076,15 +6126,13 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
                 DayBucket bucket = dayBuckets.get(day);
                 if (bucket == null) {
-                    int currentDayKey = year * 10_000 + (month + 1) * 100 + day;
-                    boolean afterLocalToday = localTodayDayKey > 0 && currentDayKey > localTodayDayKey;
                     View dayCell = createDailyReturnsCell(
                             String.valueOf(day),
-                            afterLocalToday ? "--" : formatReturnValue(0d, 0d, true),
+                            "--",
                             ContextCompat.getColor(this, R.color.text_primary),
-                            afterLocalToday ? null : resolveReturnDisplayColor(0d, 0d, R.color.text_secondary),
                             null,
-                            afterLocalToday ? null : 0d);
+                            null,
+                            null);
                     applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
                     tableRow.addView(dayCell);
@@ -6101,17 +6149,28 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                     }
                     double dayAmount = bucket.closeEquity - prevClose;
                     double dayReturn = safeDivide(dayAmount, prevClose);
-                    int color = resolveReturnDisplayColor(dayReturn, dayAmount, R.color.text_secondary);
-                    String valueText = formatReturnValue(dayReturn, dayAmount, true);
-                    long startMs = bucket.startMs;
-                    long endMs = bucket.endMs;
+                    boolean noTradePlaceholder = isZeroReturnValue(dayReturn, dayAmount);
+                    Integer color = noTradePlaceholder
+                            ? null
+                            : resolveReturnDisplayColor(dayReturn, dayAmount, R.color.text_secondary);
+                    String valueText = noTradePlaceholder
+                            ? "--"
+                            : formatReturnValue(dayReturn, dayAmount, true);
+                    View.OnClickListener click = null;
+                    Double heatRate = null;
+                    if (!noTradePlaceholder) {
+                        long startMs = bucket.startMs;
+                        long endMs = bucket.endMs;
+                        click = v -> applyCurveRangeFromTableSelection(startMs, endMs);
+                        heatRate = dayReturn;
+                    }
                     View dayCell = createDailyReturnsCell(
                             String.valueOf(day),
                             valueText,
                             ContextCompat.getColor(this, R.color.text_primary),
                             color,
-                            v -> applyCurveRangeFromTableSelection(startMs, endMs),
-                            dayReturn);
+                            click,
+                            heatRate);
                     applyReturnsCellLayout(dayCell, 0, 1f, RETURNS_BODY_HEIGHT_DP,
                             RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP, RETURNS_CELL_MARGIN_DP);
                     tableRow.addView(dayCell);
@@ -6120,14 +6179,6 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
             }
             table.addView(tableRow);
         }
-    }
-
-    // 日收益表空白日期是否显示 --，统一以 APP 本地今天为边界。
-    private int resolveLocalTodayDayKey() {
-        Calendar today = Calendar.getInstance();
-        return today.get(Calendar.YEAR) * 10_000
-                + (today.get(Calendar.MONTH) + 1) * 100
-                + today.get(Calendar.DAY_OF_MONTH);
     }
 
     private void rebuildMonthlyTableTwoRowsV3(TableLayout table, List<YearlyReturnRow> rows) {
@@ -6212,6 +6263,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         legacy.returnAmount = info.returnAmount;
         legacy.returnRate = info.returnRate;
         legacy.hasData = info.hasData;
+        legacy.hasTrades = info.hasTrades;
         return legacy;
     }
 
@@ -6267,7 +6319,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private TextView createMonthlyGroupedCell(int month, @Nullable MonthReturnInfo info) {
-        Integer valueColor = info != null && info.hasData
+        Integer valueColor = !shouldRenderNoTradePlaceholder(info)
                 ? resolveReturnDisplayColor(info.returnRate, info.returnAmount, R.color.text_primary)
                 : null;
         TextView cell = createReturnsCell(
@@ -6284,7 +6336,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private String formatMonthlyGroupedValue(@Nullable MonthReturnInfo info) {
-        if (info == null || !info.hasData) {
+        if (shouldRenderNoTradePlaceholder(info)) {
             return "--";
         }
         if (isPrivacyMasked()) {
@@ -6324,7 +6376,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
     }
 
     private String legacyFormatMonthlyHeatCellValue(@Nullable MonthReturnInfo info) {
-        if (info == null || !info.hasData) {
+        if (shouldRenderNoTradePlaceholder(info)) {
             return "--";
         }
         if (isPrivacyMasked()) {
@@ -6346,7 +6398,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     @Nullable
     private Integer resolveMonthlyHeatCellTextColor(@Nullable MonthReturnInfo info) {
-        if (info == null || !info.hasData) {
+        if (shouldRenderNoTradePlaceholder(info)) {
             return null;
         }
         return resolveReturnDisplayColor(info.returnRate, info.returnAmount, R.color.text_primary);
@@ -6354,7 +6406,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     @Nullable
     private Double resolveMonthlyHeatCellRate(@Nullable MonthReturnInfo info) {
-        if (info == null || !info.hasData) {
+        if (shouldRenderNoTradePlaceholder(info)) {
             return null;
         }
         return info.returnRate;
@@ -6362,7 +6414,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
 
     @Nullable
     private View.OnClickListener resolveMonthlyHeatCellClickListener(@Nullable MonthReturnInfo info) {
-        if (info == null || !info.hasData || info.startMs <= 0L || info.endMs <= info.startMs) {
+        if (shouldRenderNoTradePlaceholder(info) || info.startMs <= 0L || info.endMs <= info.startMs) {
             return null;
         }
         long startMs = info.startMs;
@@ -6782,6 +6834,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 info.startMs = startOfMonth(closeTime);
                 info.endMs = endOfMonth(closeTime);
                 info.hasData = true;
+                info.hasTrades = true;
                 monthReturnMap.put(key, info);
             }
             info.returnAmount += trade.getProfit() + trade.getStorageFee();
@@ -6848,6 +6901,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
                 continue;
             }
             info.hasData = true;
+            info.hasTrades = true;
             info.returnAmount += trade.getProfit() + trade.getStorageFee();
         }
         if (!info.hasData) {
@@ -7389,6 +7443,14 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         return Math.abs(b) < 1e-9 ? 0d : a / b;
     }
 
+    private boolean isZeroReturnValue(double rate, double amount) {
+        return Math.abs(rate) < 1e-9 && Math.abs(amount) < 1e-9;
+    }
+
+    private boolean shouldRenderNoTradePlaceholder(@Nullable MonthReturnInfo info) {
+        return info == null || !info.hasData || (!info.hasTrades && isZeroReturnValue(info.returnRate, info.returnAmount));
+    }
+
     private double returnN(double[] values, int n) {
         if (values.length < 2) {
             return 0d;
@@ -7587,6 +7649,7 @@ public class AccountStatsBridgeActivity extends AppCompatActivity {
         private double returnAmount;
         private double returnRate;
         private boolean hasData;
+        private boolean hasTrades;
     }
 
     private static class YearlyReturnRow {

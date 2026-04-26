@@ -234,6 +234,10 @@ final class AccountStatsReturnsTableHelper {
         return numerator / denominator;
     }
 
+    private static boolean isZeroReturnValue(double rate, double amount) {
+        return Math.abs(rate) < 1e-9 && Math.abs(amount) < 1e-9;
+    }
+
     private void renderDailyReturnsTableFromTrades(@NonNull RenderRequest request, long referenceTime) {
         ContentAccountStatsBinding binding = host.getBinding();
         TableLayout table = binding.tableMonthlyReturns;
@@ -268,6 +272,7 @@ final class AccountStatsReturnsTableHelper {
                 info.startMs = host.startOfDay(closeTime);
                 info.endMs = host.endOfDay(closeTime);
                 info.hasData = true;
+                info.hasTrades = true;
                 dayInfoMap.put(day, info);
             }
             info.returnAmount += trade.getProfit() + trade.getStorageFee();
@@ -315,18 +320,18 @@ final class AccountStatsReturnsTableHelper {
                     continue;
                 }
                 MonthReturnInfo info = dayInfoMap.get(dayValue);
-                String valueText = host.formatReturnValue(
-                        info == null ? 0d : info.returnRate,
-                        info == null ? 0d : info.returnAmount,
-                        true
-                );
-                int color = host.resolveReturnDisplayColor(
-                        info == null ? 0d : info.returnRate,
-                        info == null ? 0d : info.returnAmount,
-                        com.binance.monitor.R.color.text_secondary
-                );
+                String valueText = "--";
+                Integer color = null;
                 View.OnClickListener click = null;
-                Double heatRate = 0d;
+                Double heatRate = null;
+                if (info != null && info.hasData) {
+                    valueText = host.formatReturnValue(info.returnRate, info.returnAmount, true);
+                    color = host.resolveReturnDisplayColor(
+                            info.returnRate,
+                            info.returnAmount,
+                            com.binance.monitor.R.color.text_secondary
+                    );
+                }
                 if (info != null && info.hasData && info.endMs > info.startMs) {
                     long startMs = info.startMs;
                     long endMs = info.endMs;
@@ -559,7 +564,6 @@ final class AccountStatsReturnsTableHelper {
 
         int totalCells = firstWeek + daysInMonth;
         int rows = (int) Math.ceil(totalCells / 7d);
-        int localTodayDayKey = resolveLocalTodayDayKey();
         int day = 1;
         for (int row = 0; row < rows; row++) {
             TableRow tableRow = new TableRow(binding.getRoot().getContext());
@@ -583,15 +587,13 @@ final class AccountStatsReturnsTableHelper {
                 }
                 DayBucket bucket = dayBuckets.get(day);
                 if (bucket == null) {
-                    int currentDayKey = year * 10_000 + (month + 1) * 100 + day;
-                    boolean afterLocalToday = localTodayDayKey > 0 && currentDayKey > localTodayDayKey;
                     View dayCell = host.createDailyReturnsCell(
                             String.valueOf(day),
-                            afterLocalToday ? "--" : host.formatReturnValue(0d, 0d, true),
+                            "--",
                             androidx.core.content.ContextCompat.getColor(binding.getRoot().getContext(), com.binance.monitor.R.color.text_primary),
-                            afterLocalToday ? null : host.resolveReturnDisplayColor(0d, 0d, com.binance.monitor.R.color.text_secondary),
                             null,
-                            afterLocalToday ? null : 0d
+                            null,
+                            null
                     );
                     host.applyReturnsCellLayout(dayCell, 0, 1f, 42, 1, 1, 1, 1);
                     tableRow.addView(dayCell);
@@ -608,17 +610,28 @@ final class AccountStatsReturnsTableHelper {
                     }
                     double dayAmount = bucket.closeEquity - prevClose;
                     double dayReturn = safeDivide(dayAmount, prevClose);
-                    int color = host.resolveReturnDisplayColor(dayReturn, dayAmount, com.binance.monitor.R.color.text_secondary);
-                    String valueText = host.formatReturnValue(dayReturn, dayAmount, true);
-                    long startMs = bucket.startMs;
-                    long endMs = bucket.endMs;
+                    boolean noTradePlaceholder = isZeroReturnValue(dayReturn, dayAmount);
+                    Integer color = noTradePlaceholder
+                            ? null
+                            : host.resolveReturnDisplayColor(dayReturn, dayAmount, com.binance.monitor.R.color.text_secondary);
+                    String valueText = noTradePlaceholder
+                            ? "--"
+                            : host.formatReturnValue(dayReturn, dayAmount, true);
+                    View.OnClickListener click = null;
+                    Double heatRate = null;
+                    if (!noTradePlaceholder) {
+                        long startMs = bucket.startMs;
+                        long endMs = bucket.endMs;
+                        click = v -> host.applyCurveRangeFromTableSelection(startMs, endMs);
+                        heatRate = dayReturn;
+                    }
                     View dayCell = host.createDailyReturnsCell(
                             String.valueOf(day),
                             valueText,
                             androidx.core.content.ContextCompat.getColor(binding.getRoot().getContext(), com.binance.monitor.R.color.text_primary),
                             color,
-                            v -> host.applyCurveRangeFromTableSelection(startMs, endMs),
-                            dayReturn
+                            click,
+                            heatRate
                     );
                     host.applyReturnsCellLayout(dayCell, 0, 1f, 42, 1, 1, 1, 1);
                     tableRow.addView(dayCell);
@@ -627,14 +640,6 @@ final class AccountStatsReturnsTableHelper {
             }
             table.addView(tableRow);
         }
-    }
-
-    // 日收益表空白日期是否显示 --，统一以 APP 本地今天为边界。
-    private int resolveLocalTodayDayKey() {
-        Calendar today = Calendar.getInstance();
-        return today.get(Calendar.YEAR) * 10_000
-                + (today.get(Calendar.MONTH) + 1) * 100
-                + today.get(Calendar.DAY_OF_MONTH);
     }
 
     private void rebuildMonthlyTableThreeRowsV4(@NonNull List<YearlyReturnRow> rows) {
@@ -693,6 +698,7 @@ final class AccountStatsReturnsTableHelper {
                 continue;
             }
             info.hasData = true;
+            info.hasTrades = true;
             info.returnAmount += trade.getProfit() + trade.getStorageFee();
         }
         if (!info.hasData) {
@@ -730,6 +736,7 @@ final class AccountStatsReturnsTableHelper {
                 info.startMs = host.startOfMonth(closeTime);
                 info.endMs = host.endOfMonth(closeTime);
                 info.hasData = true;
+                info.hasTrades = true;
                 monthReturnMap.put(key, info);
             }
             info.returnAmount += trade.getProfit() + trade.getStorageFee();
@@ -869,6 +876,7 @@ final class AccountStatsReturnsTableHelper {
         double returnAmount;
         double returnRate;
         boolean hasData;
+        boolean hasTrades;
     }
 
     static final class YearlyReturnRow {

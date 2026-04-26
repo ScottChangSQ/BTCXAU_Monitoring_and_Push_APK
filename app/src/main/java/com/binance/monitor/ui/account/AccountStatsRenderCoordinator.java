@@ -117,6 +117,8 @@ final class AccountStatsRenderCoordinator {
 
         int nextDeferredSecondaryRenderRevision();
 
+        int nextDeferredCurveProjectionRenderRevision();
+
         boolean canExecuteDeferredSecondarySectionRender();
 
         void executeDeferredSecondaryRender(@NonNull Runnable action);
@@ -124,6 +126,8 @@ final class AccountStatsRenderCoordinator {
         void runOnUiThread(@NonNull Runnable action);
 
         boolean shouldIgnoreDeferredSecondaryRenderResult(int renderRevision);
+
+        boolean shouldIgnoreDeferredCurveProjectionResult(int renderRevision);
 
         void logRenderWarning(@NonNull String message);
 
@@ -398,6 +402,7 @@ final class AccountStatsRenderCoordinator {
 
     // 时间区间或手动日期区间变化时，统一通过协调器刷新曲线投影，避免旧 Activity 自己拼重算。
     void refreshCurveProjection() {
+        host.nextDeferredCurveProjectionRenderRevision();
         AccountDeferredSnapshotRenderHelper.CurveProjection curveProjection =
                 AccountDeferredSnapshotRenderHelper.buildCurveProjection(
                         host.getAllCurvePoints(),
@@ -410,6 +415,46 @@ final class AccountStatsRenderCoordinator {
         host.setManualCurveRangeEnabled(curveProjection.isManualRangeApplied());
         host.syncRangeInputsWithDisplayedCurve(curveProjection.getDisplayedCurvePoints());
         host.applyPreparedCurveProjection(curveProjection);
+    }
+
+    // 次屏曲线区挂载后优先只补齐仓位/回撤/收益副图，避免等待整套交易统计 deferred 计算。
+    void refreshCurveProjectionAsync() {
+        if (!host.canExecuteDeferredSecondarySectionRender()) {
+            host.logRenderWarning("Deferred curve projection refresh skipped: executor unavailable");
+            return;
+        }
+        CurveProjectionRenderRequest request = buildCurveProjectionRenderRequest();
+        int renderRevision = host.nextDeferredCurveProjectionRenderRevision();
+        host.executeDeferredSecondaryRender(() -> {
+            try {
+                AccountDeferredSnapshotRenderHelper.CurveProjection curveProjection =
+                        AccountDeferredSnapshotRenderHelper.buildCurveProjection(
+                                request.allCurvePoints,
+                                request.selectedRange,
+                                request.manualCurveRangeEnabled,
+                                request.manualCurveRangeStartMs,
+                                request.manualCurveRangeEndMs,
+                                request.appliedAccountUpdatedAt
+                        );
+                host.runOnUiThread(() -> {
+                    if (host.shouldIgnoreDeferredCurveProjectionResult(renderRevision)
+                            || !host.isSecondarySectionsAttached()) {
+                        return;
+                    }
+                    long stageStartedAt = System.currentTimeMillis();
+                    host.setManualCurveRangeEnabled(curveProjection.isManualRangeApplied());
+                    host.syncRangeInputsWithDisplayedCurve(curveProjection.getDisplayedCurvePoints());
+                    host.applyPreparedCurveProjection(curveProjection);
+                    host.traceAccountRenderPhase("apply_curve_range_async",
+                            stageStartedAt,
+                            host.getBaseTrades().size(),
+                            host.getBasePositions().size(),
+                            host.getDisplayedCurvePointCount());
+                });
+            } catch (Exception exception) {
+                host.logRenderWarning("Deferred curve projection refresh failed: " + exception.getMessage());
+            }
+        });
     }
 
     // 交易记录筛选和排序统一收口，避免旧 Activity 自己再持有一套主链。
@@ -484,6 +529,17 @@ final class AccountStatsRenderCoordinator {
                 sort,
                 normalizedSort,
                 host.isTradeSortDescending()
+        );
+    }
+
+    private CurveProjectionRenderRequest buildCurveProjectionRenderRequest() {
+        return new CurveProjectionRenderRequest(
+                new ArrayList<>(host.getAllCurvePoints()),
+                host.getSelectedRange(),
+                host.isManualCurveRangeEnabled(),
+                host.getManualCurveRangeStartMs(),
+                host.getManualCurveRangeEndMs(),
+                host.getAppliedAccountUpdatedAt()
         );
     }
 
@@ -687,6 +743,30 @@ final class AccountStatsRenderCoordinator {
                 return AccountDeferredSnapshotRenderHelper.SortMode.PROFIT;
             }
             return AccountDeferredSnapshotRenderHelper.SortMode.CLOSE_TIME;
+        }
+    }
+
+    // 曲线专用后台刷新请求，只冻结副曲线投影所需状态，避免混入交易统计重计算。
+    private static final class CurveProjectionRenderRequest {
+        private final List<CurvePoint> allCurvePoints;
+        private final AccountTimeRange selectedRange;
+        private final boolean manualCurveRangeEnabled;
+        private final long manualCurveRangeStartMs;
+        private final long manualCurveRangeEndMs;
+        private final long appliedAccountUpdatedAt;
+
+        private CurveProjectionRenderRequest(List<CurvePoint> allCurvePoints,
+                                             AccountTimeRange selectedRange,
+                                             boolean manualCurveRangeEnabled,
+                                             long manualCurveRangeStartMs,
+                                             long manualCurveRangeEndMs,
+                                             long appliedAccountUpdatedAt) {
+            this.allCurvePoints = allCurvePoints == null ? new ArrayList<>() : new ArrayList<>(allCurvePoints);
+            this.selectedRange = selectedRange;
+            this.manualCurveRangeEnabled = manualCurveRangeEnabled;
+            this.manualCurveRangeStartMs = manualCurveRangeStartMs;
+            this.manualCurveRangeEndMs = manualCurveRangeEndMs;
+            this.appliedAccountUpdatedAt = appliedAccountUpdatedAt;
         }
     }
 }

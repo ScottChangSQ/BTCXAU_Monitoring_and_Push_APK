@@ -67,7 +67,7 @@ public class AnalysisStatsSummaryExpandSourceTest {
         assertTrue(layout.contains("@+id/tvStatsSummaryMetricFiveValue"));
         assertTrue(layout.contains("@+id/tvStatsSummaryMetricSixLabel"));
         assertTrue(layout.contains("@+id/tvStatsSummaryMetricSixValue"));
-        assertTrue(layout.contains("android:text=\"累计收益额\""));
+        assertTrue(layout.contains("android:text=\"累计结余\""));
         assertTrue(layout.contains("android:text=\"累计收益率\""));
         assertTrue(layout.contains("android:text=\"总交易次数\""));
         assertTrue(layout.contains("android:text=\"胜率\""));

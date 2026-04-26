@@ -94,8 +94,8 @@ public class MonitorFloatingCoordinatorSourceTest {
                 "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
         ).replace("\r\n", "\n").replace('\r', '\n');
 
-        assertTrue(source.contains("revisionRefreshPolicy.shouldRefresh(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures())"));
-        assertTrue(source.contains("revisionRefreshPolicy.markApplied(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures())"));
+        assertTrue(source.contains("revisionRefreshPolicy.shouldRefresh(productRevisions, marketSignatures)"));
+        assertTrue(source.contains("revisionRefreshPolicy.markApplied(work.productRevisions, work.marketSignatures)"));
         assertTrue(source.contains("private List<String> resolveVisibleMarketSignatures() {"));
     }
 
@@ -128,6 +128,39 @@ public class MonitorFloatingCoordinatorSourceTest {
         assertTrue(source.contains("AppForegroundTracker.getInstance().isForeground(),"));
         assertTrue(source.contains("hasActivePositions,"));
         assertTrue(source.contains("minimized"));
+    }
+
+    @Test
+    public void floatingCoordinatorShouldNotBuildSnapshotsWhenFloatingWindowIsDisabled() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private boolean isFloatingEnabled() {"));
+        assertTrue(source.contains("return configManager == null || configManager.isFloatingEnabled();"));
+        assertTrue(source.contains("if (!isFloatingEnabled()) {\n            cancelScheduledRefresh();\n            return;\n        }\n        requestRefresh(true);"));
+        assertTrue(source.contains("void requestRefresh(boolean immediate) {"));
+        assertTrue(source.contains("if (!isFloatingEnabled()) {\n            cancelScheduledRefresh();\n            return;\n        }\n        if (!screenInteractive) {"));
+        assertTrue(source.contains("private void enqueueFloatingRefresh(boolean immediate) {"));
+        assertTrue(source.contains("if (!isFloatingEnabled()) {\n            cancelScheduledRefresh();\n            return;\n        }\n        if (!screenInteractive) {"));
+    }
+
+    @Test
+    public void floatingCoordinatorShouldBuildSnapshotsOffMainThread() throws Exception {
+        String source = readUtf8(
+                "app/src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java",
+                "src/main/java/com/binance/monitor/service/MonitorFloatingCoordinator.java"
+        ).replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(source.contains("private final ExecutorService floatingRefreshExecutor = Executors.newSingleThreadExecutor"));
+        assertTrue(source.contains("private boolean floatingRefreshInFlight;"));
+        assertTrue(source.contains("floatingRefreshExecutor.execute(() -> {"));
+        assertTrue(source.contains("FloatingRefreshWork work = prepareFloatingRefreshWork(immediate);"));
+        assertTrue(source.contains("mainHandler.post(() -> applyFloatingRefreshWork(work));"));
+        assertTrue(source.contains("private FloatingRefreshWork prepareFloatingRefreshWork(boolean immediate) {"));
+        assertTrue(source.contains("private void applyFloatingRefreshWork(@Nullable FloatingRefreshWork work) {"));
+        assertTrue(source.contains("floatingRefreshExecutor.shutdownNow();"));
     }
 
     private static String readUtf8(String... candidates) throws Exception {

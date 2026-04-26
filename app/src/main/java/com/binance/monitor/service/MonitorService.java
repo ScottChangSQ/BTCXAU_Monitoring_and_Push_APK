@@ -54,6 +54,7 @@ import com.binance.monitor.util.NotificationHelper;
 import com.binance.monitor.data.model.v2.session.RemoteAccountProfile;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -926,24 +927,26 @@ public class MonitorService extends Service {
         synchronized (dispatchedServerAlertIds) {
             dispatchedAlertIdSnapshot = new HashSet<>(dispatchedServerAlertIds);
         }
-        if (!AbnormalSyncRuntimeHelper.shouldDispatchServerAlert(
-                alert.getId(),
-                alert.getSymbols(),
-                dispatchedAlertIdSnapshot,
-                lastNotifyAt,
-                now,
-                AppConstants.NOTIFICATION_COOLDOWN_MS)) {
+        if (AbnormalSyncRuntimeHelper.isServerAlertAlreadyDispatched(alert.getId(), dispatchedAlertIdSnapshot)) {
             return;
         }
-        notificationHelper.notifyAbnormalAlert(
-                alert.getTitle(),
-                alert.getContent(),
-                resolveAlertNotificationId(alert.getSymbols())
+        List<String> normalizedSymbols = AbnormalSyncRuntimeHelper.normalizeServerAlertSymbols(alert.getSymbols());
+        if (normalizedSymbols.isEmpty()) {
+            return;
+        }
+        List<String> dispatchableSymbols = AbnormalSyncRuntimeHelper.collectDispatchableServerAlertSymbols(
+                normalizedSymbols,
+                lastNotifyAt,
+                now,
+                AppConstants.NOTIFICATION_COOLDOWN_MS
         );
-        for (String symbol : alert.getSymbols()) {
-            if (symbol != null && !symbol.trim().isEmpty()) {
-                lastNotifyAt.put(symbol.trim(), now);
-            }
+        for (String symbol : dispatchableSymbols) {
+            notificationHelper.notifyAbnormalAlert(
+                    alert.getTitle(),
+                    AbnormalSyncRuntimeHelper.buildSymbolScopedAlertContent(alert.getContent(), symbol),
+                    resolveAlertNotificationId(Collections.singletonList(symbol))
+            );
+            lastNotifyAt.put(symbol, now);
         }
         synchronized (dispatchedServerAlertIds) {
             dispatchedServerAlertIds.add(alert.getId());

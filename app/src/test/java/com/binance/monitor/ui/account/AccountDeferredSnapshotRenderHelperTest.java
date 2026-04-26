@@ -218,6 +218,81 @@ public class AccountDeferredSnapshotRenderHelperTest {
     }
 
     @Test
+    public void buildTradeAnalyticsShouldUseNetSettledAmountForCumulativeBalanceMetric() {
+        TradeRecordItem trade = new TradeRecordItem(
+                2_000L,
+                "BTCUSD",
+                "BTCUSD",
+                "Buy",
+                112d,
+                1d,
+                100d,
+                -2d,
+                "",
+                100d,
+                1_000L,
+                2_000L,
+                -3d,
+                100d,
+                112d,
+                2_000L,
+                2_001L,
+                2_002L,
+                1
+        );
+
+        AccountDeferredSnapshotRenderHelper.TradeAnalytics analytics =
+                AccountDeferredSnapshotRenderHelper.buildTradeAnalytics(
+                        Arrays.asList(),
+                        Arrays.asList(trade),
+                        AccountDeferredSnapshotRenderHelper.TradePnlSideMode.ALL,
+                        AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.CLOSE_TIME,
+                        Arrays.asList()
+                );
+
+        assertEquals("+$95.00", findMetricValue(analytics.getTradeStatsMetrics(), "累计收益额"));
+    }
+
+    @Test
+    public void buildTradeAnalyticsShouldOverrideGrossSnapshotAmountWithNetSettledAmount() {
+        TradeRecordItem trade = new TradeRecordItem(
+                2_000L,
+                "BTCUSD",
+                "BTCUSD",
+                "Buy",
+                112d,
+                1d,
+                100d,
+                -2d,
+                "",
+                100d,
+                1_000L,
+                2_000L,
+                -3d,
+                100d,
+                112d,
+                2_000L,
+                2_001L,
+                2_002L,
+                1
+        );
+
+        AccountDeferredSnapshotRenderHelper.TradeAnalytics analytics =
+                AccountDeferredSnapshotRenderHelper.buildTradeAnalytics(
+                        Arrays.asList(
+                                new AccountMetric("累计收益额", "+$100.00"),
+                                new AccountMetric("最大回撤", "-1.00%")
+                        ),
+                        Arrays.asList(trade),
+                        AccountDeferredSnapshotRenderHelper.TradePnlSideMode.ALL,
+                        AccountDeferredSnapshotRenderHelper.TradeWeekdayBasis.CLOSE_TIME,
+                        Arrays.asList()
+                );
+
+        assertEquals("+$95.00", findMetricValue(analytics.getTradeStatsMetrics(), "累计收益额"));
+    }
+
+    @Test
     public void buildPeriodReturnValueShouldUseCurrentDisplayedCurveRange() {
         List<CurvePoint> curvePoints = Arrays.asList(
                 new CurvePoint(1_000L, 100_000d, 100_000d, 0.10d),

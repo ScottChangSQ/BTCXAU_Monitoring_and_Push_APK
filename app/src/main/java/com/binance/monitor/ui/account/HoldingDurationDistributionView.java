@@ -31,6 +31,12 @@ public class HoldingDurationDistributionView extends View {
     private final Paint lossBarPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint valuePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint emptyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final List<BucketDrawItem> drawItems = new ArrayList<>();
+    private float preparedLeft;
+    private float preparedTop;
+    private float preparedRight;
+    private float preparedBottom;
+    private int preparedMaxCount = 1;
     private boolean masked;
 
     public HoldingDurationDistributionView(Context context) {
@@ -75,6 +81,7 @@ public class HoldingDurationDistributionView extends View {
         if (source != null) {
             buckets.addAll(source);
         }
+        rebuildDrawItems();
         invalidate();
     }
 
@@ -84,7 +91,63 @@ public class HoldingDurationDistributionView extends View {
             return;
         }
         this.masked = masked;
+        rebuildDrawItems();
         invalidate();
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        rebuildDrawItems();
+    }
+
+    private void rebuildDrawItems() {
+        drawItems.clear();
+        float width = getWidth();
+        float height = getHeight();
+        if (width <= 0f || height <= 0f || masked || buckets.isEmpty()) {
+            return;
+        }
+        preparedLeft = dp(22f);
+        preparedRight = width - dp(16f);
+        preparedTop = dp(12f);
+        preparedBottom = height - dp(24f);
+
+        preparedMaxCount = 1;
+        for (CurveAnalyticsHelper.DurationBucket bucket : buckets) {
+            preparedMaxCount = Math.max(preparedMaxCount, bucket.getCount());
+        }
+
+        float slotWidth = (preparedRight - preparedLeft) / Math.max(1, buckets.size());
+        float barWidth = Math.max(dp(12f), slotWidth * 0.48f);
+        float usableHeight = preparedBottom - preparedTop - dp(14f);
+        for (int i = 0; i < buckets.size(); i++) {
+            CurveAnalyticsHelper.DurationBucket bucket = buckets.get(i);
+            float centerX = preparedLeft + slotWidth * i + slotWidth / 2f;
+            float totalTop = preparedBottom - usableHeight * (bucket.getCount() / (float) preparedMaxCount);
+            float lossTop = preparedBottom - usableHeight * (bucket.getLossCount() / (float) preparedMaxCount);
+            float winTop = preparedBottom - usableHeight * ((bucket.getLossCount() + bucket.getWinCount()) / (float) preparedMaxCount);
+            RectF lossRect = bucket.getLossCount() > 0
+                    ? new RectF(centerX - barWidth / 2f, lossTop, centerX + barWidth / 2f, preparedBottom)
+                    : null;
+            float winBottom = bucket.getLossCount() > 0 ? lossTop : preparedBottom;
+            RectF winRect = bucket.getWinCount() > 0
+                    ? new RectF(centerX - barWidth / 2f, Math.min(winTop, winBottom), centerX + barWidth / 2f, winBottom)
+                    : null;
+            String valueText = String.format(Locale.getDefault(), "%d(%d/%d)",
+                    bucket.getCount(),
+                    bucket.getWinCount(),
+                    bucket.getLossCount());
+            drawItems.add(new BucketDrawItem(
+                    lossRect,
+                    winRect,
+                    valueText,
+                    bucket.getLabel(),
+                    centerX,
+                    Math.max(preparedTop + dp(10f), totalTop - dp(4f)),
+                    preparedBottom + dp(12f)
+            ));
+        }
     }
 
     @Override
@@ -96,12 +159,6 @@ public class HoldingDurationDistributionView extends View {
             return;
         }
 
-        float left = dp(22f);
-        float right = width - dp(16f);
-        float top = dp(12f);
-        float bottom = height - dp(24f);
-        drawFrame(canvas, left, top, right, bottom);
-
         if (masked) {
             canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
             return;
@@ -112,43 +169,24 @@ public class HoldingDurationDistributionView extends View {
             return;
         }
 
-        int maxCount = 1;
-        for (CurveAnalyticsHelper.DurationBucket bucket : buckets) {
-            maxCount = Math.max(maxCount, bucket.getCount());
+        if (drawItems.isEmpty()) {
+            rebuildDrawItems();
+        }
+        drawFrame(canvas, preparedLeft, preparedTop, preparedRight, preparedBottom);
+        for (BucketDrawItem item : drawItems) {
+            if (item.lossRect != null) {
+                canvas.drawRect(item.lossRect, lossBarPaint);
+            }
+            if (item.winRect != null) {
+                canvas.drawRect(item.winRect, winBarPaint);
+            }
+            canvas.drawText(item.valueText, item.centerX, item.valueY, valuePaint);
+            drawSingleLineLabel(canvas, item.labelText, item.centerX, item.labelY);
         }
 
-        float slotWidth = (right - left) / Math.max(1, buckets.size());
-        float barWidth = Math.max(dp(12f), slotWidth * 0.48f);
-        for (int i = 0; i < buckets.size(); i++) {
-            CurveAnalyticsHelper.DurationBucket bucket = buckets.get(i);
-            float centerX = left + slotWidth * i + slotWidth / 2f;
-            float usableHeight = bottom - top - dp(14f);
-            float totalTop = bottom - usableHeight * (bucket.getCount() / (float) maxCount);
-            float lossTop = bottom - usableHeight * (bucket.getLossCount() / (float) maxCount);
-            float winTop = bottom - usableHeight * ((bucket.getLossCount() + bucket.getWinCount()) / (float) maxCount);
-            if (bucket.getLossCount() > 0) {
-                RectF lossRect = new RectF(centerX - barWidth / 2f, lossTop, centerX + barWidth / 2f, bottom);
-                canvas.drawRect(lossRect, lossBarPaint);
-            }
-            if (bucket.getWinCount() > 0) {
-                float winBottom = bucket.getLossCount() > 0 ? lossTop : bottom;
-                RectF winRect = new RectF(centerX - barWidth / 2f, Math.min(winTop, winBottom), centerX + barWidth / 2f, winBottom);
-                canvas.drawRect(winRect, winBarPaint);
-            }
-            canvas.drawText(
-                    String.format(Locale.getDefault(), "%d(%d/%d)",
-                            bucket.getCount(),
-                            bucket.getWinCount(),
-                            bucket.getLossCount()),
-                    centerX,
-                    Math.max(top + dp(10f), totalTop - dp(4f)),
-                    valuePaint);
-            drawSingleLineLabel(canvas, bucket.getLabel(), centerX, bottom + dp(12f));
-        }
-
-        canvas.drawText(String.format(Locale.getDefault(), "最高 %d 笔", maxCount),
-                left + dp(22f), top + dp(2f), labelPaint);
-        canvas.drawText("总(盈/亏)", right - dp(26f), top + dp(2f), labelPaint);
+        canvas.drawText(String.format(Locale.getDefault(), "最高 %d 笔", preparedMaxCount),
+                preparedLeft + dp(22f), preparedTop + dp(2f), labelPaint);
+        canvas.drawText("总(盈/亏)", preparedRight - dp(26f), preparedTop + dp(2f), labelPaint);
     }
 
     // 绘制基础网格。
@@ -178,5 +216,33 @@ public class HoldingDurationDistributionView extends View {
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
         return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
+    }
+
+    private static final class BucketDrawItem {
+        @Nullable
+        final RectF lossRect;
+        @Nullable
+        final RectF winRect;
+        final String valueText;
+        final String labelText;
+        final float centerX;
+        final float valueY;
+        final float labelY;
+
+        private BucketDrawItem(@Nullable RectF lossRect,
+                               @Nullable RectF winRect,
+                               String valueText,
+                               String labelText,
+                               float centerX,
+                               float valueY,
+                               float labelY) {
+            this.lossRect = lossRect;
+            this.winRect = winRect;
+            this.valueText = valueText;
+            this.labelText = labelText;
+            this.centerX = centerX;
+            this.valueY = valueY;
+            this.labelY = labelY;
+        }
     }
 }

@@ -139,17 +139,14 @@ public class AccountStatsLayoutResourceTest {
         int returnStatsIndex = xml.indexOf("android:id=\"@+id/cardReturnStatsSection\"");
         int curveIndex = xml.indexOf("android:id=\"@+id/cardCurveSection\"");
         int tradeStatsIndex = xml.indexOf("android:id=\"@+id/cardTradeStatsSection\"");
-        int tradeRecordsIndex = xml.indexOf("android:id=\"@+id/cardTradeRecordsSection\"");
 
         assertTrue("共享布局里必须保留核心统计卡片", statsSummaryIndex >= 0);
         assertTrue("共享布局里必须保留收益统计卡片", returnStatsIndex >= 0);
         assertTrue("共享布局里必须保留净值/结余曲线卡片", curveIndex >= 0);
         assertTrue("共享布局里必须保留交易统计卡片", tradeStatsIndex >= 0);
-        assertTrue("共享布局里必须保留交易记录卡片", tradeRecordsIndex >= 0);
         assertTrue("分析页应先展示核心统计，再展示收益统计", statsSummaryIndex < returnStatsIndex);
         assertTrue("分析页应在收益统计后展示净值/结余曲线", returnStatsIndex < curveIndex);
         assertTrue("分析页应在净值/结余曲线后展示交易统计", curveIndex < tradeStatsIndex);
-        assertTrue("交易记录应排在交易统计之后，避免打断分析主链", tradeStatsIndex < tradeRecordsIndex);
     }
 
     // 分析页顺序已交给共享布局真值管理，宿主代码不应继续保留旧的运行时底部重排。

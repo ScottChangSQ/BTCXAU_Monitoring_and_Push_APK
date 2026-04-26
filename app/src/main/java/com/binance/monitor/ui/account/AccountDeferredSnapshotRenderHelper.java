@@ -202,7 +202,7 @@ public final class AccountDeferredSnapshotRenderHelper {
                                                               List<CurvePoint> curvePoints) {
         List<AccountMetric> snapshotMetricResult = snapshotStats == null
                 ? new ArrayList<>()
-                : normalizeTradeStatsMetrics(snapshotStats);
+                : normalizeTradeStatsMetrics(snapshotStats, baseTrades);
         if (!snapshotMetricResult.isEmpty()) {
             upsertMetric(snapshotMetricResult, "夏普比率", buildSharpeRatioValue(curvePoints), "Sharpe", "Sharpe Ratio");
             return snapshotMetricResult;
@@ -239,11 +239,9 @@ public final class AccountDeferredSnapshotRenderHelper {
             }
         }
 
+        String netSettledAmountValue = buildNetSettledAmountValue(trades);
         AccountOverviewCumulativeMetricsCalculator.OverviewCumulativeValues cumulativeValues =
                 AccountOverviewCumulativeMetricsCalculator.calculate(trades, null, curvePoints);
-        double cumulativePnl = cumulativeValues.hasCumulativePnlTruth()
-                ? cumulativeValues.getCumulativePnl()
-                : totalPnl;
         double cumulativeReturnRate = cumulativeValues.hasCumulativeReturnRateTruth()
                 ? cumulativeValues.getCumulativeReturnRate()
                 : 0d;
@@ -258,7 +256,7 @@ public final class AccountDeferredSnapshotRenderHelper {
         double maxDrawdown = drawdownSegment == null ? 0d : drawdownSegment.getDrawdownRate();
 
         List<AccountMetric> result = new ArrayList<>();
-        result.add(new AccountMetric("累计收益额", FormatUtils.formatSignedMoney(cumulativePnl)));
+        result.add(new AccountMetric("累计收益额", netSettledAmountValue));
         result.add(new AccountMetric("累计收益率", formatRatioPercent(cumulativeReturnRate, true)));
         result.add(new AccountMetric("总交易次数", String.valueOf(trades.size())));
         result.add(new AccountMetric("买入次数", String.valueOf(buyCount)));
@@ -724,9 +722,10 @@ public final class AccountDeferredSnapshotRenderHelper {
         return IndicatorFormatterCenter.formatPercent(ratio, 2, showPositiveSign);
     }
 
-    // 统一把统计列表里的最大回撤修正为负值展示，避免服务端或本地旧格式残留正号。
+    // 统一把统计列表里的最大回撤修正为负值展示，并把累计金额口径收口为已平仓净额。
     @NonNull
-    private static List<AccountMetric> normalizeTradeStatsMetrics(@Nullable List<AccountMetric> metrics) {
+    private static List<AccountMetric> normalizeTradeStatsMetrics(@Nullable List<AccountMetric> metrics,
+                                                                  @Nullable List<TradeRecordItem> trades) {
         List<AccountMetric> normalized = new ArrayList<>();
         if (metrics == null) {
             return normalized;
@@ -743,7 +742,79 @@ public final class AccountDeferredSnapshotRenderHelper {
             }
             normalized.add(metric);
         }
+        if (normalized.isEmpty()) {
+            return normalized;
+        }
+        String netSettledAmountValue = buildNetSettledAmountValue(trades);
+        if (!"--".equals(netSettledAmountValue)) {
+            replaceOrAppendMetric(normalized,
+                    findMetricByNames(normalized, "累计收益额", "累计盈亏", "累计结余"),
+                    "累计收益额",
+                    netSettledAmountValue);
+        }
         return normalized;
+    }
+
+    // 累计结余按已平仓成交净额求和，统一扣除库存费和手续费。
+    @NonNull
+    static String buildNetSettledAmountValue(@Nullable List<TradeRecordItem> trades) {
+        if (trades == null || trades.isEmpty()) {
+            return "--";
+        }
+        double totalNetAmount = 0d;
+        boolean hasTrade = false;
+        for (TradeRecordItem item : trades) {
+            if (item == null) {
+                continue;
+            }
+            totalNetAmount += item.getProfit() + item.getStorageFee() + item.getFee();
+            hasTrade = true;
+        }
+        if (!hasTrade) {
+            return "--";
+        }
+        return FormatUtils.formatSignedMoney(totalNetAmount);
+    }
+
+    @Nullable
+    private static AccountMetric findMetricByNames(@Nullable List<AccountMetric> metrics,
+                                                   @NonNull String primaryName,
+                                                   @NonNull String... aliases) {
+        if (metrics == null || metrics.isEmpty()) {
+            return null;
+        }
+        List<String> names = new ArrayList<>();
+        names.add(primaryName);
+        java.util.Collections.addAll(names, aliases);
+        for (AccountMetric metric : metrics) {
+            if (metric == null || metric.getName() == null) {
+                continue;
+            }
+            String normalizedName = normalizeMetricName(metric.getName());
+            for (String name : names) {
+                if (normalizeMetricName(name).equals(normalizedName)) {
+                    return metric;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void replaceOrAppendMetric(@NonNull List<AccountMetric> metrics,
+                                              @Nullable AccountMetric existing,
+                                              @NonNull String name,
+                                              @NonNull String value) {
+        AccountMetric replacement = new AccountMetric(name, value);
+        if (existing == null) {
+            metrics.add(replacement);
+            return;
+        }
+        int index = metrics.indexOf(existing);
+        if (index >= 0) {
+            metrics.set(index, replacement);
+            return;
+        }
+        metrics.add(replacement);
     }
 
     // 最大回撤只保留负号或零值，不再展示正号。

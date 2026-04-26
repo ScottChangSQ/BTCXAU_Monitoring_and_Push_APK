@@ -75,7 +75,7 @@
                                 android:id="@+id/tvStatsSummaryMetricOneLabel"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="累计收益额"
+                                android:text="累计结余"
                                 android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
 
                             <TextView
@@ -1075,7 +1075,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_12"
-                        android:text="交易记录"
+                        android:text="交易统计"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.SectionLabel" />
 
                     <TextView
@@ -1083,7 +1083,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_4"
-                        android:text="当账户产生历史成交后，这里会自动展示交易统计和交易记录。"
+                        android:text="当账户产生历史成交后，这里会自动展示交易统计图表。"
                         android:textAppearance="@style/TextAppearance.BinanceMonitor.Meta" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

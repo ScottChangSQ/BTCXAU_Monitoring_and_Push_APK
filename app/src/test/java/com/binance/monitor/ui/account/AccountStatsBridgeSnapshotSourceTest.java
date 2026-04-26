@@ -135,7 +135,7 @@ public class AccountStatsBridgeSnapshotSourceTest {
         ), StandardCharsets.UTF_8);
 
         assertTrue(helperSource.contains("List<CurvePoint> effectivePoints = points == null"));
-        assertTrue(helperSource.contains("binding.positionRatioChartView.setPoints(effectivePoints);"));
+        assertTrue(helperSource.contains("binding.positionRatioChartView.setRenderData("));
     }
 
     @Test
@@ -300,8 +300,8 @@ public class AccountStatsBridgeSnapshotSourceTest {
         assertTrue(coordinatorSource.contains("host.renderCurveWithIndicators(host.resolveImmediateCurvePoints());"));
         assertTrue(activitySource.contains("binding.layoutCurveSecondarySection.setVisibility(View.VISIBLE);"));
         assertTrue(activitySource.contains("binding.cardReturnStatsSection.setVisibility(View.VISIBLE);"));
-        assertTrue(activitySource.contains("binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);"));
-        assertFalse(activitySource.contains("binding.cardTradeRecordsSection.setVisibility(View.VISIBLE);\n        binding.cardTradeStatsSection.setVisibility(View.VISIBLE);"));
+        assertTrue(activitySource.contains("binding.cardTradeRecordsSection.setVisibility(View.GONE);"));
+        assertTrue(activitySource.contains("binding.cardTradeStatsSection.setVisibility(View.VISIBLE);"));
         assertTrue(activitySource.contains("private void bindTradeAnalytics(List<AccountMetric> tradeStatsMetrics,"));
         assertTrue(activitySource.contains("boolean masked = isPrivacyMasked();"));
         assertTrue(activitySource.contains("binding.cardTradeStatsSection.setVisibility(View.VISIBLE);"));
@@ -310,7 +310,6 @@ public class AccountStatsBridgeSnapshotSourceTest {
 
         assertTrue(layoutSource.contains("android:id=\"@+id/cardCurveSection\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/layoutCurveSecondarySection\""));
-        assertTrue(layoutSource.contains("android:id=\"@+id/cardTradeRecordsSection\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/cardTradeStatsSection\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/cardReturnStatsSection\""));
         assertTrue(layoutSource.contains("android:id=\"@+id/layoutCurveSecondarySection\"\n"));
@@ -377,7 +376,7 @@ public class AccountStatsBridgeSnapshotSourceTest {
     }
 
     @Test
-    public void tradeStatsSectionShouldBecomeVisibleOnlyAfterMetricsAndChartsAreBound() throws Exception {
+    public void tradeStatsBindingShouldStillReassertVisibleAfterMetricsAndChartsAreBound() throws Exception {
         String activitySource = new String(Files.readAllBytes(
                 Paths.get("src/main/java/com/binance/monitor/ui/account/AccountStatsBridgeActivity.java")
         ), StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n');
@@ -385,13 +384,13 @@ public class AccountStatsBridgeSnapshotSourceTest {
         int statsSubmitIndex = activitySource.indexOf("statsAdapter.submitList(tradeStatsMetrics == null ? new ArrayList<>() : new ArrayList<>(tradeStatsMetrics));");
         int pnlChartIndex = activitySource.indexOf("binding.tradePnlBarChart.setEntries(");
         int scatterIndex = activitySource.indexOf("binding.tradeDistributionScatterView.setPoints(");
-        int visibleIndex = activitySource.indexOf("binding.cardTradeStatsSection.setVisibility(View.VISIBLE);");
+        int visibleIndex = activitySource.lastIndexOf("binding.cardTradeStatsSection.setVisibility(View.VISIBLE);");
 
         assertTrue(statsSubmitIndex >= 0);
         assertTrue(pnlChartIndex >= 0);
         assertTrue(scatterIndex >= 0);
         assertTrue(visibleIndex >= 0);
-        assertTrue("交易统计卡片应在指标和图表数据全部绑定后再整体显示，避免先露出选项卡再补列表",
+        assertTrue("交易统计数据绑定完成后，仍应显式把卡片拉回可见态，避免挂载占位后被后续逻辑压掉",
                 visibleIndex > statsSubmitIndex && visibleIndex > pnlChartIndex && visibleIndex > scatterIndex);
     }
 

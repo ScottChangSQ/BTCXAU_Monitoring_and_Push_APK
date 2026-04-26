@@ -41,6 +41,7 @@ public class DailyReturnChartView extends View {
     private final Paint selectionPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint emptyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final GestureDetector gestureDetector;
+    private DailyReturnRenderModel renderModel = DailyReturnRenderModel.empty();
 
     private float chartLeft;
     private float chartTop;
@@ -130,6 +131,7 @@ public class DailyReturnChartView extends View {
         highlightedIndex = -1;
         highlightedXRatio = -1f;
         longPressing = false;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -137,6 +139,22 @@ public class DailyReturnChartView extends View {
     public void setViewport(long startTs, long endTs) {
         viewportStartTs = Math.max(0L, startTs);
         viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
+        rebuildRenderModel();
+        invalidate();
+    }
+
+    public void setRenderData(@Nullable List<CurveAnalyticsHelper.DailyReturnPoint> source, long startTs, long endTs) {
+        points.clear();
+        if (source != null) {
+            points.addAll(source);
+        }
+        viewportStartTs = Math.max(0L, startTs);
+        viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
+        highlightedIndex = -1;
+        highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
+        longPressing = false;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -146,6 +164,7 @@ public class DailyReturnChartView extends View {
             return;
         }
         showBottomTimeLabels = show;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -155,6 +174,7 @@ public class DailyReturnChartView extends View {
             return;
         }
         mergeWithPreviousPane = merge;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -164,6 +184,7 @@ public class DailyReturnChartView extends View {
             return;
         }
         mergeWithNextPane = merge;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -227,6 +248,72 @@ public class DailyReturnChartView extends View {
     }
 
     @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        rebuildRenderModel();
+    }
+
+    // 预生成日收益柱体和坐标范围，避免滚动时反复计算每根柱子。
+    private void rebuildRenderModel() {
+        float width = getWidth();
+        float height = getHeight();
+        if (width <= 0f || height <= 0f || masked || points.isEmpty()) {
+            renderModel = DailyReturnRenderModel.empty();
+            return;
+        }
+
+        float preparedLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
+        float preparedRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
+        float preparedTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
+        float preparedBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
+                mergeWithNextPane,
+                showBottomTimeLabels,
+                dp(10f),
+                dp(24f)
+        );
+        double maxAbs = 0.01d;
+        for (CurveAnalyticsHelper.DailyReturnPoint point : points) {
+            maxAbs = Math.max(maxAbs, Math.abs(point.getReturnRate()));
+        }
+        seriesStartTs = points.get(0).getTimestamp();
+        seriesEndTs = points.get(points.size() - 1).getTimestamp();
+        long startTs = viewportStartTs > 0L ? viewportStartTs : seriesStartTs;
+        long endTs = viewportEndTs > startTs ? viewportEndTs : Math.max(startTs + 1L, seriesEndTs);
+        float zeroY = mapY(0d, -maxAbs, maxAbs, preparedTop, preparedBottom);
+        float barWidth = Math.max(dp(2f), Math.min(dp(10f),
+                (preparedRight - preparedLeft) / Math.max(1f, points.size() * 1.7f)));
+        List<DailyReturnBarDrawItem> bars = new ArrayList<>();
+        for (CurveAnalyticsHelper.DailyReturnPoint point : points) {
+            float centerX = mapX(point.getTimestamp(), startTs, endTs, preparedLeft, preparedRight);
+            float targetY = mapY(point.getReturnRate(), -maxAbs, maxAbs, preparedTop, preparedBottom);
+            RectF rect = new RectF(
+                    centerX - barWidth / 2f,
+                    Math.min(zeroY, targetY),
+                    centerX + barWidth / 2f,
+                    Math.max(zeroY, targetY)
+            );
+            rect.bottom = Math.max(rect.bottom, rect.top + dp(1.2f));
+            bars.add(new DailyReturnBarDrawItem(rect, point.getReturnRate() >= 0d));
+        }
+
+        chartLeft = preparedLeft;
+        chartTop = preparedTop;
+        chartRight = preparedRight;
+        chartBottom = preparedBottom;
+        renderModel = new DailyReturnRenderModel(
+                preparedLeft,
+                preparedTop,
+                preparedRight,
+                preparedBottom,
+                maxAbs,
+                startTs,
+                endTs,
+                zeroY,
+                bars
+        );
+    }
+
+    @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         float width = getWidth();
@@ -235,16 +322,12 @@ public class DailyReturnChartView extends View {
             return;
         }
 
-        chartLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
-        chartRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
-        chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
-        chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
-                mergeWithNextPane,
-                showBottomTimeLabels,
-                dp(10f),
-                dp(24f)
-        );
-        drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
+        DailyReturnRenderModel model = renderModel;
+        chartLeft = model.chartLeft;
+        chartTop = model.chartTop;
+        chartRight = model.chartRight;
+        chartBottom = model.chartBottom;
+        drawFrame(canvas, model.chartLeft, model.chartTop, model.chartRight, model.chartBottom);
 
         if (masked) {
             canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
@@ -256,57 +339,35 @@ public class DailyReturnChartView extends View {
             return;
         }
 
-        double maxAbs = 0.01d;
-        for (CurveAnalyticsHelper.DailyReturnPoint point : points) {
-            maxAbs = Math.max(maxAbs, Math.abs(point.getReturnRate()));
-        }
-        seriesStartTs = points.get(0).getTimestamp();
-        seriesEndTs = points.get(points.size() - 1).getTimestamp();
-        long startTs = viewportStartTs > 0L ? viewportStartTs : seriesStartTs;
-        long endTs = viewportEndTs > startTs ? viewportEndTs : Math.max(startTs + 1L, seriesEndTs);
-        float zeroY = mapY(0d, -maxAbs, maxAbs, chartTop, chartBottom);
-        canvas.drawLine(chartLeft, zeroY, chartRight, zeroY, axisPaint);
+        canvas.drawLine(model.chartLeft, model.zeroY, model.chartRight, model.zeroY, axisPaint);
 
-        float barWidth = Math.max(dp(2f), Math.min(dp(10f),
-                (chartRight - chartLeft) / Math.max(1f, points.size() * 1.7f)));
-        for (int i = 0; i < points.size(); i++) {
-            CurveAnalyticsHelper.DailyReturnPoint point = points.get(i);
-            float centerX = mapX(point.getTimestamp(), startTs, endTs, chartLeft, chartRight);
-            float targetY = mapY(point.getReturnRate(), -maxAbs, maxAbs, chartTop, chartBottom);
-            RectF rect = new RectF(
-                    centerX - barWidth / 2f,
-                    Math.min(zeroY, targetY),
-                    centerX + barWidth / 2f,
-                    Math.max(zeroY, targetY)
-            );
-            rect.bottom = Math.max(rect.bottom, rect.top + dp(1.2f));
-            canvas.drawRoundRect(rect, dp(2f), dp(2f),
-                    point.getReturnRate() >= 0d ? positivePaint : negativePaint);
+        for (int i = 0; i < model.bars.size(); i++) {
+            DailyReturnBarDrawItem bar = model.bars.get(i);
+            canvas.drawRoundRect(bar.rect, dp(2f), dp(2f), bar.positive ? positivePaint : negativePaint);
             if (i == highlightedIndex) {
-                canvas.drawRect(rect, selectionPaint);
+                canvas.drawRect(bar.rect, selectionPaint);
             }
         }
 
         if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
-            CurveAnalyticsHelper.DailyReturnPoint point = points.get(highlightedIndex);
-            float highlightX = resolveHighlightX(startTs, endTs);
-            canvas.drawLine(highlightX, chartTop, highlightX, chartBottom, crosshairPaint);
+            float highlightX = resolveHighlightX(model.startTs, model.endTs);
+            canvas.drawLine(highlightX, model.chartTop, highlightX, model.chartBottom, crosshairPaint);
         }
 
-        float centerY = chartTop + (chartBottom - chartTop) / 2f;
+        float centerY = model.chartTop + (model.chartBottom - model.chartTop) / 2f;
         float verticalCenterBaseline = centerY - (labelPaint.descent() + labelPaint.ascent()) / 2f;
-        float topBaseline = chartTop + dp(mergeWithPreviousPane ? 10f : 6f);
+        float topBaseline = model.chartTop + dp(mergeWithPreviousPane ? 10f : 6f);
         float bottomBaseline = CurvePaneSpacingHelper.resolveBottomLabelBaseline(
-                chartBottom,
+                model.chartBottom,
                 mergeWithNextPane && !showBottomTimeLabels,
                 dp(2f)
         );
         Paint.Align originalAlign = labelPaint.getTextAlign();
         labelPaint.setTextAlign(Paint.Align.RIGHT);
-        float labelAnchorX = chartLeft - dp(4f);
-        canvas.drawText(String.format(Locale.getDefault(), "+%.1f%%", maxAbs * 100d),
+        float labelAnchorX = model.chartLeft - dp(4f);
+        canvas.drawText(String.format(Locale.getDefault(), "+%.1f%%", model.maxAbs * 100d),
                 labelAnchorX, topBaseline, labelPaint);
-        canvas.drawText(String.format(Locale.getDefault(), "-%.1f%%", maxAbs * 100d),
+        canvas.drawText(String.format(Locale.getDefault(), "-%.1f%%", model.maxAbs * 100d),
                 labelAnchorX, bottomBaseline, labelPaint);
         float rightEdge = getWidth() - dp(12f);
         labelPaint.setTextAlign(Paint.Align.CENTER);
@@ -316,7 +377,7 @@ public class DailyReturnChartView extends View {
         canvas.restore();
         labelPaint.setTextAlign(originalAlign);
         if (showBottomTimeLabels) {
-            drawXLabels(canvas, chartLeft, chartRight, chartBottom, startTs, endTs);
+            drawXLabels(canvas, model.chartLeft, model.chartRight, model.chartBottom, model.startTs, model.endTs);
         }
     }
 
@@ -377,16 +438,7 @@ public class DailyReturnChartView extends View {
 
     // 按时间找到最近的日收益柱。
     private int findNearestIndexByTimestamp(long timestamp) {
-        int bestIndex = 0;
-        long bestDistance = Long.MAX_VALUE;
-        for (int i = 0; i < points.size(); i++) {
-            long distance = Math.abs(points.get(i).getTimestamp() - timestamp);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestIndex = i;
-            }
-        }
-        return bestIndex;
+        return CurvePointBinarySearch.nearestDailyReturnPointIndex(points, timestamp);
     }
 
     // 清除用户选中的十字光标并通知宿主。
@@ -439,5 +491,51 @@ public class DailyReturnChartView extends View {
 
     private float clampRatio(float ratio) {
         return Math.max(0f, Math.min(1f, ratio));
+    }
+
+    private static final class DailyReturnRenderModel {
+        final float chartLeft;
+        final float chartTop;
+        final float chartRight;
+        final float chartBottom;
+        final double maxAbs;
+        final long startTs;
+        final long endTs;
+        final float zeroY;
+        final List<DailyReturnBarDrawItem> bars;
+
+        private DailyReturnRenderModel(float chartLeft,
+                                       float chartTop,
+                                       float chartRight,
+                                       float chartBottom,
+                                       double maxAbs,
+                                       long startTs,
+                                       long endTs,
+                                       float zeroY,
+                                       List<DailyReturnBarDrawItem> bars) {
+            this.chartLeft = chartLeft;
+            this.chartTop = chartTop;
+            this.chartRight = chartRight;
+            this.chartBottom = chartBottom;
+            this.maxAbs = maxAbs;
+            this.startTs = startTs;
+            this.endTs = endTs;
+            this.zeroY = zeroY;
+            this.bars = bars;
+        }
+
+        static DailyReturnRenderModel empty() {
+            return new DailyReturnRenderModel(0f, 0f, 0f, 0f, 0.01d, 0L, 1L, 0f, new ArrayList<>());
+        }
+    }
+
+    private static final class DailyReturnBarDrawItem {
+        final RectF rect;
+        final boolean positive;
+
+        private DailyReturnBarDrawItem(RectF rect, boolean positive) {
+            this.rect = rect;
+            this.positive = positive;
+        }
     }
 }

@@ -54,6 +54,7 @@ public class EquityCurveView extends View {
     private final List<CurvePoint> points = new ArrayList<>();
     private final List<String> tooltipExtraLines = new ArrayList<>();
     private final GestureDetector gestureDetector;
+    private EquityCurveRenderModel renderModel = EquityCurveRenderModel.empty();
     @Nullable
     private CurvePoint tooltipPointOverride;
 
@@ -184,11 +185,13 @@ public class EquityCurveView extends View {
         highlightedXRatio = -1f;
         longPressing = false;
         dispatchHighlightedPoint();
+        rebuildRenderModel();
         invalidate();
     }
 
     public void setBaseBalance(double value) {
         baseBalance = Math.max(1e-9, value);
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -196,6 +199,7 @@ public class EquityCurveView extends View {
     public void setViewport(long startTs, long endTs) {
         viewportStartTs = Math.max(0L, startTs);
         viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -205,6 +209,7 @@ public class EquityCurveView extends View {
             return;
         }
         showBottomTimeLabels = show;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -214,6 +219,7 @@ public class EquityCurveView extends View {
             return;
         }
         mergeWithPreviousPane = merge;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -223,6 +229,7 @@ public class EquityCurveView extends View {
             return;
         }
         mergeWithNextPane = merge;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -242,6 +249,39 @@ public class EquityCurveView extends View {
         drawdownEndTs = Math.max(0L, endTs);
         drawdownPeakBalance = peakBalance;
         drawdownValleyBalance = valleyBalance;
+        rebuildRenderModel();
+        invalidate();
+    }
+
+    // 一次性写入曲线、视窗、基准和回撤高亮，避免一次投影绑定触发多次 invalidate。
+    public void setRenderData(@Nullable List<CurvePoint> data,
+                              long startTs,
+                              long endTs,
+                              double baseBalanceValue,
+                              long drawdownStart,
+                              long drawdownEnd,
+                              double peakBalance,
+                              double valleyBalance) {
+        points.clear();
+        if (data != null) {
+            points.addAll(data);
+            points.sort((left, right) -> Long.compare(left.getTimestamp(), right.getTimestamp()));
+        }
+        viewportStartTs = Math.max(0L, startTs);
+        viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
+        baseBalance = Math.max(1e-9, baseBalanceValue);
+        drawdownStartTs = Math.max(0L, drawdownStart);
+        drawdownEndTs = Math.max(0L, drawdownEnd);
+        drawdownPeakBalance = peakBalance;
+        drawdownValleyBalance = valleyBalance;
+        tooltipExtraLines.clear();
+        tooltipPointOverride = null;
+        highlightedIndex = -1;
+        highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
+        longPressing = false;
+        rebuildRenderModel();
+        dispatchHighlightedPoint();
         invalidate();
     }
 
@@ -311,34 +351,29 @@ public class EquityCurveView extends View {
     }
 
     @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        rebuildRenderModel();
+    }
+
+    // 将曲线路径、范围和坐标边界提前准备好，滚动触发 onDraw 时只消费缓存。
+    private void rebuildRenderModel() {
         int width = getWidth();
         int height = getHeight();
-        if (width <= 0 || height <= 0) {
+        if (width <= 0 || height <= 0 || masked || points.size() < 2) {
+            renderModel = EquityCurveRenderModel.empty();
             return;
         }
 
-        chartLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
-        chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(12f));
-        chartRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
-        chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
+        float preparedLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
+        float preparedTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(12f));
+        float preparedRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
+        float preparedBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
                 mergeWithNextPane,
                 showBottomTimeLabels,
                 dp(10f),
                 dp(24f)
         );
-
-        drawGrid(canvas, chartLeft, chartTop, chartRight, chartBottom);
-        drawAxes(canvas, chartLeft, chartTop, chartRight, chartBottom);
-        if (masked) {
-            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
-            return;
-        }
-        if (points.size() < 2) {
-            canvas.drawText("暂无曲线数据", width / 2f, height / 2f, emptyPaint);
-            return;
-        }
 
         double rawMin = Double.MAX_VALUE;
         double rawMax = -Double.MAX_VALUE;
@@ -352,47 +387,100 @@ public class EquityCurveView extends View {
         }
         double rawRange = Math.max(1d, rawMax - rawMin);
         double step = niceStep(rawRange / 4d);
-        chartMin = Math.floor(rawMin / step) * step;
-        chartMax = Math.ceil(rawMax / step) * step;
-        if (chartMax - chartMin < 1e-6) {
-            chartMax += 1d;
-            chartMin -= 1d;
+        double preparedMin = Math.floor(rawMin / step) * step;
+        double preparedMax = Math.ceil(rawMax / step) * step;
+        if (preparedMax - preparedMin < 1e-6) {
+            preparedMax += 1d;
+            preparedMin -= 1d;
         }
 
-        chartStartTs = viewportStartTs > 0L ? viewportStartTs : points.get(0).getTimestamp();
-        chartEndTs = viewportEndTs > chartStartTs ? viewportEndTs : points.get(points.size() - 1).getTimestamp();
-        if (chartEndTs <= chartStartTs) {
-            chartEndTs = chartStartTs + 1L;
+        long preparedStartTs = viewportStartTs > 0L ? viewportStartTs : points.get(0).getTimestamp();
+        long preparedEndTs = viewportEndTs > preparedStartTs ? viewportEndTs : points.get(points.size() - 1).getTimestamp();
+        if (preparedEndTs <= preparedStartTs) {
+            preparedEndTs = preparedStartTs + 1L;
         }
 
-        drawZeroPercentReferenceLine(canvas, chartLeft, chartRight, chartTop, chartBottom, chartMin, chartMax, baseBalance);
-        drawDrawdownHighlight(canvas);
-        equityPath.reset();
-        balancePath.reset();
+        Path preparedEquityPath = new Path();
+        Path preparedBalancePath = new Path();
         for (int i = 0; i < points.size(); i++) {
             CurvePoint point = points.get(i);
-            float x = mapX(point.getTimestamp(), chartStartTs, chartEndTs, chartLeft, chartRight);
-            float yEquity = mapY(point.getEquity(), chartMin, chartMax, chartTop, chartBottom);
-            float yBalance = mapY(point.getBalance(), chartMin, chartMax, chartTop, chartBottom);
+            float x = mapX(point.getTimestamp(), preparedStartTs, preparedEndTs, preparedLeft, preparedRight);
+            float yEquity = mapY(point.getEquity(), preparedMin, preparedMax, preparedTop, preparedBottom);
+            float yBalance = mapY(point.getBalance(), preparedMin, preparedMax, preparedTop, preparedBottom);
             if (i == 0) {
-                equityPath.moveTo(x, yEquity);
-                balancePath.moveTo(x, yBalance);
+                preparedEquityPath.moveTo(x, yEquity);
+                preparedBalancePath.moveTo(x, yBalance);
             } else {
-                equityPath.lineTo(x, yEquity);
-                balancePath.lineTo(x, yBalance);
+                preparedEquityPath.lineTo(x, yEquity);
+                preparedBalancePath.lineTo(x, yBalance);
             }
         }
 
-        canvas.drawPath(balancePath, balancePaint);
-        canvas.drawPath(equityPath, equityPaint);
+        chartLeft = preparedLeft;
+        chartTop = preparedTop;
+        chartRight = preparedRight;
+        chartBottom = preparedBottom;
+        chartMin = preparedMin;
+        chartMax = preparedMax;
+        chartStartTs = preparedStartTs;
+        chartEndTs = preparedEndTs;
+        renderModel = new EquityCurveRenderModel(
+                preparedLeft,
+                preparedTop,
+                preparedRight,
+                preparedBottom,
+                preparedMin,
+                preparedMax,
+                preparedStartTs,
+                preparedEndTs,
+                preparedEquityPath,
+                preparedBalancePath
+        );
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        int width = getWidth();
+        int height = getHeight();
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+
+        EquityCurveRenderModel model = renderModel;
+
+        drawGrid(canvas, model.chartLeft, model.chartTop, model.chartRight, model.chartBottom);
+        drawAxes(canvas, model.chartLeft, model.chartTop, model.chartRight, model.chartBottom);
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
+        if (points.size() < 2) {
+            canvas.drawText("暂无曲线数据", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
+
+        chartLeft = model.chartLeft;
+        chartTop = model.chartTop;
+        chartRight = model.chartRight;
+        chartBottom = model.chartBottom;
+        chartMin = model.chartMin;
+        chartMax = model.chartMax;
+        chartStartTs = model.chartStartTs;
+        chartEndTs = model.chartEndTs;
+
+        drawZeroPercentReferenceLine(canvas, model.chartLeft, model.chartRight, model.chartTop, model.chartBottom, model.chartMin, model.chartMax, baseBalance);
+        drawDrawdownHighlight(canvas);
+        canvas.drawPath(model.balancePath, balancePaint);
+        canvas.drawPath(model.equityPath, equityPaint);
 
         if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
             drawHighlight(canvas, highlightedIndex);
         }
 
-        drawYLabels(canvas, chartLeft, chartRight, chartTop, chartBottom, chartMin, chartMax, baseBalance);
+        drawYLabels(canvas, model.chartLeft, model.chartRight, model.chartTop, model.chartBottom, model.chartMin, model.chartMax, baseBalance);
         if (showBottomTimeLabels) {
-            drawXLabels(canvas, chartLeft, chartRight, chartBottom);
+            drawXLabels(canvas, model.chartLeft, model.chartRight, model.chartBottom);
         }
     }
 
@@ -731,5 +819,44 @@ public class EquityCurveView extends View {
     private int blendColor(int startColor, int endColor, float ratio) {
         float safeRatio = Math.max(0f, Math.min(1f, ratio));
         return androidx.core.graphics.ColorUtils.blendARGB(startColor, endColor, safeRatio);
+    }
+
+    private static final class EquityCurveRenderModel {
+        final float chartLeft;
+        final float chartTop;
+        final float chartRight;
+        final float chartBottom;
+        final double chartMin;
+        final double chartMax;
+        final long chartStartTs;
+        final long chartEndTs;
+        final Path equityPath;
+        final Path balancePath;
+
+        private EquityCurveRenderModel(float chartLeft,
+                                       float chartTop,
+                                       float chartRight,
+                                       float chartBottom,
+                                       double chartMin,
+                                       double chartMax,
+                                       long chartStartTs,
+                                       long chartEndTs,
+                                       @NonNull Path equityPath,
+                                       @NonNull Path balancePath) {
+            this.chartLeft = chartLeft;
+            this.chartTop = chartTop;
+            this.chartRight = chartRight;
+            this.chartBottom = chartBottom;
+            this.chartMin = chartMin;
+            this.chartMax = chartMax;
+            this.chartStartTs = chartStartTs;
+            this.chartEndTs = chartEndTs;
+            this.equityPath = equityPath;
+            this.balancePath = balancePath;
+        }
+
+        static EquityCurveRenderModel empty() {
+            return new EquityCurveRenderModel(0f, 0f, 0f, 0f, 0d, 1d, 0L, 1L, new Path(), new Path());
+        }
     }
 }

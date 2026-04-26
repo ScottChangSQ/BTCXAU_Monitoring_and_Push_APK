@@ -99,15 +99,21 @@ final class AccountStatsCurveRenderHelper {
         CurveAnalyticsHelper.DrawdownSegment drawdownSegment =
                 CurveAnalyticsHelper.resolveMaxDrawdownSegment(effectivePoints);
         double curveBaseBalance = resolveCurvePercentBase(effectivePoints);
-        binding.equityCurveView.setBaseBalance(curveBaseBalance);
 
         long viewportStartTs = effectivePoints.isEmpty() ? 0L : effectivePoints.get(0).getTimestamp();
         long viewportEndTs = effectivePoints.size() > 1
                 ? effectivePoints.get(effectivePoints.size() - 1).getTimestamp()
                 : viewportStartTs + 1L;
-        applyDrawdownHighlight(drawdownSegment);
-        binding.equityCurveView.setViewport(viewportStartTs, viewportEndTs);
-        binding.equityCurveView.setPoints(effectivePoints);
+        binding.equityCurveView.setRenderData(
+                effectivePoints,
+                viewportStartTs,
+                viewportEndTs,
+                curveBaseBalance,
+                drawdownSegment == null ? 0L : drawdownSegment.getPeakTimestamp(),
+                drawdownSegment == null ? 0L : drawdownSegment.getValleyTimestamp(),
+                drawdownSegment == null ? 0d : drawdownSegment.getPeakEquity(),
+                drawdownSegment == null ? 0d : drawdownSegment.getValleyEquity()
+        );
         latestDisplayedPoints = new ArrayList<>(effectivePoints);
 
         String defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
@@ -118,14 +124,11 @@ final class AccountStatsCurveRenderHelper {
         List<CurveAnalyticsHelper.DrawdownPoint> drawdownPoints = new ArrayList<>();
         List<CurveAnalyticsHelper.DailyReturnPoint> dailyReturnPoints = new ArrayList<>();
         if (secondarySectionsAttached) {
-            binding.positionRatioChartView.setViewport(viewportStartTs, viewportEndTs);
-            binding.positionRatioChartView.setPoints(effectivePoints);
             drawdownPoints = CurveAnalyticsHelper.buildDrawdownSeries(effectivePoints);
             dailyReturnPoints = CurveAnalyticsHelper.buildDailyReturnSeries(effectivePoints);
-            binding.drawdownChartView.setViewport(viewportStartTs, viewportEndTs);
-            binding.drawdownChartView.setPoints(drawdownPoints);
-            binding.dailyReturnChartView.setViewport(viewportStartTs, viewportEndTs);
-            binding.dailyReturnChartView.setPoints(dailyReturnPoints);
+            binding.positionRatioChartView.setRenderData(effectivePoints, viewportStartTs, viewportEndTs);
+            binding.drawdownChartView.setRenderData(drawdownPoints, viewportStartTs, viewportEndTs);
+            binding.dailyReturnChartView.setRenderData(dailyReturnPoints, viewportStartTs, viewportEndTs);
         }
         indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));
         return new RenderResult(
@@ -153,13 +156,16 @@ final class AccountStatsCurveRenderHelper {
                 : new ArrayList<>(curveProjection.getDisplayedCurvePoints());
         CurveAnalyticsHelper.DrawdownSegment drawdownSegment = curveProjection.getDrawdownSegment();
         double curveBaseBalance = curveProjection.getCurveBaseBalance();
-        binding.equityCurveView.setBaseBalance(curveBaseBalance);
-        applyDrawdownHighlight(drawdownSegment);
-        binding.equityCurveView.setViewport(
+        binding.equityCurveView.setRenderData(
+                effectivePoints,
                 curveProjection.getViewportStartTs(),
-                curveProjection.getViewportEndTs()
+                curveProjection.getViewportEndTs(),
+                curveBaseBalance,
+                drawdownSegment == null ? 0L : drawdownSegment.getPeakTimestamp(),
+                drawdownSegment == null ? 0L : drawdownSegment.getValleyTimestamp(),
+                drawdownSegment == null ? 0d : drawdownSegment.getPeakEquity(),
+                drawdownSegment == null ? 0d : drawdownSegment.getValleyEquity()
         );
-        binding.equityCurveView.setPoints(effectivePoints);
         latestDisplayedPoints = new ArrayList<>(effectivePoints);
 
         String defaultCurveMeta = buildCurveMeta(effectivePoints, drawdownSegment);
@@ -174,21 +180,18 @@ final class AccountStatsCurveRenderHelper {
                 ? new ArrayList<>()
                 : new ArrayList<>(curveProjection.getDailyReturnPoints());
         if (secondarySectionsAttached) {
-            binding.positionRatioChartView.setViewport(
+            binding.positionRatioChartView.setRenderData(
+                    effectivePoints,
                     curveProjection.getViewportStartTs(),
-                    curveProjection.getViewportEndTs()
-            );
-            binding.positionRatioChartView.setPoints(effectivePoints);
-            binding.drawdownChartView.setViewport(
+                    curveProjection.getViewportEndTs());
+            binding.drawdownChartView.setRenderData(
+                    drawdownPoints,
                     curveProjection.getViewportStartTs(),
-                    curveProjection.getViewportEndTs()
-            );
-            binding.drawdownChartView.setPoints(drawdownPoints);
-            binding.dailyReturnChartView.setViewport(
+                    curveProjection.getViewportEndTs());
+            binding.dailyReturnChartView.setRenderData(
+                    dailyReturnPoints,
                     curveProjection.getViewportStartTs(),
-                    curveProjection.getViewportEndTs()
-            );
-            binding.dailyReturnChartView.setPoints(dailyReturnPoints);
+                    curveProjection.getViewportEndTs());
         }
         indicatorAdapter.submitList(buildCurveIndicators(latestCurveIndicators));
         return new RenderResult(
@@ -199,20 +202,6 @@ final class AccountStatsCurveRenderHelper {
                 curveBaseBalance,
                 curveProjection.getViewportStartTs(),
                 curveProjection.getViewportEndTs()
-        );
-    }
-
-    // 同步主图上的回撤高亮。
-    private void applyDrawdownHighlight(@Nullable CurveAnalyticsHelper.DrawdownSegment drawdownSegment) {
-        if (drawdownSegment == null) {
-            binding.equityCurveView.setDrawdownHighlight(0L, 0L, 0d, 0d);
-            return;
-        }
-        binding.equityCurveView.setDrawdownHighlight(
-                drawdownSegment.getPeakTimestamp(),
-                drawdownSegment.getValleyTimestamp(),
-                drawdownSegment.getPeakEquity(),
-                drawdownSegment.getValleyEquity()
         );
     }
 

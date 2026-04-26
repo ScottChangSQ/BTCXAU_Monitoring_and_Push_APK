@@ -42,6 +42,7 @@ public class DrawdownChartView extends View {
     private final Path linePath = new Path();
     private final Path fillPath = new Path();
     private final GestureDetector gestureDetector;
+    private DrawdownRenderModel renderModel = DrawdownRenderModel.empty();
 
     private float chartLeft;
     private float chartTop;
@@ -130,6 +131,7 @@ public class DrawdownChartView extends View {
         highlightedIndex = -1;
         highlightedXRatio = -1f;
         longPressing = false;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -137,6 +139,22 @@ public class DrawdownChartView extends View {
     public void setViewport(long startTs, long endTs) {
         viewportStartTs = Math.max(0L, startTs);
         viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
+        rebuildRenderModel();
+        invalidate();
+    }
+
+    public void setRenderData(@Nullable List<CurveAnalyticsHelper.DrawdownPoint> source, long startTs, long endTs) {
+        points.clear();
+        if (source != null) {
+            points.addAll(source);
+        }
+        viewportStartTs = Math.max(0L, startTs);
+        viewportEndTs = Math.max(viewportStartTs + 1L, endTs);
+        highlightedIndex = -1;
+        highlightedXRatio = -1f;
+        highlightedTimestamp = -1L;
+        longPressing = false;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -161,6 +179,7 @@ public class DrawdownChartView extends View {
             return;
         }
         mergeWithPreviousPane = merge;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -170,6 +189,7 @@ public class DrawdownChartView extends View {
             return;
         }
         mergeWithNextPane = merge;
+        rebuildRenderModel();
         invalidate();
     }
 
@@ -218,34 +238,23 @@ public class DrawdownChartView extends View {
     }
 
     @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        rebuildRenderModel();
+    }
+
+    // 预生成回撤曲线和填充路径，降低滚动期 onDraw 负担。
+    private void rebuildRenderModel() {
         float width = getWidth();
         float height = getHeight();
-        if (width <= 0f || height <= 0f) {
+        if (width <= 0f || height <= 0f || masked || points.size() < 2) {
+            renderModel = DrawdownRenderModel.empty();
             return;
         }
-
-        chartLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
-        chartTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
-        chartRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
-        chartBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(
-                mergeWithNextPane,
-                false,
-                dp(10f),
-                0f
-        );
-        drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
-
-        if (masked) {
-            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
-            return;
-        }
-
-        if (points.size() < 2) {
-            canvas.drawText("暂无回撤数据", width / 2f, height / 2f, emptyPaint);
-            return;
-        }
+        float preparedLeft = SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartLeftInsetRes());
+        float preparedTop = CurvePaneSpacingHelper.resolveTopInsetPx(mergeWithPreviousPane, dp(10f));
+        float preparedRight = width - SpacingTokenResolver.dpFloat(getContext(), CurvePaneLayoutHelper.resolveChartRightInsetRes());
+        float preparedBottom = height - CurvePaneSpacingHelper.resolveBottomInsetPx(mergeWithNextPane, false, dp(10f), 0f);
 
         double minDrawdown = 0d;
         CurveAnalyticsHelper.DrawdownPoint valley = points.get(0);
@@ -262,39 +271,86 @@ public class DrawdownChartView extends View {
         long startTs = viewportStartTs > 0L ? viewportStartTs : seriesStartTs;
         long endTs = viewportEndTs > startTs ? viewportEndTs : Math.max(startTs + 1L, seriesEndTs);
 
-        float zeroY = mapY(0d, chartMin, chartMax, chartTop, chartBottom);
-        linePath.reset();
-        fillPath.reset();
+        float zeroY = mapY(0d, chartMin, chartMax, preparedTop, preparedBottom);
+        Path preparedLinePath = new Path();
+        Path preparedFillPath = new Path();
         for (int i = 0; i < points.size(); i++) {
             CurveAnalyticsHelper.DrawdownPoint point = points.get(i);
-            float x = mapX(point.getTimestamp(), startTs, endTs, chartLeft, chartRight);
-            float y = mapY(point.getDrawdownRate(), chartMin, chartMax, chartTop, chartBottom);
+            float x = mapX(point.getTimestamp(), startTs, endTs, preparedLeft, preparedRight);
+            float y = mapY(point.getDrawdownRate(), chartMin, chartMax, preparedTop, preparedBottom);
             if (i == 0) {
-                linePath.moveTo(x, y);
-                fillPath.moveTo(x, zeroY);
-                fillPath.lineTo(x, y);
+                preparedLinePath.moveTo(x, y);
+                preparedFillPath.moveTo(x, zeroY);
+                preparedFillPath.lineTo(x, y);
             } else {
-                linePath.lineTo(x, y);
-                fillPath.lineTo(x, y);
+                preparedLinePath.lineTo(x, y);
+                preparedFillPath.lineTo(x, y);
             }
         }
-        fillPath.lineTo(mapX(points.get(points.size() - 1).getTimestamp(), startTs, endTs, chartLeft, chartRight), zeroY);
-        fillPath.close();
-        canvas.drawPath(fillPath, fillPaint);
-        canvas.drawPath(linePath, linePaint);
+        preparedFillPath.lineTo(mapX(points.get(points.size() - 1).getTimestamp(), startTs, endTs, preparedLeft, preparedRight), zeroY);
+        preparedFillPath.close();
 
-        float valleyX = mapX(valley.getTimestamp(), startTs, endTs, chartLeft, chartRight);
-        float valleyY = mapY(valley.getDrawdownRate(), chartMin, chartMax, chartTop, chartBottom);
-        canvas.drawCircle(valleyX, valleyY, dp(3.2f), markerPaint);
+        chartLeft = preparedLeft;
+        chartTop = preparedTop;
+        chartRight = preparedRight;
+        chartBottom = preparedBottom;
+        renderModel = new DrawdownRenderModel(
+                preparedLeft,
+                preparedTop,
+                preparedRight,
+                preparedBottom,
+                chartMin,
+                chartMax,
+                minDrawdown,
+                startTs,
+                endTs,
+                zeroY,
+                mapX(valley.getTimestamp(), startTs, endTs, preparedLeft, preparedRight),
+                mapY(valley.getDrawdownRate(), chartMin, chartMax, preparedTop, preparedBottom),
+                preparedLinePath,
+                preparedFillPath
+        );
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        float width = getWidth();
+        float height = getHeight();
+        if (width <= 0f || height <= 0f) {
+            return;
+        }
+
+        DrawdownRenderModel model = renderModel;
+        chartLeft = model.chartLeft;
+        chartTop = model.chartTop;
+        chartRight = model.chartRight;
+        chartBottom = model.chartBottom;
+        drawFrame(canvas, model.chartLeft, model.chartTop, model.chartRight, model.chartBottom);
+
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
+
+        if (points.size() < 2) {
+            canvas.drawText("暂无回撤数据", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
+
+        canvas.drawPath(model.fillPath, fillPaint);
+        canvas.drawPath(model.linePath, linePaint);
+
+        canvas.drawCircle(model.valleyX, model.valleyY, dp(3.2f), markerPaint);
         if (highlightedIndex >= 0 && highlightedIndex < points.size()) {
             CurveAnalyticsHelper.DrawdownPoint point = points.get(highlightedIndex);
-            float highlightX = resolveHighlightX(startTs, endTs);
-            float highlightY = mapY(point.getDrawdownRate(), chartMin, chartMax, chartTop, chartBottom);
-            canvas.drawLine(highlightX, chartTop, highlightX, chartBottom, crosshairPaint);
+            float highlightX = resolveHighlightX(model.startTs, model.endTs);
+            float highlightY = mapY(point.getDrawdownRate(), model.chartMin, model.chartMax, model.chartTop, model.chartBottom);
+            canvas.drawLine(highlightX, model.chartTop, highlightX, model.chartBottom, crosshairPaint);
             canvas.drawCircle(highlightX, highlightY, dp(3.4f), markerPaint);
         }
-        canvas.drawLine(chartLeft, zeroY, chartRight, zeroY, axisPaint);
-        drawLabels(canvas, chartLeft, chartRight, chartTop, chartBottom, minDrawdown);
+        canvas.drawLine(model.chartLeft, model.zeroY, model.chartRight, model.zeroY, axisPaint);
+        drawLabels(canvas, model.chartLeft, model.chartRight, model.chartTop, model.chartBottom, model.minDrawdown);
     }
 
     // 绘制基础网格和边框。
@@ -357,16 +413,7 @@ public class DrawdownChartView extends View {
 
     // 按时间找到最近的数据点。
     private int findNearestIndexByTimestamp(long timestamp) {
-        int bestIndex = 0;
-        long bestDistance = Long.MAX_VALUE;
-        for (int i = 0; i < points.size(); i++) {
-            long distance = Math.abs(points.get(i).getTimestamp() - timestamp);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestIndex = i;
-            }
-        }
-        return bestIndex;
+        return CurvePointBinarySearch.nearestDrawdownPointIndex(points, timestamp);
     }
 
     // 清除用户选中的十字光标并通知宿主。
@@ -430,5 +477,56 @@ public class DrawdownChartView extends View {
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
         return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
+    }
+
+    private static final class DrawdownRenderModel {
+        final float chartLeft;
+        final float chartTop;
+        final float chartRight;
+        final float chartBottom;
+        final double chartMin;
+        final double chartMax;
+        final double minDrawdown;
+        final long startTs;
+        final long endTs;
+        final float zeroY;
+        final float valleyX;
+        final float valleyY;
+        final Path linePath;
+        final Path fillPath;
+
+        private DrawdownRenderModel(float chartLeft,
+                                    float chartTop,
+                                    float chartRight,
+                                    float chartBottom,
+                                    double chartMin,
+                                    double chartMax,
+                                    double minDrawdown,
+                                    long startTs,
+                                    long endTs,
+                                    float zeroY,
+                                    float valleyX,
+                                    float valleyY,
+                                    Path linePath,
+                                    Path fillPath) {
+            this.chartLeft = chartLeft;
+            this.chartTop = chartTop;
+            this.chartRight = chartRight;
+            this.chartBottom = chartBottom;
+            this.chartMin = chartMin;
+            this.chartMax = chartMax;
+            this.minDrawdown = minDrawdown;
+            this.startTs = startTs;
+            this.endTs = endTs;
+            this.zeroY = zeroY;
+            this.valleyX = valleyX;
+            this.valleyY = valleyY;
+            this.linePath = linePath;
+            this.fillPath = fillPath;
+        }
+
+        static DrawdownRenderModel empty() {
+            return new DrawdownRenderModel(0f, 0f, 0f, 0f, -0.01d, 0d, 0d, 0L, 1L, 0f, 0f, 0f, new Path(), new Path());
+        }
     }
 }

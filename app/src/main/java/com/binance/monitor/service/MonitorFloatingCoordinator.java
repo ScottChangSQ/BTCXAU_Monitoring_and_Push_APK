@@ -29,6 +29,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 final class MonitorFloatingCoordinator {
 
@@ -50,7 +52,13 @@ final class MonitorFloatingCoordinator {
     private final DataSource dataSource;
     private final UnifiedRuntimeSnapshotStore runtimeSnapshotStore;
     private final FloatingRevisionRefreshPolicy revisionRefreshPolicy = new FloatingRevisionRefreshPolicy();
+    private final ExecutorService floatingRefreshExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "floating-refresh");
+        thread.setDaemon(true);
+        return thread;
+    });
     private boolean floatingRefreshScheduled;
+    private boolean floatingRefreshInFlight;
     private boolean screenInteractive = true;
     private long lastFloatingRefreshAt;
     private final Runnable floatingRefreshRunnable = new Runnable() {
@@ -58,7 +66,7 @@ final class MonitorFloatingCoordinator {
         public void run() {
             floatingRefreshScheduled = false;
             lastFloatingRefreshAt = System.currentTimeMillis();
-            refreshFloatingWindow();
+            enqueueFloatingRefresh(false);
         }
     };
 
@@ -91,6 +99,10 @@ final class MonitorFloatingCoordinator {
                 configManager.isShowBtc(),
                 configManager.isShowXau()
         );
+        if (!isFloatingEnabled()) {
+            cancelScheduledRefresh();
+            return;
+        }
         requestRefresh(true);
     }
 
@@ -103,12 +115,13 @@ final class MonitorFloatingCoordinator {
         if (floatingWindowManager == null) {
             return;
         }
+        if (!isFloatingEnabled()) {
+            cancelScheduledRefresh();
+            return;
+        }
         if (!screenInteractive) {
             mainHandler.removeCallbacks(floatingRefreshRunnable);
             floatingRefreshScheduled = false;
-            return;
-        }
-        if (!immediate && !revisionRefreshPolicy.shouldRefresh(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures())) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -118,7 +131,7 @@ final class MonitorFloatingCoordinator {
             mainHandler.removeCallbacks(floatingRefreshRunnable);
             floatingRefreshScheduled = false;
             lastFloatingRefreshAt = now;
-            refreshFloatingWindow();
+            enqueueFloatingRefresh(immediate);
             return;
         }
         if (floatingRefreshScheduled) {
@@ -165,6 +178,7 @@ final class MonitorFloatingCoordinator {
         if (floatingWindowManager != null) {
             floatingWindowManager.destroy();
         }
+        floatingRefreshExecutor.shutdownNow();
     }
 
     private void cancelScheduledRefresh() {
@@ -172,27 +186,58 @@ final class MonitorFloatingCoordinator {
         floatingRefreshScheduled = false;
     }
 
-    // 立即拼装并更新悬浮窗快照。
-    private void refreshFloatingWindow() {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post(this::refreshFloatingWindow);
+    // 悬浮窗快照拼装放到后台，避免行情刷新抢占前台页面输入。
+    private void enqueueFloatingRefresh(boolean immediate) {
+        if (floatingWindowManager == null) {
             return;
         }
-        if (floatingWindowManager == null) {
+        if (!isFloatingEnabled()) {
+            cancelScheduledRefresh();
             return;
         }
         if (!screenInteractive) {
             return;
         }
-        FloatingWindowSnapshot snapshot = buildFloatingSnapshot();
-        for (FloatingSymbolCardData card : snapshot.getCards()) {
+        if (floatingRefreshInFlight) {
+            return;
+        }
+        floatingRefreshInFlight = true;
+        floatingRefreshExecutor.execute(() -> {
+            FloatingRefreshWork work = prepareFloatingRefreshWork(immediate);
+            mainHandler.post(() -> applyFloatingRefreshWork(work));
+        });
+    }
+
+    @Nullable
+    private FloatingRefreshWork prepareFloatingRefreshWork(boolean immediate) {
+        if (!isFloatingEnabled() || !screenInteractive) {
+            return null;
+        }
+        List<Long> productRevisions = resolveVisibleProductRevisions();
+        List<String> marketSignatures = resolveVisibleMarketSignatures();
+        if (!immediate && !revisionRefreshPolicy.shouldRefresh(productRevisions, marketSignatures)) {
+            return null;
+        }
+        return new FloatingRefreshWork(
+                buildFloatingSnapshot(),
+                productRevisions,
+                marketSignatures
+        );
+    }
+
+    private void applyFloatingRefreshWork(@Nullable FloatingRefreshWork work) {
+        floatingRefreshInFlight = false;
+        if (work == null || floatingWindowManager == null || !isFloatingEnabled() || !screenInteractive) {
+            return;
+        }
+        for (FloatingSymbolCardData card : work.snapshot.getCards()) {
             if (card == null) {
                 continue;
             }
             ChainLatencyTracer.markFloatingUpdate(card.getCode(), card.getUpdatedAt());
         }
-        floatingWindowManager.update(snapshot);
-        revisionRefreshPolicy.markApplied(resolveVisibleProductRevisions(), resolveVisibleMarketSignatures());
+        floatingWindowManager.update(work.snapshot);
+        revisionRefreshPolicy.markApplied(work.productRevisions, work.marketSignatures);
     }
 
     // 组装一份统一悬浮窗快照，确保所有字段在同一次 UI 刷新中一起变化。
@@ -366,5 +411,23 @@ final class MonitorFloatingCoordinator {
                 hasActivePositions,
                 minimized
         );
+    }
+
+    private boolean isFloatingEnabled() {
+        return configManager == null || configManager.isFloatingEnabled();
+    }
+
+    private static final class FloatingRefreshWork {
+        private final FloatingWindowSnapshot snapshot;
+        private final List<Long> productRevisions;
+        private final List<String> marketSignatures;
+
+        private FloatingRefreshWork(@NonNull FloatingWindowSnapshot snapshot,
+                                    @NonNull List<Long> productRevisions,
+                                    @NonNull List<String> marketSignatures) {
+            this.snapshot = snapshot;
+            this.productRevisions = productRevisions;
+            this.marketSignatures = marketSignatures;
+        }
     }
 }

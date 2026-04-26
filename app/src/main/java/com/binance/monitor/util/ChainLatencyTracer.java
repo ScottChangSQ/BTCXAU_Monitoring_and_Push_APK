@@ -20,7 +20,7 @@ public final class ChainLatencyTracer {
     private static final String TAG = "ChainTrace";
     private static final int MAX_TRACE_POINTS = 512;
     private static final long TRACE_EXPIRE_MS = 180_000L;
-    private static final boolean ENABLED = false;
+    private static final boolean ENABLED = com.binance.monitor.BuildConfig.DEBUG;
 
     private static final Map<String, TracePoint> TRACE_POINTS = new LinkedHashMap<>();
     private static final Map<String, Long> PENDING_MARKET_TRIGGER_AT = new HashMap<>();

@@ -9,12 +9,16 @@ import com.binance.monitor.data.repository.MonitorRepository;
 import com.binance.monitor.runtime.AppForegroundTracker;
 import com.binance.monitor.runtime.account.AccountStatsPreloadManager;
 import com.binance.monitor.ui.theme.ThemeLauncherIconManager;
+import com.binance.monitor.util.MainLooperSlowMessageLogger;
 
 public class BinanceMonitorApp extends Application {
 
     @Override
     public void onCreate() {
         super.onCreate();
+        if (BuildConfig.DEBUG) {
+            MainLooperSlowMessageLogger.install();
+        }
         AppForegroundTracker.init(this);
         ConfigManager.getInstance(this);
         LogManager.getInstance(this);

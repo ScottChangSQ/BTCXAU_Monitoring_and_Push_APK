@@ -1,5 +1,6 @@
 package com.binance.monitor.ui.account;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -10,12 +11,12 @@ import java.nio.file.Paths;
 import org.junit.Test;
 
 /**
- * 锁定分析页日收益表未来日期显示规则，避免本地今天之后继续显示 +0.0%。
+ * 锁定分析页日收益表无交易占位规则，避免空白日期继续显示 +0.0%。
  */
 public class AccountStatsDailyReturnFutureDateSourceTest {
 
     @Test
-    public void dailyReturnTableShouldUseLocalTodayAsPlaceholderBoundary() throws Exception {
+    public void dailyReturnTableShouldUsePlaceholderForNoTradeDays() throws Exception {
         String screenSource = readUtf8("src/main/java/com/binance/monitor/ui/account/AccountStatsScreen.java")
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
@@ -26,22 +27,20 @@ public class AccountStatsDailyReturnFutureDateSourceTest {
                 .replace("\r\n", "\n")
                 .replace('\r', '\n');
 
-        assertTrue(screenSource.contains("int localTodayDayKey = resolveLocalTodayDayKey();"));
-        assertTrue(screenSource.contains("boolean afterLocalToday = localTodayDayKey > 0 && currentDayKey > localTodayDayKey;"));
-        assertTrue(screenSource.contains("afterLocalToday ? \"--\" : formatReturnValue(0d, 0d, true)"));
-        assertTrue(screenSource.contains("afterLocalToday ? null : resolveReturnDisplayColor(0d, 0d, R.color.text_secondary)"));
-        assertTrue(screenSource.contains("private int resolveLocalTodayDayKey()"));
-        assertTrue(screenSource.contains("Calendar today = Calendar.getInstance();"));
+        assertTrue(screenSource.contains("String valueText = \"--\";"));
+        assertTrue(screenSource.contains("boolean noTradePlaceholder = isZeroReturnValue(dayReturn, dayAmount);"));
+        assertTrue(screenSource.contains("private boolean isZeroReturnValue(double rate, double amount)"));
+        assertFalse(screenSource.contains("resolveLocalTodayDayKey()"));
 
-        assertTrue(bridgeSource.contains("int localTodayDayKey = resolveLocalTodayDayKey();"));
-        assertTrue(bridgeSource.contains("boolean afterLocalToday = localTodayDayKey > 0 && currentDayKey > localTodayDayKey;"));
-        assertTrue(bridgeSource.contains("afterLocalToday ? \"--\" : formatReturnValue(0d, 0d, true)"));
-        assertTrue(bridgeSource.contains("private int resolveLocalTodayDayKey()"));
+        assertTrue(bridgeSource.contains("String valueText = \"--\";"));
+        assertTrue(bridgeSource.contains("boolean noTradePlaceholder = isZeroReturnValue(dayReturn, dayAmount);"));
+        assertTrue(bridgeSource.contains("private boolean isZeroReturnValue(double rate, double amount)"));
+        assertFalse(bridgeSource.contains("resolveLocalTodayDayKey()"));
 
-        assertTrue(helperSource.contains("int localTodayDayKey = resolveLocalTodayDayKey();"));
-        assertTrue(helperSource.contains("boolean afterLocalToday = localTodayDayKey > 0 && currentDayKey > localTodayDayKey;"));
-        assertTrue(helperSource.contains("afterLocalToday ? \"--\" : host.formatReturnValue(0d, 0d, true)"));
-        assertTrue(helperSource.contains("private int resolveLocalTodayDayKey()"));
+        assertTrue(helperSource.contains("String valueText = \"--\";"));
+        assertTrue(helperSource.contains("boolean noTradePlaceholder = isZeroReturnValue(dayReturn, dayAmount);"));
+        assertTrue(helperSource.contains("private static boolean isZeroReturnValue(double rate, double amount)"));
+        assertFalse(helperSource.contains("resolveLocalTodayDayKey()"));
         assertTrue(screenSource.contains("boolean masked = isPrivacyMasked() && !\"--\".equals(displayValue);"));
     }
 

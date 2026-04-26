@@ -33,6 +33,12 @@ public class TradeWeekdayBarChartView extends View {
     private final Paint positivePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint negativePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint emptyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final List<BarDrawItem> drawItems = new ArrayList<>();
+    private float preparedLeft;
+    private float preparedRight;
+    private float preparedChartTop;
+    private float preparedAxisBottom;
+    private float preparedZeroY;
     private boolean masked;
 
     public TradeWeekdayBarChartView(Context context) {
@@ -76,6 +82,7 @@ public class TradeWeekdayBarChartView extends View {
         if (source != null) {
             entries.addAll(source);
         }
+        rebuildDrawItems();
         invalidate();
     }
 
@@ -85,7 +92,82 @@ public class TradeWeekdayBarChartView extends View {
             return;
         }
         this.masked = masked;
+        rebuildDrawItems();
         invalidate();
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        rebuildDrawItems();
+    }
+
+    private void rebuildDrawItems() {
+        drawItems.clear();
+        float width = getWidth();
+        float height = getHeight();
+        if (width <= 0f || height <= 0f || masked || entries.isEmpty()) {
+            return;
+        }
+        preparedLeft = dp(18f);
+        preparedRight = width - dp(16f);
+        preparedChartTop = dp(22f);
+        preparedAxisBottom = height - dp(42f);
+        float labelBaseline = height - dp(10f);
+
+        boolean hasPositive = false;
+        boolean hasNegative = false;
+        double positiveMax = 0d;
+        double negativeMin = 0d;
+        for (TradeWeekdayBarChartHelper.Entry entry : entries) {
+            if (entry.pnl > 0d) {
+                hasPositive = true;
+                positiveMax = Math.max(positiveMax, entry.pnl);
+            } else if (entry.pnl < 0d) {
+                hasNegative = true;
+                negativeMin = Math.min(negativeMin, entry.pnl);
+            }
+        }
+
+        if (hasPositive && hasNegative) {
+            double range = Math.max(1e-9, positiveMax - negativeMin);
+            preparedZeroY = (float) (preparedChartTop + (positiveMax / range) * (preparedAxisBottom - preparedChartTop));
+        } else if (hasPositive) {
+            preparedZeroY = preparedAxisBottom - dp(8f);
+            positiveMax = Math.max(positiveMax, 1d);
+        } else if (hasNegative) {
+            preparedZeroY = preparedChartTop + dp(12f);
+            negativeMin = Math.min(negativeMin, -1d);
+        } else {
+            preparedZeroY = preparedChartTop + (preparedAxisBottom - preparedChartTop) / 2f;
+        }
+
+        float slotWidth = (preparedRight - preparedLeft) / entries.size();
+        float barWidth = Math.max(dp(10f), slotWidth * 0.42f);
+        float positiveHeight = Math.max(dp(1f), preparedZeroY - preparedChartTop - dp(4f));
+        float negativeHeight = Math.max(dp(1f), preparedAxisBottom - preparedZeroY - dp(10f));
+        double positiveBase = Math.max(1d, positiveMax);
+        double negativeBase = Math.max(1d, Math.abs(negativeMin));
+
+        for (int i = 0; i < entries.size(); i++) {
+            TradeWeekdayBarChartHelper.Entry entry = entries.get(i);
+            float centerX = preparedLeft + slotWidth * i + slotWidth / 2f;
+            boolean positive = entry.pnl >= 0d;
+            RectF rect;
+            float valueY;
+            if (positive) {
+                float ratio = (float) (Math.abs(entry.pnl) / positiveBase);
+                float barHeight = positiveHeight * ratio;
+                rect = new RectF(centerX - barWidth / 2f, preparedZeroY - barHeight, centerX + barWidth / 2f, preparedZeroY);
+                valueY = Math.max(dp(14f), rect.top - dp(8f));
+            } else {
+                float ratio = (float) (Math.abs(entry.pnl) / negativeBase);
+                float barHeight = negativeHeight * ratio;
+                rect = new RectF(centerX - barWidth / 2f, preparedZeroY, centerX + barWidth / 2f, preparedZeroY + barHeight);
+                valueY = Math.min(labelBaseline - dp(10f), rect.bottom + dp(12f));
+            }
+            drawItems.add(new BarDrawItem(rect, positive, formatPnl(entry.pnl), entry.label, centerX, valueY, labelBaseline));
+        }
     }
 
     @Override
@@ -97,12 +179,6 @@ public class TradeWeekdayBarChartView extends View {
             return;
         }
 
-        float left = dp(18f);
-        float right = width - dp(16f);
-        float chartTop = dp(22f);
-        float axisBottom = height - dp(42f);
-        float labelBaseline = height - dp(10f);
-
         if (masked) {
             canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
             return;
@@ -112,66 +188,18 @@ public class TradeWeekdayBarChartView extends View {
             return;
         }
 
-        boolean hasPositive = false;
-        boolean hasNegative = false;
-        double maxPositive = 0d;
-        double minNegative = 0d;
-        for (TradeWeekdayBarChartHelper.Entry entry : entries) {
-            if (entry.pnl > 0d) {
-                hasPositive = true;
-                maxPositive = Math.max(maxPositive, entry.pnl);
-            } else if (entry.pnl < 0d) {
-                hasNegative = true;
-                minNegative = Math.min(minNegative, entry.pnl);
-            }
+        if (drawItems.isEmpty()) {
+            rebuildDrawItems();
         }
+        canvas.drawLine(preparedLeft, preparedZeroY, preparedRight, preparedZeroY, axisPaint);
+        canvas.drawLine(preparedLeft, preparedChartTop, preparedLeft, preparedAxisBottom, gridPaint);
+        canvas.drawLine(preparedRight, preparedChartTop, preparedRight, preparedAxisBottom, gridPaint);
 
-        float zeroY;
-        if (hasPositive && hasNegative) {
-            double range = Math.max(1e-9, maxPositive - minNegative);
-            zeroY = (float) (chartTop + (maxPositive / range) * (axisBottom - chartTop));
-        } else if (hasPositive) {
-            zeroY = axisBottom - dp(8f);
-            maxPositive = Math.max(maxPositive, 1d);
-        } else if (hasNegative) {
-            zeroY = chartTop + dp(12f);
-            minNegative = Math.min(minNegative, -1d);
-        } else {
-            zeroY = chartTop + (axisBottom - chartTop) / 2f;
-        }
-
-        canvas.drawLine(left, zeroY, right, zeroY, axisPaint);
-        canvas.drawLine(left, chartTop, left, axisBottom, gridPaint);
-        canvas.drawLine(right, chartTop, right, axisBottom, gridPaint);
-
-        float slotWidth = (right - left) / entries.size();
-        float barWidth = Math.max(dp(10f), slotWidth * 0.42f);
-        float positiveHeight = Math.max(dp(1f), zeroY - chartTop - dp(4f));
-        float negativeHeight = Math.max(dp(1f), axisBottom - zeroY - dp(10f));
-        double positiveBase = Math.max(1d, maxPositive);
-        double negativeBase = Math.max(1d, Math.abs(minNegative));
-
-        for (int i = 0; i < entries.size(); i++) {
-            TradeWeekdayBarChartHelper.Entry entry = entries.get(i);
-            float centerX = left + slotWidth * i + slotWidth / 2f;
-
-            if (entry.pnl >= 0d) {
-                float ratio = (float) (Math.abs(entry.pnl) / positiveBase);
-                float barHeight = positiveHeight * ratio;
-                RectF rect = new RectF(centerX - barWidth / 2f, zeroY - barHeight, centerX + barWidth / 2f, zeroY);
-                canvas.drawRoundRect(rect, dp(3f), dp(3f), positivePaint);
-                valuePaint.setColor(positivePaint.getColor());
-                canvas.drawText(formatPnl(entry.pnl), centerX, Math.max(dp(14f), rect.top - dp(8f)), valuePaint);
-            } else {
-                float ratio = (float) (Math.abs(entry.pnl) / negativeBase);
-                float barHeight = negativeHeight * ratio;
-                RectF rect = new RectF(centerX - barWidth / 2f, zeroY, centerX + barWidth / 2f, zeroY + barHeight);
-                canvas.drawRoundRect(rect, dp(3f), dp(3f), negativePaint);
-                valuePaint.setColor(negativePaint.getColor());
-                float textY = Math.min(labelBaseline - dp(10f), rect.bottom + dp(12f));
-                canvas.drawText(formatPnl(entry.pnl), centerX, textY, valuePaint);
-            }
-            canvas.drawText(entry.label, centerX, labelBaseline, labelPaint);
+        for (BarDrawItem item : drawItems) {
+            canvas.drawRoundRect(item.rect, dp(3f), dp(3f), item.positive ? positivePaint : negativePaint);
+            valuePaint.setColor(item.positive ? positivePaint.getColor() : negativePaint.getColor());
+            canvas.drawText(item.valueText, item.centerX, item.valueY, valuePaint);
+            canvas.drawText(item.labelText, item.centerX, item.labelY, labelPaint);
         }
     }
 
@@ -188,5 +216,31 @@ public class TradeWeekdayBarChartView extends View {
     private int applyAlpha(int color, int alpha) {
         int safeAlpha = Math.max(0, Math.min(255, alpha));
         return androidx.core.graphics.ColorUtils.setAlphaComponent(color, safeAlpha);
+    }
+
+    private static final class BarDrawItem {
+        final RectF rect;
+        final boolean positive;
+        final String valueText;
+        final String labelText;
+        final float centerX;
+        final float valueY;
+        final float labelY;
+
+        private BarDrawItem(RectF rect,
+                            boolean positive,
+                            String valueText,
+                            String labelText,
+                            float centerX,
+                            float valueY,
+                            float labelY) {
+            this.rect = rect;
+            this.positive = positive;
+            this.valueText = valueText;
+            this.labelText = labelText;
+            this.centerX = centerX;
+            this.valueY = valueY;
+            this.labelY = labelY;
+        }
     }
 }

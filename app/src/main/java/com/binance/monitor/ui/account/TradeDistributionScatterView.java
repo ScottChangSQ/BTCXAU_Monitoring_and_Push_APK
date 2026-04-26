@@ -38,6 +38,9 @@ public class TradeDistributionScatterView extends View {
     private final Paint tooltipTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint emptyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final GestureDetector gestureDetector;
+    private final List<ScatterDrawItem> drawItems = new ArrayList<>();
+    private float zeroX;
+    private float zeroY;
 
     private float chartLeft;
     private float chartRight;
@@ -108,6 +111,7 @@ public class TradeDistributionScatterView extends View {
             points.addAll(source);
         }
         selectedIndex = -1;
+        rebuildDrawItems();
         invalidate();
     }
 
@@ -118,6 +122,7 @@ public class TradeDistributionScatterView extends View {
         }
         this.masked = masked;
         selectedIndex = -1;
+        rebuildDrawItems();
         invalidate();
     }
 
@@ -131,29 +136,22 @@ public class TradeDistributionScatterView extends View {
     }
 
     @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        rebuildDrawItems();
+    }
+
+    private void rebuildDrawItems() {
+        drawItems.clear();
         float width = getWidth();
         float height = getHeight();
-        if (width <= 0f || height <= 0f) {
+        if (width <= 0f || height <= 0f || masked || points.isEmpty()) {
             return;
         }
-
         chartLeft = dp(22f);
         chartRight = width - dp(16f);
         chartTop = dp(12f);
         chartBottom = height - dp(24f);
-        drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
-
-        if (masked) {
-            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
-            return;
-        }
-
-        if (points.isEmpty()) {
-            canvas.drawText("暂无交易分布数据", width / 2f, height / 2f, emptyPaint);
-            return;
-        }
 
         chartMinX = -0.05d;
         chartMaxX = 0d;
@@ -167,21 +165,52 @@ public class TradeDistributionScatterView extends View {
         chartMaxY = Math.max(chartMaxY, 0.02d);
         chartMinY = Math.min(chartMinY, -0.02d);
         chartMinX = Math.min(chartMinX * 1.08d, -0.01d);
+        zeroX = mapX(0d, chartMinX, chartMaxX, chartLeft, chartRight);
+        zeroY = mapY(0d, chartMinY, chartMaxY, chartTop, chartBottom);
 
-        float zeroX = mapX(0d, chartMinX, chartMaxX, chartLeft, chartRight);
-        float zeroY = mapY(0d, chartMinY, chartMaxY, chartTop, chartBottom);
+        for (CurveAnalyticsHelper.TradeScatterPoint point : points) {
+            drawItems.add(new ScatterDrawItem(
+                    mapX(point.getMaxDrawdownRate(), chartMinX, chartMaxX, chartLeft, chartRight),
+                    mapY(point.getReturnRate(), chartMinY, chartMaxY, chartTop, chartBottom),
+                    point.isPositive(),
+                    point.isHighlight()
+            ));
+        }
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        float width = getWidth();
+        float height = getHeight();
+        if (width <= 0f || height <= 0f) {
+            return;
+        }
+
+        if (masked) {
+            canvas.drawText("****", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
+
+        if (points.isEmpty()) {
+            canvas.drawText("暂无交易分布数据", width / 2f, height / 2f, emptyPaint);
+            return;
+        }
+
+        if (drawItems.isEmpty()) {
+            rebuildDrawItems();
+        }
+        drawFrame(canvas, chartLeft, chartTop, chartRight, chartBottom);
         canvas.drawLine(chartLeft, zeroY, chartRight, zeroY, axisPaint);
         canvas.drawLine(zeroX, chartTop, zeroX, chartBottom, axisPaint);
 
-        for (int i = 0; i < points.size(); i++) {
-            CurveAnalyticsHelper.TradeScatterPoint point = points.get(i);
-            float cx = mapX(point.getMaxDrawdownRate(), chartMinX, chartMaxX, chartLeft, chartRight);
-            float cy = mapY(point.getReturnRate(), chartMinY, chartMaxY, chartTop, chartBottom);
-            Paint fillPaint = point.isPositive() ? positivePaint : negativePaint;
-            float radius = point.isHighlight() || i == selectedIndex ? dp(4.2f) : dp(3.0f);
-            canvas.drawCircle(cx, cy, radius, fillPaint);
-            if (point.isHighlight() || i == selectedIndex) {
-                canvas.drawCircle(cx, cy, radius + dp(1.6f), highlightPaint);
+        for (int i = 0; i < drawItems.size(); i++) {
+            ScatterDrawItem item = drawItems.get(i);
+            Paint fillPaint = item.positive ? positivePaint : negativePaint;
+            float radius = item.highlight || i == selectedIndex ? dp(4.2f) : dp(3.0f);
+            canvas.drawCircle(item.cx, item.cy, radius, fillPaint);
+            if (item.highlight || i == selectedIndex) {
+                canvas.drawCircle(item.cx, item.cy, radius + dp(1.6f), highlightPaint);
             }
         }
 
@@ -252,10 +281,14 @@ public class TradeDistributionScatterView extends View {
         float bestDistance = Float.MAX_VALUE;
         float hitRadius = dp(18f);
         for (int i = 0; i < points.size(); i++) {
-            CurveAnalyticsHelper.TradeScatterPoint point = points.get(i);
-            float cx = mapX(point.getMaxDrawdownRate(), chartMinX, chartMaxX, chartLeft, chartRight);
-            float cy = mapY(point.getReturnRate(), chartMinY, chartMaxY, chartTop, chartBottom);
-            float distance = (float) Math.hypot(touchX - cx, touchY - cy);
+            if (drawItems.isEmpty()) {
+                rebuildDrawItems();
+            }
+            ScatterDrawItem item = i < drawItems.size() ? drawItems.get(i) : null;
+            if (item == null) {
+                continue;
+            }
+            float distance = (float) Math.hypot(touchX - item.cx, touchY - item.cy);
             if (distance <= hitRadius && distance < bestDistance) {
                 bestDistance = distance;
                 bestIndex = i;
@@ -324,5 +357,19 @@ public class TradeDistributionScatterView extends View {
             builder.append(minutes).append("分钟");
         }
         return builder.toString();
+    }
+
+    private static final class ScatterDrawItem {
+        final float cx;
+        final float cy;
+        final boolean positive;
+        final boolean highlight;
+
+        private ScatterDrawItem(float cx, float cy, boolean positive, boolean highlight) {
+            this.cx = cx;
+            this.cy = cy;
+            this.positive = positive;
+            this.highlight = highlight;
+        }
     }
 }

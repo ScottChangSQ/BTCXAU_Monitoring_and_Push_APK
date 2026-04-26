@@ -357,6 +357,7 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
     @Override
     public void onHostPageShown() {
         if (screen != null) {
+            screen.onHostPageShown();
             screen.onNewIntent(requireActivity().getIntent());
         }
         if (pageController != null) {
@@ -366,6 +367,9 @@ public class MarketChartFragment extends Fragment implements HostTabPage {
 
     @Override
     public void onHostPageHidden() {
+        if (screen != null) {
+            screen.onHostPageHidden();
+        }
         if (pageController != null) {
             pageController.onPageHidden();
         }
